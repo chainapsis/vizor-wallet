@@ -111,7 +111,7 @@ class _VotingProposalDetailScreenState
                 ),
               );
             }
-            if (completedVote != null && hasConfirmedVotingEligibility) {
+            if (completedVote != null) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: _VotedPollContent(
@@ -154,6 +154,10 @@ class _VotingProposalDetailScreenState
               state,
               preparing: votingPowerPreparing,
             );
+            final votingError = state.error;
+            final votingEligibilityError = votingError == null
+                ? false
+                : isVotingEligibilityErrorText(votingError.message);
             _maybePrecomputeDelegationPir(state);
             return _ActivePollContent(
               roundId: roundId,
@@ -162,15 +166,23 @@ class _VotingProposalDetailScreenState
               description: _roundDescription(round.rawJson),
               forumUri: forumUri,
               endDate: _roundEndDate(round.rawJson),
-              votingPowerZatoshi: state.eligibleWeightZatoshi,
+              votingPowerZatoshi: votingEligibilityError
+                  ? BigInt.zero
+                  : state.eligibleWeightZatoshi,
               votingPowerPreparing: votingPowerPreparing,
               votingEligibilityConfirmed: hasConfirmedVotingEligibility,
-              votingEligibilityMessage: votingEligibilityMessage,
+              votingEligibilityMessage: votingEligibilityError
+                  ? null
+                  : votingEligibilityMessage,
+              votingEligibilityErrorMessage: votingEligibilityError
+                  ? votingEligibilityMessage
+                  : null,
               proposals: proposals,
               draft: draft,
               onChoice: draftKey == null
                   ? (_, _) {}
                   : (proposalId, choice) {
+                      if (!hasConfirmedVotingEligibility) return;
                       final notifier = ref.read(
                         votingDraftProvider(draftKey).notifier,
                       );
@@ -285,6 +297,7 @@ class _ActivePollContent extends StatefulWidget {
     required this.votingPowerPreparing,
     required this.votingEligibilityConfirmed,
     required this.votingEligibilityMessage,
+    required this.votingEligibilityErrorMessage,
     required this.proposals,
     required this.draft,
     required this.onChoice,
@@ -300,6 +313,7 @@ class _ActivePollContent extends StatefulWidget {
   final bool votingPowerPreparing;
   final bool votingEligibilityConfirmed;
   final String? votingEligibilityMessage;
+  final String? votingEligibilityErrorMessage;
   final List<VotingProposalView> proposals;
   final VotingDraftState draft;
   final void Function(int proposalId, int? choice) onChoice;
@@ -312,7 +326,15 @@ class _ActivePollContentState extends State<_ActivePollContent> {
   bool _descriptionExpanded = false;
 
   Future<void> _handleBottomActionPressed() async {
-    if (!widget.votingEligibilityConfirmed) return;
+    if (!widget.votingEligibilityConfirmed) {
+      final message = widget.votingEligibilityErrorMessage;
+      if (message == null) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) => _IneligiblePollDialog(message: message),
+      );
+      return;
+    }
     final skippedCount = widget.proposals
         .where((proposal) => widget.draft.choices[proposal.id] == null)
         .length;
@@ -393,10 +415,15 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                       );
                     }
                     if (index == widget.proposals.length + 1) {
+                      final isIneligible =
+                          !widget.votingEligibilityConfirmed &&
+                          widget.votingEligibilityErrorMessage != null;
                       return _ReviewAnswersButton(
                         enabled:
+                            isIneligible ||
                             widget.votingEligibilityConfirmed &&
-                            !widget.draft.isEmpty,
+                                !widget.draft.isEmpty,
+                        label: isIneligible ? 'Not eligible' : 'Review answers',
                         onPressed: _handleBottomActionPressed,
                       );
                     }
@@ -493,6 +520,77 @@ class _SkippedQuestionsDialog extends StatelessWidget {
                 variant: AppButtonVariant.ghost,
                 minWidth: 312,
                 child: const Text('Keep voting'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IneligiblePollDialog extends StatelessWidget {
+  const _IneligiblePollDialog({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Dialog(
+      backgroundColor: colors.background.ground,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.large),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: colors.background.neutralSubtleOpacity,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: AppIcon(
+                        AppIcons.warning,
+                        size: AppIconSize.medium,
+                        color: colors.icon.regular,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      'Not eligible for this poll',
+                      style: AppTypography.bodyLarge.copyWith(
+                        color: colors.text.accent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                message,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppButton(
+                onPressed: () => Navigator.of(context).pop(),
+                minWidth: 312,
+                child: const Text('Done'),
               ),
             ],
           ),
@@ -711,9 +809,14 @@ class _ViewMoreButton extends StatelessWidget {
 }
 
 class _ReviewAnswersButton extends StatelessWidget {
-  const _ReviewAnswersButton({required this.enabled, required this.onPressed});
+  const _ReviewAnswersButton({
+    required this.enabled,
+    required this.label,
+    required this.onPressed,
+  });
 
   final bool enabled;
+  final String label;
   final VoidCallback onPressed;
 
   @override
@@ -725,7 +828,7 @@ class _ReviewAnswersButton extends StatelessWidget {
           variant: AppButtonVariant.primary,
           size: AppButtonSize.large,
           minWidth: constraints.maxWidth,
-          child: const Text('Review answers'),
+          child: Text(label),
         );
       },
     );
@@ -1238,20 +1341,18 @@ class _ProposalCard extends StatelessWidget {
               ),
             ),
           ],
-          if (enabled) ...[
-            const SizedBox(height: AppSpacing.s),
-            for (final option in proposal.options) ...[
-              _OptionRow(
-                option: option,
-                selected: selectedChoice == option.index,
-                enabled: enabled,
-                onTap: () => onChoice(
-                  selectedChoice == option.index ? null : option.index,
-                ),
+          const SizedBox(height: AppSpacing.s),
+          for (final option in proposal.options) ...[
+            _OptionRow(
+              option: option,
+              selected: selectedChoice == option.index,
+              enabled: enabled,
+              onTap: () => onChoice(
+                selectedChoice == option.index ? null : option.index,
               ),
-              if (option != proposal.options.last)
-                const SizedBox(height: AppSpacing.xs),
-            ],
+            ),
+            if (option != proposal.options.last)
+              const SizedBox(height: AppSpacing.xs),
           ],
         ],
       ),

@@ -146,8 +146,7 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
               state,
               preparing: votingPowerPreparing,
             );
-            final onSubmit =
-                draft.isEmpty || !state.hasConfirmedVotingEligibility
+            final onSubmit = draft.isEmpty
                 ? null
                 : () => context.go(
                     votingStatusRoute(widget.roundId, accountUuid: accountUuid),

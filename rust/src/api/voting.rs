@@ -2203,7 +2203,8 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), "wallet-api-witness").unwrap();
         db.init_round(&test_api_round_params(), None).unwrap();
-        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        let notes = minimum_eligible_test_notes();
+        db.ensure_bundles(ROUND_ID, &notes).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
 
@@ -2239,7 +2240,8 @@ mod tests {
         let account_uuid = "wallet-api-round-reset";
         let db = db::open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap();
         db.init_round(&test_api_round_params(), None).unwrap();
-        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        let notes = minimum_eligible_test_notes();
+        db.ensure_bundles(ROUND_ID, &notes).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
 
@@ -2281,10 +2283,10 @@ mod tests {
         let mut other_round_params = test_api_round_params();
         other_round_params.vote_round_id = OTHER_ROUND_ID.to_string();
         db.init_round(&other_round_params, None).unwrap();
-        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        let notes = minimum_eligible_test_notes();
+        db.ensure_bundles(ROUND_ID, &notes).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
-        db.ensure_bundles(OTHER_ROUND_ID, &[test_note_info(0)])
-            .unwrap();
+        db.ensure_bundles(OTHER_ROUND_ID, &notes).unwrap();
         db.store_van_position(OTHER_ROUND_ID, 0, 0).unwrap();
 
         let server_round_one = start_tree_server(1, vec![fp_one_base64()], 3);
@@ -2340,7 +2342,8 @@ mod tests {
         let account_uuid = "wallet-api-account-reset";
         let db = db::open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap();
         db.init_round(&test_api_round_params(), None).unwrap();
-        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        let notes = minimum_eligible_test_notes();
+        db.ensure_bundles(ROUND_ID, &notes).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
 
@@ -2484,7 +2487,8 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
         db.init_round(&test_api_round_params(), None).unwrap();
-        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        let notes = minimum_eligible_test_notes();
+        db.ensure_bundles(ROUND_ID, &notes).unwrap();
 
         store_keystone_signature(
             db_path.to_str().unwrap().to_string(),
@@ -2586,7 +2590,8 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
         db.init_round(&test_api_round_params(), None).unwrap();
-        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        let notes = minimum_eligible_test_notes();
+        db.ensure_bundles(ROUND_ID, &notes).unwrap();
 
         mark_delegation_submitted(
             db_path.to_str().unwrap().to_string(),

@@ -112,12 +112,18 @@ class _VotingSubmissionConfirmationScreenState
                   );
                 }
                 if (!hasConfirmedVotingEligibility) {
+                  final storedEligibilityError = state.error;
+                  final storedEligibilityErrorMessage =
+                      storedEligibilityError == null
+                      ? null
+                      : friendlyVotingErrorText(storedEligibilityError.message);
                   return _ConfirmationScaffold(
                     confirmed: false,
                     title: 'Submission not complete',
                     pollTitle: pollTitle,
                     message:
                         _votingPowerRefreshErrorMessage ??
+                        storedEligibilityErrorMessage ??
                         (_refreshingVotingPower
                             ? 'Checking voting eligibility for this account.'
                             : 'Voting eligibility has not been confirmed for this account.'),

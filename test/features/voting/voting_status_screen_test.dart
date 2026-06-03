@@ -1458,7 +1458,7 @@ void main() {
     expect(find.text('Preparing voting power'), findsNothing);
   });
 
-  testWidgets('proposal detail hides option labels when eligibility fails', (
+  testWidgets('proposal detail shows read-only options when eligibility fails', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1152, 768));
@@ -1486,16 +1486,29 @@ void main() {
     const message =
         'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
         'at snapshot block 3,359,740. Switch to an eligible account to vote.';
-    await _pumpUntilFound(tester, find.text(message));
+    await _pumpUntilFound(tester, find.text('Not eligible'));
 
-    expect(find.text(message), findsOneWidget);
+    expect(find.text(message), findsNothing);
     expect(find.text('First proposal'), findsOneWidget);
-    expect(find.text('Yes'), findsNothing);
-    expect(find.text('No'), findsNothing);
-    expect(find.text('Review answers'), findsOneWidget);
+    expect(find.text('Voting power 0 ZEC'), findsOneWidget);
+    expect(find.text('Yes'), findsOneWidget);
+    expect(find.text('No'), findsOneWidget);
+    expect(find.text('Review answers'), findsNothing);
+    expect(find.text('Not eligible'), findsOneWidget);
+
+    await tester.tap(find.text('Yes'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(votingDraftProvider(_draftKey)).isEmpty, true);
+
+    await tester.tap(find.text('Not eligible'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Not eligible for this poll'), findsOneWidget);
+    expect(find.text(message), findsOneWidget);
   });
 
-  testWidgets('proposal detail hides completed vote when eligibility fails', (
+  testWidgets('proposal detail shows completed vote when eligibility fails', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1152, 768));
@@ -1538,11 +1551,11 @@ void main() {
     const message =
         'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
         'at snapshot block 3,359,740. Switch to an eligible account to vote.';
-    await _pumpUntilFound(tester, find.text(message));
+    await _pumpUntilFound(tester, find.textContaining('Voted'));
 
-    expect(find.text(message), findsOneWidget);
-    expect(find.textContaining('Voted'), findsNothing);
-    expect(find.text('Yes'), findsNothing);
+    expect(find.text(message), findsNothing);
+    expect(find.textContaining('Voted'), findsOneWidget);
+    expect(find.text('Yes'), findsOneWidget);
     expect(find.text('No'), findsNothing);
   });
 
@@ -1590,13 +1603,14 @@ void main() {
     const message =
         'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
         'at snapshot block 3,359,740. Switch to an eligible account to vote.';
-    await _pumpUntilFound(tester, find.text(message));
+    await _pumpUntilFound(tester, find.text('Not eligible'));
 
-    expect(find.text(message), findsOneWidget);
+    expect(find.text(message), findsNothing);
     expect(find.text('Vote in progress'), findsNothing);
     expect(find.text('Continue voting'), findsNothing);
-    expect(find.text('Yes'), findsNothing);
-    expect(find.text('No'), findsNothing);
+    expect(find.text('Yes'), findsOneWidget);
+    expect(find.text('No'), findsOneWidget);
+    expect(find.text('Not eligible'), findsOneWidget);
   });
 
   testWidgets('review hides stale choices when eligibility fails', (
@@ -1634,6 +1648,7 @@ void main() {
 
     expect(find.text(message), findsOneWidget);
     expect(find.text('Yes'), findsNothing);
+    expect(find.text('Confirm & submit'), findsOneWidget);
   });
 
   testWidgets('results screen renders flat tally rows as ZEC totals', (
@@ -2489,10 +2504,7 @@ void main() {
 
     expect(find.text('Sign bundle 1 of 1'), findsOneWidget);
     expect(find.text('Memo'), findsOneWidget);
-    expect(
-      find.textContaining('Amount: 0.00000100 ZEC'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Amount: 0.00000100 ZEC'), findsOneWidget);
     expect(find.text('Scan signature'), findsOneWidget);
     expect(find.text('Software account required'), findsNothing);
     await tester.tap(find.text('Scan signature'));
