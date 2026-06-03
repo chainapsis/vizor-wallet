@@ -20,14 +20,14 @@ use zcash_voting::storage::VotingDb;
 use zcash_voting::BundlePolicy;
 
 const ZATOSHI_PER_ZEC: u64 = 100_000_000;
-const WHALE_PROTECTION_NOTE_VALUE_ZATOSHI: u64 = 500 * ZATOSHI_PER_ZEC;
+const WHALE_PROTECTION_BUNDLE_ADDITION_THRESHOLD_ZATOSHI: u64 = 500 * ZATOSHI_PER_ZEC;
 
-/// Isolate large notes while preserving normal packing for smaller notes.
+/// Start a new bundle before adding a note would cross the whale threshold.
 ///
 /// `zcash_voting` owns the final bundle planning. Vizor only supplies the
-/// threshold that marks a note as large enough to receive its own bundle.
+/// threshold used when deciding whether another note can join a bundle.
 fn whale_protected_bundle_policy(bundle_policy: BundlePolicy) -> BundlePolicy {
-    bundle_policy.with_isolated_note_threshold(WHALE_PROTECTION_NOTE_VALUE_ZATOSHI)
+    bundle_policy.with_bundle_addition_threshold(WHALE_PROTECTION_BUNDLE_ADDITION_THRESHOLD_ZATOSHI)
 }
 
 fn prepare_params_with_whale_protection<'a>(
@@ -455,9 +455,9 @@ mod tests {
     }
 
     #[test]
-    fn whale_protection_isolates_large_notes_and_packs_smaller_notes() {
+    fn whale_protection_starts_new_bundle_when_addition_would_cross_threshold() {
         let notes = vec![
-            note_with_value(1, WHALE_PROTECTION_NOTE_VALUE_ZATOSHI),
+            note_with_value(1, WHALE_PROTECTION_BUNDLE_ADDITION_THRESHOLD_ZATOSHI),
             note_with_value(2, 400 * ZATOSHI_PER_ZEC),
             note_with_value(3, 200 * ZATOSHI_PER_ZEC),
         ];
@@ -472,9 +472,10 @@ mod tests {
             .map(|bundle| bundle.iter().map(|note| note.position).collect())
             .collect();
 
-        assert_eq!(protected_plan.len(), 2);
+        assert_eq!(protected_plan.len(), 3);
         assert!(protected_positions.contains(&vec![1]));
-        assert!(protected_positions.contains(&vec![2, 3]));
+        assert!(protected_positions.contains(&vec![2]));
+        assert!(protected_positions.contains(&vec![3]));
     }
 
     #[test]
