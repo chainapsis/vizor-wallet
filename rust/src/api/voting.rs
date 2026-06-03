@@ -1071,6 +1071,35 @@ pub fn reset_voting_session_state(
     })
 }
 
+/// Delete all durable voting sidecar rows for an account.
+///
+/// This removes every persisted round scoped to `account_uuid`, relying on the
+/// `zcash_voting` round deletion cascade for bundles, recovery rows, share
+/// history, ballot intent, and cached tree state. Use this only at account
+/// deletion boundaries, not for ordinary voting-session retries.
+pub fn delete_voting_account_state(db_path: String, account_uuid: String) -> Result<u32, String> {
+    catch(|| {
+        let db = db::open_voting_db(&db_path, &account_uuid)?;
+        let rounds = db
+            .list_rounds()
+            .map_err(|e| format!("list voting rounds failed: {e}"))?;
+        let round_count = rounds.len();
+
+        for round in rounds {
+            db.clear_round(&round.round_id)
+                .map_err(|e| format!("clear voting round {} failed: {e}", round.round_id))?;
+        }
+
+        log::info!(
+            "voting: deleted durable account state (account_uuid={}, rounds={})",
+            account_uuid,
+            round_count
+        );
+        u32::try_from(round_count)
+            .map_err(|_| format!("deleted voting round count exceeds u32 range: {round_count}"))
+    })
+}
+
 /// Recover a committed but unsubmitted vote from persisted local recovery data.
 ///
 /// # Errors
@@ -2487,6 +2516,43 @@ mod tests {
         )
         .unwrap();
         assert!(cleared_state.share_delegations.is_empty());
+    }
+
+    #[test]
+    fn delete_voting_account_state_clears_target_account_rounds_only() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let target_account_uuid = "wallet-delete-target";
+        let other_account_uuid = "wallet-delete-other";
+
+        let target_db = db::open_voting_db(db_path.to_str().unwrap(), target_account_uuid).unwrap();
+        target_db
+            .init_round(&test_api_round_params(), None)
+            .unwrap();
+        target_db
+            .ensure_bundles(ROUND_ID, &[test_note_info(0)])
+            .unwrap();
+
+        let other_db = db::open_voting_db(db_path.to_str().unwrap(), other_account_uuid).unwrap();
+        other_db.init_round(&test_api_round_params(), None).unwrap();
+        other_db
+            .ensure_bundles(ROUND_ID, &[test_note_info(1)])
+            .unwrap();
+        drop(target_db);
+        drop(other_db);
+
+        let deleted = delete_voting_account_state(
+            db_path.to_str().unwrap().to_string(),
+            target_account_uuid.to_string(),
+        )
+        .unwrap();
+
+        let target_db = db::open_voting_db(db_path.to_str().unwrap(), target_account_uuid).unwrap();
+        let other_db = db::open_voting_db(db_path.to_str().unwrap(), other_account_uuid).unwrap();
+        assert_eq!(deleted, 1);
+        assert!(target_db.list_rounds().unwrap().is_empty());
+        assert_eq!(other_db.list_rounds().unwrap().len(), 1);
+        assert_eq!(other_db.get_bundle_count(ROUND_ID).unwrap(), 1);
     }
 
     #[test]

@@ -442,7 +442,10 @@ Future<VanWitness> generateVanWitness({
 /// Clear process-local vote-tree sync state for a wallet or round.
 ///
 /// Passing a non-empty round ID clears only that round's cached vote-tree sync
-/// state. Passing `None` or an empty round ID performs account-wide cleanup.
+/// state and unsigned delegation setup fields by calling
+/// `zcash_voting::precompute::reset_voting_session_state(db, round_id)`.
+/// Passing `None` or an empty round ID performs account-wide vote-tree cleanup
+/// with `zcash_voting::precompute::reset_voting_session_state(db, "")`.
 ///
 /// This does not delete durable recovery rows or abort in-flight proof/vote
 /// work already running on worker threads.
@@ -454,6 +457,20 @@ Future<void> resetVotingSessionState({
   dbPath: dbPath,
   accountUuid: accountUuid,
   roundId: roundId,
+);
+
+/// Delete all durable voting sidecar rows for an account.
+///
+/// This removes every persisted round scoped to `account_uuid`, relying on the
+/// `zcash_voting` round deletion cascade for bundles, recovery rows, share
+/// history, ballot intent, and cached tree state. Use this only at account
+/// deletion boundaries, not for ordinary voting-session retries.
+Future<int> deleteVotingAccountState({
+  required String dbPath,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiVotingDeleteVotingAccountState(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
 );
 
 /// Recover a committed but unsubmitted vote from persisted local recovery data.
