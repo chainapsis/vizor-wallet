@@ -1034,6 +1034,45 @@ pub fn generate_van_witness(
 /// Clear process-local vote-tree sync state for a wallet or round.
 ///
 /// Passing a non-empty round ID clears only that round's cached vote-tree sync
+/// state by calling `zcash_voting::precompute::reset_vote_tree(db, round_id)`.
+/// Passing `None` or an empty round ID performs account-wide vote-tree cleanup
+/// with `zcash_voting::precompute::reset_vote_tree(db, "")`.
+///
+/// This does not clear unsigned delegation setup fields, delete durable recovery
+/// rows, or abort in-flight proof/vote work already running on worker threads.
+pub fn reset_vote_tree(
+    db_path: String,
+    account_uuid: String,
+    round_id: Option<String>,
+) -> Result<(), String> {
+    catch(|| {
+        let db = db::open_voting_db(&db_path, &account_uuid)?;
+
+        let scoped_round_id = round_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .unwrap_or("");
+        let reset_scope = if scoped_round_id.is_empty() {
+            "account"
+        } else {
+            "round"
+        };
+        zcash_voting::precompute::reset_vote_tree(&db, scoped_round_id)
+            .map_err(|e| format!("reset vote tree failed: {e}"))?;
+        log::info!(
+            "voting: reset vote-tree state \
+             (account_uuid={}, scope={}, round_id={:?})",
+            account_uuid,
+            reset_scope,
+            round_id
+        );
+        Ok(())
+    })
+}
+
+/// Clear process-local voting session state for a wallet or round.
+///
+/// Passing a non-empty round ID clears only that round's cached vote-tree sync
 /// state and unsigned delegation setup fields by calling
 /// `zcash_voting::precompute::reset_voting_session_state(db, round_id)`.
 /// Passing `None` or an empty round ID performs account-wide vote-tree cleanup

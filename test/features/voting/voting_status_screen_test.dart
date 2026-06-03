@@ -3247,6 +3247,13 @@ class _NoopVotingRustApi implements VotingRustApi {
   }) async {}
 
   @override
+  Future<void> resetVoteTree({
+    required String dbPath,
+    required String accountUuid,
+    String? roundId,
+  }) async {}
+
+  @override
   Future<List<int>> generateVotingHotkey({required String network}) async {
     return [9, 9, 9];
   }

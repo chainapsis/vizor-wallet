@@ -106,7 +106,7 @@ class VotingTreePreSyncService {
           if (attempt < nodeUrls.length - 1) {
             await _ref
                 .read(votingRustApiProvider)
-                .resetVotingSessionState(
+                .resetVoteTree(
                   dbPath: dbPath,
                   accountUuid: accountUuid,
                   roundId: roundId,

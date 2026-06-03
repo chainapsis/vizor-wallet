@@ -3853,7 +3853,8 @@ void main() {
       'https://voting.example',
       'https://voting-failover.example',
     ]);
-    expect(rust.resetVotingSessionStateCalls, ['account-1:$kRoundId']);
+    expect(rust.resetVoteTreeCalls, ['account-1:$kRoundId']);
+    expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
 
   test('vote tree sync runs before each proposal', () async {
@@ -6036,6 +6037,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final hotkeyGenerationStarted = Completer<void>();
   final precomputeStarted = Completer<void>();
   final precomputeFinished = Completer<void>();
+  final resetVoteTreeCalls = <String>[];
   final resetVotingSessionStateCalls = <String>[];
   final draftSingleShareValues = <bool>[];
   final planLastMomentBufferSeconds = <BigInt?>[];
@@ -6429,6 +6431,15 @@ class FakeVotingRustApi implements VotingRustApi {
     String? roundId,
   }) async {
     resetVotingSessionStateCalls.add('$accountUuid:${roundId ?? '*'}');
+  }
+
+  @override
+  Future<void> resetVoteTree({
+    required String dbPath,
+    required String accountUuid,
+    String? roundId,
+  }) async {
+    resetVoteTreeCalls.add('$accountUuid:${roundId ?? '*'}');
   }
 
   @override

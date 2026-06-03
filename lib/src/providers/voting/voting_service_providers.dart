@@ -446,11 +446,21 @@ abstract interface class VotingRustApi {
     required int anchorHeight,
   });
 
+  /// Clear only the process-local vote-tree sync cache for a round or account.
+  ///
+  /// A non-null, non-empty `roundId` clears that round's tree sync cache.
+  /// `null` (or empty) performs account-wide vote-tree cleanup for `accountUuid`.
+  Future<void> resetVoteTree({
+    required String dbPath,
+    required String accountUuid,
+    String? roundId,
+  });
+
   /// Clear process-local Rust voting caches for a round or account.
   ///
-  /// A non-null, non-empty `roundId` clears vote-tree sync cache for that
-  /// round. `null` (or empty) performs account-wide cleanup of vote-tree sync
-  /// state for `accountUuid`.
+  /// A non-null, non-empty `roundId` clears round-scoped vote-tree sync cache
+  /// and unsigned delegation setup fields. `null` (or empty) performs
+  /// account-wide cleanup for `accountUuid`.
   Future<void> resetVotingSessionState({
     required String dbPath,
     required String accountUuid,
@@ -808,6 +818,19 @@ class FrbVotingRustApi implements VotingRustApi {
     String? roundId,
   }) {
     return rust_api.resetVotingSessionState(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
+    );
+  }
+
+  @override
+  Future<void> resetVoteTree({
+    required String dbPath,
+    required String accountUuid,
+    String? roundId,
+  }) {
+    return rust_api.resetVoteTree(
       dbPath: dbPath,
       accountUuid: accountUuid,
       roundId: roundId,
