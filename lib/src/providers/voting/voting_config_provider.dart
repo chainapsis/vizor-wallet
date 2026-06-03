@@ -52,12 +52,16 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
   int _loadGeneration = 0;
   ResolvedVotingConfig? _previousResolvedConfig;
   String? _previousResolvedSourceUrl;
+  bool _submissionGuardListenerRegistered = false;
+  bool _sessionInvalidationDeferred = false;
 
   @override
   Future<ResolvedVotingConfig> build() async {
+    _registerSubmissionGuardListener();
     final generation = ++_loadGeneration;
     ref.onDispose(() {
       _loadGeneration++;
+      _submissionGuardListenerRegistered = false;
     });
     try {
       final config = await _loadAndCommit(generation);
@@ -196,9 +200,28 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
     _invalidateEndpointState();
     ref.invalidate(votingRoundsProvider);
     if (ref.read(votingSubmissionGuardProvider).isEmpty) {
-      ref.invalidate(votingSessionProvider);
-      ref.invalidate(votingSubmissionSessionProvider);
+      _invalidateVotingSessionState();
+    } else {
+      _sessionInvalidationDeferred = true;
     }
+  }
+
+  void _registerSubmissionGuardListener() {
+    if (_submissionGuardListenerRegistered) return;
+    _submissionGuardListenerRegistered = true;
+    ref.listen<List<VotingSubmissionGuard>>(votingSubmissionGuardProvider, (
+      _,
+      guards,
+    ) {
+      if (!_sessionInvalidationDeferred || guards.isNotEmpty) return;
+      _sessionInvalidationDeferred = false;
+      _invalidateVotingSessionState();
+    }, fireImmediately: true);
+  }
+
+  void _invalidateVotingSessionState() {
+    ref.invalidate(votingSessionProvider);
+    ref.invalidate(votingSubmissionSessionProvider);
   }
 
   void _invalidateEndpointState() {

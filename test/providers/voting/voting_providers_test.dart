@@ -499,7 +499,7 @@ void main() {
     },
   );
 
-  test('config switch preserves sessions during active submission', () async {
+  test('config switch defers session invalidation during submission', () async {
     var refreshCount = 0;
     final roundProvider = votingSessionProvider(kRoundId);
     const submissionKey = VotingSessionKey(
@@ -544,6 +544,12 @@ void main() {
 
     expect(roundObserver.disposed, isFalse);
     expect(submissionObserver.disposed, isFalse);
+
+    container.read(votingSubmissionGuardProvider.notifier).release(guard);
+    await container.pump();
+
+    expect(roundObserver.disposed, isTrue);
+    expect(submissionObserver.disposed, isTrue);
   });
 
   test('config switch unchanged keeps rounds provider cache', () async {
