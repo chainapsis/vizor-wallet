@@ -13,6 +13,7 @@ import '../../features/voting/voting_formatters.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/voting.dart' as rust_api;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
+import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
@@ -675,15 +676,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
       final rust = ref.read(votingRustApiProvider);
       for (final bundleIndex in plan.pendingDelegationBundleIndexes) {
-        final signature = signatures[bundleIndex];
-        if (signature == null) {
+        if (!signatures.containsKey(bundleIndex)) {
           _setError(
             'Sign delegation bundle ${bundleIndex + 1} with Keystone before submitting.',
             context: context,
           );
           return;
         }
-
+      }
+      for (final bundleIndex in plan.pendingDelegationBundleIndexes) {
+        final signature = signatures[bundleIndex]!;
         final bundleTimer = Stopwatch()..start();
         debugPrint(
           '[zcash] Voting: Keystone delegation bundle start '
@@ -2359,9 +2361,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       context = await _loadContext(_roundId);
     }
 
-    final plan = current.resumePlan ?? context.resumePlan;
-    final roundPlan = current.roundPlan ?? context.roundPlan;
-    final signatures = await _loadKeystoneSignatures(context);
+    var plan = current.resumePlan ?? context.resumePlan;
+    var roundPlan = current.roundPlan ?? context.roundPlan;
+    var signatures = await _loadKeystoneSignatures(context);
     int? nextUnsignedBundle;
     for (final bundleIndex in plan.pendingDelegationBundleIndexes) {
       if (!signatures.containsKey(bundleIndex)) {
@@ -2410,19 +2412,89 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       ),
     );
 
-    final request = await ref
-        .read(votingRustApiProvider)
-        .buildKeystoneDelegationRequest(
-          ctx: _apiRoundContext(context),
-          storedHotkeySecret: storedHotkeySecret,
-          bundleIndex: nextUnsignedBundle,
+    final rust = ref.read(votingRustApiProvider);
+    late final rust_delegate.KeystoneSigningRequest request;
+    try {
+      request = await rust.buildKeystoneDelegationRequest(
+        ctx: _apiRoundContext(context),
+        storedHotkeySecret: storedHotkeySecret,
+        bundleIndex: nextUnsignedBundle,
+      );
+    } catch (error) {
+      if (!_isKeystoneSetupOverwriteError(error)) rethrow;
+      debugPrint(
+        '[zcash] Voting: Keystone request detected stale bundle setup '
+        'round=${context.round.roundId} bundle=$nextUnsignedBundle',
+      );
+      await _resetVotingSessionState(
+        rust: rust,
+        context: context,
+        reason: 'keystone-stale-setup',
+      );
+      await rust.setupDelegationBundles(ctx: _apiRoundContext(context));
+      plan = await _loadResumePlan(context);
+      roundPlan = await _loadRoundPlan(context);
+      signatures = await _loadKeystoneSignatures(context);
+      final maxBundleIndex = plan.bundleCount;
+      if (maxBundleIndex >= 0) {
+        signatures = {
+          for (final entry in signatures.entries)
+            if (entry.key >= 0 && entry.key < maxBundleIndex)
+              entry.key: entry.value,
+        };
+      }
+      nextUnsignedBundle = null;
+      for (final bundleIndex in plan.pendingDelegationBundleIndexes) {
+        if (!signatures.containsKey(bundleIndex)) {
+          nextUnsignedBundle = bundleIndex;
+          break;
+        }
+      }
+      if (nextUnsignedBundle == null) {
+        _setStateForContext(
+          context,
+          (state.value ?? current).copyWith(
+            phase: VotingSessionPhase.readyToDelegate,
+            isHardwareAccount: true,
+            resumePlan: plan,
+            roundPlan: roundPlan,
+            keystoneSignatures: signatures,
+            clearKeystoneSigningRequest: true,
+            clearKeystoneScanError: true,
+            clearCurrentBundleIndex: true,
+            clearError: true,
+          ),
         );
+        return;
+      }
+      _setStateForContext(
+        context,
+        (state.value ?? current).copyWith(
+          phase: VotingSessionPhase.keystoneSigning,
+          isHardwareAccount: true,
+          resumePlan: plan,
+          roundPlan: roundPlan,
+          keystoneSignatures: signatures,
+          currentBundleIndex: nextUnsignedBundle,
+          clearKeystoneSigningRequest: true,
+          clearKeystoneScanError: true,
+          clearError: true,
+        ),
+      );
+      request = await rust.buildKeystoneDelegationRequest(
+        ctx: _apiRoundContext(context),
+        storedHotkeySecret: storedHotkeySecret,
+        bundleIndex: nextUnsignedBundle,
+      );
+    }
 
     _setStateForContext(
       context,
       (state.value ?? current).copyWith(
         phase: VotingSessionPhase.keystoneSigning,
         isHardwareAccount: true,
+        resumePlan: plan,
+        roundPlan: roundPlan,
         eligibleWeightZatoshi: request.eligibleWeightZatoshi,
         keystoneSigningRequest: request,
         keystoneSignatures: signatures,
@@ -3083,6 +3155,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       if (left[i] != right[i]) return false;
     }
     return true;
+  }
+
+  static bool _isKeystoneSetupOverwriteError(Object error) {
+    final normalized = error
+        .toString()
+        .toLowerCase()
+        .replaceAll('_', ' ')
+        .replaceAll('-', ' ');
+    return normalized.contains('refusing to overwrite pczt sighash') ||
+        normalized.contains('refusing to overwrite pczt hash') ||
+        normalized.contains('refusing to overwrite padded note secrets');
   }
 }
 
