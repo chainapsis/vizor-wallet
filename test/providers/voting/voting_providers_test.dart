@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart'
 import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_tree_sync_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_vote_tree_round_guard.dart';
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_api;
 import 'package:zcash_wallet/src/rust/api/voting_config.dart'
     as rust_config_api;
@@ -3585,6 +3586,103 @@ void main() {
     expect(rust.resetVotingSessionStateCalls, ['account-1:$kRoundId']);
   });
 
+  test(
+    'vote tree pre-sync skips while interactive vote-tree sync is active',
+    () async {
+      final rust = FakeVotingRustApi(
+        failingVoteTreeNodeUrls: const {'https://voting.example'},
+      );
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses(
+          dynamicConfig: dynamicConfigJson(
+            voteServers: const [
+              {'url': 'https://voting.example', 'label': 'primary'},
+              {'url': 'https://voting-failover.example', 'label': 'failover'},
+            ],
+          ),
+        ),
+      );
+      final container = _sessionContainer(http: http, rust: rust);
+      addTearDown(container.dispose);
+
+      final guard = container.read(votingVoteTreeRoundGuardProvider);
+      await guard.runHeld(kRoundId, () async {
+        await container.read(votingTreePreSyncProvider).preSyncRound(kRoundId);
+      });
+
+      expect(rust.syncedVoteTreeNodeUrls, isEmpty);
+      expect(rust.resetVotingSessionStateCalls, isEmpty);
+    },
+  );
+
+  test(
+    'vote tree pre-sync does not reset cache during castVotes witness wait',
+    () async {
+      final witnessGate = Completer<void>();
+      final rust = FakeVotingRustApi(
+        emitCommitments: true,
+        vanWitnessGate: witnessGate,
+        failingVoteTreeNodeUrls: const {'https://voting.example'},
+      );
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses(
+          dynamicConfig: dynamicConfigJson(
+            voteServers: const [
+              {'url': 'https://voting.example', 'label': 'primary'},
+              {'url': 'https://voting-failover.example', 'label': 'failover'},
+            ],
+          ),
+        ),
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(
+          bundleCount: 1,
+          delegationTxHashes: [
+            rust_frb_types.DelegationRecoveryView(
+              bundleIndex: 0,
+              phase: VotingWorkflowPhase.submittedDelegation,
+              txHash: 'delegation-0',
+              vanLeafPosition: null,
+            ),
+          ],
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: recoveryApi,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final castVotes = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(
+            draftVotes: [
+              rust_wire.DraftVote(
+                proposalId: 7,
+                choice: 1,
+                numOptions: 2,
+                vcTreePosition: BigInt.zero,
+                singleShare: false,
+              ),
+            ],
+          );
+      await rust.vanWitnessStarted.future;
+      await container.read(votingTreePreSyncProvider).preSyncRound(kRoundId);
+      witnessGate.complete();
+      await castVotes;
+
+      expect(
+        rust.resetVotingSessionStateCalls.where(
+          (call) => call == 'account-1:$kRoundId',
+        ),
+        isEmpty,
+      );
+      expect(rust.voteCommitBundleCalls, [0]);
+    },
+  );
+
   test('vote tree sync runs before each proposal', () async {
     final rust = FakeVotingRustApi();
     final container = _sessionContainer(rust: rust);
@@ -5714,6 +5812,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.delegationProofGate,
     this.keystoneDelegationProofGate,
     this.voteCommitmentGate,
+    this.vanWitnessGate,
     this.onDeleteSkippedBundles,
     this.failingVoteTreeNodeUrls = const {},
   });
@@ -5733,6 +5832,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final Completer<void>? delegationProofGate;
   final Completer<void>? keystoneDelegationProofGate;
   final Completer<void>? voteCommitmentGate;
+  final Completer<void>? vanWitnessGate;
   final void Function(int keepCount)? onDeleteSkippedBundles;
   final Set<String> failingVoteTreeNodeUrls;
   int setupCalls = 0;
@@ -5757,6 +5857,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final delegationProofStarted = Completer<void>();
   final keystoneDelegationProofStarted = Completer<void>();
   final voteCommitmentStarted = Completer<void>();
+  final vanWitnessStarted = Completer<void>();
   final hotkeyGenerationStarted = Completer<void>();
   final precomputeStarted = Completer<void>();
   final precomputeFinished = Completer<void>();
@@ -6134,6 +6235,10 @@ class FakeVotingRustApi implements VotingRustApi {
     required int bundleIndex,
     required int anchorHeight,
   }) async {
+    if (!vanWitnessStarted.isCompleted) {
+      vanWitnessStarted.complete();
+    }
+    await vanWitnessGate?.future;
     return rust_vote.VanWitness(
       authPath: const [],
       position: bundleIndex,

@@ -23,6 +23,7 @@ import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
+import 'voting_vote_tree_round_guard.dart';
 
 /// Orchestrates one round's voting lifecycle for the UI.
 ///
@@ -1089,40 +1090,45 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             'round=${context.round.roundId} bundle=$bundleIndex '
             'proposal=${draftVote.proposalId}',
           );
-          final syncTimer = Stopwatch()..start();
-          final anchorHeight = await _syncVoteTreeWithFailover(
-            context: context,
-            bundleIndex: bundleIndex,
-            proposalId: draftVote.proposalId,
-          );
-          debugPrint(
-            '[zcash] Voting: vote tree sync completed '
-            'round=${context.round.roundId} bundle=$bundleIndex '
-            'proposal=${draftVote.proposalId} anchorHeight=$anchorHeight '
-            'elapsed=${formatElapsedSeconds(syncTimer.elapsed)}',
-          );
-
-          final witnessTimer = Stopwatch()..start();
-          debugPrint(
-            '[zcash] Voting: VAN witness generation start '
-            'round=${context.round.roundId} bundle=$bundleIndex '
-            'proposal=${draftVote.proposalId} anchorHeight=$anchorHeight',
-          );
           final witness = await ref
-              .read(votingRustApiProvider)
-              .generateVanWitness(
-                dbPath: context.dbPath,
-                accountUuid: context.accountUuid,
-                roundId: context.round.roundId,
-                bundleIndex: bundleIndex,
-                anchorHeight: anchorHeight,
-              );
-          debugPrint(
-            '[zcash] Voting: VAN witness generation completed '
-            'round=${context.round.roundId} bundle=$bundleIndex '
-            'proposal=${draftVote.proposalId} position=${witness.position} '
-            'elapsed=${formatElapsedSeconds(witnessTimer.elapsed)}',
-          );
+              .read(votingVoteTreeRoundGuardProvider)
+              .runHeld(context.round.roundId, () async {
+            final syncTimer = Stopwatch()..start();
+            final anchorHeight = await _syncVoteTreeWithFailover(
+              context: context,
+              bundleIndex: bundleIndex,
+              proposalId: draftVote.proposalId,
+            );
+            debugPrint(
+              '[zcash] Voting: vote tree sync completed '
+              'round=${context.round.roundId} bundle=$bundleIndex '
+              'proposal=${draftVote.proposalId} anchorHeight=$anchorHeight '
+              'elapsed=${formatElapsedSeconds(syncTimer.elapsed)}',
+            );
+
+            final witnessTimer = Stopwatch()..start();
+            debugPrint(
+              '[zcash] Voting: VAN witness generation start '
+              'round=${context.round.roundId} bundle=$bundleIndex '
+              'proposal=${draftVote.proposalId} anchorHeight=$anchorHeight',
+            );
+            final witness = await ref
+                .read(votingRustApiProvider)
+                .generateVanWitness(
+                  dbPath: context.dbPath,
+                  accountUuid: context.accountUuid,
+                  roundId: context.round.roundId,
+                  bundleIndex: bundleIndex,
+                  anchorHeight: anchorHeight,
+                );
+            debugPrint(
+              '[zcash] Voting: VAN witness generation completed '
+              'round=${context.round.roundId} bundle=$bundleIndex '
+              'proposal=${draftVote.proposalId} position=${witness.position} '
+              'elapsed=${formatElapsedSeconds(witnessTimer.elapsed)}',
+            );
+            return witness;
+          });
           _setStateForContext(
             context,
             (state.value ?? current).copyWith(

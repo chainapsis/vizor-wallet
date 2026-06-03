@@ -5,6 +5,7 @@ import '../../core/formatting/duration_format.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
 import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
+import 'voting_vote_tree_round_guard.dart';
 
 final votingTreePreSyncProvider = Provider<VotingTreePreSyncService>((ref) {
   return VotingTreePreSyncService(ref);
@@ -79,11 +80,26 @@ class VotingTreePreSyncService {
     required String roundId,
     required List<Uri> nodeUrls,
   }) async {
+    final guard = _ref.read(votingVoteTreeRoundGuardProvider);
+    if (guard.isHeld(roundId)) {
+      debugPrint(
+        '[zcash] Voting: vote tree pre-sync skipped round=$roundId '
+        'reason=interactive-sync-active',
+      );
+      return;
+    }
     final timer = Stopwatch()..start();
     debugPrint('[zcash] Voting: vote tree pre-sync start round=$roundId');
     Object? lastError;
     try {
       for (var attempt = 0; attempt < nodeUrls.length; attempt++) {
+        if (guard.isHeld(roundId)) {
+          debugPrint(
+            '[zcash] Voting: vote tree pre-sync aborted round=$roundId '
+            'reason=interactive-sync-active',
+          );
+          return;
+        }
         final nodeUrl = nodeUrls[attempt];
         try {
           final height = await _ref
@@ -104,6 +120,13 @@ class VotingTreePreSyncService {
         } catch (e) {
           lastError = e;
           if (attempt < nodeUrls.length - 1) {
+            if (guard.isHeld(roundId)) {
+              debugPrint(
+                '[zcash] Voting: vote tree pre-sync failover reset skipped '
+                'round=$roundId reason=interactive-sync-active',
+              );
+              return;
+            }
             await _ref.read(votingRustApiProvider).resetVotingSessionState(
                   dbPath: dbPath,
                   accountUuid: accountUuid,
