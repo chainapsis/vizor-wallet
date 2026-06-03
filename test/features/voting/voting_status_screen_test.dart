@@ -1119,7 +1119,12 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
 
-    final round = _roundStatusJson()..['summary'] = '[TEST] Max Proposals';
+    final proposal = _proposalJson(1, 'First proposal', ['Yes', 'No'])
+      ..['zip_number'] = 'ZIP 233'
+      ..['forum_url'] = 'https://forum.zcashcommunity.com/t/zip-233';
+    final round = _roundStatusJson()
+      ..['summary'] = '[TEST] Max Proposals'
+      ..['proposals'] = [proposal];
     final http = FakeVotingHttpClient(
       responses: _votingHttpResponses()
         ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
@@ -1143,6 +1148,8 @@ void main() {
 
     expect(find.text('[TEST] Max Proposals'), findsOneWidget);
     expect(find.text('Voting power 0.000001 ZEC'), findsOneWidget);
+    expect(find.text('ZIP-233'), findsOneWidget);
+    expect(find.text('Forum discussion'), findsOneWidget);
     expect(find.text('Yes'), findsOneWidget);
     expect(find.text('Review answers'), findsOneWidget);
     expect(find.text('Start Voting'), findsNothing);
@@ -1286,6 +1293,8 @@ void main() {
         {
           'id': 2,
           'title': 'Second proposal',
+          'zip_number': 'ZIP 231',
+          'forum_url': 'https://forum.zcashcommunity.com/t/zip-231',
           'options': [
             {'index': 0, 'label': 'Mint', 'description': optionDescription},
             {'index': 1, 'label': 'Burn'},
@@ -1339,6 +1348,8 @@ void main() {
     expect(find.text('Total: 0.75 ZEC'), findsOneWidget);
     expect(find.text('Voted: Yes'), findsOneWidget);
     expect(find.text('Second proposal'), findsOneWidget);
+    expect(find.text('ZIP-231'), findsOneWidget);
+    expect(find.text('Forum discussion'), findsOneWidget);
     expect(find.text('Mint'), findsOneWidget);
     expect(find.text(optionDescription), findsNothing);
     expect(find.text('0.13 ZEC'), findsOneWidget);
@@ -1535,9 +1546,12 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
 
+    final firstProposal = _proposalJson(1, 'First proposal', ['Yes', 'No'])
+      ..['zip_number'] = 'ZIP 233';
     final round = _roundStatusJson()
+      ..['forum_link'] = 'https://forum.zcashcommunity.com/t/zip-233'
       ..['proposals'] = [
-        _proposalJson(1, 'First proposal', ['Yes', 'No']),
+        firstProposal,
         _proposalJson(2, 'Second proposal', ['Aye', 'Nay']),
       ];
     final http = FakeVotingHttpClient(
@@ -1576,6 +1590,8 @@ void main() {
 
     expect(find.text('Review your answers'), findsOneWidget);
     expect(find.text('Confirm & submit'), findsOneWidget);
+    expect(find.text('ZIP-233'), findsOneWidget);
+    expect(find.text('Forum discussion'), findsOneWidget);
     expect(find.text('First proposal'), findsOneWidget);
     expect(find.text('Yes'), findsOneWidget);
     expect(find.text('Second proposal'), findsOneWidget);

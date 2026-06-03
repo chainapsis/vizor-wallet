@@ -16,6 +16,8 @@ import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart';
 
 void main() {
+  setUp(resetVotingPollListRecentRefreshForTests);
+
   testWidgets('poll list reloads when screen opens and route returns', (
     tester,
   ) async {
@@ -168,6 +170,49 @@ void main() {
 
     expect(find.text('Account 2 poll'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  testWidgets('poll cards show round forum discussion links', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final router = GoRouter(
+      initialLocation: '/voting',
+      routes: [
+        GoRoute(path: '/voting', builder: (_, _) => const VotingPollsScreen()),
+        GoRoute(path: '/accounts', builder: (_, _) => const Text('accounts')),
+        GoRoute(path: '/home', builder: (_, _) => const Text('home')),
+        GoRoute(
+          path: '/address-book',
+          builder: (_, _) => const Text('address book'),
+        ),
+        GoRoute(path: '/activity', builder: (_, _) => const Text('activity')),
+        GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
+        GoRoute(path: '/about', builder: (_, _) => const Text('about')),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWith(_SoftwareAccountNotifier.new),
+          syncProvider.overrideWith(_NoopSyncNotifier.new),
+          swapFeatureEnabledProvider.overrideWithValue(false),
+          votingConfigProvider.overrideWith(_TrackingVotingConfigNotifier.new),
+          votingRoundsProvider.overrideWith(_ForumLinkVotingRoundsNotifier.new),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.light, child: child!),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Forum discussion'), findsOneWidget);
   });
 
   testWidgets(
@@ -334,6 +379,26 @@ class _InitiallyFailingVotingRoundsNotifier extends VotingRoundsNotifier {
       ),
     ]);
   }
+}
+
+class _ForumLinkVotingRoundsNotifier extends VotingRoundsNotifier {
+  @override
+  Future<List<VotingRoundView>> build() async => const [_round];
+
+  @override
+  Future<void> reload() async {
+    state = const AsyncData([_round]);
+  }
+
+  static const _round = VotingRoundView(
+    roundId: 'round-1',
+    title: 'Active poll',
+    status: 'active',
+    rawJson: {
+      'description': 'Active poll description',
+      'discussion_url': 'https://forum.zcashcommunity.com/t/active-poll',
+    },
+  );
 }
 
 class _AccountReloadVotingRoundsNotifier extends VotingRoundsNotifier {

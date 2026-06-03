@@ -21,6 +21,11 @@ bool wasVotingPollListRecentlyRefreshed() {
       kVotingPollListRecentRefreshWindow;
 }
 
+@visibleForTesting
+void resetVotingPollListRecentRefreshForTests() {
+  _lastVotingPollListRefreshAt = null;
+}
+
 /// Refreshes the dynamic voting config and then reloads the poll list.
 ///
 /// Call this before returning to the poll menu after completing voting work so
