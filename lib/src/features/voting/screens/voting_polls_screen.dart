@@ -18,8 +18,10 @@ import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../voting_poll_ordering.dart';
+import '../voting_flow_models.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_config_settings_panel.dart';
+import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
 class VotingPollsScreen extends ConsumerStatefulWidget {
@@ -335,6 +337,7 @@ class _PollCard extends StatelessWidget {
     final colors = context.colors;
     final title = round.title.isEmpty ? round.roundId : round.title;
     final description = _roundDescription(round.rawJson);
+    final forumUri = votingRoundForumUriFromJson(round.rawJson);
     final state = _pollCardState(round);
     final dateLabel = _roundDateLabel(round.rawJson, state);
 
@@ -399,6 +402,13 @@ class _PollCard extends StatelessWidget {
                 letterSpacing: 0,
               ),
             ),
+            if (forumUri != null) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Align(
+                alignment: Alignment.centerRight,
+                child: VotingForumLinkButton(uri: forumUri),
+              ),
+            ],
             const SizedBox(height: AppSpacing.md),
             Align(
               alignment: Alignment.centerRight,

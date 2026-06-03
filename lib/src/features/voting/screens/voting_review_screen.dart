@@ -13,6 +13,7 @@ import '../../../providers/voting/voting_session_provider.dart';
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 import '../voting_routes.dart';
+import '../widgets/voting_metadata_widgets.dart';
 
 class VotingReviewScreen extends ConsumerStatefulWidget {
   const VotingReviewScreen({super.key, required this.roundId});
@@ -69,6 +70,9 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
             final proposals = round == null
                 ? <VotingProposalView>[]
                 : proposalsFromRound(round);
+            final roundForumUri = round == null
+                ? null
+                : votingRoundForumUriFromJson(round.rawJson);
             final accountUuid = state.accountUuid;
             final draft = accountUuid == null
                 ? const VotingDraftState()
@@ -125,10 +129,19 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                                               color: context.colors.text.accent,
                                             ),
                                       ),
+                                      if (roundForumUri != null) ...[
+                                        const SizedBox(height: AppSpacing.xs),
+                                        Align(
+                                          alignment: Alignment.centerRight,
+                                          child: VotingForumLinkButton(
+                                            uri: roundForumUri,
+                                          ),
+                                        ),
+                                      ],
                                       const SizedBox(height: AppSpacing.md),
                                       for (final proposal in proposals)
                                         _ReviewRow(
-                                          title: proposal.title,
+                                          proposal: proposal,
                                           value: _reviewValue(proposal, draft),
                                           skipped:
                                               draft.choices[proposal.id] ==
@@ -188,12 +201,12 @@ String _reviewValue(VotingProposalView proposal, VotingDraftState draft) {
 
 class _ReviewRow extends StatelessWidget {
   const _ReviewRow({
-    required this.title,
+    required this.proposal,
     required this.value,
     this.skipped = false,
   });
 
-  final String title;
+  final VotingProposalView proposal;
   final String value;
   final bool skipped;
 
@@ -206,8 +219,10 @@ class _ReviewRow extends StatelessWidget {
     final valueColor = skipped
         ? colors.text.secondary.withValues(alpha: 0.72)
         : votingChoicePalette(context, value).text;
+    final zipBadges = proposal.zipBadges;
+    final forumUri = proposal.forumUri;
     final titleText = Text(
-      title,
+      proposal.title,
       style: AppTypography.bodyMedium.copyWith(color: titleColor),
     );
     final valueText = Text(
@@ -230,6 +245,10 @@ class _ReviewRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (zipBadges.isNotEmpty || forumUri != null) ...[
+            VotingProposalMetadataRow(zipBadges: zipBadges, forumUri: forumUri),
+            const SizedBox(height: AppSpacing.xs),
+          ],
           titleText,
           const SizedBox(height: AppSpacing.xxs),
           valueText,

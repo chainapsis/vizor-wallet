@@ -21,6 +21,7 @@ import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
+import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
 class VotingProposalDetailScreen extends ConsumerStatefulWidget {
@@ -85,6 +86,7 @@ class _VotingProposalDetailScreenState
                 ? const VotingDraftState()
                 : ref.watch(votingDraftProvider(draftKey));
             final proposals = proposalsFromRound(round);
+            final forumUri = votingRoundForumUriFromJson(round.rawJson);
             final completedVote = _CompletedVote.fromPlan(state.roundPlan);
             _maybePrepareVotingPower(state);
             // Foreground recovery takes precedence over the read-only voted view.
@@ -99,6 +101,7 @@ class _VotingProposalDetailScreenState
                       : round.title,
                   snapshotHeight: round.snapshotHeight,
                   description: _roundDescription(round.rawJson),
+                  forumUri: forumUri,
                   roundId: roundId,
                   accountUuid: accountUuid,
                 ),
@@ -113,6 +116,7 @@ class _VotingProposalDetailScreenState
                       : round.title,
                   snapshotHeight: round.snapshotHeight,
                   description: _roundDescription(round.rawJson),
+                  forumUri: forumUri,
                   votingPowerZatoshi: state.eligibleWeightZatoshi,
                   votingPowerPreparing: _votingPowerPreparationInFlight,
                   votedAt: completedVote.votedAt,
@@ -131,6 +135,7 @@ class _VotingProposalDetailScreenState
                       : round.title,
                   snapshotHeight: round.snapshotHeight,
                   description: _roundDescription(round.rawJson),
+                  forumUri: forumUri,
                   roundId: roundId,
                   accountUuid: accountUuid,
                 ),
@@ -142,6 +147,7 @@ class _VotingProposalDetailScreenState
               title: round.title.isEmpty ? 'Coinholder poll' : round.title,
               snapshotHeight: round.snapshotHeight,
               description: _roundDescription(round.rawJson),
+              forumUri: forumUri,
               endDate: _roundEndDate(round.rawJson),
               votingPowerZatoshi: state.eligibleWeightZatoshi,
               votingPowerPreparing: _votingPowerPreparationInFlight,
@@ -245,6 +251,7 @@ class _ActivePollContent extends StatefulWidget {
     required this.title,
     required this.snapshotHeight,
     required this.description,
+    required this.forumUri,
     required this.endDate,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
@@ -257,6 +264,7 @@ class _ActivePollContent extends StatefulWidget {
   final String title;
   final int snapshotHeight;
   final String description;
+  final Uri? forumUri;
   final DateTime? endDate;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
@@ -339,6 +347,7 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                         title: widget.title,
                         snapshotHeight: widget.snapshotHeight,
                         description: widget.description,
+                        forumUri: widget.forumUri,
                         endDate: widget.endDate,
                         votingPowerZatoshi: widget.votingPowerZatoshi,
                         votingPowerPreparing: widget.votingPowerPreparing,
@@ -458,6 +467,7 @@ class _PollSummary extends StatelessWidget {
     required this.title,
     required this.snapshotHeight,
     required this.description,
+    required this.forumUri,
     required this.endDate,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
@@ -468,6 +478,7 @@ class _PollSummary extends StatelessWidget {
   final String title;
   final int snapshotHeight;
   final String description;
+  final Uri? forumUri;
   final DateTime? endDate;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
@@ -577,6 +588,13 @@ class _PollSummary extends StatelessWidget {
             },
           ),
         ],
+        if (forumUri != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Align(
+            alignment: Alignment.centerRight,
+            child: VotingForumLinkButton(uri: forumUri!),
+          ),
+        ],
       ],
     );
   }
@@ -666,6 +684,7 @@ class _VotedPollContent extends StatelessWidget {
     required this.roundTitle,
     required this.snapshotHeight,
     required this.description,
+    required this.forumUri,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
     required this.votedAt,
@@ -676,6 +695,7 @@ class _VotedPollContent extends StatelessWidget {
   final String roundTitle;
   final int snapshotHeight;
   final String description;
+  final Uri? forumUri;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
   final DateTime? votedAt;
@@ -706,6 +726,7 @@ class _VotedPollContent extends StatelessWidget {
             title: roundTitle,
             snapshotHeight: snapshotHeight,
             description: description,
+            forumUri: forumUri,
             votingPowerZatoshi: votingPowerZatoshi,
             votingPowerPreparing: votingPowerPreparing,
             votedAt: votedAt,
@@ -748,6 +769,7 @@ class _PendingVoteContent extends StatelessWidget {
     required this.roundTitle,
     required this.snapshotHeight,
     required this.description,
+    required this.forumUri,
     required this.roundId,
     required this.accountUuid,
   });
@@ -755,6 +777,7 @@ class _PendingVoteContent extends StatelessWidget {
   final String roundTitle;
   final int snapshotHeight;
   final String description;
+  final Uri? forumUri;
   final String roundId;
   final String? accountUuid;
 
@@ -810,6 +833,13 @@ class _PendingVoteContent extends StatelessWidget {
                       ),
                     ),
                   ],
+                  if (forumUri != null) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: VotingForumLinkButton(uri: forumUri!),
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.md),
                   Text(
                     'Vote in progress',
@@ -849,6 +879,7 @@ class _VotedPollHeader extends StatelessWidget {
     required this.title,
     required this.snapshotHeight,
     required this.description,
+    required this.forumUri,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
     required this.votedAt,
@@ -857,6 +888,7 @@ class _VotedPollHeader extends StatelessWidget {
   final String title;
   final int snapshotHeight;
   final String description;
+  final Uri? forumUri;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
   final DateTime? votedAt;
@@ -915,6 +947,13 @@ class _VotedPollHeader extends StatelessWidget {
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
+          ),
+        ],
+        if (forumUri != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Align(
+            alignment: Alignment.centerRight,
+            child: VotingForumLinkButton(uri: forumUri!),
           ),
         ],
       ],
@@ -984,6 +1023,8 @@ class _VotedProposalCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final choiceLabel = _choiceLabel(proposal, choice);
+    final zipBadges = proposal.zipBadges;
+    final forumUri = proposal.forumUri;
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
@@ -1004,7 +1045,7 @@ class _VotedProposalCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              _ProposalBadge('Proposal ${proposal.id}'),
+              VotingMetadataBadge('Proposal ${proposal.id}'),
               const SizedBox(width: AppSpacing.xs),
               Expanded(
                 child: Align(
@@ -1014,6 +1055,10 @@ class _VotedProposalCard extends StatelessWidget {
               ),
             ],
           ),
+          if (zipBadges.isNotEmpty || forumUri != null) ...[
+            const SizedBox(height: AppSpacing.s),
+            VotingProposalMetadataRow(zipBadges: zipBadges, forumUri: forumUri),
+          ],
           const SizedBox(height: AppSpacing.s),
           Text(
             proposal.title,
@@ -1033,36 +1078,6 @@ class _VotedProposalCard extends StatelessWidget {
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _ProposalBadge extends StatelessWidget {
-  const _ProposalBadge(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: 2,
-      ),
-      decoration: BoxDecoration(
-        color: colors.background.neutralSubtleOpacity,
-        borderRadius: BorderRadius.circular(AppRadii.full),
-        border: Border.all(color: colors.border.regular),
-      ),
-      child: Text(
-        label,
-        style: AppTypography.labelMedium.copyWith(
-          color: colors.text.secondary,
-          height: 16 / 12,
-          letterSpacing: 0,
-        ),
       ),
     );
   }
@@ -1110,7 +1125,8 @@ class _ProposalCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final badge = _proposalBadge(proposal);
+    final zipBadges = proposal.zipBadges;
+    final forumUri = proposal.forumUri;
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
@@ -1141,8 +1157,8 @@ class _ProposalCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (badge != null) ...[
-            _ProposalBadge(badge),
+          if (zipBadges.isNotEmpty || forumUri != null) ...[
+            VotingProposalMetadataRow(zipBadges: zipBadges, forumUri: forumUri),
             const SizedBox(height: AppSpacing.s),
           ],
           Text(
@@ -1276,15 +1292,6 @@ String _daysLeftLabel(DateTime endDate) {
   if (days <= 0) return 'Ends today';
   if (days == 1) return '1 day left';
   return '$days days left';
-}
-
-String? _proposalBadge(VotingProposalView proposal) {
-  final match = RegExp(
-    r'\bZIP[-\s]?\d+\b',
-    caseSensitive: false,
-  ).firstMatch('${proposal.title} ${proposal.description}');
-  if (match == null) return null;
-  return match.group(0)!.toUpperCase().replaceAll(RegExp(r'\s+'), '-');
 }
 
 class _OptionRow extends StatelessWidget {

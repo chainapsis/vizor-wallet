@@ -42,6 +42,125 @@ void main() {
     ]);
   });
 
+  test('proposal parser preserves structured ZIP and forum metadata', () {
+    final proposals = proposalsFromJson({
+      'proposals': [
+        {
+          'id': 1,
+          'title': 'First',
+          'zip_number': 'ZIP 233, 234',
+          'forum_url': 'https://forum.zcashcommunity.com/t/zip-233',
+        },
+        {
+          'id': 2,
+          'title': 'Second',
+          'zipNumber': 'ZIP 231',
+          'forumURL': 'https://forum.zcashcommunity.com/t/zip-231',
+        },
+        {
+          'id': 3,
+          'title': 'Third',
+          'zipNumberString': '232',
+          'forum_link': 'Discussion: https://example.com/voting/zip-232',
+        },
+        {
+          'id': 4,
+          'title': 'Fourth',
+          'metadata': {
+            'links': [
+              {'url': 'http://example.net/voting/zip-230'},
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(proposals.first.zipNumber, 'ZIP 233, 234');
+    expect(proposals.first.zipBadges, ['ZIP-233', 'ZIP-234']);
+    expect(
+      proposals.first.forumUri,
+      Uri.parse('https://forum.zcashcommunity.com/t/zip-233'),
+    );
+    expect(proposals[1].zipBadges, ['ZIP-231']);
+    expect(
+      proposals[1].forumUri,
+      Uri.parse('https://forum.zcashcommunity.com/t/zip-231'),
+    );
+    expect(proposals[2].zipBadges, ['ZIP-232']);
+    expect(
+      proposals[2].forumUri,
+      Uri.parse('https://example.com/voting/zip-232'),
+    );
+    expect(
+      proposals[3].forumUri,
+      Uri.parse('http://example.net/voting/zip-230'),
+    );
+  });
+
+  test('proposal ZIP badges fall back to title and description text', () {
+    final proposals = proposalsFromJson({
+      'proposals': [
+        {'id': 1, 'title': 'NU7 ZIP 233', 'description': 'Related to ZIP 234.'},
+      ],
+    });
+
+    expect(proposals.single.zipBadges, ['ZIP-233', 'ZIP-234']);
+  });
+
+  test('round forum URL parser accepts discussion and forum aliases', () {
+    expect(
+      votingRoundForumUriFromJson({
+        'discussion_url': 'https://forum.zcashcommunity.com/t/nu7',
+      }),
+      Uri.parse('https://forum.zcashcommunity.com/t/nu7'),
+    );
+    expect(
+      votingRoundForumUriFromJson({
+        'forumURL': 'https://forum.zcashcommunity.com/t/proposal',
+      }),
+      Uri.parse('https://forum.zcashcommunity.com/t/proposal'),
+    );
+    expect(
+      votingRoundForumUriFromJson({
+        'forum_link': 'https://example.com/proposal-link',
+      }),
+      Uri.parse('https://example.com/proposal-link'),
+    );
+    expect(
+      votingRoundForumUriFromJson({'url': 'http://example.org/root-url'}),
+      Uri.parse('http://example.org/root-url'),
+    );
+    expect(
+      votingRoundForumUriFromJson({
+        'metadata': {
+          'links': [
+            {'label': 'Forum', 'url': 'https://example.net/nested'},
+          ],
+        },
+      }),
+      Uri.parse('https://example.net/nested'),
+    );
+    expect(
+      votingRoundForumUriFromJson({
+        'proposals': [
+          {'forum_url': 'https://forum.zcashcommunity.com/t/proposal-only'},
+        ],
+      }),
+      null,
+    );
+    expect(votingRoundForumUriFromJson({'forum_url': 'javascript:bad'}), null);
+    expect(
+      votingRoundForumUriFromJson({
+        'forum_url': 'http://forum.zcashcommunity.com/t/nu7',
+      }),
+      Uri.parse('http://forum.zcashcommunity.com/t/nu7'),
+    );
+    expect(
+      votingRoundForumUriFromJson({'forum_url': 'https://example.com/t/nu7'}),
+      Uri.parse('https://example.com/t/nu7'),
+    );
+  });
+
   test(
     'proposal parser preserves option descriptions separately from labels',
     () {

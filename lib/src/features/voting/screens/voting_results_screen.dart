@@ -19,6 +19,7 @@ import '../../../services/voting/resolved_voting_config_extensions.dart';
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 import '../voting_poll_ordering.dart';
+import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
 const int _ballotDivisorZatoshi = 12500000;
@@ -127,6 +128,7 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
                           title: _roundTitle(round),
                           snapshotHeight: round.snapshotHeight,
                           description: _roundDescription(round) ?? '',
+                          forumUri: votingRoundForumUriFromJson(round.rawJson),
                         ),
                         const SizedBox(height: AppSpacing.md),
                         Text(
@@ -195,11 +197,13 @@ class _ResultsHeader extends StatefulWidget {
     required this.title,
     required this.snapshotHeight,
     required this.description,
+    required this.forumUri,
   });
 
   final String title;
   final int snapshotHeight;
   final String description;
+  final Uri? forumUri;
 
   @override
   State<_ResultsHeader> createState() => _ResultsHeaderState();
@@ -211,7 +215,8 @@ class _ResultsHeaderState extends State<_ResultsHeader> {
   @override
   void didUpdateWidget(covariant _ResultsHeader oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.description != widget.description) {
+    if (oldWidget.description != widget.description ||
+        oldWidget.forumUri != widget.forumUri) {
       _descriptionExpanded = false;
     }
   }
@@ -293,6 +298,13 @@ class _ResultsHeaderState extends State<_ResultsHeader> {
             },
           ),
         ],
+        if (widget.forumUri != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Align(
+            alignment: Alignment.centerRight,
+            child: VotingForumLinkButton(uri: widget.forumUri!),
+          ),
+        ],
       ],
     );
   }
@@ -314,6 +326,8 @@ class _ResultCard extends StatelessWidget {
     final total = tally.values.fold<num>(0, (sum, value) => sum + value);
     final winningOption = _singleWinningOption(proposal.options, tally, total);
     final selectedLabel = _optionLabel(proposal.options, selectedChoice);
+    final zipBadges = proposal.zipBadges;
+    final forumUri = proposal.forumUri;
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
@@ -325,6 +339,10 @@ class _ResultCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (zipBadges.isNotEmpty || forumUri != null) ...[
+            VotingProposalMetadataRow(zipBadges: zipBadges, forumUri: forumUri),
+            const SizedBox(height: AppSpacing.s),
+          ],
           Text(
             proposal.title,
             style: AppTypography.headlineSmall.copyWith(

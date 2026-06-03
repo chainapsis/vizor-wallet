@@ -9,6 +9,35 @@ import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 
 const int _minProposalId = 1;
 const int _maxProposalId = 15;
+const List<String> _forumUrlKeys = [
+  'discussion_url',
+  'discussionUrl',
+  'discussionURL',
+  'discussion_link',
+  'discussionLink',
+  'discussion',
+  'forum_url',
+  'forumUrl',
+  'forumURL',
+  'forum_link',
+  'forumLink',
+  'forum',
+  'thread_url',
+  'threadUrl',
+  'thread_link',
+  'threadLink',
+  'topic_url',
+  'topicUrl',
+  'topic_link',
+  'topicLink',
+];
+const List<String> _proposalForumUrlKeys = [..._forumUrlKeys, 'url', 'link'];
+const List<String> _forumMetadataContainerKeys = [
+  'metadata',
+  'meta',
+  'links',
+  'resources',
+];
 
 class VotingProposalView {
   const VotingProposalView({
@@ -16,12 +45,26 @@ class VotingProposalView {
     required this.title,
     required this.description,
     required this.options,
+    this.zipNumber = '',
+    this.forumUrl = '',
   });
 
   final int id;
   final String title;
   final String description;
   final List<VotingOptionView> options;
+  final String zipNumber;
+  final String forumUrl;
+
+  List<String> get zipBadges {
+    final explicitBadges = votingZipBadgesFromZipNumber(zipNumber);
+    if (explicitBadges.isNotEmpty) return explicitBadges;
+    return votingZipBadgesFromText('$title $description');
+  }
+
+  Uri? get forumUri => votingForumUriFromString(forumUrl);
+
+  bool get hasDisplayMetadata => zipBadges.isNotEmpty || forumUri != null;
 }
 
 class VotingOptionView {
@@ -295,6 +338,21 @@ VotingProposalView _proposalFromJson(
     title:
         _stringFromJson(json, const ['title']) ?? 'Proposal ${fallbackId + 1}',
     description: _stringFromJson(json, const ['description']) ?? '',
+    zipNumber:
+        _stringFromJson(json, const [
+          'zip_number',
+          'zipNumber',
+          'zip_number_string',
+          'zipNumberString',
+        ])?.trim() ??
+        '',
+    forumUrl:
+        _forumUrlStringFromJson(
+          json,
+          keys: _proposalForumUrlKeys,
+          allowGenericRootLinkKeys: true,
+        ) ??
+        '',
     options: options.isEmpty
         ? const [
             VotingOptionView(index: 0, label: 'Yes'),
@@ -302,6 +360,152 @@ VotingProposalView _proposalFromJson(
           ]
         : options,
   );
+}
+
+Uri? votingRoundForumUriFromJson(Map<String, dynamic> json) {
+  return _forumUriFromJson(
+    json,
+    keys: _forumUrlKeys,
+    allowGenericRootLinkKeys: true,
+  );
+}
+
+Uri? votingForumUriFromString(String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  final uri = _externalWebUriFromCandidate(trimmed);
+  if (uri != null) return uri;
+  final match = RegExp(
+    r'''https?://[^\s<>()"']+''',
+    caseSensitive: false,
+  ).firstMatch(trimmed);
+  if (match == null) return null;
+  return _externalWebUriFromCandidate(match.group(0)!);
+}
+
+String? _forumUrlStringFromJson(
+  Map<String, dynamic> json, {
+  required List<String> keys,
+  required bool allowGenericRootLinkKeys,
+}) {
+  return _forumUriFromJson(
+    json,
+    keys: keys,
+    allowGenericRootLinkKeys: allowGenericRootLinkKeys,
+  )?.toString();
+}
+
+Uri? _forumUriFromJson(
+  Map<String, dynamic> json, {
+  required List<String> keys,
+  required bool allowGenericRootLinkKeys,
+}) {
+  final direct = votingForumUriFromString(_stringFromJson(json, keys));
+  if (direct != null) return direct;
+
+  for (final key in _forumMetadataContainerKeys) {
+    final uri = _forumUriFromValue(json[key]);
+    if (uri != null) return uri;
+  }
+
+  for (final entry in json.entries) {
+    if (!_isForumLinkKey(
+      entry.key,
+      allowGenericLinkKeys: allowGenericRootLinkKeys,
+    )) {
+      continue;
+    }
+    final uri = _forumUriFromValue(entry.value);
+    if (uri != null) return uri;
+  }
+
+  return null;
+}
+
+Uri? _forumUriFromValue(Object? value) {
+  if (value == null) return null;
+  if (value is String) return votingForumUriFromString(value);
+  if (value is Map) {
+    for (final entry in value.entries) {
+      final uri = _forumUriFromValue(entry.value);
+      if (uri != null) return uri;
+    }
+    return null;
+  }
+  if (value is Iterable) {
+    for (final item in value) {
+      final uri = _forumUriFromValue(item);
+      if (uri != null) return uri;
+    }
+  }
+  return null;
+}
+
+Uri? _externalWebUriFromCandidate(String value) {
+  final uri = Uri.tryParse(value);
+  if (uri == null || uri.host.trim().isEmpty) return null;
+  final scheme = uri.scheme.toLowerCase();
+  return scheme == 'https' || scheme == 'http' ? uri : null;
+}
+
+bool _isForumLinkKey(String key, {required bool allowGenericLinkKeys}) {
+  final normalized = key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+  if (normalized.contains('forum') ||
+      normalized.contains('discussion') ||
+      normalized.contains('thread') ||
+      normalized.contains('topic')) {
+    return true;
+  }
+  return allowGenericLinkKeys &&
+      (normalized == 'url' || normalized == 'link' || normalized == 'href');
+}
+
+List<String> votingZipBadgesFromZipNumber(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return const [];
+
+  final parts = trimmed
+      .split(RegExp(r'\s*(?:,|;|/|&|\band\b)\s*', caseSensitive: false))
+      .map((part) => part.trim())
+      .where((part) => part.isNotEmpty)
+      .toList(growable: false);
+  final normalizedParts = [
+    for (final part in parts) _normalizeExplicitZipLabel(part),
+  ].whereType<String>().toList(growable: false);
+  if (normalizedParts.isNotEmpty) return _dedupe(normalizedParts);
+
+  return votingZipBadgesFromText(trimmed);
+}
+
+List<String> votingZipBadgesFromText(String value) {
+  final matches = RegExp(
+    r'\bZIP[-\s]?\d+\b',
+    caseSensitive: false,
+  ).allMatches(value);
+  return _dedupe([
+    for (final match in matches)
+      match.group(0)!.toUpperCase().replaceAll(RegExp(r'\s+'), '-'),
+  ]);
+}
+
+String? _normalizeExplicitZipLabel(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return null;
+  final prefixed = RegExp(
+    r'^ZIP[-\s]?([A-Z0-9]+)$',
+    caseSensitive: false,
+  ).firstMatch(trimmed);
+  if (prefixed != null) return 'ZIP-${prefixed.group(1)!.toUpperCase()}';
+  if (RegExp(r'^\d+$').hasMatch(trimmed)) return 'ZIP-$trimmed';
+  return null;
+}
+
+List<String> _dedupe(Iterable<String> values) {
+  final seen = <String>{};
+  return [
+    for (final value in values)
+      if (seen.add(value)) value,
+  ];
 }
 
 int _proposalIdFromJson(Map<String, dynamic> json) {
