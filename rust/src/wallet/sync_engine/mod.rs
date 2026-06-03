@@ -1,16 +1,17 @@
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
+use shardtree::error::{InsertionError, ShardTreeError};
 use tonic::transport::Channel;
 use zcash_client_backend::{
     data_api::{
         chain::{self, error::Error as ChainError, scan_cached_blocks},
-        scanning::ScanPriority,
+        scanning::{ScanPriority, ScanRange},
+        wallet::ConfirmationsPolicy,
         WalletRead, WalletWrite,
     },
     proto::service,
 };
-use shardtree::error::{InsertionError, ShardTreeError};
 use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::BlockHeight;
@@ -151,6 +152,91 @@ fn target_percentage_after_blocks(initial_total: u64, remaining: u64, blocks: u6
         let target_remaining = remaining.saturating_sub(blocks);
         (1.0 - (target_remaining as f64 / initial_total as f64)).clamp(0.0, 1.0)
     }
+}
+
+fn is_pending_scan_range(range: &ScanRange) -> bool {
+    range.priority() != ScanPriority::Ignored && range.priority() != ScanPriority::Scanned
+}
+
+fn pending_scan_blocks(ranges: &[ScanRange]) -> u64 {
+    ranges
+        .iter()
+        .filter(|r| is_pending_scan_range(r))
+        .map(|r| {
+            u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start)) as u64
+        })
+        .sum()
+}
+
+fn first_pending_scan_range(ranges: &[ScanRange]) -> Option<String> {
+    ranges
+        .iter()
+        .find(|r| is_pending_scan_range(r))
+        .map(|r| r.to_string())
+}
+
+fn wallet_summary_heights(db: &WalletDatabase) -> Result<Option<(u64, u64)>, SyncError> {
+    db.get_wallet_summary(ConfirmationsPolicy::default())
+        .map_err(|e| SyncError::db(format!("get_wallet_summary: {e}")))
+        .map(|summary| {
+            summary.map(|s| {
+                (
+                    u32::from(s.fully_scanned_height()) as u64,
+                    u32::from(s.chain_tip_height()) as u64,
+                )
+            })
+        })
+}
+
+fn ensure_complete_scan_state(
+    db: &WalletDatabase,
+    current_tip_height: u64,
+) -> Result<(u64, u64), SyncError> {
+    let ranges = db
+        .suggest_scan_ranges()
+        .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
+    let pending_blocks = pending_scan_blocks(&ranges);
+    if pending_blocks > 0 {
+        let first = first_pending_scan_range(&ranges).unwrap_or_else(|| "unknown".into());
+        return Err(SyncError::continuity(
+            current_tip_height,
+            format!(
+                "sync completion blocked: {pending_blocks} pending scan blocks remain \
+                 (first pending range: {first})"
+            ),
+        ));
+    }
+
+    let Some((fully_scanned_height, db_tip_height)) = wallet_summary_heights(db)? else {
+        if current_tip_height == 0 {
+            return Ok((0, 0));
+        }
+        return Err(SyncError::db(format!(
+            "sync completion blocked: wallet summary unavailable at tip {current_tip_height}"
+        )));
+    };
+
+    if db_tip_height < current_tip_height {
+        return Err(SyncError::continuity(
+            current_tip_height,
+            format!(
+                "sync completion blocked: wallet DB chain tip {db_tip_height} \
+                 lags lightwalletd tip {current_tip_height}"
+            ),
+        ));
+    }
+
+    if fully_scanned_height < db_tip_height {
+        return Err(SyncError::continuity(
+            db_tip_height,
+            format!(
+                "sync completion blocked: fully scanned height {fully_scanned_height} \
+                 below wallet DB chain tip {db_tip_height}"
+            ),
+        ));
+    }
+
+    Ok((fully_scanned_height, db_tip_height))
 }
 
 async fn refresh_utxos(
@@ -458,9 +544,7 @@ async fn run_sync_impl(
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
         ranges
             .iter()
-            .filter(|r| {
-                r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned
-            })
+            .filter(|r| is_pending_scan_range(r))
             .map(|r| {
                 u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start))
                     as u64
@@ -589,11 +673,12 @@ async fn run_sync_impl(
             .suggest_scan_ranges()
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
 
-        let range = match ranges.iter().find(|r| {
-            r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned
-        }) {
+        let range = match ranges.iter().find(|r| is_pending_scan_range(r)) {
             Some(r) => r.clone(),
-            None => break, // Fully synced
+            None => {
+                ensure_complete_scan_state(&db, current_tip_height)?;
+                break;
+            }
         };
 
         // Phase bookkeeping. `ScanPriority::Verify` ranges are
@@ -809,6 +894,12 @@ async fn run_sync_impl(
                         );
                         return Err(sync_err);
                     }
+                    let rewind_attempt_index = *current_rewinds;
+                    let rewind_distance =
+                        sync_err.rewind_distance_for_attempt(rewind_attempt_index);
+                    let requested_rewind_height = sync_err
+                        .rewind_target_for_attempt(rewind_attempt_index)
+                        .unwrap_or(to_height);
                     *current_rewinds += 1;
                     // `truncate_to_height` does NOT silently clamp to the
                     // nearest checkpoint. If the requested height is below
@@ -822,7 +913,7 @@ async fn run_sync_impl(
                     // recovers. When it's `None` there is genuinely
                     // nowhere safe to rewind to, and we surface the
                     // failure as fatal.
-                    let target = BlockHeight::from_u32(to_height as u32);
+                    let target = BlockHeight::from_u32(requested_rewind_height as u32);
                     let actual_rewind_height = with_wallet_db_write_lock(
                         "sync_engine.truncate_to_height",
                         || -> Result<BlockHeight, SyncError> {
@@ -870,22 +961,59 @@ async fn run_sync_impl(
                                     // error and triggers the rewind again. If the
                                     // lock has cleared by then, the retry succeeds.
                                     Err(SyncError::other(format!(
-                                        "truncate_to_height({to_height}): SQLite lock contention: {e}"
+                                        "truncate_to_height({requested_rewind_height}): SQLite lock contention: {e}"
                                     )))
                                 }
                                 Err(e) => Err(SyncError::db(format!(
-                                    "truncate_to_height({to_height}): {e}"
+                                    "truncate_to_height({requested_rewind_height}): {e}"
                                 ))),
                             }
                         },
                     )?;
+                    let current_tip = BlockHeight::from_u32(current_tip_height as u32);
+                    let post_rewind_ranges = with_wallet_db_write_lock(
+                        "sync_engine.update_chain_tip.after_rewind",
+                        || -> Result<Vec<ScanRange>, SyncError> {
+                            db.update_chain_tip(current_tip).map_err(|e| {
+                                SyncError::db(format!(
+                                    "update_chain_tip({current_tip_height}) after rewind: {e}"
+                                ))
+                            })?;
+                            db.suggest_scan_ranges().map_err(|e| {
+                                SyncError::db(format!("suggest_scan_ranges after rewind: {e}"))
+                            })
+                        },
+                    )?;
+                    let post_rewind_pending = pending_scan_blocks(&post_rewind_ranges);
+                    let first_pending = first_pending_scan_range(&post_rewind_ranges)
+                        .unwrap_or_else(|| "none".into());
+                    let summary = wallet_summary_heights(&db)?;
+                    let actual_rewind_height_u64 = u32::from(actual_rewind_height) as u64;
                     log::info!(
-                        "[{}] sync: {phase_name} rewound to {actual_rewind_height} after reorg \
-                         (attempt {}/{}); restarting scan loop",
+                        "[{}] sync: {phase_name} rewound to {actual_rewind_height} \
+                         after reorg (requested={requested_rewind_height}, \
+                         distance={rewind_distance}, attempt {}/{}); \
+                         post_rewind_pending={post_rewind_pending}, first_pending={first_pending}, \
+                         summary={summary:?}; restarting scan loop",
                         elapsed(),
                         *current_rewinds,
                         MAX_REWINDS_PER_RUN,
                     );
+                    if actual_rewind_height_u64 < current_tip_height && post_rewind_pending == 0 {
+                        return Err(SyncError::continuity(
+                            current_tip_height,
+                            format!(
+                                "post-rewind scan queue empty after rewinding to \
+                                 {actual_rewind_height_u64}, but lightwalletd tip is \
+                                 {current_tip_height}"
+                            ),
+                        ));
+                    }
+                    if post_rewind_pending > 0 {
+                        initial_total = post_rewind_pending;
+                        prev_remaining = post_rewind_pending;
+                    }
+                    prefetch = None;
                     continue;
                 }
                 RecoveryStrategy::RetryWithBackoff | RecoveryStrategy::Fatal => {
@@ -1011,9 +1139,7 @@ async fn run_sync_impl(
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
         let remaining: u64 = post_ranges
             .iter()
-            .filter(|r| {
-                r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned
-            })
+            .filter(|r| is_pending_scan_range(r))
             .map(|r| {
                 u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start))
                     as u64
@@ -1040,9 +1166,7 @@ async fn run_sync_impl(
         };
         let next_display_target_blocks = post_ranges
             .iter()
-            .find(|r| {
-                r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned
-            })
+            .find(|r| is_pending_scan_range(r))
             .map(|r| {
                 let next_start = r.block_range().start;
                 let next_batch_size =
@@ -1107,11 +1231,18 @@ async fn run_sync_impl(
         }
     }
 
-    log::info!("[{}] sync: completed", elapsed());
+    let (final_scanned_height, final_tip_height) =
+        ensure_complete_scan_state(&db, current_tip_height)?;
+    log::info!(
+        "[{}] sync: completed (fully_scanned={}, chain_tip={})",
+        elapsed(),
+        final_scanned_height,
+        final_tip_height,
+    );
     // Final progress
     let final_progress = SyncProgressEvent {
-        scanned_height: current_tip_height,
-        chain_tip_height: current_tip_height,
+        scanned_height: final_scanned_height,
+        chain_tip_height: final_tip_height,
         percentage: 1.0,
         display_target_percentage: 1.0,
         display_target_blocks: 0,
@@ -1226,12 +1357,11 @@ mod tests {
         ));
         assert!(is_commitment_tree_root_conflict(&conflict));
 
-        let out_of_range = SqliteClientError::CommitmentTree(ShardTreeError::Insert(
-            InsertionError::OutOfRange(
+        let out_of_range =
+            SqliteClientError::CommitmentTree(ShardTreeError::Insert(InsertionError::OutOfRange(
                 incrementalmerkletree::Position::from(0),
                 incrementalmerkletree::Position::from(1)..incrementalmerkletree::Position::from(2),
-            ),
-        ));
+            )));
         assert!(!is_commitment_tree_root_conflict(&out_of_range));
 
         let block_conflict = SqliteClientError::BlockConflict(

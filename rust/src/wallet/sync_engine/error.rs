@@ -69,6 +69,11 @@ pub(crate) enum RecoveryStrategy {
 /// librustzcash's responsibility to enforce.
 pub(crate) const REWIND_DISTANCE: u64 = 10;
 
+/// Commitment-tree root conflicts can be produced by a stale local tree over a
+/// wider range than a normal one-block chain reorg. Escalate each retry inside
+/// a single sync run so we do not keep landing on the same bad shard boundary.
+pub(crate) const COMMITMENT_TREE_REWIND_DISTANCES: [u64; 3] = [10, 100, 1000];
+
 /// Maximum number of reorg-triggered rewinds allowed inside a single
 /// `run_sync_impl` invocation. Caps runaway rewind loops: if the chain is
 /// flapping fast enough to blow through this budget, `run_sync_impl` bails
@@ -150,6 +155,36 @@ impl SyncError {
             },
             SyncError::Network(_) | SyncError::Other(_) => RecoveryStrategy::RetryWithBackoff,
             SyncError::Db(_) | SyncError::Parse(_) => RecoveryStrategy::Fatal,
+        }
+    }
+
+    pub(crate) fn is_commitment_tree_root_conflict(&self) -> bool {
+        match self {
+            SyncError::Continuity { detail, .. } => detail
+                .to_ascii_lowercase()
+                .contains("commitment tree root conflict"),
+            _ => false,
+        }
+    }
+
+    pub(crate) fn rewind_distance_for_attempt(&self, attempt_index: u32) -> u64 {
+        if self.is_commitment_tree_root_conflict() {
+            let idx = usize::try_from(attempt_index).unwrap_or(usize::MAX);
+            COMMITMENT_TREE_REWIND_DISTANCES
+                .get(idx)
+                .copied()
+                .unwrap_or_else(|| *COMMITMENT_TREE_REWIND_DISTANCES.last().unwrap())
+        } else {
+            REWIND_DISTANCE
+        }
+    }
+
+    pub(crate) fn rewind_target_for_attempt(&self, attempt_index: u32) -> Option<u64> {
+        match self {
+            SyncError::Continuity { at_height, .. } => {
+                Some(at_height.saturating_sub(self.rewind_distance_for_attempt(attempt_index)))
+            }
+            _ => None,
         }
     }
 
@@ -380,6 +415,34 @@ mod tests {
             RecoveryStrategy::Rewind {
                 to_height: 2_500_000 - REWIND_DISTANCE,
             },
+        );
+    }
+
+    #[test]
+    fn commitment_tree_conflicts_escalate_rewind_distance() {
+        let e = SyncError::continuity(
+            2_500_000,
+            "commitment tree root conflict while scanning from 2500000",
+        );
+
+        assert!(e.is_commitment_tree_root_conflict());
+        assert_eq!(e.rewind_distance_for_attempt(0), 10);
+        assert_eq!(e.rewind_distance_for_attempt(1), 100);
+        assert_eq!(e.rewind_distance_for_attempt(2), 1000);
+        assert_eq!(e.rewind_distance_for_attempt(99), 1000);
+        assert_eq!(e.rewind_target_for_attempt(2), Some(2_499_000));
+    }
+
+    #[test]
+    fn ordinary_continuity_keeps_fixed_rewind_distance() {
+        let e = SyncError::continuity(2_500_000, "prev hash mismatch");
+
+        assert!(!e.is_commitment_tree_root_conflict());
+        assert_eq!(e.rewind_distance_for_attempt(0), REWIND_DISTANCE);
+        assert_eq!(e.rewind_distance_for_attempt(2), REWIND_DISTANCE);
+        assert_eq!(
+            e.rewind_target_for_attempt(2),
+            Some(2_500_000 - REWIND_DISTANCE)
         );
     }
 }
