@@ -24,7 +24,7 @@ use zcash_voting::storage::VotingDb;
 use zcash_voting::BundlePolicy;
 
 const ZATOSHI_PER_ZEC: u64 = 100_000_000;
-const WHALE_PROTECTION_NOTE_VALUE_ZATOSHI: u64 = 1_000 * ZATOSHI_PER_ZEC;
+const WHALE_PROTECTION_NOTE_VALUE_ZATOSHI: u64 = 500 * ZATOSHI_PER_ZEC;
 const WHALE_PROTECTION_MAX_REAL_NOTES_PER_BUNDLE: usize = 1;
 
 /// Lower the bundle cap when the selected snapshot contains a large note.
