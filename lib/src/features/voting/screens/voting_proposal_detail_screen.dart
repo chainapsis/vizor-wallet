@@ -325,14 +325,18 @@ class _ActivePollContent extends StatefulWidget {
 class _ActivePollContentState extends State<_ActivePollContent> {
   bool _descriptionExpanded = false;
 
+  Future<void> _showIneligibleDialog() async {
+    final message = widget.votingEligibilityErrorMessage;
+    if (message == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _IneligiblePollDialog(message: message),
+    );
+  }
+
   Future<void> _handleBottomActionPressed() async {
     if (!widget.votingEligibilityConfirmed) {
-      final message = widget.votingEligibilityErrorMessage;
-      if (message == null) return;
-      await showDialog<void>(
-        context: context,
-        builder: (_) => _IneligiblePollDialog(message: message),
-      );
+      await _showIneligibleDialog();
       return;
     }
     final skippedCount = widget.proposals
@@ -428,12 +432,18 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                       );
                     }
                     final proposal = widget.proposals[index - 1];
+                    final isIneligible =
+                        !widget.votingEligibilityConfirmed &&
+                        widget.votingEligibilityErrorMessage != null;
                     return _ProposalCard(
                       proposal: proposal,
                       selectedChoice: widget.votingEligibilityConfirmed
                           ? widget.draft.choices[proposal.id]
                           : null,
                       enabled: widget.votingEligibilityConfirmed,
+                      onDisabledOptionTap: isIneligible
+                          ? _showIneligibleDialog
+                          : null,
                       onChoice: (choice) =>
                           widget.onChoice(proposal.id, choice),
                     );
@@ -1272,12 +1282,14 @@ class _ProposalCard extends StatelessWidget {
     required this.proposal,
     required this.selectedChoice,
     required this.enabled,
+    required this.onDisabledOptionTap,
     required this.onChoice,
   });
 
   final VotingProposalView proposal;
   final int? selectedChoice;
   final bool enabled;
+  final VoidCallback? onDisabledOptionTap;
   final ValueChanged<int?> onChoice;
 
   @override
@@ -1347,6 +1359,7 @@ class _ProposalCard extends StatelessWidget {
               option: option,
               selected: selectedChoice == option.index,
               enabled: enabled,
+              onDisabledTap: onDisabledOptionTap,
               onTap: () => onChoice(
                 selectedChoice == option.index ? null : option.index,
               ),
@@ -1458,12 +1471,14 @@ class _OptionRow extends StatelessWidget {
     required this.option,
     required this.selected,
     required this.enabled,
+    required this.onDisabledTap,
     required this.onTap,
   });
 
   final VotingOptionView option;
   final bool selected;
   final bool enabled;
+  final VoidCallback? onDisabledTap;
   final VoidCallback onTap;
 
   @override
@@ -1483,7 +1498,7 @@ class _OptionRow extends StatelessWidget {
         : colors.text.secondary.withValues(alpha: 0.48);
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadii.small),
-      onTap: enabled ? onTap : null,
+      onTap: enabled ? onTap : onDisabledTap,
       child: Container(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.sm,

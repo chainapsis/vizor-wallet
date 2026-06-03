@@ -1500,6 +1500,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(container.read(votingDraftProvider(_draftKey)).isEmpty, true);
+    expect(find.text('Not eligible for this poll'), findsOneWidget);
+    expect(find.text(message), findsOneWidget);
+
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('Not eligible'));
     await tester.pumpAndSettle();
