@@ -7,6 +7,7 @@ import '../../providers/app_security_provider.dart';
 import '../../providers/sync_failure.dart';
 import '../../providers/sync_provider.dart';
 import '../config/swap_feature_config.dart';
+import '../navigation/app_navigation_source.dart';
 import '../profile_pictures.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
@@ -29,10 +30,14 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       _matchedLocation == routePath ||
       _matchedLocation.startsWith('$routePath/');
 
-  void _openAccounts() {
-    if (!_matches('/accounts')) {
-      context.go('/accounts');
+  void _goToSidebarRoute(String routePath) {
+    if (!_matches(routePath)) {
+      context.go(routePath, extra: AppNavigationSource.mainSidebar);
     }
+  }
+
+  void _openAccounts() {
+    _goToSidebarRoute('/accounts');
   }
 
   Future<void> _handleSignOut() async {
@@ -115,7 +120,9 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     label: 'Home',
                     iconName: AppIcons.home,
                     active: _matches('/home'),
-                    onTap: _matches('/home') ? null : () => context.go('/home'),
+                    onTap: _matches('/home')
+                        ? null
+                        : () => _goToSidebarRoute('/home'),
                   ),
                   if (swapFeatureEnabled) ...[
                     const SizedBox(height: AppSpacing.xs),
@@ -126,7 +133,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       active: _matches('/swap'),
                       onTap: _matches('/swap')
                           ? null
-                          : () => context.go('/swap'),
+                          : () => _goToSidebarRoute('/swap'),
                     ),
                   ],
                   const SizedBox(height: AppSpacing.xs),
@@ -137,7 +144,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     active: _matches('/address-book'),
                     onTap: _matches('/address-book')
                         ? null
-                        : () => context.go('/address-book'),
+                        : () => _goToSidebarRoute('/address-book'),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
@@ -147,7 +154,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     active: _matches('/activity'),
                     onTap: _matches('/activity')
                         ? null
-                        : () => context.go('/activity'),
+                        : () => _goToSidebarRoute('/activity'),
                   ),
                 ],
               ),
@@ -164,7 +171,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     active: _matches('/settings'),
                     onTap: _matches('/settings')
                         ? null
-                        : () => context.go('/settings'),
+                        : () => _goToSidebarRoute('/settings'),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
@@ -173,7 +180,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     active: _matches('/about'),
                     onTap: _matches('/about')
                         ? null
-                        : () => context.go('/about'),
+                        : () => _goToSidebarRoute('/about'),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(

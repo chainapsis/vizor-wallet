@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
+import 'package:zcash_wallet/src/core/navigation/app_navigation_source.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -71,6 +72,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('address book'), findsOneWidget);
+  });
+
+  testWidgets('sidebar tags main route navigation as sidebar sourced', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sidebarHarness(SyncState()));
+    await tester.pump();
+
+    await tester.tap(find.text('Activity'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('activity from sidebar'), findsOneWidget);
   });
 
   testWidgets('sidebar keeps primary navigation item spacing consistent', (
@@ -263,7 +276,14 @@ Widget _sidebarHarness(
         path: '/address-book',
         builder: (_, _) => const Text('address book'),
       ),
-      GoRoute(path: '/activity', builder: (_, _) => const Text('activity')),
+      GoRoute(
+        path: '/activity',
+        builder: (_, state) => Text(
+          state.extra == AppNavigationSource.mainSidebar
+              ? 'activity from sidebar'
+              : 'activity',
+        ),
+      ),
       GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
       GoRoute(path: '/about', builder: (_, _) => const Text('about')),
     ],

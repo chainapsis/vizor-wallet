@@ -15,6 +15,7 @@ import 'src/app_bootstrap.dart';
 import 'src/core/config/swap_feature_config.dart';
 import 'src/core/layout/app_layout.dart';
 import 'src/core/motion/onboarding_motion.dart';
+import 'src/core/navigation/app_navigation_source.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
@@ -545,13 +546,24 @@ final _routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
       GoRoute(path: '/privacy', builder: (_, _) => const PrivacyPolicyScreen()),
-      GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
-      GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
+      GoRoute(
+        path: '/home',
+        pageBuilder: (_, state) => _mainSidebarPage(state, const HomeScreen()),
+      ),
+      GoRoute(
+        path: '/about',
+        pageBuilder: (_, state) => _mainSidebarPage(state, const AboutScreen()),
+      ),
       GoRoute(
         path: '/address-book',
-        builder: (_, _) => const AddressBookScreen(),
+        pageBuilder: (_, state) =>
+            _mainSidebarPage(state, const AddressBookScreen()),
       ),
-      GoRoute(path: '/activity', builder: (_, _) => const ActivityScreen()),
+      GoRoute(
+        path: '/activity',
+        pageBuilder: (_, state) =>
+            _mainSidebarPage(state, const ActivityScreen()),
+      ),
       GoRoute(
         path: '/activity/swap/:swapId',
         builder: (_, state) {
@@ -605,7 +617,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/swap',
         redirect: (_, _) => swapFeatureEnabled ? null : '/home',
-        builder: (_, _) => const SwapScreen(),
+        pageBuilder: (_, state) => _mainSidebarPage(state, const SwapScreen()),
       ),
       GoRoute(
         path: '/swap/review',
@@ -636,7 +648,11 @@ final _routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
-      GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
+      GoRoute(
+        path: '/accounts',
+        pageBuilder: (_, state) =>
+            _mainSidebarPage(state, const AccountsScreen()),
+      ),
       GoRoute(
         path: '/import-keystone',
         redirect: (_, _) => KeystoneOnboardingStep.howToConnect.routePath,
@@ -645,7 +661,11 @@ final _routerProvider = Provider<GoRouter>((ref) {
         path: '/import-keystone/set-password',
         redirect: (_, _) => KeystoneOnboardingStep.howToConnect.routePath,
       ),
-      GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+      GoRoute(
+        path: '/settings',
+        pageBuilder: (_, state) =>
+            _mainSidebarPage(state, const SettingsScreen()),
+      ),
       GoRoute(
         path: '/settings/secret-passphrase',
         builder: (_, _) => const SettingsSeedPhraseScreen(),
@@ -661,6 +681,37 @@ final _routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+const _mobileSidebarTransitionDuration = Duration(milliseconds: 170);
+const _mobileSidebarReverseTransitionDuration = Duration(milliseconds: 120);
+
+Page<void> _mainSidebarPage(GoRouterState state, Widget child) {
+  if (!shouldUseMobileSidebarTransition(state.extra)) {
+    return MaterialPage<void>(key: state.pageKey, child: child);
+  }
+
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    transitionDuration: _mobileSidebarTransitionDuration,
+    reverseTransitionDuration: _mobileSidebarReverseTransitionDuration,
+    child: child,
+    transitionsBuilder: _mobileSidebarTransition,
+  );
+}
+
+Widget _mobileSidebarTransition(
+  BuildContext context,
+  Animation<double> animation,
+  Animation<double> secondaryAnimation,
+  Widget child,
+) {
+  final curve = CurvedAnimation(
+    parent: animation,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
+  return FadeTransition(opacity: curve, child: child);
+}
 
 /// Cross-fade for onboarding page-level transitions. Both legs keep the
 /// two screens visible during the dissolve so the acrylic backdrop stays
