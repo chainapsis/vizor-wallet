@@ -813,15 +813,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final current = await future;
       final context = await _loadContext(_roundId);
       await _waitUntilWalletReadyForVoting(context);
-      final storedHotkeySecret = await _hotkeyForVoteCasting(context);
-      if (storedHotkeySecret == null) {
-        _setError(
-          'Voting hotkey is missing. Delegate this round before casting votes.',
-          cause: const VotingHotkeyUnavailable('missing stored hotkey'),
-          context: context,
-        );
-        return;
-      }
 
       final progress = Map<VotingVoteKey, VotingSessionProgress>.from(
         current.voteProgress,
@@ -949,6 +940,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             bundleIndexes: bundleIndexesByProposal[draftVote.proposalId]!,
           ),
       ].where((work) => work.bundleIndexes.isNotEmpty).toList();
+      final List<int>? storedHotkeySecret;
+      if (voteWork.isEmpty) {
+        storedHotkeySecret = null;
+      } else {
+        storedHotkeySecret = await _hotkeyForVoteCasting(context);
+        if (storedHotkeySecret == null) {
+          _setError(
+            'Voting hotkey is missing. Delegate this round before casting votes.',
+            cause: const VotingHotkeyUnavailable('missing stored hotkey'),
+            context: context,
+          );
+          return;
+        }
+      }
       final totalQuestions = recoveredVoteWork.length + voteWork.length;
       final totalBundleTasks =
           recoveredVoteWork.length +
@@ -1169,7 +1174,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                     network: context.network,
                     roundId: context.round.roundId,
                     bundleIndex: bundleIndex,
-                    storedHotkeySecret: storedHotkeySecret,
+                    storedHotkeySecret: storedHotkeySecret!,
                     vanWitness: witness,
                     draftVotes: [timedDraftVote],
                   )) {

@@ -3716,6 +3716,7 @@ void main() {
       http: FakeVotingHttpClient(responses: httpResponses),
       rust: rust,
       recoveryApi: recoveryApi,
+      hotkeyStore: const FailingVotingHotkeyStore(),
       txConfirmationPolling: _fastTxConfirmationPolling,
     );
     addTearDown(container.dispose);
