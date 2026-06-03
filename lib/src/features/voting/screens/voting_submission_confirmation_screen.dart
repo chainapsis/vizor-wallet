@@ -45,9 +45,28 @@ class _VotingSubmissionConfirmationScreenState
   String? _votingPowerRefreshKey;
   BigInt? _refreshedVotingPowerZatoshi;
   String? _votingPowerRefreshErrorMessage;
+  VotingSessionState? _lastSubmissionState;
   String? _pollRefreshKey;
   Future<void>? _pollRefreshFuture;
   String? _returnErrorMessage;
+
+  @override
+  void didUpdateWidget(covariant VotingSubmissionConfirmationScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.roundId == widget.roundId &&
+        oldWidget.accountUuid == widget.accountUuid) {
+      return;
+    }
+    _refreshingVotingPower = false;
+    _votingPowerRefreshAttempted = false;
+    _votingPowerRefreshKey = null;
+    _refreshedVotingPowerZatoshi = null;
+    _votingPowerRefreshErrorMessage = null;
+    _lastSubmissionState = null;
+    _pollRefreshKey = null;
+    _pollRefreshFuture = null;
+    _returnErrorMessage = null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,86 +90,116 @@ class _VotingSubmissionConfirmationScreenState
             child: session.when(
               skipLoadingOnRefresh: false,
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => _ConfirmationScaffold(
-                confirmed: false,
-                title: 'Submission not complete',
-                pollTitle: 'Coinholder poll',
-                message: "Couldn't load submission details: $error",
-                votingPower: 'Not available',
-              ),
-              data: (state) {
-                final pollTitle = state.round?.title.isNotEmpty == true
-                    ? state.round!.title
-                    : 'Coinholder poll';
-                final hasCompletedSubmission = hasCompletedVoteForDisplay(
-                  state.roundPlan,
-                );
-                final hasConfirmedVotingEligibility =
-                    state.hasConfirmedVotingEligibility ||
-                    _refreshedVotingPowerZatoshi != null;
-                final confirmed =
-                    hasCompletedSubmission && hasConfirmedVotingEligibility;
-                _maybeRefreshVotingPower(
-                  confirmed: hasCompletedSubmission,
-                  state: state,
-                  jobKey: jobKey,
-                );
-                _maybePrefetchPollRefresh(
-                  confirmed: confirmed,
-                  state: state,
-                  jobKey: jobKey,
-                );
-                if (!hasCompletedSubmission) {
-                  return _ConfirmationScaffold(
-                    confirmed: false,
-                    title: 'Submission not complete',
-                    pollTitle: pollTitle,
-                    message:
-                        'This account has not completed submission for this poll.',
-                    votingPower: 'Not available',
-                    doneLabel: 'Done',
-                  );
-                }
-                if (!hasConfirmedVotingEligibility) {
-                  final storedEligibilityError = state.error;
-                  final storedEligibilityErrorMessage =
-                      storedEligibilityError == null
-                      ? null
-                      : friendlyVotingErrorText(storedEligibilityError.message);
-                  return _ConfirmationScaffold(
-                    confirmed: false,
-                    title: 'Submission not complete',
-                    pollTitle: pollTitle,
-                    message:
-                        _votingPowerRefreshErrorMessage ??
-                        storedEligibilityErrorMessage ??
-                        (_refreshingVotingPower
-                            ? 'Checking voting eligibility for this account.'
-                            : 'Voting eligibility has not been confirmed for this account.'),
-                    votingPower: 'Not available',
-                    doneLabel: 'Done',
+              error: (error, _) {
+                final cachedState = _lastSubmissionState;
+                if (cachedState != null) {
+                  return _buildSubmissionContent(
+                    state: cachedState,
+                    jobKey: jobKey,
+                    loadError: error,
                   );
                 }
                 return _ConfirmationScaffold(
-                  confirmed: true,
-                  title: 'Submission confirmed!',
-                  pollTitle: pollTitle,
-                  message:
-                      'Your vote was successfully published and cannot be changed.',
-                  votingPower: _formatVotingPower(
-                    _refreshedVotingPowerZatoshi ?? state.eligibleWeightZatoshi,
-                  ),
-                  isReturningToPolls: _isReturningToPolls,
-                  doneEnabled: !_isReturningToPolls,
-                  doneLabel: _isReturningToPolls ? 'Updating...' : 'Done',
-                  returnErrorMessage: _returnErrorMessage,
-                  onDone: () => unawaited(_returnToPolls(jobKey)),
+                  confirmed: false,
+                  title: 'Submission not complete',
+                  pollTitle: 'Coinholder poll',
+                  message: "Couldn't load submission details: $error",
+                  votingPower: 'Not available',
                 );
+              },
+              data: (state) {
+                return _buildSubmissionContent(state: state, jobKey: jobKey);
               },
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSubmissionContent({
+    required VotingSessionState state,
+    required VotingSessionKey? jobKey,
+    Object? loadError,
+  }) {
+    final pollTitle = state.round?.title.isNotEmpty == true
+        ? state.round!.title
+        : 'Coinholder poll';
+    final hasCompletedSubmission = hasCompletedVoteForDisplay(state.roundPlan);
+    if (hasCompletedSubmission) {
+      _lastSubmissionState = state;
+    }
+    final hasConfirmedVotingEligibility =
+        state.hasConfirmedVotingEligibility ||
+        _refreshedVotingPowerZatoshi != null;
+    final confirmed = hasCompletedSubmission && hasConfirmedVotingEligibility;
+    _maybeRefreshVotingPower(
+      confirmed: hasCompletedSubmission,
+      state: state,
+      jobKey: jobKey,
+    );
+    _maybePrefetchPollRefresh(
+      confirmed: confirmed,
+      state: state,
+      jobKey: jobKey,
+    );
+
+    if (!hasCompletedSubmission) {
+      return _ConfirmationScaffold(
+        confirmed: false,
+        title: 'Submission not complete',
+        pollTitle: pollTitle,
+        message: 'This account has not completed submission for this poll.',
+        votingPower: 'Not available',
+        doneLabel: 'Done',
+      );
+    }
+    if (!hasConfirmedVotingEligibility) {
+      final storedEligibilityError = state.error;
+      final storedEligibilityErrorMessage = storedEligibilityError == null
+          ? null
+          : friendlyVotingErrorText(storedEligibilityError.message);
+      final loadErrorMessage = loadError == null
+          ? null
+          : friendlyVotingErrorMessage(loadError);
+      final latestRefreshMessage =
+          _votingPowerRefreshErrorMessage ?? loadErrorMessage;
+      final retryMessage = _refreshingVotingPower ? null : latestRefreshMessage;
+      final canRetry =
+          latestRefreshMessage != null &&
+          !_refreshingVotingPower &&
+          !isVotingEligibilityErrorText(latestRefreshMessage);
+      return _ConfirmationScaffold(
+        confirmed: false,
+        title: 'Submission not complete',
+        pollTitle: pollTitle,
+        message:
+            retryMessage ??
+            storedEligibilityErrorMessage ??
+            (_refreshingVotingPower
+                ? 'Checking voting eligibility for this account.'
+                : 'Voting eligibility has not been confirmed for this account.'),
+        votingPower: 'Not available',
+        doneLabel: 'Done',
+        retryLabel: canRetry ? 'Retry' : null,
+        onRetry: canRetry
+            ? () => _retryVotingPowerRefresh(state, jobKey)
+            : null,
+      );
+    }
+    return _ConfirmationScaffold(
+      confirmed: true,
+      title: 'Submission confirmed!',
+      pollTitle: pollTitle,
+      message: 'Your vote was successfully published and cannot be changed.',
+      votingPower: _formatVotingPower(
+        _refreshedVotingPowerZatoshi ?? state.eligibleWeightZatoshi,
+      ),
+      isReturningToPolls: _isReturningToPolls,
+      doneEnabled: !_isReturningToPolls,
+      doneLabel: _isReturningToPolls ? 'Updating...' : 'Done',
+      returnErrorMessage: _returnErrorMessage,
+      onDone: () => unawaited(_returnToPolls(jobKey)),
     );
   }
 
@@ -184,13 +233,36 @@ class _VotingSubmissionConfirmationScreenState
     return formatVotingPower(zatoshi);
   }
 
+  void _retryVotingPowerRefresh(
+    VotingSessionState state,
+    VotingSessionKey? jobKey,
+  ) {
+    if (_refreshingVotingPower) return;
+    final refreshKey = _submissionRefreshKey(state: state, jobKey: jobKey);
+    setState(() {
+      _votingPowerRefreshKey = refreshKey;
+      _refreshingVotingPower = true;
+      _votingPowerRefreshAttempted = true;
+      _votingPowerRefreshErrorMessage = null;
+    });
+    unawaited(
+      _refreshVotingPower(state: state, jobKey: jobKey, key: refreshKey),
+    );
+  }
+
+  String _submissionRefreshKey({
+    required VotingSessionState state,
+    required VotingSessionKey? jobKey,
+  }) {
+    return '${widget.roundId}|${jobKey?.accountUuid ?? state.accountUuid ?? ''}';
+  }
+
   void _maybeRefreshVotingPower({
     required bool confirmed,
     required VotingSessionState state,
     required VotingSessionKey? jobKey,
   }) {
-    final refreshKey =
-        '${widget.roundId}|${jobKey?.accountUuid ?? state.accountUuid ?? ''}';
+    final refreshKey = _submissionRefreshKey(state: state, jobKey: jobKey);
     if (_votingPowerRefreshKey != refreshKey) {
       _votingPowerRefreshKey = refreshKey;
       _refreshingVotingPower = false;
@@ -217,8 +289,7 @@ class _VotingSubmissionConfirmationScreenState
     required VotingSessionState state,
     required VotingSessionKey? jobKey,
   }) {
-    final refreshKey =
-        '${widget.roundId}|${jobKey?.accountUuid ?? state.accountUuid ?? ''}';
+    final refreshKey = _submissionRefreshKey(state: state, jobKey: jobKey);
     if (_pollRefreshKey != refreshKey) {
       _pollRefreshKey = refreshKey;
       _pollRefreshFuture = null;
@@ -302,6 +373,8 @@ class _ConfirmationScaffold extends StatelessWidget {
     this.isReturningToPolls = false,
     this.doneEnabled = true,
     this.doneLabel = 'Done',
+    this.retryLabel,
+    this.onRetry,
     this.returnErrorMessage,
   });
 
@@ -314,6 +387,8 @@ class _ConfirmationScaffold extends StatelessWidget {
   final bool isReturningToPolls;
   final bool doneEnabled;
   final String doneLabel;
+  final String? retryLabel;
+  final VoidCallback? onRetry;
   final String? returnErrorMessage;
 
   @override
@@ -424,6 +499,17 @@ class _ConfirmationScaffold extends StatelessWidget {
                           child: Text(doneLabel),
                         ),
                       ),
+                      if (onRetry != null && retryLabel != null) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        SizedBox(
+                          width: double.infinity,
+                          child: AppButton(
+                            onPressed: onRetry,
+                            variant: AppButtonVariant.secondary,
+                            child: Text(retryLabel!),
+                          ),
+                        ),
+                      ],
                       if (returnErrorMessage != null) ...[
                         const SizedBox(height: AppSpacing.xs),
                         Text(

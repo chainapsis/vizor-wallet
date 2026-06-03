@@ -465,6 +465,63 @@ void main() {
     expect(find.text('Submission confirmed!'), findsNothing);
   });
 
+  testWidgets('submitted route can retry eligibility refresh', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final completedRoundPlan = apiRoundPlan(
+      roundId: _roundId,
+      pendingRecovery: false,
+      nextSteps: const [],
+      openProposals: Uint32List(0),
+      allDecided: true,
+      completedVoteArtifact: true,
+      completedForDisplay: true,
+    );
+    late _RetryableEligibilityVotingSessionNotifier notifier;
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      overrides: [
+        votingSessionProvider(_roundId).overrideWith(() {
+          notifier = _RetryableEligibilityVotingSessionNotifier(
+            VotingSessionState(
+              roundId: _roundId,
+              accountUuid: 'account-1',
+              phase: VotingSessionPhase.done,
+              roundPlan: completedRoundPlan,
+            ),
+          );
+          return notifier;
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _submissionHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(tester, find.text('Retry'));
+
+    expect(find.text('Submission not complete'), findsOneWidget);
+    expect(find.textContaining('temporary setup unavailable'), findsOneWidget);
+    expect(notifier.refreshCalls, 1);
+
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(tester, find.text('Submission confirmed!'));
+
+    expect(find.text('Submission confirmed!'), findsOneWidget);
+    expect(find.text('Voting power'), findsOneWidget);
+    expect(find.text('0.000001 ZEC'), findsOneWidget);
+    expect(notifier.refreshCalls, 2);
+  });
+
   testWidgets(
     'submitted route refreshes poll rows before returning to vote menu',
     (tester) async {
@@ -1513,7 +1570,7 @@ void main() {
     expect(find.text(message), findsOneWidget);
   });
 
-  testWidgets('proposal detail shows completed vote when eligibility fails', (
+  testWidgets('proposal detail hides completed vote when eligibility fails', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1152, 768));
@@ -1556,12 +1613,14 @@ void main() {
     const message =
         'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
         'at snapshot block 3,359,740. Switch to an eligible account to vote.';
-    await _pumpUntilFound(tester, find.textContaining('Voted'));
+    await _pumpUntilFound(tester, find.text('Not eligible'));
 
     expect(find.text(message), findsNothing);
-    expect(find.textContaining('Voted'), findsOneWidget);
+    expect(find.textContaining('Voted'), findsNothing);
+    expect(find.text('Voting power 0 ZEC'), findsOneWidget);
     expect(find.text('Yes'), findsOneWidget);
-    expect(find.text('No'), findsNothing);
+    expect(find.text('No'), findsOneWidget);
+    expect(find.text('Review answers'), findsNothing);
   });
 
   testWidgets('proposal detail hides pending recovery when eligibility fails', (
@@ -1657,6 +1716,47 @@ void main() {
       find.widgetWithText(AppButton, 'Confirm & submit'),
     );
     expect(submitButton.onPressed, isNull);
+  });
+
+  testWidgets('review disables submit until eligibility is confirmed', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _FailingVotingPowerRustApi(),
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+    );
+    addTearDown(container.dispose);
+    container.read(votingDraftProvider(_draftKey).notifier).setChoice(1, 0);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(
+          initialLocation: '/voting/poll/$_roundId/review',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(tester, find.text('Review your answers'));
+
+    final submitButton = tester.widget<AppButton>(
+      find.widgetWithText(AppButton, 'Confirm & submit'),
+    );
+    expect(submitButton.onPressed, isNull);
+
+    await tester.tap(find.text('Confirm & submit'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review your answers'), findsOneWidget);
+    expect(find.textContaining('status account:'), findsNothing);
   });
 
   testWidgets('results screen renders flat tally rows as ZEC totals', (
@@ -3482,6 +3582,22 @@ class _FailingEligibilityVotingSessionNotifier
       'notes and 12500000 zatoshi voting weight; selected 2 distinct eligible '
       'notes with 25000000 zatoshi voting weight at snapshot height 3359740',
     );
+  }
+}
+
+class _RetryableEligibilityVotingSessionNotifier
+    extends _StaticVotingSessionNotifier {
+  _RetryableEligibilityVotingSessionNotifier(super.state);
+
+  int refreshCalls = 0;
+
+  @override
+  Future<BigInt?> refreshEligibleWeight() async {
+    refreshCalls++;
+    if (refreshCalls == 1) {
+      throw StateError('temporary setup unavailable');
+    }
+    return BigInt.from(100);
   }
 }
 

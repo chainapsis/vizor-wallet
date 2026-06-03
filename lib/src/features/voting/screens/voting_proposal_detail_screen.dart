@@ -111,7 +111,7 @@ class _VotingProposalDetailScreenState
                 ),
               );
             }
-            if (completedVote != null) {
+            if (completedVote != null && hasConfirmedVotingEligibility) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: _VotedPollContent(

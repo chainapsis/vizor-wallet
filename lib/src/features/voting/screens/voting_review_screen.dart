@@ -146,11 +146,8 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
               state,
               preparing: votingPowerPreparing,
             );
-            final sessionError = state.error;
-            final votingEligibilityError = sessionError == null
-                ? false
-                : isVotingEligibilityErrorText(sessionError.message);
-            final onSubmit = draft.isEmpty || votingEligibilityError
+            final onSubmit =
+                draft.isEmpty || !state.hasConfirmedVotingEligibility
                 ? null
                 : () => context.go(
                     votingStatusRoute(widget.roundId, accountUuid: accountUuid),
