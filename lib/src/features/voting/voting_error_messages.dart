@@ -32,5 +32,18 @@ String friendlyVotingErrorText(String text) {
         'shielded funds at $snapshot. Switch to an eligible account to vote.';
   }
 
+  final minimumVotingEligibility = RegExp(
+    r'minimum voting eligibility requires at least 5 eligible notes and 12500000 zatoshi voting weight; selected \d+ distinct eligible notes with \d+ zatoshi voting weight(?: at snapshot height (\d+))?',
+    caseSensitive: false,
+  ).firstMatch(message);
+  if (minimumVotingEligibility != null) {
+    final heightText = minimumVotingEligibility.group(1);
+    final snapshot = heightText == null
+        ? 'the poll snapshot block'
+        : 'snapshot block ${formatBlockHeight(int.parse(heightText))}';
+    return 'Voting requires at least 5 eligible shielded notes totaling '
+        '0.125 ZEC at $snapshot. Switch to an eligible account to vote.';
+  }
+
   return message.isEmpty ? 'Voting session action failed.' : message;
 }

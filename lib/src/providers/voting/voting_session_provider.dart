@@ -248,6 +248,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     });
   }
 
+  Future<void> ensureVotingEligibility() {
+    return _enqueue(_ensureVotingEligibilityUnlocked);
+  }
+
   void clearVoteSubmissionProgressForJobStart() {
     final current = state.value;
     if (current == null) return;
@@ -1894,10 +1898,19 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return _enqueue(() async {
       _shareTrackingTimer?.cancel();
       _shareTrackingTimer = null;
-      final current = await future;
-      final context = await _loadContext(_roundId);
-      final plan = await _loadResumePlan(context);
-      final roundPlan = await _loadRoundPlan(context);
+      var current = await future;
+      var context = await _loadContext(_roundId);
+      var plan = await _loadResumePlan(context);
+      var roundPlan = await _loadRoundPlan(context);
+      if (plan.unconfirmedShareDelegations.isNotEmpty &&
+          !current.hasConfirmedVotingEligibility) {
+        await _ensureVotingEligibilityUnlocked();
+        current = await future;
+        if (!current.hasConfirmedVotingEligibility) return;
+        context = await _loadContext(_roundId);
+        plan = await _loadResumePlan(context);
+        roundPlan = await _loadRoundPlan(context);
+      }
       _setStateForContext(
         context,
         current.copyWith(
@@ -2577,6 +2590,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> _refreshEligibleWeightUnlocked() async {
     final current = await future;
     final context = await _loadContext(_roundId);
+
     final bundleSetup = await ref
         .read(votingRustApiProvider)
         .setupDelegationBundles(ctx: _apiRoundContext(context));
@@ -2590,6 +2604,32 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         roundPlan: refreshedRoundPlan,
         eligibleWeightZatoshi: eligibleWeight,
         isHardwareAccount: context.isHardwareAccount,
+      ),
+    );
+  }
+
+  Future<void> _ensureVotingEligibilityUnlocked() async {
+    final current = await future;
+    if (current.hasConfirmedVotingEligibility) return;
+    final context = await _loadContext(_roundId);
+    await _waitUntilWalletReadyForVoting(context);
+
+    final bundleSetup = await ref
+        .read(votingRustApiProvider)
+        .setupDelegationBundles(ctx: _apiRoundContext(context));
+    final refreshedPlan = await _loadResumePlan(context);
+    final refreshedRoundPlan = await _loadRoundPlan(context);
+    _setStateForContext(
+      context,
+      (state.value ?? current).copyWith(
+        phase: current.phase,
+        config: context.config,
+        round: context.round,
+        resumePlan: refreshedPlan,
+        roundPlan: refreshedRoundPlan,
+        eligibleWeightZatoshi: bundleSetup.eligibleWeight,
+        isHardwareAccount: context.isHardwareAccount,
+        clearError: true,
       ),
     );
   }

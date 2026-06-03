@@ -17,6 +17,7 @@ import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../voting_choice_style.dart';
+import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
@@ -88,11 +89,14 @@ class _VotingProposalDetailScreenState
             final proposals = proposalsFromRound(round);
             final forumUri = votingRoundForumUriFromJson(round.rawJson);
             final completedVote = _CompletedVote.fromPlan(state.roundPlan);
+            final hasConfirmedVotingEligibility =
+                state.hasConfirmedVotingEligibility;
             _maybePrepareVotingPower(state);
             // Foreground recovery takes precedence over the read-only voted view.
             // Accepted helper shares may still be tracked after submission, but
             // that background work should not keep this screen resumable.
-            if (hasBlockingRoundRecoveryWork(state.roundPlan)) {
+            if (hasBlockingRoundRecoveryWork(state.roundPlan) &&
+                hasConfirmedVotingEligibility) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: _PendingVoteContent(
@@ -107,7 +111,7 @@ class _VotingProposalDetailScreenState
                 ),
               );
             }
-            if (completedVote != null) {
+            if (completedVote != null && hasConfirmedVotingEligibility) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: _VotedPollContent(
@@ -126,7 +130,7 @@ class _VotingProposalDetailScreenState
               );
             }
             final pendingVote = _PendingVoteRecovery.fromPlan(state.roundPlan);
-            if (pendingVote != null) {
+            if (pendingVote != null && hasConfirmedVotingEligibility) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: _PendingVoteContent(
@@ -141,6 +145,15 @@ class _VotingProposalDetailScreenState
                 ),
               );
             }
+            final votingPowerPreparing =
+                _votingPowerPreparationInFlight ||
+                (state.eligibleWeightZatoshi == null &&
+                    state.error == null &&
+                    _shouldPrepareVotingPower(state));
+            final votingEligibilityMessage = _votingEligibilityMessage(
+              state,
+              preparing: votingPowerPreparing,
+            );
             _maybePrecomputeDelegationPir(state);
             return _ActivePollContent(
               roundId: roundId,
@@ -150,7 +163,9 @@ class _VotingProposalDetailScreenState
               forumUri: forumUri,
               endDate: _roundEndDate(round.rawJson),
               votingPowerZatoshi: state.eligibleWeightZatoshi,
-              votingPowerPreparing: _votingPowerPreparationInFlight,
+              votingPowerPreparing: votingPowerPreparing,
+              votingEligibilityConfirmed: hasConfirmedVotingEligibility,
+              votingEligibilityMessage: votingEligibilityMessage,
               proposals: proposals,
               draft: draft,
               onChoice: draftKey == null
@@ -209,7 +224,9 @@ class _VotingProposalDetailScreenState
   // from PCZT construction, so it only needs the stored voting hotkey secret.
   void _maybePrecomputeDelegationPir(VotingSessionState state) {
     final accountUuid = state.accountUuid;
-    if (accountUuid == null || !_shouldPrepareVotingPower(state)) {
+    if (accountUuid == null ||
+        !state.hasConfirmedVotingEligibility ||
+        !_shouldPrepareVotingPower(state)) {
       return;
     }
 
@@ -245,6 +262,17 @@ bool _shouldPrepareVotingPower(VotingSessionState state) {
   };
 }
 
+String? _votingEligibilityMessage(
+  VotingSessionState state, {
+  required bool preparing,
+}) {
+  if (state.hasConfirmedVotingEligibility) return null;
+  final error = state.error;
+  if (error != null) return friendlyVotingErrorText(error.message);
+  if (preparing) return null;
+  return 'Voting power unavailable.';
+}
+
 class _ActivePollContent extends StatefulWidget {
   const _ActivePollContent({
     required this.roundId,
@@ -255,6 +283,8 @@ class _ActivePollContent extends StatefulWidget {
     required this.endDate,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
+    required this.votingEligibilityConfirmed,
+    required this.votingEligibilityMessage,
     required this.proposals,
     required this.draft,
     required this.onChoice,
@@ -268,6 +298,8 @@ class _ActivePollContent extends StatefulWidget {
   final DateTime? endDate;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
+  final bool votingEligibilityConfirmed;
+  final String? votingEligibilityMessage;
   final List<VotingProposalView> proposals;
   final VotingDraftState draft;
   final void Function(int proposalId, int? choice) onChoice;
@@ -280,6 +312,7 @@ class _ActivePollContentState extends State<_ActivePollContent> {
   bool _descriptionExpanded = false;
 
   Future<void> _handleBottomActionPressed() async {
+    if (!widget.votingEligibilityConfirmed) return;
     final skippedCount = widget.proposals
         .where((proposal) => widget.draft.choices[proposal.id] == null)
         .length;
@@ -351,6 +384,8 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                         endDate: widget.endDate,
                         votingPowerZatoshi: widget.votingPowerZatoshi,
                         votingPowerPreparing: widget.votingPowerPreparing,
+                        votingEligibilityMessage:
+                            widget.votingEligibilityMessage,
                         expanded: _descriptionExpanded,
                         onToggleDescription: () => setState(() {
                           _descriptionExpanded = !_descriptionExpanded;
@@ -359,14 +394,19 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                     }
                     if (index == widget.proposals.length + 1) {
                       return _ReviewAnswersButton(
-                        enabled: !widget.draft.isEmpty,
+                        enabled:
+                            widget.votingEligibilityConfirmed &&
+                            !widget.draft.isEmpty,
                         onPressed: _handleBottomActionPressed,
                       );
                     }
                     final proposal = widget.proposals[index - 1];
                     return _ProposalCard(
                       proposal: proposal,
-                      selectedChoice: widget.draft.choices[proposal.id],
+                      selectedChoice: widget.votingEligibilityConfirmed
+                          ? widget.draft.choices[proposal.id]
+                          : null,
+                      enabled: widget.votingEligibilityConfirmed,
                       onChoice: (choice) =>
                           widget.onChoice(proposal.id, choice),
                     );
@@ -471,6 +511,7 @@ class _PollSummary extends StatelessWidget {
     required this.endDate,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
+    required this.votingEligibilityMessage,
     required this.expanded,
     required this.onToggleDescription,
   });
@@ -482,6 +523,7 @@ class _PollSummary extends StatelessWidget {
   final DateTime? endDate;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
+  final String? votingEligibilityMessage;
   final bool expanded;
   final VoidCallback onToggleDescription;
 
@@ -554,6 +596,17 @@ class _PollSummary extends StatelessWidget {
             ],
           ],
         ),
+        if (votingEligibilityMessage != null) ...[
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            votingEligibilityMessage!,
+            style: AppTypography.bodySmall.copyWith(
+              color: colors.text.secondary,
+              height: 16 / 12,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
         if (hasDescription) ...[
           const SizedBox(height: AppSpacing.xs),
           LayoutBuilder(
@@ -1115,11 +1168,13 @@ class _ProposalCard extends StatelessWidget {
   const _ProposalCard({
     required this.proposal,
     required this.selectedChoice,
+    required this.enabled,
     required this.onChoice,
   });
 
   final VotingProposalView proposal;
   final int? selectedChoice;
+  final bool enabled;
   final ValueChanged<int?> onChoice;
 
   @override
@@ -1183,17 +1238,20 @@ class _ProposalCard extends StatelessWidget {
               ),
             ),
           ],
-          const SizedBox(height: AppSpacing.s),
-          for (final option in proposal.options) ...[
-            _OptionRow(
-              option: option,
-              selected: selectedChoice == option.index,
-              onTap: () => onChoice(
-                selectedChoice == option.index ? null : option.index,
+          if (enabled) ...[
+            const SizedBox(height: AppSpacing.s),
+            for (final option in proposal.options) ...[
+              _OptionRow(
+                option: option,
+                selected: selectedChoice == option.index,
+                enabled: enabled,
+                onTap: () => onChoice(
+                  selectedChoice == option.index ? null : option.index,
+                ),
               ),
-            ),
-            if (option != proposal.options.last)
-              const SizedBox(height: AppSpacing.xs),
+              if (option != proposal.options.last)
+                const SizedBox(height: AppSpacing.xs),
+            ],
           ],
         ],
       ),
@@ -1298,11 +1356,13 @@ class _OptionRow extends StatelessWidget {
   const _OptionRow({
     required this.option,
     required this.selected,
+    required this.enabled,
     required this.onTap,
   });
 
   final VotingOptionView option;
   final bool selected;
+  final bool enabled;
   final VoidCallback onTap;
 
   @override
@@ -1310,21 +1370,31 @@ class _OptionRow extends StatelessWidget {
     final colors = context.colors;
     final description = option.description.trim();
     final palette = votingChoicePalette(context, option.label);
+    final primaryTextColor = enabled
+        ? selected
+              ? palette.text
+              : colors.text.accent
+        : colors.text.secondary.withValues(alpha: 0.56);
+    final secondaryTextColor = enabled
+        ? selected
+              ? palette.text.withValues(alpha: 0.82)
+              : colors.text.secondary
+        : colors.text.secondary.withValues(alpha: 0.48);
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadii.small),
-      onTap: onTap,
+      onTap: enabled ? onTap : null,
       child: Container(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.sm,
           vertical: AppSpacing.xs,
         ),
         decoration: BoxDecoration(
-          color: selected
+          color: enabled && selected
               ? palette.background
               : colors.background.neutralSubtleOpacity,
           borderRadius: BorderRadius.circular(AppRadii.small),
           border: Border.all(
-            color: selected ? palette.border : colors.border.subtle,
+            color: enabled && selected ? palette.border : colors.border.subtle,
           ),
         ),
         child: Row(
@@ -1339,7 +1409,7 @@ class _OptionRow extends StatelessWidget {
                   Text(
                     option.label,
                     style: AppTypography.labelLarge.copyWith(
-                      color: selected ? palette.text : colors.text.accent,
+                      color: primaryTextColor,
                     ),
                   ),
                   if (description.isNotEmpty) ...[
@@ -1347,9 +1417,7 @@ class _OptionRow extends StatelessWidget {
                     Text(
                       description,
                       style: AppTypography.bodySmall.copyWith(
-                        color: selected
-                            ? palette.text.withValues(alpha: 0.82)
-                            : colors.text.secondary,
+                        color: secondaryTextColor,
                         height: 16 / 12,
                         letterSpacing: 0,
                       ),
@@ -1362,7 +1430,7 @@ class _OptionRow extends StatelessWidget {
             Text(
               selected ? 'Selected' : 'Choose',
               style: AppTypography.bodySmall.copyWith(
-                color: selected ? palette.text : colors.text.secondary,
+                color: enabled && selected ? palette.text : secondaryTextColor,
               ),
             ),
           ],

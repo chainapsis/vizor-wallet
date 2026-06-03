@@ -442,7 +442,9 @@ Future<VanWitness> generateVanWitness({
 /// Clear process-local vote-tree sync state for a wallet or round.
 ///
 /// Passing a non-empty round ID clears only that round's cached vote-tree sync
-/// state. Passing `None` or an empty round ID performs account-wide cleanup.
+/// state by calling `zcash_voting::precompute::reset_vote_tree(db, round_id)`.
+/// Passing `None` or an empty round ID performs account-wide cleanup with
+/// `zcash_voting::precompute::reset_vote_tree(db, "")`.
 ///
 /// This does not delete durable recovery rows or abort in-flight proof/vote
 /// work already running on worker threads.

@@ -17,6 +17,7 @@ import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
+import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
@@ -43,6 +44,7 @@ class _VotingSubmissionConfirmationScreenState
   bool _votingPowerRefreshAttempted = false;
   String? _votingPowerRefreshKey;
   BigInt? _refreshedVotingPowerZatoshi;
+  String? _votingPowerRefreshErrorMessage;
   String? _pollRefreshKey;
   Future<void>? _pollRefreshFuture;
   String? _returnErrorMessage;
@@ -80,9 +82,16 @@ class _VotingSubmissionConfirmationScreenState
                 final pollTitle = state.round?.title.isNotEmpty == true
                     ? state.round!.title
                     : 'Coinholder poll';
-                final confirmed = hasCompletedVoteForDisplay(state.roundPlan);
+                final hasCompletedSubmission = hasCompletedVoteForDisplay(
+                  state.roundPlan,
+                );
+                final hasConfirmedVotingEligibility =
+                    state.hasConfirmedVotingEligibility ||
+                    _refreshedVotingPowerZatoshi != null;
+                final confirmed =
+                    hasCompletedSubmission && hasConfirmedVotingEligibility;
                 _maybeRefreshVotingPower(
-                  confirmed: confirmed,
+                  confirmed: hasCompletedSubmission,
                   state: state,
                   jobKey: jobKey,
                 );
@@ -91,13 +100,27 @@ class _VotingSubmissionConfirmationScreenState
                   state: state,
                   jobKey: jobKey,
                 );
-                if (!hasCompletedVoteForDisplay(state.roundPlan)) {
+                if (!hasCompletedSubmission) {
                   return _ConfirmationScaffold(
                     confirmed: false,
                     title: 'Submission not complete',
                     pollTitle: pollTitle,
                     message:
                         'This account has not completed submission for this poll.',
+                    votingPower: 'Not available',
+                    doneLabel: 'Done',
+                  );
+                }
+                if (!hasConfirmedVotingEligibility) {
+                  return _ConfirmationScaffold(
+                    confirmed: false,
+                    title: 'Submission not complete',
+                    pollTitle: pollTitle,
+                    message:
+                        _votingPowerRefreshErrorMessage ??
+                        (_refreshingVotingPower
+                            ? 'Checking voting eligibility for this account.'
+                            : 'Voting eligibility has not been confirmed for this account.'),
                     votingPower: 'Not available',
                     doneLabel: 'Done',
                   );
@@ -167,6 +190,7 @@ class _VotingSubmissionConfirmationScreenState
       _refreshingVotingPower = false;
       _votingPowerRefreshAttempted = false;
       _refreshedVotingPowerZatoshi = null;
+      _votingPowerRefreshErrorMessage = null;
     }
     if (!confirmed || _refreshingVotingPower || _votingPowerRefreshAttempted) {
       return;
@@ -239,17 +263,24 @@ class _VotingSubmissionConfirmationScreenState
       if (!mounted || _votingPowerRefreshKey != key) return;
       setState(() {
         _refreshedVotingPowerZatoshi = refreshed;
+        _votingPowerRefreshErrorMessage = null;
       });
     } catch (error) {
       debugPrint(
         '[zcash] Voting: confirmation voting power refresh failed '
         'round=${widget.roundId} account=${state.accountUuid} error=$error',
       );
+      if (mounted && _votingPowerRefreshKey == key) {
+        setState(() {
+          _votingPowerRefreshErrorMessage = friendlyVotingErrorText('$error');
+        });
+      }
     } finally {
-      if (!mounted || _votingPowerRefreshKey != key) return;
-      setState(() {
-        _refreshingVotingPower = false;
-      });
+      if (mounted && _votingPowerRefreshKey == key) {
+        setState(() {
+          _refreshingVotingPower = false;
+        });
+      }
     }
   }
 }

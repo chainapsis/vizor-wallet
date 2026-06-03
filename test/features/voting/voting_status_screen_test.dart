@@ -219,6 +219,138 @@ void main() {
     expect(find.text('Retry'), findsOneWidget);
   });
 
+  testWidgets('status screen explains minimum voting eligibility failure', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      rust: _MinimumVotingEligibilityRustApi(),
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+    );
+    addTearDown(container.dispose);
+    container.read(votingDraftProvider(_draftKey).notifier).setChoice(1, 0);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _statusHarness()),
+    );
+    await tester.pumpAndSettle();
+
+    const message =
+        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
+        'at snapshot block 3,359,740. Switch to an eligible account to vote.';
+    await _pumpUntilFound(tester, find.text(message));
+
+    expect(find.text(message), findsOneWidget);
+    expect(find.text('Voting failed.'), findsNothing);
+    expect(find.text('Retry'), findsOneWidget);
+  });
+
+  testWidgets('status screen revalidates eligibility before cast recovery', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..state = _recoveryState(
+        delegationWorkflows: const [
+          rust_frb_types.DelegationRecoveryView(
+            bundleIndex: 0,
+            phase: VotingWorkflowPhase.confirmed,
+            txHash: 'delegation-0',
+            vanLeafPosition: 0,
+          ),
+        ],
+      )
+      ..roundPlan = apiRoundPlan(
+        roundId: _roundId,
+        pendingRecovery: true,
+        nextSteps: const [
+          rust_wire.NextStepView(
+            kind: 'cast_vote',
+            bundleIndex: 0,
+            proposalId: 1,
+            choice: 0,
+            shareIndex: 0,
+          ),
+        ],
+        openProposals: Uint32List.fromList([1]),
+        allDecided: false,
+      );
+    final rust = _MinimumVotingEligibilityRustApi(recoveryApi);
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: rust,
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+    );
+    addTearDown(container.dispose);
+    container.read(votingDraftProvider(_draftKey).notifier).setChoice(1, 0);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _statusHarness()),
+    );
+    await tester.pumpAndSettle();
+
+    const message =
+        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
+        'at snapshot block 3,359,740. Switch to an eligible account to vote.';
+    await _pumpUntilFound(tester, find.text(message));
+
+    expect(find.text(message), findsOneWidget);
+    expect(rust.setupDelegationBundleCalls, 1);
+    expect(rust.voteCommitmentCalls, 0);
+  });
+
+  testWidgets('status screen revalidates eligibility before completion', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..roundPlan = apiRoundPlan(
+        roundId: _roundId,
+        pendingRecovery: false,
+        nextSteps: const [],
+        openProposals: Uint32List(0),
+        allDecided: true,
+        completedVoteArtifact: true,
+        completedForDisplay: true,
+      );
+    final rust = _MinimumVotingEligibilityRustApi(recoveryApi);
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: rust,
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _statusHarness()),
+    );
+    await tester.pumpAndSettle();
+
+    const message =
+        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
+        'at snapshot block 3,359,740. Switch to an eligible account to vote.';
+    await _pumpUntilFound(tester, find.text(message));
+
+    expect(find.text(message), findsOneWidget);
+    expect(find.text('submission confirmed route'), findsNothing);
+    expect(rust.setupDelegationBundleCalls, 1);
+  });
+
   testWidgets('status screen retry keeps setup errors specific', (
     tester,
   ) async {
@@ -282,6 +414,57 @@ void main() {
     );
   });
 
+  testWidgets('submitted route does not confirm without eligibility', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final completedRoundPlan = apiRoundPlan(
+      roundId: _roundId,
+      pendingRecovery: false,
+      nextSteps: const [],
+      openProposals: Uint32List(0),
+      allDecided: true,
+      completedVoteArtifact: true,
+      completedForDisplay: true,
+    );
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      overrides: [
+        votingSessionProvider(_roundId).overrideWith(
+          () => _FailingEligibilityVotingSessionNotifier(
+            VotingSessionState(
+              roundId: _roundId,
+              accountUuid: 'account-1',
+              phase: VotingSessionPhase.done,
+              roundPlan: completedRoundPlan,
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _submissionHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    const message =
+        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
+        'at snapshot block 3,359,740. Switch to an eligible account to vote.';
+    await _pumpUntilFound(tester, find.text(message));
+
+    expect(find.text(message), findsOneWidget);
+    expect(find.text('Submission confirmed!'), findsNothing);
+  });
+
   testWidgets(
     'submitted route refreshes poll rows before returning to vote menu',
     (tester) async {
@@ -316,6 +499,7 @@ void main() {
                 accountUuid: 'account-1',
                 phase: VotingSessionPhase.done,
                 roundPlan: completedRoundPlan,
+                eligibleWeightZatoshi: BigInt.from(100),
               ),
             ),
           ),
@@ -349,7 +533,6 @@ void main() {
           child: _submissionHarness(votingRoute: const VotingPollsScreen()),
         ),
       );
-      await tester.pumpAndSettle();
       await _pumpUntilFound(tester, find.text('Submission confirmed!'));
 
       await tester.tap(find.text('Done'));
@@ -791,7 +974,7 @@ void main() {
     expect(find.text('submission confirmed route'), findsOne);
     expect(find.text('Sign bundle 1 of 1'), findsNothing);
     expect(find.text('Scan signature'), findsNothing);
-    expect(rust.setupDelegationBundleCalls, 0);
+    expect(rust.setupDelegationBundleCalls, 2);
     expect(rust.keystoneDelegationRequestCalls, 0);
     expect(recoveryApi.ballotIntents, isEmpty);
   });
@@ -893,7 +1076,7 @@ void main() {
     expect(find.text('submission confirmed route'), findsOne);
     expect(find.text('Sign bundle 1 of 1'), findsNothing);
     expect(find.text('Scan signature'), findsNothing);
-    expect(rust.setupDelegationBundleCalls, 0);
+    expect(rust.setupDelegationBundleCalls, 2);
     expect(rust.keystoneDelegationRequestCalls, 0);
     expect(
       http.requests.any(
@@ -1273,6 +1456,184 @@ void main() {
 
     expect(find.text('Voting power unavailable'), findsOneWidget);
     expect(find.text('Preparing voting power'), findsNothing);
+  });
+
+  testWidgets('proposal detail hides option labels when eligibility fails', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _MinimumVotingEligibilityRustApi(recoveryApi),
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    const message =
+        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
+        'at snapshot block 3,359,740. Switch to an eligible account to vote.';
+    await _pumpUntilFound(tester, find.text(message));
+
+    expect(find.text(message), findsOneWidget);
+    expect(find.text('First proposal'), findsOneWidget);
+    expect(find.text('Yes'), findsNothing);
+    expect(find.text('No'), findsNothing);
+    expect(find.text('Review answers'), findsOneWidget);
+  });
+
+  testWidgets('proposal detail hides completed vote when eligibility fails', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..roundPlan = apiRoundPlan(
+        roundId: _roundId,
+        pendingRecovery: false,
+        nextSteps: const [],
+        openProposals: Uint32List.fromList(const [1]),
+        allDecided: true,
+        completedVoteArtifact: true,
+        completedForDisplay: true,
+        completedVoteDisplay: rust_wire.CompletedVoteDisplayView(
+          choices: const [
+            rust_wire.CompletedVoteChoiceView(proposalId: 1, choice: 0),
+          ],
+          votedAt: BigInt.from(1717260000),
+        ),
+      );
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _MinimumVotingEligibilityRustApi(recoveryApi),
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    const message =
+        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
+        'at snapshot block 3,359,740. Switch to an eligible account to vote.';
+    await _pumpUntilFound(tester, find.text(message));
+
+    expect(find.text(message), findsOneWidget);
+    expect(find.textContaining('Voted'), findsNothing);
+    expect(find.text('Yes'), findsNothing);
+    expect(find.text('No'), findsNothing);
+  });
+
+  testWidgets('proposal detail hides pending recovery when eligibility fails', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..roundPlan = apiRoundPlan(
+        roundId: _roundId,
+        pendingRecovery: true,
+        nextSteps: const [
+          rust_wire.NextStepView(
+            kind: 'cast_vote',
+            bundleIndex: 0,
+            proposalId: 1,
+            choice: 0,
+            shareIndex: 0,
+          ),
+        ],
+        openProposals: Uint32List.fromList([1]),
+        allDecided: false,
+        completedVoteArtifact: true,
+      );
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _MinimumVotingEligibilityRustApi(recoveryApi),
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    const message =
+        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
+        'at snapshot block 3,359,740. Switch to an eligible account to vote.';
+    await _pumpUntilFound(tester, find.text(message));
+
+    expect(find.text(message), findsOneWidget);
+    expect(find.text('Vote in progress'), findsNothing);
+    expect(find.text('Continue voting'), findsNothing);
+    expect(find.text('Yes'), findsNothing);
+    expect(find.text('No'), findsNothing);
+  });
+
+  testWidgets('review hides stale choices when eligibility fails', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _MinimumVotingEligibilityRustApi(recoveryApi),
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+    );
+    addTearDown(container.dispose);
+    container.read(votingDraftProvider(_draftKey).notifier).setChoice(1, 0);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(
+          initialLocation: '/voting/poll/$_roundId/review',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    const message =
+        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
+        'at snapshot block 3,359,740. Switch to an eligible account to vote.';
+    await _pumpUntilFound(tester, find.text(message));
+
+    expect(find.text(message), findsOneWidget);
+    expect(find.text('Yes'), findsNothing);
   });
 
   testWidgets('results screen renders flat tally rows as ZEC totals', (
@@ -3085,6 +3446,23 @@ class _StaticVotingSessionNotifier extends VotingSessionNotifier {
 
   @override
   Future<VotingSessionState> build() async => _state;
+
+  @override
+  Future<BigInt?> refreshEligibleWeight() async => _state.eligibleWeightZatoshi;
+}
+
+class _FailingEligibilityVotingSessionNotifier
+    extends _StaticVotingSessionNotifier {
+  _FailingEligibilityVotingSessionNotifier(super.state);
+
+  @override
+  Future<BigInt?> refreshEligibleWeight() async {
+    throw Exception(
+      'Invalid input: minimum voting eligibility requires at least 5 eligible '
+      'notes and 12500000 zatoshi voting weight; selected 2 distinct eligible '
+      'notes with 25000000 zatoshi voting weight at snapshot height 3359740',
+    );
+  }
 }
 
 class _CountingVotingConfigNotifier extends VotingConfigNotifier {
@@ -3187,6 +3565,23 @@ class _FailingVotingPowerRustApi extends _NoopVotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
   }) async {
     throw StateError('snapshot setup unavailable');
+  }
+}
+
+class _MinimumVotingEligibilityRustApi extends _VotingStatusRustApi {
+  _MinimumVotingEligibilityRustApi([_MutableVotingRecoveryApi? recoveryApi])
+    : super(recoveryApi ?? _MutableVotingRecoveryApi());
+
+  @override
+  Future<rust_round.BundleLayout> setupDelegationBundles({
+    required rust_api.ApiVotingRoundContext ctx,
+  }) async {
+    setupDelegationBundleCalls++;
+    throw Exception(
+      'Invalid input: minimum voting eligibility requires at least 5 eligible '
+      'notes and 12500000 zatoshi voting weight; selected 2 distinct eligible '
+      'notes with 25000000 zatoshi voting weight at snapshot height 3359740',
+    );
   }
 }
 
@@ -3342,6 +3737,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
   int setupDelegationBundleCalls = 0;
   int keystoneDelegationRequestCalls = 0;
+  int voteCommitmentCalls = 0;
 
   @override
   Future<rust_round.BundleLayout> setupDelegationBundles({
@@ -3637,6 +4033,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required rust_vote.VanWitness vanWitness,
     required List<rust_wire.DraftVote> draftVotes,
   }) async* {
+    voteCommitmentCalls++;
     for (final draft in draftVotes) {
       yield rust_api.ApiVoteCommitEvent(
         phase: 'result',

@@ -1479,6 +1479,21 @@ mod tests {
     use zcash_voting::prelude::{TxEvent, TxEventAttribute};
     use zcash_voting::BundlePolicy;
 
+    fn distinct_test_notes(count: usize) -> Vec<zcash_voting::NoteInfo> {
+        (0..count)
+            .map(|index| {
+                let mut note = test_note_info(index as u64);
+                note.commitment[0] = 0x10 + index as u8;
+                note.nullifier[0] = 0x20 + index as u8;
+                note
+            })
+            .collect()
+    }
+
+    fn minimum_eligible_test_notes() -> Vec<zcash_voting::NoteInfo> {
+        distinct_test_notes(zcash_voting::BUNDLE_NOTE_SLOTS)
+    }
+
     fn b64(bytes: impl AsRef<[u8]>) -> String {
         base64::engine::general_purpose::STANDARD.encode(bytes)
     }
@@ -2149,7 +2164,7 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), "wallet-api-bundles").unwrap();
         db.init_round(&test_api_round_params(), None).unwrap();
-        let notes: Vec<_> = (0..6).map(test_note_info).collect();
+        let notes = distinct_test_notes(6);
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
 
         assert_eq!(
@@ -2361,8 +2376,9 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
         db.init_round(&test_api_round_params(), None).unwrap();
-        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-        seed_recovery_vote(&db, TEST_ACCOUNT_UUID, 0, 7, 1, 88);
+        let notes = minimum_eligible_test_notes();
+        db.ensure_bundles(ROUND_ID, &notes).unwrap();
+        seed_recovery_vote(&db, 0, 7, 1, 88, &notes);
 
         let recovered = recover_vote_commitment(
             db_path.to_str().unwrap().to_string(),
@@ -2385,22 +2401,12 @@ mod tests {
         let account_uuid = "wallet-api-recovery";
         let db = db::open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap();
         db.init_round(&test_api_round_params(), None).unwrap();
-        let notes: Vec<_> = (0..6).map(test_note_info).collect();
+        let notes = distinct_test_notes(6);
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
         db.store_delegation_tx_hash(ROUND_ID, 0, "delegation-tx-0")
             .unwrap();
-        let conn = db.conn();
-        zcash_voting::storage::queries::store_vote(
-            &conn,
-            ROUND_ID,
-            account_uuid,
-            1,
-            2,
-            1,
-            b"vote-1",
-        )
-        .unwrap();
-        drop(conn);
+        let recovery = test_vote_recovery_bundle(1, 2, 1, 99);
+        zcash_voting::vote::insert_recovery_fixture(&db, &recovery, &notes).unwrap();
         mark_vote_submitted(
             db_path.to_str().unwrap().to_string(),
             account_uuid.to_string(),
@@ -2410,23 +2416,6 @@ mod tests {
             "vote-tx-1-2".to_string(),
         )
         .unwrap();
-        {
-            let conn = db.conn();
-            conn.execute(
-                "UPDATE votes SET commitment_bundle_json = :json, vc_tree_position = :pos
-                 WHERE round_id = :round_id AND wallet_id = :wallet_id
-                   AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
-                rusqlite::named_params! {
-                    ":json": test_vote_recovery_json(1, 2, 1, 99),
-                    ":pos": 99i64,
-                    ":round_id": ROUND_ID,
-                    ":wallet_id": account_uuid,
-                    ":bundle_index": 1i64,
-                    ":proposal_id": 2i64,
-                },
-            )
-            .unwrap();
-        }
         record_share_delegation(
             db_path.to_str().unwrap().to_string(),
             account_uuid.to_string(),
@@ -2627,8 +2616,9 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
         db.init_round(&test_api_round_params(), None).unwrap();
-        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-        seed_recovery_vote(&db, TEST_ACCOUNT_UUID, 0, 7, 1, 88);
+        let notes = minimum_eligible_test_notes();
+        db.ensure_bundles(ROUND_ID, &notes).unwrap();
+        seed_recovery_vote(&db, 0, 7, 1, 88, &notes);
 
         let delegation = confirm_delegation_submission(
             db_path.to_str().unwrap().to_string(),
@@ -2736,13 +2726,13 @@ mod tests {
         assert!(err.contains("Voting hotkey reconstruction failed"));
     }
 
-    fn test_vote_recovery_json(
+    fn test_vote_recovery_bundle(
         bundle_index: u32,
         proposal_id: u32,
         vote_decision: u32,
         vc_tree_position: u64,
-    ) -> String {
-        zcash_voting::vote::serialize_recovery(&zcash_voting::vote::VoteRecoveryBundle {
+    ) -> zcash_voting::vote::VoteRecoveryBundle {
+        zcash_voting::vote::VoteRecoveryBundle {
             vote_round_id: ROUND_ID.to_string(),
             bundle_index,
             proposal_id,
@@ -2768,52 +2758,20 @@ mod tests {
             }],
             share_blinds: vec![[12u8; 32]],
             share_comms: vec![[13u8; 32]],
-        })
-        .unwrap()
+        }
     }
 
     fn seed_recovery_vote(
         db: &zcash_voting::storage::VotingDb,
-        account_uuid: &str,
         bundle_index: u32,
         proposal_id: u32,
         vote_decision: u32,
         vc_tree_position: u64,
+        notes: &[zcash_voting::NoteInfo],
     ) {
-        let recovery_json =
-            test_vote_recovery_json(bundle_index, proposal_id, vote_decision, vc_tree_position);
-        let recovery = zcash_voting::vote::parse_recovery(&recovery_json).unwrap();
-        let commitment_bytes = serde_json::to_vec(&serde_json::json!({
-            "van_nullifier": hex::encode(recovery.van_nullifier),
-            "vote_authority_note_new": hex::encode(recovery.vote_authority_note_new),
-            "vote_commitment": hex::encode(recovery.vote_commitment),
-            "proof": hex::encode(recovery.proof),
-        }))
-        .unwrap();
-        zcash_voting::storage::queries::store_vote(
-            &db.conn(),
-            ROUND_ID,
-            account_uuid,
-            bundle_index,
-            proposal_id,
-            vote_decision,
-            &commitment_bytes,
-        )
-        .unwrap();
-        db.conn()
-            .execute(
-                "UPDATE votes SET commitment_bundle_json = :json
-                 WHERE round_id = :round_id AND wallet_id = :wallet_id
-                   AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
-                rusqlite::named_params! {
-                    ":json": recovery_json,
-                    ":round_id": ROUND_ID,
-                    ":wallet_id": account_uuid,
-                    ":bundle_index": i64::from(bundle_index),
-                    ":proposal_id": i64::from(proposal_id),
-                },
-            )
-            .unwrap();
+        let recovery =
+            test_vote_recovery_bundle(bundle_index, proposal_id, vote_decision, vc_tree_position);
+        zcash_voting::vote::insert_recovery_fixture(db, &recovery, notes).unwrap();
     }
 
     fn test_tree_state(height: u64) -> TreeState {

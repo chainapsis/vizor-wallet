@@ -418,7 +418,37 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         return;
       }
 
-      final activeSession = afterWalletSync ?? loadedSession;
+      var activeSession = afterWalletSync ?? loadedSession;
+      if (!activeSession.hasConfirmedVotingEligibility &&
+          _hasCompletedSubmissionArtifacts(activeSession)) {
+        await sessionNotifier.ensureVotingEligibility();
+        if (!_isCurrentJob(key: key, generation: generation)) return;
+        final afterEligibilityCheck = _sessionForJob(key);
+        if (afterEligibilityCheck?.phase == VotingSessionPhase.error) {
+          _failFromSession(
+            key: key,
+            generation: generation,
+            session: afterEligibilityCheck!,
+          );
+          return;
+        }
+        activeSession = afterEligibilityCheck ?? activeSession;
+      }
+      if (!draft.isEmpty && _sessionNeedsDelegation(activeSession)) {
+        await sessionNotifier.prepareDelegation();
+        if (!_isCurrentJob(key: key, generation: generation)) return;
+        final afterEligibilityCheck = _sessionForJob(key);
+        if (afterEligibilityCheck?.phase == VotingSessionPhase.error) {
+          _failFromSession(
+            key: key,
+            generation: generation,
+            session: afterEligibilityCheck!,
+          );
+          return;
+        }
+        activeSession = afterEligibilityCheck ?? activeSession;
+      }
+
       if (_canCompleteSessionWithoutDraft(activeSession, draft)) {
         _completeJob(key: key, generation: generation);
         return;
@@ -441,6 +471,22 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       final canPollDelegationWithoutDraft = _canPollDelegationWithoutDraft(
         activeSession,
       );
+      if ((draftVotes.isNotEmpty ||
+              _hasRemainingVoteOrShareWork(activeSession)) &&
+          !activeSession.hasConfirmedVotingEligibility) {
+        await sessionNotifier.ensureVotingEligibility();
+        if (!_isCurrentJob(key: key, generation: generation)) return;
+        final afterEligibilityCheck = _sessionForJob(key);
+        if (afterEligibilityCheck?.phase == VotingSessionPhase.error) {
+          _failFromSession(
+            key: key,
+            generation: generation,
+            session: afterEligibilityCheck!,
+          );
+          return;
+        }
+        activeSession = afterEligibilityCheck ?? activeSession;
+      }
       final needsDelegation = _sessionNeedsDelegation(activeSession);
       final needsDelegationSubmission = _sessionNeedsDelegationSubmission(
         activeSession,
@@ -698,7 +744,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     VotingSessionState? initialSession,
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
-    final votePollingSession = _sessionForJob(key) ?? initialSession;
+    var votePollingSession = _sessionForJob(key) ?? initialSession;
     if (draftVotes.isEmpty &&
         (votePollingSession == null ||
             !_canRecoverWithoutDraft(votePollingSession))) {
@@ -708,6 +754,25 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         message: 'Choose at least one vote before submitting.',
       );
       return;
+    }
+    final hasVoteOrShareWork =
+        draftVotes.isNotEmpty ||
+        (votePollingSession != null &&
+            _hasRemainingVoteOrShareWork(votePollingSession));
+    if (hasVoteOrShareWork &&
+        !(votePollingSession?.hasConfirmedVotingEligibility ?? false)) {
+      await sessionNotifier.ensureVotingEligibility();
+      if (!_isCurrentJob(key: key, generation: generation)) return;
+      final afterEligibilityCheck = _sessionForJob(key);
+      if (afterEligibilityCheck?.phase == VotingSessionPhase.error) {
+        _failFromSession(
+          key: key,
+          generation: generation,
+          session: afterEligibilityCheck!,
+        );
+        return;
+      }
+      votePollingSession = afterEligibilityCheck ?? votePollingSession;
     }
     if (draftVotes.isNotEmpty || _sessionNeedsVotePolling(votePollingSession)) {
       await sessionNotifier.castVotes(
@@ -890,6 +955,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }
 
   bool _canCompleteSubmission(VotingSessionState? session) {
+    if (session == null) return false;
+    return session.hasConfirmedVotingEligibility &&
+        _hasCompletedSubmissionArtifacts(session);
+  }
+
+  bool _hasCompletedSubmissionArtifacts(VotingSessionState? session) {
     if (session == null) return false;
     return hasCompletedVoteForDisplay(session.roundPlan) &&
         !_hasRemainingVoteOrShareWork(session);
