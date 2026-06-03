@@ -501,6 +501,64 @@ void main() {
     expect(confirmation?.events.single['attributes'].single['value'], '3');
   });
 
+  test(
+    'tries tx confirmation fallbacks before returning null on 404',
+    () async {
+      final primary = Uri.parse('https://vote-primary.example');
+      final secondary = Uri.parse('https://vote-secondary.example');
+      final http = FakeVotingHttpClient(
+        responses: {
+          'https://vote-primary.example/shielded-vote/v1/tx/delegation-tx':
+              jsonResponse({'error': 'not found'}, statusCode: 404),
+          'https://vote-secondary.example/shielded-vote/v1/tx/delegation-tx': {
+            'height': '12',
+            'code': 0,
+            'log': '',
+            'events': const [],
+          },
+        },
+      );
+      final client = VotingApiClient(
+        baseUrl: primary,
+        fallbackBaseUrls: [secondary],
+        httpClient: http,
+        delay: (_) async {},
+      );
+
+      final confirmation = await client.getTxConfirmation('delegation-tx');
+
+      expect(confirmation?.height, 12);
+      expect(http.requests.map((request) => request.uri.host), [
+        'vote-primary.example',
+        'vote-secondary.example',
+      ]);
+
+      final missingHttp = FakeVotingHttpClient(
+        responses: {
+          'https://vote-primary.example/shielded-vote/v1/tx/missing-tx':
+              jsonResponse({'error': 'not found'}, statusCode: 404),
+          'https://vote-secondary.example/shielded-vote/v1/tx/missing-tx':
+              jsonResponse({'error': 'not found'}, statusCode: 404),
+        },
+      );
+      final missingClient = VotingApiClient(
+        baseUrl: primary,
+        fallbackBaseUrls: [secondary],
+        httpClient: missingHttp,
+        delay: (_) async {},
+      );
+
+      await expectLater(
+        missingClient.getTxConfirmation('missing-tx'),
+        completion(isNull),
+      );
+      expect(missingHttp.requests.map((request) => request.uri.host), [
+        'vote-primary.example',
+        'vote-secondary.example',
+      ]);
+    },
+  );
+
   test('rejects malformed transaction confirmation bodies', () async {
     final client = VotingApiClient(
       baseUrl: Uri.parse('https://voting.valargroup.org'),

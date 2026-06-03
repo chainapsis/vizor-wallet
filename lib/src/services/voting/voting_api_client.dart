@@ -240,6 +240,7 @@ class VotingApiClient {
           },
         );
       },
+      shouldTryNextCandidate: (response) => response.statusCode == 404,
     );
     if (response.statusCode == 404) return null;
     return VotingTxConfirmation.fromJson(
@@ -384,13 +385,19 @@ class VotingApiClient {
   Future<T> _withVoteServerFailover<T>({
     required VotingRetryPolicy policy,
     required Future<T> Function(Uri baseUrl) operation,
+    bool Function(T result)? shouldTryNextCandidate,
   }) async {
     final candidates = [_baseUrl, ..._fallbackBaseUrls];
     Object? lastError;
     for (var attempt = 0; attempt < candidates.length; attempt++) {
       final baseUrl = candidates[attempt];
       try {
-        return await operation(baseUrl);
+        final result = await operation(baseUrl);
+        if (attempt < candidates.length - 1 &&
+            (shouldTryNextCandidate?.call(result) ?? false)) {
+          continue;
+        }
+        return result;
       } catch (error) {
         lastError = error;
         if (attempt == candidates.length - 1 || !policy.shouldRetry(error)) {
