@@ -2510,6 +2510,51 @@ void main() {
   );
 
   test(
+    'submission job revalidates completed session after draft load failure',
+    () async {
+      final rust = FakeVotingRustApi();
+      final completedPlan = apiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: false,
+        nextSteps: const [],
+        openProposals: Uint32List(0),
+        allDecided: true,
+        completedVoteArtifact: true,
+        completedForDisplay: true,
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(bundleCount: 1),
+        roundPlanSequence: [completedPlan, completedPlan],
+      );
+      final draftPersistence = FakeVotingDraftPersistence()
+        ..loadError = StateError('draft load failed');
+      final container = _sessionContainer(
+        rust: rust,
+        recoveryApi: recoveryApi,
+        draftPersistence: draftPersistence,
+        txConfirmationPolling: _fastTxConfirmationPolling,
+      );
+      addTearDown(container.dispose);
+
+      final startedKey = await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(
+        startedKey,
+        const VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1'),
+      );
+      final completed = await _waitForJobStatus(
+        container,
+        startedKey!,
+        VotingSubmissionJobStatus.complete,
+      );
+
+      expect(completed.errorMessage, isNull);
+      expect(rust.setupCalls, 1);
+    },
+  );
+
+  test(
     'submitted delegation recovery continues pending share recovery',
     () async {
       final shareNullifier = Uint8List.fromList(List.filled(32, 1));
@@ -5613,9 +5658,12 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
 class FakeVotingDraftPersistence implements VotingDraftPersistence {
   final _stored = <VotingSessionKey, VotingDraftState>{};
   final _deletedAccountUuids = <String>{};
+  Object? loadError;
 
   @override
   Future<VotingDraftState> load(VotingSessionKey key) async {
+    final error = loadError;
+    if (error != null) throw error;
     return _stored[key] ?? const VotingDraftState();
   }
 

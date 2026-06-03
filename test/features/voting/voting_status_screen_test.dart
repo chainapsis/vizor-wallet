@@ -1653,7 +1653,10 @@ void main() {
 
     expect(find.text(message), findsOneWidget);
     expect(find.text('Yes'), findsNothing);
-    expect(find.text('Confirm & submit'), findsOneWidget);
+    final submitButton = tester.widget<AppButton>(
+      find.widgetWithText(AppButton, 'Confirm & submit'),
+    );
+    expect(submitButton.onPressed, isNull);
   });
 
   testWidgets('results screen renders flat tally rows as ZEC totals', (

@@ -391,7 +391,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
             .ensureLoaded();
       } catch (_) {
         if (!_isCurrentJob(key: key, generation: generation)) return;
-        if (_canCompleteSessionAfterDraftLoadFailure(loadedSession)) {
+        final activeSession = await _ensureEligibilityForCompletedSession(
+          key: key,
+          generation: generation,
+          sessionNotifier: sessionNotifier,
+          session: loadedSession,
+        );
+        if (activeSession == null) return;
+        if (_canCompleteSessionAfterDraftLoadFailure(activeSession)) {
           _completeJob(key: key, generation: generation);
           return;
         }
@@ -419,21 +426,15 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
 
       var activeSession = afterWalletSync ?? loadedSession;
-      if (!activeSession.hasConfirmedVotingEligibility &&
-          _hasCompletedSubmissionArtifacts(activeSession)) {
-        await sessionNotifier.ensureVotingEligibility();
-        if (!_isCurrentJob(key: key, generation: generation)) return;
-        final afterEligibilityCheck = _sessionForJob(key);
-        if (afterEligibilityCheck?.phase == VotingSessionPhase.error) {
-          _failFromSession(
+      final completedEligibilitySession =
+          await _ensureEligibilityForCompletedSession(
             key: key,
             generation: generation,
-            session: afterEligibilityCheck!,
+            sessionNotifier: sessionNotifier,
+            session: activeSession,
           );
-          return;
-        }
-        activeSession = afterEligibilityCheck ?? activeSession;
-      }
+      if (completedEligibilitySession == null) return;
+      activeSession = completedEligibilitySession;
       if (!draft.isEmpty && _sessionNeedsDelegation(activeSession)) {
         await sessionNotifier.prepareDelegation();
         if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -958,6 +959,30 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (session == null) return false;
     return session.hasConfirmedVotingEligibility &&
         _hasCompletedSubmissionArtifacts(session);
+  }
+
+  Future<VotingSessionState?> _ensureEligibilityForCompletedSession({
+    required VotingSessionKey key,
+    required int generation,
+    required VotingSessionNotifier sessionNotifier,
+    required VotingSessionState session,
+  }) async {
+    if (session.hasConfirmedVotingEligibility ||
+        !_hasCompletedSubmissionArtifacts(session)) {
+      return session;
+    }
+    await sessionNotifier.ensureVotingEligibility();
+    if (!_isCurrentJob(key: key, generation: generation)) return null;
+    final afterEligibilityCheck = _sessionForJob(key);
+    if (afterEligibilityCheck?.phase == VotingSessionPhase.error) {
+      _failFromSession(
+        key: key,
+        generation: generation,
+        session: afterEligibilityCheck!,
+      );
+      return null;
+    }
+    return afterEligibilityCheck ?? session;
   }
 
   bool _hasCompletedSubmissionArtifacts(VotingSessionState? session) {
