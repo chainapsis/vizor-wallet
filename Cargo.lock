@@ -2298,7 +2298,7 @@ dependencies = [
 
 [[package]]
 name = "vote-commitment-tree"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "ff",
@@ -2316,7 +2316,7 @@ dependencies = [
 
 [[package]]
 name = "vote-commitment-tree-client"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "base64",
  "bytes",
@@ -2337,8 +2337,9 @@ dependencies = [
 
 [[package]]
 name = "voting-circuits"
-version = "0.7.0"
-source = "git+https://github.com/valargroup/voting-circuits.git?branch=codex%2Forchard-0.14-halo2-0.5#ca95582b528dcf028725e0c44cde2b167b923703"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37d8bd9964ce4aef9152a66ad8950af529de4bbbd875bfd9e5d95534abc50df9"
 dependencies = [
  "blake2b_simd",
  "ff",
@@ -2638,7 +2639,7 @@ dependencies = [
 
 [[package]]
 name = "zcash_voting"
-version = "0.10.2"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "blake2b_simd",

@@ -37,7 +37,7 @@ This workspace tracks the upstream Zcash crates directly:
 - **orchard 0.14** — Resolved from crates.io with the
   `unstable-voting-circuits` feature enabled for governance proof paths.
 
-- **voting-circuits 0.7** — Resolved from
+- **voting-circuits 0.8** — Resolved from
   [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits)
   for the Orchard-backed delegation and vote proof circuits.
 

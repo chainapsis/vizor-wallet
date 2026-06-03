@@ -1,6 +1,6 @@
 [package]
 name = "zcash_voting"
-version = "0.10.2"
+version = "0.11.0"
 edition = "2021"
 description = "Client-side library for Zcash shielded voting: ZKP delegation and vote-commitment proofs (Halo 2), ElGamal encryption, governance PCZT construction, Merkle witness generation, and SQLite round-state persistence."
 license = "MIT OR Apache-2.0"
@@ -84,8 +84,8 @@ hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "
 tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 
 # Vote commitment tree (VAN witness generation). Behind `client-tree-sync`.
-vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.3.1", optional = true }
-vote-commitment-tree-client = { path = "../vote-commitment-tree-client", version = "=0.5.1", features = ["http"], optional = true }
+vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.3.2", optional = true }
+vote-commitment-tree-client = { path = "../vote-commitment-tree-client", version = "=0.5.2", features = ["http"], optional = true }
 
 # Storage
 rusqlite = { version = "0.37", features = ["bundled"] }
@@ -100,7 +100,7 @@ thiserror = "2"
 # `Rho::from_nf_old`).
 subtle = "2.6"
 orchard = { version = "0.14", features = ["unstable-voting-circuits"] }
-voting-circuits = { git = "https://github.com/valargroup/voting-circuits.git", branch = "codex/orchard-0.14-halo2-0.5", version = "=0.7.0" }
+voting-circuits = "=0.8.0"
 nonempty = "0.11"
 zip32 = "0.2"
 incrementalmerkletree = "0.8"

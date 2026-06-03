@@ -6,7 +6,7 @@ Client-side library for integrating [Zcash shielded voting](https://github.com/v
 
 Wallets typically consume this through a language bridge:
 
-- **Rust wallets**: add `zcash_voting = "0.9"` to `Cargo.toml`.
+- **Rust wallets**: add `zcash_voting = "0.11"` to `Cargo.toml`.
 - **Mobile wallets**: expose the needed Rust APIs through the wallet SDK's FFI
   layer and keep platform-specific work, such as CSPRNG byte generation and
   HTTP submission, at the SDK boundary.
@@ -41,7 +41,7 @@ crate own the sampling and ordering policy.
 
 - **`orchard 0.14`** from crates.io, with the
   `unstable-voting-circuits` feature enabled for the governance proof paths.
-- **`voting-circuits 0.7`** for the delegation and vote proof circuits.
+- **`voting-circuits 0.8`** for the delegation and vote proof circuits.
 - **`vote-commitment-tree 0.3`** and **`vote-commitment-tree-client 0.5`** for
   vote commitment tree state and optional HTTP sync.
 - **`pczt`, `zcash_keys`, `zcash_primitives`, and `zcash_protocol`** from the
