@@ -248,6 +248,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     });
   }
 
+  Future<void> ensureVotingEligibility() {
+    return _enqueue(_ensureVotingEligibilityUnlocked);
+  }
+
   void clearVoteSubmissionProgressForJobStart() {
     final current = state.value;
     if (current == null) return;
@@ -1905,10 +1909,19 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return _enqueue(() async {
       _shareTrackingTimer?.cancel();
       _shareTrackingTimer = null;
-      final current = await future;
-      final context = await _loadContext(_roundId);
-      final plan = await _loadResumePlan(context);
-      final roundPlan = await _loadRoundPlan(context);
+      var current = await future;
+      var context = await _loadContext(_roundId);
+      var plan = await _loadResumePlan(context);
+      var roundPlan = await _loadRoundPlan(context);
+      if (plan.unconfirmedShareDelegations.isNotEmpty &&
+          !current.hasConfirmedVotingEligibility) {
+        await _ensureVotingEligibilityUnlocked();
+        current = await future;
+        if (!current.hasConfirmedVotingEligibility) return;
+        context = await _loadContext(_roundId);
+        plan = await _loadResumePlan(context);
+        roundPlan = await _loadRoundPlan(context);
+      }
       _setStateForContext(
         context,
         current.copyWith(
@@ -2588,21 +2601,82 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> _refreshEligibleWeightUnlocked() async {
     final current = await future;
     final context = await _loadContext(_roundId);
-    final bundleSetup = await ref
-        .read(votingRustApiProvider)
-        .setupDelegationBundles(ctx: _apiRoundContext(context));
-    final refreshedPlan = await _loadResumePlan(context);
-    final refreshedRoundPlan = await _loadRoundPlan(context);
-    final eligibleWeight = bundleSetup.eligibleWeight;
-    _setStateForContext(
-      context,
-      (state.value ?? current).copyWith(
+    await _waitUntilWalletReadyForVoting(context);
+    await _refreshVotingEligibilityState(current: current, context: context);
+  }
+
+  Future<void> _ensureVotingEligibilityUnlocked() async {
+    final current = await future;
+    if (current.hasConfirmedVotingEligibility) return;
+    final context = await _loadContext(_roundId);
+    await _waitUntilWalletReadyForVoting(context);
+    await _refreshVotingEligibilityState(current: current, context: context);
+  }
+
+  Future<void> _refreshVotingEligibilityState({
+    required VotingSessionState current,
+    required _VotingSessionContext context,
+  }) async {
+    try {
+      final eligibility = await ref
+          .read(votingRustApiProvider)
+          .checkVotingEligibility(ctx: _apiRoundContext(context));
+      final refreshedPlan = await _loadResumePlan(context);
+      final refreshedRoundPlan = await _loadRoundPlan(context);
+      final successPhase = current.phase == VotingSessionPhase.error
+          ? VotingSessionPhase.idle
+          : current.phase;
+      final base = (state.value ?? current).copyWith(
+        phase: eligibility.isEligible ? successPhase : VotingSessionPhase.error,
+        config: context.config,
+        round: context.round,
         resumePlan: refreshedPlan,
         roundPlan: refreshedRoundPlan,
-        eligibleWeightZatoshi: eligibleWeight,
+        eligibleWeightZatoshi: eligibility.eligibleWeightZatoshi,
         isHardwareAccount: context.isHardwareAccount,
-      ),
-    );
+        clearError: eligibility.isEligible,
+      );
+      _setStateForContext(
+        context,
+        eligibility.isEligible
+            ? base
+            : base.copyWith(
+                error: VotingSessionError(
+                  message: _minimumVotingEligibilityErrorMessage(
+                    eligibility: eligibility,
+                    snapshotHeight: context.round.snapshotHeight,
+                  ),
+                ),
+              ),
+      );
+    } catch (error) {
+      final message = friendlyVotingErrorMessage(error);
+      final eligibilityError = isVotingEligibilityErrorText(message);
+      _setStateForContext(
+        context,
+        (state.value ?? current).copyWith(
+          phase: VotingSessionPhase.error,
+          config: context.config,
+          round: context.round,
+          resumePlan: context.resumePlan,
+          roundPlan: context.roundPlan,
+          eligibleWeightZatoshi: eligibilityError ? BigInt.zero : null,
+          isHardwareAccount: context.isHardwareAccount,
+          error: VotingSessionError(message: message, cause: error),
+        ),
+      );
+    }
+  }
+
+  String _minimumVotingEligibilityErrorMessage({
+    required rust_api.ApiVotingEligibility eligibility,
+    required int snapshotHeight,
+  }) {
+    return 'minimum voting eligibility requires at least 5 eligible notes and '
+        '12500000 zatoshi voting weight; selected '
+        '${eligibility.distinctNoteCount} distinct eligible notes with '
+        '${eligibility.eligibleWeightZatoshi} zatoshi voting weight at '
+        'snapshot height $snapshotHeight';
   }
 
   Future<_VotingSessionContext> _loadContext(

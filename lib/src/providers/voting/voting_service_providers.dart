@@ -347,6 +347,10 @@ abstract interface class VotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
   });
 
+  Future<rust_api.ApiVotingEligibility> checkVotingEligibility({
+    required rust_api.ApiVotingRoundContext ctx,
+  });
+
   Future<rust_voting.DelegationPirPrecomputeResultView>
   precomputeDelegationPir({
     required rust_api.ApiVotingRoundContext ctx,
@@ -591,6 +595,13 @@ class FrbVotingRustApi implements VotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
   }) {
     return rust_api.setupDelegationBundles(ctx: ctx);
+  }
+
+  @override
+  Future<rust_api.ApiVotingEligibility> checkVotingEligibility({
+    required rust_api.ApiVotingRoundContext ctx,
+  }) {
+    return rust_api.checkVotingEligibility(ctx: ctx);
   }
 
   @override

@@ -14,7 +14,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 BigInt? lastMomentBufferSeconds({
@@ -192,6 +192,20 @@ Future<Uint8List> generateVotingHotkey({required String network}) =>
 Future<BundleLayout> setupDelegationBundles({
   required ApiVotingRoundContext ctx,
 }) => RustLib.instance.api.crateApiVotingSetupDelegationBundles(ctx: ctx);
+
+/// Check whether the account has enough selected notes to vote in this round.
+///
+/// This selects notes at the round snapshot height and returns the smart-bundle
+/// eligibility result without initializing round rows or persisting delegation
+/// bundles.
+///
+/// # Errors
+///
+/// Returns an error if bundle policy parsing, opening the sidecar DB, note
+/// selection, or eligibility calculation fails.
+Future<ApiVotingEligibility> checkVotingEligibility({
+  required ApiVotingRoundContext ctx,
+}) => RustLib.instance.api.crateApiVotingCheckVotingEligibility(ctx: ctx);
 
 /// Build delegation PCZT material and prefetch/cache PIR-backed IMT proofs.
 ///
@@ -798,6 +812,34 @@ class ApiVoteCommitEvent {
           bundleIndex == other.bundleIndex &&
           proofProgress == other.proofProgress &&
           commitments == other.commitments;
+}
+
+/// Read-only minimum voting eligibility status for one round/account.
+class ApiVotingEligibility {
+  final bool isEligible;
+  final int distinctNoteCount;
+  final BigInt eligibleWeightZatoshi;
+
+  const ApiVotingEligibility({
+    required this.isEligible,
+    required this.distinctNoteCount,
+    required this.eligibleWeightZatoshi,
+  });
+
+  @override
+  int get hashCode =>
+      isEligible.hashCode ^
+      distinctNoteCount.hashCode ^
+      eligibleWeightZatoshi.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVotingEligibility &&
+          runtimeType == other.runtimeType &&
+          isEligible == other.isEligible &&
+          distinctNoteCount == other.distinctNoteCount &&
+          eligibleWeightZatoshi == other.eligibleWeightZatoshi;
 }
 
 /// Shared delegation/voting round context passed across the FRB boundary.

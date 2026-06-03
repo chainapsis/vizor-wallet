@@ -118,6 +118,14 @@ pub struct ApiVotingRoundContext {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// Read-only minimum voting eligibility status for one round/account.
+pub struct ApiVotingEligibility {
+    pub is_eligible: bool,
+    pub distinct_note_count: u32,
+    pub eligible_weight_zatoshi: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 /// Parsed fields from a Keystone-signed voting PCZT.
 pub struct ParsedSignedVotingPczt {
     /// ZIP-244 sighash extracted from the signed PCZT.
@@ -619,6 +627,40 @@ pub async fn setup_delegation_bundles(
         bundle_policy,
     )
     .await
+}
+
+/// Check whether the account has enough selected notes to vote in this round.
+///
+/// This selects notes at the round snapshot height and returns the smart-bundle
+/// eligibility result without initializing round rows or persisting delegation
+/// bundles.
+///
+/// # Errors
+///
+/// Returns an error if bundle policy parsing, opening the sidecar DB, note
+/// selection, or eligibility calculation fails.
+pub async fn check_voting_eligibility(
+    ctx: ApiVotingRoundContext,
+) -> Result<ApiVotingEligibility, String> {
+    let (voting_network, bundle_policy) =
+        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
+    let voting_db = db::open_voting_db(&ctx.db_path, &ctx.account_uuid)?;
+    let eligibility = delegation::check_voting_eligibility(
+        &voting_db,
+        &ctx.db_path,
+        &ctx.lightwalletd_url,
+        voting_network,
+        ctx.round_params.snapshot_height,
+        bundle_policy,
+    )
+    .await?;
+    let distinct_note_count = u32::try_from(eligibility.distinct_note_count)
+        .map_err(|_| "distinct note count does not fit in u32".to_string())?;
+    Ok(ApiVotingEligibility {
+        is_eligible: eligibility.is_eligible(),
+        distinct_note_count,
+        eligible_weight_zatoshi: eligibility.eligible_weight,
+    })
 }
 
 /// Build delegation PCZT material and prefetch/cache PIR-backed IMT proofs.
@@ -2904,8 +2946,8 @@ mod tests {
             output_index: commitment_tree_position as u32,
             value_zatoshi,
             voting_weight_zatoshi,
-            commitment: vec![0x01; 32],
-            nullifier: vec![0x02; 32],
+            commitment: vec![commitment_tree_position as u8; 32],
+            nullifier: vec![commitment_tree_position as u8 ^ 0xaa; 32],
             diversifier: vec![0x03; 11],
             rho: vec![0x04; 32],
             rseed: vec![0x05; 32],

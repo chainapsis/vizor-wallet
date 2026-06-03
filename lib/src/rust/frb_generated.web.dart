@@ -77,6 +77,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiVoteCommitEvent dco_decode_api_vote_commit_event(dynamic raw);
 
   @protected
+  ApiVotingEligibility dco_decode_api_voting_eligibility(dynamic raw);
+
+  @protected
   ApiVotingRoundContext dco_decode_api_voting_round_context(dynamic raw);
 
   @protected
@@ -560,6 +563,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiVoteCommitEvent sse_decode_api_vote_commit_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVotingEligibility sse_decode_api_voting_eligibility(
     SseDeserializer deserializer,
   );
 
@@ -1160,6 +1168,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_vote_commit_event(
     ApiVoteCommitEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_voting_eligibility(
+    ApiVotingEligibility self,
     SseSerializer serializer,
   );
 
