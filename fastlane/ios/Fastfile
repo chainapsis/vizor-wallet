@@ -1,0 +1,268 @@
+fastlane_version "2.220.0"
+
+default_platform(:ios)
+
+require "json"
+require "plist"
+require "tempfile"
+require_relative "../common/release"
+
+IOS_TEAM_ID = "SZTB68DXM4".freeze
+IOS_APP_IDENTIFIER = "com.keplr.vizor".freeze
+IOS_WIDGET_IDENTIFIER = "com.keplr.vizor.SyncWidget".freeze
+IOS_APP_IDENTIFIERS = [IOS_APP_IDENTIFIER, IOS_WIDGET_IDENTIFIER].freeze
+IOS_TARGET_BUNDLE_IDS = {
+  "Runner" => IOS_APP_IDENTIFIER,
+  "SyncWidgetExtension" => IOS_WIDGET_IDENTIFIER
+}.freeze
+
+def shell_escape(value)
+  VizorRelease.shell_escape(value)
+end
+
+def workspace_root
+  VizorRelease.workspace_root
+end
+
+def ios_release_tag
+  tag = ENV["RELEASE_TAG"].to_s.strip
+  return tag unless tag.empty?
+
+  ref_type = ENV.fetch("GITHUB_REF_TYPE")
+  UI.user_error!("RELEASE_TAG is required when GITHUB_REF_TYPE is not 'tag'") unless ref_type == "tag"
+  ENV.fetch("GITHUB_REF_NAME")
+end
+
+def ios_release_metadata
+  tag = ios_release_tag
+  tag_info = VizorRelease.release_tag_info(tag)
+
+  unless ENV["GITHUB_RELEASE_PRERELEASE"].to_s.strip.empty?
+    env_prerelease = VizorRelease.release_boolean_env("GITHUB_RELEASE_PRERELEASE")
+    UI.user_error!("GITHUB_RELEASE_PRERELEASE=#{env_prerelease} does not match release tag #{tag}") unless env_prerelease == tag_info.fetch(:is_prerelease)
+  end
+
+  {
+    tag: tag,
+    version: tag_info.fetch(:base_version),
+    asset_version: tag_info.fetch(:asset_version),
+    is_prerelease: tag_info.fetch(:is_prerelease),
+    build_number: VizorRelease.release_build_number,
+    ipa_dir: File.join(workspace_root, "build", "ios", "ipa")
+  }
+end
+
+def ios_project_path
+  File.join(workspace_root, "ios", "Runner.xcodeproj")
+end
+
+def ios_widget_info_plist_path
+  File.join(workspace_root, "ios", "SyncWidget", "Info.plist")
+end
+
+def ios_keychain_name
+  name = ENV["IOS_KEYCHAIN_NAME"].to_s.strip
+  name = ENV["MACOS_KEYCHAIN_NAME"].to_s.strip if name.empty?
+  name.empty? ? "fastlane-ios-signing.keychain-db" : name
+end
+
+def ios_keychain_password
+  password = ENV["IOS_KEYCHAIN_PASSWORD"].to_s
+  password = ENV["MACOS_KEYCHAIN_PASSWORD"].to_s if password.empty?
+  UI.user_error!("IOS_KEYCHAIN_PASSWORD or MACOS_KEYCHAIN_PASSWORD is required") if password.empty?
+  password
+end
+
+def ios_keychain_path
+  File.expand_path(File.join("~/Library/Keychains", ios_keychain_name))
+end
+
+def ios_match_readonly?
+  VizorRelease.release_boolean_env("MATCH_READONLY")
+end
+
+def ios_match_git_branch
+  branch = ENV["MATCH_GIT_BRANCH"].to_s.strip
+  branch.empty? ? "main" : branch
+end
+
+def setup_ios_signing_keychain
+  keychain_path = ios_keychain_path
+  if File.exist?(keychain_path)
+    UI.user_error!("Refusing to delete keychain directory #{keychain_path}") if File.directory?(keychain_path)
+    sh("security delete-keychain #{shell_escape(keychain_path)}")
+  end
+
+  create_keychain(
+    path: keychain_path,
+    password: ios_keychain_password,
+    default_keychain: true,
+    unlock: true,
+    timeout: 21600,
+    lock_when_sleeps: true,
+    lock_after_timeout: true,
+    add_to_search_list: true
+  )
+
+  {
+    name: ios_keychain_name,
+    path: keychain_path,
+    password: ios_keychain_password
+  }
+end
+
+def with_ios_app_store_connect_api_key_path(required: true)
+  raw_json = ENV["APP_STORE_CONNECT_API_KEY_JSON"].to_s
+  if raw_json.empty?
+    UI.user_error!("APP_STORE_CONNECT_API_KEY_JSON is required") if required
+    return yield(nil)
+  end
+
+  json = JSON.parse(raw_json)
+  Tempfile.create(["app-store-connect-api-key", ".json"]) do |file|
+    file.write(JSON.pretty_generate(json))
+    file.flush
+    yield(file.path)
+  end
+end
+
+def with_ios_sigh_certificate_verification_skipped
+  previous = ENV["SIGH_SKIP_CERTIFICATE_VERIFICATION"]
+  ENV["SIGH_SKIP_CERTIFICATE_VERIFICATION"] = "true"
+  yield
+ensure
+  previous.nil? ? ENV.delete("SIGH_SKIP_CERTIFICATE_VERIFICATION") : ENV["SIGH_SKIP_CERTIFICATE_VERIFICATION"] = previous
+end
+
+def sync_ios_match!(keychain)
+  readonly = ios_match_readonly?
+
+  with_ios_app_store_connect_api_key_path(required: !readonly) do |api_key_path|
+    match_options = {
+      type: "appstore",
+      platform: "ios",
+      app_identifier: IOS_APP_IDENTIFIERS,
+      readonly: readonly,
+      git_branch: ios_match_git_branch,
+      team_id: IOS_TEAM_ID,
+      keychain_name: keychain.fetch(:name),
+      keychain_password: keychain.fetch(:password)
+    }
+    match_options[:api_key_path] = api_key_path if api_key_path
+
+    with_ios_sigh_certificate_verification_skipped do
+      match(match_options)
+    end
+  end
+
+  lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING]
+end
+
+def configure_ios_code_signing!(profile_mapping)
+  IOS_TARGET_BUNDLE_IDS.each do |target, bundle_id|
+    profile_name = profile_mapping.fetch(bundle_id)
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: ios_project_path,
+      targets: [target],
+      build_configurations: ["Release"],
+      sdk: "iphoneos*",
+      code_sign_identity: "Apple Distribution",
+      profile_name: profile_name,
+      bundle_identifier: bundle_id,
+      team_id: IOS_TEAM_ID
+    )
+  end
+end
+
+def configure_ios_extension_version!(metadata)
+  update_info_plist(
+    plist_path: ios_widget_info_plist_path,
+    block: proc do |plist|
+      plist["CFBundleShortVersionString"] = metadata.fetch(:version)
+      plist["CFBundleVersion"] = metadata.fetch(:build_number)
+    end
+  )
+end
+
+def with_ios_export_options(profile_mapping)
+  provisioning_profiles = {}
+  IOS_APP_IDENTIFIERS.each do |bundle_id|
+    provisioning_profiles[bundle_id] = profile_mapping.fetch(bundle_id)
+  end
+
+  options = {
+    "method" => "app-store",
+    "signingStyle" => "manual",
+    "teamID" => IOS_TEAM_ID,
+    "provisioningProfiles" => provisioning_profiles,
+    "uploadBitcode" => false,
+    "uploadSymbols" => true,
+    "compileBitcode" => false
+  }
+
+  Tempfile.create(["ios-export-options", ".plist"]) do |file|
+    file.write(options.to_plist)
+    file.flush
+    yield(file.path)
+  end
+end
+
+def latest_ios_ipa!(ipa_dir)
+  ipa_path = Dir[File.join(ipa_dir, "*.ipa")].max_by { |path| File.mtime(path) }
+  UI.user_error!("No IPA found in #{ipa_dir}") unless ipa_path
+  ipa_path
+end
+
+platform :ios do
+  desc "Install iOS App Store signing profiles"
+  lane :sync_signing do
+    keychain = setup_ios_signing_keychain
+    sync_ios_match!(keychain)
+  end
+
+  desc "Build iOS IPA for App Store Connect"
+  lane :build do
+    metadata = ios_release_metadata
+    keychain = setup_ios_signing_keychain
+    profile_mapping = sync_ios_match!(keychain)
+    configure_ios_code_signing!(profile_mapping)
+    configure_ios_extension_version!(metadata)
+
+    with_ios_export_options(profile_mapping) do |export_options_path|
+      sh(
+        [
+          "fvm flutter build ipa",
+          "--release",
+          "--build-name", shell_escape(metadata.fetch(:version)),
+          "--build-number", shell_escape(metadata.fetch(:build_number)),
+          "--export-options-plist", shell_escape(export_options_path)
+        ].join(" ")
+      )
+    end
+  end
+
+  desc "Upload iOS IPA to TestFlight"
+  lane :upload do
+    metadata = ios_release_metadata
+    ipa_path = ENV["IOS_IPA_PATH"].to_s.strip
+    ipa_path = latest_ios_ipa!(metadata.fetch(:ipa_dir)) if ipa_path.empty?
+
+    with_ios_app_store_connect_api_key_path do |api_key_path|
+      upload_to_testflight(
+        api_key_path: api_key_path,
+        app_identifier: IOS_APP_IDENTIFIER,
+        ipa: ipa_path,
+        skip_waiting_for_build_processing: true,
+        distribute_external: false,
+        notify_external_testers: false
+      )
+    end
+  end
+
+  desc "Build and upload iOS release to TestFlight"
+  lane :release do
+    build
+    upload
+  end
+end
