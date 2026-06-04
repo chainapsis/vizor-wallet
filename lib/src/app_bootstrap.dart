@@ -251,6 +251,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
               uuid: account.uuid,
               name: account.name,
               order: index,
+              isHardware: account.isHardware,
               isSeedAnchor: account.isSeedAnchor,
             ),
             storedAccount: stored,
@@ -374,7 +375,8 @@ AccountInfo mergeBootstrappedAccountInfo({
     uuid: rustAccount.uuid,
     name: storedAccount?.name ?? rustAccount.name,
     order: storedAccount?.order ?? order,
-    isHardware: storedAccount?.isHardware ?? false,
+    // Rust can recover Keystone accounts when older stored metadata lost this bit.
+    isHardware: (storedAccount?.isHardware ?? false) || rustAccount.isHardware,
     isSeedAnchor: rustAccount.isSeedAnchor,
     profilePictureId:
         storedAccount?.profilePictureId ?? kDefaultProfilePictureId,

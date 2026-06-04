@@ -178,12 +178,14 @@ class AccountInfo {
   final String name;
   final String unifiedAddress;
   final bool isSeedAnchor;
+  final bool isHardware;
 
   const AccountInfo({
     required this.uuid,
     required this.name,
     required this.unifiedAddress,
     required this.isSeedAnchor,
+    required this.isHardware,
   });
 
   @override
@@ -191,7 +193,8 @@ class AccountInfo {
       uuid.hashCode ^
       name.hashCode ^
       unifiedAddress.hashCode ^
-      isSeedAnchor.hashCode;
+      isSeedAnchor.hashCode ^
+      isHardware.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -201,7 +204,8 @@ class AccountInfo {
           uuid == other.uuid &&
           name == other.name &&
           unifiedAddress == other.unifiedAddress &&
-          isSeedAnchor == other.isSeedAnchor;
+          isSeedAnchor == other.isSeedAnchor &&
+          isHardware == other.isHardware;
 }
 
 /// Result of wallet creation, containing the mnemonic, unified address, and account UUID.
