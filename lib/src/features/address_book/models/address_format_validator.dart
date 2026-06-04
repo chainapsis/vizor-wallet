@@ -31,21 +31,13 @@ String? addressFormatIssue(
   final trimmed = address.trim();
   if (trimmed.isEmpty) return null;
 
+  // Every EVM chain shares the same 0x address family, so one check covers all
+  // of them (see AddressBookNetwork.isEvm — the single source of truth).
+  if (network.isEvm) {
+    return _isEvmAddress(trimmed) ? null : 'Invalid EVM address';
+  }
+
   final (ok, kind) = switch (network) {
-    AddressBookNetwork.ethereum ||
-    AddressBookNetwork.base ||
-    AddressBookNetwork.arbitrum ||
-    AddressBookNetwork.optimism ||
-    AddressBookNetwork.polygon ||
-    AddressBookNetwork.binanceSmartChain ||
-    AddressBookNetwork.avalanche ||
-    AddressBookNetwork.gnosis ||
-    AddressBookNetwork.scroll ||
-    AddressBookNetwork.xLayer ||
-    AddressBookNetwork.plasma ||
-    AddressBookNetwork.abstractChain ||
-    AddressBookNetwork.monad ||
-    AddressBookNetwork.bera => (_isEvmAddress(trimmed), 'EVM'),
     AddressBookNetwork.bitcoin => (_isBitcoinAddress(trimmed), 'Bitcoin'),
     AddressBookNetwork.solana => (_isSolanaAddress(trimmed), 'Solana'),
     AddressBookNetwork.near => (_isNearAddress(trimmed), 'NEAR'),

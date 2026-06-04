@@ -40,6 +40,28 @@ enum AddressBookNetwork {
 
   bool get canSendFromWallet => this == AddressBookNetwork.zcash;
 
+  /// Whether this network uses the shared EVM address format (0x + 40 hex).
+  /// EVM addresses are interchangeable across EVM chains — the same account
+  /// works on every one — so a destination on any EVM chain can accept an
+  /// address saved for any other EVM chain.
+  bool get isEvm => switch (this) {
+    AddressBookNetwork.ethereum ||
+    AddressBookNetwork.base ||
+    AddressBookNetwork.arbitrum ||
+    AddressBookNetwork.optimism ||
+    AddressBookNetwork.polygon ||
+    AddressBookNetwork.binanceSmartChain ||
+    AddressBookNetwork.avalanche ||
+    AddressBookNetwork.gnosis ||
+    AddressBookNetwork.scroll ||
+    AddressBookNetwork.xLayer ||
+    AddressBookNetwork.plasma ||
+    AddressBookNetwork.abstractChain ||
+    AddressBookNetwork.monad ||
+    AddressBookNetwork.bera => true,
+    _ => false,
+  };
+
   static AddressBookNetwork? tryFromId(String id) {
     final normalized = id.trim().toLowerCase();
     final alias = switch (normalized) {

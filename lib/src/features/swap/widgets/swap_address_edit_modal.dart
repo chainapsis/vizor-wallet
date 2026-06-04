@@ -2,14 +2,22 @@ import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_profile_picture.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/models/address_format_validator.dart';
 import '../models/swap_models.dart';
 import 'swap_modal_controls.dart';
 
-typedef SwapAddressSubmitCallback = void Function(String value, bool remember);
+typedef SwapAddressSubmitCallback =
+    void Function(
+      String value,
+      bool remember,
+      String? nickname,
+      String profilePictureId,
+    );
 
 class SwapAddressEditModal extends StatefulWidget {
   const SwapAddressEditModal({
@@ -33,14 +41,20 @@ class SwapAddressEditModal extends StatefulWidget {
 
 class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
   late final TextEditingController _controller;
+  late final TextEditingController _nicknameController;
   late final FocusNode _focusNode;
+  late final FocusNode _nicknameFocusNode;
   var _rememberAddress = false;
+  var _pickingAvatar = false;
+  var _selectedProfilePictureId = kDefaultProfilePictureId;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.state.destinationText);
+    _nicknameController = TextEditingController();
     _focusNode = FocusNode(debugLabel: 'SwapAddressModalField');
+    _nicknameFocusNode = FocusNode(debugLabel: 'SwapAddressModalNicknameField');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _focusNode.requestFocus();
@@ -64,16 +78,41 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
   @override
   void dispose() {
     _controller.dispose();
+    _nicknameController.dispose();
     _focusNode.dispose();
+    _nicknameFocusNode.dispose();
     super.dispose();
   }
 
   void _submit() {
     // Guard the keyboard "done"/enter path the same way the primary button is
-    // gated, so a malformed address cannot be committed by pressing enter.
-    if (_formatError != null) return;
-    widget.onSubmitted(_controller.text.trim(), _rememberAddress);
+    // gated, so a malformed address (or a missing/invalid nickname when the
+    // user opted to remember it) cannot be committed by pressing enter.
+    if (!_canSubmit) return;
+    widget.onSubmitted(
+      _controller.text.trim(),
+      _rememberAddress,
+      _rememberAddress ? _nicknameController.text.trim() : null,
+      _selectedProfilePictureId,
+    );
   }
+
+  void _toggleRemember() {
+    setState(() {
+      _rememberAddress = !_rememberAddress;
+      if (!_rememberAddress) _pickingAvatar = false;
+    });
+    if (_rememberAddress) _nicknameFocusNode.requestFocus();
+  }
+
+  void _selectAvatar(String id) {
+    setState(() {
+      _selectedProfilePictureId = id;
+      _pickingAvatar = false;
+    });
+  }
+
+  bool get _canSubmit => _formatError == null && _nicknameError == null;
 
   String? get _formatError {
     final trimmed = _controller.text.trim();
@@ -83,6 +122,14 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
     );
     if (network == null) return null;
     return addressFormatIssue(network, trimmed);
+  }
+
+  // Only constrains submission when the user opted to remember the address; the
+  // saved entry becomes an address-book contact, so we reuse the same label
+  // rules (non-empty, 1-20 chars) the address-book add form enforces.
+  String? get _nicknameError {
+    if (!_rememberAddress) return null;
+    return validateAddressBookLabel(_nicknameController.text);
   }
 
   @override
@@ -96,17 +143,23 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
     final fieldLabel = sendsZec ? 'Recipient' : 'Refund to';
     final hint = widget.state.destinationFieldHint;
     final description = sendsZec
-        ? 'The external asset will be delivered to this address.'
-        : 'If swap fails, or market conditions change, your transaction may be refunded minus the fee. The refund currency is ${asset.symbol} on Near.';
+        ? 'Your ${asset.symbol} will be delivered to this address.'
+        : "If the swap fails or the rate moves, you'll be refunded in "
+              '${asset.symbol} on ${asset.chainLabel}, minus the fee.';
     final rememberLabel = sendsZec
         ? 'Remember this address for recipients'
         : 'Remember this address for refunds';
     final formatError = _formatError;
+    // Suppress the "Add a label" error on the pristine empty field — the hint
+    // already says what to do, and the disabled button signals it can't submit
+    // yet. Surface the error only once the user typed something invalid.
+    final nicknameError = _nicknameController.text.trim().isEmpty
+        ? null
+        : _nicknameError;
 
     return Container(
       key: const ValueKey('swap_address_modal'),
       width: 312,
-      height: 440,
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
       decoration: BoxDecoration(
         color: colors.background.ground,
@@ -114,6 +167,7 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
@@ -136,111 +190,143 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
             ],
           ),
           const SizedBox(height: 16),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      fieldLabel,
-                      style: AppTypography.labelMedium.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color: colors.background.base,
-                        border: Border.all(
-                          color: colors.border.subtle,
-                          width: 1.5,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  fieldLabel,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: colors.background.base,
+                    border: Border.all(color: colors.border.subtle, width: 1.5),
+                    borderRadius: BorderRadius.circular(AppRadii.small),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: TextField(
+                            key: const ValueKey('swap_destination_field'),
+                            controller: _controller,
+                            focusNode: _focusNode,
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) => _submit(),
+                            onChanged: (_) => setState(() {}),
+                            style: AppTypography.labelLarge.copyWith(
+                              color: colors.text.accent,
+                            ),
+                            cursorColor: colors.text.accent,
+                            decoration: InputDecoration.collapsed(
+                              hintText: hint,
+                              hintStyle: AppTypography.labelLarge.copyWith(
+                                color: colors.text.muted,
+                              ),
+                            ),
+                          ),
                         ),
-                        borderRadius: BorderRadius.circular(AppRadii.small),
                       ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                              ),
-                              child: TextField(
-                                key: const ValueKey('swap_destination_field'),
-                                controller: _controller,
-                                focusNode: _focusNode,
-                                textInputAction: TextInputAction.done,
-                                onSubmitted: (_) => _submit(),
-                                onChanged: (_) => setState(() {}),
-                                style: AppTypography.labelLarge.copyWith(
-                                  color: colors.text.accent,
-                                ),
-                                cursorColor: colors.text.accent,
-                                decoration: InputDecoration.collapsed(
-                                  hintText: hint,
-                                  hintStyle: AppTypography.labelLarge.copyWith(
-                                    color: colors.text.muted,
-                                  ),
-                                ),
-                              ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SwapInlineIconButton(
+                              key: const ValueKey('swap_address_scan_button'),
+                              iconName: AppIcons.qr,
+                              onTap: widget.onScan,
                             ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                SwapInlineIconButton(
-                                  key: const ValueKey(
-                                    'swap_address_scan_button',
-                                  ),
-                                  iconName: AppIcons.qr,
-                                  onTap: widget.onScan,
-                                ),
-                                const SizedBox(width: 4),
-                                SwapInlineIconButton(
-                                  key: const ValueKey(
-                                    'swap_address_contacts_button',
-                                  ),
-                                  iconName: AppIcons.users,
-                                  onTap: widget.onOpenContacts,
-                                ),
-                              ],
+                            const SizedBox(width: 4),
+                            SwapInlineIconButton(
+                              key: const ValueKey(
+                                'swap_address_contacts_button',
+                              ),
+                              iconName: AppIcons.users,
+                              onTap: widget.onOpenContacts,
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (formatError != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        formatError,
-                        key: const ValueKey('swap_destination_format_error'),
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: colors.text.destructive,
+                          ],
                         ),
                       ),
                     ],
-                    const SizedBox(height: 12),
+                  ),
+                ),
+                if (formatError != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    formatError,
+                    key: const ValueKey('swap_destination_format_error'),
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.destructive,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Text(
+                  description,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _AddressRememberToggle(
+                  selected: _rememberAddress,
+                  label: rememberLabel,
+                  onTap: _toggleRemember,
+                ),
+                if (_rememberAddress) ...[
+                  const SizedBox(height: 20),
+                  Text(
+                    'Address label',
+                    style: AppTypography.labelMedium.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _AddressAvatarButton(
+                        profilePictureId: _selectedProfilePictureId,
+                        onTap: () =>
+                            setState(() => _pickingAvatar = !_pickingAvatar),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _NicknameInputBox(
+                          controller: _nicknameController,
+                          focusNode: _nicknameFocusNode,
+                          onChanged: (_) => setState(() {}),
+                          onSubmitted: (_) => _submit(),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (nicknameError != null) ...[
+                    const SizedBox(height: 8),
                     Text(
-                      description,
+                      nicknameError,
+                      key: const ValueKey('swap_address_nickname_error'),
                       style: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.accent,
+                        color: colors.text.destructive,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    _AddressRememberToggle(
-                      selected: _rememberAddress,
-                      label: rememberLabel,
-                      onTap: () {
-                        setState(() => _rememberAddress = !_rememberAddress);
-                      },
+                  ],
+                  if (_pickingAvatar) ...[
+                    const SizedBox(height: 12),
+                    _AvatarPickerStrip(
+                      selectedId: _selectedProfilePictureId,
+                      onSelected: _selectAvatar,
                     ),
                   ],
-                ),
-              ),
+                ],
+              ],
             ),
           ),
           SwapModalButtons(
@@ -248,7 +334,7 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
             cancelKey: const ValueKey('swap_address_cancel_button'),
             onPrimary: _submit,
             onCancel: widget.onCancel,
-            primaryEnabled: formatError == null,
+            primaryEnabled: _canSubmit,
           ),
         ],
       ),
@@ -313,6 +399,190 @@ class _AddressRememberToggle extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NicknameInputBox extends StatelessWidget {
+  const _NicknameInputBox({
+    required this.controller,
+    required this.focusNode,
+    required this.onChanged,
+    required this.onSubmitted,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final ValueChanged<String> onChanged;
+  final ValueChanged<String> onSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      height: 46,
+      decoration: BoxDecoration(
+        color: colors.background.base,
+        border: Border.all(color: colors.border.subtle, width: 1.5),
+        borderRadius: BorderRadius.circular(AppRadii.small),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: TextField(
+          key: const ValueKey('swap_address_nickname_field'),
+          controller: controller,
+          focusNode: focusNode,
+          textInputAction: TextInputAction.done,
+          onChanged: onChanged,
+          onSubmitted: onSubmitted,
+          style: AppTypography.labelMedium.copyWith(color: colors.text.accent),
+          cursorColor: colors.text.accent,
+          decoration: InputDecoration.collapsed(
+            hintText: 'Add a label (1-20 characters)',
+            hintStyle: AppTypography.labelMedium.copyWith(
+              color: colors.text.muted,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AddressAvatarButton extends StatelessWidget {
+  const _AddressAvatarButton({
+    required this.profilePictureId,
+    required this.onTap,
+  });
+
+  final String profilePictureId;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        key: const ValueKey('swap_address_avatar_button'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          width: 46,
+          height: 46,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              AppProfilePicture(
+                profilePictureId: profilePictureId,
+                size: AppProfilePictureSize.large,
+              ),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: colors.background.inverse,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: AppIcon(
+                      AppIcons.edit,
+                      size: 10,
+                      color: colors.icon.inverse,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AvatarPickerStrip extends StatelessWidget {
+  const _AvatarPickerStrip({required this.selectedId, required this.onSelected});
+
+  final String selectedId;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final option in kProfilePictureOptions)
+          _AvatarChoice(
+            option: option,
+            selected: option.id == selectedId,
+            onSelected: onSelected,
+          ),
+      ],
+    );
+  }
+}
+
+class _AvatarChoice extends StatelessWidget {
+  const _AvatarChoice({
+    required this.option,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final ProfilePictureOption option;
+  final bool selected;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        key: ValueKey('swap_address_avatar_${option.id}'),
+        behavior: HitTestBehavior.opaque,
+        onTap: () => onSelected(option.id),
+        child: SizedBox(
+          width: 36,
+          height: 36,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              AppProfilePicture(
+                profilePictureId: option.id,
+                size: AppProfilePictureSize.large,
+              ),
+              if (selected)
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: colors.background.inverse,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: AppIcon(
+                        AppIcons.check,
+                        size: 10,
+                        color: colors.icon.inverse,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

@@ -223,11 +223,22 @@ class SwapNotifier extends Notifier<SwapState> {
       state.supportedExternalAssets,
     );
     if (supportedAsset == null) return;
+    // The destination is an address on the external asset's chain. When the
+    // chain changes (e.g. USDC-on-Ethereum -> SOL-on-Solana) the old address is
+    // no longer valid, so clear it; keep it when only the token changes within
+    // the same chain (e.g. USDC -> DAI on Ethereum). copyWith treats null as
+    // "keep" and '' as "clear".
+    final chainChanged =
+        supportedAsset.chainTicker != state.externalAsset.chainTicker;
     _clearReviewState();
     state = swapStateWithDerivedFiatTexts(
       swapStateWithIndicativeCounterpart(
         swapStateWithTokenAmountsForFiatModes(
-          state.copyWith(externalAsset: supportedAsset, reviewVisible: false),
+          state.copyWith(
+            externalAsset: supportedAsset,
+            reviewVisible: false,
+            destinationText: chainChanged ? '' : null,
+          ),
         ),
       ),
       preserveAmountFiatInput:

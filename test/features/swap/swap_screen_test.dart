@@ -1540,7 +1540,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
     await tester.pumpAndSettle();
 
-    expect(find.text('External USDC address or account'), findsOneWidget);
+    expect(find.text('Ethereum address or account'), findsOneWidget);
     expect(find.text('NEAR or Ethereum address'), findsNothing);
 
     final paneRect = tester.getRect(find.byType(AppDesktopPane));
@@ -1913,6 +1913,18 @@ void main() {
       find.byKey(const ValueKey('swap_address_remember_toggle')),
     );
     await tester.pumpAndSettle();
+
+    // Enabling "remember" requires a nickname before the address can be saved.
+    final beforeNickname = tester.widget<AppButton>(
+      find.byKey(const ValueKey('swap_address_update_button')),
+    );
+    expect(beforeNickname.onPressed, isNull);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_address_nickname_field')),
+      'My USDC',
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
     await tester.pumpAndSettle();
 
@@ -1925,10 +1937,152 @@ void main() {
       addressBookRepository.contacts.single.network,
       AddressBookNetwork.ethereum,
     );
-    expect(addressBookRepository.contacts.single.label, 'USDC recipient');
+    expect(addressBookRepository.contacts.single.label, 'My USDC');
   });
 
-  testWidgets('swap address modal filters contacts by token chain ticker', (
+  testWidgets('swap address modal requires a valid nickname to remember', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final addressBookRepository = _FakeAddressBookRepository();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        addressBookRepository: addressBookRepository,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0xdbf03b407c01e7cd3cbea99509d93f8dddc8c6fb',
+    );
+    await tester.pumpAndSettle();
+
+    // No nickname field until the user opts to remember the address.
+    expect(
+      find.byKey(const ValueKey('swap_address_nickname_field')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('swap_address_remember_toggle')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('swap_address_nickname_field')),
+      findsOneWidget,
+    );
+
+    // A nickname over the 20-char limit surfaces the shared address-book label
+    // error and keeps the button disabled, so nothing is saved.
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_address_nickname_field')),
+      'this nickname is definitely too long',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Use 1-20 characters'), findsOneWidget);
+    final blocked = tester.widget<AppButton>(
+      find.byKey(const ValueKey('swap_address_update_button')),
+    );
+    expect(blocked.onPressed, isNull);
+    expect(addressBookRepository.contacts, isEmpty);
+  });
+
+  testWidgets('swap clears the destination only when the chain changes', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    const ethAddress = '0x52908400098527886e0f7030069857d2e4169ee7';
+    notifier.updateDestination(ethAddress);
+    await tester.pumpAndSettle();
+
+    // Same chain (Ethereum USDC -> Ethereum DAI): the address is kept.
+    notifier.selectExternalAsset(SwapAsset.dai);
+    await tester.pumpAndSettle();
+    expect(container.read(swapStateProvider).destinationText, ethAddress);
+
+    // Different chain (Ethereum -> Solana): the address is cleared.
+    notifier.selectExternalAsset(SwapAsset.sol);
+    await tester.pumpAndSettle();
+    expect(container.read(swapStateProvider).destinationText, isEmpty);
+  });
+
+  testWidgets('swap address modal saves the chosen avatar with the address', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final addressBookRepository = _FakeAddressBookRepository();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        addressBookRepository: addressBookRepository,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0xdbf03b407c01e7cd3cbea99509d93f8dddc8c6fb',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('swap_address_remember_toggle')),
+    );
+    await tester.pumpAndSettle();
+
+    // Open the avatar picker and choose a non-default avatar.
+    await tester.tap(find.byKey(const ValueKey('swap_address_avatar_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_address_avatar_samurai')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_address_nickname_field')),
+      'My USDC',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
+    await tester.pumpAndSettle();
+
+    expect(addressBookRepository.contacts, hasLength(1));
+    expect(addressBookRepository.contacts.single.label, 'My USDC');
+    expect(addressBookRepository.contacts.single.profilePictureId, 'samurai');
+  });
+
+  testWidgets('swap address modal shows EVM contacts across chains', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -1955,8 +2109,60 @@ void main() {
             address: '0xdc2d3454f7baf9f15c98e8f5d6a3cb5a5f1b2c3d',
           ),
           _addressBookContact(
+            id: 'polygon',
+            label: 'Polygon Friend',
+            network: AddressBookNetwork.polygon,
+            address: '0x583031d1113ad414f02576bd6afabfb302140225',
+          ),
+          _addressBookContact(
+            id: 'solana',
+            label: 'Solana Friend',
+            network: AddressBookNetwork.solana,
+            address: '7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs',
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('swap_address_contacts_button')),
+    );
+    await tester.pumpAndSettle();
+
+    // EVM addresses are interchangeable across chains, so a Polygon contact is
+    // usable as a Base refund/recipient — both EVM contacts show.
+    expect(find.text('Base USDC Friend'), findsOneWidget);
+    expect(find.text('Polygon Friend'), findsOneWidget);
+    // Non-EVM contacts stay hidden.
+    expect(find.text('Solana Friend'), findsNothing);
+  });
+
+  testWidgets('swap address modal keeps non-EVM contact filtering exact', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: _FakeSwapProvider(supportedAssets: const [SwapAsset.sol]),
+        seedSwapActivityFixtures: false,
+        addressBookRepository: _FakeAddressBookRepository([
+          _addressBookContact(
+            id: 'solana',
+            label: 'Solana Friend',
+            network: AddressBookNetwork.solana,
+            address: '7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs',
+          ),
+          _addressBookContact(
             id: 'ethereum',
-            label: 'Ethereum USDC Friend',
+            label: 'Ethereum Friend',
             network: AddressBookNetwork.ethereum,
             address: '0x583031d1113ad414f02576bd6afabfb302140225',
           ),
@@ -1972,8 +2178,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Base USDC Friend'), findsOneWidget);
-    expect(find.text('Ethereum USDC Friend'), findsNothing);
+    // Solana addresses are chain-specific, so only the Solana contact shows.
+    expect(find.text('Solana Friend'), findsOneWidget);
+    expect(find.text('Ethereum Friend'), findsNothing);
   });
 
   testWidgets('fresh swap screen starts without seeded activity or requests', (

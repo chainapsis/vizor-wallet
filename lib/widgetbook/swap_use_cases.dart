@@ -83,7 +83,7 @@ Widget buildSwapAddressModalFigmaNode7UseCase(BuildContext context) {
   return _SwapPageModalFrame(
     child: SwapAddressEditModal(
       state: _figmaNode3State,
-      onSubmitted: (_, _) {},
+      onSubmitted: (_, _, _, _) {},
       onScan: () {},
       onOpenContacts: () {},
       onCancel: () {},

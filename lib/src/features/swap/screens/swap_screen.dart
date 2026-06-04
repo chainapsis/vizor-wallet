@@ -9,7 +9,6 @@ import 'package:go_router/go_router.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
-import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
@@ -55,7 +54,18 @@ AddressBookNetwork? _addressBookNetworkForSwapDestination(SwapState state) {
 
 List<AddressBookNetwork> _swapContactPickerNetworks(SwapState state) {
   final network = _addressBookNetworkForSwapDestination(state);
-  return network == null ? const [] : [network];
+  if (network == null) return const [];
+  // EVM addresses are interchangeable across EVM chains (the same 0x account
+  // works on every one), so let the user pick any saved EVM contact — e.g. a
+  // Polygon address as the refund for a Base swap. Non-EVM chains keep the
+  // exact-network filter since those address formats are chain-specific.
+  if (network.isEvm) {
+    return [
+      for (final candidate in AddressBookNetwork.values)
+        if (candidate.isEvm) candidate,
+    ];
+  }
+  return [network];
 }
 
 String _swapContactPickerTitle(SwapState state) {
@@ -133,11 +143,24 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     _closeSwapModal();
   }
 
-  Future<void> _rememberSwapAddress(String value, SwapState swapState) async {
+  Future<void> _rememberSwapAddress(
+    String value,
+    SwapState swapState,
+    String? nickname,
+    String profilePictureId,
+  ) async {
     final address = value.trim();
     if (address.isEmpty) return;
     final network = _addressBookNetworkForSwapDestination(swapState);
     if (network == null) return;
+
+    // The modal requires a nickname when "remember" is on; fall back to the
+    // auto-generated label only as a defensive default (e.g. an empty value
+    // slipping through from a future caller).
+    final trimmedNickname = nickname?.trim() ?? '';
+    final label = trimmedNickname.isEmpty
+        ? _swapAddressBookLabel(swapState)
+        : trimmedNickname;
 
     try {
       final current =
@@ -155,10 +178,10 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
       await ref
           .read(addressBookProvider.notifier)
           .addContact(
-            label: _swapAddressBookLabel(swapState),
+            label: label,
             network: network,
             address: address,
-            profilePictureId: kDefaultProfilePictureId,
+            profilePictureId: profilePictureId,
           );
     } catch (_) {
       // Saving a convenience contact must not block the swap form update.
@@ -326,13 +349,21 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                       ),
                       _SwapModalSurface.addressEditor => SwapAddressEditModal(
                         state: swapState,
-                        onSubmitted: (value, remember) {
-                          if (remember) {
-                            unawaited(_rememberSwapAddress(value, swapState));
-                          }
-                          swapNotifier.updateDestination(value);
-                          _closeSwapModal();
-                        },
+                        onSubmitted:
+                            (value, remember, nickname, profilePictureId) {
+                              if (remember) {
+                                unawaited(
+                                  _rememberSwapAddress(
+                                    value,
+                                    swapState,
+                                    nickname,
+                                    profilePictureId,
+                                  ),
+                                );
+                              }
+                              swapNotifier.updateDestination(value);
+                              _closeSwapModal();
+                            },
                         onScan: _openAddressScanner,
                         onOpenContacts: _openAddressContactPicker,
                         onCancel: _closeSwapModal,

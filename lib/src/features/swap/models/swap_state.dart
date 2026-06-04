@@ -170,10 +170,14 @@ class SwapState {
           ? 'Destination'
           : '${externalAsset.symbol} refund address';
 
+  // The address belongs to a chain, not the token (you don't have a "USDC
+  // address" — you have an Ethereum address that holds USDC), so name the
+  // chain. Leading with it also keeps the relevant part visible in the narrow
+  // modal field (the old "Refund address on the ET…" cut off the chain).
   String get destinationFieldHint =>
       direction.sendsZec
-          ? 'External ${externalAsset.symbol} address or account'
-          : 'Refund address on the ${externalAsset.symbol} source chain';
+          ? '${externalAsset.chainLabel} address or account'
+          : '${externalAsset.chainLabel} address';
 
   /// Best-effort format check of [destinationText] against the external asset's
   /// chain. Returns null when empty, when the chain has no validator, or when
