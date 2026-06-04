@@ -40,6 +40,16 @@ pub(crate) fn open_wallet_db_for_read_with_timeout(
     Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
 }
 
+pub(crate) fn open_wallet_raw_conn_with_timeout(
+    db_path: &str,
+    timeout: Duration,
+) -> Result<rusqlite::Connection, String> {
+    let conn = rusqlite::Connection::open(db_path)
+        .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
+    configure_wallet_connection(&conn, timeout, true)?;
+    Ok(conn)
+}
+
 fn configure_wallet_connection(
     conn: &rusqlite::Connection,
     timeout: Duration,
