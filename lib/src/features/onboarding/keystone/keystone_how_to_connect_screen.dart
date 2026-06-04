@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +11,24 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'keystone_onboarding_flow.dart';
+
+@visibleForTesting
+bool usesMobileKeystoneHowToConnectLayout(
+  TargetPlatform platform, {
+  bool isWeb = kIsWeb,
+}) {
+  if (isWeb) return false;
+  return switch (platform) {
+    TargetPlatform.android || TargetPlatform.iOS => true,
+    TargetPlatform.fuchsia ||
+    TargetPlatform.linux ||
+    TargetPlatform.macOS ||
+    TargetPlatform.windows => false,
+  };
+}
+
+bool get _usesMobileLayout =>
+    usesMobileKeystoneHowToConnectLayout(defaultTargetPlatform);
 
 class KeystoneHowToConnectScreen extends ConsumerWidget {
   const KeystoneHowToConnectScreen({super.key});
@@ -39,6 +59,47 @@ class _HeroLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_usesMobileLayout) {
+      return Column(
+        children: [
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: AppSpacing.s),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _HeroBlock(),
+                          SizedBox(height: AppSpacing.md),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            onPressed: () {
+              ref.read(keystoneOnboardingProvider.notifier).resetScan();
+              context.go(KeystoneOnboardingStep.scanQrCode.routePath);
+            },
+            variant: AppButtonVariant.primary,
+            minWidth: buttonWidth,
+            trailing: const AppIcon(AppIcons.chevronForward),
+            child: const Text("I'm ready now"),
+          ),
+        ],
+      );
+    }
+
     return Column(
       children: [
         const Expanded(
@@ -115,20 +176,47 @@ class _CardsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
-      width: _width,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: _KeystoneStartCard(kind: _KeystoneStartCardKind.prep),
-          ),
-          SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: _KeystoneStartCard(kind: _KeystoneStartCardKind.next),
-          ),
-        ],
-      ),
+    if (_usesMobileLayout) {
+      return const _CardsMobileColumn();
+    }
+
+    return const SizedBox(width: _width, child: _CardsDesktopRow());
+  }
+}
+
+class _CardsMobileColumn extends StatelessWidget {
+  const _CardsMobileColumn();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: _KeystoneStartCard(kind: _KeystoneStartCardKind.prep),
+        ),
+        SizedBox(height: AppSpacing.md),
+        SizedBox(
+          width: double.infinity,
+          child: _KeystoneStartCard(kind: _KeystoneStartCardKind.next),
+        ),
+      ],
+    );
+  }
+}
+
+class _CardsDesktopRow extends StatelessWidget {
+  const _CardsDesktopRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: _KeystoneStartCard(kind: _KeystoneStartCardKind.prep)),
+        SizedBox(width: AppSpacing.md),
+        Expanded(child: _KeystoneStartCard(kind: _KeystoneStartCardKind.next)),
+      ],
     );
   }
 }

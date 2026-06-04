@@ -1,5 +1,6 @@
 import 'dart:ui' show Size;
 
+import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter/widgets.dart' show Text, Widget;
@@ -63,6 +64,23 @@ void main() {
       expect(KeystoneOnboardingStep.selectAccount.iconName, AppIcons.user);
     },
   );
+
+  test('uses stacked scrollable Keystone layout on mobile platforms', () {
+    expect(usesMobileKeystoneHowToConnectLayout(TargetPlatform.iOS), isTrue);
+    expect(
+      usesMobileKeystoneHowToConnectLayout(TargetPlatform.android),
+      isTrue,
+    );
+  });
+
+  test('keeps the desktop Keystone layout on desktop and web', () {
+    expect(usesMobileKeystoneHowToConnectLayout(TargetPlatform.macOS), isFalse);
+    expect(usesMobileKeystoneHowToConnectLayout(TargetPlatform.linux), isFalse);
+    expect(
+      usesMobileKeystoneHowToConnectLayout(TargetPlatform.iOS, isWeb: true),
+      isFalse,
+    );
+  });
 }
 
 Future<void> _loadAppFonts() async {
