@@ -1998,6 +1998,61 @@ void main() {
     expect(addressBookRepository.contacts, isEmpty);
   });
 
+  testWidgets('swap address modal warns when the address is already saved', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    const existing = '0x52908400098527886e0f7030069857d2e4169ee7';
+    final addressBookRepository = _FakeAddressBookRepository([
+      _addressBookContact(
+        id: 'existing',
+        label: 'Existing',
+        network: AddressBookNetwork.ethereum,
+        address: existing,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        addressBookRepository: addressBookRepository,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      existing,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('swap_address_remember_toggle')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_address_nickname_field')),
+      'Duplicate',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
+    // Let the async remember-path run and the toast appear; avoid
+    // pumpAndSettle here since it would wait out the toast's auto-dismiss.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Already in your address book'), findsOneWidget);
+    // No duplicate created — still just the seeded contact.
+    expect(addressBookRepository.contacts, hasLength(1));
+
+    // Drain the toast's auto-dismiss timer so the test ends cleanly.
+    await tester.pumpAndSettle(const Duration(seconds: 3));
+  });
+
   testWidgets('swap clears the destination only when the chain changes', (
     tester,
   ) async {

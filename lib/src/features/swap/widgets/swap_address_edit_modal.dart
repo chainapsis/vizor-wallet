@@ -332,6 +332,7 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
           SwapModalButtons(
             primaryKey: const ValueKey('swap_address_update_button'),
             cancelKey: const ValueKey('swap_address_cancel_button'),
+            primaryLabel: 'Save',
             onPrimary: _submit,
             onCancel: widget.onCancel,
             primaryEnabled: _canSubmit,

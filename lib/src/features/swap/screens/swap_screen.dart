@@ -173,7 +173,15 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
             contact.network == network &&
             contact.address.trim().toLowerCase() == normalizedAddress,
       );
-      if (alreadySaved) return;
+      if (alreadySaved) {
+        // Don't create a duplicate, but tell the user why nothing was saved —
+        // otherwise the chosen label/avatar would vanish with no feedback.
+        final toastContext = _toastOverlayContextKey.currentContext;
+        if (toastContext != null && toastContext.mounted) {
+          showAppToast(toastContext, 'Already in your address book');
+        }
+        return;
+      }
 
       await ref
           .read(addressBookProvider.notifier)
