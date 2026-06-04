@@ -1,5 +1,6 @@
 import 'dart:ui' show Size;
 
+import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter/material.dart' show MaterialApp, TextButton;
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter/widgets.dart' show Text, ValueKey, Widget;
@@ -29,6 +30,20 @@ void main() {
     expect(
       find.byKey(const ValueKey('welcome_endpoint_settings_button')),
       findsOneWidget,
+    );
+  });
+
+  test('keeps welcome title on one line on desktop', () {
+    expect(
+      welcomeTitleForPlatform(TargetPlatform.macOS),
+      'Private money. By default.',
+    );
+  });
+
+  test('splits welcome title into two lines on mobile', () {
+    expect(
+      welcomeTitleForPlatform(TargetPlatform.iOS),
+      'Private money.\nBy default.',
     );
   });
 

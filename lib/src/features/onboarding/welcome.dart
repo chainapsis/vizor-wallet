@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,6 +17,23 @@ import 'shared/onboarding_welcome_art.dart';
 /// Welcome-specific button width. The redesigned Figma CTA stack is 256 dp
 /// wide (node 1136:17519).
 const double _welcomeActionWidth = 256;
+
+@visibleForTesting
+String welcomeTitleForPlatform(TargetPlatform platform, {bool isWeb = kIsWeb}) {
+  if (isWeb) return 'Private money. By default.';
+  final usesMobileTitle = switch (platform) {
+    TargetPlatform.android || TargetPlatform.iOS => true,
+    TargetPlatform.fuchsia ||
+    TargetPlatform.linux ||
+    TargetPlatform.macOS ||
+    TargetPlatform.windows => false,
+  };
+  return usesMobileTitle
+      ? 'Private money.\nBy default.'
+      : 'Private money. By default.';
+}
+
+String get _welcomeTitle => welcomeTitleForPlatform(defaultTargetPlatform);
 
 /// Onboarding entry point — the Figma "Split View" at node 215:2688
 /// (light) / 215:2888 (dark).
@@ -381,7 +400,7 @@ class _TitleBlock extends StatelessWidget {
         const _VizorLogo(),
         const SizedBox(height: AppSpacing.md),
         Text(
-          'Private money. By default.',
+          _welcomeTitle,
           style: AppTypography.displayLarge.copyWith(color: colors.text.accent),
           textAlign: TextAlign.center,
         ),
