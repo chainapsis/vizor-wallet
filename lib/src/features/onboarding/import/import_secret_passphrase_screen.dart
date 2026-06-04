@@ -35,6 +35,8 @@ class ImportSecretPassphraseScreen extends ConsumerStatefulWidget {
 
 class _ImportSecretPassphraseScreenState
     extends ConsumerState<ImportSecretPassphraseScreen> {
+  static const _minImportWordCount = 12;
+  static const _wordCountStep = 3;
   static const _wordCount = 24;
   static const _gridWidth = 588.0;
   static const _titleWidth = 504.0;
@@ -94,15 +96,32 @@ class _ImportSecretPassphraseScreenState
       .map((controller) => controller.text.trim().toLowerCase())
       .toList();
 
-  String get _mnemonic => _normalizedWords.join(' ');
+  List<String> get _enteredWordCells {
+    final words = _normalizedWords;
+    final lastEnteredIndex = words.lastIndexWhere((word) => word.isNotEmpty);
+    if (lastEnteredIndex < 0) return const [];
+    return words.take(lastEnteredIndex + 1).toList();
+  }
 
-  bool get _hasAllWords => _normalizedWords.every((word) => word.isNotEmpty);
+  String get _mnemonic => _enteredWordCells.join(' ');
+
+  bool get _hasContiguousMnemonicWords =>
+      _enteredWordCells.every((word) => word.isNotEmpty);
+
+  bool get _hasSupportedMnemonicWordCount {
+    final count = _enteredWordCells.length;
+    return count >= _minImportWordCount &&
+        count <= _wordCount &&
+        count % _wordCountStep == 0;
+  }
 
   bool get _hasEnteredMnemonicWords =>
       _controllers.any((controller) => controller.text.trim().isNotEmpty);
 
   bool get _isMnemonicValid =>
-      _hasAllWords && rust_wallet.validateMnemonic(mnemonic: _mnemonic);
+      _hasContiguousMnemonicWords &&
+      _hasSupportedMnemonicWordCount &&
+      rust_wallet.validateMnemonic(mnemonic: _mnemonic);
 
   bool get _canSubmit => !_isSubmitting && _isMnemonicValid;
 
@@ -188,7 +207,7 @@ class _ImportSecretPassphraseScreenState
   String? get _errorText {
     if (_submitError != null) return _submitError;
     if (_showValidationError && !_isMnemonicValid) {
-      return 'Enter a valid 24-word Secret Passphrase.';
+      return 'Enter a valid secret passphrase with 12, 15, 18, 21, or 24 words.';
     }
     return null;
   }

@@ -11,13 +11,17 @@ import 'package:flutter/widgets.dart'
         ScrollableState,
         Size,
         SizedBox,
+        ValueKey,
         Widget;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_secret_passphrase_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 void main() {
@@ -221,6 +225,61 @@ void main() {
   });
 
   testWidgets(
+    'submits a valid 12-word mnemonic without requiring empty fields',
+    (tester) async {
+      ImportBirthdayArgs? submittedArgs;
+      final router = _importPassphraseRouter((args) => submittedArgs = args);
+      addTearDown(router.dispose);
+
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(_routerHarness(router));
+      await _enterWords(tester, 12);
+
+      expect(_submitButton(tester).onPressed, isNotNull);
+
+      await tester.tap(find.byKey(_submitButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(submittedArgs?.mnemonic, _words(12).join(' '));
+    },
+  );
+
+  testWidgets('accepts supported mnemonic lengths and rejects partial steps', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+
+    await _enterWords(tester, 12);
+    expect(_submitButton(tester).onPressed, isNotNull);
+
+    await tester.enterText(_wordField(12), _wordAt(12));
+    await tester.pump();
+    expect(_submitButton(tester).onPressed, isNull);
+
+    await tester.enterText(_wordField(13), _wordAt(13));
+    await tester.enterText(_wordField(14), _wordAt(14));
+    await tester.pump();
+    expect(_submitButton(tester).onPressed, isNotNull);
+  });
+
+  testWidgets(
+    'rejects mnemonic words with a gap before the last entered word',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(_importPassphraseScreen());
+
+      await _enterWords(tester, 12);
+      expect(_submitButton(tester).onPressed, isNotNull);
+
+      await tester.enterText(_wordField(5), '');
+      await tester.pump();
+
+      expect(_submitButton(tester).onPressed, isNull);
+    },
+  );
+
+  testWidgets(
     'privacy shield ignores empty focused words when focus is unsafe',
     (tester) async {
       final controller = SensitivePrivacyOverlayController(
@@ -354,11 +413,67 @@ Widget _importPassphraseScreen({
   );
 }
 
+GoRouter _importPassphraseRouter(
+  void Function(ImportBirthdayArgs args) onSubmit,
+) {
+  return GoRouter(
+    initialLocation: '/import',
+    routes: [
+      GoRoute(
+        path: '/import',
+        builder: (_, _) => const Scaffold(body: ImportSecretPassphraseScreen()),
+      ),
+      GoRoute(
+        path: '/import/birthday',
+        builder: (_, state) {
+          onSubmit(state.extra as ImportBirthdayArgs);
+          return const SizedBox.shrink();
+        },
+      ),
+      GoRoute(path: '/welcome', builder: (_, _) => const SizedBox.shrink()),
+    ],
+  );
+}
+
+Widget _routerHarness(GoRouter router) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, child) => AppTheme(
+        data: AppThemeData.light,
+        child: child ?? const SizedBox.shrink(),
+      ),
+    ),
+  );
+}
+
 Finder _wordField(int index) => find.byType(TextField).at(index);
 
 TextField _textField(WidgetTester tester, int index) {
   return tester.widget<TextField>(_wordField(index));
 }
+
+const _submitButtonKey = ValueKey('import_secret_submit_button');
+
+AppButton _submitButton(WidgetTester tester) {
+  return tester.widget<AppButton>(find.byKey(_submitButtonKey));
+}
+
+Future<void> _enterWords(WidgetTester tester, int count) async {
+  for (var index = 0; index < count; index++) {
+    await tester.enterText(_wordField(index), _wordAt(index));
+  }
+  await tester.pump();
+}
+
+List<String> _words(int count) {
+  return List.generate(count, _wordAt);
+}
+
+String _wordAt(int index) => _wordList[index % _wordList.length];
 
 class _RustApiFake implements RustLibApi {
   @override
@@ -366,7 +481,8 @@ class _RustApiFake implements RustLibApi {
 
   @override
   bool crateApiWalletValidateMnemonic({required String mnemonic}) {
-    return mnemonic.trim().split(RegExp(r'\s+')).length == 24;
+    final count = mnemonic.trim().split(RegExp(r'\s+')).length;
+    return count >= 12 && count <= 24 && count % 3 == 0;
   }
 
   @override

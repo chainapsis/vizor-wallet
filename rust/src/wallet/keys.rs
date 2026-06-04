@@ -32,6 +32,9 @@ use crate::wallet::{
 
 const DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE: &str = "This account is already in your wallet.";
 const DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE: &str = "This Keystone account is already in your wallet.";
+const MIN_MNEMONIC_WORD_COUNT: usize = 12;
+const MAX_MNEMONIC_WORD_COUNT: usize = 24;
+const MNEMONIC_WORD_COUNT_STEP: usize = 3;
 
 fn map_account_import_error(
     error: SqliteClientError,
@@ -79,9 +82,22 @@ pub fn mnemonic_word_list() -> Vec<String> {
         .collect()
 }
 
+fn is_supported_mnemonic_word_count(count: usize) -> bool {
+    count >= MIN_MNEMONIC_WORD_COUNT
+        && count <= MAX_MNEMONIC_WORD_COUNT
+        && count % MNEMONIC_WORD_COUNT_STEP == 0
+}
+
 /// Convert a mnemonic phrase to a 64-byte seed wrapped in SecretVec.
 /// The seed is zeroized from memory when the SecretVec is dropped.
 pub fn mnemonic_to_seed(phrase: &str) -> Result<SecretVec<u8>, String> {
+    let word_count = phrase.split_whitespace().count();
+    if !is_supported_mnemonic_word_count(word_count) {
+        return Err(
+            "Invalid mnemonic word count: expected 12, 15, 18, 21, or 24 words".to_string(),
+        );
+    }
+
     let mnemonic =
         Mnemonic::<English>::from_phrase(phrase).map_err(|e| format!("Invalid mnemonic: {e}"))?;
     let seed = Zeroizing::new(mnemonic.to_seed(""));
@@ -664,6 +680,36 @@ mod tests {
         let phrase = generate_mnemonic();
         let seed = mnemonic_to_seed(&phrase).unwrap();
         assert_eq!(seed.expose_secret().len(), 64);
+    }
+
+    #[test]
+    fn test_mnemonic_to_seed_accepts_supported_word_counts() {
+        for count in [
+            Count::Words12,
+            Count::Words15,
+            Count::Words18,
+            Count::Words21,
+            Count::Words24,
+        ] {
+            let phrase = Mnemonic::<English>::generate(count).phrase().to_string();
+            let seed = mnemonic_to_seed(&phrase).unwrap();
+            assert_eq!(seed.expose_secret().len(), 64);
+        }
+    }
+
+    #[test]
+    fn test_mnemonic_to_seed_rejects_unsupported_word_counts() {
+        for count in [11, 13, 25] {
+            let phrase = std::iter::repeat("abandon")
+                .take(count)
+                .collect::<Vec<_>>()
+                .join(" ");
+            let error = match mnemonic_to_seed(&phrase) {
+                Ok(_) => panic!("unsupported mnemonic word count should be rejected"),
+                Err(error) => error,
+            };
+            assert!(error.contains("expected 12, 15, 18, 21, or 24 words"));
+        }
     }
 
     #[test]
