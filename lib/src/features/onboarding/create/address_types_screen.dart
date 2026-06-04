@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
@@ -5,6 +7,24 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'onboarding_split_view.dart';
+
+@visibleForTesting
+bool usesMobileAddressTypesCardScroll(
+  TargetPlatform platform, {
+  bool isWeb = kIsWeb,
+}) {
+  if (isWeb) return false;
+  return switch (platform) {
+    TargetPlatform.android || TargetPlatform.iOS => true,
+    TargetPlatform.fuchsia ||
+    TargetPlatform.linux ||
+    TargetPlatform.macOS ||
+    TargetPlatform.windows => false,
+  };
+}
+
+bool get _usesMobileCardScroll =>
+    usesMobileAddressTypesCardScroll(defaultTargetPlatform);
 
 class AddressTypesScreen extends StatelessWidget {
   const AddressTypesScreen({super.key});
@@ -152,10 +172,12 @@ class _TitleBlock extends StatelessWidget {
 class _CardsRow extends StatelessWidget {
   const _CardsRow();
 
+  static const _width = 588.0;
+
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
-      width: 588,
+    const cards = SizedBox(
+      width: _width,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -163,6 +185,14 @@ class _CardsRow extends StatelessWidget {
           SizedBox(width: AppSpacing.md),
           _AddressTypeCard(kind: _AddressTypeCardKind.transparent),
         ],
+      ),
+    );
+    if (!_usesMobileCardScroll) return cards;
+    return const SizedBox(
+      width: double.infinity,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: cards,
       ),
     );
   }
