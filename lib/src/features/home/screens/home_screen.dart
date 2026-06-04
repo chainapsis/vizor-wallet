@@ -743,6 +743,7 @@ class _HomeBalanceCardState extends State<_HomeBalanceCard> {
   bool _isShieldBalanceHovered = false;
 
   static const _shieldedCardHeight = 216.0;
+  static const _mobileShieldedCardHeight = 236.0;
   static const _transparentStripHeight = 56.0;
   static const _shieldedCardBorderWidth = 1.5;
   static const _shieldedCardBorderColor = Color(0x12FFFFFF);
@@ -917,7 +918,10 @@ class _HomeBalanceCardState extends State<_HomeBalanceCard> {
       curve: Curves.easeOutCubic,
       tween: Tween<double>(begin: targetStripHeight, end: targetStripHeight),
       builder: (context, stripHeight, _) {
-        final cardHeight = _shieldedCardHeight + stripHeight;
+        final shieldedCardHeight = isDesktopLayoutPlatform
+            ? _shieldedCardHeight
+            : _mobileShieldedCardHeight;
+        final cardHeight = shieldedCardHeight + stripHeight;
         final revealProgress = (stripHeight / _transparentStripHeight).clamp(
           0.0,
           1.0,
@@ -979,7 +983,7 @@ class _HomeBalanceCardState extends State<_HomeBalanceCard> {
                             left: 0,
                             top: 0,
                             right: 0,
-                            height: _shieldedCardHeight,
+                            height: shieldedCardHeight,
                             child: ClipRRect(
                               borderRadius: shieldedCardRadius,
                               child: DecoratedBox(
@@ -1083,7 +1087,7 @@ class _HomeBalanceCardState extends State<_HomeBalanceCard> {
                                                         : 'assets/illustrations/home_balance_card_bg_light.png',
                                                     fit: BoxFit.cover,
                                                     width: 604,
-                                                    height: _shieldedCardHeight,
+                                                    height: shieldedCardHeight,
                                                   ),
                                                 ),
                                               ),
@@ -1183,7 +1187,7 @@ class _HomeBalanceCardState extends State<_HomeBalanceCard> {
                           ),
                           Positioned(
                             left: 0,
-                            top: _shieldedCardHeight,
+                            top: shieldedCardHeight,
                             right: 0,
                             height: stripHeight,
                             child: SizedBox(
