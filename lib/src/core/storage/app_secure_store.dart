@@ -30,6 +30,7 @@ const _passwordRotationRollbackFailedKind = 'rollbackFailed';
 const _accountMnemonicKeyPrefix = 'zcash_account_mnemonic_';
 const _accountMnemonicMigrationCompleteKey =
     'zcash_mnemonic_storage_migrated_v1';
+const _votingHotkeyKeyPrefix = 'zcash_account_voting_hotkey_';
 
 class PasswordRotationRecoveryFailedException implements Exception {
   const PasswordRotationRecoveryFailedException();
@@ -194,6 +195,23 @@ class AppSecureStore {
     });
   }
 
+  /// Reads the voting hotkey for an account and round.
+  ///
+  /// Hotkeys are session secrets, so callers must have an unlocked wallet
+  /// session. A locked session returns `null` instead of touching platform
+  /// secure storage.
+  Future<List<int>?> readVotingHotkey({
+    required String accountUuid,
+    required String roundId,
+  }) async {
+    final encoded = await readSecretStringWithOptions(
+      votingHotkeyStorageKey(accountUuid: accountUuid, roundId: roundId),
+      requireUnlockedSession: true,
+    );
+    if (encoded == null || encoded.isEmpty) return null;
+    return base64Decode(encoded);
+  }
+
   Future<void> writeString(String key, String value) async {
     await _runStorageOperation(
       'write "$key"',
@@ -223,6 +241,46 @@ class AppSecureStore {
     });
   }
 
+  /// Stores a voting hotkey as an encrypted secret for an account and round.
+  Future<void> writeVotingHotkey({
+    required String accountUuid,
+    required String roundId,
+    required List<int> hotkey,
+  }) {
+    return writeSecretString(
+      votingHotkeyStorageKey(accountUuid: accountUuid, roundId: roundId),
+      base64Encode(hotkey),
+    );
+  }
+
+  /// Removes one voting hotkey for an account and round.
+  Future<void> deleteVotingHotkey({
+    required String accountUuid,
+    required String roundId,
+  }) {
+    return delete(
+      votingHotkeyStorageKey(accountUuid: accountUuid, roundId: roundId),
+    );
+  }
+
+  /// Removes every voting hotkey for an account.
+  Future<void> deleteVotingHotkeysForAccount(String accountUuid) {
+    return _secretMutationLock.run(() async {
+      final prefix = _votingHotkeyAccountPrefix(accountUuid);
+      final storedValues = await _runStorageOperation(
+        'read voting hotkeys for account "$accountUuid"',
+        _storage.readAll,
+      );
+      for (final key in storedValues.keys.toList(growable: false)) {
+        if (!key.startsWith(prefix)) continue;
+        await _runStorageOperation(
+          'delete voting hotkey "$key"',
+          () => _storage.delete(key: key),
+        );
+      }
+    });
+  }
+
   Future<void> delete(String key) async {
     if (key.startsWith(_accountMnemonicKeyPrefix)) {
       await _secretMutationLock.run(() async {
@@ -231,6 +289,15 @@ class AppSecureStore {
           () => _mnemonicStorage.delete(key: key),
         );
         await _deleteLegacyAccountMnemonicBestEffort(key);
+      });
+      return;
+    }
+    if (key.startsWith(_votingHotkeyKeyPrefix)) {
+      await _secretMutationLock.run(() async {
+        await _runStorageOperation(
+          'delete "$key"',
+          () => _storage.delete(key: key),
+        );
       });
       return;
     }
@@ -275,6 +342,25 @@ class AppSecureStore {
     );
   }
 
+  /// Deletes plain storage entries whose keys start with [prefix].
+  ///
+  /// Secret values that use the mnemonic or voting hotkey storage helpers should
+  /// keep using their dedicated deletion paths.
+  Future<void> deletePlainKeysWithPrefix(String prefix) async {
+    if (prefix.isEmpty) return;
+    final storedValues = await _runStorageOperation(
+      'read keys with prefix "$prefix"',
+      _storage.readAll,
+    );
+    for (final key in storedValues.keys.toList(growable: false)) {
+      if (!key.startsWith(prefix)) continue;
+      await _runStorageOperation(
+        'delete "$key"',
+        () => _storage.delete(key: key),
+      );
+    }
+  }
+
   Future<bool> isPasswordConfigured() async {
     final verifier = await readPlain(_passwordVerifierKey);
     final salt = await readPlain(_passwordVerifierSaltKey);
@@ -297,8 +383,10 @@ class AppSecureStore {
     setSessionPassword(password);
   }
 
-  /// Rotates the wallet password and re-encrypts every app-managed encrypted
-  /// secure-storage payload so mnemonic entries remain readable afterwards.
+  /// Rotates the wallet password and re-encrypts every app-managed secret.
+  ///
+  /// Account mnemonics and voting hotkeys are both encrypted with the wallet
+  /// password, but they may live in different secure storage backends.
   Future<bool> changePassword({
     required String currentPassword,
     required String newPassword,
@@ -377,6 +465,40 @@ class AppSecureStore {
           ),
         );
       }
+      final votingHotkeyValues = await _runStorageOperation(
+        'read all voting hotkeys',
+        _storage.readAll,
+      );
+      for (final entry in votingHotkeyValues.entries) {
+        if (!entry.key.startsWith(_votingHotkeyKeyPrefix)) continue;
+
+        if (!_isEncryptedPayload(entry.value)) {
+          throw StateError(
+            'Failed to parse secure-storage value for "${entry.key}".',
+          );
+        }
+
+        final clearText = await _decryptPayloadBytesForKey(
+          entry.key,
+          entry.value,
+          currentPassword,
+          secretSaltBase64,
+        );
+        final rotatedValue = await _encryptBytesWithPassword(
+          clearText,
+          newPassword,
+          secretSaltBase64,
+        );
+        rotatedSecrets.add(
+          _PasswordRotationEntry(key: entry.key, rotatedValue: rotatedValue),
+        );
+        rollbackSecrets.add(
+          _PasswordRotationRollbackEntry(
+            key: entry.key,
+            originalValue: entry.value,
+          ),
+        );
+      }
 
       final newVerifierSalt = _randomBytes(16);
       final newVerifierSaltBase64 = base64Encode(newVerifierSalt);
@@ -409,6 +531,18 @@ class AppSecureStore {
 
       return true;
     });
+  }
+
+  /// Stable secure-storage key for one account's hotkey in one voting round.
+  static String votingHotkeyStorageKey({
+    required String accountUuid,
+    required String roundId,
+  }) {
+    return '${_votingHotkeyAccountPrefix(accountUuid)}$roundId';
+  }
+
+  static String _votingHotkeyAccountPrefix(String accountUuid) {
+    return '$_votingHotkeyKeyPrefix${accountUuid}_';
   }
 
   Future<void> recoverInterruptedPasswordRotation() async {
@@ -753,8 +887,10 @@ class AppSecureStore {
   ) async {
     for (final entry in rotation.entries) {
       await _runStorageOperation(
-        'write rotated account mnemonic "${entry.key}"',
-        () => _mnemonicStorage.write(key: entry.key, value: entry.rotatedValue),
+        'write rotated secret "${entry.key}"',
+        () => _encryptedSecretStorageForKey(
+          entry.key,
+        ).write(key: entry.key, value: entry.rotatedValue),
       );
     }
     await writePlain(_passwordVerifierSaltKey, rotation.newVerifierSalt);
@@ -768,11 +904,10 @@ class AppSecureStore {
     try {
       for (final entry in rollback.entries) {
         await _runStorageOperation(
-          'restore account mnemonic "${entry.key}"',
-          () => _mnemonicStorage.write(
-            key: entry.key,
-            value: entry.originalValue,
-          ),
+          'restore secret "${entry.key}"',
+          () => _encryptedSecretStorageForKey(
+            entry.key,
+          ).write(key: entry.key, value: entry.originalValue),
         );
       }
       if (rollback.oldVerifierSalt == null) {
@@ -793,6 +928,12 @@ class AppSecureStore {
         'AppSecureStore: rollback failed: $rollbackError\n$rollbackStackTrace',
       );
     }
+  }
+
+  FlutterSecureStorage _encryptedSecretStorageForKey(String key) {
+    return key.startsWith(_accountMnemonicKeyPrefix)
+        ? _mnemonicStorage
+        : _storage;
   }
 
   Future<void> _deleteRotationRecordBestEffort() async {

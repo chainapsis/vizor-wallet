@@ -50,9 +50,16 @@ abstract final class AppBackResolver {
     '/accounts': 'Accounts',
     '/settings': 'Settings',
     '/settings/secret-passphrase': 'Secret passphrase',
-    '/settings/change-password': 'Change Password',
+    '/settings/change-password': 'Change password',
     '/settings/endpoint': 'Endpoint',
     '/onboarding/keystone': 'Connect Keystone',
+    '/voting': 'Vote',
+    '/voting/poll/:roundId': 'Poll',
+    '/voting/poll/:roundId/review': 'Review',
+    '/voting/poll/:roundId/status': 'Status',
+    '/voting/poll/:roundId/submitted': 'Submitted',
+    '/voting/poll/:roundId/results': 'Results',
+    '/voting/keystone/scan': 'Keystone',
   };
 
   static AppBackTarget resolve(BuildContext context) {
@@ -132,6 +139,21 @@ abstract final class AppBackResolver {
   static String? _dynamicRouteLabel(String location) {
     if (location.startsWith('/activity/tx/')) {
       return _routeLabels['/activity/tx/:txid'];
+    }
+    if (location.startsWith('/voting/poll/')) {
+      if (location.endsWith('/review')) {
+        return _routeLabels['/voting/poll/:roundId/review'];
+      }
+      if (location.endsWith('/status')) {
+        return _routeLabels['/voting/poll/:roundId/status'];
+      }
+      if (location.endsWith('/submitted')) {
+        return _routeLabels['/voting/poll/:roundId/submitted'];
+      }
+      if (location.endsWith('/results')) {
+        return _routeLabels['/voting/poll/:roundId/results'];
+      }
+      return _routeLabels['/voting/poll/:roundId'];
     }
     return null;
   }

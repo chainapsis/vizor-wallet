@@ -55,10 +55,22 @@ void main() {
     expect(homeIcon.name, AppIcons.home);
     expect(find.text('Send'), findsNothing);
     expect(find.text('Receive'), findsNothing);
+    expect(find.byKey(const ValueKey('sidebar_voting_button')), findsOneWidget);
+    expect(find.text('Vote'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('sidebar_address_book_button')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('sidebar Vote item opens the voting route', (tester) async {
+    await tester.pumpWidget(_sidebarHarness(SyncState()));
+    await tester.pump();
+
+    await tester.tap(find.text('Vote'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('voting'), findsOneWidget);
   });
 
   testWidgets('sidebar Address Book item opens the address book route', (
@@ -82,6 +94,7 @@ void main() {
     final positions = [
       tester.getTopLeft(find.text('Home')).dy,
       tester.getTopLeft(find.text('Swap')).dy,
+      tester.getTopLeft(find.text('Vote')).dy,
       tester.getTopLeft(find.text('Address book')).dy,
       tester.getTopLeft(find.text('Activity')).dy,
     ];
@@ -258,6 +271,7 @@ Widget _sidebarHarness(
       GoRoute(path: '/accounts', builder: (_, _) => const Text('accounts')),
       GoRoute(path: '/send', builder: (_, _) => const Text('send')),
       GoRoute(path: '/swap', builder: (_, _) => const Text('swap')),
+      GoRoute(path: '/voting', builder: (_, _) => const Text('voting')),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive')),
       GoRoute(
         path: '/address-book',

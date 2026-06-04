@@ -10,11 +10,19 @@ import 'api/keystone.dart';
 import 'api/secret.dart';
 import 'api/simple.dart';
 import 'api/sync.dart';
+import 'api/voting.dart';
 import 'api/wallet.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_web.dart';
+import 'third_party/zcash_voting/config.dart';
+import 'third_party/zcash_voting/delegate.dart';
+import 'third_party/zcash_voting/round.dart';
+import 'third_party/zcash_voting/share_policy.dart';
+import 'third_party/zcash_voting/types.dart';
+import 'third_party/zcash_voting/vote.dart';
+import 'third_party/zcash_voting/wire.dart';
 import 'wallet/keystone.dart';
 
 abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
@@ -29,12 +37,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException dco_decode_AnyhowException(dynamic raw);
 
   @protected
+  RustStreamSink<ApiDelegationProofEvent>
+  dco_decode_StreamSink_api_delegation_proof_event_Sse(dynamic raw);
+
+  @protected
   RustStreamSink<ApiMempoolTxEvent>
   dco_decode_StreamSink_api_mempool_tx_event_Sse(dynamic raw);
 
   @protected
   RustStreamSink<ApiSyncProgressEvent>
   dco_decode_StreamSink_api_sync_progress_event_Sse(dynamic raw);
+
+  @protected
+  RustStreamSink<ApiVoteCommitEvent>
+  dco_decode_StreamSink_api_vote_commit_event_Sse(dynamic raw);
 
   @protected
   String dco_decode_String(dynamic raw);
@@ -49,10 +65,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AddressValidationResult dco_decode_address_validation_result(dynamic raw);
 
   @protected
+  ApiDelegationProofEvent dco_decode_api_delegation_proof_event(dynamic raw);
+
+  @protected
   ApiMempoolTxEvent dco_decode_api_mempool_tx_event(dynamic raw);
 
   @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
+
+  @protected
+  ApiVoteCommitEvent dco_decode_api_vote_commit_event(dynamic raw);
+
+  @protected
+  ApiVotingEligibility dco_decode_api_voting_eligibility(dynamic raw);
+
+  @protected
+  ApiVotingRoundContext dco_decode_api_voting_round_context(dynamic raw);
+
+  @protected
+  AuthenticatedRound dco_decode_authenticated_round(dynamic raw);
 
   @protected
   BlockMetaInfo dco_decode_block_meta_info(dynamic raw);
@@ -61,10 +92,93 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  ApiVotingRoundContext dco_decode_box_autoadd_api_voting_round_context(
+    dynamic raw,
+  );
+
+  @protected
+  CompletedVoteDisplayView dco_decode_box_autoadd_completed_vote_display_view(
+    dynamic raw,
+  );
+
+  @protected
+  double dco_decode_box_autoadd_f_64(dynamic raw);
+
+  @protected
+  ResolvedVotingConfig dco_decode_box_autoadd_resolved_voting_config(
+    dynamic raw,
+  );
+
+  @protected
+  ShareDelegationRecordView dco_decode_box_autoadd_share_delegation_record_view(
+    dynamic raw,
+  );
+
+  @protected
+  SignedDelegationPayloadView
+  dco_decode_box_autoadd_signed_delegation_payload_view(dynamic raw);
+
+  @protected
+  SignedVoteCommitmentsView dco_decode_box_autoadd_signed_vote_commitments_view(
+    dynamic raw,
+  );
+
+  @protected
   int dco_decode_box_autoadd_u_32(dynamic raw);
 
   @protected
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
+
+  @protected
+  VanWitness dco_decode_box_autoadd_van_witness(dynamic raw);
+
+  @protected
+  VoteCommitmentWire dco_decode_box_autoadd_vote_commitment_wire(dynamic raw);
+
+  @protected
+  VoteShareWire dco_decode_box_autoadd_vote_share_wire(dynamic raw);
+
+  @protected
+  BundleLayout dco_decode_bundle_layout(dynamic raw);
+
+  @protected
+  CompletedVoteChoiceView dco_decode_completed_vote_choice_view(dynamic raw);
+
+  @protected
+  CompletedVoteDisplayView dco_decode_completed_vote_display_view(dynamic raw);
+
+  @protected
+  ConfigCondition dco_decode_config_condition(dynamic raw);
+
+  @protected
+  ConfigConditionKind dco_decode_config_condition_kind(dynamic raw);
+
+  @protected
+  ConfigSwitchKind dco_decode_config_switch_kind(dynamic raw);
+
+  @protected
+  DelegationConfirmation dco_decode_delegation_confirmation(dynamic raw);
+
+  @protected
+  DelegationPirPrecomputeResultView
+  dco_decode_delegation_pir_precompute_result_view(dynamic raw);
+
+  @protected
+  DelegationRecoveryView dco_decode_delegation_recovery_view(dynamic raw);
+
+  @protected
+  DelegationRecoveryWorkView dco_decode_delegation_recovery_work_view(
+    dynamic raw,
+  );
+
+  @protected
+  DelegationStatusView dco_decode_delegation_status_view(dynamic raw);
+
+  @protected
+  DelegationSubmissionWire dco_decode_delegation_submission_wire(dynamic raw);
+
+  @protected
+  DraftVote dco_decode_draft_vote(dynamic raw);
 
   @protected
   ExecuteProposalResult dco_decode_execute_proposal_result(dynamic raw);
@@ -78,10 +192,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_f_64(dynamic raw);
 
   @protected
+  int dco_decode_i_32(dynamic raw);
+
+  @protected
   PlatformInt64 dco_decode_i_64(dynamic raw);
 
   @protected
   KeystoneAccountInfo dco_decode_keystone_account_info(dynamic raw);
+
+  @protected
+  KeystoneSignatureRecord dco_decode_keystone_signature_record(dynamic raw);
+
+  @protected
+  KeystoneSigningRequest dco_decode_keystone_signing_request(dynamic raw);
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
@@ -90,10 +213,55 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<AccountInfo> dco_decode_list_account_info(dynamic raw);
 
   @protected
+  List<AuthenticatedRound> dco_decode_list_authenticated_round(dynamic raw);
+
+  @protected
   List<BlockMetaInfo> dco_decode_list_block_meta_info(dynamic raw);
 
   @protected
+  List<CompletedVoteChoiceView> dco_decode_list_completed_vote_choice_view(
+    dynamic raw,
+  );
+
+  @protected
+  List<ConfigCondition> dco_decode_list_config_condition(dynamic raw);
+
+  @protected
+  List<DelegationRecoveryView> dco_decode_list_delegation_recovery_view(
+    dynamic raw,
+  );
+
+  @protected
+  List<DelegationRecoveryWorkView>
+  dco_decode_list_delegation_recovery_work_view(dynamic raw);
+
+  @protected
+  List<DelegationStatusView> dco_decode_list_delegation_status_view(
+    dynamic raw,
+  );
+
+  @protected
+  List<DraftVote> dco_decode_list_draft_vote(dynamic raw);
+
+  @protected
   List<KeystoneAccountInfo> dco_decode_list_keystone_account_info(dynamic raw);
+
+  @protected
+  List<KeystoneSignatureRecord> dco_decode_list_keystone_signature_record(
+    dynamic raw,
+  );
+
+  @protected
+  List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<NextStepView> dco_decode_list_next_step_view(dynamic raw);
+
+  @protected
+  List<int> dco_decode_list_prim_u_32_loose(dynamic raw);
+
+  @protected
+  Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
 
   @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
@@ -102,7 +270,32 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<RecoverableCommitmentBundle>
+  dco_decode_list_recoverable_commitment_bundle(dynamic raw);
+
+  @protected
   List<ScanRangeInfo> dco_decode_list_scan_range_info(dynamic raw);
+
+  @protected
+  List<ServiceEndpoint> dco_decode_list_service_endpoint(dynamic raw);
+
+  @protected
+  List<ShareDelegationRecordView> dco_decode_list_share_delegation_record_view(
+    dynamic raw,
+  );
+
+  @protected
+  List<ShareSubmissionPlan> dco_decode_list_share_submission_plan(dynamic raw);
+
+  @protected
+  List<ShareWorkflowRecoveryView> dco_decode_list_share_workflow_recovery_view(
+    dynamic raw,
+  );
+
+  @protected
+  List<SignedVoteCommitmentView> dco_decode_list_signed_vote_commitment_view(
+    dynamic raw,
+  );
 
   @protected
   List<SubtreeRoot> dco_decode_list_subtree_root(dynamic raw);
@@ -119,7 +312,44 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<TxDataRequest> dco_decode_list_tx_data_request(dynamic raw);
 
   @protected
+  List<VoteRecoveryView> dco_decode_list_vote_recovery_view(dynamic raw);
+
+  @protected
+  List<VoteRecoveryWorkView> dco_decode_list_vote_recovery_work_view(
+    dynamic raw,
+  );
+
+  @protected
+  List<VoteShareWire> dco_decode_list_vote_share_wire(dynamic raw);
+
+  @protected
+  List<WireEncryptedShare> dco_decode_list_wire_encrypted_share(dynamic raw);
+
+  @protected
+  NextStepView dco_decode_next_step_view(dynamic raw);
+
+  @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  CompletedVoteDisplayView?
+  dco_decode_opt_box_autoadd_completed_vote_display_view(dynamic raw);
+
+  @protected
+  double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
+
+  @protected
+  ResolvedVotingConfig? dco_decode_opt_box_autoadd_resolved_voting_config(
+    dynamic raw,
+  );
+
+  @protected
+  SignedDelegationPayloadView?
+  dco_decode_opt_box_autoadd_signed_delegation_payload_view(dynamic raw);
+
+  @protected
+  SignedVoteCommitmentsView?
+  dco_decode_opt_box_autoadd_signed_vote_commitments_view(dynamic raw);
 
   @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
@@ -131,7 +361,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  ParsedSignedVotingPczt dco_decode_parsed_signed_voting_pczt(dynamic raw);
+
+  @protected
   ProposalResult dco_decode_proposal_result(dynamic raw);
+
+  @protected
+  RecoverableCommitmentBundle dco_decode_recoverable_commitment_bundle(
+    dynamic raw,
+  );
+
+  @protected
+  ResolvedVotingConfig dco_decode_resolved_voting_config(dynamic raw);
+
+  @protected
+  RoundPlanView dco_decode_round_plan_view(dynamic raw);
+
+  @protected
+  RoundRecoveryStateView dco_decode_round_recovery_state_view(dynamic raw);
 
   @protected
   ScanRangeInfo dco_decode_scan_range_info(dynamic raw);
@@ -141,6 +388,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SendMaxEstimateResult dco_decode_send_max_estimate_result(dynamic raw);
+
+  @protected
+  ServiceEndpoint dco_decode_service_endpoint(dynamic raw);
+
+  @protected
+  ShareDelegationRecordView dco_decode_share_delegation_record_view(
+    dynamic raw,
+  );
+
+  @protected
+  ShareSubmissionPlan dco_decode_share_submission_plan(dynamic raw);
+
+  @protected
+  ShareWorkflowRecoveryView dco_decode_share_workflow_recovery_view(
+    dynamic raw,
+  );
 
   @protected
   ShieldTransparentPcztResult dco_decode_shield_transparent_pczt_result(
@@ -154,10 +417,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ShieldTransparentStatus dco_decode_shield_transparent_status(dynamic raw);
 
   @protected
+  SignedDelegationPayloadView dco_decode_signed_delegation_payload_view(
+    dynamic raw,
+  );
+
+  @protected
+  SignedVoteCommitmentView dco_decode_signed_vote_commitment_view(dynamic raw);
+
+  @protected
+  SignedVoteCommitmentsView dco_decode_signed_vote_commitments_view(
+    dynamic raw,
+  );
+
+  @protected
   SubtreeIndices dco_decode_subtree_indices(dynamic raw);
 
   @protected
   SubtreeRoot dco_decode_subtree_root(dynamic raw);
+
+  @protected
+  SupportedVersions dco_decode_supported_versions(dynamic raw);
 
   @protected
   SyncProgress dco_decode_sync_progress(dynamic raw);
@@ -193,6 +472,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt dco_decode_usize(dynamic raw);
 
   @protected
+  VanWitness dco_decode_van_witness(dynamic raw);
+
+  @protected
+  VoteCommitmentWire dco_decode_vote_commitment_wire(dynamic raw);
+
+  @protected
+  VoteConfirmation dco_decode_vote_confirmation(dynamic raw);
+
+  @protected
+  VoteRecoveryView dco_decode_vote_recovery_view(dynamic raw);
+
+  @protected
+  VoteRecoveryWorkView dco_decode_vote_recovery_work_view(dynamic raw);
+
+  @protected
+  VoteShareWire dco_decode_vote_share_wire(dynamic raw);
+
+  @protected
+  VotingConfigResolution dco_decode_voting_config_resolution(dynamic raw);
+
+  @protected
+  VotingRoundParams dco_decode_voting_round_params(dynamic raw);
+
+  @protected
   WalletBalance dco_decode_wallet_balance(dynamic raw);
 
   @protected
@@ -202,7 +505,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   WalletImportResult dco_decode_wallet_import_result(dynamic raw);
 
   @protected
+  WireEncryptedShare dco_decode_wire_encrypted_share(dynamic raw);
+
+  @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
+
+  @protected
+  RustStreamSink<ApiDelegationProofEvent>
+  sse_decode_StreamSink_api_delegation_proof_event_Sse(
+    SseDeserializer deserializer,
+  );
 
   @protected
   RustStreamSink<ApiMempoolTxEvent>
@@ -213,6 +525,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_StreamSink_api_sync_progress_event_Sse(
     SseDeserializer deserializer,
   );
+
+  @protected
+  RustStreamSink<ApiVoteCommitEvent>
+  sse_decode_StreamSink_api_vote_commit_event_Sse(SseDeserializer deserializer);
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
@@ -231,6 +547,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiDelegationProofEvent sse_decode_api_delegation_proof_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiMempoolTxEvent sse_decode_api_mempool_tx_event(
     SseDeserializer deserializer,
   );
@@ -241,16 +562,141 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiVoteCommitEvent sse_decode_api_vote_commit_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVotingEligibility sse_decode_api_voting_eligibility(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVotingRoundContext sse_decode_api_voting_round_context(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  AuthenticatedRound sse_decode_authenticated_round(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BlockMetaInfo sse_decode_block_meta_info(SseDeserializer deserializer);
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  ApiVotingRoundContext sse_decode_box_autoadd_api_voting_round_context(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  CompletedVoteDisplayView sse_decode_box_autoadd_completed_vote_display_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
+  ResolvedVotingConfig sse_decode_box_autoadd_resolved_voting_config(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ShareDelegationRecordView sse_decode_box_autoadd_share_delegation_record_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SignedDelegationPayloadView
+  sse_decode_box_autoadd_signed_delegation_payload_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SignedVoteCommitmentsView sse_decode_box_autoadd_signed_vote_commitments_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  VanWitness sse_decode_box_autoadd_van_witness(SseDeserializer deserializer);
+
+  @protected
+  VoteCommitmentWire sse_decode_box_autoadd_vote_commitment_wire(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VoteShareWire sse_decode_box_autoadd_vote_share_wire(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BundleLayout sse_decode_bundle_layout(SseDeserializer deserializer);
+
+  @protected
+  CompletedVoteChoiceView sse_decode_completed_vote_choice_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  CompletedVoteDisplayView sse_decode_completed_vote_display_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ConfigCondition sse_decode_config_condition(SseDeserializer deserializer);
+
+  @protected
+  ConfigConditionKind sse_decode_config_condition_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ConfigSwitchKind sse_decode_config_switch_kind(SseDeserializer deserializer);
+
+  @protected
+  DelegationConfirmation sse_decode_delegation_confirmation(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegationPirPrecomputeResultView
+  sse_decode_delegation_pir_precompute_result_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegationRecoveryView sse_decode_delegation_recovery_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegationRecoveryWorkView sse_decode_delegation_recovery_work_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegationStatusView sse_decode_delegation_status_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegationSubmissionWire sse_decode_delegation_submission_wire(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DraftVote sse_decode_draft_vote(SseDeserializer deserializer);
 
   @protected
   ExecuteProposalResult sse_decode_execute_proposal_result(
@@ -266,10 +712,23 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_f_64(SseDeserializer deserializer);
 
   @protected
+  int sse_decode_i_32(SseDeserializer deserializer);
+
+  @protected
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
   KeystoneAccountInfo sse_decode_keystone_account_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  KeystoneSignatureRecord sse_decode_keystone_signature_record(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  KeystoneSigningRequest sse_decode_keystone_signing_request(
     SseDeserializer deserializer,
   );
 
@@ -280,14 +739,67 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<AccountInfo> sse_decode_list_account_info(SseDeserializer deserializer);
 
   @protected
+  List<AuthenticatedRound> sse_decode_list_authenticated_round(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<BlockMetaInfo> sse_decode_list_block_meta_info(
     SseDeserializer deserializer,
   );
 
   @protected
+  List<CompletedVoteChoiceView> sse_decode_list_completed_vote_choice_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ConfigCondition> sse_decode_list_config_condition(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<DelegationRecoveryView> sse_decode_list_delegation_recovery_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<DelegationRecoveryWorkView>
+  sse_decode_list_delegation_recovery_work_view(SseDeserializer deserializer);
+
+  @protected
+  List<DelegationStatusView> sse_decode_list_delegation_status_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<DraftVote> sse_decode_list_draft_vote(SseDeserializer deserializer);
+
+  @protected
   List<KeystoneAccountInfo> sse_decode_list_keystone_account_info(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<KeystoneSignatureRecord> sse_decode_list_keystone_signature_record(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<Uint8List> sse_decode_list_list_prim_u_8_strict(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<NextStepView> sse_decode_list_next_step_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<int> sse_decode_list_prim_u_32_loose(SseDeserializer deserializer);
+
+  @protected
+  Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
 
   @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
@@ -296,7 +808,36 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  List<RecoverableCommitmentBundle>
+  sse_decode_list_recoverable_commitment_bundle(SseDeserializer deserializer);
+
+  @protected
   List<ScanRangeInfo> sse_decode_list_scan_range_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ServiceEndpoint> sse_decode_list_service_endpoint(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ShareDelegationRecordView> sse_decode_list_share_delegation_record_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ShareSubmissionPlan> sse_decode_list_share_submission_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ShareWorkflowRecoveryView> sse_decode_list_share_workflow_recovery_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<SignedVoteCommitmentView> sse_decode_list_signed_vote_commitment_view(
     SseDeserializer deserializer,
   );
 
@@ -319,7 +860,56 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<VoteRecoveryView> sse_decode_list_vote_recovery_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<VoteRecoveryWorkView> sse_decode_list_vote_recovery_work_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<VoteShareWire> sse_decode_list_vote_share_wire(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<WireEncryptedShare> sse_decode_list_wire_encrypted_share(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NextStepView sse_decode_next_step_view(SseDeserializer deserializer);
+
+  @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  CompletedVoteDisplayView?
+  sse_decode_opt_box_autoadd_completed_vote_display_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
+  ResolvedVotingConfig? sse_decode_opt_box_autoadd_resolved_voting_config(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SignedDelegationPayloadView?
+  sse_decode_opt_box_autoadd_signed_delegation_payload_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SignedVoteCommitmentsView?
+  sse_decode_opt_box_autoadd_signed_vote_commitments_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
@@ -331,7 +921,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  ParsedSignedVotingPczt sse_decode_parsed_signed_voting_pczt(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ProposalResult sse_decode_proposal_result(SseDeserializer deserializer);
+
+  @protected
+  RecoverableCommitmentBundle sse_decode_recoverable_commitment_bundle(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ResolvedVotingConfig sse_decode_resolved_voting_config(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RoundPlanView sse_decode_round_plan_view(SseDeserializer deserializer);
+
+  @protected
+  RoundRecoveryStateView sse_decode_round_recovery_state_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ScanRangeInfo sse_decode_scan_range_info(SseDeserializer deserializer);
@@ -341,6 +954,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SendMaxEstimateResult sse_decode_send_max_estimate_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ServiceEndpoint sse_decode_service_endpoint(SseDeserializer deserializer);
+
+  @protected
+  ShareDelegationRecordView sse_decode_share_delegation_record_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ShareSubmissionPlan sse_decode_share_submission_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ShareWorkflowRecoveryView sse_decode_share_workflow_recovery_view(
     SseDeserializer deserializer,
   );
 
@@ -360,10 +991,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  SignedDelegationPayloadView sse_decode_signed_delegation_payload_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SignedVoteCommitmentView sse_decode_signed_vote_commitment_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SignedVoteCommitmentsView sse_decode_signed_vote_commitments_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   SubtreeIndices sse_decode_subtree_indices(SseDeserializer deserializer);
 
   @protected
   SubtreeRoot sse_decode_subtree_root(SseDeserializer deserializer);
+
+  @protected
+  SupportedVersions sse_decode_supported_versions(SseDeserializer deserializer);
 
   @protected
   SyncProgress sse_decode_sync_progress(SseDeserializer deserializer);
@@ -401,6 +1050,38 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt sse_decode_usize(SseDeserializer deserializer);
 
   @protected
+  VanWitness sse_decode_van_witness(SseDeserializer deserializer);
+
+  @protected
+  VoteCommitmentWire sse_decode_vote_commitment_wire(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VoteConfirmation sse_decode_vote_confirmation(SseDeserializer deserializer);
+
+  @protected
+  VoteRecoveryView sse_decode_vote_recovery_view(SseDeserializer deserializer);
+
+  @protected
+  VoteRecoveryWorkView sse_decode_vote_recovery_work_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VoteShareWire sse_decode_vote_share_wire(SseDeserializer deserializer);
+
+  @protected
+  VotingConfigResolution sse_decode_voting_config_resolution(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VotingRoundParams sse_decode_voting_round_params(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   WalletBalance sse_decode_wallet_balance(SseDeserializer deserializer);
 
   @protected
@@ -414,11 +1095,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  int sse_decode_i_32(SseDeserializer deserializer);
+  WireEncryptedShare sse_decode_wire_encrypted_share(
+    SseDeserializer deserializer,
+  );
 
   @protected
   void sse_encode_AnyhowException(
     AnyhowException self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_StreamSink_api_delegation_proof_event_Sse(
+    RustStreamSink<ApiDelegationProofEvent> self,
     SseSerializer serializer,
   );
 
@@ -431,6 +1120,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_StreamSink_api_sync_progress_event_Sse(
     RustStreamSink<ApiSyncProgressEvent> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_StreamSink_api_vote_commit_event_Sse(
+    RustStreamSink<ApiVoteCommitEvent> self,
     SseSerializer serializer,
   );
 
@@ -453,6 +1148,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_delegation_proof_event(
+    ApiDelegationProofEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_mempool_tx_event(
     ApiMempoolTxEvent self,
     SseSerializer serializer,
@@ -465,16 +1166,169 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_vote_commit_event(
+    ApiVoteCommitEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_voting_eligibility(
+    ApiVotingEligibility self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_voting_round_context(
+    ApiVotingRoundContext self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_authenticated_round(
+    AuthenticatedRound self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_block_meta_info(BlockMetaInfo self, SseSerializer serializer);
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_api_voting_round_context(
+    ApiVotingRoundContext self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_completed_vote_display_view(
+    CompletedVoteDisplayView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_resolved_voting_config(
+    ResolvedVotingConfig self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_share_delegation_record_view(
+    ShareDelegationRecordView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_signed_delegation_payload_view(
+    SignedDelegationPayloadView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_signed_vote_commitments_view(
+    SignedVoteCommitmentsView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_van_witness(
+    VanWitness self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_vote_commitment_wire(
+    VoteCommitmentWire self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_vote_share_wire(
+    VoteShareWire self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bundle_layout(BundleLayout self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_completed_vote_choice_view(
+    CompletedVoteChoiceView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_completed_vote_display_view(
+    CompletedVoteDisplayView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_config_condition(
+    ConfigCondition self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_config_condition_kind(
+    ConfigConditionKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_config_switch_kind(
+    ConfigSwitchKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_delegation_confirmation(
+    DelegationConfirmation self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_delegation_pir_precompute_result_view(
+    DelegationPirPrecomputeResultView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_delegation_recovery_view(
+    DelegationRecoveryView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_delegation_recovery_work_view(
+    DelegationRecoveryWorkView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_delegation_status_view(
+    DelegationStatusView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_delegation_submission_wire(
+    DelegationSubmissionWire self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_draft_vote(DraftVote self, SseSerializer serializer);
 
   @protected
   void sse_encode_execute_proposal_result(
@@ -492,11 +1346,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_i_32(int self, SseSerializer serializer);
+
+  @protected
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
   @protected
   void sse_encode_keystone_account_info(
     KeystoneAccountInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_keystone_signature_record(
+    KeystoneSignatureRecord self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_keystone_signing_request(
+    KeystoneSigningRequest self,
     SseSerializer serializer,
   );
 
@@ -510,14 +1379,86 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_authenticated_round(
+    List<AuthenticatedRound> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_block_meta_info(
     List<BlockMetaInfo> self,
     SseSerializer serializer,
   );
 
   @protected
+  void sse_encode_list_completed_vote_choice_view(
+    List<CompletedVoteChoiceView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_config_condition(
+    List<ConfigCondition> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_delegation_recovery_view(
+    List<DelegationRecoveryView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_delegation_recovery_work_view(
+    List<DelegationRecoveryWorkView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_delegation_status_view(
+    List<DelegationStatusView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_draft_vote(
+    List<DraftVote> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_keystone_account_info(
     List<KeystoneAccountInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_keystone_signature_record(
+    List<KeystoneSignatureRecord> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_list_prim_u_8_strict(
+    List<Uint8List> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_next_step_view(
+    List<NextStepView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_u_32_loose(
+    List<int> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_u_32_strict(
+    Uint32List self,
     SseSerializer serializer,
   );
 
@@ -531,8 +1472,44 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_recoverable_commitment_bundle(
+    List<RecoverableCommitmentBundle> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_scan_range_info(
     List<ScanRangeInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_service_endpoint(
+    List<ServiceEndpoint> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_share_delegation_record_view(
+    List<ShareDelegationRecordView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_share_submission_plan(
+    List<ShareSubmissionPlan> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_share_workflow_recovery_view(
+    List<ShareWorkflowRecoveryView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_signed_vote_commitment_view(
+    List<SignedVoteCommitmentView> self,
     SseSerializer serializer,
   );
 
@@ -561,7 +1538,61 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_vote_recovery_view(
+    List<VoteRecoveryView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_vote_recovery_work_view(
+    List<VoteRecoveryWorkView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_vote_share_wire(
+    List<VoteShareWire> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_wire_encrypted_share(
+    List<WireEncryptedShare> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_next_step_view(NextStepView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_completed_vote_display_view(
+    CompletedVoteDisplayView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_resolved_voting_config(
+    ResolvedVotingConfig? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_signed_delegation_payload_view(
+    SignedDelegationPayloadView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_signed_vote_commitments_view(
+    SignedVoteCommitmentsView? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
@@ -576,8 +1607,35 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_parsed_signed_voting_pczt(
+    ParsedSignedVotingPczt self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_proposal_result(
     ProposalResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_recoverable_commitment_bundle(
+    RecoverableCommitmentBundle self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_resolved_voting_config(
+    ResolvedVotingConfig self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_round_plan_view(RoundPlanView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_round_recovery_state_view(
+    RoundRecoveryStateView self,
     SseSerializer serializer,
   );
 
@@ -590,6 +1648,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_send_max_estimate_result(
     SendMaxEstimateResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_service_endpoint(
+    ServiceEndpoint self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_share_delegation_record_view(
+    ShareDelegationRecordView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_share_submission_plan(
+    ShareSubmissionPlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_share_workflow_recovery_view(
+    ShareWorkflowRecoveryView self,
     SseSerializer serializer,
   );
 
@@ -612,6 +1694,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_signed_delegation_payload_view(
+    SignedDelegationPayloadView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_signed_vote_commitment_view(
+    SignedVoteCommitmentView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_signed_vote_commitments_view(
+    SignedVoteCommitmentsView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_subtree_indices(
     SubtreeIndices self,
     SseSerializer serializer,
@@ -619,6 +1719,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_subtree_root(SubtreeRoot self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_supported_versions(
+    SupportedVersions self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_sync_progress(SyncProgress self, SseSerializer serializer);
@@ -666,6 +1772,48 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_usize(BigInt self, SseSerializer serializer);
 
   @protected
+  void sse_encode_van_witness(VanWitness self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_vote_commitment_wire(
+    VoteCommitmentWire self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_vote_confirmation(
+    VoteConfirmation self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_vote_recovery_view(
+    VoteRecoveryView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_vote_recovery_work_view(
+    VoteRecoveryWorkView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_vote_share_wire(VoteShareWire self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_voting_config_resolution(
+    VotingConfigResolution self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_voting_round_params(
+    VotingRoundParams self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_wallet_balance(WalletBalance self, SseSerializer serializer);
 
   @protected
@@ -681,7 +1829,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_i_32(int self, SseSerializer serializer);
+  void sse_encode_wire_encrypted_share(
+    WireEncryptedShare self,
+    SseSerializer serializer,
+  );
 }
 
 // Section: wire_class

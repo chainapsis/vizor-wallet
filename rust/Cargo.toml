@@ -25,11 +25,15 @@ zcash_client_backend = { version = "0.23", features = [
     "pczt",
 ] }
 zcash_client_sqlite = { version = "0.21", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
+# Voting clients need PIR lookup support and vote-commitment-tree sync.
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "5b164d03cb12b1635deea589e575d461481fed72", package = "zcash_voting" }
 # Must match versions used by zcash_client_sqlite to avoid type conflicts
 orchard = "0.14"
 sapling-crypto = { version = "0.7", default-features = false, features = ["circuit"] }
 uuid = "1.1"
 zip32 = "0.2"
+pasta_curves = "0.5"
+ff = "0.13"
 # Required by no-op Sapling prover trait impls
 jubjub = "0.10"
 bls12_381 = "0.8"
@@ -62,6 +66,7 @@ rand = "0.8"
 
 # Async runtime & gRPC
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+futures = "0.3"
 tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring"] }
 # rustls is in the graph transitively via tonic; make it a direct dep
 # so we can explicitly install the ring CryptoProvider in `init_app`.
@@ -91,6 +96,18 @@ security-framework = { version = "3.7", features = ["OSX_10_15"] }
 [dev-dependencies]
 tempfile = "3"
 hex = "0.4"
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting", rev = "5b164d03cb12b1635deea589e575d461481fed72", package = "vote-commitment-tree" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
+
+# Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
+# without `--release`). Rust crypto and voting flows are slow under the default
+# debug opt-level=0, so keep debug assertions and symbols while making local
+# Flutter/debug voting builds usable. Release builds are unaffected by this
+# profile.
+[profile.dev]
+opt-level = 3
+
+[profile.dev.package."*"]
+opt-level = 3

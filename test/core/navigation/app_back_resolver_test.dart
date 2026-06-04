@@ -76,6 +76,23 @@ void main() {
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Review'), findsNothing);
   });
+
+  testWidgets('uses voting route labels for pushed poll screens', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_backResolverHarness(initialLocation: '/voting'));
+    await tester.pump();
+
+    await tester.tap(find.text('Open Poll'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Vote'), findsOneWidget);
+
+    await tester.tap(find.text('Open Voting Review'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Poll'), findsOneWidget);
+  });
 }
 
 Widget _backResolverHarness({required String initialLocation}) {
@@ -142,6 +159,34 @@ Widget _backResolverHarness({required String initialLocation}) {
       ),
       GoRoute(
         path: '/send/status',
+        builder: (_, _) => const AppRouteBackLink(),
+      ),
+      GoRoute(
+        path: '/voting',
+        builder: (_, _) => const Column(
+          children: [
+            AppRouteBackLink(),
+            _PushRouteButton(
+              label: 'Open Poll',
+              location: '/voting/poll/round-1',
+            ),
+          ],
+        ),
+      ),
+      GoRoute(
+        path: '/voting/poll/:roundId',
+        builder: (_, _) => const Column(
+          children: [
+            AppRouteBackLink(),
+            _PushRouteButton(
+              label: 'Open Voting Review',
+              location: '/voting/poll/round-1/review',
+            ),
+          ],
+        ),
+      ),
+      GoRoute(
+        path: '/voting/poll/:roundId/review',
         builder: (_, _) => const AppRouteBackLink(),
       ),
     ],

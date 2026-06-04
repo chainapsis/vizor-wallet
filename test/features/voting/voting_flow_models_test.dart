@@ -1,0 +1,401 @@
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    FlutterSecureStorage.setMockInitialValues({});
+  });
+
+  test('proposal parser preserves explicit service proposal ids', () {
+    final proposals = proposalsFromJson({
+      'proposals': [
+        {
+          'id': 1,
+          'title': 'First',
+          'options': [
+            {'index': 0, 'label': 'Yes'},
+            {'index': 1, 'label': 'No'},
+          ],
+        },
+        {
+          'id': 2,
+          'title': 'Second',
+          'options': [
+            {'index': 0, 'label': 'Abstain'},
+            {'index': 1, 'label': 'Support'},
+          ],
+        },
+      ],
+    });
+
+    expect(proposals.map((proposal) => proposal.id), [1, 2]);
+    expect(proposals.first.options.map((option) => option.index), [0, 1]);
+    expect(proposals.last.options.map((option) => option.label), [
+      'Abstain',
+      'Support',
+    ]);
+  });
+
+  test('proposal parser preserves structured ZIP and forum metadata', () {
+    final proposals = proposalsFromJson({
+      'proposals': [
+        {
+          'id': 1,
+          'title': 'First',
+          'zip_number': 'ZIP 233, 234',
+          'forum_url': 'https://forum.zcashcommunity.com/t/zip-233',
+        },
+        {
+          'id': 2,
+          'title': 'Second',
+          'zipNumber': 'ZIP 231',
+          'forumURL': 'https://forum.zcashcommunity.com/t/zip-231',
+        },
+        {
+          'id': 3,
+          'title': 'Third',
+          'zipNumberString': '232',
+          'forum_link': 'Discussion: https://example.com/voting/zip-232',
+        },
+        {
+          'id': 4,
+          'title': 'Fourth',
+          'metadata': {
+            'links': [
+              {'url': 'http://example.net/voting/zip-230'},
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(proposals.first.zipNumber, 'ZIP 233, 234');
+    expect(proposals.first.zipBadges, ['ZIP-233', 'ZIP-234']);
+    expect(
+      proposals.first.forumUri,
+      Uri.parse('https://forum.zcashcommunity.com/t/zip-233'),
+    );
+    expect(proposals[1].zipBadges, ['ZIP-231']);
+    expect(
+      proposals[1].forumUri,
+      Uri.parse('https://forum.zcashcommunity.com/t/zip-231'),
+    );
+    expect(proposals[2].zipBadges, ['ZIP-232']);
+    expect(
+      proposals[2].forumUri,
+      Uri.parse('https://example.com/voting/zip-232'),
+    );
+    expect(
+      proposals[3].forumUri,
+      Uri.parse('http://example.net/voting/zip-230'),
+    );
+  });
+
+  test('proposal ZIP badges fall back to title and description text', () {
+    final proposals = proposalsFromJson({
+      'proposals': [
+        {'id': 1, 'title': 'NU7 ZIP 233', 'description': 'Related to ZIP 234.'},
+      ],
+    });
+
+    expect(proposals.single.zipBadges, ['ZIP-233', 'ZIP-234']);
+  });
+
+  test('round forum URL parser accepts discussion and forum aliases', () {
+    expect(
+      votingRoundForumUriFromJson({
+        'discussion_url': 'https://forum.zcashcommunity.com/t/nu7',
+      }),
+      Uri.parse('https://forum.zcashcommunity.com/t/nu7'),
+    );
+    expect(
+      votingRoundForumUriFromJson({
+        'forumURL': 'https://forum.zcashcommunity.com/t/proposal',
+      }),
+      Uri.parse('https://forum.zcashcommunity.com/t/proposal'),
+    );
+    expect(
+      votingRoundForumUriFromJson({
+        'forum_link': 'https://example.com/proposal-link',
+      }),
+      Uri.parse('https://example.com/proposal-link'),
+    );
+    expect(
+      votingRoundForumUriFromJson({'url': 'http://example.org/root-url'}),
+      Uri.parse('http://example.org/root-url'),
+    );
+    expect(
+      votingRoundForumUriFromJson({
+        'metadata': {
+          'links': [
+            {'label': 'Forum', 'url': 'https://example.net/nested'},
+          ],
+        },
+      }),
+      Uri.parse('https://example.net/nested'),
+    );
+    expect(
+      votingRoundForumUriFromJson({
+        'proposals': [
+          {'forum_url': 'https://forum.zcashcommunity.com/t/proposal-only'},
+        ],
+      }),
+      null,
+    );
+    expect(votingRoundForumUriFromJson({'forum_url': 'javascript:bad'}), null);
+    expect(
+      votingRoundForumUriFromJson({
+        'forum_url': 'http://forum.zcashcommunity.com/t/nu7',
+      }),
+      Uri.parse('http://forum.zcashcommunity.com/t/nu7'),
+    );
+    expect(
+      votingRoundForumUriFromJson({'forum_url': 'https://example.com/t/nu7'}),
+      Uri.parse('https://example.com/t/nu7'),
+    );
+  });
+
+  test(
+    'proposal parser preserves option descriptions separately from labels',
+    () {
+      final proposals = proposalsFromJson({
+        'proposals': [
+          {
+            'id': 1,
+            'title': 'Issuance smoothing',
+            'options': [
+              {
+                'index': 0,
+                'label': 'Preserve halvings',
+                'description':
+                    'Keep the existing halving schedule for new ZEC.',
+              },
+              {
+                'index': 1,
+                'short_title': 'Smooth issuance curve',
+                'description':
+                    'Replace halvings with a gradual issuance curve.',
+              },
+              {'index': 2, 'shortTitle': 'Delay reissuance'},
+              {'index': 3, 'title': 'Do not smooth issuance'},
+            ],
+          },
+        ],
+      });
+
+      expect(proposals.single.options.map((option) => option.label), [
+        'Preserve halvings',
+        'Smooth issuance curve',
+        'Delay reissuance',
+        'Do not smooth issuance',
+      ]);
+      expect(
+        proposals.single.options.first.description,
+        'Keep the existing halving schedule for new ZEC.',
+      );
+      expect(
+        proposals.single.options[1].description,
+        'Replace halvings with a gradual issuance curve.',
+      );
+      expect(proposals.single.options[2].description, isEmpty);
+      expect(proposals.single.options[3].description, isEmpty);
+    },
+  );
+
+  test('proposal parser rejects missing proposal ids', () {
+    expect(
+      () => proposalsFromJson({
+        'proposals': [
+          {'title': 'Missing id'},
+        ],
+      }),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          'Missing required int: id',
+        ),
+      ),
+    );
+  });
+
+  test('proposal parser rejects ids outside Rust vote protocol range', () {
+    expect(
+      () => proposalsFromJson({
+        'proposals': [
+          {'id': 0, 'title': 'Zero'},
+        ],
+      }),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          'id must be 1..15, got 0',
+        ),
+      ),
+    );
+  });
+
+  test('proposal parser rejects fractional proposal ids', () {
+    expect(
+      () => proposalsFromJson({
+        'proposals': [
+          {'id': 1.9, 'title': 'Fractional'},
+        ],
+      }),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          'id must be an integer',
+        ),
+      ),
+    );
+  });
+
+  test('draft choices can be cleared by proposal id', () {
+    final draft = const VotingDraftState()
+        .setChoice(1, 0)
+        .setChoice(2, 1)
+        .clearChoice(1);
+
+    expect(draft.choices, {2: 1});
+    expect(draft.isEmpty, false);
+    expect(draft.clearChoice(2).isEmpty, true);
+  });
+
+  test('secure draft persistence deletes matching account drafts', () async {
+    const persistence = SecureVotingDraftPersistence();
+    const removedAccountRoundOne = VotingSessionKey(
+      accountUuid: 'account-1',
+      roundId: 'round-1',
+    );
+    const removedAccountRoundTwo = VotingSessionKey(
+      accountUuid: 'account-1',
+      roundId: 'round-2',
+    );
+    const retainedAccountRound = VotingSessionKey(
+      accountUuid: 'account-2',
+      roundId: 'round-1',
+    );
+
+    await persistence.save(
+      removedAccountRoundOne,
+      const VotingDraftState(choices: {1: 0}),
+    );
+    await persistence.save(
+      removedAccountRoundTwo,
+      const VotingDraftState(choices: {2: 1}),
+    );
+    await persistence.save(
+      retainedAccountRound,
+      const VotingDraftState(choices: {3: 0}),
+    );
+
+    await persistence.deleteForAccount('account-1');
+    await persistence.save(
+      removedAccountRoundOne,
+      const VotingDraftState(choices: {4: 1}),
+    );
+
+    expect((await persistence.load(removedAccountRoundOne)).isEmpty, true);
+    expect((await persistence.load(removedAccountRoundTwo)).isEmpty, true);
+    expect((await persistence.load(retainedAccountRound)).choices, {3: 0});
+  });
+
+  test('draft notifier merges early edits with persisted choices', () async {
+    final key = const VotingSessionKey(
+      roundId: 'round-1',
+      accountUuid: 'account-1',
+    );
+    final persistence = _DelayedDraftPersistence();
+    final container = ProviderContainer(
+      overrides: [
+        votingDraftPersistenceProvider.overrideWithValue(persistence),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    container.read(votingDraftProvider(key));
+    final notifier = container.read(votingDraftProvider(key).notifier);
+    notifier.setChoice(3, 0);
+
+    expect(container.read(votingDraftProvider(key)).choices, {3: 0});
+
+    persistence.completeLoad(const VotingDraftState(choices: {1: 0, 2: 1}));
+    await notifier.ensureLoaded();
+    await persistence.waitForSaveCount(1);
+
+    expect(container.read(votingDraftProvider(key)).choices, {
+      1: 0,
+      2: 1,
+      3: 0,
+    });
+    expect(persistence.saved.single.choices, {1: 0, 2: 1, 3: 0});
+  });
+
+  test('draft notifier applies early clears to persisted choices', () async {
+    final key = const VotingSessionKey(
+      roundId: 'round-1',
+      accountUuid: 'account-1',
+    );
+    final persistence = _DelayedDraftPersistence();
+    final container = ProviderContainer(
+      overrides: [
+        votingDraftPersistenceProvider.overrideWithValue(persistence),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    container.read(votingDraftProvider(key));
+    final notifier = container.read(votingDraftProvider(key).notifier);
+    notifier.clearChoice(1);
+
+    persistence.completeLoad(const VotingDraftState(choices: {1: 0, 2: 1}));
+    await notifier.ensureLoaded();
+    await persistence.waitForSaveCount(1);
+
+    expect(container.read(votingDraftProvider(key)).choices, {2: 1});
+    expect(persistence.saved.single.choices, {2: 1});
+  });
+}
+
+class _DelayedDraftPersistence implements VotingDraftPersistence {
+  final _load = Completer<VotingDraftState>();
+  final saved = <VotingDraftState>[];
+  final _saveWaiters = <({int count, Completer<void> waiter})>[];
+
+  @override
+  Future<VotingDraftState> load(VotingSessionKey key) => _load.future;
+
+  @override
+  Future<void> save(VotingSessionKey key, VotingDraftState draft) async {
+    saved.add(draft);
+    for (final entry in _saveWaiters.toList()) {
+      if (saved.length >= entry.count && !entry.waiter.isCompleted) {
+        entry.waiter.complete();
+        _saveWaiters.remove(entry);
+      }
+    }
+  }
+
+  @override
+  Future<void> deleteForAccount(String accountUuid) async {}
+
+  void completeLoad(VotingDraftState draft) {
+    _load.complete(draft);
+  }
+
+  Future<void> waitForSaveCount(int count) {
+    if (saved.length >= count) return Future.value();
+    final waiter = Completer<void>();
+    _saveWaiters.add((count: count, waiter: waiter));
+    return waiter.future;
+  }
+}
