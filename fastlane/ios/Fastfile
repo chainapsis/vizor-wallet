@@ -57,7 +57,7 @@ def ios_project_path
 end
 
 def ios_widget_info_plist_path
-  File.join(workspace_root, "ios", "SyncWidget", "Info.plist")
+  "SyncWidget/Info.plist"
 end
 
 def ios_keychain_name
@@ -177,6 +177,7 @@ end
 
 def configure_ios_extension_version!(metadata)
   update_info_plist(
+    xcodeproj: ios_project_path,
     plist_path: ios_widget_info_plist_path,
     block: proc do |plist|
       plist["CFBundleShortVersionString"] = metadata.fetch(:version)
