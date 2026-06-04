@@ -11,6 +11,12 @@ bool isVotingEligibilityErrorText(String text) {
       _minimumVotingEligibilityPattern.firstMatch(message) != null ||
       lowerMessage.startsWith('this account is not eligible for this ') ||
       lowerMessage.startsWith(
+        'voting requires at least one eligible shielded note bundle with 0.125 zec',
+      ) ||
+      lowerMessage.startsWith(
+        'voting requires at least 0.125 zec in eligible shielded funds',
+      ) ||
+      lowerMessage.startsWith(
         'voting requires at least 5 eligible shielded notes totaling 0.125 zec',
       );
 }
@@ -35,8 +41,9 @@ String friendlyVotingErrorText(String text) {
     final snapshot = heightText == null
         ? 'the voting round snapshot block'
         : 'snapshot block ${formatBlockHeight(int.parse(heightText))}';
-    return 'Voting requires at least 5 eligible shielded notes totaling '
-        '0.125 ZEC at $snapshot. Switch to an eligible account to vote.';
+    return 'Voting requires at least one eligible shielded note bundle with '
+        '0.125 ZEC '
+        'at $snapshot. Switch to an eligible account to vote.';
   }
 
   return message.isEmpty ? 'Voting session action failed.' : message;
@@ -65,6 +72,6 @@ final _noSpendableNotesPattern = RegExp(
 );
 
 final _minimumVotingEligibilityPattern = RegExp(
-  r'minimum voting eligibility requires at least 5 eligible notes and 12500000 zatoshi voting weight; selected \d+ distinct eligible notes with \d+ zatoshi voting weight(?: at snapshot height (\d+))?',
+  r'minimum voting eligibility requires (?:(?:at least 5 eligible notes and )?12500000 zatoshi voting weight|at least one eligible voting bundle with 12500000 zatoshi voting weight); selected (?:(?:\d+ distinct eligible notes with )?\d+ zatoshi voting weight|\d+ distinct notes across eligible bundles with \d+ zatoshi eligible bundle weight)(?: at snapshot height (\d+))?',
   caseSensitive: false,
 );

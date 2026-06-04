@@ -6205,9 +6205,7 @@ class FakeVotingRustApi implements VotingRustApi {
     eligibilityCheckCalls++;
     eligibilityAccountUuids.add(ctx.accountUuid);
     return rust_api.ApiVotingEligibility(
-      isEligible:
-          eligibilityEligible ??
-          (eligibilityDistinctNoteCount >= 5 && setupEligibleWeight > 0),
+      isEligible: eligibilityEligible ?? setupEligibleWeight > 0,
       distinctNoteCount: eligibilityDistinctNoteCount,
       eligibleWeightZatoshi: BigInt.from(setupEligibleWeight),
     );

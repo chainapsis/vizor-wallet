@@ -26,7 +26,7 @@ zcash_client_backend = { version = "0.23", features = [
 ] }
 zcash_client_sqlite = { version = "0.21", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "5b164d03cb12b1635deea589e575d461481fed72", package = "zcash_voting" }
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "faf2bb29c120bf022fa7704f4c7b95909b5e9a2b", package = "zcash_voting" }
 # Must match versions used by zcash_client_sqlite to avoid type conflicts
 orchard = "0.14"
 sapling-crypto = { version = "0.7", default-features = false, features = ["circuit"] }
@@ -96,7 +96,7 @@ security-framework = { version = "3.7", features = ["OSX_10_15"] }
 [dev-dependencies]
 tempfile = "3"
 hex = "0.4"
-vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting", rev = "5b164d03cb12b1635deea589e575d461481fed72", package = "vote-commitment-tree" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting", rev = "faf2bb29c120bf022fa7704f4c7b95909b5e9a2b", package = "vote-commitment-tree" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
