@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart'
     show
         InputDecoration,
@@ -17,6 +19,24 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../shared/onboarding_flow_args.dart';
 import 'import_split_view.dart';
+
+@visibleForTesting
+bool usesMobileImportPassphraseScroll(
+  TargetPlatform platform, {
+  bool isWeb = kIsWeb,
+}) {
+  if (isWeb) return false;
+  return switch (platform) {
+    TargetPlatform.android || TargetPlatform.iOS => true,
+    TargetPlatform.fuchsia ||
+    TargetPlatform.linux ||
+    TargetPlatform.macOS ||
+    TargetPlatform.windows => false,
+  };
+}
+
+bool get _usesMobileScroll =>
+    usesMobileImportPassphraseScroll(defaultTargetPlatform);
 
 class ImportSecretPassphraseScreen extends ConsumerStatefulWidget {
   const ImportSecretPassphraseScreen({
@@ -317,157 +337,202 @@ class _ImportSecretPassphraseScreenState
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-
     return ImportOnboardingTrailingPane(
       overlay: SensitivePrivacyOverlay(
         sensitiveContentVisible: _hasEnteredMnemonicWords,
         controller: _privacyOverlayController,
         child: const SizedBox.expand(),
       ),
-      child: Column(
-        children: [
-          SizedBox(
-            height: 32,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _handleBack,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AppIcon(
-                        AppIcons.chevronBackward,
-                        size: AppIconSize.medium,
-                        color: colors.text.accent,
-                      ),
-                      const SizedBox(width: AppSpacing.xxs),
-                      Text(
-                        'Back',
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.accent,
-                        ),
-                      ),
-                    ],
+      child: _usesMobileScroll
+          ? _buildMobileLayout(context)
+          : _buildDesktopLayout(context),
+    );
+  }
+
+  Widget _buildDesktopLayout(BuildContext context) {
+    return Column(
+      children: [
+        _buildBackRow(context),
+        const SizedBox(height: AppSpacing.s),
+        Expanded(
+          child: Column(
+            children: [
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
+                    child: _buildFormContent(context),
                   ),
                 ),
               ),
-            ),
+              const SizedBox(height: AppSpacing.md),
+              _buildSubmitButton(),
+            ],
           ),
-          const SizedBox(height: AppSpacing.s),
-          Expanded(
-            child: Column(
-              children: [
-                Expanded(
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.s,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: _titleWidth,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Welcome, Adventurer',
-                                  style: AppTypography.displayLarge.copyWith(
-                                    color: colors.text.accent,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: AppSpacing.sm),
-                                SizedBox(
-                                  width: _subtitleWidth,
-                                  child: Text(
-                                    'Import your wallet by entering your Secret Passphrase.',
-                                    style: AppTypography.bodyMedium.copyWith(
-                                      color: colors.text.accent,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.lg),
-                          SizedBox(
-                            width: _gridWidth,
-                            child: Wrap(
-                              alignment: WrapAlignment.center,
-                              spacing: AppSpacing.s,
-                              runSpacing: AppSpacing.s,
-                              children: List.generate(
-                                _wordCount,
-                                (index) => _MnemonicWordCell(
-                                  index: index,
-                                  controller: _controllers[index],
-                                  focusNode: _focusNodes[index],
-                                  wordList: _mnemonicWordList,
-                                  autocompleteEnabled: () =>
-                                      _autocompleteEnabled,
-                                  onAutocompleteReactivationRequested: () =>
-                                      _reactivateAutocomplete(
-                                        _controllers[index],
-                                      ),
-                                  destructive:
-                                      _showValidationError &&
-                                      _controllers[index].text
-                                          .trim()
-                                          .isNotEmpty,
-                                  autofocus: index == 0,
-                                  onMoveNext: () => _moveToNextWord(index),
-                                  onMovePrevious: () =>
-                                      _moveToPreviousWord(index),
-                                  onSuggestionSelected: (word) =>
-                                      _handleSuggestionSelected(index, word),
-                                  onChanged: (value) =>
-                                      _handleWordChanged(index, value),
-                                  onSubmitted: () {
-                                    if (index == _wordCount - 1) {
-                                      _submit();
-                                    } else {
-                                      _moveToNextWord(index);
-                                    }
-                                  },
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (_errorText != null) ...[
-                            const SizedBox(height: AppSpacing.s),
-                            Text(
-                              _errorText!,
-                              style: AppTypography.bodyMedium.copyWith(
-                                color: colors.text.destructive,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ],
-                      ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMobileLayout(BuildContext context) {
+    return Column(
+      children: [
+        _buildBackRow(context),
+        const SizedBox(height: AppSpacing.s),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildFormContent(context),
+                        const SizedBox(height: AppSpacing.md),
+                        _buildSubmitButton(),
+                        const SizedBox(height: AppSpacing.md),
+                      ],
                     ),
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
-                AppButton(
-                  key: const ValueKey('import_secret_submit_button'),
-                  onPressed: _canSubmit ? _submit : null,
-                  minWidth: _buttonWidth,
-                  trailing: const AppIcon(AppIcons.chevronForward),
-                  child: Text(_isSubmitting ? 'Importing...' : 'Import'),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBackRow(BuildContext context) {
+    final colors = context.colors;
+
+    return SizedBox(
+      height: 32,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _handleBack,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppIcon(
+                  AppIcons.chevronBackward,
+                  size: AppIconSize.medium,
+                  color: colors.text.accent,
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                Text(
+                  'Back',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
                 ),
               ],
             ),
           ),
-        ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildFormContent(BuildContext context) {
+    final colors = context.colors;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: _titleWidth,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Welcome, Adventurer',
+                style: AppTypography.displayLarge.copyWith(
+                  color: colors.text.accent,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              SizedBox(
+                width: _subtitleWidth,
+                child: Text(
+                  'Import your wallet by entering your Secret Passphrase.',
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.accent,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        SizedBox(
+          width: _gridWidth,
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            spacing: AppSpacing.s,
+            runSpacing: AppSpacing.s,
+            children: List.generate(
+              _wordCount,
+              (index) => _MnemonicWordCell(
+                index: index,
+                controller: _controllers[index],
+                focusNode: _focusNodes[index],
+                wordList: _mnemonicWordList,
+                autocompleteEnabled: () => _autocompleteEnabled,
+                onAutocompleteReactivationRequested: () =>
+                    _reactivateAutocomplete(_controllers[index]),
+                destructive:
+                    _showValidationError &&
+                    _controllers[index].text.trim().isNotEmpty,
+                autofocus: index == 0,
+                onMoveNext: () => _moveToNextWord(index),
+                onMovePrevious: () => _moveToPreviousWord(index),
+                onSuggestionSelected: (word) =>
+                    _handleSuggestionSelected(index, word),
+                onChanged: (value) => _handleWordChanged(index, value),
+                onSubmitted: () {
+                  if (index == _wordCount - 1) {
+                    _submit();
+                  } else {
+                    _moveToNextWord(index);
+                  }
+                },
+              ),
+            ),
+          ),
+        ),
+        if (_errorText != null) ...[
+          const SizedBox(height: AppSpacing.s),
+          Text(
+            _errorText!,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.destructive,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSubmitButton() {
+    return AppButton(
+      key: const ValueKey('import_secret_submit_button'),
+      onPressed: _canSubmit ? _submit : null,
+      minWidth: _buttonWidth,
+      trailing: const AppIcon(AppIcons.chevronForward),
+      child: Text(_isSubmitting ? 'Importing...' : 'Import'),
     );
   }
 }

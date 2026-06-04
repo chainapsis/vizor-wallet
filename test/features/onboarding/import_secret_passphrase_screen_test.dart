@@ -27,6 +27,20 @@ void main() {
 
   tearDownAll(RustLib.dispose);
 
+  test('uses scrollable import layout on mobile platforms', () {
+    expect(usesMobileImportPassphraseScroll(TargetPlatform.iOS), isTrue);
+    expect(usesMobileImportPassphraseScroll(TargetPlatform.android), isTrue);
+  });
+
+  test('keeps fixed import layout on desktop and web', () {
+    expect(usesMobileImportPassphraseScroll(TargetPlatform.macOS), isFalse);
+    expect(usesMobileImportPassphraseScroll(TargetPlatform.windows), isFalse);
+    expect(
+      usesMobileImportPassphraseScroll(TargetPlatform.iOS, isWeb: true),
+      isFalse,
+    );
+  });
+
   testWidgets('shows BIP39 prefix suggestions for the focused word', (
     tester,
   ) async {
