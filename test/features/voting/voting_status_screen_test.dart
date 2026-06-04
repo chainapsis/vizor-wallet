@@ -2917,6 +2917,7 @@ void main() {
       ),
     );
     await _pumpUntilFound(tester, find.text('Sign bundle 1 of 2'));
+    expect(find.text('1 / 2'), findsNothing);
 
     await tester.tap(find.text('Scan signature'));
     await tester.pumpAndSettle();
@@ -2924,6 +2925,7 @@ void main() {
     await _pumpUntilFound(tester, find.text('Skip'));
 
     expect(find.text('Sign bundle 2 of 2'), findsOneWidget);
+    expect(find.text('2 / 2'), findsNothing);
     expect(find.text('Skip'), findsOneWidget);
 
     await tester.tap(find.text('Skip'));
