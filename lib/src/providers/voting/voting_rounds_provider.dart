@@ -21,6 +21,10 @@ bool wasVotingPollListRecentlyRefreshed() {
       kVotingPollListRecentRefreshWindow;
 }
 
+void markVotingPollListRecentlyRefreshed() {
+  _lastVotingPollListRefreshAt = DateTime.now();
+}
+
 @visibleForTesting
 void resetVotingPollListRecentRefreshForTests() {
   _lastVotingPollListRefreshAt = null;
@@ -38,7 +42,7 @@ Future<void> refreshVotingPollList({
   await config.refresh();
   if (shouldReload != null && !shouldReload()) return;
   await readRounds().reload();
-  _lastVotingPollListRefreshAt = DateTime.now();
+  markVotingPollListRecentlyRefreshed();
 }
 
 /// Provides poll-list rows with explicit, route-driven reloads.

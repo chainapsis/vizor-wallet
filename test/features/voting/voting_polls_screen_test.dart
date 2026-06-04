@@ -100,6 +100,79 @@ void main() {
     expect(find.text('View results'), findsOneWidget);
   });
 
+  testWidgets(
+    'initial entry waits for in-flight config and poll load instead of refreshing',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final configLoadGate = Completer<void>();
+      final configNotifier = _TrackingVotingConfigNotifier(
+        buildGate: configLoadGate.future,
+      );
+      late _GatedInitialVotingRoundsNotifier roundsNotifier;
+      final initialLoadGate = Completer<void>();
+      final router = GoRouter(
+        initialLocation: '/voting',
+        routes: [
+          GoRoute(
+            path: '/voting',
+            builder: (_, _) => const VotingPollsScreen(),
+          ),
+          GoRoute(path: '/accounts', builder: (_, _) => const Text('accounts')),
+          GoRoute(path: '/home', builder: (_, _) => const Text('home')),
+          GoRoute(
+            path: '/address-book',
+            builder: (_, _) => const Text('address book'),
+          ),
+          GoRoute(path: '/activity', builder: (_, _) => const Text('activity')),
+          GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
+          GoRoute(path: '/about', builder: (_, _) => const Text('about')),
+        ],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            accountProvider.overrideWith(_SoftwareAccountNotifier.new),
+            syncProvider.overrideWith(_NoopSyncNotifier.new),
+            swapFeatureEnabledProvider.overrideWithValue(false),
+            votingConfigProvider.overrideWith(() => configNotifier),
+            votingRoundsProvider.overrideWith(() {
+              roundsNotifier = _GatedInitialVotingRoundsNotifier(
+                initialLoadGate.future,
+              );
+              return roundsNotifier;
+            }),
+          ],
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.light, child: child!),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(configNotifier.refreshCount, 0);
+      expect(roundsNotifier.reloadCount, 0);
+      expect(wasVotingPollListRecentlyRefreshed(), isFalse);
+
+      configLoadGate.complete();
+      initialLoadGate.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Closed poll'), findsOneWidget);
+      expect(configNotifier.refreshCount, 0);
+      expect(roundsNotifier.reloadCount, 0);
+      expect(wasVotingPollListRecentlyRefreshed(), isTrue);
+    },
+  );
+
   testWidgets('account reload shows loading instead of previous account rows', (
     tester,
   ) async {
@@ -290,10 +363,15 @@ void main() {
 }
 
 class _TrackingVotingConfigNotifier extends VotingConfigNotifier {
+  _TrackingVotingConfigNotifier({Future<void>? buildGate})
+    : _buildGate = buildGate;
+
+  final Future<void>? _buildGate;
   int refreshCount = 0;
 
   @override
   Future<ResolvedVotingConfig> build() async {
+    await _buildGate;
     return const ResolvedVotingConfig(
       sourceFingerprint: 'source-fingerprint',
       trustedKeyFingerprint: 'trusted-key-fingerprint',
@@ -343,6 +421,40 @@ class _TrackingVotingRoundsNotifier extends VotingRoundsNotifier {
     if (pendingReload != null) {
       await pendingReload;
     }
+    state = const AsyncData([
+      VotingRoundView(
+        roundId: 'round-1',
+        title: 'Closed poll',
+        status: 'closed',
+        rawJson: {'description': 'Closed poll description'},
+      ),
+    ]);
+  }
+}
+
+class _GatedInitialVotingRoundsNotifier extends VotingRoundsNotifier {
+  _GatedInitialVotingRoundsNotifier(this.initialLoadGate);
+
+  final Future<void> initialLoadGate;
+  int reloadCount = 0;
+
+  @override
+  Future<List<VotingRoundView>> build() async {
+    await ref.read(votingConfigProvider.future);
+    await initialLoadGate;
+    return const [
+      VotingRoundView(
+        roundId: 'round-1',
+        title: 'Closed poll',
+        status: 'closed',
+        rawJson: {'description': 'Closed poll description'},
+      ),
+    ];
+  }
+
+  @override
+  Future<void> reload() async {
+    reloadCount++;
     state = const AsyncData([
       VotingRoundView(
         roundId: 'round-1',

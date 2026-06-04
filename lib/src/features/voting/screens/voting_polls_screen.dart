@@ -48,6 +48,10 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
         _preSyncLoadedRounds();
         return;
       }
+      if (_isInitialPollListLoadInFlight()) {
+        _awaitInitialPollListLoad();
+        return;
+      }
       _reloadRoundsWithFreshConfig(entryRefresh: true);
     });
   }
@@ -153,6 +157,34 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
             );
           }),
     );
+  }
+
+  bool _isInitialPollListLoadInFlight() {
+    final rounds = ref.read(votingRoundsProvider);
+    if (!rounds.isLoading || rounds.hasValue) return false;
+    if (!ref.exists(votingConfigProvider)) return false;
+    final config = ref.read(votingConfigProvider);
+    return config.isLoading && !config.hasValue;
+  }
+
+  void _awaitInitialPollListLoad() {
+    unawaited(() async {
+      try {
+        final rounds = await ref.read(votingRoundsProvider.future);
+        markVotingPollListRecentlyRefreshed();
+        if (mounted) {
+          _preSyncVisibleRoundTrees(rounds);
+        }
+      } catch (_) {
+        // The provider state already carries the load error for the UI.
+      } finally {
+        if (mounted) {
+          setState(() {
+            _entryRefreshInFlight = false;
+          });
+        }
+      }
+    }());
   }
 
   void _openRoundAction(VotingRoundView round) {
