@@ -179,65 +179,6 @@ void main() {
     },
   );
 
-  testWidgets('poll list refreshes periodically while open', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(1512, 982));
-    addTearDown(() async {
-      await tester.binding.setSurfaceSize(null);
-    });
-
-    late _TrackingVotingRoundsNotifier roundsNotifier;
-    late _TrackingVotingConfigNotifier configNotifier;
-    final router = GoRouter(
-      initialLocation: '/voting',
-      routes: [
-        GoRoute(path: '/voting', builder: (_, _) => const VotingPollsScreen()),
-        GoRoute(path: '/accounts', builder: (_, _) => const Text('accounts')),
-        GoRoute(path: '/home', builder: (_, _) => const Text('home')),
-        GoRoute(
-          path: '/address-book',
-          builder: (_, _) => const Text('address book'),
-        ),
-        GoRoute(path: '/activity', builder: (_, _) => const Text('activity')),
-        GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
-        GoRoute(path: '/about', builder: (_, _) => const Text('about')),
-      ],
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          accountProvider.overrideWith(_SoftwareAccountNotifier.new),
-          syncProvider.overrideWith(_NoopSyncNotifier.new),
-          swapFeatureEnabledProvider.overrideWithValue(false),
-          votingConfigProvider.overrideWith(() {
-            configNotifier = _TrackingVotingConfigNotifier();
-            return configNotifier;
-          }),
-          votingRoundsProvider.overrideWith(() {
-            roundsNotifier = _TrackingVotingRoundsNotifier();
-            return roundsNotifier;
-          }),
-        ],
-        child: MaterialApp.router(
-          routerConfig: router,
-          builder: (_, child) =>
-              AppTheme(data: AppThemeData.light, child: child!),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(roundsNotifier.reloadCount, 1);
-    expect(configNotifier.refreshCount, 1);
-
-    await tester.pump(kVotingPollListAutoRefreshInterval);
-    await tester.pumpAndSettle();
-
-    expect(roundsNotifier.reloadCount, 2);
-    expect(configNotifier.refreshCount, 2);
-    expect(find.text('View results'), findsOneWidget);
-  });
-
   testWidgets('account reload shows loading instead of previous account rows', (
     tester,
   ) async {

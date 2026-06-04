@@ -428,6 +428,104 @@ void main() {
   });
 
   test(
+    'poll refresh shows newly authenticated round with same endpoints',
+    () async {
+      const newRoundId =
+          'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
+      var authenticatedRoundIds = const [kRoundId];
+      final responses = <String, Object>{
+        'https://voting.example/static-voting-config.json': staticConfigJson(),
+        'https://voting.example/dynamic-voting-config.json':
+            dynamicConfigJson(),
+        '/shielded-vote/v1/rounds': {
+          'rounds': [
+            {
+              'vote_round_id': kRoundId,
+              'title': 'Initial poll',
+              'status': 'active',
+            },
+          ],
+        },
+      };
+      final http = FakeVotingHttpClient(responses: responses);
+      final container = ProviderContainer(
+        overrides: [
+          votingConfigSourceStoreProvider.overrideWithValue(
+            FakeVotingConfigSourceStore(),
+          ),
+          votingHttpClientProvider.overrideWithValue(http),
+          votingConfigLoaderProvider.overrideWithValue(
+            VotingConfigLoader(
+              httpClient: http,
+              sourceUrl: 'https://voting.example/static-voting-config.json',
+              resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
+              resolveVotingConfig:
+                  ({
+                    required source,
+                    required staticBytes,
+                    required dynamicBytes,
+                    previous,
+                  }) => fakeResolveVotingConfig(
+                    dynamicBytes: dynamicBytes,
+                    previous: previous,
+                    authenticatedRoundIds: authenticatedRoundIds,
+                    switchKind: previous == null
+                        ? rust_config.ConfigSwitchKind.initialLoad
+                        : rust_config.ConfigSwitchKind.unchanged,
+                  ),
+            ),
+          ),
+          votingActiveAccountUuidProvider.overrideWithValue(() async => null),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final initial = await container.read(votingRoundsProvider.future);
+      expect(initial.map((round) => round.title), ['Initial poll']);
+
+      authenticatedRoundIds = const [kRoundId, newRoundId];
+      final dynamicConfig = dynamicConfigJson();
+      dynamicConfig['rounds'] = {
+        ...dynamicConfig['rounds'] as Map<String, dynamic>,
+        newRoundId: {
+          'auth_version': 1,
+          'ea_pk': _bytes1x32Base64,
+          'signatures': [
+            {'key_id': 'demo', 'alg': 'ed25519', 'sig': _bytes12x64Base64},
+          ],
+        },
+      };
+      responses['https://voting.example/dynamic-voting-config.json'] =
+          dynamicConfig;
+      responses['/shielded-vote/v1/rounds'] = {
+        'rounds': [
+          {
+            'vote_round_id': kRoundId,
+            'title': 'Initial poll',
+            'status': 'active',
+          },
+          {
+            'vote_round_id': newRoundId,
+            'title': 'New poll',
+            'status': 'active',
+          },
+        ],
+      };
+
+      await refreshVotingPollList(
+        config: container.read(votingConfigProvider.notifier),
+        readRounds: () => container.read(votingRoundsProvider.notifier),
+      );
+      final refreshed = container.read(votingRoundsProvider).requireValue;
+
+      expect(refreshed.map((round) => round.title), [
+        'Initial poll',
+        'New poll',
+      ]);
+    },
+  );
+
+  test(
     'config source change invalidates rounds provider on initial load',
     () async {
       const firstSource = 'https://voting-a.example/static-voting-config.json';
@@ -5251,13 +5349,17 @@ class _GatedVotingHttpClient extends FakeVotingHttpClient {
   }
 
   @override
-  Future<VotingHttpResponse> get(Uri uri, {Duration? timeout}) async {
+  Future<VotingHttpResponse> get(
+    Uri uri, {
+    Map<String, String>? headers,
+    Duration? timeout,
+  }) async {
     _recordGet(uri.path);
     final gates = _getGates[uri.path];
     if (gates != null && gates.isNotEmpty) {
       await gates.removeAt(0).future;
     }
-    return super.get(uri, timeout: timeout);
+    return super.get(uri, headers: headers, timeout: timeout);
   }
 
   void _recordGet(String path) {

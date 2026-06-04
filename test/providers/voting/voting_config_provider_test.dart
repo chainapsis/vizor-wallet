@@ -190,7 +190,11 @@ class _NoopVotingHttpClient implements VotingHttpClient {
   const _NoopVotingHttpClient();
 
   @override
-  Future<VotingHttpResponse> get(Uri uri, {Duration? timeout}) async {
+  Future<VotingHttpResponse> get(
+    Uri uri, {
+    Map<String, String>? headers,
+    Duration? timeout,
+  }) async {
     throw UnimplementedError('HTTP should not be used in this test.');
   }
 

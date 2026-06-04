@@ -162,6 +162,10 @@ void main() {
       'https://voting.example/static-voting-config.json',
       dynamicUrl,
     ]);
+    expect(http.requests.map((request) => request.headers), [
+      {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'},
+      {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'},
+    ]);
   });
 
   test('load cache-busts GitHub raw branch dynamic config', () async {
@@ -209,6 +213,10 @@ void main() {
     expect(dynamicRequest.uri.scheme, 'https');
     expect(dynamicRequest.uri.host, 'raw.githubusercontent.com');
     expect(dynamicRequest.uri.queryParameters['vizor_cache_bust'], isNotEmpty);
+    expect(dynamicRequest.headers, {
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+    });
   });
 
   test('load does not cache-bust GitHub raw pinned dynamic config', () async {

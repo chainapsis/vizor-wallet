@@ -11,8 +11,14 @@ class FakeVotingHttpClient implements VotingHttpClient {
   FakeVotingHttpClient({this.responses = const {}});
 
   @override
-  Future<VotingHttpResponse> get(Uri uri, {Duration? timeout}) async {
-    requests.add(FakeVotingHttpRequest('GET', uri, timeout: timeout));
+  Future<VotingHttpResponse> get(
+    Uri uri, {
+    Map<String, String>? headers,
+    Duration? timeout,
+  }) async {
+    requests.add(
+      FakeVotingHttpRequest('GET', uri, headers: headers, timeout: timeout),
+    );
     return _responseFor(uri);
   }
 
@@ -62,9 +68,16 @@ class FakeVotingHttpRequest {
   final String method;
   final Uri uri;
   final Map<String, dynamic>? body;
+  final Map<String, String>? headers;
   final Duration? timeout;
 
-  const FakeVotingHttpRequest(this.method, this.uri, {this.body, this.timeout});
+  const FakeVotingHttpRequest(
+    this.method,
+    this.uri, {
+    this.body,
+    this.headers,
+    this.timeout,
+  });
 }
 
 class SequentialVotingHttpResponses {

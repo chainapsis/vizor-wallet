@@ -12,7 +12,6 @@ import 'voting_service_providers.dart';
 import 'voting_state.dart';
 
 const kVotingPollListRecentRefreshWindow = Duration(seconds: 10);
-const kVotingPollListAutoRefreshInterval = Duration(seconds: 30);
 DateTime? _lastVotingPollListRefreshAt;
 
 class VotingPollListRefreshRequestNotifier extends Notifier<int> {

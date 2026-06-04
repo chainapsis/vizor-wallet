@@ -35,12 +35,10 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
   bool _showSettings = false;
   bool _entryRefreshInFlight = true;
   bool _pollListRefreshInFlight = false;
-  Timer? _autoRefreshTimer;
 
   @override
   void initState() {
     super.initState();
-    _startAutoRefreshTimer();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (_wasPollListRecentlyRefreshed()) {
@@ -56,12 +54,6 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
       }
       _reloadRoundsWithFreshConfig(entryRefresh: true);
     });
-  }
-
-  @override
-  void dispose() {
-    _stopAutoRefreshTimer();
-    super.dispose();
   }
 
   @override
@@ -208,11 +200,9 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
   }
 
   void _pushRoundRoute(String route) {
-    _stopAutoRefreshTimer();
     unawaited(
       context.push(route).whenComplete(() {
         if (!mounted) return;
-        _startAutoRefreshTimer();
         _reloadRoundsWithFreshConfig();
       }),
     );
@@ -243,19 +233,6 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
   void _handleExternalRefreshRequest() {
     if (!mounted) return;
     _reloadRoundsWithFreshConfig();
-  }
-
-  void _startAutoRefreshTimer() {
-    if (_autoRefreshTimer != null) return;
-    _autoRefreshTimer = Timer.periodic(kVotingPollListAutoRefreshInterval, (_) {
-      if (!mounted) return;
-      _reloadRoundsWithFreshConfig();
-    });
-  }
-
-  void _stopAutoRefreshTimer() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = null;
   }
 
   bool _wasPollListRecentlyRefreshed() {

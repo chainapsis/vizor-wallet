@@ -224,7 +224,11 @@ class VotingConfigLoader {
   }
 
   Future<List<int>> _fetchBytes(Uri uri) async {
-    final response = await _httpClient.get(uri, timeout: _timeout);
+    final response = await _httpClient.get(
+      uri,
+      headers: _configFetchHeaders,
+      timeout: _timeout,
+    );
     if (response.statusCode != 200) {
       throw VotingHttpException(
         uri: uri,
@@ -235,6 +239,8 @@ class VotingConfigLoader {
     return response.bodyBytes;
   }
 }
+
+const _configFetchHeaders = {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'};
 
 Uri _dynamicConfigTransportUri(String dynamicConfigUrl) {
   final uri = Uri.parse(dynamicConfigUrl);
