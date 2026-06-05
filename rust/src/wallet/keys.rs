@@ -4,6 +4,7 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
+use ::transparent::keys::{IncomingViewingKey as _, NonHardenedChildIndex};
 use bip0039::{Count, English, Language, Mnemonic};
 use rusqlite::named_params;
 use secrecy::{ExposeSecret, SecretVec};
@@ -643,6 +644,22 @@ fn orchard_address_request() -> UnifiedAddressRequest {
     .expect("valid receiver requirements")
 }
 
+fn source_uses_zip32_account_zero(source: &AccountSource) -> bool {
+    let derivation = match source {
+        AccountSource::Derived { derivation, .. } => Some(derivation),
+        AccountSource::Imported {
+            purpose:
+                AccountPurpose::Spending {
+                    derivation: Some(derivation),
+                },
+            ..
+        } => Some(derivation),
+        _ => None,
+    };
+
+    derivation.is_some_and(|d| d.account_index() == zip32::AccountId::ZERO)
+}
+
 /// Get the transparent address from an existing wallet database.
 pub fn get_transparent_address_from_db(
     db_path: &str,
@@ -653,18 +670,27 @@ pub fn get_transparent_address_from_db(
 
     let account_id = resolve_account_id(&db, account_uuid)?;
 
-    let current_ua = db
-        .get_last_generated_address_matching(account_id, UnifiedAddressRequest::AllAvailableKeys)
-        .map_err(|e| format!("Failed to get current generated address: {e}"))?
-        .ok_or_else(|| "No tracked transparent address available".to_string())?;
-    let taddr = current_ua.transparent().ok_or_else(|| {
-        "Current generated address does not include a transparent receiver".to_string()
-    })?;
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| format!("Failed to get account: {e}"))?
+        .ok_or("Account not found")?;
+    if !source_uses_zip32_account_zero(account.source()) {
+        return Err("Transparent receive address is only supported for account 0.".to_string());
+    }
+
+    let ufvk = account.ufvk().ok_or("Account does not have a UFVK")?;
+    let taddr = ufvk
+        .transparent()
+        .ok_or("Account does not have a transparent key")?
+        .derive_external_ivk()
+        .map_err(|e| format!("Failed to derive transparent external key: {e}"))?
+        .derive_address(NonHardenedChildIndex::ZERO)
+        .map_err(|e| format!("Failed to derive transparent receive address: {e}"))?;
 
     Ok(encode_transparent_address(
         &network.b58_pubkey_address_prefix(),
         &network.b58_script_address_prefix(),
-        taddr,
+        &taddr,
     ))
 }
 
@@ -798,6 +824,87 @@ mod tests {
                 .unwrap()
                 .unified_address
         );
+    }
+
+    #[test]
+    fn test_get_transparent_address_stays_fixed_after_receive_rotation() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+
+        let (uuid, default_address) =
+            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
+                .unwrap();
+        let transparent_address =
+            get_transparent_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap();
+
+        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
+        let renewed_address = crate::wallet::sync::get_next_available_address(
+            db_path_str,
+            WalletNetwork::Main,
+            &uuid,
+            crate::wallet::sync::AddressRequestKind::Shielded,
+        )
+        .unwrap();
+
+        assert_ne!(default_address, renewed_address);
+        assert_eq!(
+            transparent_address,
+            get_transparent_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_get_transparent_address_rejects_nonzero_zip32_account() {
+        use zcash_address::unified::{Encoding, Fvk, Ufvk};
+        use zcash_protocol::consensus::NetworkType;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        let account_index = zip32::AccountId::try_from(1u32).unwrap();
+        let usk = UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            seed.expose_secret(),
+            account_index,
+        )
+        .unwrap();
+        let full_ufvk = usk.to_unified_full_viewing_key();
+        let orchard_fvk = full_ufvk.orchard().unwrap().to_bytes();
+        let transparent_fvk = full_ufvk
+            .transparent()
+            .unwrap()
+            .serialize()
+            .try_into()
+            .unwrap();
+        let keystone_style_ufvk =
+            Ufvk::try_from_items(vec![Fvk::Orchard(orchard_fvk), Fvk::P2pkh(transparent_fvk)])
+                .unwrap()
+                .encode(&NetworkType::Main);
+        let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
+            .unwrap()
+            .to_bytes();
+
+        let (uuid, _) = import_hardware_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "Keystone account 1",
+            &keystone_style_ufvk,
+            &seed_fingerprint,
+            u32::from(account_index),
+            None,
+        )
+        .unwrap();
+
+        let error = get_transparent_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid))
+            .unwrap_err();
+        assert!(error.contains("account 0"), "{error}");
     }
 
     #[test]

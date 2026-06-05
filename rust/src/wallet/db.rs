@@ -5,6 +5,7 @@ use std::{
 
 use rand::rngs::OsRng;
 use zcash_client_sqlite::{util::SystemClock, WalletDb};
+use zcash_keys::keys::transparent::gap_limits::GapLimits;
 
 use crate::wallet::network::WalletNetwork;
 
@@ -18,6 +19,17 @@ pub(crate) const ACCOUNT_MUTATION_DB_BUSY_TIMEOUT: Duration = Duration::from_sec
 pub(crate) const SYNC_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 pub(crate) const READ_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 
+pub(crate) const LEDGER_TRANSPARENT_GAP_LIMIT: u32 = 20;
+
+fn wallet_gap_limits() -> GapLimits {
+    let default = GapLimits::default();
+    GapLimits::new(
+        LEDGER_TRANSPARENT_GAP_LIMIT,
+        LEDGER_TRANSPARENT_GAP_LIMIT,
+        default.ephemeral(),
+    )
+}
+
 pub(crate) fn open_wallet_db_with_timeout(
     db_path: &str,
     network: WalletNetwork,
@@ -26,7 +38,8 @@ pub(crate) fn open_wallet_db_with_timeout(
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
     configure_wallet_connection(&conn, timeout, true)?;
-    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
+    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng)
+        .with_gap_limits(wallet_gap_limits()))
 }
 
 pub(crate) fn open_wallet_db_for_read_with_timeout(
@@ -37,7 +50,8 @@ pub(crate) fn open_wallet_db_for_read_with_timeout(
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
     configure_wallet_connection(&conn, timeout, false)?;
-    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
+    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng)
+        .with_gap_limits(wallet_gap_limits()))
 }
 
 pub(crate) fn open_wallet_raw_conn_with_timeout(

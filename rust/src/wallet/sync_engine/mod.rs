@@ -44,12 +44,14 @@ use {
 mod block_source;
 mod enhance;
 mod error;
+mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
 
 use enhance::run_enhancement;
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
+use ledger_discovery::run_ledger_transparent_discovery;
 use lwd::{download_blocks, download_subtree_roots, get_tree_state};
 pub(crate) use lwd::{
     get_latest_block, get_transaction, open_lwd_channel, send_transaction,
@@ -955,6 +957,27 @@ async fn run_sync_impl(
         db.update_chain_tip(tip_height)
             .map_err(|e| SyncError::db(format!("update_chain_tip: {e}")))
     })?;
+
+    // Ledger Live rotates transparent P2PKH addresses. Discover its normal
+    // BIP44 account-0 external/change activity before the regular UTXO refresh
+    // so shieldable transparent funds appear in the same sync pass.
+    if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        log::info!(
+            "[{}] sync: cancel/mode observed before Ledger transparent discovery, skipping",
+            elapsed(),
+        );
+        return Ok(());
+    }
+
+    if let Err(e) =
+        run_ledger_transparent_discovery(&mut client, &mut db, db_data_path, network, tip_height)
+            .await
+    {
+        log::warn!(
+            "[{}] sync: Ledger transparent discovery skipped: {e}",
+            elapsed()
+        );
+    }
 
     // Match the cancellation granularity we already use for
     // `run_enhancement`: let this stage run to completion once it has
