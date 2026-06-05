@@ -358,8 +358,8 @@ mod tests {
     }
 
     #[test]
-    fn ledger_gap_limit_is_bip44_default() {
-        assert_eq!(crate::wallet::db::LEDGER_TRANSPARENT_GAP_LIMIT, 20);
+    fn ledger_gap_limit_is_reduced_for_sync_overhead() {
+        assert_eq!(crate::wallet::db::LEDGER_TRANSPARENT_GAP_LIMIT, 10);
     }
 
     #[test]

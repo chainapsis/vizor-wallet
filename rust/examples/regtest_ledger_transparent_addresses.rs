@@ -37,10 +37,10 @@ fn main() {
         json!({
             "softwareReceiveTransparent": software_receive_transparent,
             "external0": external_address(&external, 0, network),
+            "external9": external_address(&external, 9, network),
             "external19": external_address(&external, 19, network),
-            "external39": external_address(&external, 39, network),
+            "internal9": internal_address(&internal, 9, network),
             "internal19": internal_address(&internal, 19, network),
-            "internal39": internal_address(&internal, 39, network),
         })
     );
 }
