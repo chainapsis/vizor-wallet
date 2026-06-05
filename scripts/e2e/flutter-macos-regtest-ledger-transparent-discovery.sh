@@ -54,6 +54,7 @@ birthday_height="$(zcash_cli getblockcount)"
 
 addresses_json="$(cd rust && cargo run --quiet --example regtest_ledger_transparent_addresses -- "$MNEMONIC")"
 external0="$(json_field "$addresses_json" external0)"
+software_receive_transparent="$(json_field "$addresses_json" softwareReceiveTransparent)"
 external19="$(json_field "$addresses_json" external19)"
 external39="$(json_field "$addresses_json" external39)"
 internal19="$(json_field "$addresses_json" internal19)"
@@ -74,5 +75,5 @@ fvm flutter test \
   --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \
   --dart-define=ZCASH_E2E_ZCASHD_RPC_URL="$ZCASHD_RPC_URL" \
   --dart-define=ZCASH_E2E_IMPORT_BIRTHDAY_HEIGHT="$birthday_height" \
-  --dart-define=ZCASH_E2E_EXPECTED_TRANSPARENT_ADDRESS="$external0" \
+  --dart-define=ZCASH_E2E_EXPECTED_TRANSPARENT_ADDRESS="$software_receive_transparent" \
   --dart-define=ZCASH_E2E_EXPECTED_TRANSPARENT_BALANCE_ZAT=65000000

@@ -2,7 +2,10 @@ use rust_lib_zcash_wallet::wallet::{keys::mnemonic_to_seed, network::WalletNetwo
 use secrecy::ExposeSecret;
 use serde_json::json;
 use transparent::keys::{IncomingViewingKey, NonHardenedChildIndex};
-use zcash_keys::{encoding::AddressCodec as _, keys::UnifiedSpendingKey};
+use zcash_keys::{
+    encoding::AddressCodec as _,
+    keys::{UnifiedAddressRequest, UnifiedSpendingKey},
+};
 
 fn main() {
     let mnemonic = std::env::args()
@@ -21,10 +24,18 @@ fn main() {
     let internal = transparent
         .derive_internal_ivk()
         .expect("derive internal transparent IVK");
+    let (software_receive_ua, _) = ufvk
+        .default_address(UnifiedAddressRequest::AllAvailableKeys)
+        .expect("derive software receive UA");
+    let software_receive_transparent = software_receive_ua
+        .transparent()
+        .expect("software receive UA has transparent receiver")
+        .encode(&network);
 
     println!(
         "{}",
         json!({
+            "softwareReceiveTransparent": software_receive_transparent,
             "external0": external_address(&external, 0, network),
             "external19": external_address(&external, 19, network),
             "external39": external_address(&external, 39, network),

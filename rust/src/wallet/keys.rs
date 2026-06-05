@@ -679,19 +679,38 @@ pub fn get_transparent_address_from_db(
     }
 
     let ufvk = account.ufvk().ok_or("Account does not have a UFVK")?;
-    let taddr = ufvk
-        .transparent()
-        .ok_or("Account does not have a transparent key")?
-        .derive_external_ivk()
-        .map_err(|e| format!("Failed to derive transparent external key: {e}"))?
-        .derive_address(NonHardenedChildIndex::ZERO)
-        .map_err(|e| format!("Failed to derive transparent receive address: {e}"))?;
+    if ufvk.transparent().is_none() {
+        return Err("Account does not have a transparent key".to_string());
+    }
 
-    Ok(encode_transparent_address(
-        &network.b58_pubkey_address_prefix(),
-        &network.b58_script_address_prefix(),
-        &taddr,
-    ))
+    if is_keystone_style_ufvk(ufvk) {
+        let taddr = ufvk
+            .transparent()
+            .expect("checked above")
+            .derive_external_ivk()
+            .map_err(|e| format!("Failed to derive transparent external key: {e}"))?
+            .derive_address(NonHardenedChildIndex::ZERO)
+            .map_err(|e| format!("Failed to derive transparent receive address: {e}"))?;
+
+        Ok(encode_transparent_address(
+            &network.b58_pubkey_address_prefix(),
+            &network.b58_script_address_prefix(),
+            &taddr,
+        ))
+    } else {
+        let (ua, _) = ufvk
+            .default_address(UnifiedAddressRequest::AllAvailableKeys)
+            .map_err(|e| format!("Failed to derive default unified address: {e}"))?;
+        let taddr = ua
+            .transparent()
+            .ok_or("Default unified address does not include a transparent receiver")?;
+
+        Ok(encode_transparent_address(
+            &network.b58_pubkey_address_prefix(),
+            &network.b58_script_address_prefix(),
+            taddr,
+        ))
+    }
 }
 
 /// Validate that a wallet database exists and has at least one account.
@@ -858,6 +877,116 @@ mod tests {
     }
 
     #[test]
+    fn test_get_transparent_address_for_software_uses_all_available_default_receiver() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let seed_tag = software_seed_tag_with_nonzero_all_available_transparent_index();
+        let seed = SecretVec::new(vec![seed_tag; 32]);
+        let usk = UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            seed.expose_secret(),
+            zip32::AccountId::ZERO,
+        )
+        .unwrap();
+        let ufvk = usk.to_unified_full_viewing_key();
+        let (ua, _) = ufvk
+            .default_address(UnifiedAddressRequest::AllAvailableKeys)
+            .unwrap();
+        let expected_taddr = encode_transparent_address(
+            &WalletNetwork::Main.b58_pubkey_address_prefix(),
+            &WalletNetwork::Main.b58_script_address_prefix(),
+            ua.transparent().unwrap(),
+        );
+        let external_zero = ufvk
+            .transparent()
+            .unwrap()
+            .derive_external_ivk()
+            .unwrap()
+            .derive_address(NonHardenedChildIndex::ZERO)
+            .unwrap();
+        let external_zero = encode_transparent_address(
+            &WalletNetwork::Main.b58_pubkey_address_prefix(),
+            &WalletNetwork::Main.b58_script_address_prefix(),
+            &external_zero,
+        );
+        assert_ne!(expected_taddr, external_zero);
+
+        let (uuid, _) =
+            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
+                .unwrap();
+
+        assert_eq!(
+            expected_taddr,
+            get_transparent_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_get_transparent_address_for_keystone_style_uses_external_zero() {
+        use zcash_address::unified::{Encoding, Fvk, Ufvk};
+        use zcash_protocol::consensus::NetworkType;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let seed_tag = software_seed_tag_with_nonzero_all_available_transparent_index();
+        let seed = SecretVec::new(vec![seed_tag; 32]);
+        let account_index = zip32::AccountId::ZERO;
+        let usk = UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            seed.expose_secret(),
+            account_index,
+        )
+        .unwrap();
+        let full_ufvk = usk.to_unified_full_viewing_key();
+        let orchard_fvk = full_ufvk.orchard().unwrap().to_bytes();
+        let transparent_fvk = full_ufvk
+            .transparent()
+            .unwrap()
+            .serialize()
+            .try_into()
+            .unwrap();
+        let keystone_style_ufvk =
+            Ufvk::try_from_items(vec![Fvk::Orchard(orchard_fvk), Fvk::P2pkh(transparent_fvk)])
+                .unwrap()
+                .encode(&NetworkType::Main);
+        let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
+            .unwrap()
+            .to_bytes();
+        let external_zero = full_ufvk
+            .transparent()
+            .unwrap()
+            .derive_external_ivk()
+            .unwrap()
+            .derive_address(NonHardenedChildIndex::ZERO)
+            .unwrap();
+        let expected_taddr = encode_transparent_address(
+            &WalletNetwork::Main.b58_pubkey_address_prefix(),
+            &WalletNetwork::Main.b58_script_address_prefix(),
+            &external_zero,
+        );
+
+        let (uuid, _) = import_hardware_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "Keystone",
+            &keystone_style_ufvk,
+            &seed_fingerprint,
+            u32::from(account_index),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            expected_taddr,
+            get_transparent_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap()
+        );
+    }
+
+    #[test]
     fn test_get_transparent_address_rejects_nonzero_zip32_account() {
         use zcash_address::unified::{Encoding, Fvk, Ufvk};
         use zcash_protocol::consensus::NetworkType;
@@ -987,6 +1116,38 @@ mod tests {
         assert!(debug.contains("Orchard"));
         assert!(!debug.contains("Sapling"));
         assert!(!debug.contains("P2pkh"));
+    }
+
+    fn software_seed_tag_with_nonzero_all_available_transparent_index() -> u8 {
+        (0u8..=u8::MAX)
+            .find(|tag| {
+                let seed = vec![*tag; 32];
+                let Ok(usk) = UnifiedSpendingKey::from_seed(
+                    &WalletNetwork::Main,
+                    &seed,
+                    zip32::AccountId::ZERO,
+                ) else {
+                    return false;
+                };
+                let ufvk = usk.to_unified_full_viewing_key();
+                let Ok((ua, _)) = ufvk.default_address(UnifiedAddressRequest::AllAvailableKeys)
+                else {
+                    return false;
+                };
+                let Some(all_available_taddr) = ua.transparent() else {
+                    return false;
+                };
+                let external_zero = ufvk
+                    .transparent()
+                    .unwrap()
+                    .derive_external_ivk()
+                    .unwrap()
+                    .derive_address(NonHardenedChildIndex::ZERO)
+                    .unwrap();
+
+                all_available_taddr != &external_zero
+            })
+            .expect("test fixture seed with nonzero all-available transparent index")
     }
 
     #[test]
