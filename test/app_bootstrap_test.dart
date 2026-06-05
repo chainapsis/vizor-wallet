@@ -53,6 +53,29 @@ void main() {
     expect(merged.isSeedAnchor, isFalse);
   });
 
+  test('mergeBootstrappedAccountInfo recovers Rust hardware metadata', () {
+    const rustAccount = AccountInfo(
+      uuid: 'account-3',
+      name: 'Rust Keystone',
+      order: 1,
+      isHardware: true,
+    );
+    const storedAccount = AccountInfo(
+      uuid: 'account-3',
+      name: 'Stored Keystone',
+      order: 1,
+    );
+
+    final merged = mergeBootstrappedAccountInfo(
+      rustAccount: rustAccount,
+      storedAccount: storedAccount,
+      order: 1,
+    );
+
+    expect(merged.isHardware, isTrue);
+    expect(merged.name, 'Stored Keystone');
+  });
+
   test('empty bootstrap has no password rotation recovery failure', () {
     expect(AppBootstrapState.empty.passwordRotationRecoveryFailed, isFalse);
   });

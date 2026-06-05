@@ -2707,10 +2707,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required rust_api.ApiVotingEligibility eligibility,
     required int snapshotHeight,
   }) {
-    return 'minimum voting eligibility requires at least 5 eligible notes and '
-        '12500000 zatoshi voting weight; selected '
-        '${eligibility.distinctNoteCount} distinct eligible notes with '
-        '${eligibility.eligibleWeightZatoshi} zatoshi voting weight at '
+    return 'minimum voting eligibility requires at least one eligible voting '
+        'bundle with 12500000 zatoshi voting weight; selected '
+        '${eligibility.distinctNoteCount} distinct notes across eligible '
+        'bundles with ${eligibility.eligibleWeightZatoshi} zatoshi eligible '
+        'bundle weight at '
         'snapshot height $snapshotHeight';
   }
 

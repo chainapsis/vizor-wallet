@@ -1040,24 +1040,12 @@ class _KeystoneBundleProgress extends StatelessWidget {
       );
     });
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+    return Row(
       children: [
-        Row(
-          children: [
-            for (var i = 0; i < segments.length; i++) ...[
-              if (i > 0) const SizedBox(width: AppSpacing.xxs),
-              segments[i],
-            ],
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xxs),
-        Text(
-          '$currentBundle / $bundleCount',
-          style: AppTypography.labelSmall.copyWith(
-            color: colors.text.secondary,
-          ),
-        ),
+        for (var i = 0; i < segments.length; i++) ...[
+          if (i > 0) const SizedBox(width: AppSpacing.xxs),
+          segments[i],
+        ],
       ],
     );
   }

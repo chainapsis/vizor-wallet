@@ -342,6 +342,7 @@ pub struct AccountInfo {
     pub name: String,
     pub unified_address: String,
     pub is_seed_anchor: bool,
+    pub is_hardware: bool,
 }
 
 /// List all accounts in the wallet database.
@@ -359,9 +360,12 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
             .map_err(|e| format!("Failed to get account: {e}"))?
             .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
 
-        let address = match account.ufvk() {
-            Some(ufvk) => current_receive_address(&db, network, id, ufvk)?,
-            None => String::new(),
+        let (address, is_hardware) = match account.ufvk() {
+            Some(ufvk) => (
+                current_receive_address(&db, network, id, ufvk)?,
+                is_keystone_style_ufvk(ufvk),
+            ),
+            None => (String::new(), false),
         };
 
         accounts.push(AccountInfo {
@@ -369,6 +373,7 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
             name: account.name().unwrap_or("").to_string(),
             unified_address: address,
             is_seed_anchor: matches!(account.source(), AccountSource::Derived { .. }),
+            is_hardware,
         });
     }
 
@@ -612,6 +617,10 @@ fn current_receive_address(
     Ok(address.encode(&network))
 }
 
+fn is_keystone_style_ufvk(ufvk: &UnifiedFullViewingKey) -> bool {
+    ufvk.orchard().is_some() && ufvk.sapling().is_none()
+}
+
 /// Returns the standard shielded address request (Orchard + Sapling, no transparent).
 /// This matches the behavior of zodl/Zashi wallets.
 fn shielded_address_request() -> UnifiedAddressRequest {
@@ -835,6 +844,12 @@ mod tests {
             None,
         )
         .unwrap();
+        let listed_account = list_accounts(db_path_str, WalletNetwork::Main)
+            .unwrap()
+            .into_iter()
+            .find(|account| account.uuid == uuid)
+            .unwrap();
+        assert!(listed_account.is_hardware);
 
         crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
         let shielded_error = crate::wallet::sync::get_next_available_address(
@@ -1207,6 +1222,12 @@ mod tests {
         let (_, address) =
             init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
                 .unwrap();
+        let listed_account = list_accounts(db_path_str, WalletNetwork::Main)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        assert!(!listed_account.is_hardware);
 
         // Decode and verify receiver types
         let za = zcash_address::ZcashAddress::try_from_encoded(&address).unwrap();

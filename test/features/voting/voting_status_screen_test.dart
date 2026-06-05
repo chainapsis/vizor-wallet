@@ -241,7 +241,8 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
+        'Voting requires at least one eligible shielded note bundle with '
+        '0.125 ZEC '
         'at snapshot block 123. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text(message));
 
@@ -300,7 +301,8 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
+        'Voting requires at least one eligible shielded note bundle with '
+        '0.125 ZEC '
         'at snapshot block 123. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text(message));
 
@@ -342,7 +344,8 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
+        'Voting requires at least one eligible shielded note bundle with '
+        '0.125 ZEC '
         'at snapshot block 123. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text(message));
 
@@ -459,7 +462,8 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
+        'Voting requires at least one eligible shielded note bundle with '
+        '0.125 ZEC '
         'at snapshot block 3,359,740. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text(message));
 
@@ -1704,60 +1708,62 @@ void main() {
     expect(find.text('Review answers'), findsOneWidget);
   });
 
-  testWidgets('proposal detail shows read-only options when eligibility fails', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1152, 768));
-    addTearDown(() async {
-      await tester.binding.setSurfaceSize(null);
-    });
+  testWidgets(
+    'proposal detail shows read-only options when eligibility fails',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1152, 768));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
 
-    final recoveryApi = _MutableVotingRecoveryApi();
-    final container = _statusContainer(
-      accountOverride: _MnemonicAccountNotifier.new,
-      recoveryApi: recoveryApi,
-      rust: _MinimumVotingEligibilityRustApi(recoveryApi),
-      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
-    );
-    addTearDown(container.dispose);
+      final recoveryApi = _MutableVotingRecoveryApi();
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        recoveryApi: recoveryApi,
+        rust: _MinimumVotingEligibilityRustApi(recoveryApi),
+        hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+      );
+      addTearDown(container.dispose);
 
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: _proposalHarness(),
-      ),
-    );
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _proposalHarness(),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    const message =
-        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
-        'at snapshot block 123. Switch to an eligible account to vote.';
-    await _pumpUntilFound(tester, find.text('Not eligible'));
+      const message =
+          'Voting requires at least one eligible shielded note bundle with '
+          '0.125 ZEC '
+          'at snapshot block 123. Switch to an eligible account to vote.';
+      await _pumpUntilFound(tester, find.text('Not eligible'));
 
-    expect(find.text(message), findsNothing);
-    expect(find.text('First proposal'), findsOneWidget);
-    expect(find.text('Voting power 0 ZEC'), findsOneWidget);
-    expect(find.text('Yes'), findsOneWidget);
-    expect(find.text('No'), findsOneWidget);
-    expect(find.text('Review answers'), findsNothing);
-    expect(find.text('Not eligible'), findsOneWidget);
+      expect(find.text(message), findsNothing);
+      expect(find.text('First proposal'), findsOneWidget);
+      expect(find.text('Voting power 0 ZEC'), findsOneWidget);
+      expect(find.text('Yes'), findsOneWidget);
+      expect(find.text('No'), findsOneWidget);
+      expect(find.text('Review answers'), findsNothing);
+      expect(find.text('Not eligible'), findsOneWidget);
 
-    await tester.tap(find.text('Yes'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Yes'));
+      await tester.pumpAndSettle();
 
-    expect(container.read(votingDraftProvider(_draftKey)).isEmpty, true);
-    expect(find.text('Not eligible for this voting round'), findsOneWidget);
-    expect(find.text(message), findsOneWidget);
+      expect(container.read(votingDraftProvider(_draftKey)).isEmpty, true);
+      expect(find.text('Not eligible for this voting round'), findsOneWidget);
+      expect(find.text(message), findsOneWidget);
 
-    await tester.tap(find.text('Done'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Not eligible'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Not eligible'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Not eligible for this voting round'), findsOneWidget);
-    expect(find.text(message), findsOneWidget);
-  });
+      expect(find.text('Not eligible for this voting round'), findsOneWidget);
+      expect(find.text(message), findsOneWidget);
+    },
+  );
 
   testWidgets('proposal detail hides completed vote when eligibility fails', (
     tester,
@@ -1800,7 +1806,8 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
+        'Voting requires at least one eligible shielded note bundle with '
+        '0.125 ZEC '
         'at snapshot block 123. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text('Not eligible'));
 
@@ -1854,7 +1861,8 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
+        'Voting requires at least one eligible shielded note bundle with '
+        '0.125 ZEC '
         'at snapshot block 123. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text('Not eligible'));
 
@@ -1895,7 +1903,8 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'Voting requires at least 5 eligible shielded notes totaling 0.125 ZEC '
+        'Voting requires at least one eligible shielded note bundle with '
+        '0.125 ZEC '
         'at snapshot block 123. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text(message));
 
@@ -2908,6 +2917,7 @@ void main() {
       ),
     );
     await _pumpUntilFound(tester, find.text('Sign bundle 1 of 2'));
+    expect(find.text('1 / 2'), findsNothing);
 
     await tester.tap(find.text('Scan signature'));
     await tester.pumpAndSettle();
@@ -2915,6 +2925,7 @@ void main() {
     await _pumpUntilFound(tester, find.text('Skip'));
 
     expect(find.text('Sign bundle 2 of 2'), findsOneWidget);
+    expect(find.text('2 / 2'), findsNothing);
     expect(find.text('Skip'), findsOneWidget);
 
     await tester.tap(find.text('Skip'));
@@ -3767,9 +3778,11 @@ class _FailingEligibilityVotingSessionNotifier
   @override
   Future<BigInt?> refreshEligibleWeight() async {
     throw Exception(
-      'Invalid input: minimum voting eligibility requires at least 5 eligible '
-      'notes and 12500000 zatoshi voting weight; selected 2 distinct eligible '
-      'notes with 25000000 zatoshi voting weight at snapshot height 3359740',
+      'Invalid input: minimum voting eligibility requires at least one '
+      'eligible voting bundle with 12500000 zatoshi voting weight; selected 0 '
+      'distinct notes across eligible bundles with 0 zatoshi eligible bundle '
+      'weight at snapshot height '
+      '3359740',
     );
   }
 }
@@ -3958,7 +3971,7 @@ class _MinimumVotingEligibilityRustApi extends _VotingStatusRustApi {
     return rust_api.ApiVotingEligibility(
       isEligible: false,
       distinctNoteCount: 2,
-      eligibleWeightZatoshi: BigInt.from(25000000),
+      eligibleWeightZatoshi: BigInt.from(100),
     );
   }
 }
