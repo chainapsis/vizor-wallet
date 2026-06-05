@@ -737,6 +737,7 @@ class _BlockHeightField extends StatelessWidget {
           ),
           Expanded(
             child: material.TextField(
+              key: const ValueKey('import_birthday_height_field'),
               controller: controller,
               focusNode: focusNode,
               keyboardType: material.TextInputType.number,
