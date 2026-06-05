@@ -6,7 +6,7 @@ use std::{
 
 use ::transparent::keys::{IncomingViewingKey as _, NonHardenedChildIndex};
 use bip0039::{Count, English, Language, Mnemonic};
-use rusqlite::named_params;
+use rusqlite::{named_params, OptionalExtension};
 use secrecy::{ExposeSecret, SecretVec};
 use zcash_client_backend::data_api::{
     chain::ChainState, Account as _, AccountBirthday, AccountPurpose, AccountSource, WalletRead,
@@ -26,7 +26,7 @@ use crate::wallet::{
     db::{
         open_wallet_db_for_read_with_timeout, open_wallet_db_with_timeout,
         with_wallet_db_write_lock, WalletDatabase, ACCOUNT_MUTATION_DB_BUSY_TIMEOUT,
-        READ_DB_BUSY_TIMEOUT, WALLET_DB_BUSY_TIMEOUT,
+        LEDGER_TRANSPARENT_SCAN_TABLE, READ_DB_BUSY_TIMEOUT, WALLET_DB_BUSY_TIMEOUT,
     },
     network::WalletNetwork,
 };
@@ -498,6 +498,8 @@ fn delete_account_rows(db_path: &str, account_id: AccountUuid) -> Result<(), Str
         }
     }
 
+    delete_ledger_transparent_scan_rows(&tx, account_uuid_bytes)?;
+
     tx.execute(
         r#"
         WITH account_transactions AS (
@@ -540,6 +542,35 @@ fn delete_account_rows(db_path: &str, account_id: AccountUuid) -> Result<(), Str
 
     tx.commit()
         .map_err(|e| format!("Failed to commit account deletion: {e}"))
+}
+
+fn delete_ledger_transparent_scan_rows(
+    tx: &rusqlite::Transaction<'_>,
+    account_uuid: &[u8],
+) -> Result<(), String> {
+    let table_exists = tx
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            rusqlite::params![LEDGER_TRANSPARENT_SCAN_TABLE],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to check Ledger transparent scan table: {e}"))?
+        .is_some();
+
+    if !table_exists {
+        return Ok(());
+    }
+
+    tx.execute(
+        &format!(
+            "DELETE FROM {LEDGER_TRANSPARENT_SCAN_TABLE}
+             WHERE account_uuid = :account_uuid"
+        ),
+        named_params![":account_uuid": account_uuid],
+    )
+    .map(|_| ())
+    .map_err(|e| format!("Failed to delete Ledger transparent scan state: {e}"))
 }
 
 /// Parse an account UUID string into AccountUuid.
@@ -1257,6 +1288,48 @@ mod tests {
     }
 
     #[test]
+    fn test_delete_account_removes_ledger_transparent_scan_state() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let first_phrase = generate_mnemonic();
+        let first_seed = mnemonic_to_seed(&first_phrase).unwrap();
+        let (first_uuid, _) = init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &first_seed,
+            None,
+            "first",
+        )
+        .unwrap();
+
+        let second_phrase = generate_mnemonic();
+        let second_seed = mnemonic_to_seed(&second_phrase).unwrap();
+        let (second_uuid, _) = add_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "second",
+            &second_seed,
+            None,
+        )
+        .unwrap();
+
+        seed_ledger_transparent_scan_state(db_path_str, &first_uuid, &second_uuid);
+
+        delete_account(db_path_str, WalletNetwork::Main, &second_uuid).unwrap();
+
+        assert_eq!(
+            ledger_transparent_scan_row_count(db_path_str, &second_uuid),
+            0
+        );
+        assert_eq!(
+            ledger_transparent_scan_row_count(db_path_str, &first_uuid),
+            1
+        );
+    }
+
+    #[test]
     fn test_delete_account_handles_internal_sent_note_to_deleted_account() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
@@ -1328,6 +1401,45 @@ mod tests {
         let accounts = list_accounts(db_path_str, WalletNetwork::Main).unwrap();
         assert_eq!(accounts.len(), 2);
         assert!(accounts.iter().any(|account| account.uuid == first_uuid));
+    }
+
+    fn seed_ledger_transparent_scan_state(db_path: &str, first_uuid: &str, second_uuid: &str) {
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.execute(
+            &format!(
+                "CREATE TABLE {LEDGER_TRANSPARENT_SCAN_TABLE} (
+                    account_uuid BLOB NOT NULL,
+                    key_scope INTEGER NOT NULL,
+                    checked_height INTEGER NOT NULL,
+                    PRIMARY KEY (account_uuid, key_scope)
+                )"
+            ),
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {LEDGER_TRANSPARENT_SCAN_TABLE}
+                 (account_uuid, key_scope, checked_height)
+                 VALUES (?1, 0, 100), (?2, 0, 200), (?2, 1, 200)"
+            ),
+            rusqlite::params![uuid_bytes(first_uuid), uuid_bytes(second_uuid)],
+        )
+        .unwrap();
+    }
+
+    fn ledger_transparent_scan_row_count(db_path: &str, account_uuid: &str) -> i64 {
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.query_row(
+            &format!(
+                "SELECT COUNT(*)
+                 FROM {LEDGER_TRANSPARENT_SCAN_TABLE}
+                 WHERE account_uuid = ?1"
+            ),
+            rusqlite::params![uuid_bytes(account_uuid)],
+            |row| row.get(0),
+        )
+        .unwrap()
     }
 
     fn seed_internal_sent_note_to_account(db_path: &str, from_uuid: &str, to_uuid: &str) {
@@ -1418,13 +1530,19 @@ mod tests {
     }
 
     fn account_row_id(conn: &rusqlite::Connection, account_uuid: &str) -> i64 {
-        let uuid = uuid::Uuid::parse_str(account_uuid).unwrap();
         conn.query_row(
             "SELECT id FROM accounts WHERE uuid = ?1",
-            rusqlite::params![uuid.as_bytes().as_slice()],
+            rusqlite::params![uuid_bytes(account_uuid)],
             |row| row.get(0),
         )
         .unwrap()
+    }
+
+    fn uuid_bytes(account_uuid: &str) -> Vec<u8> {
+        uuid::Uuid::parse_str(account_uuid)
+            .unwrap()
+            .into_bytes()
+            .to_vec()
     }
 
     #[test]

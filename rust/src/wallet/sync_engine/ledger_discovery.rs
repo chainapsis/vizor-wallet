@@ -26,14 +26,12 @@ use zcash_protocol::consensus::BlockHeight;
 use crate::wallet::{
     db::{
         open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock, WalletDatabase,
-        SYNC_DB_BUSY_TIMEOUT,
+        LEDGER_TRANSPARENT_SCAN_TABLE, SYNC_DB_BUSY_TIMEOUT,
     },
     network::WalletNetwork,
 };
 
 use super::{enhance, SyncError};
-
-const LEDGER_SCAN_TABLE: &str = "ext_vizor_ledger_transparent_scan";
 
 #[derive(Clone)]
 struct Candidate {
@@ -108,7 +106,7 @@ pub(super) fn rewind_ledger_transparent_discovery_to_height(
     let table_exists = conn
         .query_row(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
-            rusqlite::params![LEDGER_SCAN_TABLE],
+            rusqlite::params![LEDGER_TRANSPARENT_SCAN_TABLE],
             |_| Ok(()),
         )
         .optional()
@@ -122,7 +120,7 @@ pub(super) fn rewind_ledger_transparent_discovery_to_height(
     let updated = conn
         .execute(
             &format!(
-                "UPDATE {LEDGER_SCAN_TABLE}
+                "UPDATE {LEDGER_TRANSPARENT_SCAN_TABLE}
                  SET checked_height = :checked_height
                  WHERE checked_height > :checked_height"
             ),
@@ -271,7 +269,7 @@ fn ensure_scan_table(db_path: &str) -> Result<(), SyncError> {
         let conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)
             .map_err(SyncError::db)?;
         conn.execute_batch(&format!(
-            "CREATE TABLE IF NOT EXISTS {LEDGER_SCAN_TABLE} (
+            "CREATE TABLE IF NOT EXISTS {LEDGER_TRANSPARENT_SCAN_TABLE} (
                 account_uuid BLOB NOT NULL,
                 key_scope INTEGER NOT NULL,
                 checked_height INTEGER NOT NULL,
@@ -293,7 +291,7 @@ fn next_scan_start(
         .query_row(
             &format!(
                 "SELECT checked_height
-                 FROM {LEDGER_SCAN_TABLE}
+                 FROM {LEDGER_TRANSPARENT_SCAN_TABLE}
                  WHERE account_uuid = :account_uuid AND key_scope = :key_scope"
             ),
             rusqlite::named_params![
@@ -321,7 +319,7 @@ fn set_scope_checked_height(
             .map_err(SyncError::db)?;
         conn.execute(
             &format!(
-                "INSERT INTO {LEDGER_SCAN_TABLE} (account_uuid, key_scope, checked_height)
+                "INSERT INTO {LEDGER_TRANSPARENT_SCAN_TABLE} (account_uuid, key_scope, checked_height)
                  VALUES (:account_uuid, :key_scope, :checked_height)
                  ON CONFLICT (account_uuid, key_scope) DO UPDATE
                  SET checked_height = MAX(checked_height, :checked_height)"
@@ -382,7 +380,7 @@ mod tests {
         let conn = open_wallet_raw_conn_with_timeout(db_path_str, SYNC_DB_BUSY_TIMEOUT).unwrap();
         conn.execute(
             &format!(
-                "INSERT INTO {LEDGER_SCAN_TABLE} (account_uuid, key_scope, checked_height)
+                "INSERT INTO {LEDGER_TRANSPARENT_SCAN_TABLE} (account_uuid, key_scope, checked_height)
                  VALUES
                     (x'01', 0, 50),
                     (x'02', 0, 100),
@@ -398,7 +396,7 @@ mod tests {
         let mut stmt = conn
             .prepare(&format!(
                 "SELECT key_scope, checked_height
-                 FROM {LEDGER_SCAN_TABLE}
+                 FROM {LEDGER_TRANSPARENT_SCAN_TABLE}
                  ORDER BY account_uuid"
             ))
             .unwrap();
