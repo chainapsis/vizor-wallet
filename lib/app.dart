@@ -890,8 +890,7 @@ class _WindowsUpdatePromptHostState
 
   bool _canShowForCurrentRoute() {
     final path = _currentPath;
-    if (path == '/unlock' ||
-        path == '/welcome' ||
+    if (path == '/welcome' ||
         path == '/add-account' ||
         path == '/lost-password' ||
         path.startsWith('/onboarding/') ||
