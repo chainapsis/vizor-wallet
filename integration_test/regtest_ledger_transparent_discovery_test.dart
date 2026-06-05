@@ -367,7 +367,7 @@ Future<void> _sendToAddress(
   String amount,
 ) async {
   _log('sending $amount $_currencyTicker to second account');
-  await _tapWidget(tester, const ValueKey('sidebar_send_button'));
+  await _openSendFromHome(tester);
   await _enterText(tester, const ValueKey('send_address_field'), address);
   await _enterText(tester, const ValueKey('send_amount_field'), amount);
   await _tapAppButton(
@@ -387,6 +387,23 @@ Future<void> _sendToAddress(
     timeout: const Duration(minutes: 4),
   );
   _log('send succeeded');
+}
+
+Future<void> _openSendFromHome(WidgetTester tester) async {
+  await _openWallet(tester);
+  final finder = find.widgetWithText(AppButton, 'Send');
+  await _pumpUntil(
+    tester,
+    () =>
+        tester.any(finder) &&
+        tester.widget<AppButton>(finder.first).onPressed != null,
+    description: 'home Send button to be enabled',
+  );
+  await tester.ensureVisible(finder.first);
+  await tester.pump(const Duration(milliseconds: 50));
+  await tester.tap(finder.first);
+  await tester.pump(const Duration(milliseconds: 250));
+  _log('tapped home Send button');
 }
 
 Future<void> _mineRegtestBlocks(int blocks) async {
@@ -453,7 +470,7 @@ Future<T> _zcashdRpc<T>(
 }
 
 Future<void> _openWallet(WidgetTester tester) async {
-  await _tapWidget(tester, const ValueKey('sidebar_wallet_button'));
+  await _tapWidget(tester, const ValueKey('sidebar_home_button'));
   await _waitForHome(tester);
 }
 
