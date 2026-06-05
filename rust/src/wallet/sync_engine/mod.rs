@@ -16,7 +16,7 @@ use zcash_client_backend::{
 };
 use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::block::BlockHash;
-use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 use crate::wallet::{
     db::{
@@ -96,7 +96,6 @@ const SANDBLASTING_START: u32 = 1_710_000;
 const SANDBLASTING_END: u32 = 2_050_000;
 const BATCH_SIZE_SANDBLASTING: u32 = 100;
 
-const SAPLING_ACTIVATION_HEIGHT: u32 = 419200;
 const MAX_WITNESS_REPAIR_PASSES_PER_RUN: u32 = 3;
 const WITNESS_CHECK_POLICY_VERSION: u32 = 1;
 const WITNESS_CHECK_MAX_CLEAN_AGE_BLOCKS: u64 = 10_000;
@@ -1319,7 +1318,7 @@ async fn run_sync_impl(
         }
 
         // Get tree state
-        let from_state = if u32::from(start) <= SAPLING_ACTIVATION_HEIGHT {
+        let from_state = if should_use_empty_chain_state(&network, start)? {
             chain::ChainState::empty(start - 1, BlockHash([0u8; 32]))
         } else {
             let ts = get_tree_state(&mut client, u32::from(start - 1) as u64).await?;
@@ -1823,6 +1822,16 @@ fn is_commitment_tree_root_conflict(err: &SqliteClientError) -> bool {
     )
 }
 
+fn should_use_empty_chain_state(
+    network: &WalletNetwork,
+    start: BlockHeight,
+) -> Result<bool, SyncError> {
+    let sapling_activation_height = network
+        .activation_height(NetworkUpgrade::Sapling)
+        .ok_or_else(|| SyncError::parse("Sapling activation height is unavailable"))?;
+    Ok(start <= sapling_activation_height)
+}
+
 // ==================== Tests ====================
 //
 // Error-taxonomy tests now live alongside their types in `error.rs`. The
@@ -1834,6 +1843,28 @@ fn is_commitment_tree_root_conflict(err: &SqliteClientError) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_chain_state_uses_network_activation_height() {
+        assert!(
+            should_use_empty_chain_state(&WalletNetwork::Main, BlockHeight::from_u32(419_200))
+                .unwrap()
+        );
+        assert!(!should_use_empty_chain_state(
+            &WalletNetwork::Main,
+            BlockHeight::from_u32(419_201)
+        )
+        .unwrap());
+
+        assert!(
+            should_use_empty_chain_state(&WalletNetwork::Regtest, BlockHeight::from_u32(1))
+                .unwrap()
+        );
+        assert!(
+            !should_use_empty_chain_state(&WalletNetwork::Regtest, BlockHeight::from_u32(141))
+                .unwrap()
+        );
+    }
 
     #[test]
     fn witness_check_runs_without_a_clean_marker() {
