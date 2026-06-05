@@ -215,36 +215,39 @@ pub(super) async fn process_taddress_history(
     }
 
     let mut found = false;
-    let mut stream = lwd::get_taddress_txids(client, address, start_height, end_height).await?;
+    let mut stream =
+        lwd::get_taddress_txids(client, address.clone(), start_height, end_height).await?;
     let mut fee_client = client.clone();
     loop {
         match lwd::next_stream_message(&mut stream, "get_taddress_txids stream").await? {
             Some(raw) => {
                 if !raw.data.is_empty() {
-                    found = true;
                     let mined_height = mined_height_from_raw_height(raw.height)?;
-                    match Transaction::read(&raw.data[..], BranchId::Sapling) {
-                        Ok(tx) => {
-                            if let Err(e) = with_wallet_db_write_lock(
-                                "sync_engine.enhance.decrypt_and_store_transaction",
-                                || decrypt_and_store_transaction(&network, db, &tx, mined_height),
-                            ) {
-                                log::error!(
-                                    "sync: decrypt_and_store_transaction (addr) failed: {e}"
-                                );
-                            }
-                            if let Err(e) =
-                                fill_missing_transparent_fee(&mut fee_client, db_path, &tx).await
-                            {
-                                log::warn!(
-                                    "sync: transparent fee enhancement (addr) failed for {}: {e}",
-                                    tx.txid()
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("sync: Transaction::read (addr) failed: {e}");
-                        }
+                    let tx = Transaction::read(&raw.data[..], BranchId::Sapling).map_err(|e| {
+                        SyncError::parse(format!("Transaction::read (addr {address}) failed: {e}"))
+                    })?;
+                    let txid = tx.txid();
+
+                    with_wallet_db_write_lock(
+                        "sync_engine.enhance.decrypt_and_store_transaction",
+                        || {
+                            decrypt_and_store_transaction(&network, db, &tx, mined_height)
+                                .map_err(|e| {
+                                    SyncError::db(format!(
+                                        "decrypt_and_store_transaction (addr {address}, txid {txid}) failed: {e}"
+                                    ))
+                                })
+                        },
+                    )?;
+                    found = true;
+
+                    if let Err(e) =
+                        fill_missing_transparent_fee(&mut fee_client, db_path, &tx).await
+                    {
+                        log::warn!(
+                            "sync: transparent fee enhancement (addr) failed for {}: {e}",
+                            tx.txid()
+                        );
                     }
                 }
             }
