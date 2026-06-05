@@ -14,6 +14,20 @@ import 'voting_state.dart';
 const kVotingPollListRecentRefreshWindow = Duration(seconds: 10);
 DateTime? _lastVotingPollListRefreshAt;
 
+class VotingPollListRefreshRequestNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void request() {
+    state++;
+  }
+}
+
+final votingPollListRefreshRequestProvider =
+    NotifierProvider<VotingPollListRefreshRequestNotifier, int>(
+      VotingPollListRefreshRequestNotifier.new,
+    );
+
 bool wasVotingPollListRecentlyRefreshed() {
   final refreshedAt = _lastVotingPollListRefreshAt;
   if (refreshedAt == null) return false;

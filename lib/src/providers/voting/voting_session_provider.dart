@@ -25,6 +25,8 @@ import 'voting_service_providers.dart';
 import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
 
+final _minimumVotingBundleWeightZatoshi = BigInt.from(12500000);
+
 /// Orchestrates one round's voting lifecycle for the UI.
 ///
 /// The notifier is intentionally recovery-first: every public action reloads
@@ -2708,7 +2710,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required int snapshotHeight,
   }) {
     return 'minimum voting eligibility requires at least one eligible voting '
-        'bundle with 12500000 zatoshi voting weight; selected '
+        'bundle with $_minimumVotingBundleWeightZatoshi zatoshi voting weight; '
+        'selected '
         '${eligibility.distinctNoteCount} distinct notes across eligible '
         'bundles with ${eligibility.eligibleWeightZatoshi} zatoshi eligible '
         'bundle weight at '
@@ -3407,6 +3410,41 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
   @override
   Future<void> _refreshSessionAccountFromActiveAccount() async {
     _sessionAccountUuid = _key.accountUuid;
+  }
+
+  @override
+  Future<void> _refreshEligibleWeightUnlocked() async {
+    final current = await future;
+    final context = await _loadContext(_roundId);
+    await _waitUntilWalletReadyForVoting(context);
+    if (context.isHardwareAccount) {
+      final signatures = await _loadKeystoneSignatures(context);
+      if (signatures.isNotEmpty) {
+        final bundleSetup = await ref
+            .read(votingRustApiProvider)
+            .setupDelegationBundles(ctx: _apiRoundContext(context));
+        final refreshedPlan = await _loadResumePlan(context);
+        final refreshedRoundPlan = await _loadRoundPlan(context);
+        final successPhase = current.phase == VotingSessionPhase.error
+            ? VotingSessionPhase.idle
+            : current.phase;
+        _setStateForContext(
+          context,
+          (state.value ?? current).copyWith(
+            phase: successPhase,
+            config: context.config,
+            round: context.round,
+            resumePlan: refreshedPlan,
+            roundPlan: refreshedRoundPlan,
+            eligibleWeightZatoshi: bundleSetup.eligibleWeight,
+            isHardwareAccount: context.isHardwareAccount,
+            clearError: true,
+          ),
+        );
+        return;
+      }
+    }
+    await _refreshVotingEligibilityState(current: current, context: context);
   }
 }
 

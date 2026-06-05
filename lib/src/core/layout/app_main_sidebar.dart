@@ -6,6 +6,7 @@ import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
 import '../../providers/sync_failure.dart';
 import '../../providers/sync_provider.dart';
+import '../../providers/voting/voting_rounds_provider.dart';
 import '../../providers/voting/voting_submission_guard_provider.dart';
 import '../config/swap_feature_config.dart';
 import '../profile_pictures.dart';
@@ -39,7 +40,12 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   }
 
   void _navigateTo(String routePath) {
-    if (_matches(routePath)) return;
+    if (_matches(routePath)) {
+      if (routePath == '/voting') {
+        ref.read(votingPollListRefreshRequestProvider.notifier).request();
+      }
+      return;
+    }
     context.go(routePath);
   }
 
@@ -150,9 +156,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     label: 'Vote',
                     iconName: AppIcons.scroll,
                     active: _matches('/voting'),
-                    onTap: _matches('/voting')
-                        ? null
-                        : () => _navigateTo('/voting'),
+                    onTap: () => _navigateTo('/voting'),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(

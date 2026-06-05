@@ -9,7 +9,6 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
-import '../../../core/widgets/app_icon.dart';
 import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_service_providers.dart';
 import '../../../providers/voting/voting_session_provider.dart';
@@ -119,7 +118,7 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
                   }
                   _clearPendingTallyRefresh();
                   return VotingPaneScrollView(
-                    maxWidth: 720,
+                    maxWidth: 560,
                     scrollPadding: const EdgeInsets.only(bottom: AppSpacing.md),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -149,6 +148,9 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
                                     : AppSpacing.s,
                               ),
                               child: _ResultCard(
+                                key: ValueKey(
+                                  'voting-result-card-${proposals[index].id}',
+                                ),
                                 proposal: proposals[index],
                                 tally: _proposalTally(
                                   result.rawJson,
@@ -192,7 +194,7 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
   }
 }
 
-class _ResultsHeader extends StatefulWidget {
+class _ResultsHeader extends StatelessWidget {
   const _ResultsHeader({
     required this.title,
     required this.snapshotHeight,
@@ -206,25 +208,9 @@ class _ResultsHeader extends StatefulWidget {
   final Uri? forumUri;
 
   @override
-  State<_ResultsHeader> createState() => _ResultsHeaderState();
-}
-
-class _ResultsHeaderState extends State<_ResultsHeader> {
-  bool _descriptionExpanded = false;
-
-  @override
-  void didUpdateWidget(covariant _ResultsHeader oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.description != widget.description ||
-        oldWidget.forumUri != widget.forumUri) {
-      _descriptionExpanded = false;
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final description = widget.description.trim();
+    final description = this.description.trim();
     final descriptionStyle = AppTypography.bodyMedium.copyWith(
       color: colors.text.secondary,
       height: 20 / 14,
@@ -247,7 +233,7 @@ class _ResultsHeaderState extends State<_ResultsHeader> {
           children: [
             Expanded(
               child: Text(
-                widget.title,
+                title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: titleStyle,
@@ -255,54 +241,20 @@ class _ResultsHeaderState extends State<_ResultsHeader> {
             ),
             const SizedBox(width: AppSpacing.sm),
             Text(
-              '#${formatGroupedInteger(widget.snapshotHeight)}',
+              '#${formatGroupedInteger(snapshotHeight)}',
               style: titleStyle.copyWith(fontWeight: FontWeight.w500),
             ),
           ],
         ),
         if (description.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.xs),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final canExpand = _textExceedsSingleLine(
-                context: context,
-                text: description,
-                style: descriptionStyle,
-                maxWidth: constraints.maxWidth,
-              );
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    description,
-                    maxLines: _descriptionExpanded || !canExpand ? null : 1,
-                    overflow: _descriptionExpanded || !canExpand
-                        ? TextOverflow.visible
-                        : TextOverflow.ellipsis,
-                    style: descriptionStyle,
-                  ),
-                  if (canExpand)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: _ViewMoreButton(
-                        expanded: _descriptionExpanded,
-                        onPressed: () {
-                          setState(() {
-                            _descriptionExpanded = !_descriptionExpanded;
-                          });
-                        },
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
+          VotingExpandableText(text: description, style: descriptionStyle),
         ],
-        if (widget.forumUri != null) ...[
+        if (forumUri != null) ...[
           const SizedBox(height: AppSpacing.xs),
           Align(
             alignment: Alignment.centerRight,
-            child: VotingForumLinkButton(uri: widget.forumUri!),
+            child: VotingForumLinkButton(uri: forumUri!),
           ),
         ],
       ],
@@ -312,6 +264,7 @@ class _ResultsHeaderState extends State<_ResultsHeader> {
 
 class _ResultCard extends StatelessWidget {
   const _ResultCard({
+    super.key,
     required this.proposal,
     required this.tally,
     required this.selectedChoice,
@@ -372,8 +325,6 @@ class _ResultCard extends StatelessWidget {
               highlighted: option.index == winningOption,
             ),
           if (selectedLabel != null || total > 0) ...[
-            const SizedBox(height: AppSpacing.xs),
-            Container(height: 1, color: context.colors.border.subtle),
             const SizedBox(height: AppSpacing.xs),
             Row(
               children: [
@@ -483,47 +434,6 @@ class _TallyProgressBar extends StatelessWidget {
   }
 }
 
-class _ViewMoreButton extends StatelessWidget {
-  const _ViewMoreButton({required this.expanded, required this.onPressed});
-
-  final bool expanded;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onPressed,
-      child: Padding(
-        padding: const EdgeInsets.only(top: AppSpacing.xxs),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              expanded ? 'View less' : 'View more',
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.accent,
-                height: 20 / 14,
-                letterSpacing: 0,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.xxs),
-            Transform.rotate(
-              angle: expanded ? -1.5708 : 1.5708,
-              child: AppIcon(
-                AppIcons.chevronForward,
-                size: 16,
-                color: colors.icon.accent,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _Message extends StatelessWidget {
   const _Message(this.message);
 
@@ -584,22 +494,6 @@ int? _selectedChoiceForProposal(VotingSessionState? state, int proposalId) {
     if (choice.proposalId == proposalId) return choice.choice;
   }
   return null;
-}
-
-bool _textExceedsSingleLine({
-  required BuildContext context,
-  required String text,
-  required TextStyle style,
-  required double maxWidth,
-}) {
-  if (!maxWidth.isFinite || maxWidth <= 0) return false;
-  final textPainter = TextPainter(
-    text: TextSpan(text: text, style: style),
-    textDirection: Directionality.of(context),
-    textScaler: MediaQuery.textScalerOf(context),
-    maxLines: 1,
-  )..layout(maxWidth: maxWidth);
-  return textPainter.didExceedMaxLines;
 }
 
 Map<int, num> _proposalTally(Map<String, dynamic> json, int proposalId) {

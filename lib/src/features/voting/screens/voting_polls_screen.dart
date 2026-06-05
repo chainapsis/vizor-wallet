@@ -58,6 +58,9 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(votingPollListRefreshRequestProvider, (_, _) {
+      _handleExternalRefreshRequest();
+    });
     final rounds = ref.watch(votingRoundsProvider);
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -206,6 +209,9 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
   }
 
   void _reloadRoundsWithFreshConfig({bool entryRefresh = false}) {
+    if (!entryRefresh && (_entryRefreshInFlight || _pollListRefreshInFlight)) {
+      return;
+    }
     if (!entryRefresh && ref.read(votingRoundsProvider).hasValue) {
       setState(() {
         _pollListRefreshInFlight = true;
@@ -222,6 +228,11 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
         });
       }),
     );
+  }
+
+  void _handleExternalRefreshRequest() {
+    if (!mounted) return;
+    _reloadRoundsWithFreshConfig();
   }
 
   bool _wasPollListRecentlyRefreshed() {

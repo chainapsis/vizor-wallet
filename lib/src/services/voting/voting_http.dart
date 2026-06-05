@@ -7,7 +7,11 @@ import 'dart:typed_data';
 /// The voting clients are mostly protocol mappers; keeping transport injectable
 /// lets tests assert URLs and JSON bodies without opening sockets.
 abstract interface class VotingHttpClient {
-  Future<VotingHttpResponse> get(Uri uri, {Duration? timeout});
+  Future<VotingHttpResponse> get(
+    Uri uri, {
+    Map<String, String>? headers,
+    Duration? timeout,
+  });
 
   Future<VotingHttpResponse> postJson(
     Uri uri,
@@ -53,8 +57,12 @@ class DartIoVotingHttpClient implements VotingHttpClient {
   final HttpClient _client;
 
   @override
-  Future<VotingHttpResponse> get(Uri uri, {Duration? timeout}) {
-    return _send('GET', uri, timeout: timeout);
+  Future<VotingHttpResponse> get(
+    Uri uri, {
+    Map<String, String>? headers,
+    Duration? timeout,
+  }) {
+    return _send('GET', uri, headers: headers, timeout: timeout);
   }
 
   @override
@@ -81,6 +89,7 @@ class DartIoVotingHttpClient implements VotingHttpClient {
     Uri uri, {
     List<int>? bodyBytes,
     ContentType? contentType,
+    Map<String, String>? headers,
     Duration? timeout,
   }) async {
     Future<VotingHttpResponse> run() async {
@@ -88,6 +97,7 @@ class DartIoVotingHttpClient implements VotingHttpClient {
       if (contentType != null) {
         request.headers.contentType = contentType;
       }
+      headers?.forEach(request.headers.set);
       if (bodyBytes != null) {
         request.add(bodyBytes);
       }

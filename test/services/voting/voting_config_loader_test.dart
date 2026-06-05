@@ -103,7 +103,9 @@ void main() {
   });
 
   test('allows static config sources without checksum', () {
-    final source = parseStaticVotingConfigSource('https://example.com/static.json');
+    final source = parseStaticVotingConfigSource(
+      'https://example.com/static.json',
+    );
     expect(source.uri.toString(), 'https://example.com/static.json');
     expect(source.sha256Hex, isNull);
     expect(source.raw, 'https://example.com/static.json');
@@ -156,6 +158,103 @@ void main() {
       resolution.config.pirEndpointUrls.single.toString(),
       'https://pir.example',
     );
+    expect(http.requests.map((request) => request.uri.toString()), [
+      'https://voting.example/static-voting-config.json',
+      dynamicUrl,
+    ]);
+    expect(http.requests.map((request) => request.headers), [
+      {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'},
+      {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'},
+    ]);
+  });
+
+  test('load cache-busts GitHub raw branch dynamic config', () async {
+    final staticSource = parseStaticVotingConfigSource(
+      'https://voting.example/static-voting-config.json?checksum=sha256:'
+      '0000000000000000000000000000000000000000000000000000000000000000',
+    );
+    const dynamicUrl =
+        'https://raw.githubusercontent.com/valargroup/'
+        'token-holder-voting-config/main/stage/dynamic-voting-config.json';
+    final http = FakeVotingHttpClient(
+      responses: {
+        staticSource.uri.toString(): '{"static":true}',
+        '/valargroup/token-holder-voting-config/main/stage/dynamic-voting-config.json':
+            '{"dynamic":true}',
+      },
+    );
+    final loader = VotingConfigLoader(
+      httpClient: http,
+      sourceUrl: staticSource.raw,
+      resolveStaticVotingConfig:
+          ({required source, required staticBytes}) async => dynamicUrl,
+      resolveVotingConfig:
+          ({
+            required source,
+            required staticBytes,
+            required dynamicBytes,
+            previous,
+          }) async {
+            expect(dynamicBytes, utf8.encode('{"dynamic":true}'));
+            return rust_config_api.VotingConfigResolution(
+              config: _resolvedConfig(),
+              switchKind: rust_config.ConfigSwitchKind.initialLoad,
+            );
+          },
+    );
+
+    await loader.load();
+
+    final dynamicRequest = http.requests.singleWhere(
+      (request) =>
+          request.uri.path ==
+          '/valargroup/token-holder-voting-config/main/stage/dynamic-voting-config.json',
+    );
+    expect(dynamicRequest.uri.scheme, 'https');
+    expect(dynamicRequest.uri.host, 'raw.githubusercontent.com');
+    expect(dynamicRequest.uri.queryParameters['vizor_cache_bust'], isNotEmpty);
+    expect(dynamicRequest.headers, {
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+    });
+  });
+
+  test('load does not cache-bust GitHub raw pinned dynamic config', () async {
+    final staticSource = parseStaticVotingConfigSource(
+      'https://voting.example/static-voting-config.json?checksum=sha256:'
+      '0000000000000000000000000000000000000000000000000000000000000000',
+    );
+    const dynamicUrl =
+        'https://raw.githubusercontent.com/valargroup/'
+        'token-holder-voting-config/671f76403eea8aaf64a87cb484c4b0cdaea596db/'
+        'prod/dynamic-voting-config.json';
+    final http = FakeVotingHttpClient(
+      responses: {
+        staticSource.uri.toString(): '{"static":true}',
+        dynamicUrl: '{"dynamic":true}',
+      },
+    );
+    final loader = VotingConfigLoader(
+      httpClient: http,
+      sourceUrl: staticSource.raw,
+      resolveStaticVotingConfig:
+          ({required source, required staticBytes}) async => dynamicUrl,
+      resolveVotingConfig:
+          ({
+            required source,
+            required staticBytes,
+            required dynamicBytes,
+            previous,
+          }) async {
+            return rust_config_api.VotingConfigResolution(
+              config: _resolvedConfig(),
+              switchKind: rust_config.ConfigSwitchKind.initialLoad,
+            );
+          },
+    );
+
+    await loader.load();
+
     expect(http.requests.map((request) => request.uri.toString()), [
       'https://voting.example/static-voting-config.json',
       dynamicUrl,

@@ -203,7 +203,9 @@ class VotingConfigLoader {
       staticBytes: staticBytes,
     );
 
-    final dynamicBytes = await _fetchBytes(Uri.parse(dynamicConfigUrl));
+    final dynamicBytes = await _fetchBytes(
+      _dynamicConfigTransportUri(dynamicConfigUrl),
+    );
 
     final resolution = await _resolveVotingConfig(
       source: _source.raw,
@@ -222,7 +224,11 @@ class VotingConfigLoader {
   }
 
   Future<List<int>> _fetchBytes(Uri uri) async {
-    final response = await _httpClient.get(uri, timeout: _timeout);
+    final response = await _httpClient.get(
+      uri,
+      headers: _configFetchHeaders,
+      timeout: _timeout,
+    );
     if (response.statusCode != 200) {
       throw VotingHttpException(
         uri: uri,
@@ -232,4 +238,37 @@ class VotingConfigLoader {
     }
     return response.bodyBytes;
   }
+}
+
+const _configFetchHeaders = {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'};
+
+Uri _dynamicConfigTransportUri(String dynamicConfigUrl) {
+  final uri = Uri.parse(dynamicConfigUrl);
+  if (!_isGithubRawBranchUri(uri)) return uri;
+
+  // GitHub raw branch URLs are CDN-cached for several minutes after a merge.
+  // The dynamic config is still verified after fetch, so this only changes
+  // transport freshness for test/stage configs served directly from GitHub.
+  return uri.replace(
+    queryParameters: {
+      ...uri.queryParametersAll,
+      'vizor_cache_bust': [DateTime.now().microsecondsSinceEpoch.toString()],
+    },
+  );
+}
+
+bool _isGithubRawBranchUri(Uri uri) {
+  if (uri.scheme != 'https' || uri.host != 'raw.githubusercontent.com') {
+    return false;
+  }
+  final segments = uri.pathSegments;
+  if (segments.length < 4) return false;
+  final ref = segments[2];
+  if (ref == 'refs' &&
+      segments.length >= 6 &&
+      segments[3] == 'heads' &&
+      segments[4].isNotEmpty) {
+    return true;
+  }
+  return !RegExp(r'^[0-9a-fA-F]{40}$').hasMatch(ref);
 }

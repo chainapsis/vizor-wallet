@@ -22,6 +22,7 @@ import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/features/voting/voting_routes.dart';
+import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
@@ -1414,7 +1415,7 @@ void main() {
     expect(container.read(votingDraftProvider(_draftKey)).isEmpty, true);
   });
 
-  testWidgets('proposal detail shows View more when description truncates', (
+  testWidgets('proposal detail collapses long poll descriptions', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1152, 768));
@@ -1448,7 +1449,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text(longDescription), findsOneWidget);
     expect(find.text('View more'), findsOneWidget);
+
+    await tester.tap(find.text('View more'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('View less'), findsOneWidget);
   });
 
   testWidgets('proposal detail shows completed vote with stale local draft', (
@@ -1459,6 +1466,26 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
 
+    const proposalDescription =
+        'The fee-burning component of the Network Sustainability Mechanism is '
+        'already approved. The issuance smoothing component is unresolved and '
+        'needs enough text to overflow the completed vote card.';
+    final longRoundDescription = List.filled(
+      8,
+      'Completed poll description that should collapse behind the view more control.',
+    ).join(' ');
+    final round = _roundStatusJson()
+      ..['summary'] = longRoundDescription
+      ..['forum_link'] = 'https://forum.zcashcommunity.com/t/zip-233'
+      ..['proposals'] = [
+        _proposalJson(1, 'First proposal', ['Yes', 'No'])
+          ..['zip_number'] = 'ZIP 233'
+          ..['description'] = proposalDescription,
+      ];
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
     final recoveryApi = _MutableVotingRecoveryApi()
       ..roundPlan = apiRoundPlan(
         roundId: _roundId,
@@ -1476,6 +1503,7 @@ void main() {
         ),
       );
     final container = _statusContainer(
+      http: http,
       accountOverride: _MnemonicAccountNotifier.new,
       recoveryApi: recoveryApi,
       rust: _VotingStatusRustApi(recoveryApi),
@@ -1492,7 +1520,74 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Voted'), findsOneWidget);
+    expect(find.text('Proposal 1'), findsNothing);
+    expect(find.text('ZIP-233'), findsOneWidget);
+    expect(find.text('Forum discussion'), findsNWidgets(2));
+    expect(find.text(longRoundDescription), findsOneWidget);
+    expect(find.text('View more'), findsOneWidget);
+    final headerSnapshotRight = tester.getTopRight(find.text('#123')).dx;
+    final cardRight = tester
+        .getTopRight(find.byType(VotingProposalCard).first)
+        .dx;
+    expect(headerSnapshotRight, lessThanOrEqualTo(cardRight));
+    final completedTitle = tester.widget<Text>(find.text('Poll'));
+    expect(completedTitle.style?.fontFamily, 'Geist');
+    expect(completedTitle.style?.fontSize, 20);
+    expect(completedTitle.style?.fontWeight, FontWeight.w600);
+    final completedSnapshot = tester.widget<Text>(find.text('#123'));
+    expect(completedSnapshot.style?.fontFamily, 'Geist');
+    expect(completedSnapshot.style?.fontSize, 20);
+    await tester.tap(find.text('View more'));
+    await tester.pumpAndSettle();
+    expect(find.text('View less'), findsOneWidget);
+    expect(find.text(proposalDescription), findsOneWidget);
+    expect(find.text('Yes'), findsOneWidget);
+    expect(find.text('No'), findsOneWidget);
+    expect(find.text('Selected'), findsOneWidget);
+    expect(find.text('Choose'), findsNothing);
     expect(find.text('Review answers'), findsNothing);
+  });
+
+  testWidgets('proposal detail shows long question descriptions in full', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const proposalDescription =
+        'The fee-burning component of the Network Sustainability Mechanism is '
+        'already approved. The issuance smoothing component is unresolved. '
+        'This longer description should be expandable on the vote card.';
+    final round = _roundStatusJson()
+      ..['proposals'] = [
+        _proposalJson(1, 'First proposal', ['Yes', 'No'])
+          ..['description'] = proposalDescription,
+      ];
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _NoMnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(proposalDescription), findsOneWidget);
+    expect(find.text('View more'), findsNothing);
   });
 
   testWidgets('proposal detail routes non-active rounds to results', (
@@ -1967,14 +2062,22 @@ void main() {
 
     const optionDescription =
         'Mint option explanation for detail screens only.';
+    const proposalDescription =
+        'This completed proposal description should remain fully visible on '
+        'the tally screen without an expansion control.';
+    final longRoundDescription = List.filled(
+      8,
+      'Completed poll description that should collapse behind the view more control.',
+    ).join(' ');
     final round = _roundStatusJson()
       ..['status'] = 'closed'
-      ..['summary'] = 'Completed poll'
+      ..['summary'] = longRoundDescription
       ..['proposals'] = [
         _proposalJson(1, 'First proposal', ['Yes', 'No']),
         {
           'id': 2,
           'title': 'Second proposal',
+          'description': proposalDescription,
           'zip_number': 'ZIP 231',
           'forum_url': 'https://forum.zcashcommunity.com/t/zip-231',
           'options': [
@@ -2020,7 +2123,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Poll'), findsOneWidget);
-    expect(find.text('Completed poll'), findsOneWidget);
+    expect(find.text(longRoundDescription), findsOneWidget);
+    expect(find.text('View more'), findsOneWidget);
+    await tester.tap(find.text('View more'));
+    await tester.pumpAndSettle();
+    expect(find.text('View less'), findsOneWidget);
     expect(find.text('Results'), findsOneWidget);
     expect(find.text('First proposal'), findsOneWidget);
     expect(find.text('Yes'), findsOneWidget);
@@ -2028,8 +2135,13 @@ void main() {
     expect(find.text('No'), findsOneWidget);
     expect(find.text('0.25 ZEC'), findsOneWidget);
     expect(find.text('Total: 0.75 ZEC'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('voting-result-card-1'))).width,
+      lessThanOrEqualTo(560),
+    );
     expect(find.text('Voted: Yes'), findsOneWidget);
     expect(find.text('Second proposal'), findsOneWidget);
+    expect(find.text(proposalDescription), findsOneWidget);
     expect(find.text('ZIP-231'), findsOneWidget);
     expect(find.text('Forum discussion'), findsOneWidget);
     expect(find.text('Mint'), findsOneWidget);
@@ -2225,7 +2337,8 @@ void main() {
     });
 
     final firstProposal = _proposalJson(1, 'First proposal', ['Yes', 'No'])
-      ..['zip_number'] = 'ZIP 233';
+      ..['zip_number'] = 'ZIP 233'
+      ..['forum_url'] = 'https://forum.zcashcommunity.com/t/zip-233';
     final round = _roundStatusJson()
       ..['forum_link'] = 'https://forum.zcashcommunity.com/t/zip-233'
       ..['proposals'] = [
@@ -2269,11 +2382,16 @@ void main() {
     expect(find.text('Review your answers'), findsOneWidget);
     expect(find.text('Confirm & submit'), findsOneWidget);
     expect(find.text('ZIP-233'), findsOneWidget);
-    expect(find.text('Forum discussion'), findsOneWidget);
+    expect(find.text('Forum discussion'), findsNWidgets(2));
     expect(find.text('First proposal'), findsOneWidget);
     expect(find.text('Yes'), findsOneWidget);
+    expect(find.text('No'), findsOneWidget);
     expect(find.text('Second proposal'), findsOneWidget);
+    expect(find.text('Aye'), findsOneWidget);
+    expect(find.text('Nay'), findsOneWidget);
     expect(find.text('Skipped'), findsOneWidget);
+    expect(find.text('Selected'), findsOneWidget);
+    expect(find.text('Choose'), findsNothing);
 
     await tester.tap(find.text('Confirm & submit'));
     await tester.pumpAndSettle();
@@ -2281,7 +2399,7 @@ void main() {
     expect(find.text('status account: account-1'), findsOneWidget);
   });
 
-  testWidgets('review uses short option label without option description', (
+  testWidgets('review shows full proposal card with selected choice', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1152, 768));
@@ -2289,20 +2407,24 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
 
-    final longDescription =
+    final longOptionDescription =
         'Keep the existing halving schedule for new ZEC. Only fees and '
         'donated funds are smoothed and reissued.';
+    final longQuestionDescription =
+        'Question about the NSM issuance smoothing policy. The proposal '
+        'description should remain visible on the review screen and be '
+        'expandable when it does not fit in the compact row.';
     final round = _roundStatusJson()
       ..['proposals'] = [
         {
           'id': 1,
           'title': 'NSM issuance smoothing',
-          'description': 'Question about the NSM issuance smoothing policy.',
+          'description': longQuestionDescription,
           'options': [
             {
               'index': 0,
               'label': 'Preserve halvings',
-              'description': longDescription,
+              'description': longOptionDescription,
             },
             {
               'index': 1,
@@ -2334,7 +2456,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Preserve halvings'), findsOneWidget);
-    expect(find.text(longDescription), findsOneWidget);
+    expect(find.text(longOptionDescription), findsOneWidget);
 
     await tester.tap(find.text('Preserve halvings'));
     await tester.pumpAndSettle();
@@ -2343,7 +2465,115 @@ void main() {
 
     expect(find.text('Review your answers'), findsOneWidget);
     expect(find.text('Preserve halvings'), findsOneWidget);
-    expect(find.text(longDescription), findsNothing);
+    expect(find.text(longQuestionDescription), findsOneWidget);
+    expect(find.text('View more'), findsNothing);
+    expect(find.text(longOptionDescription), findsOneWidget);
+    expect(find.text('Selected'), findsOneWidget);
+    expect(find.text('Choose'), findsNothing);
+  });
+
+  testWidgets('review hides the poll description', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final longRoundDescription = List.filled(
+      8,
+      'Poll description that should not render on review.',
+    ).join(' ');
+    final round = _roundStatusJson()
+      ..['summary'] = longRoundDescription
+      ..['proposals'] = [
+        _proposalJson(1, 'First proposal', ['Yes', 'No']),
+      ];
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _NoMnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Yes'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Review answers'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Review answers'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review your answers'), findsOneWidget);
+    final reviewTitle = tester.widget<Text>(find.text('Review your answers'));
+    expect(reviewTitle.textAlign, TextAlign.center);
+    expect(reviewTitle.style?.fontFamily, 'Libre Caslon Text');
+    expect(reviewTitle.style?.fontSize, 36);
+    expect(reviewTitle.style?.letterSpacing, 0);
+    expect(find.text(longRoundDescription), findsNothing);
+    expect(find.text('View more'), findsNothing);
+  });
+
+  testWidgets('review expands long proposal titles', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final longProposalTitle = [
+      'Welcome',
+      'to the full Network Sustainability Mechanism proposal title',
+      'that needs more than one line on the review screen',
+    ].join(' ');
+    final round = _roundStatusJson()
+      ..['proposals'] = [
+        _proposalJson(1, longProposalTitle, ['Yes', 'No']),
+      ];
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _NoMnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Yes'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Review answers'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review your answers'), findsOneWidget);
+    expect(find.text(longProposalTitle), findsOneWidget);
+    expect(find.text('View more'), findsOneWidget);
+
+    await tester.tap(find.text('View more'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('View less'), findsOneWidget);
   });
 
   testWidgets('review screen scrolls long ballots without overflowing', (
@@ -2888,6 +3118,12 @@ void main() {
     );
     final recoveryApi = _MutableVotingRecoveryApi()
       ..state = _recoveryState(bundleCount: 2);
+    final rust = _VotingStatusRustApi(
+      recoveryApi,
+      bundleCount: 2,
+      eligibilityWeightZatoshi: BigInt.from(200),
+      setupWeightPerBundle: BigInt.from(100),
+    );
     final container = _statusContainer(
       http: http,
       accountOverride: _HardwareAccountNotifier.new,
@@ -2895,7 +3131,7 @@ void main() {
       accountIsHardware: true,
       hardwareAccountUuids: const {'hardware-1'},
       recoveryApi: recoveryApi,
-      rust: _VotingStatusRustApi(recoveryApi, bundleCount: 2),
+      rust: rust,
       hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
     );
     addTearDown(container.dispose);
@@ -2937,6 +3173,11 @@ void main() {
     await _pumpUntilFound(tester, find.text('submission confirmed route'));
 
     expect(find.text('submission confirmed route'), findsOneWidget);
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'hardware-1');
+    final submissionState = container
+        .read(votingSubmissionSessionProvider(key))
+        .value;
+    expect(submissionState?.eligibleWeightZatoshi, BigInt.from(100));
     expect(
       http.requests.any(
         (request) =>
@@ -4119,13 +4360,18 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   _VotingStatusRustApi(
     this.recoveryApi, {
     this.bundleCount = 1,
+    this.eligibilityWeightZatoshi,
+    this.setupWeightPerBundle,
     this.shareTrackingDelaySeconds,
-  });
+  }) : _persistedBundleCount = bundleCount;
 
   final _MutableVotingRecoveryApi recoveryApi;
   final int bundleCount;
+  final BigInt? eligibilityWeightZatoshi;
+  final BigInt? setupWeightPerBundle;
   final BigInt? shareTrackingDelaySeconds;
   final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
+  int _persistedBundleCount;
   int setupDelegationBundleCalls = 0;
   int eligibilityCheckCalls = 0;
   int keystoneDelegationRequestCalls = 0;
@@ -4136,9 +4382,12 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
   }) async {
     setupDelegationBundleCalls++;
+    final eligibleWeight = setupWeightPerBundle == null
+        ? BigInt.from(100)
+        : setupWeightPerBundle! * BigInt.from(_persistedBundleCount);
     return rust_round.BundleLayout(
-      bundleCount: bundleCount,
-      eligibleWeight: BigInt.from(100),
+      bundleCount: _persistedBundleCount,
+      eligibleWeight: eligibleWeight,
       droppedCount: 0,
     );
   }
@@ -4148,10 +4397,11 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
   }) async {
     eligibilityCheckCalls++;
+    final eligibleWeight = eligibilityWeightZatoshi ?? BigInt.from(100);
     return rust_api.ApiVotingEligibility(
-      isEligible: true,
+      isEligible: eligibleWeight > BigInt.zero,
       distinctNoteCount: 5,
-      eligibleWeightZatoshi: BigInt.from(100),
+      eligibleWeightZatoshi: eligibleWeight,
     );
   }
 
@@ -4236,6 +4486,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     for (final bundleIndex in removed) {
       storedKeystoneSignatures.remove(bundleIndex);
     }
+    _persistedBundleCount = keepCount;
     recoveryApi.state = _recoveryState(bundleCount: keepCount);
     return bundleCount - keepCount;
   }

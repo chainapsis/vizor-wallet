@@ -16,7 +16,6 @@ import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
-import '../voting_choice_style.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
@@ -385,8 +384,6 @@ class _ActivePollContent extends StatefulWidget {
 }
 
 class _ActivePollContentState extends State<_ActivePollContent> {
-  bool _descriptionExpanded = false;
-
   Future<void> _showIneligibleDialog() async {
     final message = widget.votingEligibilityErrorMessage;
     if (message == null) return;
@@ -485,10 +482,6 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                         votingPowerPreparing: widget.votingPowerPreparing,
                         votingEligibilityMessage:
                             widget.votingEligibilityMessage,
-                        expanded: _descriptionExpanded,
-                        onToggleDescription: () => setState(() {
-                          _descriptionExpanded = !_descriptionExpanded;
-                        }),
                       );
                     }
                     if (index == widget.proposals.length + 1) {
@@ -514,7 +507,7 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                     final isIneligible =
                         !widget.votingEligibilityConfirmed &&
                         widget.votingEligibilityErrorMessage != null;
-                    return _ProposalCard(
+                    return VotingProposalCard(
                       proposal: proposal,
                       selectedChoice: widget.votingEligibilityConfirmed
                           ? widget.draft.choices[proposal.id]
@@ -699,8 +692,6 @@ class _PollSummary extends StatelessWidget {
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
     required this.votingEligibilityMessage,
-    required this.expanded,
-    required this.onToggleDescription,
   });
 
   final String title;
@@ -711,8 +702,6 @@ class _PollSummary extends StatelessWidget {
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
   final String? votingEligibilityMessage;
-  final bool expanded;
-  final VoidCallback onToggleDescription;
 
   @override
   Widget build(BuildContext context) {
@@ -796,37 +785,7 @@ class _PollSummary extends StatelessWidget {
         ],
         if (hasDescription) ...[
           const SizedBox(height: AppSpacing.xs),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final canExpand = _textExceedsSingleLine(
-                context: context,
-                text: description,
-                style: descriptionStyle,
-                maxWidth: constraints.maxWidth,
-              );
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    description,
-                    maxLines: expanded || !canExpand ? null : 1,
-                    overflow: expanded || !canExpand
-                        ? TextOverflow.visible
-                        : TextOverflow.ellipsis,
-                    style: descriptionStyle,
-                  ),
-                  if (canExpand)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: _ViewMoreButton(
-                        expanded: expanded,
-                        onPressed: onToggleDescription,
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
+          VotingExpandableText(text: description, style: descriptionStyle),
         ],
         if (forumUri != null) ...[
           const SizedBox(height: AppSpacing.xs),
@@ -836,63 +795,6 @@ class _PollSummary extends StatelessWidget {
           ),
         ],
       ],
-    );
-  }
-}
-
-bool _textExceedsSingleLine({
-  required BuildContext context,
-  required String text,
-  required TextStyle style,
-  required double maxWidth,
-}) {
-  if (!maxWidth.isFinite || maxWidth <= 0) return false;
-  final textPainter = TextPainter(
-    text: TextSpan(text: text, style: style),
-    textDirection: Directionality.of(context),
-    textScaler: MediaQuery.textScalerOf(context),
-    maxLines: 1,
-  )..layout(maxWidth: maxWidth);
-  return textPainter.didExceedMaxLines;
-}
-
-class _ViewMoreButton extends StatelessWidget {
-  const _ViewMoreButton({required this.expanded, required this.onPressed});
-
-  final bool expanded;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onPressed,
-      child: Padding(
-        padding: const EdgeInsets.only(top: AppSpacing.xxs),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              expanded ? 'View less' : 'View more',
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.accent,
-                height: 20 / 14,
-                letterSpacing: 0,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.xxs),
-            Transform.rotate(
-              angle: expanded ? -1.5708 : 1.5708,
-              child: AppIcon(
-                AppIcons.chevronForward,
-                size: 16,
-                color: colors.icon.accent,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -965,16 +867,21 @@ class _VotedPollContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.s),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-          child: _VotedPollHeader(
-            title: roundTitle,
-            snapshotHeight: snapshotHeight,
-            description: description,
-            forumUri: forumUri,
-            votingPowerZatoshi: votingPowerZatoshi,
-            votingPowerPreparing: votingPowerPreparing,
-            votedAt: votedAt,
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              child: _VotedPollHeader(
+                title: roundTitle,
+                snapshotHeight: snapshotHeight,
+                description: description,
+                forumUri: forumUri,
+                votingPowerZatoshi: votingPowerZatoshi,
+                votingPowerPreparing: votingPowerPreparing,
+                votedAt: votedAt,
+              ),
+            ),
           ),
         ),
         const SizedBox(height: AppSpacing.md),
@@ -997,9 +904,13 @@ class _VotedPollContent extends StatelessWidget {
                       const SizedBox(height: AppSpacing.s),
                   itemBuilder: (context, index) {
                     final proposal = proposals[index];
-                    return _VotedProposalCard(
+                    final choice = choicesByProposalId[proposal.id];
+                    return VotingProposalCard(
                       proposal: proposal,
-                      choice: choicesByProposalId[proposal.id],
+                      fallbackForumUri: forumUri,
+                      selectedChoice: choice,
+                      readOnly: true,
+                      statusLabel: choice == null ? 'Skipped' : null,
                     );
                   },
                 ),
@@ -1069,10 +980,8 @@ class _PendingVoteContent extends StatelessWidget {
                   ),
                   if (description.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    VotingExpandableText(
+                      text: description,
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.secondary,
                       ),
@@ -1141,26 +1050,25 @@ class _VotedPollHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final titleStyle = AppTypography.headlineMedium.copyWith(
+      color: colors.text.accent,
+      fontFamily: 'Geist',
+      fontWeight: FontWeight.w600,
+      fontSize: 20,
+      height: 30 / 20,
+      letterSpacing: 0,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Text(
-                title,
-                style: AppTypography.headlineMedium.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
-            ),
+            Expanded(child: Text(title, style: titleStyle)),
             const SizedBox(width: AppSpacing.sm),
             Text(
               '#${formatGroupedInteger(snapshotHeight)}',
-              style: AppTypography.headlineSmall.copyWith(
-                color: colors.text.accent,
-              ),
+              style: titleStyle.copyWith(fontWeight: FontWeight.w500),
             ),
           ],
         ),
@@ -1185,10 +1093,8 @@ class _VotedPollHeader extends StatelessWidget {
         ),
         if (description.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.xs),
-          Text(
-            description,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+          VotingExpandableText(
+            text: description,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -1258,200 +1164,6 @@ class _VotingPowerMeta extends StatelessWidget {
   }
 }
 
-class _VotedProposalCard extends StatelessWidget {
-  const _VotedProposalCard({required this.proposal, required this.choice});
-
-  final VotingProposalView proposal;
-  final int? choice;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final choiceLabel = _choiceLabel(proposal, choice);
-    final zipBadges = proposal.zipBadges;
-    final forumUri = proposal.forumUri;
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: colors.background.base,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-        border: Border.all(color: colors.border.subtle),
-        boxShadow: [
-          BoxShadow(
-            color: colors.background.neutralScrim.withValues(alpha: 0.12),
-            offset: const Offset(0, 8),
-            blurRadius: 18,
-            spreadRadius: -12,
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              VotingMetadataBadge('Proposal ${proposal.id}'),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: _ChoiceBadge(choiceLabel),
-                ),
-              ),
-            ],
-          ),
-          if (zipBadges.isNotEmpty || forumUri != null) ...[
-            const SizedBox(height: AppSpacing.s),
-            VotingProposalMetadataRow(zipBadges: zipBadges, forumUri: forumUri),
-          ],
-          const SizedBox(height: AppSpacing.s),
-          Text(
-            proposal.title,
-            style: AppTypography.headlineSmall.copyWith(
-              color: colors.text.accent,
-            ),
-          ),
-          if (proposal.description.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.xxs),
-            Text(
-              proposal.description,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ChoiceBadge extends StatelessWidget {
-  const _ChoiceBadge(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = votingChoicePalette(context, label);
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: 2,
-      ),
-      decoration: BoxDecoration(
-        color: palette.background,
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-        border: Border.all(color: palette.border),
-      ),
-      child: Text(
-        label,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: AppTypography.labelMedium.copyWith(color: palette.text),
-      ),
-    );
-  }
-}
-
-class _ProposalCard extends StatelessWidget {
-  const _ProposalCard({
-    required this.proposal,
-    required this.selectedChoice,
-    required this.enabled,
-    required this.onDisabledOptionTap,
-    required this.onChoice,
-  });
-
-  final VotingProposalView proposal;
-  final int? selectedChoice;
-  final bool enabled;
-  final VoidCallback? onDisabledOptionTap;
-  final ValueChanged<int?> onChoice;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final zipBadges = proposal.zipBadges;
-    final forumUri = proposal.forumUri;
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-        border: Border.all(color: colors.border.subtle),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0A231F20),
-            offset: Offset(0, 1),
-            blurRadius: 1,
-            spreadRadius: -0.5,
-          ),
-          BoxShadow(
-            color: Color(0x0A231F20),
-            offset: Offset(0, 3),
-            blurRadius: 3,
-            spreadRadius: -1.5,
-          ),
-          BoxShadow(
-            color: Color(0x0A231F20),
-            offset: Offset(0, 24),
-            blurRadius: 24,
-            spreadRadius: -12,
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (zipBadges.isNotEmpty || forumUri != null) ...[
-            VotingProposalMetadataRow(zipBadges: zipBadges, forumUri: forumUri),
-            const SizedBox(height: AppSpacing.s),
-          ],
-          Text(
-            proposal.title,
-            style: AppTypography.headlineSmall.copyWith(
-              color: colors.text.accent,
-              fontWeight: FontWeight.w600,
-              height: 24 / 16,
-              letterSpacing: 0,
-            ),
-          ),
-          if (proposal.description.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.xxs),
-            Text(
-              proposal.description,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
-                height: 16 / 12,
-                letterSpacing: 0,
-              ),
-            ),
-          ],
-          const SizedBox(height: AppSpacing.s),
-          for (final option in proposal.options) ...[
-            _OptionRow(
-              option: option,
-              selected: selectedChoice == option.index,
-              enabled: enabled,
-              onDisabledTap: onDisabledOptionTap,
-              onTap: () => onChoice(
-                selectedChoice == option.index ? null : option.index,
-              ),
-            ),
-            if (option != proposal.options.last)
-              const SizedBox(height: AppSpacing.xs),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 class _CompletedVote {
   const _CompletedVote({
     required this.choicesByProposalId,
@@ -1510,16 +1222,6 @@ class _PendingVoteRecovery {
   }
 }
 
-String _choiceLabel(VotingProposalView proposal, int? choice) {
-  if (choice == null) return 'Skipped';
-  return proposal.options
-      .firstWhere(
-        (option) => option.index == choice,
-        orElse: () => VotingOptionView(index: choice, label: 'Choice $choice'),
-      )
-      .label;
-}
-
 String _roundDescription(Map<String, dynamic> json) {
   for (final key in const ['description', 'body', 'summary']) {
     final value = json[key];
@@ -1543,96 +1245,6 @@ String _daysLeftLabel(DateTime endDate) {
   if (days <= 0) return 'Ends today';
   if (days == 1) return '1 day left';
   return '$days days left';
-}
-
-class _OptionRow extends StatelessWidget {
-  const _OptionRow({
-    required this.option,
-    required this.selected,
-    required this.enabled,
-    required this.onDisabledTap,
-    required this.onTap,
-  });
-
-  final VotingOptionView option;
-  final bool selected;
-  final bool enabled;
-  final VoidCallback? onDisabledTap;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final description = option.description.trim();
-    final palette = votingChoicePalette(context, option.label);
-    final primaryTextColor = enabled
-        ? selected
-              ? palette.text
-              : colors.text.accent
-        : colors.text.secondary.withValues(alpha: 0.56);
-    final secondaryTextColor = enabled
-        ? selected
-              ? palette.text.withValues(alpha: 0.82)
-              : colors.text.secondary
-        : colors.text.secondary.withValues(alpha: 0.48);
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadii.small),
-      onTap: enabled ? onTap : onDisabledTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
-          vertical: AppSpacing.xs,
-        ),
-        decoration: BoxDecoration(
-          color: enabled && selected
-              ? palette.background
-              : colors.background.neutralSubtleOpacity,
-          borderRadius: BorderRadius.circular(AppRadii.small),
-          border: Border.all(
-            color: enabled && selected ? palette.border : colors.border.subtle,
-          ),
-        ),
-        child: Row(
-          crossAxisAlignment: description.isEmpty
-              ? CrossAxisAlignment.center
-              : CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    option.label,
-                    style: AppTypography.labelLarge.copyWith(
-                      color: primaryTextColor,
-                    ),
-                  ),
-                  if (description.isNotEmpty) ...[
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      description,
-                      style: AppTypography.bodySmall.copyWith(
-                        color: secondaryTextColor,
-                        height: 16 / 12,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Text(
-              selected ? 'Selected' : 'Choose',
-              style: AppTypography.bodySmall.copyWith(
-                color: enabled && selected ? palette.text : secondaryTextColor,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _Message extends StatelessWidget {

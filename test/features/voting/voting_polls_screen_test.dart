@@ -76,6 +76,12 @@ void main() {
     expect(roundsNotifier.reloadCount, 1);
     expect(configNotifier.refreshCount, 1);
 
+    await tester.tap(find.byKey(const ValueKey('sidebar_voting_button')));
+    await tester.pumpAndSettle();
+
+    expect(roundsNotifier.reloadCount, 2);
+    expect(configNotifier.refreshCount, 2);
+
     final returnReload = Completer<void>();
     roundsNotifier.nextReload = returnReload.future;
 
@@ -83,14 +89,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('results route'), findsOneWidget);
-    expect(roundsNotifier.reloadCount, 1);
+    expect(roundsNotifier.reloadCount, 2);
 
     router.pop();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(roundsNotifier.reloadCount, 2);
-    expect(configNotifier.refreshCount, 2);
+    expect(roundsNotifier.reloadCount, 3);
+    expect(configNotifier.refreshCount, 3);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.text('View results'), findsOneWidget);
 
