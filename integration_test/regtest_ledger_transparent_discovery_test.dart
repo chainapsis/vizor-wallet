@@ -280,7 +280,7 @@ Future<void> _expectReceiveTransparentAddress(
   String expectedAddress,
 ) async {
   _log('checking receive transparent address');
-  await _tapWidget(tester, const ValueKey('sidebar_receive_button'));
+  await _openReceiveFromHome(tester);
   await _tapText(tester, 'Transparent');
   await _tapWidget(
     tester,
@@ -291,6 +291,24 @@ Future<void> _expectReceiveTransparentAddress(
   final address = data?.text?.trim() ?? '';
   expect(address, expectedAddress);
   _log('receive transparent address matched');
+  await _openWallet(tester);
+}
+
+Future<void> _openReceiveFromHome(WidgetTester tester) async {
+  await _waitForHome(tester);
+  final finder = find.widgetWithText(AppButton, 'Receive');
+  await _pumpUntil(
+    tester,
+    () =>
+        tester.any(finder) &&
+        tester.widget<AppButton>(finder.first).onPressed != null,
+    description: 'home Receive button to be enabled',
+  );
+  await tester.ensureVisible(finder.first);
+  await tester.pump(const Duration(milliseconds: 50));
+  await tester.tap(finder.first);
+  await tester.pump(const Duration(milliseconds: 250));
+  _log('tapped home Receive button');
 }
 
 Future<void> _openAddAccountFlow(WidgetTester tester) async {
@@ -323,7 +341,7 @@ Future<void> _importAdditionalWallet(WidgetTester tester) async {
 }
 
 Future<String> _copyActiveShieldedAddress(WidgetTester tester) async {
-  await _tapWidget(tester, const ValueKey('sidebar_receive_button'));
+  await _openReceiveFromHome(tester);
   await _pumpUntil(
     tester,
     () => tester.any(
