@@ -51,7 +51,9 @@ pub(crate) mod mempool;
 use enhance::run_enhancement;
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
-use ledger_discovery::run_ledger_transparent_discovery;
+use ledger_discovery::{
+    rewind_ledger_transparent_discovery_to_height, run_ledger_transparent_discovery,
+};
 use lwd::{download_blocks, download_subtree_roots, get_tree_state};
 pub(crate) use lwd::{
     get_latest_block, get_transaction, open_lwd_channel, send_transaction,
@@ -562,6 +564,7 @@ fn queue_witness_repairs_if_needed(
 }
 
 async fn repair_anchor_root_mismatch_if_needed(
+    db_data_path: &str,
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
     current_tip_height: u64,
@@ -655,6 +658,7 @@ async fn repair_anchor_root_mismatch_if_needed(
                         )));
                     }
                 }
+                rewind_ledger_transparent_discovery_to_height(db_data_path, repair_height)?;
                 db.update_chain_tip(current_tip).map_err(|e| {
                     SyncError::db(format!(
                         "update_chain_tip({current_tip_height}) after anchor root repair: {e}"
@@ -1189,6 +1193,7 @@ async fn run_sync_impl(
                     prefetch = None;
                     continue;
                 } else if let Some(repair_pending_blocks) = repair_anchor_root_mismatch_if_needed(
+                    db_data_path,
                     &mut client,
                     &mut db,
                     current_tip_height,
@@ -1445,7 +1450,10 @@ async fn run_sync_impl(
                         "sync_engine.truncate_to_height",
                         || -> Result<BlockHeight, SyncError> {
                             match db.truncate_to_height(target) {
-                                Ok(h) => Ok(h),
+                                Ok(h) => {
+                                    rewind_ledger_transparent_discovery_to_height(db_data_path, h)?;
+                                    Ok(h)
+                                }
                                 Err(SqliteClientError::RequestedRewindInvalid {
                                     safe_rewind_height: Some(safe),
                                     requested_height,
@@ -1455,7 +1463,7 @@ async fn run_sync_impl(
                                          below earliest checkpoint; retrying at safe_rewind_height={safe}",
                                         elapsed(),
                                     );
-                                    db.truncate_to_height(safe).map_err(|e| {
+                                    let h = db.truncate_to_height(safe).map_err(|e| {
                                         if is_sqlite_lock_contention(&e) {
                                             SyncError::other(format!(
                                                 "truncate_to_height({safe}) retry: SQLite lock contention: {e}"
@@ -1465,7 +1473,9 @@ async fn run_sync_impl(
                                                 "truncate_to_height({safe}) retry after RequestedRewindInvalid: {e}"
                                             ))
                                         }
-                                    })
+                                    })?;
+                                    rewind_ledger_transparent_discovery_to_height(db_data_path, h)?;
+                                    Ok(h)
                                 }
                                 Err(SqliteClientError::RequestedRewindInvalid {
                                     safe_rewind_height: None,

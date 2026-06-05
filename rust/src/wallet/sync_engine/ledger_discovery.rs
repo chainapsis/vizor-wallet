@@ -94,6 +94,51 @@ pub(super) async fn run_ledger_transparent_discovery(
     Ok(())
 }
 
+/// Clamp Ledger transparent discovery checkpoints after the wallet has been
+/// rewound to `height`.
+///
+/// This function intentionally does not take `with_wallet_db_write_lock`;
+/// callers use it from existing rewind critical sections.
+pub(super) fn rewind_ledger_transparent_discovery_to_height(
+    db_path: &str,
+    height: BlockHeight,
+) -> Result<(), SyncError> {
+    let conn =
+        open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT).map_err(SyncError::db)?;
+    let table_exists = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            rusqlite::params![LEDGER_SCAN_TABLE],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(|e| SyncError::db(format!("ledger discovery table lookup: {e}")))?
+        .is_some();
+
+    if !table_exists {
+        return Ok(());
+    }
+
+    let updated = conn
+        .execute(
+            &format!(
+                "UPDATE {LEDGER_SCAN_TABLE}
+                 SET checked_height = :checked_height
+                 WHERE checked_height > :checked_height"
+            ),
+            rusqlite::named_params![":checked_height": u32::from(height)],
+        )
+        .map_err(|e| SyncError::db(format!("ledger discovery rewind checkpoint: {e}")))?;
+
+    if updated > 0 {
+        log::info!(
+            "sync: clamped {updated} Ledger transparent discovery checkpoint(s) to {height}"
+        );
+    }
+
+    Ok(())
+}
+
 fn is_ledger_account_zero(source: &AccountSource) -> bool {
     let derivation = match source {
         AccountSource::Derived { derivation, .. } => Some(derivation),
@@ -315,5 +360,54 @@ mod tests {
     #[test]
     fn ledger_gap_limit_is_bip44_default() {
         assert_eq!(crate::wallet::db::LEDGER_TRANSPARENT_GAP_LIMIT, 20);
+    }
+
+    #[test]
+    fn rewind_noops_before_scan_table_exists() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        rewind_ledger_transparent_discovery_to_height(db_path_str, BlockHeight::from_u32(75))
+            .unwrap();
+    }
+
+    #[test]
+    fn rewind_clamps_checkpoints_above_height() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        ensure_scan_table(db_path_str).unwrap();
+        let conn = open_wallet_raw_conn_with_timeout(db_path_str, SYNC_DB_BUSY_TIMEOUT).unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {LEDGER_SCAN_TABLE} (account_uuid, key_scope, checked_height)
+                 VALUES
+                    (x'01', 0, 50),
+                    (x'02', 0, 100),
+                    (x'03', 1, 150)"
+            ),
+            [],
+        )
+        .unwrap();
+
+        rewind_ledger_transparent_discovery_to_height(db_path_str, BlockHeight::from_u32(75))
+            .unwrap();
+
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT key_scope, checked_height
+                 FROM {LEDGER_SCAN_TABLE}
+                 ORDER BY account_uuid"
+            ))
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, u32>(1)?)))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert_eq!(rows, vec![(0, 50), (0, 75), (1, 75)]);
     }
 }
