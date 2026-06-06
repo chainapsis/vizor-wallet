@@ -25,6 +25,7 @@ zcash_client_backend = { version = "0.23", features = [
     "pczt",
 ] }
 zcash_client_sqlite = { version = "0.21", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
+zcash_note_encryption = "0.4.1"
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
 zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "38b0c738ee8773382a817a00166791210d4dcc6d", package = "zcash_voting" }
 # Must match versions used by zcash_client_sqlite to avoid type conflicts
@@ -63,6 +64,7 @@ sha2 = "0.10"
 
 # Random number generation
 rand = "0.8"
+chacha20 = "0.9"
 
 # Async runtime & gRPC
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
@@ -111,3 +113,17 @@ opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[patch.crates-io]
+equihash = { path = "../../librustzcash/components/equihash" }
+pczt = { path = "../../librustzcash/pczt" }
+zcash_address = { path = "../../librustzcash/components/zcash_address" }
+zcash_client_backend = { path = "../../librustzcash/zcash_client_backend" }
+zcash_client_sqlite = { path = "../../librustzcash/zcash_client_sqlite" }
+zcash_encoding = { path = "../../librustzcash/components/zcash_encoding" }
+zcash_keys = { path = "../../librustzcash/zcash_keys" }
+zcash_primitives = { path = "../../librustzcash/zcash_primitives" }
+zcash_proofs = { path = "../../librustzcash/zcash_proofs" }
+zcash_protocol = { path = "../../librustzcash/components/zcash_protocol" }
+zcash_transparent = { path = "../../librustzcash/zcash_transparent" }
+zip321 = { path = "../../librustzcash/components/zip321" }

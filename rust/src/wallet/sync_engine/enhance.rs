@@ -29,8 +29,8 @@ use tonic::{transport::Channel, Code, Status};
 use transparent::bundle::OutPoint;
 use zcash_client_backend::{
     data_api::{
-        wallet::decrypt_and_store_transaction, TransactionDataRequest, TransactionStatus,
-        WalletRead, WalletWrite,
+        wallet::decrypt_and_store_transaction,
+        TransactionDataRequest, TransactionStatus, WalletRead, WalletWrite,
     },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
@@ -41,7 +41,7 @@ use zcash_protocol::value::{BalanceError, Zatoshis};
 use crate::wallet::db::{with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT};
 use crate::wallet::network::WalletNetwork;
 
-use super::{lwd, SyncError, WalletDatabase};
+use super::{WalletDatabase, decrypt_pir::try_apply_orchard_pir_enhancement, lwd, SyncError};
 
 /// Drains `db.transaction_data_requests()` against lightwalletd until
 /// the queue is empty or no request is actionable. Returns
@@ -88,6 +88,16 @@ pub(super) async fn run_enhancement(
                     let txid_str = format!("{txid}");
                     if failed_txids.contains(&txid_str) {
                         continue;
+                    }
+
+                    if matches!(req, TransactionDataRequest::Enhancement(_)) {
+                        let pir_applied = with_wallet_db_write_lock(
+                            "sync_engine.enhance.apply_orchard_pir",
+                            || try_apply_orchard_pir_enhancement(db, *txid),
+                        )?;
+                        if pir_applied {
+                            continue;
+                        }
                     }
 
                     match lwd::get_transaction(client, txid.as_ref().to_vec()).await {
@@ -560,4 +570,5 @@ mod tests {
             Err(SyncError::Parse(_)),
         ));
     }
+
 }

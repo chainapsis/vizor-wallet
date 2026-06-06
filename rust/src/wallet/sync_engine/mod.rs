@@ -42,6 +42,7 @@ use {
 };
 
 mod block_source;
+mod decrypt_pir;
 mod enhance;
 mod error;
 mod lwd;

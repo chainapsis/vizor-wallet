@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+bundle_id="com.keplr.vizor.build-vizor"
+product_name="Vizor Build"
+derived_data_path="build/build-vizor/DerivedData"
+
+encode_dart_define() {
+  printf '%s' "$1" | base64 | tr -d '\n'
+}
+
+dart_defines="$(encode_dart_define "VIZOR_STORAGE_NAMESPACE=${bundle_id}")"
+
+fvm flutter build macos --debug --config-only \
+  --dart-define="VIZOR_STORAGE_NAMESPACE=${bundle_id}"
+
+xcodebuild \
+  -workspace macos/Runner.xcworkspace \
+  -scheme Runner \
+  -configuration Debug \
+  -derivedDataPath "${derived_data_path}" \
+  -destination 'platform=macOS' \
+  DART_DEFINES="${dart_defines}" \
+  PRODUCT_BUNDLE_IDENTIFIER="${bundle_id}" \
+  VIZOR_DISPLAY_NAME="${product_name}" \
+  build
+
+echo "Built ${product_name}.app in debug mode"
+echo "Bundle ID: ${bundle_id}"
+echo "Derived data: ${derived_data_path}"
