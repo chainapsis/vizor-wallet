@@ -59,6 +59,7 @@ use zcash_client_backend::{
     zip321::{Payment, TransactionRequest},
 };
 use zcash_client_sqlite::AccountUuid;
+use zcash_client_sqlite::ReceivedNoteId;
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::transaction::{
     fees::{
@@ -77,6 +78,7 @@ use zcash_protocol::{
 use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::spendability_pir as wallet_pir;
 
 use super::{
     consume_stored_proposal, open_readonly_conn, open_wallet_db, open_wallet_db_for_read,
@@ -183,6 +185,176 @@ impl Zip317FeeRule for ConservativeZip317FeeRule {
 
     fn grace_actions(&self) -> usize {
         StandardFeeRule::Zip317.grace_actions()
+    }
+}
+
+fn should_use_pir_witnesses(
+    db: &WalletDatabase,
+    proposal: &Proposal<WalletFeeRule, ReceivedNoteId>,
+) -> bool {
+    // PIR witnesses are only considered for Orchard spends while sync is still in
+    // progress (fully scanned height is behind chain tip). Once fully synced, use
+    // standard local ShardTree witnesses.
+    if !proposal_uses_orchard_spends(proposal) {
+        return false;
+    }
+
+    match db.get_wallet_summary(ConfirmationsPolicy::default()) {
+        Ok(Some(summary)) => summary.fully_scanned_height() < summary.chain_tip_height(),
+        Ok(None) => false,
+        Err(e) => {
+            log::warn!("PIR: unable to read wallet summary for witness selection: {e}");
+            false
+        }
+    }
+}
+
+fn is_pir_anchor_mismatch(error: &str) -> bool {
+    error.contains("PIR witness anchor") || error.contains("incompatible PIR witness anchors")
+}
+
+fn proposal_uses_orchard_spends(proposal: &Proposal<WalletFeeRule, ReceivedNoteId>) -> bool {
+    !proposal_orchard_spend_positions(proposal).is_empty()
+}
+
+fn proposal_orchard_spend_positions(
+    proposal: &Proposal<WalletFeeRule, ReceivedNoteId>,
+) -> Vec<u64> {
+    use zcash_client_backend::wallet::Note;
+
+    let mut positions = Vec::new();
+    for step in proposal.steps() {
+        if let Some(inputs) = step.shielded_inputs() {
+            for selected in inputs.notes() {
+                if matches!(selected.note(), Note::Orchard(_)) {
+                    positions.push(u64::from(selected.note_commitment_tree_position()));
+                }
+            }
+        }
+    }
+    positions
+}
+
+fn refresh_proposal_pir_witnesses(
+    db: &WalletDatabase,
+    network: WalletNetwork,
+    proposal: &Proposal<WalletFeeRule, ReceivedNoteId>,
+) -> Result<u32, String> {
+    let selected_positions = proposal_orchard_spend_positions(proposal);
+    if selected_positions.is_empty() {
+        return Ok(0);
+    }
+
+    let notes: Vec<_> = selected_positions
+        .into_iter()
+        .filter_map(|position| match db.position_needs_pir_witness(position) {
+            Ok(Some(note_id)) => Some(Ok((note_id, position))),
+            Ok(None) => None,
+            Err(e) => Some(Err(format!(
+                "failed to read PIR witness eligibility for position {position}: {e}"
+            ))),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if notes.is_empty() {
+        return Ok(0);
+    }
+
+    let urls = wallet_pir::server_urls_for(network, None, None);
+    let client = witness_client::WitnessClientBlocking::connect(&urls.witness_url)
+        .map_err(|e| format!("PIR witness refresh connect failed: {e}"))?;
+    let positions: Vec<_> = notes.iter().map(|(_, position)| *position).collect();
+    let witnesses = client
+        .get_witnesses(&positions, |_| {})
+        .map_err(|e| format!("PIR witness refresh query failed: {e}"))?;
+
+    let mut inserted = 0u32;
+    for ((note_id, position), witness) in notes.iter().zip(witnesses.iter()) {
+        let validation = db
+            .validate_pir_orchard_witness(
+                *note_id,
+                &witness.siblings,
+                &witness.anchor_root,
+            )
+            .map_err(|e| format!("PIR witness refresh validation failed: {e}"))?;
+        if !validation.witness_root_matches_anchor() {
+            log::warn!(
+                "PIR: refreshed witness did not validate for proposal note {} at position {}",
+                note_id,
+                position
+            );
+            continue;
+        }
+        db.insert_pir_witness(
+            *note_id,
+            &witness.siblings,
+            witness.anchor_height,
+            &witness.anchor_root,
+        )
+        .map_err(|e| format!("PIR witness refresh insert failed: {e}"))?;
+        inserted += 1;
+    }
+    Ok(inserted)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_transactions_with_optional_pir_retry<SpendP, OutputP>(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    spend_prover: &SpendP,
+    output_prover: &OutputP,
+    spending_keys: &wallet::SpendingKeys,
+    proposal: &Proposal<WalletFeeRule, ReceivedNoteId>,
+    context: &str,
+) -> Result<Vec<TxId>, String>
+where
+    SpendP: SpendProver,
+    OutputP: OutputProver,
+{
+    let use_pir_witnesses = should_use_pir_witnesses(db, proposal);
+    let result = create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
+        db,
+        &network,
+        spend_prover,
+        output_prover,
+        spending_keys,
+        OvkPolicy::Sender,
+        proposal,
+        None,
+        use_pir_witnesses,
+    );
+
+    match result {
+        Ok(txids) => Ok(txids.iter().cloned().collect()),
+        Err(e) => {
+            let message = format!("{e}");
+            if !use_pir_witnesses || !is_pir_anchor_mismatch(&message) {
+                return Err(format!("{context}: {message}"));
+            }
+
+            log::info!("PIR: refreshing proposal witnesses after anchor mismatch");
+            let refreshed = refresh_proposal_pir_witnesses(db, network, proposal)?;
+            if refreshed == 0 {
+                return Err(format!("{context}: {message}"));
+            }
+
+            create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
+                db,
+                &network,
+                spend_prover,
+                output_prover,
+                spending_keys,
+                OvkPolicy::Sender,
+                proposal,
+                None,
+                true,
+            )
+            .map(|txids| txids.iter().cloned().collect())
+            .map_err(|retry_error| {
+                format!(
+                    "{context}: {message}; retry after refreshing {refreshed} PIR witnesses failed: {retry_error}"
+                )
+            })
+        }
     }
 }
 
@@ -459,6 +631,7 @@ pub(crate) async fn shield_transparent_balance(
                 OvkPolicy::Sender,
                 &proposal,
                 None,
+                false,
             )
             .map_err(|e| format!("Create shielding TX failed: {e}"))?;
 
@@ -562,44 +735,40 @@ async fn execute_stored_proposal(
             let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
                 .map_err(|e| format!("USK derivation failed: {e:?}"))?;
             drop(seed);
+            let spending_keys = wallet::SpendingKeys::from_unified_spending_key(usk);
 
             let txids = match (spend_params_path, output_params_path) {
                 (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
                     let prover =
                         LocalTxProver::new(std::path::Path::new(sp), std::path::Path::new(op));
-                    create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
+                    create_transactions_with_optional_pir_retry(
                         &mut db,
-                        &network,
+                        network,
                         &prover,
                         &prover,
-                        &wallet::SpendingKeys::from_unified_spending_key(usk),
-                        OvkPolicy::Sender,
+                        &spending_keys,
                         &stored.proposal,
-                        None,
-                    )
-                    .map_err(|e| format!("Create TX failed: {e}"))?
+                        "Create TX failed",
+                    )?
                 }
                 _ => {
                     let spend_prover = NoOpSpendProver;
                     let output_prover = NoOpOutputProver;
-                    create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
+                    create_transactions_with_optional_pir_retry(
                         &mut db,
-                        &network,
+                        network,
                         &spend_prover,
                         &output_prover,
-                        &wallet::SpendingKeys::from_unified_spending_key(usk),
-                        OvkPolicy::Sender,
+                        &spending_keys,
                         &stored.proposal,
-                        None,
-                    )
-                    .map_err(|e| format!("Create TX failed: {e}"))?
+                        "Create TX failed",
+                    )?
                 }
             };
             // USK and derived spending keys dropped here, before broadcast.
             Ok::<_, String>(txids)
         })?;
 
-    let txids: Vec<TxId> = txids.iter().cloned().collect();
     Ok(
         broadcast_created_transactions(db_path, lightwalletd_url, &txids, "send")
             .await
@@ -1370,7 +1539,8 @@ mod tests {
             txid[4..8].copy_from_slice(&0xfeed_beefu32.to_le_bytes());
             let outpoint = OutPoint::new(txid, 0);
             let txout = TxOut::new(value, taddr.script().into());
-            let utxo = WalletTransparentOutput::from_parts(outpoint, txout, Some(tip)).unwrap();
+            let utxo = WalletTransparentOutput::from_parts(outpoint, txout, Some(tip))
+            .unwrap();
             db.put_received_transparent_utxo(&utxo).unwrap();
         }
 
@@ -1394,6 +1564,7 @@ mod tests {
             OvkPolicy::Sender,
             &proposal,
             None,
+            false,
         )
         .expect("many-UTXO shielding should build without a fee/change mismatch");
         let change_values = proposal

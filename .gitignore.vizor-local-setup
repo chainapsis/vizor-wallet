@@ -1,0 +1,17 @@
+# Vizor local workspace setup manifest (setup-vizor-wp)
+#
+# This file stays tracked/visible on purpose. apply-setup.sh merges the paths
+# below into .gitignore and marks tracked overlays with skip-worktree so local
+# Roman workspace settings do not pollute commits.
+#
+# Re-run setup-vizor-wp after changing templates. To publish an upstream change
+# to a listed file, clear skip-worktree first:
+#   git update-index --no-skip-worktree <path>
+
+/build-vizor
+/build-restart-vizor
+.fvmrc
+lib/src/core/config/network_config.dart
+macos/Runner/Info.plist
+macos/Runner/Configs/AppInfo.xcconfig
+macos/Runner.xcodeproj/project.pbxproj

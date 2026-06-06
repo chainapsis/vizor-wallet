@@ -21,10 +21,11 @@ zcash_client_backend = { version = "0.23", features = [
     "transparent-inputs",
     "lightwalletd-tonic",
     "lightwalletd-tonic-tls-webpki-roots",
+    "spendability-pir",
     "sync",
     "pczt",
 ] }
-zcash_client_sqlite = { version = "0.21", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
+zcash_client_sqlite = { version = "0.21", features = ["orchard", "transparent-inputs", "unstable", "serde", "spendability-pir"] }
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
 zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "5b164d03cb12b1635deea589e575d461481fed72", package = "zcash_voting" }
 # Must match versions used by zcash_client_sqlite to avoid type conflicts
@@ -89,6 +90,8 @@ pczt = { version = "0.7", features = ["orchard", "io-finalizer", "signer", "zcp-
 ur-registry = { git = "https://github.com/KeystoneHQ/keystone-sdk-rust", package = "ur-registry", default-features = false, features = ["std"] }
 serde_json = "1"
 url = "2.5.8"
+spend-client = { path = "../../spendability-pir/nullifier/spend-client", features = ["ipir"] }
+witness-client = { path = "../../spendability-pir/witness/witness-client", features = ["ipir"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }
@@ -111,3 +114,17 @@ opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[patch.crates-io]
+equihash = { path = "../../librustzcash/components/equihash" }
+pczt = { path = "../../librustzcash/pczt" }
+zcash_address = { path = "../../librustzcash/components/zcash_address" }
+zcash_client_backend = { path = "../../librustzcash/zcash_client_backend" }
+zcash_client_sqlite = { path = "../../librustzcash/zcash_client_sqlite" }
+zcash_encoding = { path = "../../librustzcash/components/zcash_encoding" }
+zcash_keys = { path = "../../librustzcash/zcash_keys" }
+zcash_primitives = { path = "../../librustzcash/zcash_primitives" }
+zcash_proofs = { path = "../../librustzcash/zcash_proofs" }
+zcash_protocol = { path = "../../librustzcash/components/zcash_protocol" }
+zcash_transparent = { path = "../../librustzcash/zcash_transparent" }
+zip321 = { path = "../../librustzcash/components/zip321" }

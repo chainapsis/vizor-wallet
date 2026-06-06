@@ -77,3 +77,13 @@ app.*.map.json
 
 # Generated when selecting Linux release flavors.
 /linux/FlavorOverrides.cmake
+
+# BEGIN vizor-local-setup (managed by setup-vizor-wp)
+/build-vizor
+/build-restart-vizor
+.fvmrc
+lib/src/core/config/network_config.dart
+macos/Runner/Info.plist
+macos/Runner/Configs/AppInfo.xcconfig
+macos/Runner.xcodeproj/project.pbxproj
+# END vizor-local-setup

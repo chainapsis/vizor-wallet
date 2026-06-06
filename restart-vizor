@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+app_path="build/build-vizor/DerivedData/Build/Products/Debug/Vizor.app"
+bundle_id="com.keplr.vizor.build-vizor"
+log_dir="${HOME}/Library/Logs/VizorBuild"
+
+osascript -e "tell application id \"${bundle_id}\" to quit" >/dev/null 2>&1 || true
+sleep 1
+
+if [[ ! -d "${app_path}" ]]; then
+  echo "Expected app missing at ${app_path}" >&2
+  echo "Run ./build-vizor first to build the app." >&2
+  exit 1
+fi
+
+mkdir -p "${log_dir}"
+timestamp="$(date +%Y%m%d-%H%M%S)"
+log_path="${log_dir}/vizor-build-${timestamp}.log"
+
+plist_path="${app_path}/Contents/Info.plist"
+exec_name="$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "${plist_path}")"
+exec_path="${app_path}/Contents/MacOS/${exec_name}"
+
+if [[ ! -x "${exec_path}" ]]; then
+  echo "Expected app executable missing at ${exec_path}" >&2
+  exit 1
+fi
+
+nohup "${exec_path}" >>"${log_path}" 2>&1 &
+pid=$!
+ln -sf "${log_path}" "${log_dir}/latest.log"
+
+echo "Restarted isolated Vizor app from ${app_path}"
+echo "PID: ${pid}"
+echo "Logs: ${log_path}"
+echo "Latest symlink: ${log_dir}/latest.log"

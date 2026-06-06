@@ -4,6 +4,7 @@ pub mod keystone;
 pub mod network;
 pub mod secret_payload;
 pub mod secret_store;
+pub mod spendability_pir;
 pub mod sync;
 pub mod sync_engine;
 pub mod voting;

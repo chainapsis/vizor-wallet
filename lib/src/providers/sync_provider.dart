@@ -12,6 +12,7 @@ import '../rust/api/sync.dart' as rust_sync;
 import '../services/background_sync_delegate.dart';
 import 'account_provider.dart';
 import 'app_security_provider.dart';
+import 'pir_spendability_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'sync_failure.dart';
 
@@ -453,6 +454,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       log('Sync: skipping initial sync after lock transition');
       return;
     }
+    unawaited(ref.read(pirSpendabilityProvider.notifier).run());
     startSync();
     _startPolling();
   }
@@ -835,6 +837,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _stopMempoolObserver();
     await _syncSub?.cancel();
     _syncSub = null;
+    await ref.read(pirSpendabilityProvider.notifier).cancelAndWait();
 
     if (_bgDelegate.isActive) {
       try {
@@ -893,6 +896,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _stopMempoolObserver();
     _mempoolRefreshInFlight = false;
     _mempoolRefreshQueued = false;
+    await ref.read(pirSpendabilityProvider.notifier).cancelAndWait();
     state = AsyncData(SyncState());
 
     // Sign-out should cancel the current Rust run immediately.
@@ -1490,7 +1494,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// Public: refresh balance and recent transactions (e.g. after send).
   Future<void> refreshAfterSend() => _refreshBalance();
 
-  Future<void> refreshAfterUnlock() => _refreshBalance();
+  Future<void> refreshAfterUnlock() {
+    unawaited(ref.read(pirSpendabilityProvider.notifier).run());
+    return _refreshBalance();
+  }
 
   Future<void> _refreshBalance() async {
     if (_requiresUnlock) {

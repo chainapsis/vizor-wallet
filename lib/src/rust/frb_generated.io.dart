@@ -4,6 +4,7 @@
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
 import 'api/keystone.dart';
+import 'api/pir.dart';
 import 'api/secret.dart';
 import 'api/simple.dart';
 import 'api/sync.dart';
@@ -43,6 +44,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_StreamSink_api_mempool_tx_event_Sse(dynamic raw);
 
   @protected
+  RustStreamSink<ApiPirProgressEvent>
+  dco_decode_StreamSink_api_pir_progress_event_Sse(dynamic raw);
+
+  @protected
   RustStreamSink<ApiSyncProgressEvent>
   dco_decode_StreamSink_api_sync_progress_event_Sse(dynamic raw);
 
@@ -67,6 +72,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiMempoolTxEvent dco_decode_api_mempool_tx_event(dynamic raw);
+
+  @protected
+  ApiPirProgressEvent dco_decode_api_pir_progress_event(dynamic raw);
 
   @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
@@ -519,6 +527,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_StreamSink_api_mempool_tx_event_Sse(SseDeserializer deserializer);
 
   @protected
+  RustStreamSink<ApiPirProgressEvent>
+  sse_decode_StreamSink_api_pir_progress_event_Sse(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RustStreamSink<ApiSyncProgressEvent>
   sse_decode_StreamSink_api_sync_progress_event_Sse(
     SseDeserializer deserializer,
@@ -551,6 +565,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiMempoolTxEvent sse_decode_api_mempool_tx_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiPirProgressEvent sse_decode_api_pir_progress_event(
     SseDeserializer deserializer,
   );
 
@@ -1116,6 +1135,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_StreamSink_api_pir_progress_event_Sse(
+    RustStreamSink<ApiPirProgressEvent> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_StreamSink_api_sync_progress_event_Sse(
     RustStreamSink<ApiSyncProgressEvent> self,
     SseSerializer serializer,
@@ -1154,6 +1179,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_mempool_tx_event(
     ApiMempoolTxEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_pir_progress_event(
+    ApiPirProgressEvent self,
     SseSerializer serializer,
   );
 

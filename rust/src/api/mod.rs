@@ -1,4 +1,5 @@
 pub mod keystone;
+pub mod pir;
 pub mod secret;
 pub mod simple;
 pub mod sync;
