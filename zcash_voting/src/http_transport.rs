@@ -1,5 +1,4 @@
-#[cfg(feature = "client-tree-sync")]
-use std::future::Future;
+use std::{future::Future, sync::OnceLock};
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
@@ -16,7 +15,6 @@ type HyperClient = Client<HttpsConnector<HttpConnector>, RequestBody>;
 
 struct HyperResponse {
     status: u16,
-    #[cfg(feature = "client-pir")]
     headers: Vec<(String, String)>,
     body: Vec<u8>,
 }
@@ -24,17 +22,16 @@ struct HyperResponse {
 /// Direct Hyper/Rustls HTTP transport for client-side network requests.
 ///
 /// `zcash_voting` keeps PIR and tree-sync fetching behind small transport
-/// traits, but its client features include this adapter for consumers that want
-/// direct cleartext/HTTPS traffic without providing their own transport.
+/// traits, and includes this adapter for consumers that want direct
+/// cleartext/HTTPS traffic without providing their own transport.
 pub struct HyperTransport {
     client: HyperClient,
-    #[cfg(feature = "client-tree-sync")]
     runtime: BlockingRuntime,
 }
 
 impl HyperTransport {
     pub fn new() -> Self {
-        #[cfg(feature = "client-tree-sync")]
+        ensure_rustls_provider();
         let runtime = BlockingRuntime::new();
         let mut connector = HttpConnector::new();
         connector.enforce_http(false);
@@ -46,11 +43,7 @@ impl HyperTransport {
             .wrap_connector(connector);
         let client = Client::builder(TokioExecutor::new()).build(https);
 
-        Self {
-            client,
-            #[cfg(feature = "client-tree-sync")]
-            runtime,
-        }
+        Self { client, runtime }
     }
 
     async fn request(&self, method: Method, url: &str, body: Vec<u8>) -> Result<HyperResponse> {
@@ -65,7 +58,6 @@ impl HyperTransport {
             .await
             .context("send HTTP request")?;
         let status = response.status().as_u16();
-        #[cfg(feature = "client-pir")]
         let headers = response
             .headers()
             .iter()
@@ -86,11 +78,17 @@ impl HyperTransport {
 
         Ok(HyperResponse {
             status,
-            #[cfg(feature = "client-pir")]
             headers,
             body,
         })
     }
+}
+
+fn ensure_rustls_provider() {
+    static RUSTLS_PROVIDER: OnceLock<()> = OnceLock::new();
+    RUSTLS_PROVIDER.get_or_init(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
 }
 
 impl Default for HyperTransport {
@@ -99,12 +97,10 @@ impl Default for HyperTransport {
     }
 }
 
-#[cfg(feature = "client-tree-sync")]
 struct BlockingRuntime {
     inner: Option<tokio::runtime::Runtime>,
 }
 
-#[cfg(feature = "client-tree-sync")]
 impl BlockingRuntime {
     fn new() -> Self {
         Self {
@@ -125,7 +121,6 @@ impl BlockingRuntime {
     }
 }
 
-#[cfg(feature = "client-tree-sync")]
 impl Drop for BlockingRuntime {
     fn drop(&mut self) {
         if let Some(runtime) = self.inner.take() {
@@ -134,7 +129,6 @@ impl Drop for BlockingRuntime {
     }
 }
 
-#[cfg(feature = "client-pir")]
 impl pir_client::Transport for HyperTransport {
     fn get<'a>(&'a self, url: &'a str) -> pir_client::TransportFuture<'a> {
         Box::pin(async move {
@@ -161,7 +155,6 @@ impl pir_client::Transport for HyperTransport {
     }
 }
 
-#[cfg(feature = "client-tree-sync")]
 impl vote_commitment_tree_client::transport::Transport for HyperTransport {
     fn get(
         &self,
@@ -184,7 +177,7 @@ impl vote_commitment_tree_client::transport::Transport for HyperTransport {
     }
 }
 
-#[cfg(all(test, feature = "client-tree-sync"))]
+#[cfg(test)]
 mod tests {
     use super::BlockingRuntime;
 

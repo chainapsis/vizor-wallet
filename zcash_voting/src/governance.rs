@@ -12,6 +12,13 @@ use crate::types::VotingError;
 /// zatoshi, and bundle weights are quantized down to this boundary.
 pub const BALLOT_DIVISOR: u64 = 12_500_000;
 
+/// Number of note slots fixed by the delegation circuit.
+///
+/// Must match the delegation circuit shape in `voting-circuits`. Bundling
+/// policy can choose fewer real notes, but proof construction pads each bundle
+/// to this slot count.
+pub const BUNDLE_NOTE_SLOTS: usize = 5;
+
 /// Derive the nullifier domain for a voting round (ZIP §Nullifier Domains).
 ///
 /// `dom = Poseidon("governance authorization", vote_round_id)`

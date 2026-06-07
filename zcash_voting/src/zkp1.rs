@@ -22,11 +22,11 @@ use voting_circuits::delegation::{
     PrecomputedRandomness, RealNoteInput,
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_protocol::consensus::Network;
 
+use crate::governance::BUNDLE_NOTE_SLOTS;
 use crate::types::{
-    ct_option_to_result, validate_32_bytes, DelegationProofResult, NoteInfo, ProofProgressReporter,
-    VotingError, WitnessData,
+    ct_option_to_result, validate_32_bytes, DelegationProgressReporter, DelegationProofResult,
+    Network, NoteInfo, VotingError, WitnessData,
 };
 
 // ================================================================
@@ -35,7 +35,6 @@ use crate::types::{
 
 /// Convert an IMT proof from the PIR data crate into the circuit-crate `ImtProofData`.
 /// Both use the K=2 punctured-range format with `nf_bounds = [nf_lo, nf_mid, nf_hi]`.
-#[cfg(feature = "client-pir")]
 pub fn convert_pir_proof(pir: pir_client::ImtProofData) -> ImtProofData {
     ImtProofData {
         root: pir.root,
@@ -49,7 +48,6 @@ fn base_hex(value: pallas::Base) -> String {
     hex::encode(value.to_repr())
 }
 
-#[cfg(feature = "client-pir")]
 fn validate_pir_proof_raw(
     proof: &pir_client::ImtProofData,
     nullifier: pallas::Base,
@@ -71,7 +69,6 @@ fn validate_pir_proof_raw(
     Ok(())
 }
 
-#[cfg(feature = "client-pir")]
 pub fn validate_and_convert_pir_proof(
     proof: pir_client::ImtProofData,
     nullifier: pallas::Base,
@@ -282,7 +279,8 @@ fn delegation_cached_keys_large_stack() -> Result<&'static DelegationKeys, Votin
 ///
 /// # Arguments
 ///
-/// - `full_notes`: 1–5 wallet notes (from `get_wallet_notes_at_snapshot`).
+/// - `full_notes`: wallet notes up to [`BUNDLE_NOTE_SLOTS`] (from
+///   `get_wallet_notes_at_snapshot`).
 /// - `hotkey_raw_address`: 43-byte raw Orchard address of the voting hotkey.
 /// - `alpha_bytes`: 32-byte spend auth randomizer scalar.
 /// - `van_comm_rand_bytes`: 32-byte governance commitment blinding factor.
@@ -291,7 +289,7 @@ fn delegation_cached_keys_large_stack() -> Result<&'static DelegationKeys, Votin
 /// - `imt_proofs`: Pre-fetched IMT exclusion proofs (one per real note, from PIR client).
 /// - `extra_imt_proofs`: Additional pre-fetched IMT proofs keyed by nullifier,
 ///   currently used for padded dummy notes.
-/// - `network_id`: 0 = testnet, 1 = mainnet (for UFVK decoding; matches the SDK / wallet DB).
+/// - `network`: network used for UFVK decoding; matches the SDK / wallet DB.
 /// - `progress`: Progress callback.
 #[allow(clippy::too_many_arguments)]
 pub fn build_and_prove_delegation(
@@ -303,14 +301,14 @@ pub fn build_and_prove_delegation(
     merkle_witnesses: &[WitnessData],
     imt_proofs: &[ImtProofData],
     extra_imt_proofs: &[([u8; 32], ImtProofData)],
-    network_id: u32,
-    progress: &dyn ProofProgressReporter,
+    network: Network,
+    progress: &dyn DelegationProgressReporter,
     precomputed_randomness: Option<&PrecomputedRandomness>,
 ) -> Result<DelegationProofResult, VotingError> {
     let n = full_notes.len();
-    if n == 0 || n > 5 {
+    if n == 0 || n > BUNDLE_NOTE_SLOTS {
         return Err(VotingError::InvalidInput {
-            message: format!("expected 1–5 notes, got {n}"),
+            message: format!("expected 1..={BUNDLE_NOTE_SLOTS} notes, got {n}"),
         });
     }
     if merkle_witnesses.len() != n {
@@ -329,18 +327,6 @@ pub fn build_and_prove_delegation(
             ),
         });
     }
-
-    let network = match network_id {
-        0 => Network::TestNetwork,
-        1 => Network::MainNetwork,
-        _ => {
-            return Err(VotingError::InvalidInput {
-                message: format!(
-                    "invalid network_id {network_id}, expected 0 (testnet) or 1 (mainnet)"
-                ),
-            })
-        }
-    };
 
     // Parse scalar/field inputs.
     let alpha = bytes_to_scalar(alpha_bytes, "alpha")?;
@@ -460,12 +446,12 @@ pub fn build_and_prove_delegation(
         message: format!("delegation bundle build failed: {e}"),
     })?;
 
-    progress.on_progress(0.1);
+    progress.on_progress(crate::delegate::DelegationProgress::ProofProgress(0.1));
 
     // Fill the downstream cache on a large-stack thread when warm-up was missed.
     let (params, pk, _vk) = delegation_cached_keys_large_stack()?;
 
-    progress.on_progress(0.5);
+    progress.on_progress(crate::delegate::DelegationProgress::ProofProgress(0.5));
 
     // Create the proof on a dedicated large-stack thread. For larger circuits,
     // create_proof can also exhaust the default thread stack on simulator builds.
@@ -502,7 +488,7 @@ pub fn build_and_prove_delegation(
         })?
     })?;
 
-    progress.on_progress(1.0);
+    progress.on_progress(crate::delegate::DelegationProgress::ProofProgress(1.0));
 
     // Extract public inputs as 32-byte LE arrays.
     let public_inputs: Vec<Vec<u8>> = instance_vec
@@ -548,13 +534,17 @@ mod tests {
         count: Arc<AtomicU32>,
     }
 
-    impl ProofProgressReporter for TestReporter {
-        fn on_progress(&self, _progress: f64) {
-            self.count.fetch_add(1, Ordering::Relaxed);
+    impl crate::types::DelegationProgressReporter for TestReporter {
+        fn on_progress(&self, progress: crate::delegate::DelegationProgress) {
+            if matches!(
+                progress,
+                crate::delegate::DelegationProgress::ProofProgress(_)
+            ) {
+                self.count.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
 
-    #[cfg(feature = "client-pir")]
     fn raw_pir_proof(proof: ImtProofData) -> pir_client::ImtProofData {
         pir_client::ImtProofData {
             root: proof.root,
@@ -564,7 +554,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "client-pir")]
     #[test]
     fn validate_and_convert_pir_proof_accepts_valid_proof() {
         let imt = SpacedLeafImtProvider::new();
@@ -577,7 +566,6 @@ mod tests {
         assert_eq!(converted.root, root);
     }
 
-    #[cfg(feature = "client-pir")]
     #[test]
     fn validate_and_convert_pir_proof_rejects_unverified_path() {
         let imt = SpacedLeafImtProvider::new();
@@ -594,7 +582,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "client-pir")]
     #[test]
     fn validate_and_convert_pir_proof_rejects_wrong_root() {
         let imt = SpacedLeafImtProvider::new();
@@ -625,12 +612,55 @@ mod tests {
             &[],
             &[],
             &[],
-            0,
+            Network::Testnet,
             &reporter,
             None,
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("1–5 notes"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains(&format!("1..={BUNDLE_NOTE_SLOTS} notes")));
+    }
+
+    #[test]
+    fn reconstruct_note_accepts_regtest_network() {
+        use zcash_keys::keys::UnifiedSpendingKey;
+        use zip32::AccountId;
+
+        let network = Network::Regtest;
+        let seed = [0x42u8; 64];
+        let account = AccountId::try_from(0u32).unwrap();
+        let usk = UnifiedSpendingKey::from_seed(&network, &seed, account).unwrap();
+        let ufvk = usk.to_unified_full_viewing_key();
+        let ufvk_str = ufvk.encode(&network);
+        let fvk = ufvk.orchard().unwrap().clone();
+        let address = fvk.address_at(0u32, Scope::External);
+
+        let mut rng = OsRng;
+        let (_, _, dummy_parent) = orchard::Note::dummy(&mut rng, None);
+        let note = orchard::Note::new(
+            address,
+            NoteValue::from_raw(1),
+            Rho::from_nf_old(dummy_parent.nullifier(&fvk)),
+            &mut rng,
+        );
+        let cmx: ExtractedNoteCommitment = note.commitment().into();
+        let full_note = NoteInfo {
+            commitment: cmx.to_bytes().to_vec(),
+            diversifier: note.recipient().diversifier().as_array().to_vec(),
+            value: 1,
+            rho: note.rho().to_bytes().to_vec(),
+            rseed: note.rseed().as_bytes().to_vec(),
+            nullifier: note.nullifier(&fvk).to_bytes().to_vec(),
+            position: 0,
+            scope: 0,
+            ufvk_str,
+        };
+
+        let (rebuilt, rebuilt_fvk) = reconstruct_note(&full_note, &network).unwrap();
+
+        assert_eq!(rebuilt.nullifier(&rebuilt_fvk), note.nullifier(&fvk));
     }
 
     /// Real Halo2 delegation proof end-to-end test.
@@ -639,7 +669,8 @@ mod tests {
     /// non-membership proofs as `ImtProofData`, and calls
     /// `build_and_prove_delegation()` to generate a real Halo2 proof.
     ///
-    /// Uses 5 notes to avoid padding (no PIR server needed for padded notes).
+    /// Uses a full note-slot bundle to avoid padding (no PIR server needed for
+    /// padded notes).
     /// Long-running due to keygen + proof generation.
     ///
     /// Run with: `cargo test -p zcash_voting test_real_delegation_proof -- --ignored --nocapture`
@@ -673,9 +704,12 @@ mod tests {
         let hotkey_addr = hotkey_fvk.address_at(0u32, Scope::External);
         let hotkey_raw_address = hotkey_addr.to_raw_address_bytes().to_vec();
 
-        // 3. Create 5 notes (fills all 5 slots → no padding → no IMT server needed)
+        // 3. Fill all note slots so no padding or IMT server is needed.
         let mut rng = OsRng;
-        let note_values = [4_000_000u64, 4_000_000, 3_000_000, 2_000_000, 1_000_000]; // 14M total >= 12.5M min
+        let note_values = vec![
+            (crate::governance::BALLOT_DIVISOR / BUNDLE_NOTE_SLOTS as u64) + 1;
+            BUNDLE_NOTE_SLOTS
+        ];
         let address = fvk.address_at(0u32, Scope::External);
 
         let mut notes = Vec::new();
@@ -808,7 +842,7 @@ mod tests {
             &merkle_witnesses,
             &imt_proofs,
             &[],
-            1, // mainnet (SDK convention: 0=testnet, 1=mainnet)
+            Network::Mainnet,
             &reporter,
             None,
         )

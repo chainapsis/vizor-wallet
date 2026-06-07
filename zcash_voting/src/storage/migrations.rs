@@ -2,9 +2,10 @@ use rusqlite::Connection;
 
 use crate::VotingError;
 
-const CURRENT_VERSION: u32 = 9;
+const CURRENT_VERSION: u32 = 11;
 
-const RESET_SQL: &str = "DROP TABLE IF EXISTS imt_proofs;
+const RESET_SQL: &str = "DROP TABLE IF EXISTS ballot_intent;
+DROP TABLE IF EXISTS imt_proofs;
 DROP TABLE IF EXISTS share_delegations;
 DROP TABLE IF EXISTS keystone_signatures;
 DROP TABLE IF EXISTS votes;
@@ -170,6 +171,7 @@ mod tests {
         assert!(tables.contains(&"imt_proofs".to_string()));
         assert!(tables.contains(&"share_delegations".to_string()));
         assert!(tables.contains(&"keystone_signatures".to_string()));
+        assert!(tables.contains(&"ballot_intent".to_string()));
     }
 
     /// Verify that the bundles table columns exist after migration and can round-trip BLOB data.

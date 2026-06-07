@@ -3,5 +3,6 @@ members = [
     "zcash_voting",
     "vote-commitment-tree",
     "vote-commitment-tree-client",
+    "wallet-example",
 ]
 resolver = "2"

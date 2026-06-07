@@ -95,7 +95,6 @@ CREATE TABLE votes (
     proposal_id     INTEGER NOT NULL,
     choice          INTEGER NOT NULL,
     commitment      BLOB,
-    submitted       INTEGER NOT NULL DEFAULT 0,
     created_at      INTEGER NOT NULL,
     tx_hash                 TEXT,
     vc_tree_position        INTEGER,
@@ -131,4 +130,17 @@ CREATE TABLE keystone_signatures (
     PRIMARY KEY (round_id, wallet_id, bundle_index),
     FOREIGN KEY (round_id, wallet_id, bundle_index)
         REFERENCES bundles(round_id, wallet_id, bundle_index) ON DELETE CASCADE
+);
+
+CREATE TABLE ballot_intent (
+    round_id     TEXT NOT NULL,
+    wallet_id    TEXT NOT NULL DEFAULT '',
+    proposal_id  INTEGER NOT NULL,
+    skipped      INTEGER NOT NULL DEFAULT 0,  -- 1 = intentionally skipped
+    choice       INTEGER,                     -- 0-indexed option; NULL iff skipped
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL,
+    PRIMARY KEY (round_id, wallet_id, proposal_id),
+    FOREIGN KEY (round_id, wallet_id) REFERENCES rounds(round_id, wallet_id) ON DELETE CASCADE,
+    CHECK ((skipped = 1 AND choice IS NULL) OR (skipped = 0 AND choice IS NOT NULL))
 );

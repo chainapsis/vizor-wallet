@@ -2,7 +2,10 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::types::{ShareDelegationRecord, VotingError};
+use crate::{
+    types::{ShareDelegationRecord, VotingError},
+    wire::BoundedU32,
+};
 
 /// Seconds to wait after helper submission time before polling share status.
 pub const SHARE_STATUS_CHECK_GRACE_SECONDS: u64 = 10;
@@ -20,6 +23,12 @@ pub const SHARE_FUTURE_CHECK_MAX_DELAY_SECONDS: u64 = 30;
 pub const SHARE_MIN_TRACKING_DELAY_SECONDS: u64 = 3;
 /// Random bytes needed to sample an initial delayed share submission time.
 pub const SHARE_SUBMIT_AT_RANDOM_BYTES: usize = 8;
+/// Numerator for the last-moment share window fraction.
+pub const LAST_MOMENT_BUFFER_FRACTION_NUMERATOR: u64 = 2;
+/// Denominator for the last-moment share window fraction.
+pub const LAST_MOMENT_BUFFER_FRACTION_DENOMINATOR: u64 = 5;
+/// Maximum last-moment share window, in seconds.
+pub const LAST_MOMENT_BUFFER_MAX_SECONDS: u64 = 6 * 60 * 60;
 
 /// Pure timing knobs for helper-share scheduling and recovery.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,7 +62,7 @@ pub struct ShareSubmissionPlan {
     /// Unix seconds when helpers should submit the share, or 0 for immediate.
     pub submit_at: u64,
     /// Number of helpers each share should reach.
-    pub target_count: u64,
+    pub target_count: u32,
     /// Helper targets selected for initial share submission.
     pub target_servers: Vec<String>,
 }
@@ -81,6 +90,50 @@ impl ShareTrackingSummary {
     pub fn has_shares(&self) -> bool {
         self.total > 0
     }
+}
+
+/// Return the last-moment buffer for a voting round.
+///
+/// The buffer is 40% of the round duration from ceremony start to vote end,
+/// capped at six hours. The calculation rounds up to whole seconds so callers
+/// do not schedule delayed helper shares inside the intended last-moment
+/// window. Invalid or zero-length timing returns `None`.
+pub fn last_moment_buffer_seconds(
+    ceremony_start_seconds: u64,
+    vote_end_time_seconds: u64,
+) -> Option<u64> {
+    let duration = vote_end_time_seconds.checked_sub(ceremony_start_seconds)?;
+    if duration == 0 {
+        return None;
+    }
+    let numerator = u128::from(duration) * u128::from(LAST_MOMENT_BUFFER_FRACTION_NUMERATOR);
+    let denominator = u128::from(LAST_MOMENT_BUFFER_FRACTION_DENOMINATOR);
+    let buffer = (numerator + denominator - 1) / denominator;
+    let capped = buffer.min(u128::from(LAST_MOMENT_BUFFER_MAX_SECONDS));
+    Some(capped as u64)
+}
+
+/// Return the Unix-second boundary where last-moment mode starts.
+///
+/// Returns `None` when the round timing cannot produce a last-moment buffer.
+pub fn last_moment_deadline_seconds(
+    ceremony_start_seconds: u64,
+    vote_end_time_seconds: u64,
+) -> Option<u64> {
+    let buffer = last_moment_buffer_seconds(ceremony_start_seconds, vote_end_time_seconds)?;
+    Some(vote_end_time_seconds.saturating_sub(buffer))
+}
+
+/// Return true when `now_seconds` falls inside the active round's last-moment window.
+///
+/// Invalid or zero-length round timing is treated as not last moment.
+pub fn is_last_moment(
+    now_seconds: u64,
+    ceremony_start_seconds: u64,
+    vote_end_time_seconds: u64,
+) -> bool {
+    last_moment_deadline_seconds(ceremony_start_seconds, vote_end_time_seconds)
+        .is_some_and(|deadline| now_seconds >= deadline && now_seconds < vote_end_time_seconds)
 }
 
 /// Return the time recovery should use as the share's base time.
@@ -514,7 +567,11 @@ pub fn plan_share_submission(
 
     Ok(ShareSubmissionPlan {
         submit_at,
-        target_count: target_count as u64,
+        target_count: BoundedU32::try_from(target_count)
+            .map_err(|_| VotingError::InvalidInput {
+                message: format!("target_count {target_count} does not fit u32"),
+            })?
+            .0,
         target_servers,
     })
 }
@@ -641,7 +698,11 @@ fn plan_share_submission_with_targets(
 
     Ok(ShareSubmissionPlan {
         submit_at,
-        target_count: target_count as u64,
+        target_count: BoundedU32::try_from(target_count)
+            .map_err(|_| VotingError::InvalidInput {
+                message: format!("target_count {target_count} does not fit u32"),
+            })?
+            .0,
         target_servers,
     })
 }
@@ -803,6 +864,58 @@ mod tests {
             .iter()
             .flat_map(|sample| sample.to_le_bytes())
             .collect()
+    }
+
+    #[test]
+    fn last_moment_buffer_uses_two_fifths_of_round_duration() {
+        assert_eq!(last_moment_buffer_seconds(1_000, 1_600), Some(240));
+    }
+
+    #[test]
+    fn last_moment_buffer_caps_at_six_hours() {
+        assert_eq!(
+            last_moment_buffer_seconds(1_000, 1_000 + 24 * 60 * 60),
+            Some(LAST_MOMENT_BUFFER_MAX_SECONDS)
+        );
+    }
+
+    #[test]
+    fn last_moment_buffer_caps_without_u64_overflow() {
+        assert_eq!(
+            last_moment_buffer_seconds(0, u64::MAX),
+            Some(LAST_MOMENT_BUFFER_MAX_SECONDS)
+        );
+    }
+
+    #[test]
+    fn last_moment_buffer_rejects_invalid_round_timing() {
+        assert_eq!(last_moment_buffer_seconds(1_000, 1_000), None);
+        assert_eq!(last_moment_buffer_seconds(1_001, 1_000), None);
+    }
+
+    #[test]
+    fn last_moment_buffer_rounds_up_to_whole_seconds() {
+        assert_eq!(last_moment_buffer_seconds(1_000, 1_001), Some(1));
+        assert_eq!(last_moment_buffer_seconds(1_000, 1_002), Some(1));
+        assert_eq!(last_moment_buffer_seconds(1_000, 1_003), Some(2));
+    }
+
+    #[test]
+    fn last_moment_deadline_subtracts_buffer_from_vote_end() {
+        assert_eq!(last_moment_deadline_seconds(1_000, 1_600), Some(1_360));
+        assert_eq!(
+            last_moment_deadline_seconds(1_000, 1_000 + 24 * 60 * 60),
+            Some(1_000 + 18 * 60 * 60)
+        );
+    }
+
+    #[test]
+    fn last_moment_predicate_uses_deadline_boundary() {
+        assert!(!is_last_moment(1_359, 1_000, 1_600));
+        assert!(is_last_moment(1_360, 1_000, 1_600));
+        assert!(is_last_moment(1_599, 1_000, 1_600));
+        assert!(!is_last_moment(1_600, 1_000, 1_600));
+        assert!(!is_last_moment(1_000, 1_000, 1_000));
     }
 
     #[test]

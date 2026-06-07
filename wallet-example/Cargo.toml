@@ -1,0 +1,26 @@
+[package]
+name = "zcash-voting-wallet-example"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = "1"
+bytes = "1"
+ff = "0.13"
+http = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "http1", "http2"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "ring", "webpki-roots"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"] }
+orchard = { version = "=0.14.0", features = ["unstable-voting-circuits"] }
+pasta_curves = "0.5"
+rand = "0.8"
+rusqlite = "0.37"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zcash_client_sqlite = { version = "0.21", default-features = false, features = ["orchard"] }
+zcash_keys = { version = "0.14", features = ["orchard"] }
+zcash_protocol = "0.9"
+zcash_voting = { path = "../zcash_voting" }
+zip32 = "0.2"
