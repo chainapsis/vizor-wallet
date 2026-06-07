@@ -27,6 +27,8 @@ import 'src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'src/features/accounts/screens/accounts_screen.dart';
 import 'src/features/address_book/screens/address_book_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
+import 'src/features/migration/screens/migration_screen.dart';
+import 'src/features/migration/screens/migration_scan_screen.dart';
 import 'src/features/about/screens/about_screen.dart';
 import 'src/features/onboarding/create/address_types_screen.dart';
 import 'src/features/onboarding/create/intro_zcash_screen.dart';
@@ -554,6 +556,11 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
       GoRoute(path: '/privacy', builder: (_, _) => const PrivacyPolicyScreen()),
       GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+      GoRoute(path: '/migration', builder: (_, _) => const MigrationScreen()),
+      GoRoute(
+        path: '/migration/scan',
+        builder: (_, _) => const MigrationScanScreen(),
+      ),
       GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
       GoRoute(
         path: '/address-book',

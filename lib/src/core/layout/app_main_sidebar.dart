@@ -160,6 +160,16 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
+                    key: const ValueKey('sidebar_migration_button'),
+                    label: 'Migration',
+                    iconName: AppIcons.doubleArrowVertical,
+                    active: _matches('/migration'),
+                    onTap: _matches('/migration')
+                        ? null
+                        : () => _navigateTo('/migration'),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  AppSidebarItem(
                     key: const ValueKey('sidebar_address_book_button'),
                     label: 'Address book',
                     iconName: AppIcons.users,
