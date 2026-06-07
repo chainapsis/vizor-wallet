@@ -77,3 +77,6 @@ app.*.map.json
 
 # Generated when selecting Linux release flavors.
 /linux/FlavorOverrides.cmake
+
+# Superpowers brainstorming scratch
+.superpowers/
