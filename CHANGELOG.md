@@ -6,7 +6,7 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 # Unreleased
 
-## V2 API
+## v1.0.0
 
 ### Added
 - Added an optional `BundlePolicy` threshold that starts a new bundle when
