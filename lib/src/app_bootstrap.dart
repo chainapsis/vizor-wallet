@@ -215,6 +215,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       await storage.readString(_networkKey),
     );
     final rpcEndpointConfig = await _readRpcEndpointConfig(storage, network);
+    final walletNetwork = rpcEndpointConfig.walletNetworkName;
     await _seedNativeRpcEndpointMirror(rpcEndpointConfig);
     final themeMode = await _readThemeMode(storage);
     final privacyModeEnabled = await _readPrivacyModeEnabled(storage);
@@ -226,7 +227,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
         log('bootstrap: ensuring wallet DB migrations before startup snapshot');
         await rust_wallet.ensureWalletDbMigrated(
           dbPath: dbPath,
-          network: network,
+          network: walletNetwork,
         );
       } catch (e) {
         log('bootstrap: wallet DB migration preflight failed: $e');
@@ -248,7 +249,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       try {
         final listed = await rust_wallet.listAccounts(
           dbPath: dbPath,
-          network: network,
+          network: walletNetwork,
         );
         rustAccounts = listed.indexed.map((entry) {
           final (index, account) = entry;
@@ -286,7 +287,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
         rust_wallet.walletExists(dbPath: dbPath)) {
       initialSyncSnapshot = await _loadInitialSyncSnapshot(
         dbPath: dbPath,
-        network: network,
+        network: walletNetwork,
         accountUuid: activeAccountUuid,
       );
     }

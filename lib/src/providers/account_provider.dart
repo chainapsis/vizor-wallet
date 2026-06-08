@@ -9,7 +9,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/account_name_policy.dart';
-import '../core/config/network_config.dart';
 import '../core/profile_pictures.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/wallet_paths.dart';
@@ -216,7 +215,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }) async {
     try {
       final dbPath = await _getDbPath();
-      final network = await _getNetwork();
+      final endpoint = ref.read(rpcEndpointProvider);
+      final network = endpoint.walletNetworkName;
+      final publicNetwork = endpoint.networkName;
       final accounts = state.value?.accounts ?? [];
       final accountName = name ?? 'Account ${accounts.length + 1}';
 
@@ -237,7 +238,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         );
         accountUuid = result.accountUuid;
         unifiedAddress = result.unifiedAddress;
-        await _storage.writeString(_networkKey, network);
+        await _storage.writeString(_networkKey, publicNetwork);
       } else {
         // Additional account
         final result = await rust_wallet.addAccount(
@@ -722,9 +723,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   Future<String> _getNetwork() async {
-    return resolveStoredOrDefaultZcashNetworkName(
-      await _storage.readString(_networkKey),
-    );
+    return ref.read(rpcEndpointProvider).walletNetworkName;
   }
 
   Future<void> _deleteExistingDb(String dbPath) async {
