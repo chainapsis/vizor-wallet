@@ -180,6 +180,7 @@ pub(super) async fn run_enhancement(
                         addr_str,
                         start,
                         end.saturating_sub(1),
+                        TAddressHistoryErrorPolicy::BestEffort,
                     )
                     .await?;
 
@@ -201,6 +202,12 @@ pub(super) async fn run_enhancement(
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TAddressHistoryErrorPolicy {
+    BestEffort,
+    Strict,
+}
+
 pub(super) async fn process_taddress_history(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
@@ -209,6 +216,7 @@ pub(super) async fn process_taddress_history(
     address: String,
     start_height: u64,
     end_height: u64,
+    error_policy: TAddressHistoryErrorPolicy,
 ) -> Result<bool, SyncError> {
     if start_height > end_height {
         return Ok(false);
@@ -222,13 +230,16 @@ pub(super) async fn process_taddress_history(
         match lwd::next_stream_message(&mut stream, "get_taddress_txids stream").await? {
             Some(raw) => {
                 if !raw.data.is_empty() {
+                    found = true;
                     let mined_height = mined_height_from_raw_height(raw.height)?;
-                    let tx = Transaction::read(&raw.data[..], BranchId::Sapling).map_err(|e| {
-                        SyncError::parse(format!("Transaction::read (addr {address}) failed: {e}"))
-                    })?;
+                    let Some(tx) =
+                        parse_taddress_transaction_for_history(&address, &raw.data, error_policy)?
+                    else {
+                        continue;
+                    };
                     let txid = tx.txid();
 
-                    with_wallet_db_write_lock(
+                    let store_result = with_wallet_db_write_lock(
                         "sync_engine.enhance.decrypt_and_store_transaction",
                         || {
                             decrypt_and_store_transaction(&network, db, &tx, mined_height)
@@ -238,8 +249,15 @@ pub(super) async fn process_taddress_history(
                                     ))
                                 })
                         },
-                    )?;
-                    found = true;
+                    );
+                    if let Err(e) = store_result {
+                        match error_policy {
+                            TAddressHistoryErrorPolicy::BestEffort => {
+                                log::error!("{e}");
+                            }
+                            TAddressHistoryErrorPolicy::Strict => return Err(e),
+                        }
+                    }
 
                     if let Err(e) =
                         fill_missing_transparent_fee(&mut fee_client, db_path, &tx).await
@@ -256,6 +274,25 @@ pub(super) async fn process_taddress_history(
     }
 
     Ok(found)
+}
+
+fn parse_taddress_transaction_for_history(
+    address: &str,
+    data: &[u8],
+    error_policy: TAddressHistoryErrorPolicy,
+) -> Result<Option<Transaction>, SyncError> {
+    match Transaction::read(data, BranchId::Sapling) {
+        Ok(tx) => Ok(Some(tx)),
+        Err(e) => match error_policy {
+            TAddressHistoryErrorPolicy::BestEffort => {
+                log::warn!("sync: Transaction::read (addr {address}) failed: {e}");
+                Ok(None)
+            }
+            TAddressHistoryErrorPolicy::Strict => Err(SyncError::parse(format!(
+                "Transaction::read (addr {address}) failed: {e}"
+            ))),
+        },
+    }
 }
 
 async fn fill_missing_transparent_fee(
@@ -544,6 +581,29 @@ mod tests {
         let db = transparent_fee_test_db(&tx, -40_000);
 
         assert!(should_fill_missing_transparent_fee(db.path().to_str().unwrap(), &tx).unwrap());
+    }
+
+    #[test]
+    fn taddress_history_best_effort_ignores_unparseable_transaction() {
+        let result = parse_taddress_transaction_for_history(
+            "tmInvalidFixture",
+            b"not a transaction",
+            TAddressHistoryErrorPolicy::BestEffort,
+        )
+        .unwrap();
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn taddress_history_strict_rejects_unparseable_transaction() {
+        let result = parse_taddress_transaction_for_history(
+            "tmInvalidFixture",
+            b"not a transaction",
+            TAddressHistoryErrorPolicy::Strict,
+        );
+
+        assert!(matches!(result, Err(SyncError::Parse(_))));
     }
 
     #[test]

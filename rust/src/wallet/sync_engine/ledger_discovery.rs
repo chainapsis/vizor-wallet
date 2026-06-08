@@ -277,8 +277,17 @@ async fn scan_historical_scope(
         for candidate in pending {
             queried += 1;
             let addr_str = candidate.address.encode(&network);
-            if enhance::process_taddress_history(client, db, db_path, network, addr_str, start, end)
-                .await?
+            if enhance::process_taddress_history(
+                client,
+                db,
+                db_path,
+                network,
+                addr_str,
+                start,
+                end,
+                enhance::TAddressHistoryErrorPolicy::Strict,
+            )
+            .await?
             {
                 found += 1;
             }
@@ -357,8 +366,17 @@ async fn scan_frontier_scope(
 
         queried += 1;
         let addr_str = candidate.address.encode(&network);
-        if enhance::process_taddress_history(client, db, db_path, network, addr_str, start, end)
-            .await?
+        if enhance::process_taddress_history(
+            client,
+            db,
+            db_path,
+            network,
+            addr_str,
+            start,
+            end,
+            enhance::TAddressHistoryErrorPolicy::Strict,
+        )
+        .await?
         {
             found += 1;
         } else {
