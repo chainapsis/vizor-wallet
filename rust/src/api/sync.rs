@@ -337,9 +337,11 @@ pub struct WalletBalance {
     pub transparent: u64,
     pub sapling: u64,
     pub orchard: u64,
+    pub ironwood: u64,
     pub transparent_pending: u64,
     pub sapling_pending: u64,
     pub orchard_pending: u64,
+    pub ironwood_pending: u64,
     /// Sum of spendable shielded balances. Use this for "available to send".
     pub spendable: u64,
     /// Sum of spendable + pending balances across all pools. Use this for "total holdings".
@@ -539,16 +541,19 @@ pub fn get_balance(
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let b = wallet_sync::get_wallet_balance(&db_path, network, &account_uuid)?;
-        let spendable = b.sapling + b.orchard;
-        let total_spendable = b.transparent + b.sapling + b.orchard;
-        let pending = b.transparent_pending + b.sapling_pending + b.orchard_pending;
+        let spendable = b.sapling + b.orchard + b.ironwood;
+        let total_spendable = b.transparent + b.sapling + b.orchard + b.ironwood;
+        let pending =
+            b.transparent_pending + b.sapling_pending + b.orchard_pending + b.ironwood_pending;
         Ok(WalletBalance {
             transparent: b.transparent,
             sapling: b.sapling,
             orchard: b.orchard,
+            ironwood: b.ironwood,
             transparent_pending: b.transparent_pending,
             sapling_pending: b.sapling_pending,
             orchard_pending: b.orchard_pending,
+            ironwood_pending: b.ironwood_pending,
             spendable,
             total: total_spendable + pending,
         })

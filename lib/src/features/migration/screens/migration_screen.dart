@@ -288,7 +288,10 @@ class _InProgressView extends StatelessWidget {
                     const SizedBox(width: AppSpacing.xs),
                     Expanded(
                       child: Text(
-                        MigrationCopy.transferLabel(i + 1),
+                        MigrationCopy.transferLabel(
+                          i + 1,
+                          demo.transferOffsetsMs.length,
+                        ),
                         style: AppTypography.bodyMedium.copyWith(
                           color: colors.text.accent,
                         ),

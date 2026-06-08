@@ -4,7 +4,7 @@ use crate::wallet::network::WalletNetwork;
 pub(crate) fn voting_network(network: WalletNetwork) -> zcash_voting::Network {
     match network {
         WalletNetwork::Main => zcash_voting::Network::Mainnet,
-        WalletNetwork::Test => zcash_voting::Network::Testnet,
+        WalletNetwork::Test | WalletNetwork::LocalIronwoodTestnet => zcash_voting::Network::Testnet,
         WalletNetwork::Regtest => zcash_voting::Network::Regtest,
     }
 }
@@ -30,6 +30,10 @@ mod tests {
         );
         assert_eq!(
             voting_network(WalletNetwork::Test),
+            zcash_voting::Network::Testnet
+        );
+        assert_eq!(
+            voting_network(WalletNetwork::LocalIronwoodTestnet),
             zcash_voting::Network::Testnet
         );
         assert_eq!(

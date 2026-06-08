@@ -116,9 +116,11 @@ class AppSyncSnapshot {
     required this.transparentBalance,
     required this.saplingBalance,
     required this.orchardBalance,
+    required this.ironwoodBalance,
     required this.transparentPendingBalance,
     required this.saplingPendingBalance,
     required this.orchardPendingBalance,
+    required this.ironwoodPendingBalance,
     required this.canShieldTransparentBalance,
     required this.shieldTransparentFee,
     required this.shieldTransparentAmount,
@@ -135,9 +137,11 @@ class AppSyncSnapshot {
   final BigInt transparentBalance;
   final BigInt saplingBalance;
   final BigInt orchardBalance;
+  final BigInt ironwoodBalance;
   final BigInt transparentPendingBalance;
   final BigInt saplingPendingBalance;
   final BigInt orchardPendingBalance;
+  final BigInt ironwoodPendingBalance;
   final bool canShieldTransparentBalance;
   final BigInt shieldTransparentFee;
   final BigInt shieldTransparentAmount;
@@ -152,9 +156,11 @@ class AppSyncSnapshot {
     transparentBalance: BigInt.zero,
     saplingBalance: BigInt.zero,
     orchardBalance: BigInt.zero,
+    ironwoodBalance: BigInt.zero,
     transparentPendingBalance: BigInt.zero,
     saplingPendingBalance: BigInt.zero,
     orchardPendingBalance: BigInt.zero,
+    ironwoodPendingBalance: BigInt.zero,
     canShieldTransparentBalance: false,
     shieldTransparentFee: BigInt.zero,
     shieldTransparentAmount: BigInt.zero,
@@ -171,9 +177,11 @@ class AppSyncSnapshot {
     transparentBalance: BigInt.zero,
     saplingBalance: BigInt.zero,
     orchardBalance: BigInt.zero,
+    ironwoodBalance: BigInt.zero,
     transparentPendingBalance: BigInt.zero,
     saplingPendingBalance: BigInt.zero,
     orchardPendingBalance: BigInt.zero,
+    ironwoodPendingBalance: BigInt.zero,
     canShieldTransparentBalance: false,
     shieldTransparentFee: BigInt.zero,
     shieldTransparentAmount: BigInt.zero,
@@ -534,9 +542,11 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
       transparentBalance: balance.transparent,
       saplingBalance: balance.sapling,
       orchardBalance: balance.orchard,
+      ironwoodBalance: balance.ironwood,
       transparentPendingBalance: balance.transparentPending,
       saplingPendingBalance: balance.saplingPending,
       orchardPendingBalance: balance.orchardPending,
+      ironwoodPendingBalance: balance.ironwoodPending,
       canShieldTransparentBalance: canShieldTransparentBalance,
       shieldTransparentFee: shieldTransparentFee,
       shieldTransparentAmount: shieldTransparentAmount,

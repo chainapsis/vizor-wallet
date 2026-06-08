@@ -39,7 +39,9 @@ pub fn seed_from_macos_stored_mnemonic(
 fn secure_store_service_for_network(network: WalletNetwork) -> String {
     match network {
         WalletNetwork::Main => "com.keplr.vizor.secure_store".to_string(),
-        WalletNetwork::Test => "com.keplr.vizor.test.secure_store".to_string(),
+        WalletNetwork::Test | WalletNetwork::LocalIronwoodTestnet => {
+            "com.keplr.vizor.test.secure_store".to_string()
+        }
         WalletNetwork::Regtest => "com.keplr.vizor.regtest.secure_store".to_string(),
     }
 }

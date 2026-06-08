@@ -6844,18 +6844,22 @@ impl SseDecode for crate::api::sync::WalletBalance {
         let mut var_transparent = <u64>::sse_decode(deserializer);
         let mut var_sapling = <u64>::sse_decode(deserializer);
         let mut var_orchard = <u64>::sse_decode(deserializer);
+        let mut var_ironwood = <u64>::sse_decode(deserializer);
         let mut var_transparentPending = <u64>::sse_decode(deserializer);
         let mut var_saplingPending = <u64>::sse_decode(deserializer);
         let mut var_orchardPending = <u64>::sse_decode(deserializer);
+        let mut var_ironwoodPending = <u64>::sse_decode(deserializer);
         let mut var_spendable = <u64>::sse_decode(deserializer);
         let mut var_total = <u64>::sse_decode(deserializer);
         return crate::api::sync::WalletBalance {
             transparent: var_transparent,
             sapling: var_sapling,
             orchard: var_orchard,
+            ironwood: var_ironwood,
             transparent_pending: var_transparentPending,
             sapling_pending: var_saplingPending,
             orchard_pending: var_orchardPending,
+            ironwood_pending: var_ironwoodPending,
             spendable: var_spendable,
             total: var_total,
         };
@@ -8742,9 +8746,11 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::WalletBalance {
             self.transparent.into_into_dart().into_dart(),
             self.sapling.into_into_dart().into_dart(),
             self.orchard.into_into_dart().into_dart(),
+            self.ironwood.into_into_dart().into_dart(),
             self.transparent_pending.into_into_dart().into_dart(),
             self.sapling_pending.into_into_dart().into_dart(),
             self.orchard_pending.into_into_dart().into_dart(),
+            self.ironwood_pending.into_into_dart().into_dart(),
             self.spendable.into_into_dart().into_dart(),
             self.total.into_into_dart().into_dart(),
         ]
@@ -10259,9 +10265,11 @@ impl SseEncode for crate::api::sync::WalletBalance {
         <u64>::sse_encode(self.transparent, serializer);
         <u64>::sse_encode(self.sapling, serializer);
         <u64>::sse_encode(self.orchard, serializer);
+        <u64>::sse_encode(self.ironwood, serializer);
         <u64>::sse_encode(self.transparent_pending, serializer);
         <u64>::sse_encode(self.sapling_pending, serializer);
         <u64>::sse_encode(self.orchard_pending, serializer);
+        <u64>::sse_encode(self.ironwood_pending, serializer);
         <u64>::sse_encode(self.spendable, serializer);
         <u64>::sse_encode(self.total, serializer);
     }

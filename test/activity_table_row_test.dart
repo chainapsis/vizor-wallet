@@ -82,6 +82,12 @@ void main() {
                     kind: 'shielded',
                     amount: BigInt.from(10000),
                   ),
+                  _tx(
+                    txidHex: 'migration',
+                    kind: 'migration',
+                    amount: BigInt.from(624980000),
+                    displayPool: 'ironwood',
+                  ),
                 ],
               );
               return ActivityTable(rows: rows);
@@ -94,7 +100,11 @@ void main() {
     expect(rows[0].amountText, '+1.2345 $ticker');
     expect(rows[1].amountText, '-1 $ticker');
     expect(rows[2].amountText, '0.0001 $ticker');
+    expect(rows[3].title, 'Migration');
+    expect(rows[3].subtitle, 'Orchard to Ironwood');
+    expect(rows[3].amountText, '6.2498 $ticker');
     expect(find.text('0.0001 $ticker'), findsOneWidget);
+    expect(find.text('6.2498 $ticker'), findsOneWidget);
     expect(find.text('+1.2345 $ticker'), findsOneWidget);
     expect(find.text('-1 $ticker'), findsOneWidget);
     expect(find.text('Wallet Synced'), findsNothing);
@@ -375,6 +385,7 @@ rust_sync.TransactionInfo _tx({
   required BigInt amount,
   BigInt? minedHeight,
   bool expiredUnmined = false,
+  String displayPool = 'shielded',
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
@@ -386,7 +397,7 @@ rust_sync.TransactionInfo _tx({
     isTransparent: false,
     txKind: kind,
     displayAmount: amount,
-    displayPool: 'shielded',
+    displayPool: displayPool,
     createdTime: BigInt.from(1800000000),
   );
 }

@@ -22,26 +22,56 @@ void main() {
     // Ascending and within the window.
     final sorted = [...state.transferOffsetsMs]..sort();
     expect(state.transferOffsetsMs, sorted);
-    expect(state.transferOffsetsMs.last,
-        lessThan(MigrationDemoState.defaultDurationMs));
+    expect(
+      state.transferOffsetsMs.last,
+      lessThan(MigrationDemoState.defaultDurationMs),
+    );
     // Transfers 2 and 3 are staggered (not both at 0).
     expect(state.transferOffsetsMs[1], greaterThan(0));
+  });
+
+  test('matches the number of returned txids', () {
+    final state = buildMigrationDemoState(
+      accountUuid: 'acc-1',
+      displayAmountZatoshi: BigInt.from(42),
+      txids: const ['a', 'b'],
+      now: DateTime.fromMillisecondsSinceEpoch(0),
+      random: Random(7),
+    );
+
+    expect(state.transferOffsetsMs.length, 2);
+    expect(state.transferOffsetsMs.first, 0);
+    expect(state.transferOffsetsMs.last, greaterThan(0));
+  });
+
+  test('keeps one visible transfer when no txids are present', () {
+    final state = buildMigrationDemoState(
+      accountUuid: 'acc-1',
+      displayAmountZatoshi: BigInt.from(42),
+      txids: const [],
+      now: DateTime.fromMillisecondsSinceEpoch(0),
+      random: Random(7),
+    );
+
+    expect(state.transferOffsetsMs, const [0]);
   });
 
   test('is deterministic for a fixed seed', () {
     final now = DateTime.fromMillisecondsSinceEpoch(0);
     final a = buildMigrationDemoState(
-        accountUuid: 'x',
-        displayAmountZatoshi: BigInt.one,
-        txids: const [],
-        now: now,
-        random: Random(1));
+      accountUuid: 'x',
+      displayAmountZatoshi: BigInt.one,
+      txids: const [],
+      now: now,
+      random: Random(1),
+    );
     final b = buildMigrationDemoState(
-        accountUuid: 'x',
-        displayAmountZatoshi: BigInt.one,
-        txids: const [],
-        now: now,
-        random: Random(1));
+      accountUuid: 'x',
+      displayAmountZatoshi: BigInt.one,
+      txids: const [],
+      now: now,
+      random: Random(1),
+    );
     expect(a.transferOffsetsMs, b.transferOffsetsMs);
   });
 }

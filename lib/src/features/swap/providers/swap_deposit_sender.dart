@@ -53,7 +53,7 @@ class RustSwapDepositSender implements SwapDepositSender {
     );
     final fee = await rust_sync.estimateFee(
       dbPath: dbPath,
-      network: endpoint.networkName,
+      network: endpoint.walletNetworkName,
       accountUuid: accountUuid,
       toAddress: quote.depositInstruction.address,
       amountZatoshi: amountZatoshi,
@@ -86,7 +86,7 @@ class RustSwapDepositSender implements SwapDepositSender {
       );
       final proposal = await rust_sync.proposeSend(
         dbPath: dbPath,
-        network: endpoint.networkName,
+        network: endpoint.walletNetworkName,
         accountUuid: accountUuid,
         sendFlowId: sendFlowId,
         toAddress: quote.depositInstruction.address,

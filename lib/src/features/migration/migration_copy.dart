@@ -59,7 +59,8 @@ abstract final class MigrationCopy {
   static const inProgressBody =
       'Your funds are moving from Orchard to Ironwood.';
   static String migratingAmount(String amount) => 'Migrating $amount';
-  static String transferLabel(int index) => 'Transfer $index of 3';
+  static String transferLabel(int index, int total) =>
+      'Transfer $index of $total';
   static const transferSent = 'Sent';
   static const keepOpenWarning =
       'Keep Vizor connected to the Ironwood testnet while these transactions confirm.';

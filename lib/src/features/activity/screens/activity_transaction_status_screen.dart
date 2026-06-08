@@ -96,7 +96,7 @@ class _ActivityTransactionStatusScreenState
       final endpoint = ref.read(rpcEndpointProvider);
       final txs = await rust_sync.getTransactionHistory(
         dbPath: dbPath,
-        network: endpoint.networkName,
+        network: endpoint.walletNetworkName,
         accountUuid: accountUuid,
       );
       if (!mounted) return;
@@ -117,7 +117,7 @@ class _ActivityTransactionStatusScreenState
         try {
           detail = rust_sync.getTransactionDetail(
             dbPath: dbPath,
-            network: endpoint.networkName,
+            network: endpoint.walletNetworkName,
             accountUuid: accountUuid,
             txidHex: tx.txidHex,
             txKind: tx.txKind,

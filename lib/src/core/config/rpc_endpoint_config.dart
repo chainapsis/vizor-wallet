@@ -6,6 +6,7 @@ export 'network_config.dart';
 const kDefaultRpcEndpointPresetId = 'default-mainnet';
 const kCustomRpcEndpointPresetId = 'custom';
 const kLocalIronwoodTestnetRpcEndpointPresetId = 'local-ironwood-testnet';
+const kLocalIronwoodTestnetWalletNetworkName = 'local_ironwood_testnet';
 const kRegtestSlowRpcEndpointPresetId = 'slow-regtest';
 const kRegtestUnavailableRpcEndpointPresetId = 'unavailable-regtest';
 
@@ -21,6 +22,10 @@ class RpcEndpointConfig {
   final String? presetId;
 
   ZcashNetwork get network => zcashNetworkFromName(networkName);
+
+  String get walletNetworkName => isLocalIronwoodTestnetEndpoint(this)
+      ? kLocalIronwoodTestnetWalletNetworkName
+      : networkName;
 
   String get normalizedLightwalletdUrl =>
       normalizeRpcEndpointUrl(lightwalletdUrl, allowDefaultPort: true);
@@ -144,7 +149,8 @@ final kTestnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     id: kLocalIronwoodTestnetRpcEndpointPresetId,
     region: 'Testnet',
     label: 'Local Ironwood',
-    url: 'http://127.0.0.1:9067',
+    url: 'https://174-138-65-204.sslip.io:9067',
+    isDefault: true,
   ),
   const RpcEndpointPreset(
     id: 'default-testnet',
@@ -319,6 +325,21 @@ RpcEndpointPreset? findRpcEndpointPresetByUrl(
     }
   }
   return null;
+}
+
+bool isLocalIronwoodTestnetEndpoint(RpcEndpointConfig config) {
+  if (config.network != ZcashNetwork.testnet) return false;
+  if (config.effectivePresetId == kLocalIronwoodTestnetRpcEndpointPresetId) {
+    return true;
+  }
+
+  final localPreset = findRpcEndpointPresetById(
+    ZcashNetwork.testnet.name,
+    kLocalIronwoodTestnetRpcEndpointPresetId,
+  );
+  return localPreset != null &&
+      config.normalizedLightwalletdUrl ==
+          normalizeRpcEndpointUrl(localPreset.url, allowDefaultPort: true);
 }
 
 String normalizeRpcEndpointUrl(

@@ -1320,9 +1320,11 @@ class WalletBalance {
   final BigInt transparent;
   final BigInt sapling;
   final BigInt orchard;
+  final BigInt ironwood;
   final BigInt transparentPending;
   final BigInt saplingPending;
   final BigInt orchardPending;
+  final BigInt ironwoodPending;
 
   /// Sum of spendable shielded balances. Use this for "available to send".
   final BigInt spendable;
@@ -1334,9 +1336,11 @@ class WalletBalance {
     required this.transparent,
     required this.sapling,
     required this.orchard,
+    required this.ironwood,
     required this.transparentPending,
     required this.saplingPending,
     required this.orchardPending,
+    required this.ironwoodPending,
     required this.spendable,
     required this.total,
   });
@@ -1346,9 +1350,11 @@ class WalletBalance {
       transparent.hashCode ^
       sapling.hashCode ^
       orchard.hashCode ^
+      ironwood.hashCode ^
       transparentPending.hashCode ^
       saplingPending.hashCode ^
       orchardPending.hashCode ^
+      ironwoodPending.hashCode ^
       spendable.hashCode ^
       total.hashCode;
 
@@ -1360,9 +1366,11 @@ class WalletBalance {
           transparent == other.transparent &&
           sapling == other.sapling &&
           orchard == other.orchard &&
+          ironwood == other.ironwood &&
           transparentPending == other.transparentPending &&
           saplingPending == other.saplingPending &&
           orchardPending == other.orchardPending &&
+          ironwoodPending == other.ironwoodPending &&
           spendable == other.spendable &&
           total == other.total;
 }

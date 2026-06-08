@@ -75,56 +75,55 @@ class _MigrationSigningOverlayState
       }
 
       final endpoint = ref.read(rpcEndpointProvider);
-      if (endpoint.networkName != ZcashNetwork.testnet.name ||
-          endpoint.effectivePresetId !=
-              kLocalIronwoodTestnetRpcEndpointPresetId) {
+      if (endpoint.network != ZcashNetwork.testnet) {
         throw MigrationBatchError(
-          'Select the Local Ironwood testnet endpoint before migrating.',
+          'Select a testnet endpoint before migrating.',
         );
       }
 
       final dbPath = await getWalletDbPath();
+      final migrationNetworkName = endpoint.walletNetworkName;
       late final rust_sync.IronwoodMigrationResult result;
 
       if (Platform.isMacOS) {
         final password = ref
             .read(appSecurityProvider.notifier)
             .requireSessionPasswordForNativeSecretUse();
-        result = await rust_sync
-            .migrateOrchardToIronwoodWithMacosStoredMnemonic(
-              dbPath: dbPath,
-              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              network: endpoint.networkName,
-              accountUuid: accountUuid,
-              password: password,
-              amountZatoshi: BigInt.from(_amountPerTransferZatoshi),
-              transferCount: _transferCount,
-            );
-      } else {
-        final mnemonicBytes = await ref
-            .read(accountProvider.notifier)
-            .getMnemonicBytesForAccount(accountUuid);
-        if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
-          throw MigrationBatchError(
-            'Mnemonic not found for the active account.',
-          );
-        }
-
-        late final Future<rust_sync.IronwoodMigrationResult> resultFuture;
         try {
-          resultFuture = rust_sync.migrateOrchardToIronwood(
+          result = await rust_sync
+              .migrateOrchardToIronwoodWithMacosStoredMnemonic(
+                dbPath: dbPath,
+                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                network: migrationNetworkName,
+                accountUuid: accountUuid,
+                password: password,
+                amountZatoshi: BigInt.from(_amountPerTransferZatoshi),
+                transferCount: _transferCount,
+              );
+        } catch (e) {
+          final message = e.toString().toLowerCase();
+          if (!message.contains('secure storage salt not found') &&
+              !message.contains('mnemonic not found for account')) {
+            rethrow;
+          }
+          log(
+            'MigrationSigningOverlay: native macOS mnemonic unavailable, '
+            'falling back to Dart mnemonic storage: $e',
+          );
+          result = await _migrateWithMnemonicBytes(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-            network: endpoint.networkName,
+            network: migrationNetworkName,
             accountUuid: accountUuid,
-            mnemonicBytes: mnemonicBytes,
-            amountZatoshi: BigInt.from(_amountPerTransferZatoshi),
-            transferCount: _transferCount,
           );
-        } finally {
-          mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
         }
-        result = await resultFuture;
+      } else {
+        result = await _migrateWithMnemonicBytes(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: migrationNetworkName,
+          accountUuid: accountUuid,
+        );
       }
 
       log(
@@ -181,6 +180,34 @@ class _MigrationSigningOverlayState
     }
   }
 
+  Future<rust_sync.IronwoodMigrationResult> _migrateWithMnemonicBytes({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+  }) async {
+    final mnemonicBytes = await ref
+        .read(accountProvider.notifier)
+        .getMnemonicBytesForAccount(accountUuid);
+    if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+      throw MigrationBatchError('Mnemonic not found for the active account.');
+    }
+
+    try {
+      return await rust_sync.migrateOrchardToIronwood(
+        dbPath: dbPath,
+        lightwalletdUrl: lightwalletdUrl,
+        network: network,
+        accountUuid: accountUuid,
+        mnemonicBytes: mnemonicBytes,
+        amountZatoshi: BigInt.from(_amountPerTransferZatoshi),
+        transferCount: _transferCount,
+      );
+    } finally {
+      mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+    }
+  }
+
   String _friendlyError(Object error) {
     if (error is MigrationBatchError) return error.message;
     final lower = error.toString().toLowerCase();
@@ -190,7 +217,7 @@ class _MigrationSigningOverlayState
     if (lower.contains('sync') || lower.contains('scan required')) {
       return 'Sync the wallet before migrating.';
     }
-    return MigrationCopy.genericError;
+    return '${error.runtimeType}: $error';
   }
 
   void _cancel() {

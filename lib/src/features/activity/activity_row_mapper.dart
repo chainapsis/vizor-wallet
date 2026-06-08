@@ -43,9 +43,12 @@ ActivityRowData buildTransactionActivityRow({
   final isReceiving = kind == 'receiving';
   final isSent = kind == 'sent';
   final isShielded = kind == 'shielded';
+  final isMigration = kind == 'migration';
   final isInbound = isReceived || isReceiving;
   final signedAmount = isSent ? -amount : amount;
-  final subtitle = isInbound || isSent
+  final subtitle = isMigration
+      ? 'Orchard to Ironwood'
+      : isInbound || isSent
       ? _poolLabel(transaction.displayPool)
       : null;
 
@@ -63,6 +66,7 @@ ActivityRowData buildTransactionActivityRow({
       signedAmount: signedAmount,
       isFailed: isFailed,
       isShielded: isShielded,
+      isMigration: isMigration,
       kind: kind,
       privacyModeEnabled: privacyModeEnabled,
     ),
@@ -97,6 +101,7 @@ String _transactionAmountText({
   required BigInt signedAmount,
   required bool isFailed,
   required bool isShielded,
+  required bool isMigration,
   required String kind,
   required bool privacyModeEnabled,
 }) {
@@ -108,7 +113,7 @@ String _transactionAmountText({
     );
   }
   if (amount == BigInt.zero) return '--';
-  if (isFailed || isShielded) {
+  if (isFailed || isShielded || isMigration) {
     return ZecAmount.fromZatoshi(amount).activity.toString();
   }
   return ZecAmount.fromZatoshi(signedAmount).signedActivity.toString();
@@ -136,6 +141,7 @@ String _txTitle(String kind) {
     'received' => 'Received',
     'sent' => 'Sent',
     'shielded' => 'Shielded',
+    'migration' => 'Migration',
     _ => 'Transaction',
   };
 }
@@ -146,6 +152,7 @@ String _txIcon(String kind) {
     'received' => AppIcons.arrowDownCircle,
     'sent' => AppIcons.plane,
     'shielded' => AppIcons.shieldKeyholeOutline,
+    'migration' => AppIcons.renew,
     _ => AppIcons.history,
   };
 }
@@ -154,6 +161,7 @@ String? _poolLabel(String pool) {
   return switch (pool) {
     'transparent' => 'Transparent',
     'shielded' => 'Shielded',
+    'ironwood' => 'Ironwood',
     'mixed' => 'Mixed',
     _ => null,
   };

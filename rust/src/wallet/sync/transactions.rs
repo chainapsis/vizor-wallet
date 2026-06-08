@@ -23,6 +23,8 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::OptionalExtension;
 use zcash_client_backend::data_api::{wallet::ConfirmationsPolicy, WalletRead, WalletWrite};
+use zcash_client_sqlite::AccountUuid;
+use zcash_primitives::transaction::TxId;
 use zcash_protocol::{
     consensus::BlockHeight,
     memo::{Memo, MemoBytes},
@@ -32,7 +34,7 @@ use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
 
-use super::{open_readonly_conn, open_wallet_db, open_wallet_db_for_read};
+use super::{open_readonly_conn, open_wallet_db, open_wallet_db_for_read, open_wallet_raw_conn};
 
 // ======================== Balance ========================
 
@@ -40,9 +42,17 @@ pub(crate) struct WalletBalance {
     pub transparent: u64,
     pub sapling: u64,
     pub orchard: u64,
+    pub ironwood: u64,
     pub transparent_pending: u64,
     pub sapling_pending: u64,
     pub orchard_pending: u64,
+    pub ironwood_pending: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct IronwoodBalance {
+    pub spendable: u64,
+    pub pending: u64,
 }
 
 pub fn get_wallet_balance(
@@ -50,45 +60,185 @@ pub fn get_wallet_balance(
     network: WalletNetwork,
     account_uuid: &str,
 ) -> Result<WalletBalance, String> {
-    let db = open_wallet_db_for_read(db_path, network)?;
     let target_id = parse_account_uuid(account_uuid)?;
-    match db
-        .get_wallet_summary(ConfirmationsPolicy::default())
-        .map_err(|e| format!("{e}"))?
-    {
-        Some(s) => match s.account_balances().get(&target_id) {
-            Some(b) => Ok(WalletBalance {
-                transparent: u64::from(b.unshielded_balance().spendable_value()),
-                sapling: u64::from(b.sapling_balance().spendable_value()),
-                orchard: u64::from(b.orchard_balance().spendable_value()),
-                transparent_pending: u64::from(
-                    b.unshielded_balance().change_pending_confirmation(),
-                ) + u64::from(
-                    b.unshielded_balance().value_pending_spendability(),
-                ),
-                sapling_pending: u64::from(b.sapling_balance().change_pending_confirmation())
-                    + u64::from(b.sapling_balance().value_pending_spendability()),
-                orchard_pending: u64::from(b.orchard_balance().change_pending_confirmation())
-                    + u64::from(b.orchard_balance().value_pending_spendability()),
-            }),
-            None => Ok(WalletBalance {
-                transparent: 0,
-                sapling: 0,
-                orchard: 0,
-                transparent_pending: 0,
-                sapling_pending: 0,
-                orchard_pending: 0,
-            }),
-        },
-        None => Ok(WalletBalance {
+    let mut balance = {
+        let db = open_wallet_db_for_read(db_path, network)?;
+        match db
+            .get_wallet_summary(ConfirmationsPolicy::default())
+            .map_err(|e| format!("{e}"))?
+        {
+            Some(s) => match s.account_balances().get(&target_id) {
+                Some(b) => WalletBalance {
+                    transparent: u64::from(b.unshielded_balance().spendable_value()),
+                    sapling: u64::from(b.sapling_balance().spendable_value()),
+                    orchard: u64::from(b.orchard_balance().spendable_value()),
+                    ironwood: 0,
+                    transparent_pending: u64::from(
+                        b.unshielded_balance().change_pending_confirmation(),
+                    ) + u64::from(
+                        b.unshielded_balance().value_pending_spendability(),
+                    ),
+                    sapling_pending: u64::from(b.sapling_balance().change_pending_confirmation())
+                        + u64::from(b.sapling_balance().value_pending_spendability()),
+                    orchard_pending: u64::from(b.orchard_balance().change_pending_confirmation())
+                        + u64::from(b.orchard_balance().value_pending_spendability()),
+                    ironwood_pending: 0,
+                },
+                None => WalletBalance::empty(),
+            },
+            None => WalletBalance::empty(),
+        }
+    };
+
+    let ironwood = get_ironwood_balance(db_path, target_id)?;
+    balance.ironwood = ironwood.spendable;
+    balance.ironwood_pending = ironwood.pending;
+    Ok(balance)
+}
+
+impl WalletBalance {
+    fn empty() -> Self {
+        Self {
             transparent: 0,
             sapling: 0,
             orchard: 0,
+            ironwood: 0,
             transparent_pending: 0,
             sapling_pending: 0,
             orchard_pending: 0,
-        }),
+            ironwood_pending: 0,
+        }
     }
+}
+
+pub(crate) fn record_ironwood_migration_outputs(
+    db_path: &str,
+    account_id: AccountUuid,
+    outputs: &[(TxId, u64)],
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn(db_path)?;
+    ensure_ironwood_accounting_table(&conn)?;
+    insert_ironwood_migration_outputs(&conn, account_id, outputs)
+}
+
+fn get_ironwood_balance(db_path: &str, account_id: AccountUuid) -> Result<IronwoodBalance, String> {
+    with_wallet_db_write_lock("transactions.get_ironwood_balance", || {
+        let conn = open_wallet_raw_conn(db_path)?;
+        ensure_ironwood_accounting_table(&conn)?;
+        backfill_ironwood_migration_outputs(&conn, account_id)?;
+        read_ironwood_balance(&conn, account_id)
+    })
+}
+
+fn ensure_ironwood_accounting_table(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS ext_vizor_ironwood_received_outputs (
+             account_uuid BLOB NOT NULL,
+             txid BLOB NOT NULL,
+             value_zatoshi INTEGER NOT NULL CHECK (value_zatoshi >= 0),
+             created_at INTEGER NOT NULL DEFAULT 0,
+             PRIMARY KEY (account_uuid, txid)
+         );",
+    )
+    .map_err(|e| format!("Failed to ensure Ironwood accounting table: {e}"))
+}
+
+fn insert_ironwood_migration_outputs(
+    conn: &rusqlite::Connection,
+    account_id: AccountUuid,
+    outputs: &[(TxId, u64)],
+) -> Result<(), String> {
+    let account_uuid = account_id.expose_uuid();
+    let account_uuid_bytes = account_uuid.as_bytes().as_slice();
+    for (txid, value_zatoshi) in outputs {
+        let value_zatoshi = zatoshi_to_sql(*value_zatoshi)?;
+        conn.execute(
+            "INSERT OR IGNORE INTO ext_vizor_ironwood_received_outputs (
+                 account_uuid, txid, value_zatoshi
+             ) VALUES (?1, ?2, ?3)",
+            rusqlite::params![account_uuid_bytes, txid.as_ref(), value_zatoshi],
+        )
+        .map_err(|e| format!("Failed to record Ironwood migration output: {e}"))?;
+    }
+    Ok(())
+}
+
+fn backfill_ironwood_migration_outputs(
+    conn: &rusqlite::Connection,
+    account_id: AccountUuid,
+) -> Result<(), String> {
+    let account_uuid = account_id.expose_uuid();
+    let account_uuid_bytes = account_uuid.as_bytes().as_slice();
+    conn.execute(
+        "INSERT OR IGNORE INTO ext_vizor_ironwood_received_outputs (
+             account_uuid, txid, value_zatoshi
+         )
+         SELECT ?1, tx.txid, SUM(note.value) - COALESCE(tx.fee, 0)
+         FROM transactions tx
+         JOIN orchard_received_note_spends spend
+           ON spend.transaction_id = tx.id_tx
+         JOIN orchard_received_notes note
+           ON note.id = spend.orchard_received_note_id
+         JOIN accounts account
+           ON account.id = note.account_id
+         LEFT JOIN v_tx_outputs output
+           ON output.txid = tx.txid
+          AND (output.from_account_uuid = ?1 OR output.to_account_uuid = ?1)
+         WHERE account.uuid = ?1
+           AND tx.raw IS NOT NULL
+           AND COALESCE(tx.fee, 0) >= 0
+         GROUP BY tx.id_tx, tx.txid, tx.fee
+         HAVING COUNT(output.txid) = 0
+            AND SUM(note.value) > COALESCE(tx.fee, 0)",
+        rusqlite::params![account_uuid_bytes],
+    )
+    .map_err(|e| format!("Failed to backfill Ironwood migration outputs: {e}"))?;
+    Ok(())
+}
+
+fn read_ironwood_balance(
+    conn: &rusqlite::Connection,
+    account_id: AccountUuid,
+) -> Result<IronwoodBalance, String> {
+    let account_uuid = account_id.expose_uuid();
+    let account_uuid_bytes = account_uuid.as_bytes().as_slice();
+    let (spendable, pending) = conn
+        .query_row(
+            "SELECT
+             COALESCE(SUM(CASE
+                 WHEN tx.mined_height IS NOT NULL THEN output.value_zatoshi
+                 ELSE 0
+             END), 0),
+             COALESCE(SUM(CASE
+                 WHEN tx.mined_height IS NULL
+                  AND tx.confirmed_unmined_at_height IS NULL
+                 THEN output.value_zatoshi
+                 ELSE 0
+             END), 0)
+         FROM ext_vizor_ironwood_received_outputs output
+         JOIN transactions tx
+           ON tx.txid = output.txid
+         WHERE output.account_uuid = ?1",
+            rusqlite::params![account_uuid_bytes],
+            |row| {
+                let spendable = row.get::<_, i64>(0)?;
+                let pending = row.get::<_, i64>(1)?;
+                Ok((spendable, pending))
+            },
+        )
+        .map_err(|e| format!("Failed to read Ironwood balance: {e}"))?;
+    Ok(IronwoodBalance {
+        spendable: zatoshi_from_sql(spendable)?,
+        pending: zatoshi_from_sql(pending)?,
+    })
+}
+
+fn zatoshi_to_sql(value: u64) -> Result<i64, String> {
+    i64::try_from(value).map_err(|_| "Ironwood value exceeds SQLite INTEGER range".to_string())
+}
+
+fn zatoshi_from_sql(value: i64) -> Result<u64, String> {
+    u64::try_from(value).map_err(|_| "Ironwood accounting value cannot be negative".to_string())
 }
 
 // ======================== Diversified Address ========================
@@ -896,6 +1046,7 @@ fn detail_includes_output(
         "received" | "receiving" => {
             !base.is_shielding && to_own && (!from_own || is_user_visible_self_output(output))
         }
+        "migration" => false,
         _ => false,
     }
 }
@@ -1015,6 +1166,17 @@ fn classify_history_tx(base: &TxBase, summary: &ActivitySummary) -> Vec<Classifi
     }
 
     if rows.is_empty() {
+        if is_ironwood_migration_candidate(base, summary) {
+            rows.push(build_classified_tx(
+                base,
+                "migration",
+                base.total_spent.saturating_sub(base.fee),
+                "ironwood",
+                false,
+                1,
+            ));
+            return rows;
+        }
         if base.mined_height.is_none() && base.account_balance_delta < 0 && base.total_spent > 0 {
             let sent_amount = base
                 .account_balance_delta
@@ -1050,6 +1212,16 @@ fn classify_history_tx(base: &TxBase, summary: &ActivitySummary) -> Vec<Classifi
     }
 
     rows
+}
+
+fn is_ironwood_migration_candidate(base: &TxBase, summary: &ActivitySummary) -> bool {
+    !base.is_shielding
+        && !base.expired_unmined
+        && base.account_balance_delta < 0
+        && base.total_spent > 0
+        && base.total_received == 0
+        && summary.sent.amount == 0
+        && summary.received.amount == 0
 }
 
 fn receiving_tx_kind(base: &TxBase) -> &'static str {
@@ -1317,6 +1489,160 @@ mod tests {
 
     fn fake_txid(byte: u8) -> [u8; 32] {
         [byte; 32]
+    }
+
+    fn tx_base_for_history() -> TxBase {
+        TxBase {
+            txid: fake_txid(1).to_vec(),
+            mined_height: Some(121),
+            expired_unmined: false,
+            account_balance_delta: -625_000_000,
+            fee: 20_000,
+            block_time: 1_800_000_000,
+            total_spent: 625_000_000,
+            total_received: 0,
+            is_shielding: false,
+            expiry_height: Some(122),
+            tx_index: 0,
+            created: None,
+            created_time: 0,
+        }
+    }
+
+    #[test]
+    fn classify_orchard_to_ironwood_migration_shows_moved_amount() {
+        let rows = classify_history_tx(&tx_base_for_history(), &ActivitySummary::default());
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].info.tx_kind, "migration");
+        assert_eq!(rows[0].info.display_amount, 624_980_000);
+        assert_eq!(rows[0].info.display_pool, "ironwood");
+    }
+
+    fn fresh_ironwood_accounting_db() -> NamedTempFile {
+        let file = NamedTempFile::new().unwrap();
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE accounts (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 uuid BLOB NOT NULL UNIQUE
+             );
+             CREATE TABLE transactions (
+                 id_tx INTEGER PRIMARY KEY AUTOINCREMENT,
+                 txid BLOB NOT NULL UNIQUE,
+                 raw BLOB,
+                 fee INTEGER,
+                 mined_height INTEGER,
+                 confirmed_unmined_at_height INTEGER
+             );
+             CREATE TABLE orchard_received_notes (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 transaction_id INTEGER NOT NULL,
+                 account_id INTEGER NOT NULL,
+                 value INTEGER NOT NULL
+             );
+             CREATE TABLE orchard_received_note_spends (
+                 orchard_received_note_id INTEGER NOT NULL,
+                 transaction_id INTEGER NOT NULL
+             );
+             CREATE TABLE v_tx_outputs (
+                 txid BLOB NOT NULL,
+                 from_account_uuid BLOB,
+                 to_account_uuid BLOB
+             );",
+        )
+        .unwrap();
+        file
+    }
+
+    fn insert_orchard_migration_candidate(
+        conn: &rusqlite::Connection,
+        account: uuid::Uuid,
+        txid: &[u8],
+        note_value: i64,
+        fee: i64,
+        mined_height: Option<i64>,
+    ) {
+        conn.execute(
+            "INSERT OR IGNORE INTO accounts (uuid) VALUES (?1)",
+            rusqlite::params![account.as_bytes().as_slice()],
+        )
+        .unwrap();
+        let account_id = conn
+            .query_row(
+                "SELECT id FROM accounts WHERE uuid = ?1",
+                rusqlite::params![account.as_bytes().as_slice()],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap();
+        conn.execute(
+            "INSERT INTO transactions (txid, raw, fee, mined_height)
+             VALUES (?1, x'deadbeef', ?2, ?3)",
+            rusqlite::params![txid, fee, mined_height],
+        )
+        .unwrap();
+        let spend_tx_id = conn.last_insert_rowid();
+        let received_txid = fake_txid(0x44);
+        conn.execute(
+            "INSERT INTO transactions (txid, raw, fee)
+             VALUES (?1, x'00', 0)",
+            rusqlite::params![received_txid.as_slice()],
+        )
+        .unwrap();
+        let received_tx_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO orchard_received_notes (transaction_id, account_id, value)
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![received_tx_id, account_id, note_value],
+        )
+        .unwrap();
+        let note_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO orchard_received_note_spends (
+                 orchard_received_note_id, transaction_id
+             ) VALUES (?1, ?2)",
+            rusqlite::params![note_id, spend_tx_id],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn ironwood_accounting_backfills_and_reads_confirmed_migration_outputs() {
+        let db = fresh_ironwood_accounting_db();
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        let account = test_account_uuid();
+        let account_id = AccountUuid::from_uuid(account);
+        let txid = fake_txid(0x42);
+        insert_orchard_migration_candidate(&conn, account, &txid, 625_000_000, 20_000, Some(121));
+
+        ensure_ironwood_accounting_table(&conn).unwrap();
+        backfill_ironwood_migration_outputs(&conn, account_id).unwrap();
+        let balance = read_ironwood_balance(&conn, account_id).unwrap();
+
+        assert_eq!(balance.spendable, 624_980_000);
+        assert_eq!(balance.pending, 0);
+    }
+
+    #[test]
+    fn ironwood_accounting_reads_recorded_unmined_outputs_as_pending() {
+        let db = fresh_ironwood_accounting_db();
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        let account = test_account_uuid();
+        let account_id = AccountUuid::from_uuid(account);
+        let txid = TxId::from_bytes(fake_txid(0x43));
+        conn.execute(
+            "INSERT INTO transactions (txid, raw, fee)
+             VALUES (?1, x'deadbeef', 20_000)",
+            rusqlite::params![txid.as_ref()],
+        )
+        .unwrap();
+
+        ensure_ironwood_accounting_table(&conn).unwrap();
+        insert_ironwood_migration_outputs(&conn, account_id, &[(txid, 624_980_000)]).unwrap();
+        let balance = read_ironwood_balance(&conn, account_id).unwrap();
+
+        assert_eq!(balance.spendable, 0);
+        assert_eq!(balance.pending, 624_980_000);
     }
 
     fn fake_raw() -> Vec<u8> {

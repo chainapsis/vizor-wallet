@@ -63,7 +63,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     try {
       final dbPath = await _getDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
-      final network = endpoint.networkName;
+      final network = endpoint.walletNetworkName;
+      final publicNetwork = endpoint.networkName;
 
       final birthday = await _fetchCreationBirthdayHeight();
       log('createAccount: birthday=$birthday');
@@ -87,7 +88,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         mnemonic = result.mnemonic;
         accountUuid = result.accountUuid;
         unifiedAddress = result.unifiedAddress;
-        await _storage.writeString(_networkKey, network);
+        await _storage.writeString(_networkKey, publicNetwork);
       } else {
         // Additional account — generate mnemonic + add to existing DB
         mnemonic = rust_wallet.generateMnemonic();
@@ -144,7 +145,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     try {
       final dbPath = await _getDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
-      final network = endpoint.networkName;
+      final network = endpoint.walletNetworkName;
+      final publicNetwork = endpoint.networkName;
 
       final birthday = await _fetchCreationBirthdayHeight();
       log('createAccountFromMnemonic: birthday=$birthday');
@@ -166,7 +168,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         );
         accountUuid = result.accountUuid;
         unifiedAddress = result.unifiedAddress;
-        await _storage.writeString(_networkKey, network);
+        await _storage.writeString(_networkKey, publicNetwork);
       } else {
         final result = await rust_wallet.addAccount(
           dbPath: dbPath,

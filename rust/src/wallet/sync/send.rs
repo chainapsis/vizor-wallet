@@ -80,7 +80,7 @@ use crate::wallet::network::WalletNetwork;
 
 use super::{
     consume_stored_proposal, open_readonly_conn, open_wallet_db, open_wallet_db_for_read,
-    StoredProposal, WalletDatabase, PROPOSAL_STORE,
+    record_ironwood_migration_outputs, StoredProposal, WalletDatabase, PROPOSAL_STORE,
 };
 
 /// Result of a successful [`propose_send`]. `proposal_id` is the
@@ -694,8 +694,9 @@ pub async fn migrate_orchard_to_ironwood(
         return Err("Migration amount must be greater than zero".to_string());
     }
 
-    let (txids, fee_zatoshi, migrated_zatoshi) =
-        with_wallet_db_write_lock("send.migrate_orchard_to_ironwood", move || {
+    let (txids, fee_zatoshi, migrated_zatoshi) = with_wallet_db_write_lock(
+        "send.migrate_orchard_to_ironwood",
+        move || {
             let mut db = open_wallet_db(db_path, network)?;
             let account_id = parse_account_uuid(account_uuid)?;
             let account = db
@@ -716,6 +717,7 @@ pub async fn migrate_orchard_to_ironwood(
             let spending_keys = wallet::SpendingKeys::from_unified_spending_key(usk);
             let fee_rule = ConservativeZip317FeeRule;
             let mut txids = Vec::with_capacity(transfer_count as usize);
+            let mut ironwood_outputs = Vec::with_capacity(transfer_count as usize);
             let mut total_fee = Zatoshis::ZERO;
             let mut total_migrated = Zatoshis::ZERO;
 
@@ -725,7 +727,7 @@ pub async fn migrate_orchard_to_ironwood(
                     Memo::from_bytes(memo_text.as_bytes())
                         .map_err(|e| format!("Bad migration memo: {e}"))?,
                 );
-                let transaction = create_orchard_to_ironwood_transaction(
+                let transaction = match create_orchard_to_ironwood_transaction(
                     &mut db,
                     &network,
                     &spend_prover,
@@ -736,18 +738,43 @@ pub async fn migrate_orchard_to_ironwood(
                     Some(memo),
                     &fee_rule,
                     ConfirmationsPolicy::default(),
-                )
-                .map_err(|e| format!("Create Ironwood migration TX failed: {e}"))?;
+                ) {
+                    Ok(transaction) => transaction,
+                    Err(e) if !txids.is_empty() => {
+                        log::warn!(
+                            "ironwood_migration: created {} of {transfer_count} migration txs; stopping before tx {}: {e}",
+                            txids.len(),
+                            index + 1,
+                        );
+                        break;
+                    }
+                    Err(e) => {
+                        return Err(format!("Create Ironwood migration TX failed: {e}"));
+                    }
+                };
 
-                total_fee =
-                    (total_fee + transaction.fee_amount()).ok_or("Migration fee total overflow")?;
-                total_migrated = (total_migrated + transaction.migrated_amount())
-                    .ok_or("Migration amount total overflow")?;
-                txids.push(transaction.txid());
+                let txid = transaction.txid();
+                let fee_amount = transaction.fee_amount();
+                let migrated_amount = transaction.migrated_amount();
+                total_fee = (total_fee + fee_amount).ok_or("Migration fee total overflow")?;
+                total_migrated =
+                    (total_migrated + migrated_amount).ok_or("Migration amount total overflow")?;
+                ironwood_outputs.push((txid, u64::from(migrated_amount)));
+                txids.push(txid);
             }
 
+            if txids.is_empty() {
+                return Err(
+                    "Create Ironwood migration TX failed: no migration transactions were created"
+                        .to_string(),
+                );
+            }
+
+            drop(db);
+            record_ironwood_migration_outputs(db_path, account_id, &ironwood_outputs)?;
             Ok::<_, String>((txids, total_fee, total_migrated))
-        })?;
+        },
+    )?;
 
     let broadcast =
         broadcast_created_transactions(db_path, lightwalletd_url, &txids, "ironwood_migration")

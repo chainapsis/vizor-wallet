@@ -7143,17 +7143,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletBalance dco_decode_wallet_balance(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return WalletBalance(
       transparent: dco_decode_u_64(arr[0]),
       sapling: dco_decode_u_64(arr[1]),
       orchard: dco_decode_u_64(arr[2]),
-      transparentPending: dco_decode_u_64(arr[3]),
-      saplingPending: dco_decode_u_64(arr[4]),
-      orchardPending: dco_decode_u_64(arr[5]),
-      spendable: dco_decode_u_64(arr[6]),
-      total: dco_decode_u_64(arr[7]),
+      ironwood: dco_decode_u_64(arr[3]),
+      transparentPending: dco_decode_u_64(arr[4]),
+      saplingPending: dco_decode_u_64(arr[5]),
+      orchardPending: dco_decode_u_64(arr[6]),
+      ironwoodPending: dco_decode_u_64(arr[7]),
+      spendable: dco_decode_u_64(arr[8]),
+      total: dco_decode_u_64(arr[9]),
     );
   }
 
@@ -9245,18 +9247,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_transparent = sse_decode_u_64(deserializer);
     var var_sapling = sse_decode_u_64(deserializer);
     var var_orchard = sse_decode_u_64(deserializer);
+    var var_ironwood = sse_decode_u_64(deserializer);
     var var_transparentPending = sse_decode_u_64(deserializer);
     var var_saplingPending = sse_decode_u_64(deserializer);
     var var_orchardPending = sse_decode_u_64(deserializer);
+    var var_ironwoodPending = sse_decode_u_64(deserializer);
     var var_spendable = sse_decode_u_64(deserializer);
     var var_total = sse_decode_u_64(deserializer);
     return WalletBalance(
       transparent: var_transparent,
       sapling: var_sapling,
       orchard: var_orchard,
+      ironwood: var_ironwood,
       transparentPending: var_transparentPending,
       saplingPending: var_saplingPending,
       orchardPending: var_orchardPending,
+      ironwoodPending: var_ironwoodPending,
       spendable: var_spendable,
       total: var_total,
     );
@@ -10999,9 +11005,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.transparent, serializer);
     sse_encode_u_64(self.sapling, serializer);
     sse_encode_u_64(self.orchard, serializer);
+    sse_encode_u_64(self.ironwood, serializer);
     sse_encode_u_64(self.transparentPending, serializer);
     sse_encode_u_64(self.saplingPending, serializer);
     sse_encode_u_64(self.orchardPending, serializer);
+    sse_encode_u_64(self.ironwoodPending, serializer);
     sse_encode_u_64(self.spendable, serializer);
     sse_encode_u_64(self.total, serializer);
   }

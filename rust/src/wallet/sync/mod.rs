@@ -17,8 +17,8 @@ use zcash_protocol::consensus::BlockHeight;
 use crate::wallet::{
     db::{
         open_readonly_conn_with_timeout, open_wallet_db_for_read_with_timeout,
-        open_wallet_db_with_timeout, with_wallet_db_write_lock, WalletDatabase,
-        READ_DB_BUSY_TIMEOUT, WALLET_DB_BUSY_TIMEOUT,
+        open_wallet_db_with_timeout, open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock,
+        WalletDatabase, READ_DB_BUSY_TIMEOUT, WALLET_DB_BUSY_TIMEOUT,
     },
     network::WalletNetwork,
 };
@@ -74,9 +74,9 @@ pub use transactions::{
 };
 #[allow(unused_imports)] // ditto
 pub(crate) use transactions::{
-    get_export_birthday_anchor, get_oldest_mined_transaction_anchor, ExportBirthdayAnchor,
-    PendingTxInfo, TransactionDetail, TransactionDetailOutput, TransactionInfo, TxDataRequest,
-    WalletBalance,
+    get_export_birthday_anchor, get_oldest_mined_transaction_anchor,
+    record_ironwood_migration_outputs, ExportBirthdayAnchor, PendingTxInfo, TransactionDetail,
+    TransactionDetailOutput, TransactionInfo, TxDataRequest, WalletBalance,
 };
 
 pub(super) fn open_wallet_db(
@@ -95,6 +95,10 @@ pub(crate) fn open_wallet_db_for_read(
 
 pub(crate) fn open_readonly_conn(db_path: &str) -> Result<rusqlite::Connection, String> {
     open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))
+}
+
+pub(crate) fn open_wallet_raw_conn(db_path: &str) -> Result<rusqlite::Connection, String> {
+    open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)
 }
 
 pub(crate) fn open_readonly_conn_fail_fast(db_path: &str) -> Result<rusqlite::Connection, String> {

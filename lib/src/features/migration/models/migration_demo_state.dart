@@ -2,7 +2,7 @@ import 'dart:convert';
 
 /// Persisted, time-derived state for the (faked) Orchard→Ironwood migration.
 ///
-/// The migration is theater: all three transfers are broadcast immediately.
+/// The migration is theater: all transfers are broadcast immediately.
 /// Everything time-based here is computed from [startedAtEpochMs] against a
 /// caller-supplied `now`, so it stays pure and testable.
 class MigrationDemoState {
@@ -25,9 +25,9 @@ class MigrationDemoState {
   final List<String> txids;
 
   static const int defaultDurationMs = 24 * 60 * 60 * 1000;
-  static const int transferCount = 3;
 
-  int _rawElapsed(DateTime now) => now.millisecondsSinceEpoch - startedAtEpochMs;
+  int _rawElapsed(DateTime now) =>
+      now.millisecondsSinceEpoch - startedAtEpochMs;
 
   int elapsedMs(DateTime now) => _rawElapsed(now).clamp(0, totalDurationMs);
 
@@ -52,23 +52,25 @@ class MigrationDemoState {
   }
 
   Map<String, dynamic> toJson() => {
-        'accountUuid': accountUuid,
-        'startedAtEpochMs': startedAtEpochMs,
-        'totalDurationMs': totalDurationMs,
-        'displayAmountZatoshi': displayAmountZatoshi.toString(),
-        'transferOffsetsMs': transferOffsetsMs,
-        'txids': txids,
-      };
+    'accountUuid': accountUuid,
+    'startedAtEpochMs': startedAtEpochMs,
+    'totalDurationMs': totalDurationMs,
+    'displayAmountZatoshi': displayAmountZatoshi.toString(),
+    'transferOffsetsMs': transferOffsetsMs,
+    'txids': txids,
+  };
 
   static MigrationDemoState fromJson(Map<String, dynamic> json) =>
       MigrationDemoState(
         accountUuid: json['accountUuid'] as String,
         startedAtEpochMs: json['startedAtEpochMs'] as int,
         totalDurationMs: json['totalDurationMs'] as int,
-        displayAmountZatoshi:
-            BigInt.parse(json['displayAmountZatoshi'] as String),
-        transferOffsetsMs:
-            (json['transferOffsetsMs'] as List).map((e) => e as int).toList(),
+        displayAmountZatoshi: BigInt.parse(
+          json['displayAmountZatoshi'] as String,
+        ),
+        transferOffsetsMs: (json['transferOffsetsMs'] as List)
+            .map((e) => e as int)
+            .toList(),
         txids: (json['txids'] as List).map((e) => e as String).toList(),
       );
 

@@ -320,7 +320,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         final result = await rust_sync.extractAndBroadcastPczt(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          network: endpoint.networkName,
+          network: endpoint.walletNetworkName,
           pcztWithProofsBytes: keystone.pcztWithProofsBytes,
           pcztWithSignaturesBytes: keystone.pcztWithSignaturesBytes,
           spendParamsPath: widget.args.needsSaplingParams
