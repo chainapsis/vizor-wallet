@@ -24,7 +24,6 @@ const WATCH_CLASS_RECENT: &str = "warm_recent";
 const WATCH_CLASS_ARCHIVED: &str = "archived_ledger";
 const NO_KEY_SCOPE: i64 = -1;
 const NO_CHILD_INDEX: i64 = -1;
-const ARCHIVED_SWEEP_BUCKETS: u32 = 20;
 const ARCHIVED_SWEEP_LIMIT_PER_ACCOUNT: i64 = 8;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,6 +57,11 @@ pub(super) fn ensure_watch_table(db_path: &str) -> Result<(), SyncError> {
             CREATE INDEX IF NOT EXISTS idx_transparent_watch_account_bucket_next
                 ON {TRANSPARENT_WATCH_TABLE} (
                     account_uuid, sweep_bucket, next_utxo_query_height
+                );
+            CREATE INDEX IF NOT EXISTS idx_transparent_watch_account_class_last_next
+                ON {TRANSPARENT_WATCH_TABLE} (
+                    account_uuid, watch_class, last_utxo_query_height,
+                    next_utxo_query_height
                 );"
         ))
         .map_err(|e| SyncError::db(format!("transparent watch create table: {e}")))
@@ -265,7 +269,7 @@ pub(super) fn complete_refresh_batch(
                     ":frontier": WATCH_CLASS_FRONTIER,
                     ":key_scope": NO_KEY_SCOPE,
                     ":child_index": NO_CHILD_INDEX,
-                    ":sweep_bucket": sweep_bucket(address),
+                    ":sweep_bucket": 0,
                     ":next_height": u32::from(next_height),
                     ":tip_height": u32::from(tip_height),
                 ],
@@ -399,14 +403,20 @@ fn select_refresh_batches(
         &format!(
             "watch_class IN ('{WATCH_CLASS_RECEIVE}', '{WATCH_CLASS_FRONTIER}', '{WATCH_CLASS_UNSPENT}', '{WATCH_CLASS_RECENT}')"
         ),
+        "next_utxo_query_height, child_index, address",
         None,
     )?;
     let archived_rows = select_rows(
         &conn,
         account_id,
         tip_height,
-        "watch_class = 'archived_ledger' AND sweep_bucket = :sweep_bucket",
-        Some(i64::from(u32::from(tip_height) % ARCHIVED_SWEEP_BUCKETS)),
+        "watch_class = 'archived_ledger'",
+        "last_utxo_query_height IS NOT NULL,
+             last_utxo_query_height,
+             next_utxo_query_height,
+             child_index,
+             address",
+        Some(ARCHIVED_SWEEP_LIMIT_PER_ACCOUNT),
     )?;
 
     let mut grouped = BTreeMap::<u32, BTreeSet<String>>::new();
@@ -431,10 +441,11 @@ fn select_rows(
     account_id: AccountUuid,
     tip_height: BlockHeight,
     filter: &str,
-    sweep_bucket_param: Option<i64>,
+    order_by: &str,
+    limit: Option<i64>,
 ) -> Result<Vec<WatchRow>, SyncError> {
-    let limit_clause = if sweep_bucket_param.is_some() {
-        format!("LIMIT {ARCHIVED_SWEEP_LIMIT_PER_ACCOUNT}")
+    let limit_clause = if let Some(limit) = limit {
+        format!("LIMIT {limit}")
     } else {
         String::new()
     };
@@ -445,29 +456,13 @@ fn select_rows(
              WHERE account_uuid = :account_uuid
                AND next_utxo_query_height <= :tip_height
                AND {filter}
-             ORDER BY next_utxo_query_height, child_index, address
+             ORDER BY {order_by}
              {limit_clause}"
         ))
         .map_err(|e| SyncError::db(format!("transparent watch select rows: {e}")))?;
 
-    let rows = if let Some(sweep_bucket) = sweep_bucket_param {
-        stmt.query_map(
-            named_params![
-                ":account_uuid": account_id.expose_uuid(),
-                ":tip_height": u32::from(tip_height),
-                ":sweep_bucket": sweep_bucket,
-            ],
-            |row| {
-                Ok(WatchRow {
-                    address: row.get(0)?,
-                    next_utxo_query_height: row.get(1)?,
-                })
-            },
-        )
-        .map_err(|e| SyncError::db(format!("transparent watch rows: {e}")))?
-        .collect::<Result<Vec<_>, _>>()
-    } else {
-        stmt.query_map(
+    let rows = stmt
+        .query_map(
             named_params![
                 ":account_uuid": account_id.expose_uuid(),
                 ":tip_height": u32::from(tip_height),
@@ -481,8 +476,7 @@ fn select_rows(
         )
         .map_err(|e| SyncError::db(format!("transparent watch rows: {e}")))?
         .collect::<Result<Vec<_>, _>>()
-    }
-    .map_err(|e| SyncError::db(format!("transparent watch row decode: {e}")))?;
+        .map_err(|e| SyncError::db(format!("transparent watch row decode: {e}")))?;
 
     Ok(rows)
 }
@@ -591,7 +585,7 @@ fn upsert_watch_address(
                 ":archived": WATCH_CLASS_ARCHIVED,
                 ":key_scope": key_scope,
                 ":child_index": child_index,
-                ":sweep_bucket": sweep_bucket(address),
+                ":sweep_bucket": 0,
                 ":next_height": u32::from(next_query_height),
                 ":updated_height": u32::from(updated_height),
             ],
@@ -609,15 +603,6 @@ fn scope_code(scope: TransparentKeyScope) -> i64 {
     } else {
         2
     }
-}
-
-fn sweep_bucket(address: &str) -> i64 {
-    let mut hash = 0xcbf29ce484222325u64;
-    for byte in address.as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    (hash % u64::from(ARCHIVED_SWEEP_BUCKETS)) as i64
 }
 
 struct WatchRow {
@@ -826,5 +811,88 @@ mod tests {
             )
             .unwrap();
         assert_eq!(row, (WATCH_CLASS_UNSPENT.to_string(), 21));
+    }
+
+    #[test]
+    fn archived_selection_ignores_sweep_bucket() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let account_id = AccountUuid::from_uuid(uuid::Uuid::from_u128(5));
+
+        upsert_watch_address(
+            db_path,
+            account_id,
+            "tmArchived",
+            WATCH_CLASS_ARCHIVED,
+            0,
+            0,
+            BlockHeight::from_u32(10),
+            BlockHeight::from_u32(10),
+        )
+        .unwrap();
+
+        let conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT).unwrap();
+        conn.execute(
+            &format!(
+                "UPDATE {TRANSPARENT_WATCH_TABLE}
+                 SET sweep_bucket = 19
+                 WHERE account_uuid = :account_uuid AND address = 'tmArchived'"
+            ),
+            named_params![":account_uuid": account_id.expose_uuid()],
+        )
+        .unwrap();
+        drop(conn);
+
+        let selected = selected_addresses(db_path, account_id, BlockHeight::from_u32(20)).unwrap();
+        assert_eq!(selected, vec!["tmArchived"]);
+    }
+
+    #[test]
+    fn archived_limit_rotates_to_never_checked_rows() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let account_id = AccountUuid::from_uuid(uuid::Uuid::from_u128(6));
+
+        for index in 0..10 {
+            upsert_watch_address(
+                db_path,
+                account_id,
+                &format!("tm{index:02}"),
+                WATCH_CLASS_ARCHIVED,
+                0,
+                index,
+                BlockHeight::from_u32(10),
+                BlockHeight::from_u32(10),
+            )
+            .unwrap();
+        }
+
+        let first = selected_addresses(db_path, account_id, BlockHeight::from_u32(10)).unwrap();
+        assert_eq!(first.len(), ARCHIVED_SWEEP_LIMIT_PER_ACCOUNT as usize);
+        assert!(first.contains(&"tm00".to_string()));
+        assert!(first.contains(&"tm07".to_string()));
+        assert!(!first.contains(&"tm08".to_string()));
+        assert!(!first.contains(&"tm09".to_string()));
+
+        complete_refresh_batch(db_path, account_id, &first, &[], BlockHeight::from_u32(20))
+            .unwrap();
+
+        let second = selected_addresses(db_path, account_id, BlockHeight::from_u32(21)).unwrap();
+        assert_eq!(second.len(), ARCHIVED_SWEEP_LIMIT_PER_ACCOUNT as usize);
+        assert!(second.contains(&"tm08".to_string()));
+        assert!(second.contains(&"tm09".to_string()));
+    }
+
+    fn selected_addresses(
+        db_path: &str,
+        account_id: AccountUuid,
+        tip_height: BlockHeight,
+    ) -> Result<Vec<String>, SyncError> {
+        Ok(select_refresh_batches(db_path, account_id, tip_height)?
+            .into_iter()
+            .flat_map(|batch| batch.addresses)
+            .collect())
     }
 }
