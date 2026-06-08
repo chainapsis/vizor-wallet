@@ -275,22 +275,21 @@ final _routerProvider = Provider<GoRouter>((ref) {
       // Other routes stay on the GoRouter default.
       GoRoute(
         path: '/welcome',
-        pageBuilder: (context, state) => CustomTransitionPage<void>(
-          key: state.pageKey,
-          transitionDuration: kOnboardingForwardDuration,
-          reverseTransitionDuration: kOnboardingReverseDuration,
-          child: const WelcomeScreen(),
-          transitionsBuilder: _onboardingFadeTransition,
-        ),
+        pageBuilder: (context, state) =>
+            _onboardingPage(state, const WelcomeScreen()),
       ),
       GoRoute(
         path: '/add-account',
-        pageBuilder: (context, state) => CustomTransitionPage<void>(
-          key: state.pageKey,
-          transitionDuration: kOnboardingForwardDuration,
-          reverseTransitionDuration: kOnboardingReverseDuration,
-          child: const WelcomeScreen(showBackButton: true),
-          transitionsBuilder: _onboardingFadeTransition,
+        pageBuilder: (context, state) => _onboardingPage(
+          state,
+          const WelcomeScreen(showBackButton: true),
+          onBackSwipe: (context) {
+            if (context.canPop()) {
+              context.pop();
+              return;
+            }
+            context.go('/home');
+          },
         ),
       ),
       ShellRoute(
@@ -310,32 +309,26 @@ final _routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: '/onboarding/intro',
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: const IntroZcashScreen(),
-              transitionsBuilder: _onboardingFadeTransition,
+            pageBuilder: (context, state) => _onboardingPage(
+              state,
+              const IntroZcashScreen(),
+              onBackSwipe: _goBackTo('/welcome'),
             ),
           ),
           GoRoute(
             path: '/onboarding/address-types',
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: const AddressTypesScreen(),
-              transitionsBuilder: _onboardingFadeTransition,
+            pageBuilder: (context, state) => _onboardingPage(
+              state,
+              const AddressTypesScreen(),
+              onBackSwipe: _goBackTo(OnboardingStep.intro.routePath),
             ),
           ),
           GoRoute(
             path: '/onboarding/things-to-know',
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: const ThingsToKnowScreen(),
-              transitionsBuilder: _onboardingFadeTransition,
+            pageBuilder: (context, state) => _onboardingPage(
+              state,
+              const ThingsToKnowScreen(),
+              onBackSwipe: _goBackTo(OnboardingStep.addressTypes.routePath),
             ),
           ),
           GoRoute(
@@ -345,12 +338,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
                   ? state.extra as CreateSecretPassphraseArgs
                   : null;
 
-              return CustomTransitionPage<void>(
-                key: state.pageKey,
-                transitionDuration: kOnboardingForwardDuration,
-                reverseTransitionDuration: kOnboardingReverseDuration,
-                child: SecretPassphraseScreen(args: args),
-                transitionsBuilder: _onboardingFadeTransition,
+              return _onboardingPage(
+                state,
+                SecretPassphraseScreen(args: args),
+                onBackSwipe: _goBackTo(OnboardingStep.thingsToKnow.routePath),
               );
             },
           ),
@@ -364,15 +355,17 @@ final _routerProvider = Provider<GoRouter>((ref) {
               }
               return OnboardingStep.secretPassphrase.routePath;
             },
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: SetPasswordScreen(
-                args: state.extra as SetPasswordScreenArgs,
-              ),
-              transitionsBuilder: _onboardingFadeTransition,
-            ),
+            pageBuilder: (context, state) {
+              final args = state.extra as SetPasswordScreenArgs;
+              return _onboardingPage(
+                state,
+                SetPasswordScreen(args: args),
+                onBackSwipe: _goBackTo(
+                  args.backRoutePath,
+                  extra: args.backRouteExtra,
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -395,22 +388,20 @@ final _routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: KeystoneOnboardingStep.howToConnect.routePath,
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: const KeystoneHowToConnectScreen(),
-              transitionsBuilder: _onboardingFadeTransition,
+            pageBuilder: (context, state) => _onboardingPage(
+              state,
+              const KeystoneHowToConnectScreen(),
+              onBackSwipe: _goBackTo('/welcome'),
             ),
           ),
           GoRoute(
             path: KeystoneOnboardingStep.scanQrCode.routePath,
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: const KeystoneScanQrScreen(),
-              transitionsBuilder: _onboardingFadeTransition,
+            pageBuilder: (context, state) => _onboardingPage(
+              state,
+              const KeystoneScanQrScreen(),
+              onBackSwipe: _goBackTo(
+                KeystoneOnboardingStep.howToConnect.routePath,
+              ),
             ),
           ),
           GoRoute(
@@ -421,12 +412,12 @@ final _routerProvider = Provider<GoRouter>((ref) {
                   ? KeystoneOnboardingStep.scanQrCode.routePath
                   : null;
             },
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: const KeystoneSelectAccountScreen(),
-              transitionsBuilder: _onboardingFadeTransition,
+            pageBuilder: (context, state) => _onboardingPage(
+              state,
+              const KeystoneSelectAccountScreen(),
+              onBackSwipe: _goBackTo(
+                KeystoneOnboardingStep.scanQrCode.routePath,
+              ),
             ),
           ),
           GoRoute(
@@ -440,12 +431,12 @@ final _routerProvider = Provider<GoRouter>((ref) {
                   ? KeystoneOnboardingStep.selectAccount.routePath
                   : null;
             },
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: const KeystoneWalletBirthdayScreen(),
-              transitionsBuilder: _onboardingFadeTransition,
+            pageBuilder: (context, state) => _onboardingPage(
+              state,
+              const KeystoneWalletBirthdayScreen(),
+              onBackSwipe: _goBackTo(
+                KeystoneOnboardingStep.selectAccount.routePath,
+              ),
             ),
           ),
           GoRoute(
@@ -458,15 +449,17 @@ final _routerProvider = Provider<GoRouter>((ref) {
               }
               return KeystoneOnboardingStep.walletBirthdayHeight.routePath;
             },
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: SetPasswordScreen(
-                args: state.extra as SetPasswordScreenArgs,
-              ),
-              transitionsBuilder: _onboardingFadeTransition,
-            ),
+            pageBuilder: (context, state) {
+              final args = state.extra as SetPasswordScreenArgs;
+              return _onboardingPage(
+                state,
+                SetPasswordScreen(args: args),
+                onBackSwipe: _goBackTo(
+                  args.backRoutePath,
+                  extra: args.backRouteExtra,
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -492,12 +485,16 @@ final _routerProvider = Provider<GoRouter>((ref) {
                   ? state.extra as ImportSecretPassphraseArgs
                   : null;
 
-              return CustomTransitionPage<void>(
-                key: state.pageKey,
-                transitionDuration: kOnboardingForwardDuration,
-                reverseTransitionDuration: kOnboardingReverseDuration,
-                child: ImportSecretPassphraseScreen(args: args),
-                transitionsBuilder: _onboardingFadeTransition,
+              return _onboardingPage(
+                state,
+                ImportSecretPassphraseScreen(args: args),
+                onBackSwipe: (context) {
+                  if (context.canPop()) {
+                    context.pop();
+                    return;
+                  }
+                  context.go('/welcome');
+                },
               );
             },
           ),
@@ -505,15 +502,17 @@ final _routerProvider = Provider<GoRouter>((ref) {
             path: '/import/birthday',
             redirect: (_, state) =>
                 state.extra is ImportBirthdayArgs ? null : '/import',
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: ImportWalletBirthdayScreen(
-                args: state.extra as ImportBirthdayArgs,
-              ),
-              transitionsBuilder: _onboardingFadeTransition,
-            ),
+            pageBuilder: (context, state) {
+              final args = state.extra as ImportBirthdayArgs;
+              return _onboardingPage(
+                state,
+                ImportWalletBirthdayScreen(args: args),
+                onBackSwipe: _goBackTo(
+                  '/import',
+                  extra: ImportSecretPassphraseArgs(mnemonic: args.mnemonic),
+                ),
+              );
+            },
           ),
           GoRoute(
             path: '/import/set-password',
@@ -528,12 +527,13 @@ final _routerProvider = Provider<GoRouter>((ref) {
             pageBuilder: (context, state) {
               final args = state.extra as SetPasswordScreenArgs;
 
-              return CustomTransitionPage<void>(
-                key: state.pageKey,
-                transitionDuration: kOnboardingForwardDuration,
-                reverseTransitionDuration: kOnboardingReverseDuration,
-                child: SetPasswordScreen(args: args),
-                transitionsBuilder: _onboardingFadeTransition,
+              return _onboardingPage(
+                state,
+                SetPasswordScreen(args: args),
+                onBackSwipe: _goBackTo(
+                  args.backRoutePath,
+                  extra: args.backRouteExtra,
+                ),
               );
             },
           ),
@@ -542,7 +542,11 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/unlock', builder: (_, _) => const UnlockScreen()),
       GoRoute(
         path: '/lost-password',
-        builder: (_, _) => const LostPasswordScreen(),
+        pageBuilder: (_, state) => _onboardingPage(
+          state,
+          const LostPasswordScreen(),
+          onBackSwipe: _goBackTo('/unlock'),
+        ),
       ),
       GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
       GoRoute(path: '/privacy', builder: (_, _) => const PrivacyPolicyScreen()),
@@ -718,6 +722,28 @@ Page<void> _stackPage(GoRouterState state, Widget child) {
   return MaterialPage<void>(key: state.pageKey, child: child);
 }
 
+typedef _OnboardingBackSwipeHandler = void Function(BuildContext context);
+
+Page<void> _onboardingPage(
+  GoRouterState state,
+  Widget child, {
+  _OnboardingBackSwipeHandler? onBackSwipe,
+}) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    transitionDuration: kOnboardingForwardDuration,
+    reverseTransitionDuration: kOnboardingReverseDuration,
+    child: onBackSwipe == null
+        ? child
+        : _OnboardingBackSwipe(onBackSwipe: onBackSwipe, child: child),
+    transitionsBuilder: _onboardingFadeTransition,
+  );
+}
+
+_OnboardingBackSwipeHandler _goBackTo(String path, {Object? extra}) {
+  return (context) => context.go(path, extra: extra);
+}
+
 Page<void> _mainSidebarPage(GoRouterState state, Widget child) {
   if (!shouldUseMobileSidebarTransition(state.extra)) {
     return MaterialPage<void>(key: state.pageKey, child: child);
@@ -744,6 +770,67 @@ Widget _mobileSidebarTransition(
     reverseCurve: Curves.easeInCubic,
   );
   return FadeTransition(opacity: curve, child: child);
+}
+
+class _OnboardingBackSwipe extends StatefulWidget {
+  const _OnboardingBackSwipe({required this.child, required this.onBackSwipe});
+
+  final Widget child;
+  final _OnboardingBackSwipeHandler onBackSwipe;
+
+  @override
+  State<_OnboardingBackSwipe> createState() => _OnboardingBackSwipeState();
+}
+
+class _OnboardingBackSwipeState extends State<_OnboardingBackSwipe> {
+  static const _edgeWidth = 28.0;
+  static const _triggerDistance = 72.0;
+  static const _triggerVelocity = 450.0;
+
+  var _dragDistance = 0.0;
+
+  bool get _enabled => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
+  void _handleDragStart(DragStartDetails details) {
+    _dragDistance = 0;
+  }
+
+  void _handleDragUpdate(DragUpdateDetails details) {
+    _dragDistance += details.delta.dx;
+  }
+
+  void _handleDragEnd(DragEndDetails details) {
+    final velocity = details.velocity.pixelsPerSecond.dx;
+    final shouldGoBack =
+        _dragDistance >= _triggerDistance || velocity >= _triggerVelocity;
+    _dragDistance = 0;
+    if (!shouldGoBack) return;
+    widget.onBackSwipe(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_enabled) return widget.child;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.child,
+        Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: _edgeWidth,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragStart: _handleDragStart,
+            onHorizontalDragUpdate: _handleDragUpdate,
+            onHorizontalDragEnd: _handleDragEnd,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// Cross-fade for onboarding page-level transitions. Both legs keep the
