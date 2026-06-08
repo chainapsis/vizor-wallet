@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/home/screens/home_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
   testWidgets(
@@ -45,6 +46,61 @@ void main() {
     expect(find.text('No activity, yet...'), findsNothing);
     expect(find.text('Loading activity...'), findsOneWidget);
     expect(find.text('Recent Activity'), findsOneWidget);
+  });
+
+  testWidgets('shows compact recent activity rows when history is present', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 768));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _homeHarness(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(150000000),
+          recentTransactions: [
+            _tx(
+              txidHex: '01',
+              txKind: 'received',
+              displayAmount: BigInt.from(46000000),
+            ),
+            _tx(
+              txidHex: '02',
+              txKind: 'sent',
+              displayAmount: BigInt.from(10000000),
+            ),
+            _tx(
+              txidHex: '03',
+              txKind: 'shielded',
+              displayAmount: BigInt.from(985000),
+            ),
+            _tx(
+              txidHex: '04',
+              txKind: 'receiving',
+              displayAmount: BigInt.from(1000000),
+              minedHeight: BigInt.zero,
+              blockTime: BigInt.zero,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('No activity, yet...'), findsNothing);
+    expect(find.text('Recent Activity'), findsOneWidget);
+    expect(find.text('This week'), findsOneWidget);
+    expect(find.text('Received'), findsOneWidget);
+    expect(find.text('Sent'), findsOneWidget);
+    expect(find.text('0.00985 ZEC'), findsOneWidget);
+    expect(find.text('Receiving ...'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('home_recent_activity_row_0'))),
+      const Size(364, 44),
+    );
   });
 }
 
@@ -109,4 +165,28 @@ class _FakeSyncNotifier extends SyncNotifier {
 
   @override
   Future<SyncState> build() async => initialState;
+}
+
+rust_sync.TransactionInfo _tx({
+  required String txidHex,
+  required String txKind,
+  required BigInt displayAmount,
+  BigInt? minedHeight,
+  BigInt? blockTime,
+}) {
+  final resolvedMinedHeight = minedHeight ?? BigInt.from(100);
+  final resolvedBlockTime = blockTime ?? BigInt.from(1717000000);
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: resolvedMinedHeight,
+    expiredUnmined: false,
+    accountBalanceDelta: 0,
+    fee: BigInt.zero,
+    blockTime: resolvedBlockTime,
+    isTransparent: false,
+    txKind: txKind,
+    displayAmount: displayAmount,
+    displayPool: 'shielded',
+    createdTime: resolvedBlockTime,
+  );
 }

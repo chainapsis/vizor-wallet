@@ -776,13 +776,31 @@ class _HomeRecentActivityCard extends StatelessWidget {
   final bool isLoading;
   final VoidCallback onTitleTap;
 
+  static const _cardRadius = AppRadii.medium;
+  static const _cardPadding = AppSpacing.sm;
+  static const _sectionGap = AppSpacing.s;
+  static const _headerHeight = 24.0;
+  static const _dividerHeight = 1.0;
+  static const _listTitleHeight = 24.0;
+  static const _listTitleInset = AppSpacing.xxs;
+  static const _rowHeight = 44.0;
+  static const _rowRadius = AppRadii.small;
+  static const _rowHorizontalPadding = AppSpacing.xxs;
+  static const _rowIconGap = AppSpacing.xs;
+  static const _rowContentGap = AppSpacing.s;
+  static const _rowTrailingMaxWidth = 132.0;
+  static const _rowAvatarSize = 32.0;
+  static const _rowIconSize = 16.0;
+  static const _focusRingOutset = 2.0;
+  static const _focusRingWidth = 2.0;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: colors.background.base,
-        borderRadius: BorderRadius.circular(AppRadii.large),
+        borderRadius: BorderRadius.circular(_cardRadius),
         boxShadow: [
           BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
           BoxShadow(
@@ -795,19 +813,20 @@ class _HomeRecentActivityCard extends StatelessWidget {
             offset: const Offset(0, 2),
             blurRadius: 4,
           ),
+          BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.sm),
+        padding: const EdgeInsets.all(_cardPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _HomeRecentActivityTitle(onTap: onTitleTap),
-            const SizedBox(height: AppSpacing.s),
-            Container(height: 1, color: colors.border.subtle),
-            const SizedBox(height: AppSpacing.s),
+            const SizedBox(height: _sectionGap),
+            Container(height: _dividerHeight, color: colors.border.subtle),
+            const SizedBox(height: _sectionGap),
             const _HomeRecentActivityListTitle(),
-            const SizedBox(height: AppSpacing.s),
+            const SizedBox(height: _sectionGap),
             if (isLoading && rows.isEmpty)
               const _HomeRecentActivityMessage(text: 'Loading activity...')
             else if (rows.isEmpty)
@@ -818,7 +837,7 @@ class _HomeRecentActivityCard extends StatelessWidget {
                   key: ValueKey('home_recent_activity_row_$i'),
                   row: rows[i],
                 ),
-                if (i != rows.length - 1) const SizedBox(height: AppSpacing.s),
+                if (i != rows.length - 1) const SizedBox(height: _sectionGap),
               ],
           ],
         ),
@@ -913,7 +932,7 @@ class _HomeRecentActivityTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
-      height: 24,
+      height: _HomeRecentActivityCard._headerHeight,
       child: Row(
         children: [
           Text(
@@ -940,11 +959,13 @@ class _HomeRecentActivityListTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 24,
+      height: _HomeRecentActivityCard._listTitleHeight,
       child: Align(
         alignment: Alignment.centerLeft,
         child: Padding(
-          padding: const EdgeInsets.only(left: AppSpacing.xxs),
+          padding: const EdgeInsets.only(
+            left: _HomeRecentActivityCard._listTitleInset,
+          ),
           child: Text(
             'This week',
             style: AppTypography.labelMedium.copyWith(
@@ -1012,16 +1033,20 @@ class _HomeActivityCompactRowState extends State<_HomeActivityCompactRow> {
       clipBehavior: Clip.none,
       children: [
         Container(
-          height: 44,
-          padding: const EdgeInsets.all(AppSpacing.xxs),
+          height: _HomeRecentActivityCard._rowHeight,
+          padding: const EdgeInsets.symmetric(
+            horizontal: _HomeRecentActivityCard._rowHorizontalPadding,
+          ),
           decoration: BoxDecoration(
             color: isInteractive && _hovered ? colors.state.hover : null,
-            borderRadius: BorderRadius.circular(AppRadii.small),
+            borderRadius: BorderRadius.circular(
+              _HomeRecentActivityCard._rowRadius,
+            ),
           ),
           child: Row(
             children: [
               _HomeActivityAvatar(row: row, showLoader: isInProgress),
-              const SizedBox(width: AppSpacing.xs),
+              const SizedBox(width: _HomeRecentActivityCard._rowIconGap),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1061,9 +1086,11 @@ class _HomeActivityCompactRowState extends State<_HomeActivityCompactRow> {
                   ],
                 ),
               ),
-              const SizedBox(width: AppSpacing.s),
+              const SizedBox(width: _HomeRecentActivityCard._rowContentGap),
               ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 132),
+                constraints: const BoxConstraints(
+                  maxWidth: _HomeRecentActivityCard._rowTrailingMaxWidth,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1086,15 +1113,21 @@ class _HomeActivityCompactRowState extends State<_HomeActivityCompactRow> {
         ),
         if (isInteractive && _focused)
           Positioned(
-            left: -2,
-            top: -2,
-            right: -2,
-            bottom: -2,
+            left: -_HomeRecentActivityCard._focusRingOutset,
+            top: -_HomeRecentActivityCard._focusRingOutset,
+            right: -_HomeRecentActivityCard._focusRingOutset,
+            bottom: -_HomeRecentActivityCard._focusRingOutset,
             child: IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  border: Border.all(color: colors.state.focusRing, width: 2),
-                  borderRadius: BorderRadius.circular(AppRadii.small + 1),
+                  border: Border.all(
+                    color: colors.state.focusRing,
+                    width: _HomeRecentActivityCard._focusRingWidth,
+                  ),
+                  borderRadius: BorderRadius.circular(
+                    _HomeRecentActivityCard._rowRadius +
+                        (_HomeRecentActivityCard._focusRingWidth / 2),
+                  ),
                 ),
               ),
             ),
@@ -1171,15 +1204,19 @@ class _HomeActivityAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final iconName = showLoader ? AppIcons.loader : row.leadingIconName;
     return SizedBox(
-      width: 32,
-      height: 32,
+      width: _HomeRecentActivityCard._rowAvatarSize,
+      height: _HomeRecentActivityCard._rowAvatarSize,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: row.leadingBackgroundColor,
           shape: BoxShape.circle,
         ),
         child: Center(
-          child: AppIcon(iconName, size: 16, color: row.leadingIconColor),
+          child: AppIcon(
+            iconName,
+            size: _HomeRecentActivityCard._rowIconSize,
+            color: row.leadingIconColor,
+          ),
         ),
       ),
     );
@@ -1210,6 +1247,11 @@ class _HomeRecentActivityMessage extends StatelessWidget {
 Color _homeActivityAmountColor(BuildContext context, ActivityRowData row) {
   final colors = context.colors;
   if (row.statusText == 'Failed') return colors.text.destructive;
+  if (row.statusText == 'In progress' &&
+      row.title != 'Receiving' &&
+      row.title != 'Received') {
+    return colors.text.primary;
+  }
   if (row.amountText.trimLeft().startsWith('+')) {
     return colors.text.positiveStrong;
   }
