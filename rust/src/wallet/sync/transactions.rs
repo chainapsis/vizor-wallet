@@ -413,6 +413,8 @@ pub fn get_transaction_history(
         })
         .collect();
     let external_send_keys = build_external_send_keys(&bases, &summaries);
+    let suppressed_funding_step_fees =
+        build_suppressed_funding_step_fees(&bases, &summaries, &external_send_keys);
 
     let mut visible = Vec::new();
     for base in &bases {
@@ -421,7 +423,15 @@ pub fn get_transaction_history(
             continue;
         }
 
-        visible.extend(classify_history_tx(base, &summary));
+        let extra_sent_fee = if summary.has_external_transparent_send {
+            funding_step_key(base)
+                .and_then(|key| suppressed_funding_step_fees.get(&key).copied())
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
+        visible.extend(classify_history_tx(base, &summary, extra_sent_fee));
     }
 
     visible.retain(|tx| {
@@ -963,6 +973,33 @@ fn build_external_send_keys(
         .collect()
 }
 
+fn build_suppressed_funding_step_fees(
+    bases: &[TxBase],
+    summaries: &HashMap<Vec<u8>, ActivitySummary>,
+    external_send_keys: &HashSet<(String, i64)>,
+) -> HashMap<(String, i64), u64> {
+    let mut fees = HashMap::new();
+
+    for base in bases {
+        let summary = summaries.get(&base.txid).cloned().unwrap_or_default();
+        if !should_suppress_funding_step(base, &summary, external_send_keys) {
+            continue;
+        }
+        if let Some(key) = funding_step_key(base) {
+            let entry = fees.entry(key).or_insert(0_u64);
+            *entry = entry.saturating_add(base.fee);
+        }
+    }
+
+    fees
+}
+
+fn funding_step_key(base: &TxBase) -> Option<(String, i64)> {
+    base.created
+        .as_ref()
+        .map(|created| (created.clone(), base.expiry_key()))
+}
+
 fn should_suppress_funding_step(
     base: &TxBase,
     summary: &ActivitySummary,
@@ -980,7 +1017,11 @@ fn should_suppress_funding_step(
             .contains(&(base.created.clone().unwrap_or_default(), base.expiry_key()))
 }
 
-fn classify_history_tx(base: &TxBase, summary: &ActivitySummary) -> Vec<ClassifiedTx> {
+fn classify_history_tx(
+    base: &TxBase,
+    summary: &ActivitySummary,
+    extra_sent_fee: u64,
+) -> Vec<ClassifiedTx> {
     if base.is_shielding {
         let amount = if summary.shielded.amount > 0 {
             summary.shielded.amount
@@ -994,13 +1035,14 @@ fn classify_history_tx(base: &TxBase, summary: &ActivitySummary) -> Vec<Classifi
 
     let mut rows = Vec::new();
     if summary.sent.amount > 0 {
-        rows.push(build_classified_tx(
+        rows.push(build_classified_tx_with_fee(
             base,
             "sent",
             summary.sent.amount,
             summary.sent.display_pool(),
             summary.sent.has_transparent,
             1,
+            base.fee.saturating_add(extra_sent_fee),
         ));
     }
     if summary.received.amount > 0 {
@@ -1068,6 +1110,26 @@ fn build_classified_tx(
     is_transparent: bool,
     row_order: u8,
 ) -> ClassifiedTx {
+    build_classified_tx_with_fee(
+        base,
+        tx_kind,
+        display_amount,
+        display_pool,
+        is_transparent,
+        row_order,
+        base.fee,
+    )
+}
+
+fn build_classified_tx_with_fee(
+    base: &TxBase,
+    tx_kind: &str,
+    display_amount: u64,
+    display_pool: &str,
+    is_transparent: bool,
+    row_order: u8,
+    fee: u64,
+) -> ClassifiedTx {
     let sort_timestamp = base.display_timestamp();
     ClassifiedTx {
         info: TransactionInfo {
@@ -1075,7 +1137,7 @@ fn build_classified_tx(
             mined_height: base.mined_height.unwrap_or(0) as u64,
             expired_unmined: base.expired_unmined,
             account_balance_delta: base.account_balance_delta,
-            fee: base.fee,
+            fee,
             block_time: base.block_time,
             is_transparent,
             tx_kind: tx_kind.to_string(),
@@ -1849,6 +1911,7 @@ mod tests {
             false,
             Some(created),
         );
+        set_history_fee(&db, &funding_step, 40_000);
         insert_output_with_address(
             &db,
             &funding_step,
@@ -1874,6 +1937,7 @@ mod tests {
             false,
             Some(created),
         );
+        set_history_fee(&db, &external_send, 10_000);
         insert_output(
             &db,
             &external_send,
@@ -1896,6 +1960,7 @@ mod tests {
         assert_eq!(got[0].txid_hex, hex::encode(external_send));
         assert_eq!(got[0].tx_kind, "sent");
         assert_eq!(got[0].display_amount, 10_000_000);
+        assert_eq!(got[0].fee, 50_000);
     }
 
     #[test]
