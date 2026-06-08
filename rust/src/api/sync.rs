@@ -863,8 +863,8 @@ pub fn migrate_orchard_to_ironwood(
     transfer_count: u32,
 ) -> Result<IronwoodMigrationResult, String> {
     catch(|| {
-        let network = parse_network_and_migrate(&db_path, &network)?;
         let mnemonic_bytes = Zeroizing::new(mnemonic_bytes);
+        let network = parse_network_and_migrate(&db_path, &network)?;
         let seed = keys::mnemonic_bytes_to_seed(mnemonic_bytes.as_slice())?;
         drop(mnemonic_bytes);
 

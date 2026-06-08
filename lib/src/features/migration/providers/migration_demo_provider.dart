@@ -50,7 +50,9 @@ class MigrationDemoNotifier extends AsyncNotifier<MigrationDemoState?> {
       random: Random(),
     );
     await _store.write(demo);
-    state = AsyncData(demo);
+    if (ref.read(accountProvider).value?.activeAccountUuid == accountUuid) {
+      state = AsyncData(demo);
+    }
   }
 
   /// Clears the demo so the tab returns to its idle/landing state.
