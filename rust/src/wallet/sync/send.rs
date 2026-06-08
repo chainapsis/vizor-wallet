@@ -43,6 +43,7 @@ use transparent::{address::TransparentAddress, bundle::OutPoint, keys::Transpare
 use zcash_client_backend::data_api::wallet::input_selection::{GreedyInputSelector, InputSelector};
 use zcash_client_backend::{
     data_api::{
+        error::Error as WalletError,
         wallet::{
             self, create_orchard_to_ironwood_transaction, create_proposed_transactions,
             propose_send_max_transfer, propose_shielding, propose_transfer, ConfirmationsPolicy,
@@ -160,6 +161,7 @@ pub(crate) struct ShieldTransparentPcztResult {
 }
 
 const SHIELDING_THRESHOLD_ZATOSHI: u64 = 100_000;
+const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
 
 /// Wallet-local ZIP-317 rule that preserves standard fee parameters but
 /// prevents exact transparent-input serialization from shrinking below
@@ -682,17 +684,9 @@ pub async fn migrate_orchard_to_ironwood(
     network: WalletNetwork,
     account_uuid: &str,
     seed: SecretVec<u8>,
-    amount_zatoshi: u64,
-    transfer_count: u32,
 ) -> Result<IronwoodMigrationResult, String> {
-    if transfer_count == 0 {
-        return Err("Migration transfer count must be greater than zero".to_string());
-    }
-
-    let amount = Zatoshis::from_u64(amount_zatoshi).map_err(|_| "Bad migration amount")?;
-    if amount == Zatoshis::ZERO {
-        return Err("Migration amount must be greater than zero".to_string());
-    }
+    let amount = Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
+        .map_err(|_| "Bad migration amount")?;
 
     let (txids, fee_zatoshi, migrated_zatoshi) = with_wallet_db_write_lock(
         "send.migrate_orchard_to_ironwood",
@@ -716,12 +710,16 @@ pub async fn migrate_orchard_to_ironwood(
             let output_prover = NoOpOutputProver;
             let spending_keys = wallet::SpendingKeys::from_unified_spending_key(usk);
             let fee_rule = ConservativeZip317FeeRule;
-            let mut txids = Vec::with_capacity(transfer_count as usize);
+            let mut txids = Vec::new();
             let mut total_fee = Zatoshis::ZERO;
             let mut total_migrated = Zatoshis::ZERO;
+            let mut migration_index = 0u32;
 
-            for index in 0..transfer_count {
-                let memo_text = format!("Ironwood migration {}/{}", index + 1, transfer_count);
+            loop {
+                migration_index = migration_index
+                    .checked_add(1)
+                    .ok_or("Migration transaction count overflow")?;
+                let memo_text = format!("Ironwood migration {migration_index}");
                 let memo = MemoBytes::from(
                     Memo::from_bytes(memo_text.as_bytes())
                         .map_err(|e| format!("Bad migration memo: {e}"))?,
@@ -739,13 +737,19 @@ pub async fn migrate_orchard_to_ironwood(
                     ConfirmationsPolicy::default(),
                 ) {
                     Ok(transaction) => transaction,
-                    Err(e) if !txids.is_empty() => {
-                        log::warn!(
-                            "ironwood_migration: created {} of {transfer_count} migration txs; stopping before tx {}: {e}",
-                            txids.len(),
-                            index + 1,
-                        );
-                        break;
+                    Err(WalletError::InsufficientFunds { .. }) => {
+                        if txids.is_empty() {
+                            return Err(
+                                "Create Ironwood migration TX failed: insufficient Orchard funds to migrate"
+                                    .to_string(),
+                            );
+                        } else {
+                            log::info!(
+                                "ironwood_migration: created {} migration txs; no more spendable Orchard notes to migrate",
+                                txids.len(),
+                            );
+                            break;
+                        }
                     }
                     Err(e) => {
                         return Err(format!("Create Ironwood migration TX failed: {e}"));

@@ -2920,8 +2920,6 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_impl(
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_mnemonic_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
-            let api_amount_zatoshi = <u64>::sse_decode(&mut deserializer);
-            let api_transfer_count = <u32>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -2931,8 +2929,6 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_impl(
                         api_network,
                         api_account_uuid,
                         api_mnemonic_bytes,
-                        api_amount_zatoshi,
-                        api_transfer_count,
                     )?;
                     Ok(output_ok)
                 })())
@@ -2967,8 +2963,6 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_with_macos_stored_mnemoni
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
-            let api_amount_zatoshi = <u64>::sse_decode(&mut deserializer);
-            let api_transfer_count = <u32>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -2979,8 +2973,6 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_with_macos_stored_mnemoni
                             api_network,
                             api_account_uuid,
                             api_password,
-                            api_amount_zatoshi,
-                            api_transfer_count,
                         )?;
                     Ok(output_ok)
                 })())

@@ -864,8 +864,6 @@ pub fn migrate_orchard_to_ironwood(
     network: String,
     account_uuid: String,
     mnemonic_bytes: Vec<u8>,
-    amount_zatoshi: u64,
-    transfer_count: u32,
 ) -> Result<IronwoodMigrationResult, String> {
     catch(|| {
         let mnemonic_bytes = Zeroizing::new(mnemonic_bytes);
@@ -880,8 +878,6 @@ pub fn migrate_orchard_to_ironwood(
             network,
             &account_uuid,
             seed,
-            amount_zatoshi,
-            transfer_count,
         ))?;
         Ok(IronwoodMigrationResult {
             txids: r.txids,
@@ -901,8 +897,6 @@ pub fn migrate_orchard_to_ironwood_with_macos_stored_mnemonic(
     network: String,
     account_uuid: String,
     password: String,
-    amount_zatoshi: u64,
-    transfer_count: u32,
 ) -> Result<IronwoodMigrationResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -916,8 +910,6 @@ pub fn migrate_orchard_to_ironwood_with_macos_stored_mnemonic(
             network,
             &account_uuid,
             seed,
-            amount_zatoshi,
-            transfer_count,
         ))?;
         Ok(IronwoodMigrationResult {
             txids: r.txids,

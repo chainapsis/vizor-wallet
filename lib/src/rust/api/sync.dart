@@ -315,16 +315,12 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwood({
   required String network,
   required String accountUuid,
   required List<int> mnemonicBytes,
-  required BigInt amountZatoshi,
-  required int transferCount,
 }) => RustLib.instance.api.crateApiSyncMigrateOrchardToIronwood(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   network: network,
   accountUuid: accountUuid,
   mnemonicBytes: mnemonicBytes,
-  amountZatoshi: amountZatoshi,
-  transferCount: transferCount,
 );
 
 Future<IronwoodMigrationResult>
@@ -334,8 +330,6 @@ migrateOrchardToIronwoodWithMacosStoredMnemonic({
   required String network,
   required String accountUuid,
   required String password,
-  required BigInt amountZatoshi,
-  required int transferCount,
 }) => RustLib.instance.api
     .crateApiSyncMigrateOrchardToIronwoodWithMacosStoredMnemonic(
       dbPath: dbPath,
@@ -343,8 +337,6 @@ migrateOrchardToIronwoodWithMacosStoredMnemonic({
       network: network,
       accountUuid: accountUuid,
       password: password,
-      amountZatoshi: amountZatoshi,
-      transferCount: transferCount,
     );
 
 /// Dry-run transparent shielding without creating or broadcasting a transaction.

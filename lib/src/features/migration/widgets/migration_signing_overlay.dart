@@ -39,9 +39,6 @@ class MigrationSigningOverlay extends ConsumerStatefulWidget {
 
 class _MigrationSigningOverlayState
     extends ConsumerState<MigrationSigningOverlay> {
-  static const int _transferCount = 3;
-  static const int _amountPerTransferZatoshi = 10000; // 0.0001 ZEC
-
   _MigrationPhase _phase = _MigrationPhase.preparing;
   String? _error;
 
@@ -97,8 +94,6 @@ class _MigrationSigningOverlayState
                 network: migrationNetworkName,
                 accountUuid: accountUuid,
                 password: password,
-                amountZatoshi: BigInt.from(_amountPerTransferZatoshi),
-                transferCount: _transferCount,
               );
         } catch (e) {
           final message = e.toString().toLowerCase();
@@ -200,8 +195,6 @@ class _MigrationSigningOverlayState
         network: network,
         accountUuid: accountUuid,
         mnemonicBytes: mnemonicBytes,
-        amountZatoshi: BigInt.from(_amountPerTransferZatoshi),
-        transferCount: _transferCount,
       );
     } finally {
       mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);

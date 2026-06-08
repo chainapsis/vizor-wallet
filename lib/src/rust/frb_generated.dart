@@ -543,8 +543,6 @@ abstract class RustLibApi extends BaseApi {
     required String network,
     required String accountUuid,
     required List<int> mnemonicBytes,
-    required BigInt amountZatoshi,
-    required int transferCount,
   });
 
   Future<IronwoodMigrationResult>
@@ -554,8 +552,6 @@ abstract class RustLibApi extends BaseApi {
     required String network,
     required String accountUuid,
     required String password,
-    required BigInt amountZatoshi,
-    required int transferCount,
   });
 
   List<String> crateApiWalletMnemonicWordList();
@@ -3782,8 +3778,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String network,
     required String accountUuid,
     required List<int> mnemonicBytes,
-    required BigInt amountZatoshi,
-    required int transferCount,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -3794,8 +3788,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(mnemonicBytes, serializer);
-          sse_encode_u_64(amountZatoshi, serializer);
-          sse_encode_u_32(transferCount, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -3814,8 +3806,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           network,
           accountUuid,
           mnemonicBytes,
-          amountZatoshi,
-          transferCount,
         ],
         apiImpl: this,
       ),
@@ -3831,8 +3821,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "network",
           "accountUuid",
           "mnemonicBytes",
-          "amountZatoshi",
-          "transferCount",
         ],
       );
 
@@ -3844,8 +3832,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String network,
     required String accountUuid,
     required String password,
-    required BigInt amountZatoshi,
-    required int transferCount,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -3856,8 +3842,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(password, serializer);
-          sse_encode_u_64(amountZatoshi, serializer);
-          sse_encode_u_32(transferCount, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -3871,15 +3855,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         ),
         constMeta:
             kCrateApiSyncMigrateOrchardToIronwoodWithMacosStoredMnemonicConstMeta,
-        argValues: [
-          dbPath,
-          lightwalletdUrl,
-          network,
-          accountUuid,
-          password,
-          amountZatoshi,
-          transferCount,
-        ],
+        argValues: [dbPath, lightwalletdUrl, network, accountUuid, password],
         apiImpl: this,
       ),
     );
@@ -3895,8 +3871,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "network",
           "accountUuid",
           "password",
-          "amountZatoshi",
-          "transferCount",
         ],
       );
 
