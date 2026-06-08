@@ -86,6 +86,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final accountName = activeAccount?.name ?? 'Username';
     final sync = ref.watch(syncProvider).value ?? SyncState();
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
+    final showSwapItem = swapFeatureEnabled && !usesMobileShellPlatform;
 
     return AppDesktopSidebarSurface(
       clipBehavior: Clip.none,
@@ -124,7 +125,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         ? null
                         : () => _goToSidebarRoute('/home'),
                   ),
-                  if (swapFeatureEnabled) ...[
+                  if (showSwapItem) ...[
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(
                       key: const ValueKey('sidebar_swap_button'),

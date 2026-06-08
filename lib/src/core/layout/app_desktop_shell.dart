@@ -26,7 +26,7 @@ class AppDesktopShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (showSidebar && _usesMobileShellPlatform) {
+    if (showSidebar && usesMobileShellPlatform) {
       return _AppMobileShell(
         sidebar: sidebar,
         pane: pane,
@@ -43,7 +43,7 @@ class AppDesktopShell extends StatelessWidget {
   }
 }
 
-bool get _usesMobileShellPlatform {
+bool get usesMobileShellPlatform {
   if (kIsWeb) return false;
   return Platform.isAndroid || Platform.isIOS;
 }
