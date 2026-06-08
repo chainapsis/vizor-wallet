@@ -3,8 +3,10 @@ import 'package:flutter/widgets.dart';
 import '../../../core/account_name_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
+import 'account_modal_card.dart';
 
 class AccountNameModal extends StatefulWidget {
   const AccountNameModal({
@@ -25,8 +27,8 @@ class AccountNameModal extends StatefulWidget {
 }
 
 class _AccountNameModalState extends State<AccountNameModal> {
-  static const _fieldHeight = 86.0;
-  static const _buttonWidth = 280.0;
+  static const _fieldHeight = 66.0;
+  static const _fieldWithMessageHeight = 86.0;
 
   final _controller = TextEditingController();
   bool _isSubmitting = false;
@@ -47,6 +49,21 @@ class _AccountNameModalState extends State<AccountNameModal> {
       return null;
     }
     return kAccountNameLengthMessage;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.text = widget.accountName;
+  }
+
+  @override
+  void didUpdateWidget(covariant AccountNameModal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.accountName != widget.accountName) {
+      _controller.text = widget.accountName;
+      _submitError = null;
+    }
   }
 
   @override
@@ -86,26 +103,24 @@ class _AccountNameModalState extends State<AccountNameModal> {
 
   @override
   Widget build(BuildContext context) {
-    return _AccountNameModalCard(
-      header: _AccountNameModalHeader(
-        leading: _AccountNameModalAvatar(
-          profilePictureId: widget.profilePictureId,
-        ),
-        title: widget.accountName,
-      ),
+    return AccountModalCard(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          _AccountNameModalHeader(profilePictureId: widget.profilePictureId),
+          const SizedBox(height: AppSpacing.md),
           SizedBox(
-            height: _fieldHeight,
+            height: _messageText == null
+                ? _fieldHeight
+                : _fieldWithMessageHeight,
             child: AppTextField(
-              label: 'New Account Name',
-              hintText:
-                  '$kAccountNameMinCharacters-$kAccountNameMaxCharacters Characters',
+              label: 'Account name',
+              hintText: 'Account name',
               controller: _controller,
               autofocus: true,
               enabled: !_isSubmitting,
-              trailingSlotWidth: 40,
+              leading: const AppIcon(AppIcons.user, size: 20),
+              leadingSlotWidth: 32,
               inputHorizontalPadding: AppSpacing.s,
               messageText: _messageText,
               tone: _messageText == null
@@ -116,49 +131,26 @@ class _AccountNameModalState extends State<AccountNameModal> {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          AppButton(
-            onPressed: _canUpdate ? _submit : null,
-            variant: AppButtonVariant.primary,
-            minWidth: _buttonWidth,
-            child: Text(_isSubmitting ? 'Updating...' : 'Update'),
+          Row(
+            children: [
+              AppButton(
+                onPressed: _isSubmitting ? null : widget.onCancel,
+                variant: AppButtonVariant.ghost,
+                size: AppButtonSize.medium,
+                height: kAccountModalButtonHeight,
+                child: const Text('Cancel'),
+              ),
+              const Spacer(),
+              AppButton(
+                onPressed: _canUpdate ? _submit : null,
+                variant: AppButtonVariant.primary,
+                size: AppButtonSize.medium,
+                height: kAccountModalButtonHeight,
+                minWidth: kAccountModalButtonMinWidth,
+                child: Text(_isSubmitting ? 'Updating...' : 'Update'),
+              ),
+            ],
           ),
-          const SizedBox(height: AppSpacing.s),
-          AppButton(
-            onPressed: _isSubmitting ? null : widget.onCancel,
-            variant: AppButtonVariant.ghost,
-            minWidth: _buttonWidth,
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AccountNameModalCard extends StatelessWidget {
-  const _AccountNameModalCard({required this.header, required this.child});
-
-  final Widget header;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 312,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.md,
-      ),
-      decoration: BoxDecoration(
-        color: context.colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          header,
-          const SizedBox(height: AppSpacing.md),
-          child,
         ],
       ),
     );
@@ -166,42 +158,46 @@ class _AccountNameModalCard extends StatelessWidget {
 }
 
 class _AccountNameModalHeader extends StatelessWidget {
-  const _AccountNameModalHeader({required this.leading, required this.title});
-
-  final Widget leading;
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        leading,
-        const SizedBox(width: AppSpacing.xs),
-        Flexible(
-          child: Text(
-            title,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.bodyLarge.copyWith(
-              color: context.colors.text.accent,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AccountNameModalAvatar extends StatelessWidget {
-  const _AccountNameModalAvatar({required this.profilePictureId});
+  const _AccountNameModalHeader({required this.profilePictureId});
 
   final String profilePictureId;
 
   @override
   Widget build(BuildContext context) {
-    return AppProfilePicture(
-      profilePictureId: profilePictureId,
-      size: AppProfilePictureSize.large,
+    final colors = context.colors;
+    return SizedBox(
+      width: 56,
+      height: 56,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AppProfilePicture(
+            profilePictureId: profilePictureId,
+            size: AppProfilePictureSize.xLarge,
+          ),
+          Positioned(
+            right: -6,
+            bottom: -3,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.background.inverse,
+                shape: BoxShape.circle,
+              ),
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: Center(
+                  child: AppIcon(
+                    AppIcons.edit,
+                    size: AppIconSize.medium,
+                    color: colors.icon.inverse,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

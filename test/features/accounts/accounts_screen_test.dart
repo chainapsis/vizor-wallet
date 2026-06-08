@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -14,9 +15,11 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
+import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 const _validDeletePassword = 'Correct123!';
@@ -53,13 +56,14 @@ void main() {
     );
     expect(find.text('Current'), findsOneWidget);
     expect(find.text('Other'), findsOneWidget);
-    expect(find.text('Keystone'), findsOneWidget);
+    expect(find.text('Keystone'), findsNothing);
     final keystoneIcon = tester
         .widgetList<AppIcon>(find.byType(AppIcon))
         .singleWhere((icon) => icon.name == AppIcons.keystone);
-    expect(keystoneIcon.color, AppThemeData.light.colors.icon.accent);
+    expect(keystoneIcon.size, 14);
+    expect(keystoneIcon.color, AppThemeData.light.colors.icon.inverse);
 
-    await tester.tap(find.text('Add Account'));
+    await tester.tap(find.text('Add account'));
     await tester.pumpAndSettle();
 
     expect(find.text('add account route'), findsOneWidget);
@@ -98,11 +102,11 @@ void main() {
       );
       expect(find.text('Current'), findsOneWidget);
       expect(find.text('Other'), findsNothing);
-      expect(find.text('Add Account'), findsOneWidget);
+      expect(find.text('Add account'), findsOneWidget);
     },
   );
 
-  testWidgets('other accounts list scrolls while add account stays pinned', (
+  testWidgets('other accounts render without an internal scroll list', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -135,34 +139,16 @@ void main() {
     );
     await tester.pump();
 
-    final addButton = find.text('Add Account');
-    final addButtonTop = tester.getTopLeft(addButton).dy;
-
-    expect(
-      find.byKey(const ValueKey('accounts_list_scrollbar')),
-      findsOneWidget,
-    );
+    expect(find.byType(ListView), findsNothing);
     expect(
       find.byKey(const ValueKey('accounts_active_row_account-1')),
       findsOneWidget,
     );
     expect(
       find.byKey(const ValueKey('accounts_other_row_account-20')),
-      findsNothing,
-    );
-
-    await tester.drag(find.byType(ListView), const Offset(0, -900));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.byKey(const ValueKey('accounts_active_row_account-1')),
       findsOneWidget,
     );
-    expect(tester.getTopLeft(addButton).dy, moreOrLessEquals(addButtonTop));
-    expect(
-      find.byKey(const ValueKey('accounts_other_row_account-20')),
-      findsOneWidget,
-    );
+    expect(find.text('Add account'), findsOneWidget);
   });
 
   testWidgets('sidebar account selector opens accounts screen', (tester) async {
@@ -241,9 +227,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Edit Name'), findsOneWidget);
-    expect(find.text('Change Picture'), findsOneWidget);
-    expect(find.text('Remove Account'), findsOneWidget);
+    expect(find.text('Copy address'), findsOneWidget);
+    expect(find.text('Send ZEC'), findsOneWidget);
+    expect(find.text('Edit name'), findsOneWidget);
+    expect(find.text('Change picture'), findsOneWidget);
+    expect(find.text('Remove account'), findsOneWidget);
+    _expectVerticalTextOrder(tester, const [
+      'Copy address',
+      'Send ZEC',
+      'Edit name',
+      'Change picture',
+      'Remove account',
+    ]);
     expect(
       find.byKey(const ValueKey('accounts_active_row_account-1')),
       findsOneWidget,
@@ -261,9 +256,138 @@ void main() {
     await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
 
-    expect(find.text('Edit Name'), findsNothing);
-    expect(find.text('Change Picture'), findsNothing);
-    expect(find.text('Remove Account'), findsNothing);
+    expect(find.text('Copy address'), findsNothing);
+    expect(find.text('Send ZEC'), findsNothing);
+    expect(find.text('Edit name'), findsNothing);
+    expect(find.text('Change picture'), findsNothing);
+    expect(find.text('Remove account'), findsNothing);
+  });
+
+  testWidgets('current account menu omits send zec', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_accountsHarness());
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-1')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Copy address'), findsOneWidget);
+    expect(find.text('Send ZEC'), findsNothing);
+    expect(find.text('Edit name'), findsOneWidget);
+    expect(find.text('Change picture'), findsOneWidget);
+    _expectVerticalTextOrder(tester, const [
+      'Copy address',
+      'Edit name',
+      'Change picture',
+    ]);
+  });
+
+  testWidgets('copy address uses the selected other account uuid', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final copiedTexts = _captureClipboardWrites(tester);
+    late _FakeReceiveAddressService receiveAddressService;
+
+    await tester.pumpWidget(
+      _accountsHarness(
+        receiveAddressService: (ref) =>
+            receiveAddressService = _FakeReceiveAddressService(ref),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Copy address'));
+    await tester.pumpAndSettle();
+
+    expect(receiveAddressService.calls, [
+      const _ShieldedAddressCall(accountUuid: 'account-2'),
+    ]);
+    expect(copiedTexts, ['u1address-account-2']);
+    expect(find.text('Address copied'), findsOneWidget);
+  });
+
+  testWidgets('copy address reuses the active account address cache', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final copiedTexts = _captureClipboardWrites(tester);
+    late _FakeReceiveAddressService receiveAddressService;
+
+    await tester.pumpWidget(
+      _accountsHarness(
+        receiveAddressService: (ref) =>
+            receiveAddressService = _FakeReceiveAddressService(ref),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-1')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Copy address'));
+    await tester.pumpAndSettle();
+
+    expect(receiveAddressService.calls, [
+      const _ShieldedAddressCall(
+        accountUuid: 'account-1',
+        currentShieldedAddress: 'u1accountsaddress',
+      ),
+    ]);
+    expect(copiedTexts, ['u1accountsaddress']);
+    expect(find.text('Address copied'), findsOneWidget);
+  });
+
+  testWidgets('send zec opens send route with the selected account address', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    late _FakeReceiveAddressService receiveAddressService;
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        receiveAddressService: (ref) =>
+            receiveAddressService = _FakeReceiveAddressService(ref),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Send ZEC'));
+    await tester.pumpAndSettle();
+
+    expect(receiveAddressService.calls, [
+      const _ShieldedAddressCall(accountUuid: 'account-2'),
+    ]);
+    expect(accountNotifier.switchedUuid, isNull);
+    expect(find.text('send route u1address-account-2'), findsOneWidget);
   });
 
   testWidgets('account row hover is limited to other accounts', (tester) async {
@@ -364,7 +488,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Remove Account'), findsOneWidget);
+    expect(find.text('Remove account'), findsOneWidget);
 
     await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
@@ -373,7 +497,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Remove Account'), findsNothing);
+    expect(find.text('Remove account'), findsNothing);
   });
 
   testWidgets('edit name menu action renames the selected account', (
@@ -396,15 +520,16 @@ void main() {
       find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Edit Name'));
+    await tester.tap(find.text('Edit name'));
     await tester.pumpAndSettle();
 
-    expect(find.text('New Account Name'), findsOneWidget);
+    expect(find.text('Account name'), findsWidgets);
     expect(find.byType(AppPaneModalOverlay), findsOneWidget);
     final modalBackdrop = find.descendant(
       of: find.byType(AppPaneModalOverlay),
       matching: find.byType(BackdropFilter),
     );
+    expect(modalBackdrop, findsOneWidget);
     expect(
       tester.getTopLeft(modalBackdrop),
       tester.getTopLeft(find.byType(AppDesktopPane)),
@@ -445,10 +570,10 @@ void main() {
       find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Change Picture'));
+    await tester.tap(find.text('Change picture'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Select Profile Picture'), findsOneWidget);
+    expect(find.text('Select profile picture'), findsOneWidget);
     expect(find.byType(AppPaneModalOverlay), findsOneWidget);
 
     await tester.tap(
@@ -460,7 +585,7 @@ void main() {
 
     expect(accountNotifier.updatedProfilePictureUuid, 'account-2');
     expect(accountNotifier.updatedProfilePictureId, 'samurai');
-    expect(find.text('Select Profile Picture'), findsNothing);
+    expect(find.text('Select profile picture'), findsNothing);
   });
 
   testWidgets('remove account menu action removes the selected account', (
@@ -487,7 +612,7 @@ void main() {
       find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Remove Account'));
+    await tester.tap(find.text('Remove account'));
     await tester.pumpAndSettle();
 
     expect(
@@ -547,9 +672,14 @@ void main() {
       find.byKey(const ValueKey('account_remove_pending_swap_warning')),
       findsOneWidget,
     );
-    expect(find.textContaining('1 active swap'), findsOneWidget);
+    expect(
+      find.textContaining('This account has 1 active swap.'),
+      findsOneWidget,
+    );
 
-    await tester.tap(find.text('Remove'), warnIfMissed: false);
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Remove'));
     await tester.pumpAndSettle();
 
     expect(accountNotifier.removedUuid, isNull);
@@ -622,7 +752,7 @@ void main() {
       find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Remove Account'));
+    await tester.tap(find.text('Remove account'));
     await tester.pumpAndSettle();
     await _submitRemovePassword(tester);
     await tester.pumpAndSettle();
@@ -657,7 +787,7 @@ void main() {
       find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Remove Account'));
+    await tester.tap(find.text('Remove account'));
     await tester.pumpAndSettle();
     await _submitRemovePassword(tester);
     await tester.pump();
@@ -708,7 +838,7 @@ void main() {
         find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Remove Account'));
+      await tester.tap(find.text('Remove account'));
       await tester.pumpAndSettle();
       await _submitRemovePassword(tester);
       await tester.pumpAndSettle();
@@ -776,7 +906,7 @@ void main() {
       find.byKey(const ValueKey('accounts_row_menu_button_account-1')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Remove Account'));
+    await tester.tap(find.text('Remove account'));
     await tester.pumpAndSettle();
 
     expect(
@@ -837,7 +967,7 @@ void main() {
       find.byKey(const ValueKey('accounts_row_menu_button_account-1')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Remove Account'));
+    await tester.tap(find.text('Remove account'));
     await tester.pumpAndSettle();
     await _submitRemovePassword(tester, buttonLabel: 'Reset Vizor');
     await tester.pumpAndSettle();
@@ -856,7 +986,7 @@ Future<void> _openRemoveAccountModal(
     find.byKey(ValueKey('accounts_row_menu_button_$accountUuid')),
   );
   await tester.pumpAndSettle();
-  await tester.tap(find.text('Remove Account'));
+  await tester.tap(find.text('Remove account'));
   await tester.pumpAndSettle();
 }
 
@@ -870,10 +1000,23 @@ Future<void> _submitRemovePassword(
   await tester.tap(find.text(buttonLabel));
 }
 
+void _expectVerticalTextOrder(WidgetTester tester, List<String> labels) {
+  for (var index = 1; index < labels.length; index += 1) {
+    final previous = labels[index - 1];
+    final current = labels[index];
+    expect(
+      tester.getTopLeft(find.text(previous)).dy,
+      lessThan(tester.getTopLeft(find.text(current)).dy),
+      reason: '$previous should appear above $current',
+    );
+  }
+}
+
 Widget _accountsHarness({
   AccountNotifier Function()? accountNotifier,
   SyncNotifier Function()? syncNotifier,
   AppSecurityNotifier Function()? securityNotifier,
+  ReceiveAddressService Function(Ref ref)? receiveAddressService,
   Map<String, int> pendingSwapCounts = const {},
 }) {
   final router = GoRouter(
@@ -886,7 +1029,14 @@ Widget _accountsHarness({
         builder: (_, _) => const Text('add account route'),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
-      GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
+      GoRoute(
+        path: '/send',
+        builder: (_, state) {
+          final args = state.extra;
+          final address = args is SendPrefillArgs ? args.address : null;
+          return Text(address == null ? 'send route' : 'send route $address');
+        },
+      ),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
       GoRoute(
         path: '/activity',
@@ -912,12 +1062,35 @@ Widget _accountsHarness({
         securityNotifier ?? _FakeAppSecurityNotifier.new,
       ),
       syncProvider.overrideWith(syncNotifier ?? _FakeSyncNotifier.new),
+      if (receiveAddressService != null)
+        receiveAddressServiceProvider.overrideWith(receiveAddressService),
     ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
+}
+
+List<String> _captureClipboardWrites(WidgetTester tester) {
+  final copiedTexts = <String>[];
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    SystemChannels.platform,
+    (call) async {
+      if (call.method == 'Clipboard.setData') {
+        final arguments = call.arguments as Map<Object?, Object?>;
+        copiedTexts.add(arguments['text']! as String);
+      }
+      return null;
+    },
+  );
+  addTearDown(() {
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      null,
+    );
+  });
+  return copiedTexts;
 }
 
 Widget _sidebarHarness() {
@@ -1094,6 +1267,49 @@ class _FakeAppSecurityNotifier extends AppSecurityNotifier {
   Future<bool> confirmPassword(String password) async {
     confirmedPasswords.add(password);
     return password == validPassword;
+  }
+}
+
+class _ShieldedAddressCall {
+  const _ShieldedAddressCall({
+    required this.accountUuid,
+    this.currentShieldedAddress,
+  });
+
+  final String accountUuid;
+  final String? currentShieldedAddress;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _ShieldedAddressCall &&
+          other.accountUuid == accountUuid &&
+          other.currentShieldedAddress == currentShieldedAddress;
+
+  @override
+  int get hashCode => Object.hash(accountUuid, currentShieldedAddress);
+}
+
+class _FakeReceiveAddressService extends ReceiveAddressService {
+  _FakeReceiveAddressService(super.ref);
+
+  final List<_ShieldedAddressCall> calls = [];
+
+  @override
+  Future<String> loadShieldedAddress({
+    required String accountUuid,
+    String? currentShieldedAddress,
+  }) async {
+    calls.add(
+      _ShieldedAddressCall(
+        accountUuid: accountUuid,
+        currentShieldedAddress: currentShieldedAddress,
+      ),
+    );
+    if (currentShieldedAddress != null && currentShieldedAddress.isNotEmpty) {
+      return currentShieldedAddress;
+    }
+    return 'u1address-$accountUuid';
   }
 }
 

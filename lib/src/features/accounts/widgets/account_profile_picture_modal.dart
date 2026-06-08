@@ -5,6 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
+import 'account_modal_card.dart';
 
 class AccountProfilePictureModal extends StatefulWidget {
   const AccountProfilePictureModal({
@@ -25,9 +26,8 @@ class AccountProfilePictureModal extends StatefulWidget {
 
 class _AccountProfilePictureModalState
     extends State<AccountProfilePictureModal> {
-  static const _buttonWidth = 280.0;
   static const _optionSize = AppProfilePictureSize.large;
-  static const _gridWidth = 184.0;
+  static const _gridWidth = 189.0;
 
   late String _selectedId = _initialSelectedId();
   bool _isSubmitting = false;
@@ -80,22 +80,20 @@ class _AccountProfilePictureModalState
   Widget build(BuildContext context) {
     final previewOption = resolveProfilePictureOption(_selectedId);
 
-    return _AccountProfilePictureModalCard(
-      gap: AppSpacing.sm,
-      header: _AccountProfilePictureModalHeader(
-        profilePictureId: previewOption.id,
-      ),
+    return AccountModalCard(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          _AccountProfilePictureModalHeader(profilePictureId: previewOption.id),
+          const SizedBox(height: AppSpacing.md),
           SizedBox(
             width: _gridWidth,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
               child: Wrap(
                 alignment: WrapAlignment.center,
-                spacing: AppSpacing.xs,
-                runSpacing: AppSpacing.xs,
+                spacing: AppSpacing.s,
+                runSpacing: AppSpacing.s,
                 children: [
                   for (final option in kProfilePictureOptions)
                     _ProfilePictureOptionButton(
@@ -121,52 +119,28 @@ class _AccountProfilePictureModalState
             ),
             const SizedBox(height: AppSpacing.xs),
           ],
-          const SizedBox(height: AppSpacing.sm),
-          AppButton(
-            onPressed: _canUpdate ? _submit : null,
-            variant: AppButtonVariant.primary,
-            minWidth: _buttonWidth,
-            child: Text(_isSubmitting ? 'Updating...' : 'Update'),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          AppButton(
-            onPressed: _isSubmitting ? null : widget.onCancel,
-            variant: AppButtonVariant.ghost,
-            minWidth: _buttonWidth,
-            child: const Text('Cancel'),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              AppButton(
+                onPressed: _isSubmitting ? null : widget.onCancel,
+                variant: AppButtonVariant.ghost,
+                size: AppButtonSize.medium,
+                height: kAccountModalButtonHeight,
+                child: const Text('Cancel'),
+              ),
+              const Spacer(),
+              AppButton(
+                onPressed: _canUpdate ? _submit : null,
+                variant: AppButtonVariant.primary,
+                size: AppButtonSize.medium,
+                height: kAccountModalButtonHeight,
+                minWidth: kAccountModalButtonMinWidth,
+                child: Text(_isSubmitting ? 'Updating...' : 'Update'),
+              ),
+            ],
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _AccountProfilePictureModalCard extends StatelessWidget {
-  const _AccountProfilePictureModalCard({
-    required this.header,
-    required this.child,
-    this.gap = AppSpacing.md,
-  });
-
-  final Widget header;
-  final Widget child;
-  final double gap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 312,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.md,
-      ),
-      decoration: BoxDecoration(
-        color: context.colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [header, SizedBox(height: gap), child],
       ),
     );
   }
@@ -188,7 +162,7 @@ class _AccountProfilePictureModalHeader extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Select Profile Picture',
+          'Select profile picture',
           overflow: TextOverflow.ellipsis,
           style: AppTypography.bodyLarge.copyWith(
             color: context.colors.text.accent,
@@ -223,13 +197,11 @@ class _ProfilePictureOptionButton extends StatefulWidget {
 
 class _ProfilePictureOptionButtonState
     extends State<_ProfilePictureOptionButton> {
-  static const _outerPadding = 4.0;
   static const _focusRingWidth = 2.0;
-  static const _checkGapSize = 22.0;
-  static const _checkBadgeSize = 16.0;
-  static const _checkIconSize = 12.0;
-  static const _checkRight = -3.0;
-  static const _checkBottom = -1.0;
+  static const _checkBadgeSize = 14.0;
+  static const _checkIconSize = 9.0;
+  static const _checkRight = -2.0;
+  static const _checkBottom = -2.0;
 
   bool _isHovered = false;
   bool _isFocused = false;
@@ -252,12 +224,13 @@ class _ProfilePictureOptionButtonState
   Widget build(BuildContext context) {
     final colors = context.colors;
     final showFocusRing = widget.enabled && (_isHovered || _isFocused);
-    final outerDimension = widget.size.dimension + _outerPadding * 2;
+    final outerDimension = widget.size.dimension;
 
     return FocusableActionDetector(
       enabled: widget.enabled,
-      mouseCursor:
-          widget.enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      mouseCursor: widget.enabled
+          ? SystemMouseCursors.click
+          : SystemMouseCursors.basic,
       onShowFocusHighlight: _setFocused,
       child: MouseRegion(
         onEnter: (_) => _setHovered(true),
@@ -293,27 +266,17 @@ class _ProfilePictureOptionButtonState
                     right: _checkRight,
                     bottom: _checkBottom,
                     child: Container(
-                      width: _checkGapSize,
-                      height: _checkGapSize,
+                      width: _checkBadgeSize,
+                      height: _checkBadgeSize,
                       decoration: BoxDecoration(
-                        color: colors.background.ground,
+                        color: colors.background.inverse,
                         shape: BoxShape.circle,
                       ),
                       child: Center(
-                        child: Container(
-                          width: _checkBadgeSize,
-                          height: _checkBadgeSize,
-                          decoration: BoxDecoration(
-                            color: colors.background.inverse,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: AppIcon(
-                              AppIcons.check,
-                              size: _checkIconSize,
-                              color: colors.background.ground,
-                            ),
-                          ),
+                        child: AppIcon(
+                          AppIcons.check,
+                          size: _checkIconSize,
+                          color: colors.icon.inverse,
                         ),
                       ),
                     ),
