@@ -136,6 +136,23 @@ void main() {
     expect(find.text('Transparent'), findsOneWidget);
   });
 
+  testWidgets('TEX preview uses TEX transparent-style badge', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _sendReviewHarness(_reviewArgs(addressType: 'tex')),
+    );
+    await tester.pump();
+
+    final transparentIcon = tester
+        .widgetList<AppIcon>(find.byType(AppIcon))
+        .singleWhere((icon) => icon.name == AppIcons.transparentBalance);
+
+    expect(transparentIcon.size, 20);
+    expect(transparentIcon.color, AppThemeData.light.colors.icon.muted);
+    expect(find.text('TEX'), findsOneWidget);
+    expect(find.text('Shielded'), findsNothing);
+  });
+
   testWidgets('shortens recipient address with Figma-style middle ellipsis', (
     tester,
   ) async {

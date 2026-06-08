@@ -569,7 +569,7 @@ class _SendReviewReceiptCard extends StatelessWidget {
           Positioned(
             top: 23,
             right: 18,
-            child: _SendReviewStatusBadge(isShielded: args.isShielded),
+            child: _SendReviewStatusBadge(addressType: args.addressType),
           ),
           Positioned(
             left: AppSpacing.sm,
@@ -764,9 +764,17 @@ class _SendReviewSavedRecipientValue extends StatelessWidget {
 }
 
 class _SendReviewStatusBadge extends StatelessWidget {
-  const _SendReviewStatusBadge({required this.isShielded});
+  const _SendReviewStatusBadge({required this.addressType});
 
-  final bool isShielded;
+  final String addressType;
+
+  bool get isShielded => addressType == 'unified' || addressType == 'sapling';
+
+  String get label => addressType == 'tex'
+      ? 'TEX'
+      : isShielded
+      ? 'Shielded'
+      : 'Transparent';
 
   @override
   Widget build(BuildContext context) {
@@ -775,7 +783,7 @@ class _SendReviewStatusBadge extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          isShielded ? 'Shielded' : 'Transparent',
+          label,
           style: AppTypography.labelLarge.copyWith(
             color: isShielded ? colors.text.success : colors.text.muted,
           ),
