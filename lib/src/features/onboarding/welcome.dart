@@ -12,10 +12,8 @@ import '../../core/widgets/app_tooltip.dart';
 import '../settings/widgets/custom_endpoint_settings_panel.dart';
 import 'shared/onboarding_welcome_art.dart';
 
-const double _welcomeCanvasWidth = 1080;
 const double _welcomeCanvasHeight = 720;
 const double _welcomePaneWidth = 420;
-const double _welcomeHeroWidth = 660;
 const double _welcomeActionWidth = 196;
 const double _welcomeBackButtonTop = AppSpacing.base + AppSpacing.xs;
 
@@ -73,12 +71,12 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   }
 }
 
-/// Fixed-size 1080 x 720 welcome canvas from Figma.
+/// Responsive welcome layout from the 1080 x 720 Figma baseline.
 ///
 /// The Figma file includes macOS wallpaper, menu bar, dock, and window
 /// controls around this node. Per AGENTS.md those layers are OS chrome and
 /// are ignored; the implemented app starts at `Window Contents > Trailing
-/// Pane`, which is the split 420 / 660 welcome layout below.
+/// Pane`, with a fixed 420px lead pane and a responsive trailing hero pane.
 class _Pane extends StatelessWidget {
   const _Pane({
     required this.child,
@@ -106,60 +104,58 @@ class _Pane extends StatelessWidget {
           Positioned.fill(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final alignment = constraints.maxHeight < _welcomeCanvasHeight
-                    ? Alignment.bottomCenter
-                    : Alignment.center;
-                return OverflowBox(
-                  alignment: alignment,
-                  minWidth: _welcomeCanvasWidth,
-                  maxWidth: _welcomeCanvasWidth,
-                  minHeight: _welcomeCanvasHeight,
-                  maxHeight: _welcomeCanvasHeight,
-                  child: SizedBox(
-                    width: _welcomeCanvasWidth,
-                    height: _welcomeCanvasHeight,
-                    child: Stack(
-                      children: [
-                        Row(
-                          children: [
-                            SizedBox(
-                              width: _welcomePaneWidth,
-                              height: _welcomeCanvasHeight,
-                              child: child,
-                            ),
-                            const _WelcomeHeroPane(),
-                          ],
-                        ),
-                        if (!showBackButton)
-                          Positioned(
-                            right: AppSpacing.md,
-                            top: AppSpacing.md,
-                            child: _WelcomeIconButton(
-                              key: ValueKey('welcome_endpoint_settings_button'),
-                              icon: AppIcons.cog,
-                              tooltip: 'Endpoint settings',
-                              semanticLabel: 'Endpoint settings',
-                              onTap: onShowEndpointSettings,
-                            ),
-                          ),
-                        if (!showBackButton && showEndpointSettings)
-                          AppPaneModalOverlay(
-                            borderRadius: BorderRadius.circular(
-                              AppRadii.xSmall,
-                            ),
-                            onDismiss: onDismissEndpointSettings,
-                            child: CustomEndpointSettingsPanel(
-                              key: const ValueKey(
-                                'welcome_endpoint_settings_modal',
-                              ),
-                              restartSyncAfterUpdate: false,
-                              onClose: onDismissEndpointSettings,
-                              onUpdated: onDismissEndpointSettings,
-                            ),
-                          ),
-                      ],
+                final heroWidth =
+                    (constraints.maxWidth - _welcomePaneWidth).clamp(
+                      0.0,
+                      double.infinity,
+                    );
+                return Stack(
+                  children: [
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      width: _welcomePaneWidth,
+                      height: constraints.maxHeight,
+                      child: child,
                     ),
-                  ),
+                    Positioned(
+                      left: _welcomePaneWidth,
+                      top: 0,
+                      width: heroWidth,
+                      height: constraints.maxHeight,
+                      child: _WelcomeHeroPane(
+                        width: heroWidth,
+                        height: constraints.maxHeight,
+                      ),
+                    ),
+                    if (!showBackButton)
+                      Positioned(
+                        right: AppSpacing.md,
+                        top: AppSpacing.md,
+                        child: _WelcomeIconButton(
+                          key: ValueKey('welcome_endpoint_settings_button'),
+                          icon: AppIcons.cog,
+                          tooltip: 'Endpoint settings',
+                          semanticLabel: 'Endpoint settings',
+                          onTap: onShowEndpointSettings,
+                        ),
+                      ),
+                    if (!showBackButton && showEndpointSettings)
+                      AppPaneModalOverlay(
+                        borderRadius: BorderRadius.circular(
+                          AppRadii.xSmall,
+                        ),
+                        onDismiss: onDismissEndpointSettings,
+                        child: CustomEndpointSettingsPanel(
+                          key: const ValueKey(
+                            'welcome_endpoint_settings_modal',
+                          ),
+                          restartSyncAfterUpdate: false,
+                          onClose: onDismissEndpointSettings,
+                          onUpdated: onDismissEndpointSettings,
+                        ),
+                      ),
+                  ],
                 );
               },
             ),
@@ -177,9 +173,17 @@ class _Pane extends StatelessWidget {
 }
 
 class _WelcomeHeroPane extends StatelessWidget {
-  const _WelcomeHeroPane();
+  const _WelcomeHeroPane({
+    required this.width,
+    required this.height,
+  });
 
   static final _foregroundColor = AppTextColors.light.inverse;
+  static const _textBottomInset = _welcomeCanvasHeight - 493;
+  static const _wordmarkTopInset = _welcomeCanvasHeight - 628;
+
+  final double width;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -191,8 +195,8 @@ class _WelcomeHeroPane extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadii.large),
       child: SizedBox(
-        width: _welcomeHeroWidth,
-        height: _welcomeCanvasHeight,
+        width: width,
+        height: height,
         child: Stack(
           clipBehavior: Clip.hardEdge,
           children: [
@@ -221,7 +225,7 @@ class _WelcomeHeroPane extends StatelessWidget {
             Positioned(
               left: 0,
               right: 0,
-              top: 493,
+              top: height - _textBottomInset,
               child: Text(
                 'Private money.\nBy default',
                 textAlign: TextAlign.center,
@@ -234,7 +238,7 @@ class _WelcomeHeroPane extends StatelessWidget {
             Positioned(
               left: 0,
               right: 0,
-              top: 628,
+              top: height - _wordmarkTopInset,
               child: Center(
                 child: VizorWordmark(
                   width: 96,
