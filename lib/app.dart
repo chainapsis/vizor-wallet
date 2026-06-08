@@ -566,28 +566,31 @@ final _routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/activity/swap/:swapId',
-        builder: (_, state) {
+        pageBuilder: (_, state) {
           final swapId = state.pathParameters['swapId'];
           if (swapId == null || swapId.isEmpty) {
-            return const ActivityScreen();
+            return _stackPage(state, const ActivityScreen());
           }
-          return SwapActivityDetailScreen(
-            swapIntentId: swapId,
-            returnTarget: SwapActivityReturnTarget.fromQueryValue(
-              state.uri.queryParameters[swapActivityReturnQueryKey],
+          return _stackPage(
+            state,
+            SwapActivityDetailScreen(
+              swapIntentId: swapId,
+              returnTarget: SwapActivityReturnTarget.fromQueryValue(
+                state.uri.queryParameters[swapActivityReturnQueryKey],
+              ),
+              autoSignZecDeposit:
+                  state.uri.queryParameters[swapActivitySignQueryKey] ==
+                  swapActivitySignZecDepositValue,
             ),
-            autoSignZecDeposit:
-                state.uri.queryParameters[swapActivitySignQueryKey] ==
-                swapActivitySignZecDepositValue,
           );
         },
       ),
       GoRoute(
         path: '/activity/tx/:txid',
-        builder: (_, state) {
+        pageBuilder: (_, state) {
           final txid = state.pathParameters['txid'];
           if (txid == null || txid.isEmpty) {
-            return const ActivityScreen();
+            return _stackPage(state, const ActivityScreen());
           }
           final txKind = state.uri.queryParameters['kind'];
           final extra = state.extra;
@@ -600,18 +603,30 @@ final _routerProvider = Provider<GoRouter>((ref) {
                     initialDetail: extra.initialDetail,
                   )
                 : extra;
-            return ActivityTransactionStatusScreen(args: args);
+            return _stackPage(
+              state,
+              ActivityTransactionStatusScreen(args: args),
+            );
           }
-          return ActivityTransactionStatusScreen(
-            args: ActivityTransactionStatusArgs(txidHex: txid, txKind: txKind),
+          return _stackPage(
+            state,
+            ActivityTransactionStatusScreen(
+              args: ActivityTransactionStatusArgs(
+                txidHex: txid,
+                txKind: txKind,
+              ),
+            ),
           );
         },
       ),
       GoRoute(
         path: '/send',
-        builder: (_, state) {
+        pageBuilder: (_, state) {
           final extra = state.extra;
-          return SendScreen(prefill: extra is SendPrefillArgs ? extra : null);
+          return _stackPage(
+            state,
+            SendScreen(prefill: extra is SendPrefillArgs ? extra : null),
+          );
         },
       ),
       GoRoute(
@@ -622,32 +637,43 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/swap/review',
         redirect: (_, _) => swapFeatureEnabled ? null : '/home',
-        builder: (_, _) => const SwapReviewScreen(),
+        pageBuilder: (_, state) => _stackPage(state, const SwapReviewScreen()),
       ),
       GoRoute(
         path: '/send/review',
-        builder: (_, state) {
+        pageBuilder: (_, state) {
           final args = state.extra;
-          if (args is! SendReviewArgs) return const SendScreen();
-          return SendReviewScreen(args: args);
+          if (args is! SendReviewArgs) {
+            return _stackPage(state, const SendScreen());
+          }
+          return _stackPage(state, SendReviewScreen(args: args));
         },
       ),
       GoRoute(
         path: '/send/keystone/scan',
-        builder: (_, _) => const KeystoneSendScanScreen(),
+        pageBuilder: (_, state) =>
+            _stackPage(state, const KeystoneSendScanScreen()),
       ),
       GoRoute(
         path: '/send/status',
-        builder: (_, state) {
+        pageBuilder: (_, state) {
           final args = state.extra;
           if (args is KeystoneBroadcastArgs) {
-            return SendStatusScreen(args: args.reviewArgs, keystone: args);
+            return _stackPage(
+              state,
+              SendStatusScreen(args: args.reviewArgs, keystone: args),
+            );
           }
-          if (args is! SendReviewArgs) return const SendScreen();
-          return SendStatusScreen(args: args);
+          if (args is! SendReviewArgs) {
+            return _stackPage(state, const SendScreen());
+          }
+          return _stackPage(state, SendStatusScreen(args: args));
         },
       ),
-      GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
+      GoRoute(
+        path: '/receive',
+        pageBuilder: (_, state) => _stackPage(state, const ReceiveScreen()),
+      ),
       GoRoute(
         path: '/accounts',
         pageBuilder: (_, state) =>
@@ -668,15 +694,18 @@ final _routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/settings/secret-passphrase',
-        builder: (_, _) => const SettingsSeedPhraseScreen(),
+        pageBuilder: (_, state) =>
+            _stackPage(state, const SettingsSeedPhraseScreen()),
       ),
       GoRoute(
         path: '/settings/change-password',
-        builder: (_, _) => const SettingsChangePasswordScreen(),
+        pageBuilder: (_, state) =>
+            _stackPage(state, const SettingsChangePasswordScreen()),
       ),
       GoRoute(
         path: '/settings/endpoint',
-        builder: (_, _) => const SettingsEndpointScreen(),
+        pageBuilder: (_, state) =>
+            _stackPage(state, const SettingsEndpointScreen()),
       ),
     ],
   );
@@ -684,6 +713,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
 
 const _mobileSidebarTransitionDuration = Duration(milliseconds: 170);
 const _mobileSidebarReverseTransitionDuration = Duration(milliseconds: 120);
+
+Page<void> _stackPage(GoRouterState state, Widget child) {
+  return MaterialPage<void>(key: state.pageKey, child: child);
+}
 
 Page<void> _mainSidebarPage(GoRouterState state, Widget child) {
   if (!shouldUseMobileSidebarTransition(state.extra)) {
