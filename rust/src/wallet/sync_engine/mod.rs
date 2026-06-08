@@ -52,7 +52,8 @@ use enhance::run_enhancement;
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use ledger_discovery::{
-    rewind_ledger_transparent_discovery_to_height, run_ledger_transparent_discovery,
+    mark_ledger_transparent_historical_complete, rewind_ledger_transparent_discovery_to_height,
+    run_ledger_transparent_discovery,
 };
 use lwd::{download_blocks, download_subtree_roots, get_tree_state};
 pub(crate) use lwd::{
@@ -1771,6 +1772,23 @@ async fn run_sync_impl(
 
     let (final_scanned_height, final_tip_height) =
         ensure_complete_scan_state(&db, current_tip_height)?;
+    if let Ok(scanned_height) = u32::try_from(final_scanned_height) {
+        if let Err(e) = mark_ledger_transparent_historical_complete(
+            db_data_path,
+            BlockHeight::from_u32(scanned_height),
+        ) {
+            log::warn!(
+                "[{}] sync: Ledger transparent historical completion update skipped: {e}",
+                elapsed()
+            );
+        }
+    } else {
+        log::warn!(
+            "[{}] sync: Ledger transparent historical completion update skipped: invalid scanned height {}",
+            elapsed(),
+            final_scanned_height
+        );
+    }
     log::info!(
         "[{}] sync: completed (fully_scanned={}, chain_tip={})",
         elapsed(),
