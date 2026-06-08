@@ -44,6 +44,7 @@ final class WindowAppearanceChannel {
   private weak var window: NSWindow?
   private weak var visualEffectView: NSVisualEffectView?
   private let channel: FlutterMethodChannel
+  private var appearanceFrameRestoreToken = 0
 
   private init(
     window: NSWindow,
@@ -97,6 +98,7 @@ final class WindowAppearanceChannel {
   }
 
   private func setBrightness(_ brightness: String) {
+    let frameBeforeAppearance = window?.frame
     let appearanceName: NSAppearance.Name =
       brightness == "dark" ? .darkAqua : .aqua
     let appearance = NSAppearance(named: appearanceName)
@@ -110,6 +112,47 @@ final class WindowAppearanceChannel {
       appWindowBackgroundColor(for: brightness)
     )
     window?.invalidateShadow()
+    restoreWindowFrameAfterAppearanceChange(frameBeforeAppearance)
+  }
+
+  private func restoreWindowFrameAfterAppearanceChange(_ expectedFrame: NSRect?) {
+    guard
+      let expectedFrame,
+      let window,
+      !window.styleMask.contains(.fullScreen)
+    else {
+      return
+    }
+
+    appearanceFrameRestoreToken += 1
+    let token = appearanceFrameRestoreToken
+
+    DispatchQueue.main.async { [weak self] in
+      self?.restoreWindowFrame(expectedFrame, token: token)
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(120)) { [weak self] in
+      self?.restoreWindowFrame(expectedFrame, token: token)
+    }
+  }
+
+  private func restoreWindowFrame(_ expectedFrame: NSRect, token: Int) {
+    guard
+      token == appearanceFrameRestoreToken,
+      let window,
+      !window.styleMask.contains(.fullScreen),
+      frameDiffersVisibly(window.frame, expectedFrame)
+    else {
+      return
+    }
+
+    window.setFrame(expectedFrame, display: true, animate: false)
+  }
+
+  private func frameDiffersVisibly(_ current: NSRect, _ expected: NSRect) -> Bool {
+    abs(current.origin.x - expected.origin.x) > 0.5 ||
+      abs(current.origin.y - expected.origin.y) > 0.5 ||
+      abs(current.size.width - expected.size.width) > 0.5 ||
+      abs(current.size.height - expected.size.height) > 0.5
   }
 }
 
