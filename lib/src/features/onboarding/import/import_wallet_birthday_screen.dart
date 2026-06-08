@@ -380,6 +380,13 @@ class _ImportWalletBirthdayScreenState
     };
 
     return ImportOnboardingTrailingPane(
+      backTarget: OnboardingBackTarget.callback(
+        label: ImportOnboardingStep.secretPassphrase.label,
+        onTap: () => context.go(
+          '/import',
+          extra: ImportSecretPassphraseArgs(mnemonic: widget.args.mnemonic),
+        ),
+      ),
       overlay: _isUnknownBirthdayConfirmOpen
           ? ImportBirthdayUnknownHeightModal(
               onConfirm: _confirmUnknownBirthday,
@@ -397,13 +404,6 @@ class _ImportWalletBirthdayScreenState
           : null,
       child: Column(
         children: [
-          _BackRow(
-            onTap: () => context.go(
-              '/import',
-              extra: ImportSecretPassphraseArgs(mnemonic: widget.args.mnemonic),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s),
           Expanded(
             child: Column(
               children: [
@@ -519,47 +519,6 @@ class _ImportWalletBirthdayScreenState
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _BackRow extends StatelessWidget {
-  const _BackRow({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      height: 32,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onTap,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.chevronBackward,
-                  size: AppIconSize.medium,
-                  color: colors.text.accent,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }

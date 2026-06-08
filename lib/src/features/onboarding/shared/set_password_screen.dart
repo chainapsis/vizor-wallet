@@ -16,6 +16,7 @@ import '../../../providers/wallet_mutation_guard.dart';
 import '../create/onboarding_split_view.dart';
 import '../import/import_split_view.dart';
 import '../keystone/keystone_onboarding_flow.dart';
+import 'onboarding_chrome.dart' as onboarding_chrome;
 import 'onboarding_flow_args.dart';
 import 'onboarding_error_messages.dart';
 
@@ -168,24 +169,40 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       passwordMessage: _passwordMessage,
       confirmMessage: _confirmMessage,
       submitError: _submitError,
-      backRoutePath: args.backRoutePath,
-      backRouteExtra: args.backRouteExtra,
       onChanged: () => setState(() {
         _submitError = null;
       }),
       onSubmit: _submit,
     );
+    final backTarget = onboarding_chrome.OnboardingBackTarget.route(
+      label: _backLabel(args.flow),
+      routePath: args.backRoutePath,
+      routeExtra: args.backRouteExtra,
+    );
 
     return switch (args.flow) {
-      SetPasswordFlow.create => OnboardingTrailingPane(child: content),
+      SetPasswordFlow.create => OnboardingTrailingPane(
+        backTarget: backTarget,
+        child: content,
+      ),
       SetPasswordFlow.importWallet => ImportOnboardingTrailingPane(
+        backTarget: backTarget,
         child: content,
       ),
       SetPasswordFlow.importKeystone => KeystoneOnboardingTrailingPane(
+        backTarget: backTarget,
         child: content,
       ),
     };
   }
+
+  String _backLabel(SetPasswordFlow flow) => switch (flow) {
+    SetPasswordFlow.create => OnboardingStep.secretPassphrase.label,
+    SetPasswordFlow.importWallet =>
+      ImportOnboardingStep.walletBirthdayHeight.label,
+    SetPasswordFlow.importKeystone =>
+      KeystoneOnboardingStep.walletBirthdayHeight.label,
+  };
 }
 
 class _SetPasswordContent extends StatelessWidget {
@@ -197,8 +214,6 @@ class _SetPasswordContent extends StatelessWidget {
     required this.passwordMessage,
     required this.confirmMessage,
     required this.submitError,
-    required this.backRoutePath,
-    required this.backRouteExtra,
     required this.onChanged,
     required this.onSubmit,
   });
@@ -210,8 +225,6 @@ class _SetPasswordContent extends StatelessWidget {
   final String? passwordMessage;
   final String? confirmMessage;
   final String? submitError;
-  final String backRoutePath;
-  final Object backRouteExtra;
   final VoidCallback onChanged;
   final Future<void> Function() onSubmit;
 
@@ -225,8 +238,6 @@ class _SetPasswordContent extends StatelessWidget {
     final colors = context.colors;
     return Column(
       children: [
-        _BackRow(routePath: backRoutePath, routeExtra: backRouteExtra),
-        const SizedBox(height: AppSpacing.s),
         Expanded(
           child: Column(
             children: [
@@ -376,48 +387,6 @@ class _PasswordFieldBlock extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.only(bottom: reserveMessageSpace),
       child: child,
-    );
-  }
-}
-
-class _BackRow extends StatelessWidget {
-  const _BackRow({required this.routePath, required this.routeExtra});
-
-  final String routePath;
-  final Object routeExtra;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      height: 32,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => context.go(routePath, extra: routeExtra),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.chevronBackward,
-                  size: AppIconSize.medium,
-                  color: colors.text.accent,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

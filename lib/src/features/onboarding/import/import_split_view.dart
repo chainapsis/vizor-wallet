@@ -4,6 +4,9 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/motion/onboarding_motion.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../shared/onboarding_chrome.dart';
+
+export '../shared/onboarding_chrome.dart' show OnboardingBackTarget;
 
 enum ImportOnboardingStep {
   secretPassphrase,
@@ -78,29 +81,24 @@ class ImportOnboardingShell extends StatelessWidget {
 class ImportOnboardingTrailingPane extends StatelessWidget {
   const ImportOnboardingTrailingPane({
     required this.child,
+    this.backTarget,
     this.overlay,
+    this.bodyPadding = const EdgeInsets.fromLTRB(12, 16, 12, 16),
     super.key,
   });
 
   final Widget child;
+  final OnboardingBackTarget? backTarget;
   final Widget? overlay;
+  final EdgeInsetsGeometry bodyPadding;
 
   @override
   Widget build(BuildContext context) {
-    final overlay = this.overlay;
-    if (overlay == null) {
-      return AppDesktopPane(child: child);
-    }
-
-    return AppDesktopPane(
-      padding: EdgeInsets.zero,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Padding(padding: const EdgeInsets.all(AppSpacing.md), child: child),
-          overlay,
-        ],
-      ),
+    return OnboardingPaneChrome(
+      backTarget: backTarget,
+      overlay: overlay,
+      bodyPadding: bodyPadding,
+      child: child,
     );
   }
 }
@@ -119,73 +117,16 @@ class _Sidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppDesktopSidebarSurface(
-      child: Stack(
-        children: [
-          const Positioned.fill(child: _SidebarIllustration()),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.xs),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (var i = 0; i < _steps.length; i++) ...[
-                    _ImportSidebarItem(
-                      label: _steps[i].label,
-                      iconName: _steps[i].iconName,
-                      active: _steps[i] == activeStep,
-                    ),
-                    if (i != _steps.length - 1)
-                      const SizedBox(height: AppSpacing.xs),
-                  ],
-                ],
-              ),
-            ),
+    return OnboardingSidebarChrome(
+      steps: [
+        for (final step in _steps)
+          OnboardingSidebarStepData(
+            label: step.label,
+            iconName: step.iconName,
+            active: step == activeStep,
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ImportSidebarItem extends StatelessWidget {
-  const _ImportSidebarItem({
-    required this.label,
-    required this.iconName,
-    required this.active,
-  });
-
-  final String label;
-  final String iconName;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: active ? colors.state.selectedOpacity : null,
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      padding: const EdgeInsets.only(
-        left: AppSpacing.xs,
-        top: AppSpacing.xs,
-        bottom: AppSpacing.xs,
-      ),
-      child: Row(
-        children: [
-          AppIcon(iconName, size: 20, color: colors.icon.accent),
-          const SizedBox(width: AppSpacing.s),
-          Text(
-            label,
-            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
-          ),
-        ],
-      ),
+      ],
+      illustration: const _SidebarIllustration(),
     );
   }
 }

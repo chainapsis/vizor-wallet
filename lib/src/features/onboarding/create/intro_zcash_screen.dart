@@ -32,61 +32,12 @@ class _IntroZcashScreenState extends ConsumerState<IntroZcashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return const OnboardingTrailingPane(child: _Content());
-  }
-}
-
-class _Content extends StatelessWidget {
-  const _Content();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Column(
-      children: [
-        _BackRow(),
-        SizedBox(height: AppSpacing.xs),
-        Expanded(child: _HeroLayout()),
-      ],
-    );
-  }
-}
-
-class _BackRow extends StatelessWidget {
-  const _BackRow();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => context.go('/welcome'),
-          child: SizedBox(
-            height: 32,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                AppIcon(
-                  AppIcons.chevronBackward,
-                  size: AppIconSize.medium,
-                  color: colors.text.accent,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+    return const OnboardingTrailingPane(
+      backTarget: OnboardingBackTarget.route(
+        label: 'Welcome',
+        routePath: '/welcome',
       ),
+      child: _HeroLayout(),
     );
   }
 }

@@ -19,6 +19,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import 'onboarding_split_view.dart';
+import '../shared/onboarding_chrome.dart';
 import '../shared/onboarding_flow_args.dart';
 import '../shared/onboarding_error_messages.dart';
 
@@ -202,68 +203,25 @@ class _SecretPassphraseScreenState
   Widget build(BuildContext context) {
     return AppDesktopPane(
       padding: EdgeInsets.zero,
+      paintBackground: false,
       child: SensitivePrivacyOverlay(
         sensitiveContentVisible: _revealed && _mnemonic != null,
         controller: widget.privacyOverlayController,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Column(
-            children: [
-              const _BackRow(),
-              const SizedBox(height: AppSpacing.xs),
-              Expanded(
-                child: _HeroLayout(
-                  mnemonic: _mnemonic,
-                  isPreparing: _isPreparing,
-                  submitPhase: _submitPhase,
-                  revealed: _revealed,
-                  copied: _copied,
-                  prepareError: _prepareError,
-                  submitError: _submitError,
-                  onPrimaryPressed: _handlePrimaryAction,
-                  onCopyPressed: _copyMnemonic,
-                ),
-              ),
-            ],
+        child: OnboardingPaneScaffold(
+          backTarget: OnboardingBackTarget.route(
+            label: OnboardingStep.thingsToKnow.label,
+            routePath: OnboardingStep.thingsToKnow.routePath,
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BackRow extends StatelessWidget {
-  const _BackRow();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      height: 32,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => context.go(OnboardingStep.thingsToKnow.routePath),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.chevronBackward,
-                  size: AppIconSize.medium,
-                  color: colors.text.accent,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
+          child: _HeroLayout(
+            mnemonic: _mnemonic,
+            isPreparing: _isPreparing,
+            submitPhase: _submitPhase,
+            revealed: _revealed,
+            copied: _copied,
+            prepareError: _prepareError,
+            submitError: _submitError,
+            onPrimaryPressed: _handlePrimaryAction,
+            onCopyPressed: _copyMnemonic,
           ),
         ),
       ),

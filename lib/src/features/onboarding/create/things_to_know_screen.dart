@@ -11,60 +11,12 @@ class ThingsToKnowScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const OnboardingTrailingPane(child: _Content());
-  }
-}
-
-class _Content extends StatelessWidget {
-  const _Content();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Column(
-      children: [
-        _BackRow(),
-        SizedBox(height: AppSpacing.xs),
-        Expanded(child: _HeroLayout()),
-      ],
-    );
-  }
-}
-
-class _BackRow extends StatelessWidget {
-  const _BackRow();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      height: 32,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => context.go(OnboardingStep.addressTypes.routePath),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.chevronBackward,
-                  size: AppIconSize.medium,
-                  color: colors.text.accent,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+    return OnboardingTrailingPane(
+      backTarget: OnboardingBackTarget.route(
+        label: OnboardingStep.addressTypes.label,
+        routePath: OnboardingStep.addressTypes.routePath,
       ),
+      child: const _HeroLayout(),
     );
   }
 }
