@@ -694,7 +694,7 @@ pub async fn migrate_orchard_to_ironwood(
         return Err("Migration amount must be greater than zero".to_string());
     }
 
-    let (txids, fee_zatoshi) =
+    let (txids, fee_zatoshi, migrated_zatoshi) =
         with_wallet_db_write_lock("send.migrate_orchard_to_ironwood", move || {
             let mut db = open_wallet_db(db_path, network)?;
             let account_id = parse_account_uuid(account_uuid)?;
@@ -717,6 +717,7 @@ pub async fn migrate_orchard_to_ironwood(
             let fee_rule = ConservativeZip317FeeRule;
             let mut txids = Vec::with_capacity(transfer_count as usize);
             let mut total_fee = Zatoshis::ZERO;
+            let mut total_migrated = Zatoshis::ZERO;
 
             for index in 0..transfer_count {
                 let memo_text = format!("Ironwood migration {}/{}", index + 1, transfer_count);
@@ -740,19 +741,19 @@ pub async fn migrate_orchard_to_ironwood(
 
                 total_fee =
                     (total_fee + transaction.fee_amount()).ok_or("Migration fee total overflow")?;
+                total_migrated = (total_migrated + transaction.migrated_amount())
+                    .ok_or("Migration amount total overflow")?;
                 txids.push(transaction.txid());
             }
 
-            Ok::<_, String>((txids, total_fee))
+            Ok::<_, String>((txids, total_fee, total_migrated))
         })?;
 
-    let migrated_zatoshi = amount_zatoshi
-        .checked_mul(u64::from(transfer_count))
-        .ok_or("Migration amount overflow")?;
     let broadcast =
         broadcast_created_transactions(db_path, lightwalletd_url, &txids, "ironwood_migration")
             .await;
-    Ok(broadcast.into_ironwood_migration_result(u64::from(fee_zatoshi), migrated_zatoshi))
+    Ok(broadcast
+        .into_ironwood_migration_result(u64::from(fee_zatoshi), u64::from(migrated_zatoshi)))
 }
 
 fn shielding_threshold() -> Result<Zatoshis, String> {

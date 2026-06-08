@@ -5,6 +5,7 @@ export 'network_config.dart';
 
 const kDefaultRpcEndpointPresetId = 'default-mainnet';
 const kCustomRpcEndpointPresetId = 'custom';
+const kLocalIronwoodTestnetRpcEndpointPresetId = 'local-ironwood-testnet';
 const kRegtestSlowRpcEndpointPresetId = 'slow-regtest';
 const kRegtestUnavailableRpcEndpointPresetId = 'unavailable-regtest';
 
@@ -140,7 +141,7 @@ final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
 
 final kTestnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
   const RpcEndpointPreset(
-    id: 'local-ironwood-testnet',
+    id: kLocalIronwoodTestnetRpcEndpointPresetId,
     region: 'Testnet',
     label: 'Local Ironwood',
     url: 'http://127.0.0.1:9067',

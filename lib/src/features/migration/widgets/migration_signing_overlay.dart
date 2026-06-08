@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
@@ -73,8 +74,16 @@ class _MigrationSigningOverlayState
         );
       }
 
-      final dbPath = await getWalletDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
+      if (endpoint.networkName != ZcashNetwork.testnet.name ||
+          endpoint.effectivePresetId !=
+              kLocalIronwoodTestnetRpcEndpointPresetId) {
+        throw MigrationBatchError(
+          'Select the Local Ironwood testnet endpoint before migrating.',
+        );
+      }
+
+      final dbPath = await getWalletDbPath();
       late final rust_sync.IronwoodMigrationResult result;
 
       if (Platform.isMacOS) {
@@ -101,8 +110,9 @@ class _MigrationSigningOverlayState
           );
         }
 
+        late final Future<rust_sync.IronwoodMigrationResult> resultFuture;
         try {
-          result = await rust_sync.migrateOrchardToIronwood(
+          resultFuture = rust_sync.migrateOrchardToIronwood(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
             network: endpoint.networkName,
@@ -114,6 +124,7 @@ class _MigrationSigningOverlayState
         } finally {
           mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
         }
+        result = await resultFuture;
       }
 
       log(
@@ -123,13 +134,6 @@ class _MigrationSigningOverlayState
         'fee=${result.feeZatoshi} migrated=${result.migratedZatoshi}',
       );
 
-      if (result.status != 'broadcasted') {
-        throw MigrationBatchError(
-          result.message ??
-              'Migration transactions were created but not fully broadcast.',
-        );
-      }
-
       final txids = result.txids
           .split(',')
           .map((txid) => txid.trim())
@@ -137,7 +141,8 @@ class _MigrationSigningOverlayState
           .toList(growable: false);
       await ref
           .read(migrationDemoProvider.notifier)
-          .startDemo(
+          .startDemoForAccount(
+            accountUuid: accountUuid,
             displayAmountZatoshi: result.migratedZatoshi,
             txids: txids,
           );
@@ -149,6 +154,16 @@ class _MigrationSigningOverlayState
       }
 
       if (!mounted) return;
+      if (result.status != 'broadcasted') {
+        setState(() {
+          _phase = _MigrationPhase.failed;
+          _error =
+              result.message ??
+              'Migration transactions were created locally but not fully broadcast. Keep Vizor open and do not start another migration.';
+        });
+        return;
+      }
+
       widget.onComplete();
     } catch (e, st) {
       log('MigrationSigningOverlay._startMigration: ERROR: $e\n$st');

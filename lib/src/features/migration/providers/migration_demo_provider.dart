@@ -9,8 +9,8 @@ import '../services/migration_demo_store.dart';
 
 final migrationDemoProvider =
     AsyncNotifierProvider<MigrationDemoNotifier, MigrationDemoState?>(
-  MigrationDemoNotifier.new,
-);
+      MigrationDemoNotifier.new,
+    );
 
 class MigrationDemoNotifier extends AsyncNotifier<MigrationDemoState?> {
   final MigrationDemoStore _store = MigrationDemoStore();
@@ -29,6 +29,19 @@ class MigrationDemoNotifier extends AsyncNotifier<MigrationDemoState?> {
   }) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
+    await startDemoForAccount(
+      accountUuid: accountUuid,
+      displayAmountZatoshi: displayAmountZatoshi,
+      txids: txids,
+    );
+  }
+
+  /// Records that a migration started for a specific account.
+  Future<void> startDemoForAccount({
+    required String accountUuid,
+    required BigInt displayAmountZatoshi,
+    required List<String> txids,
+  }) async {
     final demo = buildMigrationDemoState(
       accountUuid: accountUuid,
       displayAmountZatoshi: displayAmountZatoshi,
