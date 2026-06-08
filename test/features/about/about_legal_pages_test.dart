@@ -22,11 +22,11 @@ const _utilityPageScrollbarKey = ValueKey('utility-page-scrollbar');
 void main() {
   setUpAll(_loadAppFonts);
 
-  testWidgets('About Vizor sidebar item opens the About page', (tester) async {
+  testWidgets('About page renders from the direct route', (tester) async {
     await _setDesktopViewport(tester);
 
     final router = GoRouter(
-      initialLocation: '/home',
+      initialLocation: '/about',
       routes: [
         GoRoute(
           path: '/home',
@@ -56,11 +56,10 @@ void main() {
       ],
     );
 
-    await tester.pumpWidget(_routerHarness(router, _walletBootstrap('/home')));
-
-    await tester.tap(find.text('About Vizor'));
+    await tester.pumpWidget(_routerHarness(router, _walletBootstrap('/about')));
     await tester.pumpAndSettle();
 
+    expect(find.text('About Vizor'), findsNothing);
     expect(find.text('About Vizor Wallet'), findsOneWidget);
     expect(find.text('Version: 0.0.0 Public Beta'), findsOneWidget);
     expect(find.text('Built by the Keplr team'), findsOneWidget);
@@ -73,13 +72,11 @@ void main() {
     expect(find.text('Website'), findsOneWidget);
   });
 
-  testWidgets('About sidebar navigation uses the standard Home back target', (
-    tester,
-  ) async {
+  testWidgets('About back link uses the standard Home target', (tester) async {
     await _setDesktopViewport(tester);
 
     final router = GoRouter(
-      initialLocation: '/send',
+      initialLocation: '/about',
       routes: [
         GoRoute(
           path: '/send',
@@ -109,11 +106,10 @@ void main() {
       ],
     );
 
-    await tester.pumpWidget(_routerHarness(router, _walletBootstrap('/send')));
-
-    await tester.tap(find.text('About Vizor'));
+    await tester.pumpWidget(_routerHarness(router, _walletBootstrap('/about')));
     await tester.pumpAndSettle();
 
+    expect(find.text('About Vizor'), findsNothing);
     expect(find.text('About Vizor Wallet'), findsOneWidget);
     final backLink = find.byType(AppRouteBackLink);
     expect(

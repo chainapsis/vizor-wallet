@@ -12,8 +12,10 @@ import '../../providers/privacy_mode_provider.dart';
 import '../../providers/receive_address_provider.dart';
 import '../../providers/sync_failure.dart';
 import '../../providers/sync_provider.dart';
+import '../../providers/voting/voting_rounds_provider.dart';
 import '../../providers/voting/voting_submission_guard_provider.dart';
 import '../config/network_config.dart';
+import '../config/swap_feature_config.dart';
 import '../formatting/zec_amount.dart';
 import '../privacy/privacy_mask.dart';
 import '../profile_pictures.dart';
@@ -47,10 +49,18 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     return true;
   }
 
-  void _openAccounts() {
-    if (!_matches('/accounts')) {
-      context.go('/accounts');
+  void _navigateTo(String routePath) {
+    if (_matches(routePath)) {
+      if (routePath == '/voting') {
+        ref.read(votingPollListRefreshRequestProvider.notifier).request();
+      }
+      return;
     }
+    context.go(routePath);
+  }
+
+  void _openAccounts() {
+    _navigateTo('/accounts');
   }
 
   Future<void> _copyShieldedAddress() async {
@@ -153,118 +163,171 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       balanceText,
       privacyModeEnabled: ref.watch(privacyModeProvider),
     );
+    final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final accountsActive = _matches('/accounts');
 
     return AppDesktopSidebarSurface(
       glass: true,
-      child: Padding(
-        padding: const EdgeInsets.only(
-          top: 40,
-          left: AppSpacing.xs,
-          right: AppSpacing.xs,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.xs,
-                vertical: AppSpacing.xs,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _SidebarAccountHeader(
-                    key: const ValueKey('sidebar_accounts_button'),
-                    accountName: accountName,
-                    profilePictureId:
-                        activeAccount?.profilePictureId ??
-                        kDefaultProfilePictureId,
-                    balanceLabel: balanceLabel,
-                    onCopyAddress:
-                        activeAccountUuid == null || _isCopyingAddress
-                        ? null
-                        : () => unawaited(_copyShieldedAddress()),
-                    onTap: accountsActive ? null : _openAccounts,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  AppSidebarItem(
-                    key: const ValueKey('sidebar_wallet_button'),
-                    label: 'Wallet',
-                    iconName: AppIcons.wallet,
-                    active: _matches('/home'),
-                    inactiveOpacity: 0.5,
-                    onTap: _matches('/home') ? null : () => context.go('/home'),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  AppSidebarItem(
-                    key: const ValueKey('sidebar_send_button'),
-                    label: 'Send',
-                    iconName: AppIcons.plane,
-                    active: _matches('/send'),
-                    inactiveOpacity: 0.5,
-                    onTap: _matches('/send') ? null : () => context.go('/send'),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  AppSidebarItem(
-                    key: const ValueKey('sidebar_receive_button'),
-                    label: 'Receive',
-                    iconName: AppIcons.arrowDownCircle,
-                    active: _matches('/receive'),
-                    inactiveOpacity: 0.5,
-                    onTap: _matches('/receive')
-                        ? null
-                        : () => context.go('/receive'),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  AppSidebarItem(
-                    key: const ValueKey('sidebar_activity_button'),
-                    label: 'Activity',
-                    iconName: AppIcons.history,
-                    active: _matches('/activity'),
-                    inactiveOpacity: 0.5,
-                    onTap: _matches('/activity')
-                        ? null
-                        : () => context.go('/activity'),
-                  ),
-                ],
-              ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxHeight < 640;
+          final topPadding = compact ? AppSpacing.s : 40.0;
+          final primaryVerticalPadding = compact ? 0.0 : AppSpacing.xs;
+          final headerNavGap = compact ? AppSpacing.xs : AppSpacing.md;
+          final bottomPadding = compact ? AppSpacing.xs : AppSpacing.md;
+          final bottomSyncGap = compact ? AppSpacing.xs : AppSpacing.md;
+
+          return Padding(
+            padding: EdgeInsets.only(
+              top: topPadding,
+              left: AppSpacing.xs,
+              right: AppSpacing.xs,
             ),
-            const Spacer(),
-            Padding(
-              padding: const EdgeInsets.only(
-                left: AppSpacing.xs,
-                right: AppSpacing.xs,
-                top: AppSpacing.xs,
-                bottom: AppSpacing.md,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  AppSidebarItem(
-                    label: 'Settings',
-                    iconName: AppIcons.cog,
-                    active: _matches('/settings'),
-                    onTap: _matches('/settings')
-                        ? null
-                        : () => context.go('/settings'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    physics: const ClampingScrollPhysics(),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xs,
+                        vertical: primaryVerticalPadding,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _SidebarAccountHeader(
+                            key: const ValueKey('sidebar_accounts_button'),
+                            accountName: accountName,
+                            profilePictureId:
+                                activeAccount?.profilePictureId ??
+                                kDefaultProfilePictureId,
+                            balanceLabel: balanceLabel,
+                            onCopyAddress:
+                                activeAccountUuid == null || _isCopyingAddress
+                                ? null
+                                : () => unawaited(_copyShieldedAddress()),
+                            onTap: accountsActive ? null : _openAccounts,
+                          ),
+                          SizedBox(height: headerNavGap),
+                          AppSidebarItem(
+                            key: const ValueKey('sidebar_wallet_button'),
+                            label: 'Wallet',
+                            iconName: AppIcons.wallet,
+                            active: _matches('/home'),
+                            inactiveOpacity: 0.5,
+                            onTap: _matches('/home')
+                                ? null
+                                : () => _navigateTo('/home'),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          AppSidebarItem(
+                            key: const ValueKey('sidebar_send_button'),
+                            label: 'Send',
+                            iconName: AppIcons.plane,
+                            active: _matches('/send'),
+                            inactiveOpacity: 0.5,
+                            onTap: _matches('/send')
+                                ? null
+                                : () => _navigateTo('/send'),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          AppSidebarItem(
+                            key: const ValueKey('sidebar_receive_button'),
+                            label: 'Receive',
+                            iconName: AppIcons.arrowDownCircle,
+                            active: _matches('/receive'),
+                            inactiveOpacity: 0.5,
+                            onTap: _matches('/receive')
+                                ? null
+                                : () => _navigateTo('/receive'),
+                          ),
+                          if (swapFeatureEnabled) ...[
+                            const SizedBox(height: AppSpacing.xs),
+                            AppSidebarItem(
+                              key: const ValueKey('sidebar_swap_button'),
+                              label: 'Swap',
+                              iconName: AppIcons.swapArrows,
+                              active: _matches('/swap'),
+                              inactiveOpacity: 0.5,
+                              onTap: _matches('/swap')
+                                  ? null
+                                  : () => _navigateTo('/swap'),
+                            ),
+                          ],
+                          const SizedBox(height: AppSpacing.xs),
+                          AppSidebarItem(
+                            key: const ValueKey('sidebar_voting_button'),
+                            label: 'Vote',
+                            iconName: AppIcons.scroll,
+                            active: _matches('/voting'),
+                            inactiveOpacity: 0.5,
+                            onTap: () => _navigateTo('/voting'),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          AppSidebarItem(
+                            key: const ValueKey('sidebar_address_book_button'),
+                            label: 'Address book',
+                            iconName: AppIcons.users,
+                            active: _matches('/address-book'),
+                            inactiveOpacity: 0.5,
+                            onTap: _matches('/address-book')
+                                ? null
+                                : () => _navigateTo('/address-book'),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          AppSidebarItem(
+                            key: const ValueKey('sidebar_activity_button'),
+                            label: 'Activity',
+                            iconName: AppIcons.history,
+                            active: _matches('/activity'),
+                            inactiveOpacity: 0.5,
+                            onTap: _matches('/activity')
+                                ? null
+                                : () => _navigateTo('/activity'),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: AppSpacing.xs),
-                  AppSidebarItem(
-                    label: 'Sign out',
-                    iconName: AppIcons.logOut,
-                    onTap: _isSigningOut ? null : _handleSignOut,
+                ),
+                Padding(
+                  padding: EdgeInsets.only(
+                    left: AppSpacing.xs,
+                    right: AppSpacing.xs,
+                    top: AppSpacing.xs,
+                    bottom: bottomPadding,
                   ),
-                  const SizedBox(height: AppSpacing.md),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: _SidebarSyncStatus(sync: sync),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      AppSidebarItem(
+                        label: 'Settings',
+                        iconName: AppIcons.cog,
+                        active: _matches('/settings'),
+                        onTap: _matches('/settings')
+                            ? null
+                            : () => _navigateTo('/settings'),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      AppSidebarItem(
+                        label: 'Sign out',
+                        iconName: AppIcons.logOut,
+                        onTap: _isSigningOut ? null : _handleSignOut,
+                      ),
+                      SizedBox(height: bottomSyncGap),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: _SidebarSyncStatus(sync: sync),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
