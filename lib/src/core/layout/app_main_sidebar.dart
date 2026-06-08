@@ -1,14 +1,21 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../main.dart' show log;
 import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
+import '../../providers/privacy_mode_provider.dart';
+import '../../providers/receive_address_provider.dart';
 import '../../providers/sync_failure.dart';
 import '../../providers/sync_provider.dart';
-import '../../providers/voting/voting_rounds_provider.dart';
 import '../../providers/voting/voting_submission_guard_provider.dart';
-import '../config/swap_feature_config.dart';
+import '../config/network_config.dart';
+import '../formatting/zec_amount.dart';
+import '../privacy/privacy_mask.dart';
 import '../profile_pictures.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
@@ -25,6 +32,7 @@ class AppMainSidebar extends ConsumerStatefulWidget {
 
 class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   bool _isSigningOut = false;
+  bool _isCopyingAddress = false;
 
   String get _matchedLocation => GoRouterState.of(context).matchedLocation;
 
@@ -39,18 +47,56 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     return true;
   }
 
-  void _navigateTo(String routePath) {
-    if (_matches(routePath)) {
-      if (routePath == '/voting') {
-        ref.read(votingPollListRefreshRequestProvider.notifier).request();
-      }
-      return;
+  void _openAccounts() {
+    if (!_matches('/accounts')) {
+      context.go('/accounts');
     }
-    context.go(routePath);
   }
 
-  void _openAccounts() {
-    _navigateTo('/accounts');
+  Future<void> _copyShieldedAddress() async {
+    if (_isCopyingAddress) return;
+
+    final accountState = ref.read(accountProvider).value;
+    final accountUuid = accountState?.activeAccountUuid;
+    if (accountUuid == null) {
+      showAppToast(context, "Address couldn't be copied");
+      return;
+    }
+
+    setState(() {
+      _isCopyingAddress = true;
+    });
+
+    try {
+      final address = await ref
+          .read(receiveAddressServiceProvider)
+          .loadShieldedAddress(
+            accountUuid: accountUuid,
+            currentShieldedAddress: accountState?.activeAddress,
+          );
+      if (!mounted) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+        return;
+      }
+      if (address.trim().isEmpty) {
+        showAppToast(context, "Address couldn't be copied");
+        return;
+      }
+
+      await Clipboard.setData(ClipboardData(text: address));
+      if (!mounted) return;
+      showAppToast(context, 'Address copied');
+    } catch (e) {
+      log('AppMainSidebar: ERROR copying shielded address: $e');
+      if (!mounted) return;
+      showAppToast(context, "Address couldn't be copied");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCopyingAddress = false;
+        });
+      }
+    }
   }
 
   Future<void> _handleSignOut() async {
@@ -99,74 +145,76 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     }
     final accountName = activeAccount?.name ?? 'Username';
     final sync = ref.watch(syncProvider).value ?? SyncState();
-    final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
+    final accountSync = sync.scopedToAccount(activeAccountUuid);
+    final balanceText =
+        '${ZecAmount.fromZatoshi(accountSync.totalBalance).balance.amountText} '
+        '$kZcashDefaultCurrencyTicker';
+    final balanceLabel = hideAmountIfPrivacyMode(
+      balanceText,
+      privacyModeEnabled: ref.watch(privacyModeProvider),
+    );
+    final accountsActive = _matches('/accounts');
 
     return AppDesktopSidebarSurface(
-      clipBehavior: Clip.none,
+      glass: true,
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xs),
+        padding: const EdgeInsets.only(
+          top: 40,
+          left: AppSpacing.xs,
+          right: AppSpacing.xs,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.only(
-                left: AppSpacing.xs,
-                right: AppSpacing.xs,
-                bottom: AppSpacing.xs,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xs,
+                vertical: AppSpacing.xs,
               ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  AppSidebarItem(
+                  _SidebarAccountHeader(
                     key: const ValueKey('sidebar_accounts_button'),
-                    label: accountName,
-                    leading: _SidebarAccountAvatar(
-                      profilePictureId:
-                          activeAccount?.profilePictureId ??
-                          kDefaultProfilePictureId,
-                    ),
-                    leadingGap: AppSpacing.xs,
-                    active: _matches('/accounts'),
-                    onTap: _matches('/accounts') ? null : _openAccounts,
+                    accountName: accountName,
+                    profilePictureId:
+                        activeAccount?.profilePictureId ??
+                        kDefaultProfilePictureId,
+                    balanceLabel: balanceLabel,
+                    onCopyAddress:
+                        activeAccountUuid == null || _isCopyingAddress
+                        ? null
+                        : () => unawaited(_copyShieldedAddress()),
+                    onTap: accountsActive ? null : _openAccounts,
                   ),
-                  const SizedBox(height: AppSpacing.xs),
+                  const SizedBox(height: AppSpacing.md),
                   AppSidebarItem(
-                    key: const ValueKey('sidebar_home_button'),
-                    label: 'Home',
-                    iconName: AppIcons.home,
+                    key: const ValueKey('sidebar_wallet_button'),
+                    label: 'Wallet',
+                    iconName: AppIcons.wallet,
                     active: _matches('/home'),
-                    onTap: _matches('/home')
-                        ? null
-                        : () => _navigateTo('/home'),
-                  ),
-                  if (swapFeatureEnabled) ...[
-                    const SizedBox(height: AppSpacing.xs),
-                    AppSidebarItem(
-                      key: const ValueKey('sidebar_swap_button'),
-                      label: 'Swap',
-                      iconName: AppIcons.swapArrows,
-                      active: _matches('/swap'),
-                      onTap: _matches('/swap')
-                          ? null
-                          : () => _navigateTo('/swap'),
-                    ),
-                  ],
-                  const SizedBox(height: AppSpacing.xs),
-                  AppSidebarItem(
-                    key: const ValueKey('sidebar_voting_button'),
-                    label: 'Vote',
-                    iconName: AppIcons.scroll,
-                    active: _matches('/voting'),
-                    onTap: () => _navigateTo('/voting'),
+                    inactiveOpacity: 0.5,
+                    onTap: _matches('/home') ? null : () => context.go('/home'),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
-                    key: const ValueKey('sidebar_address_book_button'),
-                    label: 'Address book',
-                    iconName: AppIcons.users,
-                    active: _matches('/address-book'),
-                    onTap: _matches('/address-book')
+                    key: const ValueKey('sidebar_send_button'),
+                    label: 'Send',
+                    iconName: AppIcons.plane,
+                    active: _matches('/send'),
+                    inactiveOpacity: 0.5,
+                    onTap: _matches('/send') ? null : () => context.go('/send'),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  AppSidebarItem(
+                    key: const ValueKey('sidebar_receive_button'),
+                    label: 'Receive',
+                    iconName: AppIcons.arrowDownCircle,
+                    active: _matches('/receive'),
+                    inactiveOpacity: 0.5,
+                    onTap: _matches('/receive')
                         ? null
-                        : () => _navigateTo('/address-book'),
+                        : () => context.go('/receive'),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
@@ -174,16 +222,22 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     label: 'Activity',
                     iconName: AppIcons.history,
                     active: _matches('/activity'),
+                    inactiveOpacity: 0.5,
                     onTap: _matches('/activity')
                         ? null
-                        : () => _navigateTo('/activity'),
+                        : () => context.go('/activity'),
                   ),
                 ],
               ),
             ),
             const Spacer(),
             Padding(
-              padding: const EdgeInsets.all(AppSpacing.xs),
+              padding: const EdgeInsets.only(
+                left: AppSpacing.xs,
+                right: AppSpacing.xs,
+                top: AppSpacing.xs,
+                bottom: AppSpacing.md,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -193,16 +247,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     active: _matches('/settings'),
                     onTap: _matches('/settings')
                         ? null
-                        : () => _navigateTo('/settings'),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  AppSidebarItem(
-                    label: 'About Vizor',
-                    iconName: AppIcons.vizor,
-                    active: _matches('/about'),
-                    onTap: _matches('/about')
-                        ? null
-                        : () => _navigateTo('/about'),
+                        : () => context.go('/settings'),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
@@ -210,8 +255,11 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     iconName: AppIcons.logOut,
                     onTap: _isSigningOut ? null : _handleSignOut,
                   ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _SidebarSyncStatus(sync: sync),
+                  const SizedBox(height: AppSpacing.md),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: _SidebarSyncStatus(sync: sync),
+                  ),
                 ],
               ),
             ),
@@ -219,6 +267,82 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         ),
       ),
     );
+  }
+}
+
+class _SidebarAccountHeader extends StatelessWidget {
+  const _SidebarAccountHeader({
+    required this.accountName,
+    required this.profilePictureId,
+    required this.balanceLabel,
+    this.onCopyAddress,
+    this.onTap,
+    super.key,
+  });
+
+  final String accountName;
+  final String profilePictureId;
+  final String balanceLabel;
+  final VoidCallback? onCopyAddress;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final row = SizedBox(
+      height: 48,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xxs),
+        child: Row(
+          children: [
+            _SidebarAccountAvatar(profilePictureId: profilePictureId),
+            const SizedBox(width: AppSpacing.s),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          accountName,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.accent,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.xxs),
+                      _SidebarCopyAddressButton(onTap: onCopyAddress),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    balanceLabel,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return onTap == null
+        ? row
+        : MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: row,
+            ),
+          );
   }
 }
 
@@ -231,7 +355,42 @@ class _SidebarAccountAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppProfilePicture(
       profilePictureId: profilePictureId,
-      size: AppProfilePictureSize.medium,
+      size: AppProfilePictureSize.navLarge,
+    );
+  }
+}
+
+class _SidebarCopyAddressButton extends StatelessWidget {
+  const _SidebarCopyAddressButton({this.onTap});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final enabled = onTap != null;
+    final iconColor = colors.icon.regular.withValues(
+      alpha: enabled ? 0.72 : 0.38,
+    );
+
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: 'Copy shielded address',
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: SizedBox(
+            width: 16,
+            height: 18,
+            child: Center(
+              child: AppIcon(AppIcons.copy, size: 16, color: iconColor),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -241,10 +400,11 @@ class _SidebarSyncStatus extends StatelessWidget {
 
   final SyncState sync;
 
+  static const _width = 176.0;
   static const _height = 34.0;
   static const _indicatorWidth = 5.0;
   static const _indicatorHeight = 32.0;
-  static const _indicatorLeft = -AppSpacing.md;
+  static const _indicatorLeft = -AppSpacing.sm;
   static const _textLeft = AppSpacing.xs;
 
   @override
@@ -262,6 +422,7 @@ class _SidebarSyncStatus extends StatelessWidget {
     };
 
     return SizedBox(
+      width: _width,
       height: _height,
       child: Semantics(
         label: status.semanticsLabel,
@@ -327,8 +488,8 @@ class _SidebarSyncStatusData {
       final reason = _syncFailureReason(failure.kind);
       return _SidebarSyncStatusData(
         kind: _SidebarSyncStatusKind.failed,
-        label: 'Syncing failed: $reason',
-        semanticsLabel: 'Syncing failed: $reason',
+        label: 'Syncing failed. $reason...',
+        semanticsLabel: 'Syncing failed. $reason',
       );
     }
 

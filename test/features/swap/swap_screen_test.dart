@@ -9,7 +9,6 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
-import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -1284,46 +1283,6 @@ void main() {
     },
   );
 
-  testWidgets('sidebar Swap item opens the swap route', (tester) async {
-    await _setDesktopViewport(tester);
-
-    final router = GoRouter(
-      initialLocation: '/home',
-      routes: [
-        GoRoute(
-          path: '/home',
-          builder: (_, _) => AppDesktopShell(
-            sidebar: const AppMainSidebar(),
-            pane: AppDesktopPane(
-              child: Text(
-                'home route',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: AppThemeData.light.colors.text.primary,
-                ),
-              ),
-            ),
-          ),
-        ),
-        GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
-        _swapRoute(),
-        _swapActivityRoute(),
-        GoRoute(
-          path: '/receive',
-          builder: (_, _) => const Text('receive route'),
-        ),
-        GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
-        GoRoute(path: '/about', builder: (_, _) => const Text('about route')),
-      ],
-    );
-
-    await tester.pumpWidget(_routerHarness(router));
-
-    await tester.tap(find.text('Swap'));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const ValueKey('swap_compact_ticket')), findsOneWidget);
-  });
-
   testWidgets('swap tab renders composer and privacy check', (tester) async {
     await _setDesktopViewport(tester);
 
@@ -1547,13 +1506,13 @@ void main() {
     final modalRect = tester.getRect(
       find.byKey(const ValueKey('swap_address_modal')),
     );
-    final sidebarSwapRect = tester.getRect(
-      find.byKey(const ValueKey('sidebar_swap_button')),
+    final sidebarItemRect = tester.getRect(
+      find.byKey(const ValueKey('sidebar_send_button')),
     );
 
     expect((modalRect.center.dx - paneRect.center.dx).abs(), lessThan(1));
     expect((modalRect.center.dy - paneRect.center.dy).abs(), lessThan(1));
-    expect(modalRect.left, greaterThan(sidebarSwapRect.right));
+    expect(modalRect.left, greaterThan(sidebarItemRect.right));
   });
 
   testWidgets('address scan modal is constrained to the desktop pane', (
@@ -1584,15 +1543,15 @@ void main() {
     final cameraRect = tester.getRect(
       find.byKey(const ValueKey('address_scan_camera_viewport')),
     );
-    final sidebarSwapRect = tester.getRect(
-      find.byKey(const ValueKey('sidebar_swap_button')),
+    final sidebarItemRect = tester.getRect(
+      find.byKey(const ValueKey('sidebar_send_button')),
     );
 
     expect(find.text('Scan the address QR Code'), findsOneWidget);
     expect(find.byKey(const ValueKey('swap_address_modal')), findsNothing);
     expect((modalRect.center.dx - paneRect.center.dx).abs(), lessThan(1));
     expect((modalRect.center.dy - paneRect.center.dy).abs(), lessThan(1));
-    expect(modalRect.left, greaterThan(sidebarSwapRect.right));
+    expect(modalRect.left, greaterThan(sidebarItemRect.right));
     expect(modalRect.size, const Size(312, 440));
     expect(cameraRect.size, const Size(272, 220));
   });

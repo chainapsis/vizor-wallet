@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 enum AppProfilePictureSize {
   medium(24, AppRadii.xSmall),
   large(32, AppRadii.small),
+  navLarge(40, AppRadii.small),
   xLarge(56, AppRadii.medium);
 
   const AppProfilePictureSize(this.dimension, this.radius);

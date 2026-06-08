@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_polls_screen.dart';
@@ -52,6 +54,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap),
           accountProvider.overrideWith(_SoftwareAccountNotifier.new),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
           swapFeatureEnabledProvider.overrideWithValue(false),
@@ -76,7 +79,11 @@ void main() {
     expect(roundsNotifier.reloadCount, 1);
     expect(configNotifier.refreshCount, 1);
 
-    await tester.tap(find.byKey(const ValueKey('sidebar_voting_button')));
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(VotingPollsScreen)),
+      listen: false,
+    );
+    container.read(votingPollListRefreshRequestProvider.notifier).request();
     await tester.pumpAndSettle();
 
     expect(roundsNotifier.reloadCount, 2);
@@ -142,6 +149,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            appBootstrapProvider.overrideWithValue(_bootstrap),
             accountProvider.overrideWith(_SoftwareAccountNotifier.new),
             syncProvider.overrideWith(_NoopSyncNotifier.new),
             swapFeatureEnabledProvider.overrideWithValue(false),
@@ -209,6 +217,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap),
           accountProvider.overrideWith(() {
             accountNotifier = _SwitchingAccountNotifier();
             return accountNotifier;
@@ -276,6 +285,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap),
           accountProvider.overrideWith(_SoftwareAccountNotifier.new),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
           swapFeatureEnabledProvider.overrideWithValue(false),
@@ -327,6 +337,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            appBootstrapProvider.overrideWithValue(_bootstrap),
             accountProvider.overrideWith(_SoftwareAccountNotifier.new),
             syncProvider.overrideWith(_NoopSyncNotifier.new),
             swapFeatureEnabledProvider.overrideWithValue(false),
@@ -367,6 +378,23 @@ void main() {
     },
   );
 }
+
+final _bootstrap = AppBootstrapState(
+  initialLocation: '/voting',
+  initialAccountState: const AccountState(
+    accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1softwareaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
 
 class _TrackingVotingConfigNotifier extends VotingConfigNotifier {
   _TrackingVotingConfigNotifier({Future<void>? buildGate})

@@ -179,10 +179,10 @@ void main() {
     final accountsButton = find.byKey(
       const ValueKey('sidebar_accounts_button'),
     );
-    final homeButton = find.byKey(const ValueKey('sidebar_home_button'));
+    final walletButton = find.byKey(const ValueKey('sidebar_wallet_button'));
     expect(
       tester.getTopLeft(accountsButton).dy,
-      lessThan(tester.getTopLeft(homeButton).dy),
+      lessThan(tester.getTopLeft(walletButton).dy),
     );
 
     await tester.tap(accountsButton);
@@ -401,12 +401,16 @@ void main() {
 
     expect(find.text('New Account Name'), findsOneWidget);
     expect(find.byType(AppPaneModalOverlay), findsOneWidget);
+    final modalBackdrop = find.descendant(
+      of: find.byType(AppPaneModalOverlay),
+      matching: find.byType(BackdropFilter),
+    );
     expect(
-      tester.getTopLeft(find.byType(BackdropFilter)),
+      tester.getTopLeft(modalBackdrop),
       tester.getTopLeft(find.byType(AppDesktopPane)),
     );
     expect(
-      tester.getSize(find.byType(BackdropFilter)),
+      tester.getSize(modalBackdrop),
       tester.getSize(find.byType(AppDesktopPane)),
     );
 
