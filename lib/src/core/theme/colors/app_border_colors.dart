@@ -6,6 +6,7 @@ import '../primitives.dart';
 ///
 /// * [subtle] — Hairline dividers, row separators.
 /// * [subtleOpacity] — Alpha border used on strong filled controls.
+/// * [inverseOpacity] — Alpha border used over inverted / strong fills.
 /// * [regular] — Default field/card/chip border. (Named `regular` instead of
 ///   Figma's `default` because `default` is a reserved word in Dart.)
 /// * [medium] — Active/filled field border.
@@ -18,6 +19,7 @@ class AppBorderColors {
   const AppBorderColors({
     required this.subtle,
     required this.subtleOpacity,
+    required this.inverseOpacity,
     required this.regular,
     required this.medium,
     required this.strong,
@@ -29,6 +31,7 @@ class AppBorderColors {
 
   final Color subtle;
   final Color subtleOpacity;
+  final Color inverseOpacity;
   final Color regular;
   final Color medium;
   final Color strong;
@@ -40,6 +43,7 @@ class AppBorderColors {
   static const dark = AppBorderColors(
     subtle: Primitives.p150Dark,
     subtleOpacity: Primitives.p900Alpha10Dark,
+    inverseOpacity: Primitives.p150Alpha15Dark,
     regular: Primitives.p300Dark,
     medium: Primitives.p400Dark,
     strong: Primitives.p800Dark,
@@ -50,8 +54,9 @@ class AppBorderColors {
   );
 
   static const light = AppBorderColors(
-    subtle: Primitives.p100Light,
+    subtle: Primitives.p150Light,
     subtleOpacity: Primitives.p900Alpha5Light,
+    inverseOpacity: Primitives.p0Alpha10Light,
     regular: Primitives.p200Light,
     medium: Primitives.p300Light,
     strong: Primitives.p900Light,

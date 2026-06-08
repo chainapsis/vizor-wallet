@@ -95,7 +95,6 @@ class _VariantPalette {
 }
 
 _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
-  final transparentBorder = c.background.ground.withValues(alpha: 0);
   switch (variant) {
     case AppButtonVariant.primary:
       return _VariantPalette(
@@ -116,9 +115,9 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         bg: c.button.secondary.bg,
         bgHover: c.button.secondary.bgHover,
         bgPressed: c.button.secondary.bgPressed,
-        border: transparentBorder,
-        borderHover: transparentBorder,
-        borderPressed: transparentBorder,
+        border: c.background.ground.withValues(alpha: 0),
+        borderHover: c.background.ground.withValues(alpha: 0),
+        borderPressed: c.background.ground.withValues(alpha: 0),
         borderWidth: 0,
         label: c.button.secondary.label,
         labelHover: c.button.secondary.label,
@@ -129,12 +128,12 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
       // Ghost's visible base is transparent regardless of the nominal token
       // value — that way it composes correctly over any surface.
       return _VariantPalette(
-        bg: transparentBorder,
+        bg: c.background.ground.withValues(alpha: 0),
         bgHover: c.button.ghost.bgHover,
         bgPressed: c.button.ghost.bgHover,
-        border: transparentBorder,
-        borderHover: transparentBorder,
-        borderPressed: transparentBorder,
+        border: c.background.ground.withValues(alpha: 0),
+        borderHover: c.background.ground.withValues(alpha: 0),
+        borderPressed: c.background.ground.withValues(alpha: 0),
         borderWidth: 0,
         label: c.button.ghost.label,
         labelHover: c.button.ghost.label,
@@ -177,10 +176,10 @@ class AppButton extends StatefulWidget {
     required this.child,
     this.variant = AppButtonVariant.primary,
     this.size = AppButtonSize.large,
+    this.height,
     this.leading,
     this.trailing,
     this.minWidth,
-    this.height,
     this.iconGap,
     this.focusRingColor,
     this.focusNode,
@@ -198,6 +197,10 @@ class AppButton extends StatefulWidget {
   final AppButtonVariant variant;
   final AppButtonSize size;
 
+  /// Optional visual height override for one-off composed components that
+  /// use the button palette but have a different fixed height in Figma.
+  final double? height;
+
   /// Optional widget shown before [child]. Auto-sized to 16×16 and tinted
   /// to the label color via [IconTheme].
   final Widget? leading;
@@ -209,10 +212,6 @@ class AppButton extends StatefulWidget {
   /// intrinsic — content drives size. Callers opt in to a floor when a
   /// specific screen or layout demands a consistent button width.
   final double? minWidth;
-
-  /// Optional visual height override for screen-specific CTA treatment.
-  /// Defaults to the design-system size token height.
-  final double? height;
 
   /// Optional gap between the label and any leading/trailing icon. Defaults
   /// to the size token's gap.

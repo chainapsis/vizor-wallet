@@ -60,14 +60,14 @@ class AppPrimaryButtonColors {
   final Color labelHover;
 
   static const dark = AppPrimaryButtonColors(
-    bg: Color(0xFFF7F7F7),
+    bg: Primitives.p800Dark,
     bgHover: CrimsonPrimitives.p300Dark,
     bgPressed: CrimsonPrimitives.p300Dark,
     border: Primitives.p150Alpha15Dark,
     borderHover: Primitives.p900Alpha10Dark,
     borderPressed: Primitives.p900Alpha10Dark,
     label: Primitives.p50Dark,
-    labelHover: Color(0xFFF7F7F7),
+    labelHover: Primitives.p800Dark,
   );
 
   static const light = AppPrimaryButtonColors(

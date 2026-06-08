@@ -5,7 +5,7 @@ import '../primitives.dart';
 /// Depth hierarchy for the app shell.
 ///
 /// Layered from deepest to highest:
-/// * [window] — Desktop window backing and matching app background.
+/// * [window] — Desktop window backing and matching onboarding pane background.
 /// * [ground] — Scaffold background, deepest layer.
 /// * [base] — Primary content surface, main panels.
 /// * [raised] — Cards, modals, sidebars, drawers.
@@ -80,8 +80,8 @@ class AppBackgroundColors {
     utilityDestructiveAlpha: PlumPrimitives.p400Alpha25Dark,
     utilitySuccessSubtle: GoldPrimitives.p150Dark,
     utilitySuccessStrong: GoldPrimitives.p500Dark,
-    utilitySuccessAlpha: GoldPrimitives.p400Alpha25Dark,
-    homeCard: Primitives.p100Dark,
+    utilitySuccessAlpha: GoldPrimitives.p300Alpha15Dark,
+    homeCard: Primitives.p50Dark,
   );
 
   static const light = AppBackgroundColors(
