@@ -127,7 +127,7 @@ class _MigrationSigningOverlayState
         'fee=${result.feeZatoshi} migrated=${result.migratedZatoshi}',
       );
 
-      if (result.status != 'broadcasted') {
+      if (result.status != 'broadcasted' && result.broadcastedCount == 0) {
         try {
           await ref.read(syncProvider.notifier).refreshAfterSend();
         } catch (e) {

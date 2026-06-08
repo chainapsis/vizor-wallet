@@ -34,9 +34,10 @@
 //! components) and the provers log+fail loudly rather than produce a
 //! silently-invalid proof.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::convert::Infallible;
 use std::num::NonZeroUsize;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use secrecy::{ExposeSecret, SecretVec};
@@ -164,6 +165,7 @@ pub(crate) struct ShieldTransparentPcztResult {
 const SHIELDING_THRESHOLD_ZATOSHI: u64 = 100_000;
 const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
 const IRONWOOD_MIGRATION_BROADCAST_DELAY: Duration = Duration::from_secs(60);
+static ACTIVE_IRONWOOD_MIGRATIONS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 /// Wallet-local ZIP-317 rule that preserves standard fee parameters but
 /// prevents exact transparent-input serialization from shrinking below
@@ -689,6 +691,7 @@ pub async fn migrate_orchard_to_ironwood(
 ) -> Result<IronwoodMigrationResult, String> {
     let amount = Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
         .map_err(|_| "Bad migration amount")?;
+    let migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
 
     let spending_keys =
         with_wallet_db_write_lock("send.migrate_orchard_to_ironwood.keys", move || {
@@ -755,8 +758,8 @@ pub async fn migrate_orchard_to_ironwood(
 
     let remaining_count =
         remaining_orchard_migration_transaction_count(db_path, network, account_uuid, amount)?;
-    if remaining_count > 0 {
-        spawn_remaining_orchard_to_ironwood_migration(
+    let status = if remaining_count > 0 {
+        match spawn_remaining_orchard_to_ironwood_migration(
             db_path.to_string(),
             lightwalletd_url.to_string(),
             network,
@@ -764,12 +767,32 @@ pub async fn migrate_orchard_to_ironwood(
             spending_keys,
             amount,
             2,
-        );
-    }
+            migration_guard,
+        ) {
+            Ok(()) => CreatedBroadcastResult::PARTIAL_BROADCAST,
+            Err(e) => {
+                return Ok(CreatedBroadcastResult {
+                    txids: join_txids(&txids),
+                    status: CreatedBroadcastResult::PARTIAL_BROADCAST,
+                    broadcasted_count: 1,
+                    total_count: remaining_count
+                        .checked_add(1)
+                        .ok_or("Migration transaction count overflow")?,
+                    message: Some(format!("Delayed migration worker could not start: {e}")),
+                }
+                .into_ironwood_migration_result(
+                    u64::from(transaction.fee_amount),
+                    u64::from(transaction.migrated_amount),
+                ));
+            }
+        }
+    } else {
+        CreatedBroadcastResult::BROADCASTED
+    };
 
     Ok(CreatedBroadcastResult {
         txids: join_txids(&txids),
-        status: CreatedBroadcastResult::BROADCASTED,
+        status,
         broadcasted_count: 1,
         total_count: remaining_count
             .checked_add(1)
@@ -828,6 +851,37 @@ fn create_orchard_to_ironwood_migration_transaction(
     }))
 }
 
+struct ActiveIronwoodMigration {
+    key: String,
+}
+
+impl ActiveIronwoodMigration {
+    fn acquire(db_path: &str, account_uuid: &str) -> Result<Self, String> {
+        let key = format!("{db_path}:{account_uuid}");
+        let mut active = active_ironwood_migrations()
+            .lock()
+            .map_err(|_| "Ironwood migration lock poisoned".to_string())?;
+
+        if !active.insert(key.clone()) {
+            return Err("An Ironwood migration is already running for this account".to_string());
+        }
+
+        Ok(Self { key })
+    }
+}
+
+impl Drop for ActiveIronwoodMigration {
+    fn drop(&mut self) {
+        if let Ok(mut active) = active_ironwood_migrations().lock() {
+            active.remove(&self.key);
+        }
+    }
+}
+
+fn active_ironwood_migrations() -> &'static Mutex<HashSet<String>> {
+    ACTIVE_IRONWOOD_MIGRATIONS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
 fn spawn_remaining_orchard_to_ironwood_migration(
     db_path: String,
     lightwalletd_url: String,
@@ -836,10 +890,12 @@ fn spawn_remaining_orchard_to_ironwood_migration(
     spending_keys: wallet::SpendingKeys,
     amount: Zatoshis,
     next_migration_index: u32,
-) {
-    if let Err(e) = std::thread::Builder::new()
+    migration_guard: ActiveIronwoodMigration,
+) -> Result<(), String> {
+    std::thread::Builder::new()
         .name("ironwood-migration".to_string())
         .spawn(move || {
+            let _migration_guard = migration_guard;
             let runtime = match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -863,9 +919,8 @@ fn spawn_remaining_orchard_to_ironwood_migration(
                 log::error!("ironwood_migration: background migration failed: {e}");
             }
         })
-    {
-        log::error!("ironwood_migration: failed to spawn background worker: {e}");
-    }
+        .map(|_| ())
+        .map_err(|e| format!("{e}"))
 }
 
 async fn run_remaining_orchard_to_ironwood_migration(
@@ -947,21 +1002,60 @@ fn remaining_orchard_migration_transaction_count(
         .ok_or("Wallet must sync before migrating")?;
     let mut excluded = Vec::<ReceivedNoteId>::new();
     let mut count = 0u32;
+    let fee_rule = ConservativeZip317FeeRule;
 
     loop {
-        let selected_notes = db
-            .select_spendable_notes(
-                account_id,
-                TargetValue::AtLeast(amount),
-                &[ShieldedProtocol::Orchard],
-                target_height,
-                ConfirmationsPolicy::default(),
-                &excluded,
-            )
-            .map_err(|e| format!("Failed to select migration notes: {e}"))?;
-        if selected_notes.orchard_value().map_err(|e| format!("{e}"))? < amount {
-            return Ok(count);
-        }
+        let mut fee_estimate = Zatoshis::ZERO;
+        let mut previous_available = Zatoshis::ZERO;
+
+        let selected_notes = loop {
+            let required_estimate =
+                (amount + fee_estimate).ok_or("Migration required amount overflow".to_string())?;
+            let selected_notes = db
+                .select_spendable_notes(
+                    account_id,
+                    TargetValue::AtLeast(required_estimate),
+                    &[ShieldedProtocol::Orchard],
+                    target_height,
+                    ConfirmationsPolicy::default(),
+                    &excluded,
+                )
+                .map_err(|e| format!("Failed to select migration notes: {e}"))?;
+            let selected_value = selected_notes.orchard_value().map_err(|e| format!("{e}"))?;
+            if selected_value < required_estimate {
+                return Ok(count);
+            }
+
+            let orchard_notes = selected_notes.orchard();
+            if orchard_notes.is_empty() {
+                return Ok(count);
+            }
+
+            let fee_amount = fee_rule
+                .fee_required(
+                    &network,
+                    consensus::BlockHeight::from(target_height),
+                    std::iter::empty::<TransparentInputSize>(),
+                    std::iter::empty::<usize>(),
+                    0,
+                    0,
+                    orchard_notes.len() + 1,
+                )
+                .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
+            let required =
+                (amount + fee_amount).ok_or("Migration required amount overflow".to_string())?;
+
+            if selected_value < required {
+                fee_estimate = fee_amount;
+                if selected_value <= previous_available {
+                    return Ok(count);
+                }
+                previous_available = selected_value;
+                continue;
+            }
+
+            break selected_notes;
+        };
 
         let orchard_notes = selected_notes.orchard();
         if orchard_notes.is_empty() {

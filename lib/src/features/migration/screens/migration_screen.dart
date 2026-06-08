@@ -14,17 +14,34 @@ import '../migration_copy.dart';
 import '../models/migration_view_state.dart';
 import '../widgets/migration_signing_overlay.dart';
 
-class MigrationExpectedTransferCountNotifier extends Notifier<int?> {
-  @override
-  int? build() => null;
+class MigrationExpectedTransferCount {
+  const MigrationExpectedTransferCount({
+    required this.accountUuid,
+    required this.count,
+  });
 
-  void setCount(int count) => state = count;
+  final String accountUuid;
+  final int count;
+}
+
+class MigrationExpectedTransferCountNotifier
+    extends Notifier<MigrationExpectedTransferCount?> {
+  @override
+  MigrationExpectedTransferCount? build() => null;
+
+  void setCount(String accountUuid, int count) {
+    state = MigrationExpectedTransferCount(
+      accountUuid: accountUuid,
+      count: count,
+    );
+  }
 }
 
 final migrationExpectedTransferCountProvider =
-    NotifierProvider<MigrationExpectedTransferCountNotifier, int?>(
-      MigrationExpectedTransferCountNotifier.new,
-    );
+    NotifierProvider<
+      MigrationExpectedTransferCountNotifier,
+      MigrationExpectedTransferCount?
+    >(MigrationExpectedTransferCountNotifier.new);
 
 class MigrationScreen extends ConsumerStatefulWidget {
   const MigrationScreen({super.key});
@@ -40,29 +57,44 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
   void _cancelSigning() => setState(() => _signing = false);
 
   void _completeSigning(rust_sync.IronwoodMigrationResult result) {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     final totalCount = result.totalCount;
-    if (totalCount > 0) {
+    if (accountUuid != null && totalCount > 0) {
       ref
           .read(migrationExpectedTransferCountProvider.notifier)
-          .setCount(totalCount);
+          .setCount(accountUuid, totalCount);
     }
     setState(() => _signing = false);
   }
 
   @override
   Widget build(BuildContext context) {
-    final account = ref.watch(accountProvider).value?.activeAccount;
+    final accountState = ref.watch(accountProvider).value;
+    final account = accountState?.activeAccount;
+    final accountUuid = accountState?.activeAccountUuid;
     final isHardware = account?.isHardware ?? false;
     final sync = ref.watch(syncProvider).value;
     final migrationTransactions = _migrationTransactions(
       sync?.recentTransactions ?? const [],
     );
-    final hasPendingMigration = migrationTransactions.any(_isPendingMigration);
-    final hasCompletedMigration = migrationTransactions.any(
-      _isCompletedMigration,
-    );
     final expectedTransferCount = ref.watch(
       migrationExpectedTransferCountProvider,
+    );
+    final scopedExpectedTransferCount =
+        expectedTransferCount?.accountUuid == accountUuid
+        ? expectedTransferCount?.count
+        : null;
+    final completedMigrationCount = migrationTransactions
+        .where(_isCompletedMigration)
+        .length;
+    final expectedMigrationInProgress =
+        scopedExpectedTransferCount != null &&
+        completedMigrationCount < scopedExpectedTransferCount;
+    final hasPendingMigration =
+        migrationTransactions.any(_isPendingMigration) ||
+        expectedMigrationInProgress;
+    final hasCompletedMigration = migrationTransactions.any(
+      _isCompletedMigration,
     );
 
     final viewState = migrationViewState(
@@ -78,7 +110,7 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
       MigrationViewState.idle => _IdleView(onStart: _startSigning),
       MigrationViewState.inProgress => _InProgressView(
         migrationTransactions: migrationTransactions,
-        expectedTransferCount: expectedTransferCount,
+        expectedTransferCount: scopedExpectedTransferCount,
         amountZatoshi: _migrationDisplayAmount(sync, migrationTransactions),
       ),
       MigrationViewState.complete => const _CompleteView(),
