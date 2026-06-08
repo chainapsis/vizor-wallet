@@ -286,6 +286,7 @@ pub(crate) struct ExportBirthdayAnchor {
 #[derive(Clone)]
 struct TxBase {
     txid: Vec<u8>,
+    transaction_id: i64,
     mined_height: Option<u32>,
     expired_unmined: bool,
     account_balance_delta: i64,
@@ -366,8 +367,17 @@ struct ActivitySummary {
     sent: ActivityAmounts,
     received: ActivityAmounts,
     shielded: ActivityAmounts,
+    own_transparent_output_amount: u64,
     has_own_transparent_output: bool,
     has_external_transparent_send: bool,
+}
+
+type FundingStepMatchKey = (String, i64, u64);
+
+#[derive(Default)]
+struct SuppressedFundingStepFees {
+    suppressed_funding_txids: HashSet<i64>,
+    extra_fee_by_external_txid: HashMap<i64, u64>,
 }
 
 struct ClassifiedTx {
@@ -419,13 +429,18 @@ pub fn get_transaction_history(
     let mut visible = Vec::new();
     for base in &bases {
         let summary = summaries.get(&base.txid).cloned().unwrap_or_default();
-        if should_suppress_funding_step(base, &summary, &external_send_keys) {
+        if suppressed_funding_step_fees
+            .suppressed_funding_txids
+            .contains(&base.transaction_id)
+        {
             continue;
         }
 
         let extra_sent_fee = if summary.has_external_transparent_send {
-            funding_step_key(base)
-                .and_then(|key| suppressed_funding_step_fees.get(&key).copied())
+            suppressed_funding_step_fees
+                .extra_fee_by_external_txid
+                .get(&base.transaction_id)
+                .copied()
                 .unwrap_or(0)
         } else {
             0
@@ -589,6 +604,7 @@ fn read_history_base_by_txid(
             r#"
         SELECT
             vt.txid,
+            COALESCE(tx.id_tx, -1) AS transaction_id,
             vt.mined_height,
             vt.expired_unmined,
             vt.account_balance_delta,
@@ -614,18 +630,19 @@ fn read_history_base_by_txid(
         .query_row(rusqlite::params![account_uuid, txid], |row| {
             Ok(TxBase {
                 txid: row.get(0)?,
-                mined_height: row.get(1)?,
-                expired_unmined: row.get(2)?,
-                account_balance_delta: row.get(3)?,
-                fee: row.get::<_, i64>(4)?.unsigned_abs(),
-                block_time: row.get::<_, i64>(5)?.unsigned_abs(),
-                total_spent: row.get::<_, i64>(6)?.unsigned_abs(),
-                total_received: row.get::<_, i64>(7)?.unsigned_abs(),
-                is_shielding: row.get(8)?,
-                expiry_height: row.get(9)?,
-                tx_index: row.get(10)?,
-                created: row.get(11)?,
-                created_time: row.get::<_, i64>(12)?.unsigned_abs(),
+                transaction_id: row.get(1)?,
+                mined_height: row.get(2)?,
+                expired_unmined: row.get(3)?,
+                account_balance_delta: row.get(4)?,
+                fee: row.get::<_, i64>(5)?.unsigned_abs(),
+                block_time: row.get::<_, i64>(6)?.unsigned_abs(),
+                total_spent: row.get::<_, i64>(7)?.unsigned_abs(),
+                total_received: row.get::<_, i64>(8)?.unsigned_abs(),
+                is_shielding: row.get(9)?,
+                expiry_height: row.get(10)?,
+                tx_index: row.get(11)?,
+                created: row.get(12)?,
+                created_time: row.get::<_, i64>(13)?.unsigned_abs(),
             })
         })
         .optional()
@@ -643,6 +660,7 @@ fn read_history_bases(
             r#"
         SELECT
             vt.txid,
+            COALESCE(tx.id_tx, -1) AS transaction_id,
             vt.mined_height,
             vt.expired_unmined,
             vt.account_balance_delta,
@@ -666,18 +684,19 @@ fn read_history_bases(
         .query_map(rusqlite::params![account_uuid], |row| {
             Ok(TxBase {
                 txid: row.get(0)?,
-                mined_height: row.get(1)?,
-                expired_unmined: row.get(2)?,
-                account_balance_delta: row.get(3)?,
-                fee: row.get::<_, i64>(4)?.unsigned_abs(),
-                block_time: row.get::<_, i64>(5)?.unsigned_abs(),
-                total_spent: row.get::<_, i64>(6)?.unsigned_abs(),
-                total_received: row.get::<_, i64>(7)?.unsigned_abs(),
-                is_shielding: row.get(8)?,
-                expiry_height: row.get(9)?,
-                tx_index: row.get(10)?,
-                created: row.get(11)?,
-                created_time: row.get::<_, i64>(12)?.unsigned_abs(),
+                transaction_id: row.get(1)?,
+                mined_height: row.get(2)?,
+                expired_unmined: row.get(3)?,
+                account_balance_delta: row.get(4)?,
+                fee: row.get::<_, i64>(5)?.unsigned_abs(),
+                block_time: row.get::<_, i64>(6)?.unsigned_abs(),
+                total_spent: row.get::<_, i64>(7)?.unsigned_abs(),
+                total_received: row.get::<_, i64>(8)?.unsigned_abs(),
+                is_shielding: row.get(9)?,
+                expiry_height: row.get(10)?,
+                tx_index: row.get(11)?,
+                created: row.get(12)?,
+                created_time: row.get::<_, i64>(13)?.unsigned_abs(),
             })
         })
         .map_err(|e| format!("Query error: {e}"))?;
@@ -869,6 +888,9 @@ fn summarize_activity_outputs(
 
         if output.output_pool == 0 && from_own && to_own {
             summary.has_own_transparent_output = true;
+            summary.own_transparent_output_amount = summary
+                .own_transparent_output_amount
+                .saturating_add(output.value);
         }
 
         let visible_self_output = from_own && to_own && is_user_visible_self_output(output);
@@ -957,53 +979,113 @@ fn decode_text_memo(memo: Option<&[u8]>) -> Option<String> {
 fn build_external_send_keys(
     bases: &[TxBase],
     summaries: &HashMap<Vec<u8>, ActivitySummary>,
-) -> HashSet<(String, i64)> {
-    bases
-        .iter()
-        .filter_map(|base| {
-            let summary = summaries.get(&base.txid)?;
-            if summary.has_external_transparent_send {
-                base.created
-                    .as_ref()
-                    .map(|created| (created.clone(), base.expiry_key()))
-            } else {
-                None
-            }
-        })
-        .collect()
+) -> HashSet<FundingStepMatchKey> {
+    let mut keys = HashSet::new();
+
+    for base in bases {
+        let Some(summary) = summaries.get(&base.txid) else {
+            continue;
+        };
+        let Some(key) = external_send_key(base, summary) else {
+            continue;
+        };
+        keys.insert(key);
+    }
+
+    keys
 }
 
 fn build_suppressed_funding_step_fees(
     bases: &[TxBase],
     summaries: &HashMap<Vec<u8>, ActivitySummary>,
-    external_send_keys: &HashSet<(String, i64)>,
-) -> HashMap<(String, i64), u64> {
-    let mut fees = HashMap::new();
+    external_send_keys: &HashSet<FundingStepMatchKey>,
+) -> SuppressedFundingStepFees {
+    let mut funding_by_key: HashMap<FundingStepMatchKey, Vec<(i64, u64)>> = HashMap::new();
+    let mut external_by_key: HashMap<FundingStepMatchKey, Vec<i64>> = HashMap::new();
 
     for base in bases {
         let summary = summaries.get(&base.txid).cloned().unwrap_or_default();
-        if !should_suppress_funding_step(base, &summary, external_send_keys) {
-            continue;
+        if let Some(key) = external_send_key(base, &summary) {
+            external_by_key
+                .entry(key)
+                .or_default()
+                .push(base.transaction_id);
         }
-        if let Some(key) = funding_step_key(base) {
-            let entry = fees.entry(key).or_insert(0_u64);
-            *entry = entry.saturating_add(base.fee);
+
+        if should_suppress_funding_step(base, &summary, external_send_keys) {
+            if let Some(key) = funding_step_key(base, &summary) {
+                funding_by_key
+                    .entry(key)
+                    .or_default()
+                    .push((base.transaction_id, base.fee));
+            }
         }
     }
 
-    fees
+    let mut matched = SuppressedFundingStepFees::default();
+    for (key, mut funding_steps) in funding_by_key {
+        let Some(mut external_sends) = external_by_key.remove(&key) else {
+            continue;
+        };
+
+        funding_steps.sort_by_key(|(transaction_id, _)| *transaction_id);
+        external_sends.sort_unstable();
+
+        let mut external_index = 0;
+        for (funding_transaction_id, funding_fee) in funding_steps {
+            while external_index < external_sends.len()
+                && external_sends[external_index] <= funding_transaction_id
+            {
+                external_index += 1;
+            }
+
+            let Some(external_transaction_id) = external_sends.get(external_index).copied() else {
+                continue;
+            };
+            external_index += 1;
+
+            matched
+                .suppressed_funding_txids
+                .insert(funding_transaction_id);
+            let entry = matched
+                .extra_fee_by_external_txid
+                .entry(external_transaction_id)
+                .or_insert(0);
+            *entry = entry.saturating_add(funding_fee);
+        }
+    }
+
+    matched
 }
 
-fn funding_step_key(base: &TxBase) -> Option<(String, i64)> {
+fn external_send_key(base: &TxBase, summary: &ActivitySummary) -> Option<FundingStepMatchKey> {
+    if !summary.has_external_transparent_send || base.total_spent == 0 || base.transaction_id < 0 {
+        return None;
+    }
+
     base.created
         .as_ref()
-        .map(|created| (created.clone(), base.expiry_key()))
+        .map(|created| (created.clone(), base.expiry_key(), base.total_spent))
+}
+
+fn funding_step_key(base: &TxBase, summary: &ActivitySummary) -> Option<FundingStepMatchKey> {
+    if summary.own_transparent_output_amount == 0 || base.transaction_id < 0 {
+        return None;
+    }
+
+    base.created.as_ref().map(|created| {
+        (
+            created.clone(),
+            base.expiry_key(),
+            summary.own_transparent_output_amount,
+        )
+    })
 }
 
 fn should_suppress_funding_step(
     base: &TxBase,
     summary: &ActivitySummary,
-    external_send_keys: &HashSet<(String, i64)>,
+    external_send_keys: &HashSet<FundingStepMatchKey>,
 ) -> bool {
     !base.is_shielding
         && base.total_spent > 0
@@ -1013,8 +1095,9 @@ fn should_suppress_funding_step(
         && summary.sent.amount == 0
         && summary.received.amount == 0
         && summary.has_own_transparent_output
-        && external_send_keys
-            .contains(&(base.created.clone().unwrap_or_default(), base.expiry_key()))
+        && funding_step_key(base, summary)
+            .map(|key| external_send_keys.contains(&key))
+            .unwrap_or(false)
 }
 
 fn classify_history_tx(
@@ -1706,6 +1789,73 @@ mod tests {
         .unwrap();
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn insert_zip320_history_pair(
+        db: &NamedTempFile,
+        account: uuid::Uuid,
+        funding_step: &[u8],
+        external_send: &[u8],
+        created: &str,
+        funding_tx_index: i64,
+        external_tx_index: i64,
+        expiry_height: i64,
+        funding_amount: i64,
+        funding_fee: i64,
+        external_fee: i64,
+    ) {
+        let send_amount = funding_amount - external_fee;
+
+        insert_history_tx(
+            db,
+            account,
+            funding_step,
+            None,
+            funding_tx_index,
+            Some(expiry_height),
+            -funding_fee,
+            funding_amount + funding_fee,
+            funding_amount,
+            false,
+            Some(created),
+        );
+        set_history_fee(db, funding_step, funding_fee);
+        insert_output_with_address(
+            db,
+            funding_step,
+            0,
+            Some(account),
+            Some(account),
+            funding_amount,
+            false,
+            Some("t-ephemeral"),
+            Some(2),
+        );
+
+        insert_history_tx(
+            db,
+            account,
+            external_send,
+            None,
+            external_tx_index,
+            Some(expiry_height),
+            -funding_amount,
+            funding_amount,
+            0,
+            false,
+            Some(created),
+        );
+        set_history_fee(db, external_send, external_fee);
+        insert_output(
+            db,
+            external_send,
+            0,
+            Some(account),
+            None,
+            send_amount,
+            false,
+        );
+    }
+
     fn set_account_birthday(db: &NamedTempFile, account: uuid::Uuid, birthday_height: i64) {
         let conn = rusqlite::Connection::open(db.path()).unwrap();
         ensure_account_row(&conn, account);
@@ -1961,6 +2111,134 @@ mod tests {
         assert_eq!(got[0].tx_kind, "sent");
         assert_eq!(got[0].display_amount, 10_000_000);
         assert_eq!(got[0].fee, 50_000);
+    }
+
+    #[test]
+    fn history_pairs_suppressed_funding_fees_by_transparent_amount() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let external_send_a = fake_txid(0xA3);
+        let funding_step_a = fake_txid(0xA4);
+        let external_send_b = fake_txid(0xA5);
+        let funding_step_b = fake_txid(0xA6);
+        let created = "2026-04-28T13:03:00Z";
+
+        insert_zip320_history_pair(
+            &db,
+            account,
+            &funding_step_a,
+            &external_send_a,
+            created,
+            4,
+            3,
+            1_000_100,
+            10_010_000,
+            40_000,
+            10_000,
+        );
+        insert_zip320_history_pair(
+            &db,
+            account,
+            &funding_step_b,
+            &external_send_b,
+            created,
+            2,
+            1,
+            1_000_100,
+            20_015_000,
+            50_000,
+            15_000,
+        );
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 2);
+
+        let row_a = got
+            .iter()
+            .find(|tx| tx.txid_hex == hex::encode(external_send_a))
+            .unwrap();
+        assert_eq!(row_a.tx_kind, "sent");
+        assert_eq!(row_a.display_amount, 10_000_000);
+        assert_eq!(row_a.fee, 50_000);
+
+        let row_b = got
+            .iter()
+            .find(|tx| tx.txid_hex == hex::encode(external_send_b))
+            .unwrap();
+        assert_eq!(row_b.tx_kind, "sent");
+        assert_eq!(row_b.display_amount, 20_000_000);
+        assert_eq!(row_b.fee, 65_000);
+    }
+
+    #[test]
+    fn history_pairs_same_amount_funding_fees_by_insert_order() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let external_send_a = fake_txid(0xA7);
+        let funding_step_a = fake_txid(0xA8);
+        let external_send_b = fake_txid(0xA9);
+        let funding_step_b = fake_txid(0xAA);
+        let created = "2026-04-28T13:03:00Z";
+
+        insert_zip320_history_pair(
+            &db,
+            account,
+            &funding_step_a,
+            &external_send_a,
+            created,
+            4,
+            3,
+            1_000_100,
+            10_010_000,
+            40_000,
+            10_000,
+        );
+        insert_zip320_history_pair(
+            &db,
+            account,
+            &funding_step_b,
+            &external_send_b,
+            created,
+            2,
+            1,
+            1_000_100,
+            10_010_000,
+            50_000,
+            10_000,
+        );
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 2);
+
+        let row_a = got
+            .iter()
+            .find(|tx| tx.txid_hex == hex::encode(external_send_a))
+            .unwrap();
+        assert_eq!(row_a.tx_kind, "sent");
+        assert_eq!(row_a.display_amount, 10_000_000);
+        assert_eq!(row_a.fee, 50_000);
+
+        let row_b = got
+            .iter()
+            .find(|tx| tx.txid_hex == hex::encode(external_send_b))
+            .unwrap();
+        assert_eq!(row_b.tx_kind, "sent");
+        assert_eq!(row_b.display_amount, 10_000_000);
+        assert_eq!(row_b.fee, 60_000);
     }
 
     #[test]
