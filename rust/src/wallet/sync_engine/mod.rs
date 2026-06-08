@@ -36,7 +36,6 @@ use {
         proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
         wallet::WalletTransparentOutput,
     },
-    zcash_keys::encoding::AddressCodec as _,
     zcash_protocol::value::Zatoshis,
     zcash_script::script,
 };
@@ -47,6 +46,7 @@ mod error;
 mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
+mod transparent_watch;
 
 use enhance::run_enhancement;
 pub(crate) use error::SyncError;
@@ -660,6 +660,7 @@ async fn repair_anchor_root_mismatch_if_needed(
                     }
                 }
                 rewind_ledger_transparent_discovery_to_height(db_data_path, repair_height)?;
+                transparent_watch::rewind_transparent_watch_to_height(db_data_path, repair_height)?;
                 db.update_chain_tip(current_tip).map_err(|e| {
                     SyncError::db(format!(
                         "update_chain_tip({current_tip_height}) after anchor root repair: {e}"
@@ -723,25 +724,32 @@ async fn repair_anchor_root_mismatch_if_needed(
 async fn refresh_utxos(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
+    db_path: &str,
     network: WalletNetwork,
+    tip_height: BlockHeight,
 ) -> Result<(), SyncError> {
     for account_id in db
         .get_account_ids()
         .map_err(|e| SyncError::db(format!("get_account_ids: {e}")))?
     {
-        let start_height = db
-            .utxo_query_height(account_id)
-            .map_err(|e| SyncError::db(format!("utxo_query_height: {e}")))?;
-        let addresses: Vec<String> = db
-            .get_transparent_receivers(account_id, true, true)
-            .map_err(|e| SyncError::db(format!("get_transparent_receivers: {e}")))?
-            .into_keys()
-            .map(|addr| addr.encode(&network))
-            .collect();
-
-        if !addresses.is_empty() {
-            refresh_transparent_addresses(client, db, addresses, start_height, "transparent UTXOs")
-                .await?;
+        for batch in transparent_watch::prepare_refresh_batches(
+            db_path, db, network, account_id, tip_height,
+        )? {
+            let observed_addresses = refresh_transparent_addresses(
+                client,
+                db,
+                batch.addresses.clone(),
+                batch.start_height,
+                "transparent UTXOs",
+            )
+            .await?;
+            transparent_watch::complete_refresh_batch(
+                db_path,
+                account_id,
+                &batch.addresses,
+                &observed_addresses,
+                tip_height,
+            )?;
         }
     }
 
@@ -754,17 +762,18 @@ async fn refresh_transparent_addresses(
     addresses: Vec<String>,
     start_height: BlockHeight,
     label: &str,
-) -> Result<(), SyncError> {
+) -> Result<Vec<String>, SyncError> {
     if addresses.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
+    let address_count = addresses.len();
 
     log::info!(
         "[{}] sync: refreshing {} from height {} ({} addresses)",
         elapsed(),
         label,
         u32::from(start_height),
-        addresses.len(),
+        address_count,
     );
 
     let mut stream = client
@@ -777,11 +786,16 @@ async fn refresh_transparent_addresses(
         .map_err(|e| SyncError::net(format!("get_address_utxos_stream: {e}")))?
         .into_inner();
 
+    let mut observed_addresses = std::collections::BTreeSet::<String>::new();
     while let Some(reply) = stream
         .message()
         .await
         .map_err(|e| SyncError::net(format!("get_address_utxos_stream message: {e}")))?
     {
+        if !reply.address.is_empty() {
+            observed_addresses.insert(reply.address.clone());
+        }
+
         let txid: [u8; 32] = reply
             .txid
             .try_into()
@@ -814,7 +828,7 @@ async fn refresh_transparent_addresses(
         })?;
     }
 
-    Ok(())
+    Ok(observed_addresses.into_iter().collect())
 }
 
 // ==================== Main sync ====================
@@ -995,7 +1009,7 @@ async fn run_sync_impl(
         return Ok(());
     }
 
-    refresh_utxos(&mut client, &mut db, network).await?;
+    refresh_utxos(&mut client, &mut db, db_data_path, network, tip_height).await?;
 
     if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
         log::info!(
@@ -1453,6 +1467,10 @@ async fn run_sync_impl(
                             match db.truncate_to_height(target) {
                                 Ok(h) => {
                                     rewind_ledger_transparent_discovery_to_height(db_data_path, h)?;
+                                    transparent_watch::rewind_transparent_watch_to_height(
+                                        db_data_path,
+                                        h,
+                                    )?;
                                     Ok(h)
                                 }
                                 Err(SqliteClientError::RequestedRewindInvalid {
@@ -1476,6 +1494,10 @@ async fn run_sync_impl(
                                         }
                                     })?;
                                     rewind_ledger_transparent_discovery_to_height(db_data_path, h)?;
+                                    transparent_watch::rewind_transparent_watch_to_height(
+                                        db_data_path,
+                                        h,
+                                    )?;
                                     Ok(h)
                                 }
                                 Err(SqliteClientError::RequestedRewindInvalid {

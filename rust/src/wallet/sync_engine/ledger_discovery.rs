@@ -31,7 +31,7 @@ use crate::wallet::{
     network::WalletNetwork,
 };
 
-use super::{enhance, SyncError};
+use super::{enhance, transparent_watch, SyncError};
 
 #[derive(Clone)]
 struct Candidate {
@@ -54,6 +54,7 @@ pub(super) async fn run_ledger_transparent_discovery(
     tip_height: BlockHeight,
 ) -> Result<(), SyncError> {
     ensure_scan_table(db_path)?;
+    transparent_watch::ensure_watch_table(db_path)?;
 
     let account_ids = db
         .get_account_ids()
@@ -277,19 +278,29 @@ async fn scan_historical_scope(
         for candidate in pending {
             queried += 1;
             let addr_str = candidate.address.encode(&network);
-            if enhance::process_taddress_history(
+            let found_history = enhance::process_taddress_history(
                 client,
                 db,
                 db_path,
                 network,
-                addr_str,
+                addr_str.clone(),
                 start,
                 end,
                 enhance::TAddressHistoryErrorPolicy::Strict,
             )
             .await?
-            .found
-            {
+            .found;
+            transparent_watch::record_ledger_address_checked(
+                db_path,
+                account_id,
+                scope,
+                candidate.index.index(),
+                &addr_str,
+                start_height,
+                end_height,
+                found_history,
+            )?;
+            if found_history {
                 found += 1;
             }
         }
@@ -367,21 +378,40 @@ async fn scan_frontier_scope(
 
         queried += 1;
         let addr_str = candidate.address.encode(&network);
-        if enhance::process_taddress_history(
+        let found_history = enhance::process_taddress_history(
             client,
             db,
             db_path,
             network,
-            addr_str,
+            addr_str.clone(),
             start,
             end,
             enhance::TAddressHistoryErrorPolicy::Strict,
         )
         .await?
-        .found
-        {
+        .found;
+        if found_history {
+            transparent_watch::record_ledger_address_checked(
+                db_path,
+                account_id,
+                scope,
+                candidate.index.index(),
+                &addr_str,
+                start_height,
+                tip_height,
+                true,
+            )?;
             found += 1;
         } else {
+            transparent_watch::record_frontier_address(
+                db_path,
+                account_id,
+                scope,
+                candidate.index.index(),
+                &addr_str,
+                tip_height + 1,
+                tip_height,
+            )?;
             break;
         }
     }

@@ -26,7 +26,8 @@ use crate::wallet::{
     db::{
         open_wallet_db_for_read_with_timeout, open_wallet_db_with_timeout,
         with_wallet_db_write_lock, WalletDatabase, ACCOUNT_MUTATION_DB_BUSY_TIMEOUT,
-        LEDGER_TRANSPARENT_SCAN_TABLE, READ_DB_BUSY_TIMEOUT, WALLET_DB_BUSY_TIMEOUT,
+        LEDGER_TRANSPARENT_SCAN_TABLE, READ_DB_BUSY_TIMEOUT, TRANSPARENT_WATCH_TABLE,
+        WALLET_DB_BUSY_TIMEOUT,
     },
     network::WalletNetwork,
 };
@@ -499,6 +500,7 @@ fn delete_account_rows(db_path: &str, account_id: AccountUuid) -> Result<(), Str
     }
 
     delete_ledger_transparent_scan_rows(&tx, account_uuid_bytes)?;
+    delete_transparent_watch_rows(&tx, account_uuid_bytes)?;
 
     tx.execute(
         r#"
@@ -571,6 +573,35 @@ fn delete_ledger_transparent_scan_rows(
     )
     .map(|_| ())
     .map_err(|e| format!("Failed to delete Ledger transparent scan state: {e}"))
+}
+
+fn delete_transparent_watch_rows(
+    tx: &rusqlite::Transaction<'_>,
+    account_uuid: &[u8],
+) -> Result<(), String> {
+    let table_exists = tx
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            rusqlite::params![TRANSPARENT_WATCH_TABLE],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to check transparent watch table: {e}"))?
+        .is_some();
+
+    if !table_exists {
+        return Ok(());
+    }
+
+    tx.execute(
+        &format!(
+            "DELETE FROM {TRANSPARENT_WATCH_TABLE}
+             WHERE account_uuid = :account_uuid"
+        ),
+        named_params![":account_uuid": account_uuid],
+    )
+    .map(|_| ())
+    .map_err(|e| format!("Failed to delete transparent watch state: {e}"))
 }
 
 /// Parse an account UUID string into AccountUuid.

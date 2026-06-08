@@ -21,6 +21,7 @@ pub(crate) const READ_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub(crate) const LEDGER_TRANSPARENT_GAP_LIMIT: u32 = 10;
 pub(crate) const LEDGER_TRANSPARENT_SCAN_TABLE: &str = "ext_vizor_ledger_transparent_scan";
+pub(crate) const TRANSPARENT_WATCH_TABLE: &str = "ext_vizor_transparent_watch";
 
 fn wallet_gap_limits() -> GapLimits {
     let default = GapLimits::default();
