@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -92,7 +90,9 @@ Future<void> initializeZcashWalletRuntime() async {
   await initializeDesktopWindow();
   if (isDesktopLayoutPlatform) {
     log('runtime: initializing desktop window visuals');
-    await DesktopWindowBootstrap.initialize();
+    await DesktopWindowBootstrap.initialize(
+      visualStyle: DesktopWindowVisualStyle.opaque,
+    );
     if (!Platform.isWindows) {
       await showDesktopWindow();
     }
@@ -768,12 +768,6 @@ class ZcashWalletApp extends ConsumerWidget {
       builder: (context, child) {
         return AppThemeHost(
           themeMode: themeMode,
-          // `DesktopWindowTitlebarSafeArea` pads the app content down past the macOS
-          // titlebar area when the native full-size content view is
-          // enabled, so traffic-light controls don't overlap UI. It is a
-          // no-op on Windows and Linux where the native title strip does
-          // not overlap Flutter content.
-          //
           // The inner `GestureDetector` handles global "tap outside clears
           // focus" — `HitTestBehavior.translucent` lets it receive pointer
           // events over empty regions while descendant GestureDetectors
@@ -784,23 +778,21 @@ class ZcashWalletApp extends ConsumerWidget {
               child: _WindowsUpdatePromptHost(
                 router: router,
                 child: _RpcEndpointFailoverToastListener(
-                  child: _LinuxOpaqueWindowBackground(
-                    child: DesktopWindowTitlebarSafeArea(
-                      child: GestureDetector(
-                        onTap: () {
-                          // Leaf-only: skip when the primary focus is a
-                          // `FocusScopeNode` rather than a concrete `FocusNode`.
-                          // Unfocusing the scope itself strips the scope's
-                          // "most-recently-focused child" memory, which leaves the
-                          // next Tab with no deterministic starting point.
-                          final primary = FocusManager.instance.primaryFocus;
-                          if (primary != null && primary is! FocusScopeNode) {
-                            primary.unfocus();
-                          }
-                        },
-                        behavior: HitTestBehavior.translucent,
-                        child: child!,
-                      ),
+                  child: _DesktopOpaqueWindowBackground(
+                    child: GestureDetector(
+                      onTap: () {
+                        // Leaf-only: skip when the primary focus is a
+                        // `FocusScopeNode` rather than a concrete `FocusNode`.
+                        // Unfocusing the scope itself strips the scope's
+                        // "most-recently-focused child" memory, which leaves the
+                        // next Tab with no deterministic starting point.
+                        final primary = FocusManager.instance.primaryFocus;
+                        if (primary != null && primary is! FocusScopeNode) {
+                          primary.unfocus();
+                        }
+                      },
+                      behavior: HitTestBehavior.translucent,
+                      child: child!,
                     ),
                   ),
                 ),
@@ -1258,17 +1250,17 @@ Future<void> _openLinuxUpdateRelease(LinuxUpdateInfo update) async {
   await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
-class _LinuxOpaqueWindowBackground extends StatelessWidget {
-  const _LinuxOpaqueWindowBackground({required this.child});
+class _DesktopOpaqueWindowBackground extends StatelessWidget {
+  const _DesktopOpaqueWindowBackground({required this.child});
 
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.linux) {
+    if (!isDesktopLayoutPlatform) {
       return child;
     }
-    return ColoredBox(color: context.colors.background.ground, child: child);
+    return ColoredBox(color: context.colors.background.window, child: child);
   }
 }
 

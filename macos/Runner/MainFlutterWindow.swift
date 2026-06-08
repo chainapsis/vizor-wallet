@@ -2,11 +2,21 @@ import Cocoa
 import FlutterMacOS
 import desktop_window_bootstrap
 
-private func titlebarTitleColor(for brightness: String) -> NSColor {
+private func appWindowBackgroundColor(for brightness: String) -> NSColor {
   if brightness == "dark" {
-    return NSColor.white.withAlphaComponent(0.8)
+    return NSColor(
+      srgbRed: 15.0 / 255.0,
+      green: 15.0 / 255.0,
+      blue: 15.0 / 255.0,
+      alpha: 1
+    )
   }
-  return NSColor.black.withAlphaComponent(0.8)
+  return NSColor(
+    srgbRed: 245.0 / 255.0,
+    green: 245.0 / 255.0,
+    blue: 245.0 / 255.0,
+    alpha: 1
+  )
 }
 
 private func currentSystemBrightness() -> String {
@@ -14,8 +24,18 @@ private func currentSystemBrightness() -> String {
   return match == .darkAqua ? "dark" : "light"
 }
 
-private func appTitle() -> String {
-  Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Vizor"
+private final class VizorWindowToolbarDelegate: NSObject, NSToolbarDelegate {
+  func toolbarAllowedItemIdentifiers(
+    _ toolbar: NSToolbar
+  ) -> [NSToolbarItem.Identifier] {
+    [.flexibleSpace]
+  }
+
+  func toolbarDefaultItemIdentifiers(
+    _ toolbar: NSToolbar
+  ) -> [NSToolbarItem.Identifier] {
+    [.flexibleSpace]
+  }
 }
 
 final class WindowAppearanceChannel {
@@ -23,18 +43,15 @@ final class WindowAppearanceChannel {
 
   private weak var window: NSWindow?
   private weak var visualEffectView: NSVisualEffectView?
-  private weak var titleLabel: NSTextField?
   private let channel: FlutterMethodChannel
 
   private init(
     window: NSWindow,
     visualEffectView: NSVisualEffectView,
-    titleLabel: NSTextField,
     messenger: FlutterBinaryMessenger
   ) {
     self.window = window
     self.visualEffectView = visualEffectView
-    self.titleLabel = titleLabel
     self.channel = FlutterMethodChannel(
       name: "com.zcash.wallet/window_appearance",
       binaryMessenger: messenger
@@ -47,13 +64,11 @@ final class WindowAppearanceChannel {
   static func register(
     window: NSWindow,
     visualEffectView: NSVisualEffectView,
-    titleLabel: NSTextField,
     messenger: FlutterBinaryMessenger
   ) {
     shared = WindowAppearanceChannel(
       window: window,
       visualEffectView: visualEffectView,
-      titleLabel: titleLabel,
       messenger: messenger
     )
   }
@@ -91,11 +106,9 @@ final class WindowAppearanceChannel {
     window?.contentView?.appearance = appearance
     window?.contentViewController?.view.appearance = appearance
     visualEffectView?.appearance = appearance
-    titleLabel?.appearance = appearance
-    titleLabel?.textColor = titlebarTitleColor(for: brightness)
-    visualEffectView?.material = .fullScreenUI
-    visualEffectView?.state = .active
-    window?.backgroundColor = .clear
+    DesktopWindowBootstrapMacOS.setOpaqueBackgroundColor(
+      appWindowBackgroundColor(for: brightness)
+    )
     window?.invalidateShadow()
   }
 }
@@ -464,40 +477,30 @@ final class CameraPermissionSettingsChannel {
   }
 }
 
-private final class TitlebarTitleLabel: NSTextField {
-  override func hitTest(_ point: NSPoint) -> NSView? {
-    nil
-  }
-}
-
 class MainFlutterWindow: NSWindow {
-  private static let fullscreenTitleFallbackDelay = DispatchTimeInterval.seconds(2)
-
-  private var fullscreenTitleObservers: [NSObjectProtocol] = []
-  private var fullscreenTitleTransitionGeneration = 0
+  private let vizorWindowToolbarDelegate = VizorWindowToolbarDelegate()
+  private var vizorWindowToolbar: NSToolbar?
+  private var vizorWindowToolbarObservers: [NSObjectProtocol] = []
 
   deinit {
-    for observer in fullscreenTitleObservers {
+    for observer in vizorWindowToolbarObservers {
       NotificationCenter.default.removeObserver(observer)
     }
   }
 
   override func awakeFromNib() {
     let desktopWindowViewController = DesktopWindowBootstrapMacOS.start(
-      mainFlutterWindow: self
+      mainFlutterWindow: self,
+      visualStyle: .opaque,
+      backgroundColor: appWindowBackgroundColor(for: currentSystemBrightness())
     )
+    title = ""
+    installVizorWindowToolbarObservers()
+    applyAndScheduleVizorWindowToolbarForCurrentState()
     let flutterViewController = desktopWindowViewController.flutterViewController
-    let titleLabel = makeTitleLabel()
-    installTitleLabel(
-      titleLabel,
-      in: desktopWindowViewController.visualEffectView,
-      above: flutterViewController.view
-    )
-    installFullscreenTitleObservers(for: titleLabel)
     WindowAppearanceChannel.register(
       window: self,
       visualEffectView: desktopWindowViewController.visualEffectView,
-      titleLabel: titleLabel,
       messenger: flutterViewController.engine.binaryMessenger
     )
     PrivacyExposureChannel.register(
@@ -512,161 +515,98 @@ class MainFlutterWindow: NSWindow {
     super.awakeFromNib()
   }
 
-  private func installFullscreenTitleObservers(for titleLabel: NSTextField) {
-    guard fullscreenTitleObservers.isEmpty else {
+  override public func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
+    super.order(place, relativeTo: otherWin)
+    hiddenWindowAtLaunch()
+    applyAndScheduleVizorWindowToolbarForCurrentState()
+  }
+
+  private func installVizorWindowToolbarObservers() {
+    guard vizorWindowToolbarObservers.isEmpty else {
       return
     }
 
-    syncTitleVisibilityWithFullscreenState(titleLabel)
-    scheduleInitialFullscreenTitleSync(for: titleLabel)
-
     let center = NotificationCenter.default
-    fullscreenTitleObservers.append(
-      center.addObserver(
-        forName: NSWindow.willEnterFullScreenNotification,
-        object: self,
-        queue: .main
-      ) { [weak self, weak titleLabel] _ in
-        guard let self, let titleLabel else {
-          return
+    let hideToolbarEvents: [Notification.Name] = [
+      NSWindow.willEnterFullScreenNotification,
+      NSWindow.didEnterFullScreenNotification,
+    ]
+    for name in hideToolbarEvents {
+      vizorWindowToolbarObservers.append(
+        center.addObserver(
+          forName: name,
+          object: self,
+          queue: .main
+        ) { [weak self] _ in
+          self?.hideVizorWindowToolbar()
         }
-        self.setTitleHidden(true, titleLabel: titleLabel)
-        self.scheduleFullscreenTitleFallback(for: titleLabel)
-      }
-    )
-    fullscreenTitleObservers.append(
-      center.addObserver(
-        forName: NSWindow.didEnterFullScreenNotification,
-        object: self,
-        queue: .main
-      ) { [weak self, weak titleLabel] _ in
-        self?.finishFullscreenTitleTransition()
-        self?.setTitleHidden(true, titleLabel: titleLabel)
-      }
-    )
-    fullscreenTitleObservers.append(
-      center.addObserver(
-        forName: NSWindow.willExitFullScreenNotification,
-        object: self,
-        queue: .main
-      ) { [weak self, weak titleLabel] _ in
-        guard let self, let titleLabel else {
-          return
-        }
-        self.setTitleHidden(true, titleLabel: titleLabel)
-        self.scheduleFullscreenTitleFallback(for: titleLabel)
-      }
-    )
-    fullscreenTitleObservers.append(
+      )
+    }
+
+    vizorWindowToolbarObservers.append(
       center.addObserver(
         forName: NSWindow.didExitFullScreenNotification,
         object: self,
         queue: .main
-      ) { [weak self, weak titleLabel] _ in
-        guard let self, let titleLabel else {
-          return
+      ) { [weak self] _ in
+        self?.applyAndScheduleVizorWindowToolbarForCurrentState()
+      }
+    )
+
+    let reapplyToolbarEvents: [Notification.Name] = [
+      NSWindow.didBecomeKeyNotification,
+      NSWindow.didEndLiveResizeNotification,
+    ]
+    for name in reapplyToolbarEvents {
+      vizorWindowToolbarObservers.append(
+        center.addObserver(
+          forName: name,
+          object: self,
+          queue: .main
+        ) { [weak self] _ in
+          self?.applyAndScheduleVizorWindowToolbarForCurrentState()
         }
-        self.finishFullscreenTitleTransition()
-        self.syncTitleVisibilityWithFullscreenState(titleLabel)
-      }
+      )
+    }
+  }
+
+  private func applyAndScheduleVizorWindowToolbarForCurrentState() {
+    applyVizorWindowToolbarForCurrentState()
+    DispatchQueue.main.async { [weak self] in
+      self?.applyVizorWindowToolbarForCurrentState()
+    }
+  }
+
+  private func applyVizorWindowToolbarForCurrentState() {
+    configureVizorWindowToolbar(
+      isVisible: !styleMask.contains(.fullScreen)
     )
   }
 
-  private func scheduleInitialFullscreenTitleSync(for titleLabel: NSTextField) {
-    DispatchQueue.main.async { [weak self, weak titleLabel] in
-      guard let self, let titleLabel else {
-        return
-      }
+  private func hideVizorWindowToolbar() {
+    configureVizorWindowToolbar(isVisible: false)
+  }
 
-      self.syncTitleVisibilityWithFullscreenState(titleLabel)
+  private func configureVizorWindowToolbar(isVisible: Bool) {
+    let vizorToolbar = vizorWindowToolbar ?? makeVizorWindowToolbar()
+    vizorToolbar.allowsUserCustomization = false
+    vizorToolbar.autosavesConfiguration = false
+    vizorToolbar.delegate = vizorWindowToolbarDelegate
+    vizorToolbar.displayMode = .iconOnly
+    vizorToolbar.sizeMode = .regular
+    vizorToolbar.showsBaselineSeparator = false
+    if toolbar !== vizorToolbar {
+      self.toolbar = vizorToolbar
     }
-  }
-
-  private func scheduleFullscreenTitleFallback(for titleLabel: NSTextField) {
-    fullscreenTitleTransitionGeneration += 1
-    let generation = fullscreenTitleTransitionGeneration
-
-    DispatchQueue.main.asyncAfter(
-      deadline: .now() + Self.fullscreenTitleFallbackDelay
-    ) { [weak self, weak titleLabel] in
-      guard
-        let self,
-        let titleLabel,
-        self.fullscreenTitleTransitionGeneration == generation
-      else {
-        return
-      }
-
-      self.syncTitleVisibilityWithFullscreenState(titleLabel)
-    }
-  }
-
-  private func finishFullscreenTitleTransition() {
-    fullscreenTitleTransitionGeneration += 1
-  }
-
-  private func setTitleHidden(_ hidden: Bool, titleLabel: NSTextField?) {
+    vizorToolbar.isVisible = isVisible
+    toolbarStyle = .unified
     titleVisibility = .hidden
-    titleLabel?.isHidden = hidden
+    titlebarSeparatorStyle = .none
   }
 
-  private func syncTitleVisibilityWithFullscreenState(_ titleLabel: NSTextField) {
-    setTitleHidden(styleMask.contains(.fullScreen), titleLabel: titleLabel)
-  }
-
-  private func makeTitleLabel() -> NSTextField {
-    let label = TitlebarTitleLabel(labelWithString: appTitle())
-    label.translatesAutoresizingMaskIntoConstraints = false
-    label.font = NSFont.systemFont(ofSize: 15, weight: .bold)
-    label.textColor = titlebarTitleColor(for: currentSystemBrightness())
-    label.lineBreakMode = .byClipping
-    label.usesSingleLineMode = true
-    return label
-  }
-
-  private func installTitleLabel(
-    _ label: NSTextField,
-    in visualEffectView: NSVisualEffectView,
-    above flutterView: NSView
-  ) {
-    visualEffectView.addSubview(label, positioned: .above, relativeTo: flutterView)
-    let verticalConstraint =
-      titleCenterYConstraint(for: label, in: visualEffectView) ??
-      label.topAnchor.constraint(equalTo: visualEffectView.topAnchor, constant: 6)
-    NSLayoutConstraint.activate([
-      label.leadingAnchor.constraint(equalTo: visualEffectView.leadingAnchor, constant: 84),
-      verticalConstraint,
-    ])
-  }
-
-  private func titleCenterYConstraint(
-    for label: NSTextField,
-    in visualEffectView: NSVisualEffectView
-  ) -> NSLayoutConstraint? {
-    guard
-      let closeButton = standardWindowButton(.closeButton),
-      let closeButtonSuperview = closeButton.superview
-    else {
-      return nil
-    }
-
-    closeButtonSuperview.layoutSubtreeIfNeeded()
-    visualEffectView.layoutSubtreeIfNeeded()
-
-    let closeFrame = closeButtonSuperview.convert(closeButton.frame, to: visualEffectView)
-    guard closeFrame.height > 0, visualEffectView.bounds.height > 0 else {
-      return nil
-    }
-
-    let closeCenterYFromTop = visualEffectView.bounds.height - closeFrame.midY
-    return label.centerYAnchor.constraint(
-      equalTo: visualEffectView.topAnchor,
-      constant: closeCenterYFromTop
-    )
-  }
-
-  override public func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
-    super.order(place, relativeTo: otherWin)
-    hiddenWindowAtLaunch()
+  private func makeVizorWindowToolbar() -> NSToolbar {
+    let toolbar = NSToolbar(identifier: "com.zcash.wallet.window-toolbar")
+    vizorWindowToolbar = toolbar
+    return toolbar
   }
 }
