@@ -7,14 +7,13 @@ import '../../../main.dart' show log;
 import '../../core/security/password_policy.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
-import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/app_text_field.dart';
 import '../../core/widgets/password_text_field.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
 import '../../providers/router_refresh_provider.dart';
 import '../../providers/sync_provider.dart';
-import 'shared/onboarding_welcome_art.dart';
+import 'shared/onboarding_auth_shell.dart';
 
 class UnlockScreen extends ConsumerStatefulWidget {
   const UnlockScreen({super.key});
@@ -99,9 +98,17 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xs),
-          child: _UnlockPane(
+        child: OnboardingAuthShell(
+          card: OnboardingAuthCard(
+            width: _UnlockContent.cardWidth,
+            height: _UnlockContent.cardHeight,
+            borderRadius: AppSpacing.base,
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.sm,
+              AppSpacing.xl,
+              AppSpacing.sm,
+              AppSpacing.lg,
+            ),
             child: _UnlockContent(
               passwordController: _passwordController,
               canSubmit: _canSubmit,
@@ -116,66 +123,6 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _UnlockPane extends StatelessWidget {
-  const _UnlockPane({required this.child});
-
-  final Widget child;
-
-  static const double _canvasWidth = 1064;
-  static const double _canvasHeight = 672;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          const Positioned.fill(
-            child: OnboardingWelcomeBackdrop(
-              fit: BoxFit.fitWidth,
-              alignment: Alignment.bottomCenter,
-            ),
-          ),
-          Positioned.fill(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final alignment = constraints.maxHeight < _canvasHeight
-                    ? Alignment.bottomCenter
-                    : Alignment.center;
-                return OverflowBox(
-                  alignment: alignment,
-                  minWidth: _canvasWidth,
-                  maxWidth: _canvasWidth,
-                  minHeight: _canvasHeight,
-                  maxHeight: _canvasHeight,
-                  child: SizedBox(
-                    width: _canvasWidth,
-                    height: _canvasHeight,
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [child],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -198,91 +145,101 @@ class _UnlockContent extends StatelessWidget {
   final Future<void> Function() onSubmit;
   final VoidCallback onForgotPassword;
 
-  static const double _contentWidth = 256;
-  static const double _titleWidth = 347;
+  static const double cardWidth = 396;
+  static const double cardHeight = 509;
+  static const double _fieldWidth = 256;
+  static const double _buttonWidth = 196;
+  static const double _titleWidth = 364;
   static const double _fieldGroupHeight = 66;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.base),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-        child: Column(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Image.asset(
+          'assets/illustrations/welcome_badge.png',
+          width: 50,
+          height: 50,
+        ),
+        const SizedBox(height: AppSpacing.base),
+        SizedBox(
+          width: _titleWidth,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Welcome back',
+                style: AppTypography.displayMedium.copyWith(
+                  color: colors.text.accent,
+                  height: 48 / 45,
+                ),
+                maxLines: 1,
+                softWrap: false,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Enter your password to open Vizor.',
+                style: AppTypography.bodyMediumStrong.copyWith(
+                  color: colors.text.accent,
+                ),
+                maxLines: 1,
+                softWrap: false,
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.base),
+        Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
-              width: _titleWidth,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const VizorWordmark(),
-                  const SizedBox(height: AppSpacing.md),
-                  Text(
-                    'Welcome Back',
-                    style: AppTypography.displayLarge.copyWith(
-                      color: colors.text.accent,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    'Enter your password to open Vizor.',
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.accent,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            SizedBox(
-              width: _contentWidth,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    height: _fieldGroupHeight,
-                    child: PasswordTextField(
-                      label: 'Password',
-                      hintText: 'Enter Your Password',
-                      showLabel: false,
-                      leadingSlotWidth: 32,
-                      trailingSlotWidth: 40,
-                      inputHorizontalPadding: AppSpacing.s,
-                      controller: passwordController,
-                      autofocus: false,
-                      messageText: messageText,
-                      tone: messageText == null
-                          ? AppTextFieldTone.neutral
-                          : AppTextFieldTone.destructive,
-                      onChanged: (_) => onChanged(),
-                      onSubmitted: (_) => onSubmit(),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xxs),
-                  AppButton(
-                    onPressed: canSubmit ? onSubmit : null,
-                    variant: AppButtonVariant.primary,
-                    minWidth: _contentWidth,
-                    trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-                    child: const Text('Sign In'),
-                  ),
-                ],
+              width: _fieldWidth,
+              height: _fieldGroupHeight,
+              child: PasswordTextField(
+                label: 'Password',
+                hintText: 'Enter password',
+                showLabel: false,
+                leadingSlotWidth: 32,
+                trailingSlotWidth: 40,
+                inputHorizontalPadding: AppSpacing.s,
+                controller: passwordController,
+                autofocus: false,
+                showVisibilityToggle: false,
+                messageText: messageText,
+                tone: messageText == null
+                    ? AppTextFieldTone.neutral
+                    : AppTextFieldTone.destructive,
+                onChanged: (_) => onChanged(),
+                onSubmitted: (_) => onSubmit(),
               ),
             ),
             const SizedBox(height: AppSpacing.base),
-            AppButton(
-              onPressed: onForgotPassword,
-              variant: AppButtonVariant.ghost,
-              size: AppButtonSize.small,
-              child: const Text('Forgot Password?'),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppButton(
+                  onPressed: canSubmit ? onSubmit : null,
+                  variant: AppButtonVariant.primary,
+                  minWidth: _buttonWidth,
+                  child: const Text('Unlock Vizor'),
+                ),
+                const SizedBox(height: AppSpacing.s),
+                AppButton(
+                  onPressed: onForgotPassword,
+                  variant: AppButtonVariant.ghost,
+                  minWidth: _buttonWidth,
+                  child: const Text('Forgot password?'),
+                ),
+              ],
             ),
           ],
         ),
-      ),
+      ],
     );
   }
 }
