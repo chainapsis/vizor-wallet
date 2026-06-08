@@ -230,6 +230,8 @@ RpcEndpointPreset? explicitRpcEndpointPresetFor(RpcEndpointConfig config) {
 List<RpcEndpointConfig> fallbackRpcEndpointCandidatesFor(
   RpcEndpointConfig primary,
 ) {
+  if (isLocalIronwoodTestnetEndpoint(primary)) return const [];
+
   final primaryPreset = _selectedFallbackPrimaryPreset(primary);
   if (primaryPreset == null) return const [];
 

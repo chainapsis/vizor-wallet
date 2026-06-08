@@ -117,13 +117,13 @@ void main() {
           .toSet();
 
       expect(urls, {
-        'http://127.0.0.1:9067',
+        'https://174-138-65-204.sslip.io:9067',
         'https://testnet.zec.rocks:443',
         'https://zcash.mysideoftheweb.com:19067',
       });
       expect(
         findRpcEndpointPresetByUrl(
-          'http://127.0.0.1:9067',
+          'https://174-138-65-204.sslip.io:9067',
           networkName: 'test',
         )?.id,
         kLocalIronwoodTestnetRpcEndpointPresetId,
@@ -302,6 +302,18 @@ void main() {
           networkName: 'regtest',
           lightwalletdUrl: 'http://127.0.0.1:19067',
           presetId: kCustomRpcEndpointPresetId,
+        ),
+      );
+
+      expect(candidates, isEmpty);
+    });
+
+    test('does not fallback from the local ironwood testnet preset', () {
+      final candidates = fallbackRpcEndpointCandidatesFor(
+        const RpcEndpointConfig(
+          networkName: 'test',
+          lightwalletdUrl: 'https://174-138-65-204.sslip.io:9067',
+          presetId: kLocalIronwoodTestnetRpcEndpointPresetId,
         ),
       );
 
