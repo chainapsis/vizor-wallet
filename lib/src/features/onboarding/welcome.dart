@@ -17,6 +17,7 @@ const double _welcomeCanvasHeight = 720;
 const double _welcomePaneWidth = 420;
 const double _welcomeHeroWidth = 660;
 const double _welcomeActionWidth = 196;
+const double _welcomeBackButtonTop = AppSpacing.base + AppSpacing.xs;
 
 /// Onboarding entry point — Figma `_Welcome` at node 4034:62997
 /// (light) / 4363:117257 (dark).
@@ -129,12 +130,6 @@ class _Pane extends StatelessWidget {
                             const _WelcomeHeroPane(),
                           ],
                         ),
-                        if (showBackButton)
-                          const Positioned(
-                            left: AppSpacing.md,
-                            top: AppSpacing.md,
-                            child: _BackRow(),
-                          ),
                         if (!showBackButton)
                           Positioned(
                             right: AppSpacing.md,
@@ -169,6 +164,12 @@ class _Pane extends StatelessWidget {
               },
             ),
           ),
+          if (showBackButton)
+            const Positioned(
+              left: AppSpacing.md,
+              top: _welcomeBackButtonTop,
+              child: _BackRow(),
+            ),
         ],
       ),
     );
@@ -178,12 +179,10 @@ class _Pane extends StatelessWidget {
 class _WelcomeHeroPane extends StatelessWidget {
   const _WelcomeHeroPane();
 
-  static const _artWidth = 1082.0;
-  static const _artLeft = -315.0;
+  static final _foregroundColor = AppTextColors.light.inverse;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final asset = isDark
         ? 'assets/illustrations/welcome_hero_dark.png'
@@ -197,15 +196,14 @@ class _WelcomeHeroPane extends StatelessWidget {
         child: Stack(
           clipBehavior: Clip.hardEdge,
           children: [
-            Positioned(
-              left: _artLeft,
-              top: 0,
-              width: _artWidth,
-              height: _welcomeCanvasHeight,
-              child: Image.asset(
-                asset,
-                fit: BoxFit.cover,
-                alignment: Alignment.centerRight,
+            Positioned.fill(
+              child: Transform.flip(
+                flipX: true,
+                child: Image.asset(
+                  asset,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.center,
+                ),
               ),
             ),
             Positioned.fill(
@@ -228,7 +226,7 @@ class _WelcomeHeroPane extends StatelessWidget {
                 'Private money.\nBy default',
                 textAlign: TextAlign.center,
                 style: AppTypography.displayMedium.copyWith(
-                  color: colors.text.inverse,
+                  color: _foregroundColor,
                   height: 48 / 45,
                 ),
               ),
@@ -241,7 +239,7 @@ class _WelcomeHeroPane extends StatelessWidget {
                 child: VizorWordmark(
                   width: 96,
                   height: 36,
-                  color: colors.text.inverse,
+                  color: _foregroundColor,
                 ),
               ),
             ),
