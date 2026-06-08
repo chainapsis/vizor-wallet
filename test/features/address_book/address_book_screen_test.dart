@@ -71,6 +71,50 @@ void main() {
     expect(find.text('No contacts yet'), findsNothing);
   });
 
+  testWidgets('creates a Zcash contact for a TEX address without warning', (
+    tester,
+  ) async {
+    const texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
+    await _setDesktopViewport(tester);
+    final repo = _FakeAddressBookRepository();
+
+    await tester.pumpWidget(_addressBookHarness(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('address_book_add_contact_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('address_book_contact_label_field')),
+      'Exchange',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('address_book_contact_address_field')),
+      texAddress,
+    );
+    await tester.pump();
+
+    expect(find.text('Invalid Zcash address'), findsNothing);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('address_book_contact_submit_button')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('address_book_contact_submit_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(repo.contacts, hasLength(1));
+    expect(repo.contacts.single.network, AddressBookNetwork.zcash);
+    expect(repo.contacts.single.address, texAddress);
+  });
+
   testWidgets('warns about a malformed address but still allows saving', (
     tester,
   ) async {
@@ -108,10 +152,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(
-      find.text("Invalid EVM address"),
-      findsOneWidget,
-    );
+    expect(find.text("Invalid EVM address"), findsOneWidget);
     // Soft warning: the save button stays enabled.
     expect(
       tester
