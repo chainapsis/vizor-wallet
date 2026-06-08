@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/navigation/onboarding_navigation.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
@@ -341,7 +342,8 @@ class _AccountsPane extends StatelessWidget {
                   const SizedBox(height: AppSpacing.sm),
                   AppButton(
                     key: const ValueKey('accounts_add_account_button'),
-                    onPressed: () => context.go('/add-account'),
+                    onPressed: () =>
+                        navigateOnboardingForward(context, '/add-account'),
                     variant: AppButtonVariant.secondary,
                     minWidth: 256,
                     leading: const AppIcon(AppIcons.addNew),

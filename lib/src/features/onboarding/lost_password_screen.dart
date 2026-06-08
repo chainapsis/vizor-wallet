@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../main.dart' show log;
 import '../../core/layout/app_pane_scaffold.dart';
+import '../../core/navigation/onboarding_navigation.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_decorative_divider.dart';
@@ -72,7 +73,7 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
       onBack();
       return;
     }
-    context.go('/unlock');
+    navigateOnboardingBack(context, '/unlock');
   }
 
   Future<void> _handleReset() async {

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/navigation/onboarding_navigation.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -246,7 +247,10 @@ class _KeystoneWalletBirthdayScreenState
 
     final account = ref.read(keystoneOnboardingProvider).selectedAccount;
     if (account == null) {
-      context.go(KeystoneOnboardingStep.selectAccount.routePath);
+      navigateOnboardingBack(
+        context,
+        KeystoneOnboardingStep.selectAccount.routePath,
+      );
       return;
     }
 
@@ -259,7 +263,8 @@ class _KeystoneWalletBirthdayScreenState
       final security = ref.read(appSecurityProvider);
       if (!security.isPasswordConfigured) {
         if (!mounted) return;
-        context.go(
+        navigateOnboardingForward(
+          context,
           KeystoneOnboardingStep.setPassword.routePath,
           extra: SetPasswordScreenArgs.importKeystone(
             name: account.name,

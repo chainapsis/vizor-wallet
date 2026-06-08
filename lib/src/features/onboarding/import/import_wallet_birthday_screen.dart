@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/navigation/onboarding_navigation.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -270,7 +271,8 @@ class _ImportWalletBirthdayScreenState
       final security = ref.read(appSecurityProvider);
       if (!security.isPasswordConfigured) {
         if (!mounted) return;
-        context.go(
+        navigateOnboardingForward(
+          context,
           '/import/set-password',
           extra: SetPasswordScreenArgs.importWallet(
             mnemonic: mnemonic,
@@ -398,7 +400,8 @@ class _ImportWalletBirthdayScreenState
       child: Column(
         children: [
           _BackRow(
-            onTap: () => context.go(
+            onTap: () => navigateOnboardingBack(
+              context,
               '/import',
               extra: ImportSecretPassphraseArgs(mnemonic: widget.args.mnemonic),
             ),

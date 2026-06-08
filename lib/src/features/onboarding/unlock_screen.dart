@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../main.dart' show log;
 import '../../core/layout/app_pane_scaffold.dart';
+import '../../core/navigation/onboarding_navigation.dart';
 import '../../core/security/password_policy.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
@@ -108,7 +109,8 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
             });
           },
           onSubmit: _submit,
-          onForgotPassword: () => context.go('/lost-password'),
+          onForgotPassword: () =>
+              navigateOnboardingForward(context, '/lost-password'),
         ),
       ),
     );

@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
+import '../../../core/navigation/onboarding_navigation.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -63,7 +63,7 @@ class _BackRow extends StatelessWidget {
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => context.go('/welcome'),
+          onTap: () => navigateOnboardingBack(context, '/welcome'),
           child: SizedBox(
             height: 32,
             child: Row(
@@ -179,7 +179,10 @@ class _ButtonStack extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         AppButton(
-          onPressed: () => context.go(OnboardingStep.addressTypes.routePath),
+          onPressed: () => navigateOnboardingForward(
+            context,
+            OnboardingStep.addressTypes.routePath,
+          ),
           variant: AppButtonVariant.primary,
           minWidth: _buttonWidth,
           trailing: const AppIcon(AppIcons.chevronForward),
@@ -187,8 +190,10 @@ class _ButtonStack extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.s),
         AppButton(
-          onPressed: () =>
-              context.go(OnboardingStep.secretPassphrase.routePath),
+          onPressed: () => navigateOnboardingForward(
+            context,
+            OnboardingStep.secretPassphrase.routePath,
+          ),
           variant: AppButtonVariant.ghost,
           minWidth: _buttonWidth,
           trailing: const AppIcon(AppIcons.skip),

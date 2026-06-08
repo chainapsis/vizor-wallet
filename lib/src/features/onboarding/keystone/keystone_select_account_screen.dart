@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
+import '../../../core/navigation/onboarding_navigation.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -19,7 +19,10 @@ class KeystoneSelectAccountScreen extends ConsumerStatefulWidget {
 class _KeystoneSelectAccountScreenState
     extends ConsumerState<KeystoneSelectAccountScreen> {
   void _continue() {
-    context.go(KeystoneOnboardingStep.walletBirthdayHeight.routePath);
+    navigateOnboardingForward(
+      context,
+      KeystoneOnboardingStep.walletBirthdayHeight.routePath,
+    );
   }
 
   @override

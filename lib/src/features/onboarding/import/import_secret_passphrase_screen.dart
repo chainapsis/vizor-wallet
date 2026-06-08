@@ -10,8 +10,8 @@ import 'package:flutter/material.dart'
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
+import '../../../core/navigation/onboarding_navigation.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -321,18 +321,15 @@ class _ImportSecretPassphraseScreenState
     });
 
     if (!mounted) return;
-    context.go(
+    navigateOnboardingForward(
+      context,
       '/import/birthday',
       extra: ImportBirthdayArgs(mnemonic: _mnemonic),
     );
   }
 
   void _handleBack() {
-    if (context.canPop()) {
-      context.pop();
-      return;
-    }
-    context.go('/welcome');
+    navigateOnboardingBack(context, '/welcome');
   }
 
   @override

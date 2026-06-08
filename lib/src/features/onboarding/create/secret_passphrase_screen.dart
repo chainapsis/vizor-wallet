@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/navigation/onboarding_navigation.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -130,7 +131,8 @@ class _SecretPassphraseScreenState
     final security = ref.read(appSecurityProvider);
 
     if (!security.isPasswordConfigured) {
-      context.go(
+      navigateOnboardingForward(
+        context,
         OnboardingStep.setPassword.routePath,
         extra: SetPasswordScreenArgs.create(mnemonic: mnemonic),
       );
@@ -246,7 +248,10 @@ class _BackRow extends StatelessWidget {
           cursor: SystemMouseCursors.click,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => context.go(OnboardingStep.thingsToKnow.routePath),
+            onTap: () => navigateOnboardingBack(
+              context,
+              OnboardingStep.thingsToKnow.routePath,
+            ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

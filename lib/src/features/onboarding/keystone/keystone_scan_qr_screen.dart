@@ -1,8 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/navigation/onboarding_navigation.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../keystone/widgets/keystone_qr_scanner_card.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
@@ -42,7 +42,10 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
       }
 
       ref.read(keystoneOnboardingProvider.notifier).setAccounts(accounts);
-      context.go(KeystoneOnboardingStep.selectAccount.routePath);
+      navigateOnboardingForward(
+        context,
+        KeystoneOnboardingStep.selectAccount.routePath,
+      );
     } catch (e, st) {
       log('KeystoneScanQrScreen: account decode error: $e\n$st');
       if (!mounted) return;

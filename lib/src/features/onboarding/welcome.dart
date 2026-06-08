@@ -2,10 +2,10 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/layout/app_layout.dart';
 import '../../core/layout/app_pane_scaffold.dart';
+import '../../core/navigation/onboarding_navigation.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_icon.dart';
@@ -319,7 +319,7 @@ class _BackRow extends StatelessWidget {
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => context.canPop() ? context.pop() : context.go('/home'),
+        onTap: () => navigateOnboardingBack(context, '/home'),
         child: SizedBox(
           height: 32,
           child: Row(
@@ -434,7 +434,8 @@ class _WelcomeButtonsWrap extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         AppButton(
           key: const ValueKey('welcome_connect_keystone_button'),
-          onPressed: () => context.go('/onboarding/keystone'),
+          onPressed: () =>
+              navigateOnboardingForward(context, '/onboarding/keystone'),
           variant: AppButtonVariant.ghost,
           minWidth: _welcomeActionWidth,
           leading: const AppIcon(AppIcons.qrCodeFill, size: 18),
@@ -458,7 +459,8 @@ class _WalletButtonsStack extends StatelessWidget {
       children: [
         AppButton(
           key: const ValueKey('welcome_create_wallet_button'),
-          onPressed: () => context.go('/onboarding/intro'),
+          onPressed: () =>
+              navigateOnboardingForward(context, '/onboarding/intro'),
           variant: AppButtonVariant.primary,
           minWidth: _welcomeActionWidth,
           leading: const AppIcon(AppIcons.addNew),
@@ -467,7 +469,7 @@ class _WalletButtonsStack extends StatelessWidget {
         const SizedBox(height: AppSpacing.s),
         AppButton(
           key: const ValueKey('welcome_import_wallet_button'),
-          onPressed: () => context.go('/import'),
+          onPressed: () => navigateOnboardingForward(context, '/import'),
           variant: AppButtonVariant.secondary,
           minWidth: _welcomeActionWidth,
           leading: const AppIcon(AppIcons.importWallet),

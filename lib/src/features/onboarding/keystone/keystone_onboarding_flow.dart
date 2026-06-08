@@ -1,10 +1,10 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/motion/onboarding_motion.dart';
+import '../../../core/navigation/onboarding_navigation.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../rust/wallet/keystone.dart' show KeystoneAccountInfo;
@@ -199,7 +199,8 @@ class KeystoneBackRow extends StatelessWidget {
           cursor: SystemMouseCursors.click,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => context.go(routePath, extra: routeExtra),
+            onTap: () =>
+                navigateOnboardingBack(context, routePath, extra: routeExtra),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

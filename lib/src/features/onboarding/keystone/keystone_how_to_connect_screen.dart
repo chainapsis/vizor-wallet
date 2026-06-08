@@ -4,9 +4,9 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/navigation/onboarding_navigation.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -89,7 +89,10 @@ class _HeroLayout extends StatelessWidget {
           AppButton(
             onPressed: () {
               ref.read(keystoneOnboardingProvider.notifier).resetScan();
-              context.go(KeystoneOnboardingStep.scanQrCode.routePath);
+              navigateOnboardingForward(
+                context,
+                KeystoneOnboardingStep.scanQrCode.routePath,
+              );
             },
             variant: AppButtonVariant.primary,
             minWidth: buttonWidth,
@@ -112,7 +115,10 @@ class _HeroLayout extends StatelessWidget {
         AppButton(
           onPressed: () {
             ref.read(keystoneOnboardingProvider.notifier).resetScan();
-            context.go(KeystoneOnboardingStep.scanQrCode.routePath);
+            navigateOnboardingForward(
+              context,
+              KeystoneOnboardingStep.scanQrCode.routePath,
+            );
           },
           variant: AppButtonVariant.primary,
           minWidth: buttonWidth,

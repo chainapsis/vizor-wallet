@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
-import 'package:go_router/go_router.dart';
 
+import '../../../core/navigation/onboarding_navigation.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -44,7 +44,10 @@ class _BackRow extends StatelessWidget {
           cursor: SystemMouseCursors.click,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => context.go(OnboardingStep.addressTypes.routePath),
+            onTap: () => navigateOnboardingBack(
+              context,
+              OnboardingStep.addressTypes.routePath,
+            ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -212,7 +215,10 @@ class _ButtonStack extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppButton(
-      onPressed: () => context.go(OnboardingStep.secretPassphrase.routePath),
+      onPressed: () => navigateOnboardingForward(
+        context,
+        OnboardingStep.secretPassphrase.routePath,
+      ),
       variant: AppButtonVariant.primary,
       minWidth: _buttonWidth,
       trailing: const AppIcon(AppIcons.chevronForward),
