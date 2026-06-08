@@ -70,6 +70,12 @@ abstract final class Primitives {
   static const p0Alpha0Dark = Color(0x00141818);
   static const p0Alpha0Light = Color(0x00FFFFFF);
 
+  static const p0Alpha5Dark = Color(0x0D141818);
+  static const p0Alpha5Light = Color(0x0DFFFFFF);
+
+  static const p0Alpha10Dark = Color(0x1A141818);
+  static const p0Alpha10Light = Color(0x1AFFFFFF);
+
   static const p0Alpha15Dark = Color(0x26141818);
   static const p0Alpha15Light = Color(0x26FFFFFF);
 
@@ -79,6 +85,9 @@ abstract final class Primitives {
   static const p0Alpha50Dark = Color(0x80141818);
   static const p0Alpha50Light = Color(0x80FFFFFF);
 
+  static const p150Alpha15Dark = Color(0x262D3232);
+  static const p150Alpha15Light = Color(0x26E1E1E1);
+
   static const p300Alpha50Dark = Color(0x804D5252);
   static const p300Alpha35Light = Color(0x59B8B8B8);
 
@@ -86,6 +95,12 @@ abstract final class Primitives {
   static const p400Alpha20Light = Color(0x339A9A9A);
 
   static const p400Alpha35Dark = Color(0x59626767);
+
+  static const p900Alpha5Dark = Color(0x0DFFFFFF);
+  static const p900Alpha5Light = Color(0x0D141818);
+
+  static const p900Alpha10Dark = Color(0x1AFFFFFF);
+  static const p900Alpha10Light = Color(0x1A141818);
 
   static const p900Alpha20Dark = Color(0x33FFFFFF);
   static const p900Alpha20Light = Color(0x33141818);
@@ -175,6 +190,9 @@ abstract final class PlumPrimitives {
 
   static const p900Dark = Color(0xFFF6EDF8);
   static const p900Light = Color(0xFF0B060D);
+
+  static const p400Alpha8Dark = Color(0x14B760C4);
+  static const p400Alpha8Light = Color(0x14854E91);
 
   static const p400Alpha25Dark = Color(0x40B760C4);
   static const p400Alpha15Light = Color(0x26854E91);

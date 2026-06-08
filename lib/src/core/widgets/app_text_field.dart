@@ -259,7 +259,8 @@ class _AppTextFieldState extends State<AppTextField> {
         AppTypography.labelLarge.copyWith(color: colors.text.muted);
     final valueStyle =
         widget.textStyle ??
-        AppTypography.labelLarge.copyWith(color: colors.text.accent);
+        (_multiline ? AppTypography.bodyMedium : AppTypography.labelLarge)
+            .copyWith(color: colors.text.accent);
     final defaultHintStyle = AppTypography.labelLarge.copyWith(
       color: colors.text.muted,
     );
@@ -278,8 +279,6 @@ class _AppTextFieldState extends State<AppTextField> {
     final gap = _multiline ? AppSpacing.xs : AppSpacing.xxs;
     final shellHeight = _multiline ? 148.0 : 46.0;
     const shellRadius = AppRadii.small;
-    const focusRingWidth = 3.0;
-    const focusRingStrokeWidth = 2.0;
     final useFixedSlotLayout =
         !_multiline &&
         (widget.leadingSlotWidth != null ||
@@ -294,22 +293,23 @@ class _AppTextFieldState extends State<AppTextField> {
       forceStrutHeight: true,
     );
 
-    final isNeutralTone = widget.tone == AppTextFieldTone.neutral;
+    final shellColor = widget.tone == AppTextFieldTone.destructive
+        ? Color.alphaBlend(
+            colors.background.utilityDestructiveAlphaSubtle,
+            colors.surface.input,
+          )
+        : colors.surface.input;
     final borderColor = switch (widget.tone) {
-      AppTextFieldTone.neutral when _isFocused || _hasText =>
-        colors.border.medium,
-      AppTextFieldTone.neutral when _hovered => colors.border.regular,
-      AppTextFieldTone.neutral => colors.border.subtle,
-      AppTextFieldTone.destructive => colors.border.utilityDestructive,
+      AppTextFieldTone.neutral when _isFocused => colors.background.inverse,
+      AppTextFieldTone.neutral when _hovered => colors.border.subtleOpacity,
+      AppTextFieldTone.neutral => Colors.transparent,
+      AppTextFieldTone.destructive => colors.border.utilityDestructiveSubtle,
       AppTextFieldTone.success => colors.border.utilitySuccess,
       AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,
     };
-    final focusRingColor = switch (widget.tone) {
-      AppTextFieldTone.neutral => colors.state.focusRing,
-      AppTextFieldTone.destructive => colors.border.utilityDestructive,
-      AppTextFieldTone.success => colors.border.utilitySuccess,
-      AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,
-    };
+    final boxShadow = widget.tone == AppTextFieldTone.destructive
+        ? const <BoxShadow>[]
+        : _appTextFieldSurfaceShadow(colors);
     final messageColor = switch (widget.tone) {
       AppTextFieldTone.neutral => colors.text.secondary,
       AppTextFieldTone.destructive => colors.text.destructive,
@@ -406,60 +406,16 @@ class _AppTextFieldState extends State<AppTextField> {
             clipBehavior: Clip.none,
             children: [
               Positioned.fill(
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    if (_isFocused)
-                      Positioned(
-                        left: -focusRingWidth,
-                        top: -focusRingWidth,
-                        right: -focusRingWidth,
-                        bottom: -focusRingWidth,
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(
-                                shellRadius + focusRingWidth,
-                              ),
-                              border: Border.all(
-                                color: focusRingColor,
-                                width: focusRingStrokeWidth,
-                                strokeAlign: BorderSide.strokeAlignInside,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    Positioned.fill(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: colors.surface.input,
-                          borderRadius: BorderRadius.circular(shellRadius),
-                          border: Border.all(
-                            color: borderColor,
-                            width: 1.5,
-                            strokeAlign: BorderSide.strokeAlignInside,
-                          ),
-                        ),
-                      ),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: shellColor,
+                    borderRadius: BorderRadius.circular(shellRadius),
+                    border: Border.all(
+                      color: borderColor,
+                      width: 1.5,
+                      strokeAlign: BorderSide.strokeAlignInside,
                     ),
-                  ],
-                ),
-              ),
-              // Keep this hover layer in the tree at all times and only vary opacity.
-              // Inserting/removing a same-typed Stack sibling around the desktop
-              // TextField caused the EditableText subtree to be replaced during
-              // hover/focus transitions, which made focus visuals appear while text
-              // input/caret handling broke. Apply the same rule to any future
-              // conditional overlay siblings in this Stack.
-              Positioned.fill(
-                child: Opacity(
-                  opacity: _hovered && !_isFocused && isNeutralTone ? 1 : 0,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: colors.state.hover,
-                      borderRadius: BorderRadius.circular(shellRadius),
-                    ),
+                    boxShadow: boxShadow,
                   ),
                 ),
               ),
@@ -696,6 +652,23 @@ class _AppTextFieldState extends State<AppTextField> {
       ],
     );
   }
+}
+
+List<BoxShadow> _appTextFieldSurfaceShadow(AppColors colors) {
+  return [
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 2),
+      blurRadius: 4,
+    ),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 1),
+      blurRadius: 2,
+    ),
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+  ];
 }
 
 class _AppTextFieldMessage extends StatelessWidget {

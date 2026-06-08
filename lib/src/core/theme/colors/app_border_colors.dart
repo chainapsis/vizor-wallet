@@ -11,6 +11,7 @@ import '../primitives.dart';
 /// * [medium] — Active/filled field border.
 /// * [strong] — Max-contrast border.
 /// * [utilityDestructive] — Validation / destructive emphasis.
+/// * [utilityDestructiveSubtle] — Soft destructive border.
 /// * [utilitySuccess] — Success emphasis.
 /// * [brandCrimsonStrong] — Brand feedback / accent border.
 class AppBorderColors {
@@ -21,6 +22,7 @@ class AppBorderColors {
     required this.medium,
     required this.strong,
     required this.utilityDestructive,
+    required this.utilityDestructiveSubtle,
     required this.utilitySuccess,
     required this.brandCrimsonStrong,
   });
@@ -31,27 +33,30 @@ class AppBorderColors {
   final Color medium;
   final Color strong;
   final Color utilityDestructive;
+  final Color utilityDestructiveSubtle;
   final Color utilitySuccess;
   final Color brandCrimsonStrong;
 
   static const dark = AppBorderColors(
     subtle: Primitives.p150Dark,
-    subtleOpacity: Primitives.p900Alpha20Dark,
+    subtleOpacity: Primitives.p900Alpha10Dark,
     regular: Primitives.p300Dark,
     medium: Primitives.p400Dark,
     strong: Primitives.p800Dark,
     utilityDestructive: PlumPrimitives.p400Dark,
+    utilityDestructiveSubtle: PlumPrimitives.p100Dark,
     utilitySuccess: GoldPrimitives.p500Dark,
     brandCrimsonStrong: CrimsonPrimitives.p400Dark,
   );
 
   static const light = AppBorderColors(
     subtle: Primitives.p100Light,
-    subtleOpacity: Primitives.p0Alpha15Light,
+    subtleOpacity: Primitives.p900Alpha5Light,
     regular: Primitives.p200Light,
     medium: Primitives.p300Light,
     strong: Primitives.p900Light,
     utilityDestructive: PlumPrimitives.p300Light,
+    utilityDestructiveSubtle: PlumPrimitives.p100Light,
     utilitySuccess: GoldPrimitives.p400Light,
     brandCrimsonStrong: CrimsonPrimitives.p300Light,
   );

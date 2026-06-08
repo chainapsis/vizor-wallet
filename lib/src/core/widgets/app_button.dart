@@ -72,21 +72,30 @@ class _VariantPalette {
     required this.bgHover,
     required this.bgPressed,
     required this.border,
+    required this.borderHover,
+    required this.borderPressed,
     required this.borderWidth,
     required this.label,
+    required this.labelHover,
     required this.focusRing,
+    required this.focusRingHover,
   });
 
   final Color bg;
   final Color bgHover;
   final Color bgPressed;
   final Color border;
+  final Color borderHover;
+  final Color borderPressed;
   final double borderWidth;
   final Color label;
+  final Color labelHover;
   final Color focusRing;
+  final Color focusRingHover;
 }
 
 _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
+  final transparentBorder = c.background.ground.withValues(alpha: 0);
   switch (variant) {
     case AppButtonVariant.primary:
       return _VariantPalette(
@@ -94,31 +103,43 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         bgHover: c.button.primary.bgHover,
         bgPressed: c.button.primary.bgPressed,
         border: c.button.primary.border,
+        borderHover: c.button.primary.borderHover,
+        borderPressed: c.button.primary.borderPressed,
         borderWidth: 1.5,
         label: c.button.primary.label,
-        focusRing: c.state.focusRingBrand,
+        labelHover: c.button.primary.labelHover,
+        focusRing: c.button.primary.bg,
+        focusRingHover: c.button.primary.bgHover,
       );
     case AppButtonVariant.secondary:
       return _VariantPalette(
         bg: c.button.secondary.bg,
         bgHover: c.button.secondary.bgHover,
         bgPressed: c.button.secondary.bgPressed,
-        border: c.background.ground.withValues(alpha: 0),
+        border: transparentBorder,
+        borderHover: transparentBorder,
+        borderPressed: transparentBorder,
         borderWidth: 0,
         label: c.button.secondary.label,
+        labelHover: c.button.secondary.label,
         focusRing: c.state.focusRing,
+        focusRingHover: c.state.focusRing,
       );
     case AppButtonVariant.ghost:
       // Ghost's visible base is transparent regardless of the nominal token
       // value — that way it composes correctly over any surface.
       return _VariantPalette(
-        bg: c.background.ground.withValues(alpha: 0),
+        bg: transparentBorder,
         bgHover: c.button.ghost.bgHover,
         bgPressed: c.button.ghost.bgHover,
-        border: c.background.ground.withValues(alpha: 0),
+        border: transparentBorder,
+        borderHover: transparentBorder,
+        borderPressed: transparentBorder,
         borderWidth: 0,
         label: c.button.ghost.label,
+        labelHover: c.button.ghost.label,
         focusRing: c.state.focusRing,
+        focusRingHover: c.state.focusRing,
       );
     case AppButtonVariant.destructive:
       return _VariantPalette(
@@ -126,9 +147,13 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         bgHover: c.button.destructive.bgHover,
         bgPressed: c.button.destructive.bgPressed,
         border: c.button.destructive.border,
+        borderHover: c.button.destructive.borderHover,
+        borderPressed: c.button.destructive.borderPressed,
         borderWidth: 1.5,
         label: c.button.destructive.label,
+        labelHover: c.button.destructive.label,
         focusRing: c.state.focusRingDestructive,
+        focusRingHover: c.state.focusRingDestructive,
       );
   }
 }
@@ -245,7 +270,18 @@ class _AppButtonState extends State<AppButton> {
         ? palette.bgHover
         : palette.bg;
 
-    final Color labelColor = _enabled ? palette.label : disabled.label;
+    final Color labelColor = !_enabled
+        ? disabled.label
+        : _pressed || _hovered
+        ? palette.labelHover
+        : palette.label;
+    final Color borderColor = !_enabled
+        ? palette.border
+        : _pressed
+        ? palette.borderPressed
+        : _hovered
+        ? palette.borderHover
+        : palette.border;
     final borderWidth = _enabled ? palette.borderWidth : 0.0;
     final iconGap = widget.iconGap ?? sizing.gap;
 
@@ -307,7 +343,7 @@ class _AppButtonState extends State<AppButton> {
           shape: StadiumBorder(
             side: borderWidth == 0
                 ? BorderSide.none
-                : BorderSide(color: palette.border, width: borderWidth),
+                : BorderSide(color: borderColor, width: borderWidth),
           ),
         ),
         padding: sizing.padding,
@@ -324,7 +360,9 @@ class _AppButtonState extends State<AppButton> {
     );
 
     final focusRingWidth = widget.size == AppButtonSize.small ? 1.5 : 2.0;
-    final focusRingColor = widget.focusRingColor ?? palette.focusRing;
+    final focusRingColor =
+        widget.focusRingColor ??
+        (_hovered ? palette.focusRingHover : palette.focusRing);
     final focusRingOutset = switch (widget.variant) {
       AppButtonVariant.primary =>
         widget.size == AppButtonSize.large ? 3.5 : 3.0,
