@@ -134,6 +134,22 @@ class _MigrationSigningOverlayState
         'fee=${result.feeZatoshi} migrated=${result.migratedZatoshi}',
       );
 
+      if (result.status != 'broadcasted') {
+        try {
+          await ref.read(syncProvider.notifier).refreshAfterSend();
+        } catch (e) {
+          log('MigrationSigningOverlay: refreshAfterSend failed: $e');
+        }
+        if (!mounted) return;
+        setState(() {
+          _phase = _MigrationPhase.failed;
+          _error =
+              result.message ??
+              'Migration transactions were created locally but not fully broadcast. Keep Vizor open and do not start another migration.';
+        });
+        return;
+      }
+
       final txids = result.txids
           .split(',')
           .map((txid) => txid.trim())
@@ -154,16 +170,6 @@ class _MigrationSigningOverlayState
       }
 
       if (!mounted) return;
-      if (result.status != 'broadcasted') {
-        setState(() {
-          _phase = _MigrationPhase.failed;
-          _error =
-              result.message ??
-              'Migration transactions were created locally but not fully broadcast. Keep Vizor open and do not start another migration.';
-        });
-        return;
-      }
-
       widget.onComplete();
     } catch (e, st) {
       log('MigrationSigningOverlay._startMigration: ERROR: $e\n$st');

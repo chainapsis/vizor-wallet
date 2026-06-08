@@ -1615,6 +1615,29 @@ mod tests {
     }
 
     #[test]
+    fn ironwood_result_preserves_partial_broadcast_status_and_migrated_amount() {
+        let result = CreatedBroadcastResult {
+            txids: "abc123,def456".to_string(),
+            status: CreatedBroadcastResult::PARTIAL_BROADCAST,
+            broadcasted_count: 1,
+            total_count: 2,
+            message: Some("Only one transaction broadcast".to_string()),
+        }
+        .into_ironwood_migration_result(20_000, 180_000);
+
+        assert_eq!(result.txids, "abc123,def456");
+        assert_eq!(result.status, CreatedBroadcastResult::PARTIAL_BROADCAST);
+        assert_eq!(result.broadcasted_count, 1);
+        assert_eq!(result.total_count, 2);
+        assert_eq!(
+            result.message.as_deref(),
+            Some("Only one transaction broadcast")
+        );
+        assert_eq!(result.fee_zatoshi, 20_000);
+        assert_eq!(result.migrated_zatoshi, 180_000);
+    }
+
+    #[test]
     fn conservative_zip317_fee_rule_clamps_known_transparent_inputs_to_p2pkh_size() {
         let network = WalletNetwork::Regtest;
         let height = BlockHeight::from_u32(1_000);

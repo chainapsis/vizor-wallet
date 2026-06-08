@@ -117,9 +117,17 @@ void main() {
           .toSet();
 
       expect(urls, {
+        'http://127.0.0.1:9067',
         'https://testnet.zec.rocks:443',
         'https://zcash.mysideoftheweb.com:19067',
       });
+      expect(
+        findRpcEndpointPresetByUrl(
+          'http://127.0.0.1:9067',
+          networkName: 'test',
+        )?.id,
+        kLocalIronwoodTestnetRpcEndpointPresetId,
+      );
       expect(
         findRpcEndpointPresetByUrl(
           'zcash.mysideoftheweb.com:19067',
