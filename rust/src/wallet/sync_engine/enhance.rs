@@ -172,7 +172,7 @@ pub(super) async fn run_enhancement(
                     let start = u32::from(req.block_range_start()) as u64;
                     let end = u32::from(end_height) as u64;
 
-                    let found = process_taddress_history(
+                    let history = process_taddress_history(
                         client,
                         db,
                         db_path,
@@ -184,7 +184,7 @@ pub(super) async fn run_enhancement(
                     )
                     .await?;
 
-                    if !found {
+                    if history.fully_processed {
                         with_wallet_db_write_lock(
                             "sync_engine.enhance.notify_address_checked",
                             || {
@@ -208,6 +208,12 @@ pub(super) enum TAddressHistoryErrorPolicy {
     Strict,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct TAddressHistoryResult {
+    pub(super) found: bool,
+    fully_processed: bool,
+}
+
 pub(super) async fn process_taddress_history(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
@@ -217,12 +223,16 @@ pub(super) async fn process_taddress_history(
     start_height: u64,
     end_height: u64,
     error_policy: TAddressHistoryErrorPolicy,
-) -> Result<bool, SyncError> {
+) -> Result<TAddressHistoryResult, SyncError> {
+    let mut result = TAddressHistoryResult {
+        found: false,
+        fully_processed: true,
+    };
+
     if start_height > end_height {
-        return Ok(false);
+        return Ok(result);
     }
 
-    let mut found = false;
     let mut stream =
         lwd::get_taddress_txids(client, address.clone(), start_height, end_height).await?;
     let mut fee_client = client.clone();
@@ -230,11 +240,12 @@ pub(super) async fn process_taddress_history(
         match lwd::next_stream_message(&mut stream, "get_taddress_txids stream").await? {
             Some(raw) => {
                 if !raw.data.is_empty() {
-                    found = true;
+                    result.found = true;
                     let mined_height = mined_height_from_raw_height(raw.height)?;
                     let Some(tx) =
                         parse_taddress_transaction_for_history(&address, &raw.data, error_policy)?
                     else {
+                        result.fully_processed = false;
                         continue;
                     };
                     let txid = tx.txid();
@@ -253,6 +264,7 @@ pub(super) async fn process_taddress_history(
                     if let Err(e) = store_result {
                         match error_policy {
                             TAddressHistoryErrorPolicy::BestEffort => {
+                                result.fully_processed = false;
                                 log::error!("{e}");
                             }
                             TAddressHistoryErrorPolicy::Strict => return Err(e),
@@ -273,7 +285,7 @@ pub(super) async fn process_taddress_history(
         }
     }
 
-    Ok(found)
+    Ok(result)
 }
 
 fn parse_taddress_transaction_for_history(

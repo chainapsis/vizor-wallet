@@ -288,6 +288,7 @@ async fn scan_historical_scope(
                 enhance::TAddressHistoryErrorPolicy::Strict,
             )
             .await?
+            .found
             {
                 found += 1;
             }
@@ -377,6 +378,7 @@ async fn scan_frontier_scope(
             enhance::TAddressHistoryErrorPolicy::Strict,
         )
         .await?
+        .found
         {
             found += 1;
         } else {
