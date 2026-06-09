@@ -135,6 +135,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     accountName: activeAccountName,
                     profilePictureId: activeProfilePictureId,
                     onCancel: _closeModal,
+                    onChangeProfilePicture: () =>
+                        _showModal(_SettingsModalType.profilePicture),
                     onUpdate: _updateAccountName,
                   ),
                   _SettingsModalType.profilePicture =>

@@ -107,38 +107,36 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final overlay = Overlay.of(context);
     final appTheme = AppTheme.of(context);
     _accountMenuEntry = OverlayEntry(
-      builder:
-          (_) => AppTheme(
-            data: appTheme,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: GestureDetector(
-                    key: const ValueKey('sidebar_accounts_popover_backdrop'),
-                    behavior: HitTestBehavior.translucent,
-                    onTap: _closeAccountMenu,
-                  ),
-                ),
-                CompositedTransformFollower(
-                  link: _accountMenuLink,
-                  showWhenUnlinked: false,
-                  targetAnchor: Alignment.topLeft,
-                  followerAnchor: Alignment.topLeft,
-                  offset: const Offset(0, 48),
-                  child: _SidebarAccountsPopover(
-                    accounts: accounts,
-                    activeAccountUuid: activeAccountUuid,
-                    onSelectAccount: (uuid) => unawaited(_switchAccount(uuid)),
-                    onCopyAccountAddress:
-                        (account) =>
-                            unawaited(_copyShieldedAddressForAccount(account)),
-                    onManageAccounts: _openAccounts,
-                    onAddAccount: _openAddAccount,
-                  ),
-                ),
-              ],
+      builder: (_) => AppTheme(
+        data: appTheme,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                key: const ValueKey('sidebar_accounts_popover_backdrop'),
+                behavior: HitTestBehavior.translucent,
+                onTap: _closeAccountMenu,
+              ),
             ),
-          ),
+            CompositedTransformFollower(
+              link: _accountMenuLink,
+              showWhenUnlinked: false,
+              targetAnchor: Alignment.topLeft,
+              followerAnchor: Alignment.topLeft,
+              offset: const Offset(0, 48),
+              child: _SidebarAccountsPopover(
+                accounts: accounts,
+                activeAccountUuid: activeAccountUuid,
+                onSelectAccount: (uuid) => unawaited(_switchAccount(uuid)),
+                onCopyAccountAddress: (account) =>
+                    unawaited(_copyShieldedAddressForAccount(account)),
+                onManageAccounts: _openAccounts,
+                onAddAccount: _openAddAccount,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
     overlay.insert(_accountMenuEntry!);
     setState(() {});
@@ -153,8 +151,10 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   }
 
   Future<void> _switchAccount(String uuid) async {
-    final activeAccountUuid =
-        ref.read(accountProvider).value?.activeAccountUuid;
+    final activeAccountUuid = ref
+        .read(accountProvider)
+        .value
+        ?.activeAccountUuid;
     _closeAccountMenu();
     if (uuid == activeAccountUuid) return;
 
@@ -229,8 +229,8 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       final accountState = ref.read(accountProvider).value;
       final currentShieldedAddress =
           accountState?.activeAccountUuid == account.uuid
-              ? accountState?.activeAddress
-              : null;
+          ? accountState?.activeAddress
+          : null;
       final address = await ref
           .read(receiveAddressServiceProvider)
           .loadShieldedAddress(
@@ -352,20 +352,18 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         balanceLabel: balanceLabel,
                         showsKeystone: activeAccount?.isHardware ?? false,
                         privacyModeEnabled: privacyModeEnabled,
-                        onTogglePrivacyMode:
-                            () =>
-                                ref.read(privacyModeProvider.notifier).toggle(),
+                        onTogglePrivacyMode: () =>
+                            ref.read(privacyModeProvider.notifier).toggle(),
                         onCopyAddress:
                             activeAccountUuid == null || _isCopyingAddress
-                                ? null
-                                : () => unawaited(_copyShieldedAddress()),
-                        onTap:
-                            accounts.isEmpty
-                                ? null
-                                : () => _toggleAccountMenu(
-                                  accounts: accounts,
-                                  activeAccountUuid: activeAccountUuid,
-                                ),
+                            ? null
+                            : () => unawaited(_copyShieldedAddress()),
+                        onTap: accounts.isEmpty
+                            ? null
+                            : () => _toggleAccountMenu(
+                                accounts: accounts,
+                                activeAccountUuid: activeAccountUuid,
+                              ),
                       ),
                     ),
                     SizedBox(height: headerNavGap),
@@ -376,10 +374,9 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       iconAnimated: !isImporting,
                       active: _homeShouldBeActive,
                       inactiveOpacity: 0.5,
-                      onTap:
-                          isImporting || _isHomeRoute
-                              ? null
-                              : () => _navigateTo('/home'),
+                      onTap: isImporting || _isHomeRoute
+                          ? null
+                          : () => _navigateTo('/home'),
                     ),
                     if (swapFeatureEnabled) ...[
                       const SizedBox(height: AppSpacing.xs),
@@ -389,10 +386,9 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         iconName: AppIcons.swapArrows,
                         active: _matches('/swap'),
                         inactiveOpacity: 0.5,
-                        onTap:
-                            isImporting || _matches('/swap')
-                                ? null
-                                : () => _navigateTo('/swap'),
+                        onTap: isImporting || _matches('/swap')
+                            ? null
+                            : () => _navigateTo('/swap'),
                       ),
                     ],
                     const SizedBox(height: AppSpacing.xs),
@@ -402,20 +398,18 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       iconName: AppIcons.history,
                       active: _matches('/activity'),
                       inactiveOpacity: 0.5,
-                      onTap:
-                          isImporting || _matches('/activity')
-                              ? null
-                              : () => _navigateTo('/activity'),
+                      onTap: isImporting || _matches('/activity')
+                          ? null
+                          : () => _navigateTo('/activity'),
                     ),
                     const Spacer(),
                     AppSidebarItem(
                       label: 'Settings',
                       iconName: AppIcons.cog,
                       active: _matches('/settings'),
-                      onTap:
-                          _matches('/settings')
-                              ? null
-                              : () => _navigateTo('/settings'),
+                      onTap: _matches('/settings')
+                          ? null
+                          : () => _navigateTo('/settings'),
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(
@@ -527,13 +521,13 @@ class _SidebarAccountHeader extends StatelessWidget {
     return onTap == null
         ? row
         : MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onTap,
-            child: row,
-          ),
-        );
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: row,
+            ),
+          );
   }
 }
 
@@ -557,7 +551,7 @@ class _SidebarAccountAvatar extends StatelessWidget {
         children: [
           AppProfilePicture(
             profilePictureId: profilePictureId,
-            size: AppProfilePictureSize.navLarge,
+            size: AppProfilePictureSize.large,
           ),
           if (showsKeystone)
             Positioned(
@@ -768,8 +762,8 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                           physics: const ClampingScrollPhysics(),
                           padding: const EdgeInsets.only(bottom: AppSpacing.xs),
                           itemCount: widget.accounts.length,
-                          separatorBuilder:
-                              (_, _) => const SizedBox(height: AppSpacing.xxs),
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: AppSpacing.xxs),
                           itemBuilder: (context, index) {
                             final account = widget.accounts[index];
                             return _SidebarAccountPopoverRow(
@@ -782,9 +776,8 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                               onTap: () => widget.onSelectAccount(account.uuid),
                               onCopyAddress:
                                   account.uuid == widget.activeAccountUuid
-                                      ? null
-                                      : () =>
-                                          widget.onCopyAccountAddress(account),
+                                  ? null
+                                  : () => widget.onCopyAccountAddress(account),
                             );
                           },
                         ),

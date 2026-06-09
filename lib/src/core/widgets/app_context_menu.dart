@@ -12,7 +12,6 @@ class AppContextMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final shadowColor = colors.background.neutralScrim;
 
     return DefaultTextStyle.merge(
       style: const TextStyle(decoration: TextDecoration.none),
@@ -23,18 +22,7 @@ class AppContextMenu extends StatelessWidget {
             color: colors.background.inverse,
             borderRadius: BorderRadius.circular(AppRadii.small),
             border: Border.all(color: colors.border.subtleOpacity),
-            boxShadow: [
-              BoxShadow(
-                color: shadowColor,
-                offset: const Offset(0, 2),
-                blurRadius: 2,
-              ),
-              BoxShadow(
-                color: shadowColor,
-                offset: const Offset(0, 10),
-                blurRadius: 15,
-              ),
-            ],
+            boxShadow: appContextMenuShadow,
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(
@@ -74,10 +62,10 @@ class _AppContextMenuItemState extends State<AppContextMenuItem> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final itemColor = widget.destructive
-        ? colors.text.destructive
+        ? colors.text.destructiveLight
         : colors.text.inverse;
     final iconColor = widget.destructive
-        ? colors.icon.destructive
+        ? colors.icon.destructiveLight
         : colors.icon.inverse;
 
     return MouseRegion(
@@ -96,7 +84,7 @@ class _AppContextMenuItemState extends State<AppContextMenuItem> {
             vertical: AppSpacing.xxs,
           ),
           decoration: BoxDecoration(
-            color: _isHovered ? colors.state.hover : null,
+            color: _isHovered ? colors.state.hoverOpacity : null,
             borderRadius: BorderRadius.circular(AppSpacing.xxs),
           ),
           child: Row(
@@ -139,9 +127,17 @@ class AppContextMenuDivider extends StatelessWidget {
         height: 1,
         width: double.infinity,
         child: DecoratedBox(
-          decoration: BoxDecoration(color: context.colors.border.subtleOpacity),
+          decoration: BoxDecoration(
+            color: context.colors.border.inverseOpacity,
+          ),
         ),
       ),
     );
   }
 }
+
+const appContextMenuShadow = [
+  BoxShadow(color: Color(0x0F000000), offset: Offset(0, 2), blurRadius: 8),
+  BoxShadow(color: Color(0x08000000), offset: Offset(0, -6), blurRadius: 12),
+  BoxShadow(color: Color(0x14000000), offset: Offset(0, 14), blurRadius: 28),
+];

@@ -68,15 +68,66 @@ Widget buildLostPasswordEnabledUseCase(BuildContext context) {
 }
 
 Widget buildAccountsManyUseCase(BuildContext context) {
+  return _buildAccountsUseCase(_accountsManyState);
+}
+
+Widget buildAccountsOtherMenuUseCase(BuildContext context) {
+  return _buildAccountsUseCase(
+    _accountsDesignState,
+    initialOpenMenuAccountUuid: 'preview-account-2',
+  );
+}
+
+Widget buildAccountsCurrentMenuUseCase(BuildContext context) {
+  return _buildAccountsUseCase(
+    _accountsDesignState,
+    initialOpenMenuAccountUuid: 'preview-account-1',
+  );
+}
+
+Widget buildAccountsEditAccountUseCase(BuildContext context) {
+  return _buildAccountsUseCase(
+    _accountsDesignState,
+    initialModalAccountUuid: 'preview-account-2',
+    initialModal: AccountsScreenInitialModal.accountName,
+  );
+}
+
+Widget buildAccountsProfilePictureUseCase(BuildContext context) {
+  return _buildAccountsUseCase(
+    _accountsDesignState,
+    initialModalAccountUuid: 'preview-account-2',
+    initialModal: AccountsScreenInitialModal.profilePicture,
+  );
+}
+
+Widget buildAccountsRemoveUseCase(BuildContext context) {
+  return _buildAccountsUseCase(
+    _accountsDesignState,
+    initialModalAccountUuid: 'preview-account-2',
+    initialModal: AccountsScreenInitialModal.removeAccount,
+  );
+}
+
+Widget _buildAccountsUseCase(
+  AccountState accountState, {
+  String? initialOpenMenuAccountUuid,
+  String? initialModalAccountUuid,
+  AccountsScreenInitialModal? initialModal,
+}) {
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_accountsBootstrap),
-      accountProvider.overrideWith(
-        () => _PreviewAccountNotifier(_accountsState),
+      appBootstrapProvider.overrideWithValue(_accountsBootstrap(accountState)),
+      accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(accountState.activeAccountUuid),
       ),
-      syncProvider.overrideWith(_PreviewSyncNotifier.new),
     ],
-    child: _AccountsHarness(),
+    child: _AccountsHarness(
+      initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
+      initialModalAccountUuid: initialModalAccountUuid,
+      initialModal: initialModal,
+    ),
   );
 }
 
@@ -93,6 +144,16 @@ class _NoOpLayoutNotifier extends AppLayoutNotifier {
 }
 
 class _AccountsHarness extends StatefulWidget {
+  const _AccountsHarness({
+    this.initialOpenMenuAccountUuid,
+    this.initialModalAccountUuid,
+    this.initialModal,
+  });
+
+  final String? initialOpenMenuAccountUuid;
+  final String? initialModalAccountUuid;
+  final AccountsScreenInitialModal? initialModal;
+
   @override
   State<_AccountsHarness> createState() => _AccountsHarnessState();
 }
@@ -106,7 +167,14 @@ class _AccountsHarnessState extends State<_AccountsHarness> {
     _router = GoRouter(
       initialLocation: '/accounts',
       routes: [
-        GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
+        GoRoute(
+          path: '/accounts',
+          builder: (_, _) => AccountsScreen(
+            initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
+            initialModalAccountUuid: widget.initialModalAccountUuid,
+            initialModal: widget.initialModal,
+          ),
+        ),
         GoRoute(
           path: '/add-account',
           builder: (_, _) =>
@@ -258,7 +326,40 @@ class _PreviewRoutePlaceholder extends StatelessWidget {
   }
 }
 
-final _accountsState = AccountState(
+final _accountsDesignState = AccountState(
+  accounts: const [
+    AccountInfo(
+      uuid: 'preview-account-1',
+      name: 'Account Name',
+      order: 0,
+      isSeedAnchor: true,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+    AccountInfo(
+      uuid: 'preview-account-2',
+      name: 'Account Name',
+      order: 1,
+      isHardware: true,
+      profilePictureId: 'pfp-01',
+    ),
+    AccountInfo(
+      uuid: 'preview-account-3',
+      name: 'Account Name',
+      order: 2,
+      profilePictureId: 'pfp-02',
+    ),
+    AccountInfo(
+      uuid: 'preview-account-4',
+      name: 'Account Name',
+      order: 3,
+      profilePictureId: 'pfp-01',
+    ),
+  ],
+  activeAccountUuid: 'preview-account-1',
+  activeAddress: 'u1widgetbookaccountsaddress',
+);
+
+final _accountsManyState = AccountState(
   accounts: [
     const AccountInfo(
       uuid: 'preview-account-1',
@@ -273,25 +374,27 @@ final _accountsState = AccountState(
         name: index == 2 ? 'Keystone Vault' : 'Account $index',
         order: index - 1,
         isHardware: index == 2,
-        profilePictureId: index.isEven ? 'samurai' : 'knight',
+        profilePictureId: index.isEven ? 'pfp-02' : 'pfp-01',
       ),
   ],
   activeAccountUuid: 'preview-account-1',
   activeAddress: 'u1widgetbookaccountsaddress',
 );
 
-final _accountsBootstrap = AppBootstrapState(
-  initialLocation: '/accounts',
-  initialAccountState: _accountsState,
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.system,
-  privacyModeEnabled: false,
-  isPasswordConfigured: true,
-  isUnlocked: true,
-  passwordRotationRecoveryFailed: false,
-);
+AppBootstrapState _accountsBootstrap(AccountState accountState) {
+  return AppBootstrapState(
+    initialLocation: '/accounts',
+    initialAccountState: accountState,
+    initialSyncSnapshot: AppSyncSnapshot.empty,
+    network: 'main',
+    rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+    themeMode: ThemeMode.system,
+    privacyModeEnabled: false,
+    isPasswordConfigured: true,
+    isUnlocked: true,
+    passwordRotationRecoveryFailed: false,
+  );
+}
 
 class _PreviewAccountNotifier extends AccountNotifier {
   _PreviewAccountNotifier(this.initialState);
@@ -359,8 +462,19 @@ class _PreviewAccountNotifier extends AccountNotifier {
 }
 
 class _PreviewSyncNotifier extends SyncNotifier {
+  _PreviewSyncNotifier(this.activeAccountUuid);
+
+  final String? activeAccountUuid;
+
   @override
-  Future<SyncState> build() async => SyncState();
+  Future<SyncState> build() async => SyncState(
+    accountUuid: activeAccountUuid,
+    hasAccountScopedData: activeAccountUuid != null,
+    isSyncing: true,
+    percentage: 0.34,
+    displayPercentage: 0.34,
+    totalBalance: BigInt.from(14223000000),
+  );
 
   @override
   Future<void> refreshAfterSend() async {}

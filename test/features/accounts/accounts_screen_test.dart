@@ -54,6 +54,24 @@ void main() {
       find.byKey(const ValueKey('accounts_other_row_account-3')),
       findsOneWidget,
     );
+    final paneTopLeft = tester.getTopLeft(find.byType(AppDesktopPane));
+    final toolbarFinder = find.byKey(const ValueKey('accounts_pane_toolbar'));
+    final backLabelFinder = find.descendant(
+      of: toolbarFinder,
+      matching: find.text('Home'),
+    );
+    expect(tester.getTopLeft(toolbarFinder), paneTopLeft);
+    expect(
+      tester.getTopLeft(backLabelFinder).dx,
+      moreOrLessEquals(
+        paneTopLeft.dx + AppSpacing.md + 16 + AppSpacing.xxs,
+        epsilon: 0.1,
+      ),
+    );
+    expect(
+      tester.getTopLeft(backLabelFinder).dy,
+      moreOrLessEquals(paneTopLeft.dy + AppSpacing.xs + 7, epsilon: 0.1),
+    );
     expect(find.text('Current'), findsOneWidget);
     expect(find.text('Other'), findsOneWidget);
     expect(find.text('Keystone'), findsNothing);
@@ -149,6 +167,15 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Add account'), findsOneWidget);
+    final otherSurface = find.byKey(const ValueKey('accounts_other_surface'));
+    final addAccountButton = find.byKey(
+      const ValueKey('accounts_add_account_button'),
+    );
+    expect(
+      tester.getTopLeft(addAccountButton).dy -
+          tester.getBottomLeft(otherSurface).dy,
+      greaterThanOrEqualTo(AppSpacing.md),
+    );
   });
 
   testWidgets('sidebar account selector opens accounts screen', (tester) async {
@@ -165,13 +192,20 @@ void main() {
     final accountsButton = find.byKey(
       const ValueKey('sidebar_accounts_button'),
     );
-    final walletButton = find.byKey(const ValueKey('sidebar_wallet_button'));
+    final homeButton = find.byKey(const ValueKey('sidebar_home_button'));
     expect(
       tester.getTopLeft(accountsButton).dy,
-      lessThan(tester.getTopLeft(walletButton).dy),
+      lessThan(tester.getTopLeft(homeButton).dy),
     );
 
     await tester.tap(accountsButton);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('sidebar_accounts_popover')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('sidebar_accounts_manage')));
     await tester.pumpAndSettle();
 
     expect(find.text('Accounts'), findsOneWidget);
@@ -263,7 +297,9 @@ void main() {
     expect(find.text('Remove account'), findsNothing);
   });
 
-  testWidgets('current account menu omits send zec', (tester) async {
+  testWidgets('current account menu shows edit actions and copy only', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
     addTearDown(() async {
       await tester.binding.setSurfaceSize(null);
@@ -281,10 +317,56 @@ void main() {
     expect(find.text('Send ZEC'), findsNothing);
     expect(find.text('Edit name'), findsOneWidget);
     expect(find.text('Change picture'), findsOneWidget);
+    expect(find.text('Remove account'), findsNothing);
     _expectVerticalTextOrder(tester, const [
-      'Copy address',
       'Edit name',
       'Change picture',
+      'Copy address',
+    ]);
+  });
+
+  testWidgets('current imported account can be removed', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'account-1',
+          name: 'Seed Anchor',
+          order: 0,
+          isSeedAnchor: true,
+        ),
+        AccountInfo(uuid: 'account-2', name: 'Imported Active', order: 1),
+      ],
+      activeAccountUuid: 'account-2',
+      activeAddress: 'u1accountsaddress',
+    );
+
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit name'), findsOneWidget);
+    expect(find.text('Change picture'), findsOneWidget);
+    expect(find.text('Copy address'), findsOneWidget);
+    expect(find.text('Remove account'), findsOneWidget);
+    expect(find.text('Send ZEC'), findsNothing);
+    _expectVerticalTextOrder(tester, const [
+      'Edit name',
+      'Change picture',
+      'Copy address',
+      'Remove account',
     ]);
   });
 
@@ -454,53 +536,54 @@ void main() {
     );
   });
 
-  testWidgets('only the last seed anchor is protected from removal', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1512, 982));
-    addTearDown(() async {
-      await tester.binding.setSurfaceSize(null);
-    });
+  testWidgets(
+    'seed anchor is protected while imported accounts can be removed',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
 
-    const accountState = AccountState(
-      accounts: [
-        AccountInfo(uuid: 'account-1', name: 'Imported First', order: 0),
-        AccountInfo(
-          uuid: 'account-2',
-          name: 'Seed Anchor',
-          order: 1,
-          isSeedAnchor: true,
+      const accountState = AccountState(
+        accounts: [
+          AccountInfo(uuid: 'account-1', name: 'Imported First', order: 0),
+          AccountInfo(
+            uuid: 'account-2',
+            name: 'Seed Anchor',
+            order: 1,
+            isSeedAnchor: true,
+          ),
+          AccountInfo(uuid: 'account-3', name: 'Imported Other', order: 2),
+        ],
+        activeAccountUuid: 'account-1',
+        activeAddress: 'u1accountsaddress',
+      );
+      await tester.pumpWidget(
+        _accountsHarness(
+          accountNotifier: () => _FakeAccountNotifier(accountState),
         ),
-        AccountInfo(uuid: 'account-3', name: 'Imported Other', order: 2),
-      ],
-      activeAccountUuid: 'account-1',
-      activeAddress: 'u1accountsaddress',
-    );
-    await tester.pumpWidget(
-      _accountsHarness(
-        accountNotifier: () => _FakeAccountNotifier(accountState),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    await tester.tap(
-      find.byKey(const ValueKey('accounts_row_menu_button_account-1')),
-    );
-    await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('accounts_row_menu_button_account-3')),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Remove account'), findsOneWidget);
+      expect(find.text('Remove account'), findsOneWidget);
 
-    await tester.tapAt(const Offset(20, 20));
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
-    );
-    await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(20, 20));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Remove account'), findsNothing);
-  });
+      expect(find.text('Remove account'), findsNothing);
+    },
+  );
 
-  testWidgets('edit name menu action renames the selected account', (
+  testWidgets('edit account menu action renames the selected account', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -525,17 +608,13 @@ void main() {
 
     expect(find.text('Account name'), findsWidgets);
     expect(find.byType(AppPaneModalOverlay), findsOneWidget);
-    final modalBackdrop = find.descendant(
-      of: find.byType(AppPaneModalOverlay),
-      matching: find.byType(BackdropFilter),
-    );
-    expect(modalBackdrop, findsOneWidget);
+    final modalOverlay = find.byType(AppPaneModalOverlay);
     expect(
-      tester.getTopLeft(modalBackdrop),
+      tester.getTopLeft(modalOverlay),
       tester.getTopLeft(find.byType(AppDesktopPane)),
     );
     expect(
-      tester.getSize(modalBackdrop),
+      tester.getSize(modalOverlay),
       tester.getSize(find.byType(AppDesktopPane)),
     );
 
@@ -550,7 +629,7 @@ void main() {
     expect(find.text('New Account Name'), findsNothing);
   });
 
-  testWidgets('change picture menu action updates the selected account', (
+  testWidgets('edit account avatar action updates the selected account', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -577,14 +656,14 @@ void main() {
     expect(find.byType(AppPaneModalOverlay), findsOneWidget);
 
     await tester.tap(
-      find.byKey(const ValueKey('profile_picture_option_samurai')),
+      find.byKey(const ValueKey('profile_picture_option_pfp-02')),
     );
     await tester.pump();
     await tester.tap(find.text('Update'));
     await tester.pumpAndSettle();
 
     expect(accountNotifier.updatedProfilePictureUuid, 'account-2');
-    expect(accountNotifier.updatedProfilePictureId, 'samurai');
+    expect(accountNotifier.updatedProfilePictureId, 'pfp-02');
     expect(find.text('Select profile picture'), findsNothing);
   });
 
