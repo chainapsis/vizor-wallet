@@ -968,7 +968,7 @@ class _ReceiveInfoModal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final title = isShielded ? 'Shielded Address' : 'Transparent Address';
+    final title = isShielded ? 'Shielded address' : 'Transparent address';
     final subtitle = isShielded
         ? 'Strong privacy by default.'
         : 'Publicly visible';

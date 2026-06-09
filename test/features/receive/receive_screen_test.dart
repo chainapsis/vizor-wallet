@@ -202,7 +202,7 @@ void main() {
     await tester.tap(_findAppIcon(AppIcons.help));
     await tester.pump(const Duration(milliseconds: 200));
 
-    expect(find.text('Shielded Address'), findsOneWidget);
+    expect(find.text('Shielded address'), findsOneWidget);
     expect(
       find.text(
         'A new Zcash Shielded address is generated only when you click the Renew button.',
@@ -235,7 +235,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 200));
 
-    expect(find.text('Shielded Address'), findsOneWidget);
+    expect(find.text('Shielded address'), findsOneWidget);
 
     await tester.tap(
       find.ancestor(

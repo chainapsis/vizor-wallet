@@ -1257,7 +1257,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final title = _isShielded ? 'Shielded Address' : 'Transparent Address';
+    final title = _isShielded ? 'Shielded address' : 'Transparent address';
     final subtitle = _isShielded
         ? 'Strong privacy by default.'
         : 'Publicly visible';

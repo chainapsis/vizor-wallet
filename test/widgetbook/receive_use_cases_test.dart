@@ -20,7 +20,7 @@ void main() {
     expect(find.text('Receive ZEC'), findsOneWidget);
     expect(find.text('Copy shielded address'), findsOneWidget);
     expect(find.text('Copy transparent address'), findsNothing);
-    expect(find.text('Shielded Address'), findsNothing);
+    expect(find.text('Shielded address'), findsNothing);
     final backLabelFinder = find.descendant(
       of: find.byKey(const ValueKey('receive_preview_pane_back_button')),
       matching: find.text('Home'),
@@ -69,7 +69,7 @@ void main() {
       find.byKey(const ValueKey('receive_preview_shielded_info_modal')),
       findsOneWidget,
     );
-    expect(find.text('Shielded Address'), findsOneWidget);
+    expect(find.text('Shielded address'), findsOneWidget);
     expect(find.text('Strong privacy by default.'), findsOneWidget);
     expect(find.text('Close'), findsOneWidget);
     expect(
@@ -93,7 +93,7 @@ void main() {
       find.byKey(const ValueKey('receive_preview_transparent_info_modal')),
       findsOneWidget,
     );
-    expect(find.text('Transparent Address'), findsOneWidget);
+    expect(find.text('Transparent address'), findsOneWidget);
     expect(find.text('Publicly visible'), findsOneWidget);
     expect(find.text('Close'), findsOneWidget);
     expect(
