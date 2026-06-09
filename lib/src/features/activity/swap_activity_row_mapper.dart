@@ -95,7 +95,7 @@ ActivityRowData buildSwapActivityRow({
     ),
     amountIconName: returnsFunds ? AppIcons.arrowBack : null,
     amountIconColor: returnsFunds ? colors.icon.regular : null,
-    amountColor: colors.text.accent,
+    amountColor: colors.text.primary,
     amountSubtitle: timedOut
         ? 'Timeout'
         : returnsFunds
@@ -161,7 +161,7 @@ List<ActivityRowData> _swapActivityChildRows({
         item,
         privacyModeEnabled: privacyModeEnabled,
       ),
-      amountColor: colors.text.accent,
+      amountColor: colors.text.primary,
       statusText: active ? 'In progress' : 'Completed',
       statusIconName: active ? AppIcons.loader : null,
       statusColor: colors.text.secondary,

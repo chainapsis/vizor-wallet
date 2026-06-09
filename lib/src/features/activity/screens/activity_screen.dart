@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart' show Scrollbar;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -13,8 +12,6 @@ import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
-import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -26,7 +23,7 @@ import '../activity_row_mapper.dart';
 import '../models/activity_row_data.dart';
 import '../swap_activity_row_items_provider.dart';
 import '../swap_activity_row_mapper.dart';
-import '../widgets/activity_table.dart';
+import '../widgets/activity_feed.dart';
 import 'activity_transaction_status_screen.dart';
 
 class ActivityScreen extends ConsumerStatefulWidget {
@@ -37,25 +34,12 @@ class ActivityScreen extends ConsumerStatefulWidget {
 }
 
 class _ActivityScreenState extends ConsumerState<ActivityScreen> {
-  static const _activityRowsPerPage = 6;
-  // Figma frame keeps a 32px Back row plus a 616px Activity panel.
-  static const double _activityPaneMinHeight = 648;
-  static const double _activityTitleBlockHeight =
-      AppBackLink.height +
-      (AppSpacing.s * 2) +
-      44 +
-      AppSpacing.sm +
-      16 +
-      AppSpacing.sm;
-
   final ScrollController _scrollController = ScrollController();
   List<rust_sync.TransactionInfo>? _transactions;
   String? _transactionsAccountUuid;
   bool _isLoading = true;
   String? _error;
-  int _currentPage = 1;
   String? _activeAccountUuid;
-  bool _isHovered = false;
   bool _canScroll = false;
   Timer? _swapActivityRefreshTimer;
   String? _swapActivityRefreshAccountUuid;
@@ -103,7 +87,6 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
           _error = null;
         }
         if (resetPage) {
-          _currentPage = 1;
           _transactions = null;
           _transactionsAccountUuid = accountUuid;
         }
@@ -117,7 +100,6 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         _transactionsAccountUuid = null;
         _isLoading = false;
         _error = null;
-        _currentPage = 1;
       });
       return;
     }
@@ -139,7 +121,6 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         _transactionsAccountUuid = accountUuid;
         _isLoading = false;
         _error = null;
-        if (resetPage) _currentPage = 1;
       });
     } catch (e, st) {
       log('Activity: transaction load failed: $e\n$st');
@@ -162,22 +143,6 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     setState(() {
       _canScroll = canScroll;
     });
-  }
-
-  void _setPage(int page) {
-    if (page == _currentPage) return;
-    setState(() {
-      _currentPage = page;
-    });
-    if (_scrollController.hasClients) {
-      unawaited(
-        _scrollController.animateTo(
-          0,
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-        ),
-      );
-    }
   }
 
   void _openTransactionStatus(rust_sync.TransactionInfo transaction) {
@@ -341,21 +306,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
           ),
         ),
     ]..sort(_compareActivityEntries);
-    final entriesAfterFirstPage = math.max(
-      0,
-      entries.length - _activityRowsPerPage,
-    );
-    final totalPages =
-        1 + (entriesAfterFirstPage / _activityRowsPerPage).ceil();
-    final currentPage = math.min(math.max(_currentPage, 1), totalPages);
-    final firstEntryIndex = currentPage == 1
-        ? 0
-        : _activityRowsPerPage + ((currentPage - 2) * _activityRowsPerPage);
-    final rows = entries
-        .skip(firstEntryIndex)
-        .take(_activityRowsPerPage)
-        .map((entry) => entry.row)
-        .toList(growable: false);
+    final sections = _activityFeedSections(entries);
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -363,11 +314,6 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         padding: EdgeInsets.zero,
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final paneHeight = _activityPaneHeight(
-              viewportHeight: constraints.maxHeight - AppSpacing.md,
-              rows: rows,
-              showPagination: totalPages > 1,
-            );
             return NotificationListener<ScrollMetricsNotification>(
               onNotification: (_) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -376,55 +322,80 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                 });
                 return false;
               },
-              child: MouseRegion(
-                onEnter: (_) {
-                  if (!_isHovered) {
-                    setState(() {
-                      _isHovered = true;
-                    });
-                  }
-                },
-                onExit: (_) {
-                  if (_isHovered) {
-                    setState(() {
-                      _isHovered = false;
-                    });
-                  }
-                },
-                child: Scrollbar(
-                  key: const ValueKey('activity_screen_scrollbar'),
-                  controller: _scrollController,
-                  thumbVisibility:
-                      isDesktopLayoutPlatform && _isHovered && _canScroll,
-                  child: SingleChildScrollView(
-                    key: const ValueKey('activity_screen_scroll_view'),
-                    controller: _scrollController,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppSpacing.md,
-                        AppSpacing.md,
-                        AppSpacing.md,
-                        0,
+              child: Stack(
+                children: [
+                  const Positioned(
+                    left: 0,
+                    top: 0,
+                    right: 0,
+                    height: 48,
+                    child: AppPaneToolbar(
+                      padding: EdgeInsets.only(
+                        left: AppSpacing.md,
+                        top: AppSpacing.xs,
+                        bottom: AppSpacing.xs,
                       ),
-                      child: SizedBox(
-                        height: paneHeight,
-                        child: _ActivityPane(
-                          rows: rows,
-                          isLoading:
-                              _isLoading &&
-                              !canRenderTransactions &&
-                              rows.isEmpty,
-                          errorText: rows.isEmpty && loadedTransactions == null
-                              ? _error
-                              : null,
-                          currentPage: currentPage,
-                          totalPages: totalPages,
-                          onPageChanged: _setPage,
+                      backLinkMinWidth: 60,
+                    ),
+                  ),
+                  Positioned(
+                    left: 0,
+                    top: 48,
+                    right: 0,
+                    bottom: 0,
+                    child: ScrollConfiguration(
+                      behavior: ScrollConfiguration.of(
+                        context,
+                      ).copyWith(scrollbars: false),
+                      child: SingleChildScrollView(
+                        key: const ValueKey('activity_screen_scroll_view'),
+                        controller: _scrollController,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: constraints.maxHeight.isFinite
+                                ? constraints.maxHeight - 48
+                                : 0,
+                          ),
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: SizedBox(
+                              width: 420,
+                              child: Padding(
+                                padding: const EdgeInsets.only(
+                                  top: AppSpacing.sm,
+                                ),
+                                child: ActivityFeed(
+                                  sections: sections,
+                                  rowKeyPrefix: 'activity_screen',
+                                  isLoading:
+                                      _isLoading &&
+                                      !canRenderTransactions &&
+                                      sections.isEmpty,
+                                  errorText:
+                                      sections.isEmpty &&
+                                          loadedTransactions == null
+                                      ? _error
+                                      : null,
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                  if (isDesktopLayoutPlatform)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 18,
+                      child: _ActivityScreenScrollbar(
+                        controller: _scrollController,
+                        visible: _canScroll,
+                      ),
+                    ),
+                ],
               ),
             );
           },
@@ -432,94 +403,100 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       ),
     );
   }
-
-  double _activityPaneHeight({
-    required double viewportHeight,
-    required List<ActivityRowData> rows,
-    required bool showPagination,
-  }) {
-    return math.max(
-      math.max(viewportHeight, _activityPaneMinHeight),
-      _activityTitleBlockHeight +
-          estimateActivityTableContentHeight(
-            rows: rows,
-            showPagination: showPagination,
-          ),
-    );
-  }
 }
 
-class _ActivityPane extends StatelessWidget {
-  const _ActivityPane({
-    required this.rows,
-    required this.isLoading,
-    required this.errorText,
-    required this.currentPage,
-    required this.totalPages,
-    required this.onPageChanged,
+class _ActivityScreenScrollbar extends StatelessWidget {
+  const _ActivityScreenScrollbar({
+    required this.controller,
+    required this.visible,
   });
 
-  final List<ActivityRowData> rows;
-  final bool isLoading;
-  final String? errorText;
-  final int currentPage;
-  final int totalPages;
-  final ValueChanged<int> onPageChanged;
+  static const _thumbWidth = 6.0;
+  static const _thumbTopInset = 14.8212890625;
+  static const _thumbHeightFactor = 337.178955078125 / 704;
+
+  final ScrollController controller;
+  final bool visible;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Align(
-          alignment: Alignment.centerLeft,
-          child: AppRouteBackLink(minWidth: 60),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(
-              top: AppSpacing.s,
-              bottom: AppSpacing.s,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Text(
-                    'Activity',
-                    style: AppTypography.displaySmall.copyWith(
-                      color: colors.text.accent,
+    return SizedBox.expand(
+      key: const ValueKey('activity_screen_scrollbar'),
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) {
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              if (!visible ||
+                  !controller.hasClients ||
+                  !controller.position.hasContentDimensions ||
+                  controller.position.maxScrollExtent <= 0) {
+                return const SizedBox.shrink();
+              }
+
+              final height = constraints.maxHeight;
+              final thumbHeight = height * _thumbHeightFactor;
+              final maxTop = math.max(_thumbTopInset, height - thumbHeight);
+              final trackScrollExtent = maxTop - _thumbTopInset;
+              final scrollFraction =
+                  (controller.offset / controller.position.maxScrollExtent)
+                      .clamp(0.0, 1.0)
+                      .toDouble();
+              final top = _thumbTopInset + (trackScrollExtent * scrollFraction);
+
+              return Stack(
+                alignment: Alignment.topCenter,
+                children: [
+                  Positioned(
+                    top: top,
+                    left: 0,
+                    right: 0,
+                    height: thumbHeight,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragUpdate: (details) =>
+                          _handleThumbDragUpdate(details, trackScrollExtent),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: Center(
+                          child: DecoratedBox(
+                            key: const ValueKey('activity_screen_scroll_thumb'),
+                            decoration: BoxDecoration(
+                              color: context.colors.background.overlay,
+                              borderRadius: BorderRadius.circular(
+                                AppRadii.full,
+                              ),
+                            ),
+                            child: const SizedBox(
+                              width: _thumbWidth,
+                              height: double.infinity,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                const Center(child: AppDecorativeDivider(width: 256)),
-                const SizedBox(height: AppSpacing.sm),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xs,
-                    ),
-                    child: ActivityTable(
-                      rows: rows,
-                      rowKeyPrefix: 'activity_screen',
-                      isLoading: isLoading,
-                      errorText: errorText,
-                      showPagination: true,
-                      pinPaginationToBottom: true,
-                      currentPage: currentPage,
-                      totalPages: totalPages,
-                      onPageChanged: onPageChanged,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
+                ],
+              );
+            },
+          );
+        },
+      ),
     );
+  }
+
+  void _handleThumbDragUpdate(
+    DragUpdateDetails details,
+    double trackScrollExtent,
+  ) {
+    if (!controller.hasClients || trackScrollExtent <= 0) return;
+    final position = controller.position;
+    final scrollDelta =
+        details.delta.dy / trackScrollExtent * position.maxScrollExtent;
+    final nextOffset = (controller.offset + scrollDelta)
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
+    controller.jumpTo(nextOffset);
   }
 }
 
@@ -543,4 +520,62 @@ DateTime? _transactionActivityTimestamp(rust_sync.TransactionInfo tx) {
   final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
   if (seconds <= BigInt.zero) return null;
   return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
+}
+
+List<ActivityFeedSectionData> _activityFeedSections(
+  List<_ActivityEntry> entries,
+) {
+  final sections = <ActivityFeedSectionData>[];
+  List<ActivityRowData>? currentRows;
+  String? currentTitle;
+
+  for (final entry in entries) {
+    final title = _activitySectionTitle(entry.timestamp);
+    if (title != currentTitle) {
+      currentTitle = title;
+      currentRows = <ActivityRowData>[];
+      sections.add(ActivityFeedSectionData(title: title, rows: currentRows));
+    }
+    currentRows!.add(entry.row);
+  }
+
+  return sections;
+}
+
+String _activitySectionTitle(DateTime? timestamp) {
+  if (timestamp == null) return 'Earlier';
+
+  final local = timestamp.toLocal();
+  final now = DateTime.now();
+  final weekStart = _startOfWeek(now);
+  final nextWeekStart = weekStart.add(const Duration(days: 7));
+  if (!local.isBefore(weekStart) && local.isBefore(nextWeekStart)) {
+    return 'This week';
+  }
+
+  return '${_monthName(local.month)} ${local.year}';
+}
+
+DateTime _startOfWeek(DateTime date) {
+  final localDate = DateTime(date.year, date.month, date.day);
+  return localDate.subtract(Duration(days: date.weekday - DateTime.monday));
+}
+
+String _monthName(int month) {
+  const months = [
+    '',
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  return months[month];
 }
