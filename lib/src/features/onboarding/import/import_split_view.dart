@@ -63,6 +63,7 @@ class ImportOnboardingShell extends StatelessWidget {
 
     return AppDesktopShell(
       sidebarWidth: 256,
+      background: _ImportOnboardingWindowBackground(activeStep: activeStep),
       sidebar: SlideTransition(
         position: Tween<Offset>(
           begin: const Offset(-1, 0),
@@ -74,6 +75,37 @@ class ImportOnboardingShell extends StatelessWidget {
         ),
       ),
       pane: FadeTransition(opacity: entrance, child: child),
+    );
+  }
+}
+
+class _ImportOnboardingWindowBackground extends StatelessWidget {
+  const _ImportOnboardingWindowBackground({required this.activeStep});
+
+  final ImportOnboardingStep activeStep;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
+    final asset = switch (activeStep) {
+      ImportOnboardingStep.secretPassphrase =>
+        isDark
+            ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
+            : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
+      _ => null,
+    };
+
+    if (asset == null) {
+      return const SizedBox.shrink();
+    }
+
+    return DecoratedBox(
+      decoration: BoxDecoration(color: context.colors.background.window),
+      child: Image.asset(
+        asset,
+        fit: BoxFit.cover,
+        alignment: Alignment.topCenter,
+      ),
     );
   }
 }

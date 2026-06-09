@@ -10,6 +10,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -38,10 +39,13 @@ class _ImportSecretPassphraseScreenState
   static const _minImportWordCount = 12;
   static const _wordCountStep = 3;
   static const _wordCount = 24;
-  static const _gridWidth = 588.0;
-  static const _titleWidth = 504.0;
-  static const _subtitleWidth = 343.0;
-  static const _buttonWidth = 256.0;
+  static const _contentWidth = 396.0;
+  static const _onPageContentHeight = 580.0;
+  static const _titleTop = 35.0;
+  static const _passphraseTop = 173.0;
+  static const _gridWidth = 396.0;
+  static const _subtitleWidth = 226.0;
+  static const _buttonWidth = 230.0;
 
   late final List<TextEditingController> _controllers;
   late final List<FocusNode> _focusNodes;
@@ -343,115 +347,189 @@ class _ImportSecretPassphraseScreenState
         label: 'Welcome',
         onTap: _handleBack,
       ),
-      bodyPadding: EdgeInsets.zero,
       overlay: SensitivePrivacyOverlay(
         sensitiveContentVisible: _hasEnteredMnemonicWords,
         controller: _privacyOverlayController,
+        borderRadius: BorderRadius.circular(
+          AppDesktopSidebarSurface.glassRadius,
+        ),
         child: const SizedBox.expand(),
       ),
-      child: Column(
-        children: [
-          Expanded(
-            child: Column(
-              children: [
-                Expanded(
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return Center(
+            child: SizedBox(
+              width: _contentWidth,
+              height: constraints.maxHeight,
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: _onPageContentHeight,
+                    child: Stack(
                       children: [
-                        SizedBox(
-                          width: _titleWidth,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Welcome, Adventurer',
-                                style: AppTypography.displayLarge.copyWith(
-                                  color: colors.text.accent,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                              const SizedBox(height: AppSpacing.sm),
-                              SizedBox(
-                                width: _subtitleWidth,
-                                child: Text(
-                                  'Import your wallet by entering your Secret Passphrase.',
-                                  style: AppTypography.bodyMedium.copyWith(
-                                    color: colors.text.accent,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            ],
+                        Positioned(
+                          top: _titleTop,
+                          left: 0,
+                          right: 0,
+                          child: _ImportSecretTitle(
+                            textColor: colors.text.accent,
                           ),
                         ),
-                        const SizedBox(height: AppSpacing.lg),
-                        SizedBox(
-                          width: _gridWidth,
-                          child: Wrap(
-                            alignment: WrapAlignment.center,
-                            spacing: AppSpacing.s,
-                            runSpacing: AppSpacing.s,
-                            children: List.generate(
-                              _wordCount,
-                              (index) => _MnemonicWordCell(
-                                index: index,
-                                controller: _controllers[index],
-                                focusNode: _focusNodes[index],
-                                wordList: _mnemonicWordList,
-                                autocompleteEnabled: () => _autocompleteEnabled,
-                                onAutocompleteReactivationRequested: () =>
-                                    _reactivateAutocomplete(
-                                      _controllers[index],
-                                    ),
-                                destructive:
-                                    _showValidationError &&
-                                    _controllers[index].text.trim().isNotEmpty,
-                                autofocus: index == 0,
-                                onMoveNext: () => _moveToNextWord(index),
-                                onMovePrevious: () =>
-                                    _moveToPreviousWord(index),
-                                onSuggestionSelected: (word) =>
-                                    _handleSuggestionSelected(index, word),
-                                onChanged: (value) =>
-                                    _handleWordChanged(index, value),
-                                onSubmitted: () {
-                                  if (index == _wordCount - 1) {
-                                    _submit();
-                                  } else {
-                                    _moveToNextWord(index);
-                                  }
-                                },
-                              ),
-                            ),
+                        Positioned(
+                          top: _passphraseTop,
+                          left: 0,
+                          right: 0,
+                          child: _ImportSecretPassphraseGrid(
+                            controllers: _controllers,
+                            focusNodes: _focusNodes,
+                            wordList: _mnemonicWordList,
+                            autocompleteEnabled: () => _autocompleteEnabled,
+                            onAutocompleteReactivationRequested: (index) =>
+                                _reactivateAutocomplete(_controllers[index]),
+                            isDestructive: (index) =>
+                                _showValidationError &&
+                                _controllers[index].text.trim().isNotEmpty,
+                            onMoveNext: _moveToNextWord,
+                            onMovePrevious: _moveToPreviousWord,
+                            onSuggestionSelected: _handleSuggestionSelected,
+                            onChanged: _handleWordChanged,
+                            onSubmitted: (index) {
+                              if (index == _wordCount - 1) {
+                                _submit();
+                              } else {
+                                _moveToNextWord(index);
+                              }
+                            },
                           ),
                         ),
-                        if (_errorText != null) ...[
-                          const SizedBox(height: AppSpacing.s),
-                          Text(
-                            _errorText!,
-                            style: AppTypography.bodyMedium.copyWith(
-                              color: colors.text.destructive,
+                        if (_errorText != null)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: Text(
+                              _errorText!,
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: colors.text.destructive,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
                             ),
-                            textAlign: TextAlign.center,
                           ),
-                        ],
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                AppButton(
-                  key: const ValueKey('import_secret_submit_button'),
-                  onPressed: _canSubmit ? _submit : null,
-                  minWidth: _buttonWidth,
-                  trailing: const AppIcon(AppIcons.chevronForward),
-                  child: Text(_isSubmitting ? 'Importing...' : 'Import'),
-                ),
-              ],
+                  AppButton(
+                    key: const ValueKey('import_secret_submit_button'),
+                    onPressed: _canSubmit ? _submit : null,
+                    minWidth: _buttonWidth,
+                    trailing: const AppIcon(AppIcons.chevronForward),
+                    child: Text(_isSubmitting ? 'Importing...' : 'Import'),
+                  ),
+                ],
+              ),
             ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ImportSecretTitle extends StatelessWidget {
+  const _ImportSecretTitle({required this.textColor});
+
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.center,
+          child: Text(
+            'Welcome, adventurer',
+            style: AppTypography.displayLarge.copyWith(
+              fontFamily: 'Young Serif',
+              fontWeight: FontWeight.w400,
+              color: textColor,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.visible,
+            softWrap: false,
+            textAlign: TextAlign.center,
           ),
-        ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SizedBox(
+          width: _ImportSecretPassphraseScreenState._subtitleWidth,
+          child: Text(
+            'Import your wallet by entering your secret passphrase.',
+            style: AppTypography.bodyMediumStrong.copyWith(color: textColor),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ImportSecretPassphraseGrid extends StatelessWidget {
+  const _ImportSecretPassphraseGrid({
+    required this.controllers,
+    required this.focusNodes,
+    required this.wordList,
+    required this.autocompleteEnabled,
+    required this.onAutocompleteReactivationRequested,
+    required this.isDestructive,
+    required this.onMoveNext,
+    required this.onMovePrevious,
+    required this.onSuggestionSelected,
+    required this.onChanged,
+    required this.onSubmitted,
+  });
+
+  final List<TextEditingController> controllers;
+  final List<FocusNode> focusNodes;
+  final List<String> wordList;
+  final bool Function() autocompleteEnabled;
+  final ValueChanged<int> onAutocompleteReactivationRequested;
+  final bool Function(int index) isDestructive;
+  final bool Function(int index) onMoveNext;
+  final bool Function(int index) onMovePrevious;
+  final void Function(int index, String word) onSuggestionSelected;
+  final void Function(int index, String value) onChanged;
+  final ValueChanged<int> onSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: _ImportSecretPassphraseScreenState._gridWidth,
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: AppSpacing.s,
+        runSpacing: AppSpacing.s,
+        children: List.generate(
+          _ImportSecretPassphraseScreenState._wordCount,
+          (index) => _MnemonicWordCell(
+            index: index,
+            controller: controllers[index],
+            focusNode: focusNodes[index],
+            wordList: wordList,
+            autocompleteEnabled: autocompleteEnabled,
+            onAutocompleteReactivationRequested: () =>
+                onAutocompleteReactivationRequested(index),
+            destructive: isDestructive(index),
+            autofocus: index == 0,
+            onMoveNext: () => onMoveNext(index),
+            onMovePrevious: () => onMovePrevious(index),
+            onSuggestionSelected: (word) => onSuggestionSelected(index, word),
+            onChanged: (value) => onChanged(index, value),
+            onSubmitted: () => onSubmitted(index),
+          ),
+        ),
       ),
     );
   }
@@ -704,24 +782,26 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
     final colors = context.colors;
     final isFocused = focusNode.hasFocus;
     final hasText = controller.text.trim().isNotEmpty;
+    final fieldRadius = BorderRadius.circular(AppRadii.small);
     final valueStyle = AppTypography.labelLarge.copyWith(
       color: colors.text.accent,
     );
     final borderColor = widget.destructive
         ? colors.border.utilityDestructive
-        : _hovered && !isFocused && !hasText
-        ? colors.border.regular
         : isFocused
-        ? colors.border.medium
-        : colors.border.subtle;
-    final focusRingColor = widget.destructive
-        ? colors.border.utilityDestructive
-        : colors.state.focusRing;
+        ? colors.border.strong
+        : hasText
+        ? colors.border.brandCrimsonStrong
+        : _hovered
+        ? colors.border.regular
+        : colors.border.subtle.withValues(alpha: 0);
 
     final numberColor = widget.destructive
         ? colors.text.destructive
-        : hasText || isFocused
+        : isFocused
         ? colors.text.accent
+        : hasText
+        ? colors.text.brandCrimson
         : colors.text.secondary;
 
     return Focus(
@@ -740,32 +820,14 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
           child: SizedBox(
             height: _fieldHeight,
             child: Stack(
-              clipBehavior: Clip.none,
               children: [
-                if (isFocused)
-                  Positioned(
-                    left: -2.5,
-                    top: -2.5,
-                    right: -2.5,
-                    bottom: -2.5,
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: focusRingColor,
-                            width: 2,
-                            strokeAlign: BorderSide.strokeAlignInside,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
                 Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: colors.background.base,
-                      borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                      color: isFocused
+                          ? colors.surface.inputFocus
+                          : colors.surface.input,
+                      borderRadius: fieldRadius,
                       border: Border.all(
                         color: borderColor,
                         width: hasText || isFocused || widget.destructive
@@ -773,6 +835,22 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                             : 1,
                         strokeAlign: BorderSide.strokeAlignInside,
                       ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: colors.shadows.subtle,
+                          blurRadius: 0.5,
+                        ),
+                        BoxShadow(
+                          color: colors.shadows.subtle,
+                          offset: const Offset(0, 2),
+                          blurRadius: 2,
+                        ),
+                        BoxShadow(
+                          color: colors.shadows.subtle,
+                          offset: const Offset(0, 1),
+                          blurRadius: 1,
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -784,7 +862,7 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: colors.state.hover,
-                        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                        borderRadius: fieldRadius,
                       ),
                     ),
                   ),
