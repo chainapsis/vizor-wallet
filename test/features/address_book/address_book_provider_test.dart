@@ -109,6 +109,25 @@ void main() {
     );
   });
 
+  test('normalizes legacy contact profile picture ids on decode', () {
+    final contacts = SecureStorageAddressBookRepository.decodeContactsJson(
+      jsonEncode([
+        {
+          'id': 'alice',
+          'label': 'Alice',
+          'network': 'zec',
+          'address': 'u1alice',
+          'profilePictureId': 'samurai',
+          'createdAtMs': 1,
+          'updatedAtMs': 1,
+        },
+      ]),
+    );
+
+    expect(contacts, hasLength(1));
+    expect(contacts.single.profilePictureId, 'pfp-03');
+  });
+
   test(
     'stores contacts as secure-store JSON without an unlock session',
     () async {

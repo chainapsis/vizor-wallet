@@ -498,8 +498,8 @@ class _ReceiveContentLayout extends StatelessWidget {
                               : 'receive_copy_transparent_address_button',
                         ),
                         label: _isShielded
-                            ? 'Copy Shielded Address'
-                            : 'Copy Transparent Address',
+                            ? 'Copy shielded address'
+                            : 'Copy transparent address',
                         type: selectedType,
                         enabled: address.isNotEmpty && !isLoading,
                         onTap: onCopy,

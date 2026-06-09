@@ -18,8 +18,8 @@ void main() {
       ReceiveDesktopPreview.size,
     );
     expect(find.text('Receive ZEC'), findsOneWidget);
-    expect(find.text('Copy Shielded Address'), findsOneWidget);
-    expect(find.text('Copy Transparent Address'), findsNothing);
+    expect(find.text('Copy shielded address'), findsOneWidget);
+    expect(find.text('Copy transparent address'), findsNothing);
     expect(find.text('Shielded Address'), findsNothing);
     final backLabelFinder = find.descendant(
       of: find.byKey(const ValueKey('receive_preview_pane_back_button')),
@@ -34,33 +34,30 @@ void main() {
       moreOrLessEquals(316, epsilon: 0.1),
     );
     expect(
-      find.byKey(
-        const ValueKey(
-          'receive_preview_qr_block_assets/illustrations/receive_qr_block_shielded_light.png',
-        ),
-      ),
+      find.byKey(const ValueKey('receive_preview_qr_block_shielded')),
       findsOneWidget,
     );
-  });
-
-  testWidgets('receive desktop transparent use case renders transparent state', (
-    tester,
-  ) async {
-    await _pumpReceiveUseCase(tester, buildReceiveDesktopTransparentUseCase);
-
-    expect(tester.takeException(), isNull);
-    expect(find.byType(ReceiveDesktopPreview), findsOneWidget);
-    expect(find.text('Copy Transparent Address'), findsOneWidget);
-    expect(find.text('Copy Shielded Address'), findsNothing);
     expect(
-      find.byKey(
-        const ValueKey(
-          'receive_preview_qr_block_assets/illustrations/receive_qr_block_transparent_light.png',
-        ),
-      ),
+      find.byKey(const ValueKey('receive_preview_qr_surface_shielded')),
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'receive desktop transparent use case renders transparent state',
+    (tester) async {
+      await _pumpReceiveUseCase(tester, buildReceiveDesktopTransparentUseCase);
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(ReceiveDesktopPreview), findsOneWidget);
+      expect(find.text('Copy transparent address'), findsOneWidget);
+      expect(find.text('Copy shielded address'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('receive_preview_qr_block_transparent')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('receive desktop shielded modal use case renders info modal', (
     tester,
@@ -118,11 +115,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(
-        find.byKey(
-          const ValueKey(
-            'receive_preview_qr_block_assets/illustrations/receive_qr_block_transparent_dark.png',
-          ),
-        ),
+        find.byKey(const ValueKey('receive_preview_qr_surface_transparent')),
         findsOneWidget,
       );
       expect(find.text('Receive ZEC'), findsOneWidget);

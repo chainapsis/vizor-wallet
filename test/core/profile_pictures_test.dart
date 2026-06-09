@@ -28,7 +28,7 @@ void main() {
     );
   });
 
-  test('findProfilePictureOption resolves numbered ids only', () {
+  test('findProfilePictureOption resolves numbered ids', () {
     final option = findProfilePictureOption('pfp-02');
 
     expect(option, isNotNull);
@@ -36,12 +36,28 @@ void main() {
     expect(option.assetPath, 'assets/profile_pictures/profile_picture_02.png');
   });
 
-  test('findProfilePictureOption rejects old semantic and malformed ids', () {
-    expect(findProfilePictureOption('knight'), isNull);
-    expect(findProfilePictureOption('samurai'), isNull);
+  test('legacy semantic ids normalize to the closest numbered option', () {
+    expect(normalizeProfilePictureId('knight'), 'pfp-01');
+    expect(normalizeProfilePictureId('knight-04'), 'pfp-04');
+    expect(normalizeProfilePictureId('knight-05'), 'pfp-05');
+    expect(normalizeProfilePictureId('samurai'), 'pfp-03');
+    expect(normalizeProfilePictureId('viking'), 'pfp-02');
+    expect(normalizeProfilePictureId('wizard'), 'pfp-11');
+    expect(resolveProfilePictureOption('samurai').id, 'pfp-03');
+  });
+
+  test('legacy ids without a clear successor normalize to default', () {
+    expect(normalizeProfilePictureId('chest'), kDefaultProfilePictureId);
+    expect(normalizeProfilePictureId('dragon'), kDefaultProfilePictureId);
+    expect(normalizeProfilePictureId('shield-1'), kDefaultProfilePictureId);
+    expect(normalizeProfilePictureId('shield-2'), kDefaultProfilePictureId);
+  });
+
+  test('malformed ids normalize to default and are not known options', () {
     expect(findProfilePictureOption('knight-'), isNull);
     expect(findProfilePictureOption('knight-2'), isNull);
     expect(findProfilePictureOption('pfp-2'), isNull);
     expect(findProfilePictureOption('unknown'), isNull);
+    expect(normalizeProfilePictureId('unknown'), kDefaultProfilePictureId);
   });
 }

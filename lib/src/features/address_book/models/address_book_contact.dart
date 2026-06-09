@@ -150,9 +150,10 @@ class AddressBookContact {
       label: (json['label'] as String?)?.trim() ?? '',
       network: network,
       address: (json['address'] as String?)?.trim() ?? '',
-      profilePictureId:
-          (json['profilePictureId'] as String?)?.trim() ??
-          kDefaultProfilePictureId,
+      profilePictureId: normalizeProfilePictureId(
+        (json['profilePictureId'] as String?)?.trim() ??
+            kDefaultProfilePictureId,
+      ),
       createdAtMs: (json['createdAtMs'] as num?)?.toInt() ?? 0,
       updatedAtMs: (json['updatedAtMs'] as num?)?.toInt() ?? 0,
     );

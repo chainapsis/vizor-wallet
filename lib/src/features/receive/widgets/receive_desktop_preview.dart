@@ -430,33 +430,408 @@ class _ReceiveContentArea extends StatelessWidget {
 class _QrCodeBlock extends StatelessWidget {
   const _QrCodeBlock({required this.isShielded});
 
+  static const _width = 262.0;
+  static const _height = 414.0;
+  static const _tabsHeight = 36.0;
+  static const _tabsToQrGap = 32.0;
+  static const _qrFrameHeight = 310.0;
+  static const _qrSurfaceSize = 230.0;
+  static const _qrPaddingX = 16.0;
+  static const _qrPaddingY = 24.0;
+  static const _addressGap = 12.0;
+  static const _renewTop = 262.0;
+  static const _renewSize = 48.0;
+
   final bool isShielded;
 
   @override
   Widget build(BuildContext context) {
-    final isDark = AppTheme.of(context) == AppThemeData.dark;
-    final asset = _qrBlockAsset(isShielded, isDark);
-
-    return Image.asset(
-      asset,
-      key: ValueKey('receive_preview_qr_block_$asset'),
-      width: 262,
-      height: 414,
-      fit: BoxFit.fill,
-      filterQuality: FilterQuality.high,
+    return SizedBox(
+      key: ValueKey(
+        isShielded
+            ? 'receive_preview_qr_block_shielded'
+            : 'receive_preview_qr_block_transparent',
+      ),
+      width: _width,
+      height: _height,
+      child: Column(
+        children: [
+          SizedBox(
+            width: 256,
+            height: _tabsHeight,
+            child: _PreviewReceiveTabs(isShielded: isShielded),
+          ),
+          const SizedBox(height: _tabsToQrGap),
+          SizedBox(
+            width: _width,
+            height: _qrFrameHeight + _addressGap + 24,
+            child: Column(
+              children: [
+                SizedBox(
+                  width: _width,
+                  height: _qrFrameHeight,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.topCenter,
+                    children: [
+                      Positioned(
+                        top: 0,
+                        child: _PreviewQrSurface(
+                          isShielded: isShielded,
+                          size: _qrSurfaceSize,
+                          paddingX: _qrPaddingX,
+                          paddingY: _qrPaddingY,
+                        ),
+                      ),
+                      if (isShielded)
+                        const Positioned(
+                          top: _renewTop,
+                          child: _PreviewRenewButton(size: _renewSize),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: _addressGap),
+                _PreviewAddressLine(isShielded: isShielded),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-String _qrBlockAsset(bool isShielded, bool isDark) {
-  if (isShielded) {
-    return isDark
-        ? 'assets/illustrations/receive_qr_block_shielded_dark.png'
-        : 'assets/illustrations/receive_qr_block_shielded_light.png';
+class _PreviewReceiveTabs extends StatelessWidget {
+  const _PreviewReceiveTabs({required this.isShielded});
+
+  final bool isShielded;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final activeBg = isShielded
+        ? colors.background.inverse
+        : colors.background.ground;
+    final activeText = isShielded ? colors.text.inverse : colors.text.accent;
+
+    return Container(
+      key: const ValueKey('receive_preview_address_type_tabs'),
+      width: 256,
+      height: 36,
+      decoration: ShapeDecoration(
+        color: colors.background.raised,
+        shape: const StadiumBorder(),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Align(
+            alignment: isShielded
+                ? Alignment.centerLeft
+                : Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.all(2),
+              child: Container(
+                width: 124,
+                decoration: ShapeDecoration(
+                  color: activeBg,
+                  shape: const StadiumBorder(),
+                ),
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              _PreviewReceiveTab(
+                label: 'Shielded',
+                iconName: AppIcons.shieldKeyhole,
+                active: isShielded,
+                activeTextColor: activeText,
+                inactiveTextColor: colors.text.accent,
+              ),
+              _PreviewReceiveTab(
+                label: 'Transparent',
+                iconName: AppIcons.transparentBalance,
+                active: !isShielded,
+                activeTextColor: activeText,
+                inactiveTextColor: colors.text.accent,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
-  return isDark
-      ? 'assets/illustrations/receive_qr_block_transparent_dark.png'
-      : 'assets/illustrations/receive_qr_block_transparent_light.png';
+}
+
+class _PreviewReceiveTab extends StatelessWidget {
+  const _PreviewReceiveTab({
+    required this.label,
+    required this.iconName,
+    required this.active,
+    required this.activeTextColor,
+    required this.inactiveTextColor,
+  });
+
+  final String label;
+  final String iconName;
+  final bool active;
+  final Color activeTextColor;
+  final Color inactiveTextColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? activeTextColor : inactiveTextColor;
+    return Expanded(
+      child: SizedBox.expand(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AppIcon(iconName, size: AppIconSize.medium, color: color),
+            const SizedBox(width: AppSpacing.xxs),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.labelMedium.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PreviewQrSurface extends StatelessWidget {
+  const _PreviewQrSurface({
+    required this.isShielded,
+    required this.size,
+    required this.paddingX,
+    required this.paddingY,
+  });
+
+  final bool isShielded;
+  final double size;
+  final double paddingX;
+  final double paddingY;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
+    final usesDarkQrSurface = isDark || isShielded;
+    final qrColor = usesDarkQrSurface
+        ? (isDark ? colors.text.accent : colors.text.inverse)
+        : colors.text.accent;
+    final qrBackground = usesDarkQrSurface
+        ? (isDark ? colors.background.ground : colors.background.inverse)
+        : colors.background.ground;
+    final embeddedImageAsset = _previewQrEmbeddedImageAsset(
+      isShielded,
+      usesDarkQrSurface: usesDarkQrSurface,
+    );
+
+    return Container(
+      key: ValueKey(
+        isShielded
+            ? 'receive_preview_qr_surface_shielded'
+            : 'receive_preview_qr_surface_transparent',
+      ),
+      width: size + paddingX * 2,
+      height: size + paddingY * 2,
+      padding: EdgeInsets.symmetric(horizontal: paddingX, vertical: paddingY),
+      decoration: BoxDecoration(
+        color: qrBackground,
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(
+          color: usesDarkQrSurface
+              ? colors.border.subtle
+              : colors.border.inverseOpacity,
+        ),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          CustomPaint(
+            size: Size.square(size),
+            painter: _PreviewQrPainter(
+              color: qrColor,
+              backgroundColor: qrBackground,
+              seed: isShielded ? 7 : 19,
+            ),
+          ),
+          Image.asset(
+            embeddedImageAsset,
+            width: 48,
+            height: 48,
+            fit: BoxFit.fill,
+            filterQuality: FilterQuality.high,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _previewQrEmbeddedImageAsset(
+  bool isShielded, {
+  required bool usesDarkQrSurface,
+}) {
+  if (isShielded) return 'assets/icons/receive_qr_shield_crimson.png';
+  return usesDarkQrSurface
+      ? 'assets/icons/receive_qr_transparent_light.png'
+      : 'assets/icons/receive_qr_transparent_dark.png';
+}
+
+class _PreviewQrPainter extends CustomPainter {
+  const _PreviewQrPainter({
+    required this.color,
+    required this.backgroundColor,
+    required this.seed,
+  });
+
+  final Color color;
+  final Color backgroundColor;
+  final int seed;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final backgroundPaint = Paint()..color = backgroundColor;
+    const moduleCount = 29;
+    final module = size.width / moduleCount;
+
+    void drawFinder(int row, int column) {
+      final center = Offset((column + 3.5) * module, (row + 3.5) * module);
+      final outerRadius = module * 3.0;
+      final innerRadius = module * 1.45;
+      canvas.drawCircle(center, outerRadius, paint);
+      canvas.drawCircle(center, outerRadius - module * 0.8, backgroundPaint);
+      canvas.drawCircle(center, innerRadius, paint);
+    }
+
+    bool inFinder(int row, int column) {
+      final inLeft = column <= 6;
+      final inRight = column >= 22;
+      final inTop = row <= 6;
+      final inBottom = row >= 22;
+      return (inTop && (inLeft || inRight)) || (inBottom && inLeft);
+    }
+
+    for (var row = 0; row < moduleCount; row++) {
+      for (var column = 0; column < moduleCount; column++) {
+        if (inFinder(row, column)) continue;
+        if (row >= 11 && row <= 17 && column >= 11 && column <= 17) continue;
+
+        final filled =
+            ((row * 13 + column * 7 + seed) % 5 == 0) ||
+            ((row * 3 + column * 11 + seed) % 7 == 0);
+        if (!filled) continue;
+
+        final rect = Rect.fromLTWH(
+          column * module + module * 0.14,
+          row * module + module * 0.14,
+          module * 0.72,
+          module * 0.72,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, Radius.circular(module * 0.24)),
+          paint,
+        );
+      }
+    }
+
+    drawFinder(0, 0);
+    drawFinder(0, 22);
+    drawFinder(22, 0);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PreviewQrPainter oldDelegate) {
+    return oldDelegate.color != color ||
+        oldDelegate.backgroundColor != backgroundColor ||
+        oldDelegate.seed != seed;
+  }
+}
+
+class _PreviewRenewButton extends StatelessWidget {
+  const _PreviewRenewButton({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: DecoratedBox(
+        decoration: ShapeDecoration(
+          color: colors.background.homeCard,
+          shadows: [
+            BoxShadow(
+              color: colors.macosUtility.window,
+              blurRadius: 0,
+              spreadRadius: 4,
+            ),
+          ],
+          shape: CircleBorder(
+            side: BorderSide(color: colors.border.inverseOpacity, width: 2),
+          ),
+        ),
+        child: Center(
+          child: AppIcon(
+            AppIcons.renew,
+            size: AppIconSize.large,
+            color: colors.text.homeCard,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PreviewAddressLine extends StatelessWidget {
+  const _PreviewAddressLine({required this.isShielded});
+
+  final bool isShielded;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 24,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Flexible(
+            child: Text(
+              isShielded
+                  ? 'u1qz4n92r8p2f ... rs5t9p7v4a1'
+                  : 't1tvg2412a23k ... k64123hhq6d',
+              overflow: TextOverflow.clip,
+              maxLines: 1,
+              textAlign: TextAlign.center,
+              style: AppTypography.labelLarge.copyWith(
+                color: context.colors.text.accent,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xxs),
+          AppIcon(
+            AppIcons.help,
+            size: AppIconSize.medium,
+            color: context.colors.button.ghost.label,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _CopyAddressButton extends StatelessWidget {
@@ -469,7 +844,7 @@ class _CopyAddressButton extends StatelessWidget {
     return _FixedPillButton(
       width: 230,
       height: 44,
-      label: isShielded ? 'Copy Shielded Address' : 'Copy Transparent Address',
+      label: isShielded ? 'Copy shielded address' : 'Copy transparent address',
       iconName: isShielded
           ? AppIcons.shieldKeyhole
           : AppIcons.transparentBalance,
