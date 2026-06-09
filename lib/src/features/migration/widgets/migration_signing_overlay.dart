@@ -25,14 +25,12 @@ enum _MigrationPhase { preparing, broadcasting, failed }
 class MigrationSigningCompletion {
   const MigrationSigningCompletion({
     required this.accountUuid,
-    required this.completedAtStart,
-    required this.transactionCountAtStart,
+    required this.firstTxid,
     required this.result,
   });
 
   final String accountUuid;
-  final int completedAtStart;
-  final int transactionCountAtStart;
+  final String? firstTxid;
   final rust_sync.IronwoodMigrationResult result;
 }
 
@@ -85,12 +83,6 @@ class _MigrationSigningOverlayState
           'Switch to a software account before migrating.',
         );
       }
-      final migrationTransactionsAtStart = _migrationTransactions(
-        ref.read(syncProvider).value?.recentTransactions ?? const [],
-      );
-      final completedAtStart = migrationTransactionsAtStart
-          .where(_isCompletedMigration)
-          .length;
 
       final endpoint = ref.read(rpcEndpointProvider);
       if (endpoint.network != ZcashNetwork.testnet) {
@@ -150,15 +142,13 @@ class _MigrationSigningOverlayState
       );
 
       final migrationStarted = _migrationStarted(result);
-      if (result.broadcastedCount > 0 && result.totalCount > 0) {
+      final firstTxid = _firstTxid(result.txids);
+      if (result.broadcastedCount > 0 &&
+          result.totalCount > 0 &&
+          firstTxid != null) {
         providerContainer
             .read(migrationExpectedTransferCountProvider.notifier)
-            .setCount(
-              accountUuid,
-              result.totalCount,
-              completedAtStart: completedAtStart,
-              transactionCountAtStart: migrationTransactionsAtStart.length,
-            );
+            .setCount(accountUuid, result.totalCount, firstTxid: firstTxid);
       }
 
       if (!migrationStarted) {
@@ -187,8 +177,7 @@ class _MigrationSigningOverlayState
       widget.onComplete(
         MigrationSigningCompletion(
           accountUuid: accountUuid,
-          completedAtStart: completedAtStart,
-          transactionCountAtStart: migrationTransactionsAtStart.length,
+          firstTxid: firstTxid,
           result: result,
         ),
       );
@@ -221,16 +210,13 @@ class _MigrationSigningOverlayState
     await providerContainer.read(syncProvider.notifier).refreshAfterSend();
   }
 
-  List<rust_sync.TransactionInfo> _migrationTransactions(
-    Iterable<rust_sync.TransactionInfo> transactions,
-  ) {
-    return transactions
-        .where((tx) => tx.txKind == 'migration')
-        .toList(growable: false);
+  String? _firstTxid(String txids) {
+    for (final txid in txids.split(',')) {
+      final trimmed = txid.trim();
+      if (trimmed.isNotEmpty) return trimmed.toLowerCase();
+    }
+    return null;
   }
-
-  bool _isCompletedMigration(rust_sync.TransactionInfo tx) =>
-      tx.minedHeight != BigInt.zero && !tx.expiredUnmined;
 
   Future<rust_sync.IronwoodMigrationResult> _migrateWithMnemonicBytes({
     required String dbPath,

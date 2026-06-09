@@ -34,14 +34,13 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
 
   void _completeSigning(MigrationSigningCompletion completion) {
     final totalCount = completion.result.totalCount;
-    if (totalCount > 0) {
+    if (totalCount > 0 && completion.firstTxid != null) {
       ref
           .read(migrationExpectedTransferCountProvider.notifier)
           .setCount(
             completion.accountUuid,
             totalCount,
-            completedAtStart: completion.completedAtStart,
-            transactionCountAtStart: completion.transactionCountAtStart,
+            firstTxid: completion.firstTxid!,
           );
     }
     setState(() => _signing = false);
@@ -72,23 +71,29 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
         ? null
         : expectedTransferCount[accountUuid];
     final now = DateTime.now();
+    final hasUnconfirmedMigration = migrationTransactions.any(
+      _isPendingMigration,
+    );
     final expectedTransferCountIsFresh =
         scopedExpectedTransferCount != null &&
-        !scopedExpectedTransferCount.isExpired(now);
+        (!scopedExpectedTransferCount.isExpired(now) ||
+            hasUnconfirmedMigration);
     final freshExpectedTransferCount = expectedTransferCountIsFresh
         ? scopedExpectedTransferCount
         : null;
     final scopedExpectedCount = freshExpectedTransferCount?.count;
-    final completedMigrationCount = migrationTransactions
+    final currentRunMigrationTransactions = _currentRunMigrationTransactions(
+      migrationTransactions,
+      freshExpectedTransferCount,
+    );
+    final currentRunCompletedCount = currentRunMigrationTransactions
         .where(_isCompletedMigration)
         .length;
     final expectedMigrationInProgress =
         scopedExpectedCount != null &&
-        completedMigrationCount <
-            freshExpectedTransferCount!.completedAtStart + scopedExpectedCount;
+        currentRunCompletedCount < scopedExpectedCount;
     final hasPendingMigration =
-        migrationTransactions.any(_isPendingMigration) ||
-        expectedMigrationInProgress;
+        hasUnconfirmedMigration || expectedMigrationInProgress;
     final hasCompletedMigration = migrationTransactions.any(
       _isCompletedMigration,
     );
@@ -103,13 +108,17 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
 
     final Widget body = switch (viewState) {
       MigrationViewState.softwareRequired => const _SoftwareRequiredView(),
-      MigrationViewState.idle => _IdleView(onStart: _startSigning),
+      MigrationViewState.idle => _IdleView(
+        onStart: _startSigning,
+        orchardBalance: sync.orchardBalance,
+      ),
       MigrationViewState.inProgress => _InProgressView(
-        migrationTransactions: migrationTransactions,
+        migrationTransactions: currentRunMigrationTransactions,
         expectedTransferCount: scopedExpectedCount,
-        transactionCountAtStart:
-            freshExpectedTransferCount?.transactionCountAtStart ?? 0,
-        amountZatoshi: _migrationDisplayAmount(sync, migrationTransactions),
+        amountZatoshi: _migrationDisplayAmount(
+          sync,
+          currentRunMigrationTransactions,
+        ),
       ),
       MigrationViewState.complete => const _CompleteView(),
     };
@@ -118,7 +127,7 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     _clearExpiredExpectedTransferCount(
       accountUuid: accountUuid,
       expectedTransferCount: scopedExpectedTransferCount,
-      hasPendingMigration: migrationTransactions.any(_isPendingMigration),
+      hasPendingMigration: hasUnconfirmedMigration,
     );
 
     return AppDesktopShell(
@@ -198,6 +207,21 @@ List<rust_sync.TransactionInfo> _migrationTransactions(
       .toList(growable: false);
 }
 
+List<rust_sync.TransactionInfo> _currentRunMigrationTransactions(
+  List<rust_sync.TransactionInfo> migrationTransactions,
+  MigrationExpectedTransferCount? expectedTransferCount,
+) {
+  final firstTxid = expectedTransferCount?.firstTxid.toLowerCase();
+  if (firstTxid == null) return migrationTransactions;
+
+  final firstTxIndex = migrationTransactions.indexWhere(
+    (tx) => tx.txidHex.toLowerCase() == firstTxid,
+  );
+  if (firstTxIndex < 0) return const [];
+
+  return migrationTransactions.take(firstTxIndex + 1).toList(growable: false);
+}
+
 bool _isPendingMigration(rust_sync.TransactionInfo tx) =>
     tx.minedHeight == BigInt.zero && !tx.expiredUnmined;
 
@@ -205,7 +229,7 @@ bool _isCompletedMigration(rust_sync.TransactionInfo tx) =>
     tx.minedHeight != BigInt.zero && !tx.expiredUnmined;
 
 BigInt _migrationDisplayAmount(
-  SyncState? sync,
+  SyncState sync,
   List<rust_sync.TransactionInfo> migrationTransactions,
 ) {
   final txAmount = migrationTransactions.fold<BigInt>(
@@ -213,20 +237,19 @@ BigInt _migrationDisplayAmount(
     (sum, tx) => sum + tx.displayAmount,
   );
   if (txAmount > BigInt.zero) return txAmount;
-  return sync?.orchardBalance ?? BigInt.zero;
+  return sync.orchardBalance;
 }
 
-class _IdleView extends ConsumerWidget {
-  const _IdleView({required this.onStart});
+class _IdleView extends StatelessWidget {
+  const _IdleView({required this.onStart, required this.orchardBalance});
   final VoidCallback onStart;
+  final BigInt orchardBalance;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final colors = context.colors;
-    final orchard =
-        ref.watch(syncProvider).value?.orchardBalance ?? BigInt.zero;
     final amount = ZecAmount.fromZatoshi(
-      orchard,
+      orchardBalance,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
 
     return Column(
@@ -320,12 +343,10 @@ class _InProgressView extends StatelessWidget {
   const _InProgressView({
     required this.migrationTransactions,
     required this.expectedTransferCount,
-    required this.transactionCountAtStart,
     required this.amountZatoshi,
   });
   final List<rust_sync.TransactionInfo> migrationTransactions;
   final int? expectedTransferCount;
-  final int transactionCountAtStart;
   final BigInt amountZatoshi;
 
   @override
@@ -334,22 +355,13 @@ class _InProgressView extends StatelessWidget {
     final amount = ZecAmount.fromZatoshi(
       amountZatoshi,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
-    final currentRunLength =
-        (migrationTransactions.length - transactionCountAtStart)
-            .clamp(0, migrationTransactions.length)
-            .toInt();
-    final currentRunTransactions = migrationTransactions
-        .take(currentRunLength)
-        .toList(growable: false);
     final total = [
-      currentRunTransactions.length,
+      migrationTransactions.length,
       expectedTransferCount ?? 0,
       1,
     ].reduce((a, b) => a > b ? a : b);
-    final completed = currentRunTransactions
-        .where(_isCompletedMigration)
-        .length;
-    final progress = currentRunTransactions.isEmpty ? null : completed / total;
+    final completed = migrationTransactions.where(_isCompletedMigration).length;
+    final progress = migrationTransactions.isEmpty ? null : completed / total;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -407,8 +419,8 @@ class _InProgressView extends StatelessWidget {
                 _MigrationTransferRow(
                   index: i,
                   total: total,
-                  transaction: i < currentRunTransactions.length
-                      ? currentRunTransactions[i]
+                  transaction: i < migrationTransactions.length
+                      ? migrationTransactions[i]
                       : null,
                 ),
               ],
