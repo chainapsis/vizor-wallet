@@ -156,9 +156,13 @@ class OnboardingSidebarChrome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = context.appTheme == AppThemeData.dark;
-    final navPanelFill = isDark
+    final navPanelMaterial = isDark
         ? const Color(0xFF1A1A1A).withValues(alpha: 0.3)
         : const Color(0xFFFFFFFF).withValues(alpha: 0.3);
+    final navPanelFill = Color.alphaBlend(
+      navPanelMaterial,
+      context.colors.background.window,
+    );
 
     return AppDesktopSidebarSurface(
       glass: true,
