@@ -674,6 +674,9 @@ class _AccountsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accountCount = otherAccounts.length + (activeAccount == null ? 0 : 1);
+    final seedAnchorCount =
+        otherAccounts.where((account) => account.isSeedAnchor).length +
+        (activeAccount?.isSeedAnchor == true ? 1 : 0);
     return Align(
       alignment: Alignment.topCenter,
       child: SizedBox(
@@ -705,6 +708,7 @@ class _AccountsList extends StatelessWidget {
                       showRemove: _AccountsList._canRemoveAccount(
                         activeAccount!,
                         accountCount,
+                        seedAnchorCount,
                       ),
                       initiallyOpenMenu:
                           initialOpenMenuAccountUuid == activeAccount!.uuid,
@@ -726,6 +730,7 @@ class _AccountsList extends StatelessWidget {
                     _OtherAccountsRows(
                       accounts: otherAccounts,
                       accountCount: accountCount,
+                      seedAnchorCount: seedAnchorCount,
                       onSelectAccount: onSelectAccount,
                       onCopyAddress: onCopyAddress,
                       onSendZec: onSendZec,
@@ -744,9 +749,14 @@ class _AccountsList extends StatelessWidget {
     );
   }
 
-  static bool _canRemoveAccount(AccountInfo account, int accountCount) {
+  static bool _canRemoveAccount(
+    AccountInfo account,
+    int accountCount,
+    int seedAnchorCount,
+  ) {
     if (accountCount == 1) return true;
-    return !account.isSeedAnchor;
+    if (!account.isSeedAnchor) return true;
+    return seedAnchorCount > 1;
   }
 
   static double _accountsRowsHeight(int count) {
@@ -794,6 +804,7 @@ class _OtherAccountsRows extends StatelessWidget {
   const _OtherAccountsRows({
     required this.accounts,
     required this.accountCount,
+    required this.seedAnchorCount,
     required this.onSelectAccount,
     required this.onCopyAddress,
     required this.onSendZec,
@@ -805,6 +816,7 @@ class _OtherAccountsRows extends StatelessWidget {
 
   final List<AccountInfo> accounts;
   final int accountCount;
+  final int seedAnchorCount;
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onCopyAddress;
   final ValueChanged<AccountInfo> onSendZec;
@@ -841,7 +853,11 @@ class _OtherAccountsRows extends StatelessWidget {
           onEditName: onEditAccountName,
           onChangeProfilePicture: onChangeProfilePicture,
           onRemove: onRemoveAccount,
-          showRemove: _AccountsList._canRemoveAccount(account, accountCount),
+          showRemove: _AccountsList._canRemoveAccount(
+            account,
+            accountCount,
+            seedAnchorCount,
+          ),
           initiallyOpenMenu: initialOpenMenuAccountUuid == account.uuid,
         ),
       );

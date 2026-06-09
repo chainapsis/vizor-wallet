@@ -583,6 +583,57 @@ void main() {
     },
   );
 
+  testWidgets('seed anchor can be removed when another seed anchor remains', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'account-1',
+          name: 'Seed Anchor 1',
+          order: 0,
+          isSeedAnchor: true,
+        ),
+        AccountInfo(
+          uuid: 'account-2',
+          name: 'Seed Anchor 2',
+          order: 1,
+          isSeedAnchor: true,
+        ),
+        AccountInfo(uuid: 'account-3', name: 'Imported Other', order: 2),
+      ],
+      activeAccountUuid: 'account-1',
+      activeAddress: 'u1accountsaddress',
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-1')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Remove account'), findsOneWidget);
+
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Remove account'), findsOneWidget);
+  });
+
   testWidgets('edit account menu action renames the selected account', (
     tester,
   ) async {
