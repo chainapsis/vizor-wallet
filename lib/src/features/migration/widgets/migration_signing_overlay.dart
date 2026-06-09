@@ -18,6 +18,7 @@ import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../migration_copy.dart';
 import '../models/migration_batch.dart';
+import '../providers/migration_expected_transfer_count_provider.dart';
 
 enum _MigrationPhase { preparing, broadcasting, failed }
 
@@ -66,6 +67,7 @@ class _MigrationSigningOverlayState
       _phase = _MigrationPhase.broadcasting;
       _error = null;
     });
+    final providerContainer = ProviderScope.containerOf(context, listen: false);
 
     try {
       final accountState = ref.read(accountProvider).value;
@@ -137,9 +139,18 @@ class _MigrationSigningOverlayState
         'fee=${result.feeZatoshi} migrated=${result.migratedZatoshi}',
       );
 
-      if (!_migrationStarted(result)) {
+      final migrationStarted = _migrationStarted(result);
+      if (migrationStarted && result.totalCount > 0) {
+        providerContainer
+            .read(migrationExpectedTransferCountProvider.notifier)
+            .setCount(accountUuid, result.totalCount);
+      }
+
+      if (!migrationStarted) {
         try {
-          await ref.read(syncProvider.notifier).refreshAfterSend();
+          await providerContainer
+              .read(syncProvider.notifier)
+              .refreshAfterSend();
         } catch (e) {
           log('MigrationSigningOverlay: refreshAfterSend failed: $e');
         }
@@ -154,7 +165,7 @@ class _MigrationSigningOverlayState
       }
 
       try {
-        await ref.read(syncProvider.notifier).refreshAfterSend();
+        await providerContainer.read(syncProvider.notifier).refreshAfterSend();
       } catch (e) {
         log('MigrationSigningOverlay: refreshAfterSend failed: $e');
       }
