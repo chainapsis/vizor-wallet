@@ -5,7 +5,9 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 
 void main() {
-  testWidgets('desktop shell owns the default window backing', (tester) async {
+  testWidgets('desktop shell owns the default macOS window backing', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
@@ -22,8 +24,26 @@ void main() {
     final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
     expect(
       scaffold.backgroundColor,
-      AppThemeData.light.colors.background.window,
+      AppThemeData.light.colors.macosUtility.window,
     );
+  });
+
+  testWidgets('desktop pane lets the shell window backing show through', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      AppTheme(
+        data: AppThemeData.light,
+        child: const Directionality(
+          textDirection: TextDirection.ltr,
+          child: AppDesktopPane(child: SizedBox.expand()),
+        ),
+      ),
+    );
+
+    final container = tester.widget<Container>(find.byType(Container));
+    final decoration = container.decoration as BoxDecoration;
+    expect(decoration.color, Colors.transparent);
   });
 
   testWidgets(

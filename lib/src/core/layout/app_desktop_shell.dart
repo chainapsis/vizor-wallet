@@ -26,7 +26,7 @@ class AppDesktopShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: backgroundColor ?? context.colors.background.window,
+      backgroundColor: backgroundColor ?? context.colors.macosUtility.window,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.xs),
@@ -135,7 +135,7 @@ class AppDesktopPane extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: backgroundColor ?? context.colors.background.window,
+        color: backgroundColor ?? Colors.transparent,
         borderRadius: BorderRadius.circular(AppWindowSizing.paneRadius),
       ),
       clipBehavior: Clip.antiAlias,

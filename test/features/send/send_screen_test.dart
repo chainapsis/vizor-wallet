@@ -32,7 +32,7 @@ void main() {
     final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
     expect(
       scaffold.backgroundColor,
-      AppThemeData.light.colors.background.window,
+      AppThemeData.light.colors.macosUtility.window,
     );
   });
 
