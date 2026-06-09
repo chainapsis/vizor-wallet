@@ -21,6 +21,16 @@ import '../models/migration_batch.dart';
 
 enum _MigrationPhase { preparing, broadcasting, failed }
 
+class MigrationSigningCompletion {
+  const MigrationSigningCompletion({
+    required this.accountUuid,
+    required this.result,
+  });
+
+  final String accountUuid;
+  final rust_sync.IronwoodMigrationResult result;
+}
+
 class MigrationSigningOverlay extends ConsumerStatefulWidget {
   const MigrationSigningOverlay({
     required this.onCancel,
@@ -29,7 +39,7 @@ class MigrationSigningOverlay extends ConsumerStatefulWidget {
   });
 
   final VoidCallback onCancel;
-  final ValueChanged<rust_sync.IronwoodMigrationResult> onComplete;
+  final ValueChanged<MigrationSigningCompletion> onComplete;
 
   @override
   ConsumerState<MigrationSigningOverlay> createState() =>
@@ -127,7 +137,7 @@ class _MigrationSigningOverlayState
         'fee=${result.feeZatoshi} migrated=${result.migratedZatoshi}',
       );
 
-      if (result.status != 'broadcasted' && result.broadcastedCount == 0) {
+      if (!_migrationStarted(result)) {
         try {
           await ref.read(syncProvider.notifier).refreshAfterSend();
         } catch (e) {
@@ -150,7 +160,9 @@ class _MigrationSigningOverlayState
       }
 
       if (!mounted) return;
-      widget.onComplete(result);
+      widget.onComplete(
+        MigrationSigningCompletion(accountUuid: accountUuid, result: result),
+      );
     } catch (e, st) {
       log('MigrationSigningOverlay._startMigration: ERROR: $e\n$st');
       if (!mounted) return;
@@ -159,6 +171,13 @@ class _MigrationSigningOverlayState
         _error = _friendlyError(e);
       });
     }
+  }
+
+  bool _migrationStarted(rust_sync.IronwoodMigrationResult result) {
+    if (result.status == 'broadcasted') return true;
+    return result.status == 'partial_broadcast' &&
+        result.broadcastedCount > 0 &&
+        result.message == null;
   }
 
   Future<rust_sync.IronwoodMigrationResult> _migrateWithMnemonicBytes({

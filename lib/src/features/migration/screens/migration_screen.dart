@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -12,36 +15,8 @@ import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../migration_copy.dart';
 import '../models/migration_view_state.dart';
+import '../providers/migration_expected_transfer_count_provider.dart';
 import '../widgets/migration_signing_overlay.dart';
-
-class MigrationExpectedTransferCount {
-  const MigrationExpectedTransferCount({
-    required this.accountUuid,
-    required this.count,
-  });
-
-  final String accountUuid;
-  final int count;
-}
-
-class MigrationExpectedTransferCountNotifier
-    extends Notifier<MigrationExpectedTransferCount?> {
-  @override
-  MigrationExpectedTransferCount? build() => null;
-
-  void setCount(String accountUuid, int count) {
-    state = MigrationExpectedTransferCount(
-      accountUuid: accountUuid,
-      count: count,
-    );
-  }
-}
-
-final migrationExpectedTransferCountProvider =
-    NotifierProvider<
-      MigrationExpectedTransferCountNotifier,
-      MigrationExpectedTransferCount?
-    >(MigrationExpectedTransferCountNotifier.new);
 
 class MigrationScreen extends ConsumerStatefulWidget {
   const MigrationScreen({super.key});
@@ -52,19 +27,25 @@ class MigrationScreen extends ConsumerStatefulWidget {
 
 class _MigrationScreenState extends ConsumerState<MigrationScreen> {
   bool _signing = false;
+  Timer? _progressRefreshTimer;
 
   void _startSigning() => setState(() => _signing = true);
   void _cancelSigning() => setState(() => _signing = false);
 
-  void _completeSigning(rust_sync.IronwoodMigrationResult result) {
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    final totalCount = result.totalCount;
-    if (accountUuid != null && totalCount > 0) {
+  void _completeSigning(MigrationSigningCompletion completion) {
+    final totalCount = completion.result.totalCount;
+    if (totalCount > 0) {
       ref
           .read(migrationExpectedTransferCountProvider.notifier)
-          .setCount(accountUuid, totalCount);
+          .setCount(completion.accountUuid, totalCount);
     }
     setState(() => _signing = false);
+  }
+
+  @override
+  void dispose() {
+    _progressRefreshTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -80,16 +61,22 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     final expectedTransferCount = ref.watch(
       migrationExpectedTransferCountProvider,
     );
-    final scopedExpectedTransferCount =
-        expectedTransferCount?.accountUuid == accountUuid
-        ? expectedTransferCount?.count
+    final scopedExpectedTransferCount = accountUuid == null
+        ? null
+        : expectedTransferCount[accountUuid];
+    final now = DateTime.now();
+    final expectedTransferCountIsFresh =
+        scopedExpectedTransferCount != null &&
+        !scopedExpectedTransferCount.isExpired(now);
+    final scopedExpectedCount = expectedTransferCountIsFresh
+        ? scopedExpectedTransferCount.count
         : null;
     final completedMigrationCount = migrationTransactions
         .where(_isCompletedMigration)
         .length;
     final expectedMigrationInProgress =
-        scopedExpectedTransferCount != null &&
-        completedMigrationCount < scopedExpectedTransferCount;
+        scopedExpectedCount != null &&
+        completedMigrationCount < scopedExpectedCount;
     final hasPendingMigration =
         migrationTransactions.any(_isPendingMigration) ||
         expectedMigrationInProgress;
@@ -110,11 +97,18 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
       MigrationViewState.idle => _IdleView(onStart: _startSigning),
       MigrationViewState.inProgress => _InProgressView(
         migrationTransactions: migrationTransactions,
-        expectedTransferCount: scopedExpectedTransferCount,
+        expectedTransferCount: scopedExpectedCount,
         amountZatoshi: _migrationDisplayAmount(sync, migrationTransactions),
       ),
       MigrationViewState.complete => const _CompleteView(),
     };
+
+    _syncMigrationProgressPolling(hasPendingMigration);
+    _clearExpiredExpectedTransferCount(
+      accountUuid: accountUuid,
+      expectedTransferCount: scopedExpectedTransferCount,
+      hasPendingMigration: migrationTransactions.any(_isPendingMigration),
+    );
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -136,6 +130,52 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
         ),
       ),
     );
+  }
+
+  void _syncMigrationProgressPolling(bool enabled) {
+    if (enabled && _progressRefreshTimer == null) {
+      _progressRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+        unawaited(_refreshMigrationProgress());
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(_refreshMigrationProgress());
+      });
+      return;
+    }
+
+    if (!enabled && _progressRefreshTimer != null) {
+      _progressRefreshTimer?.cancel();
+      _progressRefreshTimer = null;
+    }
+  }
+
+  Future<void> _refreshMigrationProgress() async {
+    try {
+      await ref.read(syncProvider.notifier).refreshAfterSend();
+    } catch (e) {
+      log('MigrationScreen: migration progress refresh failed: $e');
+    }
+  }
+
+  void _clearExpiredExpectedTransferCount({
+    required String? accountUuid,
+    required MigrationExpectedTransferCount? expectedTransferCount,
+    required bool hasPendingMigration,
+  }) {
+    if (accountUuid == null ||
+        expectedTransferCount == null ||
+        hasPendingMigration ||
+        !expectedTransferCount.isExpired(DateTime.now())) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref
+          .read(migrationExpectedTransferCountProvider.notifier)
+          .clearCount(accountUuid);
+    });
   }
 }
 

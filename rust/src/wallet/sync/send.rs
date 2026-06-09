@@ -773,11 +773,9 @@ pub async fn migrate_orchard_to_ironwood(
             Err(e) => {
                 return Ok(CreatedBroadcastResult {
                     txids: join_txids(&txids),
-                    status: CreatedBroadcastResult::PARTIAL_BROADCAST,
+                    status: CreatedBroadcastResult::DELAYED_WORKER_FAILED,
                     broadcasted_count: 1,
-                    total_count: remaining_count
-                        .checked_add(1)
-                        .ok_or("Migration transaction count overflow")?,
+                    total_count: 1,
                     message: Some(format!("Delayed migration worker could not start: {e}")),
                 }
                 .into_ironwood_migration_result(
@@ -1430,6 +1428,7 @@ impl CreatedBroadcastResult {
     const BROADCASTED: &'static str = "broadcasted";
     const PENDING_BROADCAST: &'static str = "pending_broadcast";
     const PARTIAL_BROADCAST: &'static str = "partial_broadcast";
+    const DELAYED_WORKER_FAILED: &'static str = "delayed_worker_failed";
 
     fn into_execute_result(self) -> ExecuteProposalResult {
         ExecuteProposalResult {
@@ -1955,6 +1954,29 @@ mod tests {
         );
         assert_eq!(result.fee_zatoshi, 20_000);
         assert_eq!(result.migrated_zatoshi, 180_000);
+    }
+
+    #[test]
+    fn ironwood_result_preserves_delayed_worker_failure_status() {
+        let result = CreatedBroadcastResult {
+            txids: "abc123".to_string(),
+            status: CreatedBroadcastResult::DELAYED_WORKER_FAILED,
+            broadcasted_count: 1,
+            total_count: 1,
+            message: Some("Delayed worker could not start".to_string()),
+        }
+        .into_ironwood_migration_result(10_000, 90_000);
+
+        assert_eq!(result.txids, "abc123");
+        assert_eq!(result.status, CreatedBroadcastResult::DELAYED_WORKER_FAILED);
+        assert_eq!(result.broadcasted_count, 1);
+        assert_eq!(result.total_count, 1);
+        assert_eq!(
+            result.message.as_deref(),
+            Some("Delayed worker could not start")
+        );
+        assert_eq!(result.fee_zatoshi, 10_000);
+        assert_eq!(result.migrated_zatoshi, 90_000);
     }
 
     #[test]

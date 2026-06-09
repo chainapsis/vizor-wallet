@@ -66,4 +66,20 @@ void main() {
       MigrationViewState.complete,
     );
   });
+
+  test(
+    'software account with remaining orchard funds stays idle after completion',
+    () {
+      expect(
+        migrationViewState(
+          isHardware: false,
+          hasPendingMigration: false,
+          hasCompletedMigration: true,
+          orchardBalance: BigInt.from(1),
+          ironwoodBalance: BigInt.from(1),
+        ),
+        MigrationViewState.idle,
+      );
+    },
+  );
 }

@@ -12,8 +12,8 @@ MigrationViewState migrationViewState({
 }) {
   if (isHardware) return MigrationViewState.softwareRequired;
   if (hasPendingMigration) return MigrationViewState.inProgress;
-  if (hasCompletedMigration ||
-      (orchardBalance == BigInt.zero && ironwoodBalance > BigInt.zero)) {
+  if (orchardBalance > BigInt.zero) return MigrationViewState.idle;
+  if (hasCompletedMigration || ironwoodBalance > BigInt.zero) {
     return MigrationViewState.complete;
   }
   return MigrationViewState.idle;
