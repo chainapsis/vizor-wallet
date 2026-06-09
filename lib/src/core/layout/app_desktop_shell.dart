@@ -13,29 +13,39 @@ class AppDesktopShell extends StatelessWidget {
   const AppDesktopShell({
     required this.sidebar,
     required this.pane,
+    this.background,
     this.sidebarWidth = 256,
     super.key,
   });
 
   final Widget sidebar;
   final Widget pane;
+  final Widget? background;
   final double sidebarWidth;
 
   @override
   Widget build(BuildContext context) {
+    final background = this.background;
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xs),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(width: sidebarWidth, child: sidebar),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(child: pane),
-            ],
-          ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (background != null)
+              Positioned.fill(child: IgnorePointer(child: background)),
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.xs),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(width: sidebarWidth, child: sidebar),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(child: pane),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

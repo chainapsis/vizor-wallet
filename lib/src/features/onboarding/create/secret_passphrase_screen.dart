@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart' show CircularProgressIndicator;
 import 'package:flutter/services.dart';
@@ -207,78 +206,24 @@ class _SecretPassphraseScreenState
       child: SensitivePrivacyOverlay(
         sensitiveContentVisible: _revealed && _mnemonic != null,
         controller: widget.privacyOverlayController,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            const _SecretPassphraseBackground(),
-            OnboardingPaneScaffold(
-              backTarget: OnboardingBackTarget.route(
-                label: OnboardingStep.thingsToKnow.label,
-                routePath: OnboardingStep.thingsToKnow.routePath,
-              ),
-              bodyPadding: EdgeInsets.zero,
-              child: _HeroLayout(
-                mnemonic: _mnemonic,
-                isPreparing: _isPreparing,
-                submitPhase: _submitPhase,
-                revealed: _revealed,
-                copied: _copied,
-                prepareError: _prepareError,
-                submitError: _submitError,
-                onPrimaryPressed: _handlePrimaryAction,
-                onCopyPressed: _copyMnemonic,
-              ),
-            ),
-          ],
+        child: OnboardingPaneScaffold(
+          backTarget: OnboardingBackTarget.route(
+            label: OnboardingStep.thingsToKnow.label,
+            routePath: OnboardingStep.thingsToKnow.routePath,
+          ),
+          bodyPadding: EdgeInsets.zero,
+          child: _HeroLayout(
+            mnemonic: _mnemonic,
+            isPreparing: _isPreparing,
+            submitPhase: _submitPhase,
+            revealed: _revealed,
+            copied: _copied,
+            prepareError: _prepareError,
+            submitError: _submitError,
+            onPrimaryPressed: _handlePrimaryAction,
+            onCopyPressed: _copyMnemonic,
+          ),
         ),
-      ),
-    );
-  }
-}
-
-class _SecretPassphraseBackground extends StatelessWidget {
-  const _SecretPassphraseBackground();
-
-  static const double _basePaneWidth = 800;
-  static const double _basePaneHeight = 704;
-  static const double _baseImageWidth = 1080;
-  static const double _baseImageHeight = 720;
-  static const double _baseImageLeft = -272;
-  static const double _baseImageTop = -8;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = context.appTheme == AppThemeData.dark;
-    final asset = isDark
-        ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
-        : 'assets/illustrations/onboarding_secret_passphrase_background_light.png';
-
-    return DecoratedBox(
-      decoration: BoxDecoration(color: context.colors.background.window),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final scale = math.max(
-            constraints.maxWidth / _basePaneWidth,
-            constraints.maxHeight / _basePaneHeight,
-          );
-
-          return Stack(
-            clipBehavior: Clip.hardEdge,
-            children: [
-              Positioned(
-                left: _baseImageLeft * scale,
-                top: _baseImageTop * scale,
-                width: _baseImageWidth * scale,
-                height: _baseImageHeight * scale,
-                child: Image.asset(
-                  asset,
-                  fit: BoxFit.cover,
-                  alignment: Alignment.topCenter,
-                ),
-              ),
-            ],
-          );
-        },
       ),
     );
   }
