@@ -1844,6 +1844,52 @@ void main() {
     expect(_destinationSummaryText(tester), '0xd1220a...7b9adb');
   });
 
+  testWidgets('swap contact picker cancel returns to address editor', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        addressBookRepository: _FakeAddressBookRepository([
+          _addressBookContact(
+            id: 'usdc',
+            label: 'USDC Friend',
+            network: AddressBookNetwork.ethereum,
+            address: '0xd1220a0cf47c7b9be7a2e6ba89f429762e7b9adb',
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('swap_address_contacts_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('address_book_contact_picker_modal')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.bySemanticsLabel('Close contacts'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('address_book_contact_picker_modal')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('swap_address_modal')), findsOneWidget);
+  });
+
   testWidgets('swap address modal remembers submitted recipient', (
     tester,
   ) async {

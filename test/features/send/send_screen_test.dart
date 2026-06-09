@@ -116,7 +116,7 @@ void main() {
       BorderRadius.circular(AppRadii.large),
     );
     expect(contactDecoration.boxShadow, _figmaModalSurfaceShadows);
-    expect(find.bySemanticsLabel('Close contacts'), findsNothing);
+    expect(find.bySemanticsLabel('Close contacts'), findsOneWidget);
     expect(find.text('Cancel'), findsNothing);
     final contactScrollbar = tester.widget<RawScrollbar>(
       find.byKey(const ValueKey('address_book_contact_picker_scrollbar')),

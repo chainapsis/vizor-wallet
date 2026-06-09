@@ -101,14 +101,26 @@ class _AddressBookContactPickerModalState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            widget.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.bodyLarge.copyWith(
-              color: colors.text.accent,
-              fontWeight: FontWeight.w600,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodyLarge.copyWith(
+                    color: colors.text.accent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              _ContactPickerIconButton(
+                semanticLabel: 'Close contacts',
+                iconName: AppIcons.cross,
+                onTap: widget.onCancel,
+              ),
+            ],
           ),
           Expanded(
             child: Padding(
@@ -241,6 +253,64 @@ class _ContactPickerListState extends State<_ContactPickerList> {
         ),
       ),
     );
+  }
+}
+
+class _ContactPickerIconButton extends StatefulWidget {
+  const _ContactPickerIconButton({
+    required this.semanticLabel,
+    required this.iconName,
+    required this.onTap,
+  });
+
+  final String semanticLabel;
+  final String iconName;
+  final VoidCallback onTap;
+
+  @override
+  State<_ContactPickerIconButton> createState() =>
+      _ContactPickerIconButtonState();
+}
+
+class _ContactPickerIconButtonState extends State<_ContactPickerIconButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: true,
+      label: widget.semanticLabel,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => _setHovered(true),
+        onExit: (_) => _setHovered(false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: _hovered ? colors.background.ground : null,
+              borderRadius: BorderRadius.circular(AppRadii.xSmall),
+            ),
+            child: Center(
+              child: AppIcon(
+                widget.iconName,
+                size: AppIconSize.medium,
+                color: colors.icon.regular,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _setHovered(bool value) {
+    if (_hovered == value) return;
+    setState(() => _hovered = value);
   }
 }
 
