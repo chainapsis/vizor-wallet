@@ -16,7 +16,7 @@ void main() {
       order: 9,
       isHardware: true,
       isSeedAnchor: false,
-      profilePictureId: 'knight-04',
+      profilePictureId: 'pfp-04',
     );
 
     final merged = mergeBootstrappedAccountInfo(
@@ -30,7 +30,7 @@ void main() {
     expect(merged.order, 9);
     expect(merged.isHardware, isTrue);
     expect(merged.isSeedAnchor, isTrue);
-    expect(merged.profilePictureId, 'knight-04');
+    expect(merged.profilePictureId, 'pfp-04');
   });
 
   test('mergeBootstrappedAccountInfo falls back to Rust metadata', () {

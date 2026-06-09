@@ -115,10 +115,7 @@ void main() {
 
     // The nickname is folded into the address row, not emitted as a separate
     // empty-label row.
-    expect(
-      presentation.details.where((row) => row.label.isEmpty),
-      isEmpty,
-    );
+    expect(presentation.details.where((row) => row.label.isEmpty), isEmpty);
   });
 
   test('adds a labeled recipient row to terminal swap details', () {
@@ -563,7 +560,7 @@ AddressBookContact _contact({
     label: label,
     network: network,
     address: address,
-    profilePictureId: 'knight',
+    profilePictureId: 'pfp-01',
     createdAtMs: 0,
     updatedAtMs: 0,
   );

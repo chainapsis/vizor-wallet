@@ -4,15 +4,17 @@ import '../profile_pictures.dart';
 import '../theme/app_theme.dart';
 
 enum AppProfilePictureSize {
-  medium(24, AppRadii.xSmall),
-  large(32, AppRadii.small),
-  navLarge(40, AppRadii.small),
-  xLarge(56, AppRadii.medium);
+  medium(24),
+  large(32),
+  navLarge(40),
+  xLarge(56),
+  xxLarge(72);
 
-  const AppProfilePictureSize(this.dimension, this.radius);
+  const AppProfilePictureSize(this.dimension);
 
   final double dimension;
-  final double radius;
+
+  double get radius => dimension / 2;
 }
 
 class AppProfilePicture extends StatelessWidget {
@@ -35,7 +37,7 @@ class AppProfilePicture extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: context.colors.background.raised,
-        borderRadius: BorderRadius.circular(size.radius),
+        shape: BoxShape.circle,
       ),
       child: Image.asset(
         option.assetPath,

@@ -57,7 +57,7 @@ void main() {
           label: ' Alice ',
           network: AddressBookNetwork.zcash,
           address: ' u1alice ',
-          profilePictureId: 'samurai',
+          profilePictureId: 'pfp-02',
         );
 
     expect(contact.label, 'Alice');
@@ -79,7 +79,7 @@ void main() {
           label: ' Alice ',
           network: AddressBookNetwork.zcash,
           address: ' u1alice ',
-          profilePictureId: 'samurai',
+          profilePictureId: 'pfp-02',
         );
     await pumpEventQueue();
 
@@ -180,7 +180,7 @@ void main() {
       label: 'Zed Sol',
       network: AddressBookNetwork.solana,
       address: 'solzed',
-      profilePictureId: 'dragon',
+      profilePictureId: 'pfp-06',
     );
     await notifier.removeContact('bob');
 
@@ -188,7 +188,7 @@ void main() {
     expect(contacts, hasLength(1));
     expect(contacts.single.id, 'zed');
     expect(contacts.single.network, AddressBookNetwork.solana);
-    expect(contacts.single.profilePictureId, 'dragon');
+    expect(contacts.single.profilePictureId, 'pfp-06');
     expect(repo.savedLists, hasLength(2));
   });
 }
@@ -204,7 +204,7 @@ AddressBookContact _contact({
   required String label,
   AddressBookNetwork network = AddressBookNetwork.zcash,
   String address = 'u1address',
-  String profilePictureId = 'knight',
+  String profilePictureId = 'pfp-01',
   int createdAtMs = 0,
 }) {
   return AddressBookContact(

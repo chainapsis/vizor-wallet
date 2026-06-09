@@ -745,7 +745,7 @@ const _designProgressSteps = <SwapStatusStepData>[
   ),
 ];
 
-const _designAccountProfilePictureId = 'knight';
+const _designAccountProfilePictureId = 'pfp-01';
 
 const _designTransactionDetails = <SwapStatusDetailRowData>[
   SwapStatusDetailRowData(

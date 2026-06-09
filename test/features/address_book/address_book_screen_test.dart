@@ -108,10 +108,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(
-      find.text("Invalid EVM address"),
-      findsOneWidget,
-    );
+    expect(find.text("Invalid EVM address"), findsOneWidget);
     // Soft warning: the save button stays enabled.
     expect(
       tester
@@ -210,7 +207,7 @@ void main() {
 
     expect(updateButton().onPressed, isNull);
 
-    await tester.tap(find.byKey(const ValueKey('address_book_avatar_samurai')));
+    await tester.tap(find.byKey(const ValueKey('address_book_avatar_pfp-02')));
     await tester.pumpAndSettle();
 
     expect(updateButton().onPressed, isNotNull);

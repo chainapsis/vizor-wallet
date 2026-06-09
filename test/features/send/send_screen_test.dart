@@ -265,7 +265,10 @@ Widget _sendHarness({
   final router = GoRouter(
     initialLocation: '/send',
     routes: [
-      GoRoute(path: '/send', builder: (_, _) => SendScreen(prefill: prefill)),
+      GoRoute(
+        path: '/send',
+        builder: (_, _) => SendScreen(prefill: prefill),
+      ),
       GoRoute(path: '/send/review', builder: (_, _) => const SizedBox.shrink()),
     ],
   );
@@ -295,7 +298,7 @@ AddressBookContact _contact({
     label: label,
     network: network,
     address: address,
-    profilePictureId: 'knight',
+    profilePictureId: 'pfp-01',
     createdAtMs: 1,
     updatedAtMs: 1,
   );

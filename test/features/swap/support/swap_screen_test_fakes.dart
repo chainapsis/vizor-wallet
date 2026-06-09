@@ -123,20 +123,18 @@ class _FakeSwapProvider implements SwapProvider {
       ),
       providerQuoteId: 'quote-live',
       quoteExpiresAt: quoteExpiresAt,
-      providerRefundInfo:
-          request.mode == SwapQuoteMode.exactOutput
-              ? const SwapProviderRefundInfo(
-                minimumDepositText: '1.485 ZEC',
-                refundFeeText: '0.0001 ZEC',
-              )
-              : null,
+      providerRefundInfo: request.mode == SwapQuoteMode.exactOutput
+          ? const SwapProviderRefundInfo(
+              minimumDepositText: '1.485 ZEC',
+              refundFeeText: '0.0001 ZEC',
+            )
+          : null,
       fiatValueBasis: _fakeFiatValueBasis(estimate),
       depositInstruction: SwapDepositInstruction(
         asset: estimate.sellAsset,
-        address:
-            request.direction == SwapDirection.zecToExternal
-                ? 't1live-deposit'
-                : '0xlive-deposit',
+        address: request.direction == SwapDirection.zecToExternal
+            ? 't1live-deposit'
+            : '0xlive-deposit',
         expiresInLabel: '07:12',
         reuseWarning: 'Do not reuse this address',
         memo: 'memo-live',
@@ -254,10 +252,9 @@ BigInt _fakeBaseUnits(SwapAsset asset, double amount) {
   final fixed = amount.toStringAsFixed(asset.decimals);
   final parts = fixed.split('.');
   final whole = BigInt.parse(parts.first);
-  final fraction =
-      parts.length == 1
-          ? BigInt.zero
-          : BigInt.parse(parts[1].padRight(asset.decimals, '0'));
+  final fraction = parts.length == 1
+      ? BigInt.zero
+      : BigInt.parse(parts[1].padRight(asset.decimals, '0'));
   var scale = BigInt.one;
   for (var i = 0; i < asset.decimals; i++) {
     scale *= BigInt.from(10);
@@ -960,7 +957,7 @@ AddressBookContact _addressBookContact({
     label: label,
     network: network,
     address: address,
-    profilePictureId: 'knight',
+    profilePictureId: 'pfp-01',
     createdAtMs: 1,
     updatedAtMs: 1,
   );

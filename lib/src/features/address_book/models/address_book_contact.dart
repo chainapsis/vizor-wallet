@@ -1,3 +1,5 @@
+import '../../../core/profile_pictures.dart';
+
 enum AddressBookNetwork {
   zcash('zec', 'Zcash', 'assets/swap/chains/zec.png'),
   ethereum('eth', 'Ethereum', 'assets/swap/chains/eth.png'),
@@ -149,12 +151,12 @@ class AddressBookContact {
       network: network,
       address: (json['address'] as String?)?.trim() ?? '',
       profilePictureId:
-          (json['profilePictureId'] as String?)?.trim() ?? 'knight',
+          (json['profilePictureId'] as String?)?.trim() ??
+          kDefaultProfilePictureId,
       createdAtMs: (json['createdAtMs'] as num?)?.toInt() ?? 0,
       updatedAtMs: (json['updatedAtMs'] as num?)?.toInt() ?? 0,
     );
   }
-
 }
 
 String previewAddress(String address) {
