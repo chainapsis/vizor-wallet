@@ -69,10 +69,10 @@ class AppDesktopSidebarSurface extends StatelessWidget {
           (isDark ? const Color(0xFF101010) : const Color(0xFFFFFFFF));
       final thinBorderColor = isDark
           ? const Color(0xFF1A1A1A).withValues(alpha: 0.23)
-          : const Color(0xFF1A1A1A).withValues(alpha: 0.06);
+          : const Color(0xFFFFFFFF).withValues(alpha: 0.55);
       final innerHighlightColor = const Color(
         0xFFFFFFFF,
-      ).withValues(alpha: isDark ? 0.15 : 0.04);
+      ).withValues(alpha: 0.15);
 
       return DecoratedBox(
         decoration: BoxDecoration(
