@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -70,11 +71,13 @@ class _MigrationSigningOverlayState
       _error = null;
     });
     final providerContainer = ProviderScope.containerOf(context, listen: false);
+    String? activeAccountUuid;
 
     try {
       final accountState = ref.read(accountProvider).value;
       final account = accountState?.activeAccount;
       final accountUuid = accountState?.activeAccountUuid;
+      activeAccountUuid = accountUuid;
       if (account == null || accountUuid == null) {
         throw MigrationBatchError('No active account.');
       }
@@ -95,7 +98,7 @@ class _MigrationSigningOverlayState
       final migrationNetworkName = endpoint.walletNetworkName;
       late final rust_sync.IronwoodMigrationResult result;
 
-      if (Platform.isMacOS) {
+      if (Platform.isMacOS && !kDebugMode) {
         final password = ref
             .read(appSecurityProvider.notifier)
             .requireSessionPasswordForNativeSecretUse();
@@ -167,12 +170,6 @@ class _MigrationSigningOverlayState
         return;
       }
 
-      try {
-        await _refreshIfAccountStillActive(providerContainer, accountUuid);
-      } catch (e) {
-        log('MigrationSigningOverlay: refreshAfterSend failed: $e');
-      }
-
       if (!mounted) return;
       widget.onComplete(
         MigrationSigningCompletion(
@@ -181,7 +178,47 @@ class _MigrationSigningOverlayState
           result: result,
         ),
       );
+      unawaited(
+        _refreshIfAccountStillActive(providerContainer, accountUuid).catchError(
+          (Object e) {
+            log('MigrationSigningOverlay: refreshAfterSend failed: $e');
+          },
+        ),
+      );
     } catch (e, st) {
+      if (_isActiveMigrationError(e) && activeAccountUuid != null) {
+        log(
+          'MigrationSigningOverlay._startMigration: migration already active; '
+          'returning to progress',
+        );
+        try {
+          await _refreshIfAccountStillActive(
+            providerContainer,
+            activeAccountUuid,
+          ).timeout(const Duration(seconds: 5));
+        } catch (refreshError) {
+          log(
+            'MigrationSigningOverlay: refreshAfterActiveMigration failed: '
+            '$refreshError',
+          );
+        }
+        if (!mounted) return;
+        widget.onComplete(
+          MigrationSigningCompletion(
+            accountUuid: activeAccountUuid,
+            firstTxid: null,
+            result: rust_sync.IronwoodMigrationResult(
+              txids: '',
+              status: 'partial_broadcast',
+              broadcastedCount: 0,
+              totalCount: 0,
+              feeZatoshi: BigInt.zero,
+              migratedZatoshi: BigInt.zero,
+            ),
+          ),
+        );
+        return;
+      }
       log('MigrationSigningOverlay._startMigration: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
@@ -258,6 +295,12 @@ class _MigrationSigningOverlayState
       return 'Sync the wallet before migrating.';
     }
     return '${error.runtimeType}: $error';
+  }
+
+  bool _isActiveMigrationError(Object error) {
+    return error.toString().toLowerCase().contains(
+      'ironwood migration is already running',
+    );
   }
 
   void _cancel() {
