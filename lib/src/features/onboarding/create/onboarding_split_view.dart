@@ -157,7 +157,7 @@ class _OnboardingWindowBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final asset = switch (activeStep) {
-      OnboardingStep.secretPassphrase =>
+      OnboardingStep.secretPassphrase || OnboardingStep.setPassword =>
         isDark
             ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
             : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
@@ -279,8 +279,8 @@ class _SidebarIllustration extends StatelessWidget {
             : 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_light.png',
       OnboardingStep.setPassword =>
         isDark
-            ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_open_dark.png'
-            : 'assets/illustrations/onboarding_secret_passphrase_sidebar_open_light.png',
+            ? 'assets/illustrations/onboarding_set_password_sidebar_dark.png'
+            : 'assets/illustrations/onboarding_set_password_sidebar_light.png',
       OnboardingStep.thingsToKnow =>
         isDark
             ? 'assets/illustrations/onboarding_things_to_know_sidebar_dark.png'

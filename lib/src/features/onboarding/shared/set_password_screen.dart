@@ -228,145 +228,223 @@ class _SetPasswordContent extends StatelessWidget {
   final VoidCallback onChanged;
   final Future<void> Function() onSubmit;
 
-  static const _formWidth = 304.0;
-  static const _buttonWidth = 256.0;
+  static const _contentWidth = 396.0;
+  static const _mainHeight = 248.0;
+  static const _formWidth = 256.0;
+  static const _buttonMinWidth = 196.0;
   static const _fieldGroupGap = 12.0;
   static const _fieldReservedMessageHeight = 20.0;
+  static const _sectionGap = 32.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Center(
+          child: SizedBox(
+            width: _contentWidth,
+            height: constraints.maxHeight,
+            child: Column(
+              children: [
+                Expanded(
+                  child: _SetPasswordOnPageContent(
+                    passwordController: passwordController,
+                    confirmController: confirmController,
+                    passwordMessage: passwordMessage,
+                    confirmMessage: confirmMessage,
+                    onChanged: onChanged,
+                    onSubmit: onSubmit,
+                  ),
+                ),
+                _SetPasswordBottomActions(
+                  submitPhase: submitPhase,
+                  canSubmit: canSubmit,
+                  submitError: submitError,
+                  onSubmit: onSubmit,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SetPasswordOnPageContent extends StatelessWidget {
+  const _SetPasswordOnPageContent({
+    required this.passwordController,
+    required this.confirmController,
+    required this.passwordMessage,
+    required this.confirmMessage,
+    required this.onChanged,
+    required this.onSubmit,
+  });
+
+  final TextEditingController passwordController;
+  final TextEditingController confirmController;
+  final String? passwordMessage;
+  final String? confirmMessage;
+  final VoidCallback onChanged;
+  final Future<void> Function() onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const _SetPasswordTitle(),
+          const SizedBox(height: _SetPasswordContent._sectionGap),
+          SizedBox(
+            width: double.infinity,
+            height: _SetPasswordContent._mainHeight,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: AppSpacing.base,
+              ),
+              child: Center(
+                child: SizedBox(
+                  width: _SetPasswordContent._formWidth,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _PasswordFieldBlock(
+                        reserveMessageSpace:
+                            _SetPasswordContent._fieldReservedMessageHeight,
+                        child: PasswordTextField(
+                          key: const ValueKey('set_password_password_field'),
+                          label: 'Password',
+                          hintText: 'Min. 8 characters and symbols',
+                          controller: passwordController,
+                          messageText: passwordMessage,
+                          tone: passwordMessage == null
+                              ? AppTextFieldTone.neutral
+                              : AppTextFieldTone.destructive,
+                          leadingSlotWidth: 32,
+                          trailingSlotWidth: 40,
+                          inputHorizontalPadding: AppSpacing.s,
+                          autofocus: true,
+                          showVisibilityToggle: false,
+                          onChanged: (_) => onChanged(),
+                          onSubmitted: (_) => onSubmit(),
+                        ),
+                      ),
+                      const SizedBox(
+                        height: _SetPasswordContent._fieldGroupGap,
+                      ),
+                      _PasswordFieldBlock(
+                        reserveMessageSpace:
+                            _SetPasswordContent._fieldReservedMessageHeight,
+                        child: PasswordTextField(
+                          key: const ValueKey('set_password_confirm_field'),
+                          label: 'Confirm password',
+                          hintText: 'Confirm password',
+                          controller: confirmController,
+                          messageText: confirmMessage,
+                          tone: confirmMessage == null
+                              ? AppTextFieldTone.neutral
+                              : AppTextFieldTone.destructive,
+                          leadingSlotWidth: 32,
+                          trailingSlotWidth: 40,
+                          inputHorizontalPadding: AppSpacing.s,
+                          showVisibilityToggle: false,
+                          onChanged: (_) => onChanged(),
+                          onSubmitted: (_) => onSubmit(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SetPasswordTitle extends StatelessWidget {
+  const _SetPasswordTitle();
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Column(
       children: [
-        Expanded(
-          child: Column(
-            children: [
-              Expanded(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Set Password',
-                              style: AppTypography.displayLarge.copyWith(
-                                color: colors.text.accent,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                            SizedBox(
-                              width: 270,
-                              child: Text(
-                                'Minimum 8 characters. Add numbers and '
-                                'symbols, or make it longer, for stronger '
-                                'security.',
-                                style: AppTypography.bodyMedium.copyWith(
-                                  color: colors.text.accent,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                        SizedBox(
-                          width: _formWidth,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _PasswordFieldBlock(
-                                reserveMessageSpace:
-                                    _fieldReservedMessageHeight,
-                                child: PasswordTextField(
-                                  key: const ValueKey(
-                                    'set_password_password_field',
-                                  ),
-                                  label: 'Password',
-                                  controller: passwordController,
-                                  messageText: passwordMessage,
-                                  tone: passwordMessage == null
-                                      ? AppTextFieldTone.neutral
-                                      : AppTextFieldTone.destructive,
-                                  leadingSlotWidth: 32,
-                                  trailingSlotWidth: 40,
-                                  inputHorizontalPadding: AppSpacing.s,
-                                  autofocus: true,
-                                  onChanged: (_) => onChanged(),
-                                  onSubmitted: (_) => onSubmit(),
-                                ),
-                              ),
-                              const SizedBox(height: _fieldGroupGap),
-                              _PasswordFieldBlock(
-                                reserveMessageSpace:
-                                    _fieldReservedMessageHeight,
-                                child: PasswordTextField(
-                                  key: const ValueKey(
-                                    'set_password_confirm_field',
-                                  ),
-                                  label: 'Confirm Password',
-                                  controller: confirmController,
-                                  messageText: confirmMessage,
-                                  tone: confirmMessage == null
-                                      ? AppTextFieldTone.neutral
-                                      : AppTextFieldTone.destructive,
-                                  leadingSlotWidth: 32,
-                                  trailingSlotWidth: 40,
-                                  inputHorizontalPadding: AppSpacing.s,
-                                  showVisibilityToggle: false,
-                                  onChanged: (_) => onChanged(),
-                                  onSubmitted: (_) => onSubmit(),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              SizedBox(
-                width: _buttonWidth,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (submitError != null) ...[
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                        child: Text(
-                          submitError!,
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.destructive,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ],
-                    AppButton(
-                      key: const ValueKey('set_password_submit_button'),
-                      onPressed: canSubmit ? onSubmit : null,
-                      variant: AppButtonVariant.primary,
-                      minWidth: _buttonWidth,
-                      trailing: const AppIcon(AppIcons.chevronForward),
-                      child: Text(switch (submitPhase) {
-                        _SetPasswordSubmitPhase.stoppingSync =>
-                          'Stop syncing...',
-                        _SetPasswordSubmitPhase.settingPassword =>
-                          'Setting password...',
-                        _SetPasswordSubmitPhase.idle => 'Set Password',
-                      }),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.center,
+          child: Text(
+            'Set password',
+            style: AppTypography.displayLarge.copyWith(
+              fontFamily: 'Young Serif',
+              fontWeight: FontWeight.w400,
+              color: colors.text.accent,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.visible,
+            softWrap: false,
+            textAlign: TextAlign.center,
           ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Set password for signing in to Vizor wallet.',
+          style: AppTypography.bodyMediumStrong.copyWith(
+            color: colors.text.accent,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+}
+
+class _SetPasswordBottomActions extends StatelessWidget {
+  const _SetPasswordBottomActions({
+    required this.submitPhase,
+    required this.canSubmit,
+    required this.submitError,
+    required this.onSubmit,
+  });
+
+  final _SetPasswordSubmitPhase submitPhase;
+  final bool canSubmit;
+  final String? submitError;
+  final Future<void> Function() onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (submitError != null) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+            child: Text(
+              submitError!,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.destructive,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+        AppButton(
+          key: const ValueKey('set_password_submit_button'),
+          onPressed: canSubmit ? onSubmit : null,
+          variant: AppButtonVariant.primary,
+          minWidth: _SetPasswordContent._buttonMinWidth,
+          trailing: const AppIcon(AppIcons.chevronForward),
+          child: Text(switch (submitPhase) {
+            _SetPasswordSubmitPhase.stoppingSync => 'Stop syncing...',
+            _SetPasswordSubmitPhase.settingPassword => 'Setting password...',
+            _SetPasswordSubmitPhase.idle => 'Set password & finish',
+          }),
         ),
       ],
     );
