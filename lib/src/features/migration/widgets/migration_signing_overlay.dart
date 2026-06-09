@@ -25,10 +25,12 @@ enum _MigrationPhase { preparing, broadcasting, failed }
 class MigrationSigningCompletion {
   const MigrationSigningCompletion({
     required this.accountUuid,
+    required this.completedAtStart,
     required this.result,
   });
 
   final String accountUuid;
+  final int completedAtStart;
   final rust_sync.IronwoodMigrationResult result;
 }
 
@@ -81,6 +83,9 @@ class _MigrationSigningOverlayState
           'Switch to a software account before migrating.',
         );
       }
+      final completedAtStart = _completedMigrationCount(
+        ref.read(syncProvider).value?.recentTransactions ?? const [],
+      );
 
       final endpoint = ref.read(rpcEndpointProvider);
       if (endpoint.network != ZcashNetwork.testnet) {
@@ -140,10 +145,14 @@ class _MigrationSigningOverlayState
       );
 
       final migrationStarted = _migrationStarted(result);
-      if (migrationStarted && result.totalCount > 0) {
+      if (result.broadcastedCount > 0 && result.totalCount > 0) {
         providerContainer
             .read(migrationExpectedTransferCountProvider.notifier)
-            .setCount(accountUuid, result.totalCount);
+            .setCount(
+              accountUuid,
+              result.totalCount,
+              completedAtStart: completedAtStart,
+            );
       }
 
       if (!migrationStarted) {
@@ -172,7 +181,11 @@ class _MigrationSigningOverlayState
 
       if (!mounted) return;
       widget.onComplete(
-        MigrationSigningCompletion(accountUuid: accountUuid, result: result),
+        MigrationSigningCompletion(
+          accountUuid: accountUuid,
+          completedAtStart: completedAtStart,
+          result: result,
+        ),
       );
     } catch (e, st) {
       log('MigrationSigningOverlay._startMigration: ERROR: $e\n$st');
@@ -189,6 +202,19 @@ class _MigrationSigningOverlayState
     return result.status == 'partial_broadcast' &&
         result.broadcastedCount > 0 &&
         result.message == null;
+  }
+
+  int _completedMigrationCount(
+    Iterable<rust_sync.TransactionInfo> transactions,
+  ) {
+    return transactions
+        .where(
+          (tx) =>
+              tx.txKind == 'migration' &&
+              tx.minedHeight != BigInt.zero &&
+              !tx.expiredUnmined,
+        )
+        .length;
   }
 
   Future<rust_sync.IronwoodMigrationResult> _migrateWithMnemonicBytes({

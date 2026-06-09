@@ -37,7 +37,11 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     if (totalCount > 0) {
       ref
           .read(migrationExpectedTransferCountProvider.notifier)
-          .setCount(completion.accountUuid, totalCount);
+          .setCount(
+            completion.accountUuid,
+            totalCount,
+            completedAtStart: completion.completedAtStart,
+          );
     }
     setState(() => _signing = false);
   }
@@ -68,15 +72,17 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     final expectedTransferCountIsFresh =
         scopedExpectedTransferCount != null &&
         !scopedExpectedTransferCount.isExpired(now);
-    final scopedExpectedCount = expectedTransferCountIsFresh
-        ? scopedExpectedTransferCount.count
+    final freshExpectedTransferCount = expectedTransferCountIsFresh
+        ? scopedExpectedTransferCount
         : null;
+    final scopedExpectedCount = freshExpectedTransferCount?.count;
     final completedMigrationCount = migrationTransactions
         .where(_isCompletedMigration)
         .length;
     final expectedMigrationInProgress =
         scopedExpectedCount != null &&
-        completedMigrationCount < scopedExpectedCount;
+        completedMigrationCount <
+            freshExpectedTransferCount!.completedAtStart + scopedExpectedCount;
     final hasPendingMigration =
         migrationTransactions.any(_isPendingMigration) ||
         expectedMigrationInProgress;

@@ -6,10 +6,12 @@ const _migrationExpectedTransferCountBuffer = Duration(seconds: 45);
 class MigrationExpectedTransferCount {
   const MigrationExpectedTransferCount({
     required this.count,
+    required this.completedAtStart,
     required this.startedAt,
   });
 
   final int count;
+  final int completedAtStart;
   final DateTime startedAt;
 
   bool isExpired(DateTime now) {
@@ -32,11 +34,12 @@ class MigrationExpectedTransferCountNotifier
   @override
   Map<String, MigrationExpectedTransferCount> build() => const {};
 
-  void setCount(String accountUuid, int count) {
+  void setCount(String accountUuid, int count, {int completedAtStart = 0}) {
     state = {
       ...state,
       accountUuid: MigrationExpectedTransferCount(
         count: count,
+        completedAtStart: completedAtStart,
         startedAt: DateTime.now(),
       ),
     };
