@@ -43,9 +43,8 @@ class _ImportSecretPassphraseScreenState
   static const _onPageContentHeight = 580.0;
   static const _buttonHeight = 44.0;
   static const _layoutHeight = _onPageContentHeight + _buttonHeight;
-  static const _referenceBottomPadding = AppSpacing.sm;
-  static const _referenceContentHeight =
-      _layoutHeight + _referenceBottomPadding;
+  static const _referenceLayoutSlack = AppSpacing.sm;
+  static const _referenceContentHeight = _layoutHeight + _referenceLayoutSlack;
   static const _scrollBottomPadding = AppSpacing.base;
   static const _titleTop = 35.0;
   static const _passphraseTop = 173.0;
@@ -378,7 +377,7 @@ class _ImportSecretPassphraseScreenState
             final useExpandedLayout =
                 !needsScrolling && height > _referenceContentHeight;
             final buttonTop = useExpandedLayout
-                ? height - _buttonHeight - _referenceBottomPadding
+                ? height - _buttonHeight
                 : _onPageContentHeight;
             final mainTop = useExpandedLayout
                 ? (buttonTop - _onPageContentHeight) / 2

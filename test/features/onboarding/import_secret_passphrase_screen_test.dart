@@ -119,7 +119,7 @@ void main() {
       expect(
         tester.getBottomLeft(find.byType(SingleChildScrollView)).dy -
             tester.getBottomLeft(find.byKey(_submitButtonKey)).dy,
-        closeTo(16, 0.1),
+        closeTo(0, 0.1),
       );
     },
   );
