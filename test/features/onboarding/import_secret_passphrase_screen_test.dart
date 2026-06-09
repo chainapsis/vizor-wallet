@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart' show MaterialApp, Scaffold, TextField;
+import 'package:flutter/material.dart'
+    show MaterialApp, Scaffold, Scrollbar, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart'
     show
@@ -9,6 +10,7 @@ import 'package:flutter/widgets.dart'
         FocusNode,
         Scrollable,
         ScrollableState,
+        SingleChildScrollView,
         Size,
         SizedBox,
         ValueKey,
@@ -43,6 +45,85 @@ void main() {
     expect(find.text('cabin'), findsOneWidget);
     expect(find.text('cable'), findsOneWidget);
     expect(find.text('cactus'), findsOneWidget);
+  });
+
+  testWidgets(
+    'shows the body scrollbar only below the reference layout height',
+    (tester) async {
+      await _setDesktopViewport(tester, const Size(1080, 720));
+      await tester.pumpWidget(_importPassphraseScreen());
+
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
+      expect(find.byType(Scrollbar), findsOneWidget);
+      expect(
+        tester.widget<Scrollbar>(find.byType(Scrollbar)).thumbVisibility,
+        isFalse,
+      );
+      final referenceFirstFieldTop = tester.getTopLeft(_wordField(0)).dy;
+      final referenceButtonTop = tester
+          .getTopLeft(find.byKey(_submitButtonKey))
+          .dy;
+
+      await tester.binding.setSurfaceSize(const Size(1080, 560));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
+      expect(find.byType(Scrollbar), findsOneWidget);
+      expect(
+        tester.widget<Scrollbar>(find.byType(Scrollbar)).thumbVisibility,
+        isTrue,
+      );
+      expect(
+        tester.getSize(find.byType(SingleChildScrollView)).width,
+        greaterThan(396),
+      );
+      final bodyScrollable = tester.state<ScrollableState>(
+        find.byType(Scrollable).first,
+      );
+      expect(bodyScrollable.position.maxScrollExtent, greaterThan(32));
+      bodyScrollable.position.jumpTo(bodyScrollable.position.maxScrollExtent);
+      await tester.pump();
+
+      final viewportBottom = tester
+          .getBottomLeft(find.byType(SingleChildScrollView))
+          .dy;
+      final buttonBottom = tester
+          .getBottomLeft(find.byKey(_submitButtonKey))
+          .dy;
+      expect(viewportBottom - buttonBottom, closeTo(32, 0.1));
+      bodyScrollable.position.jumpTo(0);
+      await tester.pump();
+
+      expect(tester.getTopLeft(_wordField(0)).dy, referenceFirstFieldTop);
+      expect(
+        tester.getTopLeft(find.byKey(_submitButtonKey)).dy,
+        referenceButtonTop,
+      );
+    },
+  );
+
+  testWidgets('keeps autocomplete overlay stable while resizing the body', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester, const Size(1080, 720));
+    await tester.pumpWidget(_importPassphraseScreen());
+    await tester.enterText(_wordField(0), 'cab');
+    await tester.pump();
+
+    expect(find.text('cabbage'), findsOneWidget);
+
+    await tester.binding.setSurfaceSize(const Size(1080, 560));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('cabbage'), findsOneWidget);
+
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('cabbage'), findsOneWidget);
   });
 
   testWidgets(

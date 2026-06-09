@@ -41,6 +41,9 @@ class _ImportSecretPassphraseScreenState
   static const _wordCount = 24;
   static const _contentWidth = 396.0;
   static const _onPageContentHeight = 580.0;
+  static const _buttonHeight = 44.0;
+  static const _layoutHeight = _onPageContentHeight + _buttonHeight;
+  static const _scrollBottomPadding = AppSpacing.base;
   static const _titleTop = 35.0;
   static const _passphraseTop = 173.0;
   static const _gridWidth = 396.0;
@@ -52,12 +55,16 @@ class _ImportSecretPassphraseScreenState
   late final List<String> _mnemonicWordList;
   late SensitivePrivacyOverlayController _privacyOverlayController;
   late bool _ownsPrivacyOverlayController;
+  ScrollController? _bodyScrollController;
 
   bool _isSubmitting = false;
   bool _showValidationError = false;
   bool _isApplyingProgrammaticChange = false;
   bool _autocompleteSuppressedForPrivacy = false;
   String? _submitError;
+
+  ScrollController get _effectiveBodyScrollController =>
+      _bodyScrollController ??= ScrollController();
 
   @override
   void initState() {
@@ -93,6 +100,7 @@ class _ImportSecretPassphraseScreenState
     for (final focusNode in _focusNodes) {
       focusNode.dispose();
     }
+    _bodyScrollController?.dispose();
     super.dispose();
   }
 
@@ -357,10 +365,16 @@ class _ImportSecretPassphraseScreenState
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          return Center(
-            child: SizedBox(
+          final needsScrolling = constraints.maxHeight < _layoutHeight;
+          final contentHeight = needsScrolling
+              ? _layoutHeight + _scrollBottomPadding
+              : constraints.maxHeight;
+          final scrollController = _effectiveBodyScrollController;
+
+          Widget buildContent(double height) {
+            return SizedBox(
               width: _contentWidth,
-              height: constraints.maxHeight,
+              height: height,
               child: Column(
                 children: [
                   SizedBox(
@@ -428,6 +442,21 @@ class _ImportSecretPassphraseScreenState
                     child: Text(_isSubmitting ? 'Importing...' : 'Import'),
                   ),
                 ],
+              ),
+            );
+          }
+
+          return Scrollbar(
+            controller: scrollController,
+            thumbVisibility: needsScrolling,
+            child: SingleChildScrollView(
+              controller: scrollController,
+              physics: needsScrolling
+                  ? null
+                  : const NeverScrollableScrollPhysics(),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: buildContent(contentHeight),
               ),
             ),
           );
