@@ -13,8 +13,10 @@ import 'button_use_cases.dart';
 import 'chip_use_cases.dart';
 import 'context_menu_use_cases.dart';
 import 'color_use_cases.dart';
+import 'home_desktop_use_cases.dart';
 import 'icon_use_cases.dart';
 import 'screen_use_cases.dart';
+import 'send_use_cases.dart';
 import 'swap_use_cases.dart';
 import 'text_field_use_cases.dart';
 import 'token_use_cases.dart';
@@ -51,8 +53,8 @@ class WidgetbookApp extends StatelessWidget {
             WidgetbookTheme(name: 'Dark', data: AppThemeData.dark),
             WidgetbookTheme(name: 'Light', data: AppThemeData.light),
           ],
-          themeBuilder: (context, theme, child) =>
-              AppTheme(data: theme, child: child),
+          themeBuilder:
+              (context, theme, child) => AppTheme(data: theme, child: child),
           initialTheme: const WidgetbookTheme(
             name: 'Dark',
             data: AppThemeData.dark,
@@ -63,6 +65,56 @@ class WidgetbookApp extends StatelessWidget {
         WidgetbookFolder(
           name: 'Screens',
           children: [
+            WidgetbookFolder(
+              name: 'Home',
+              children: [
+                WidgetbookComponent(
+                  name: 'Desktop',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Importing',
+                      builder: buildHomeDesktopImportingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No balance',
+                      builder: buildHomeDesktopNoBalanceUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No activity',
+                      builder: buildHomeDesktopNoActivityUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Default',
+                      builder: buildHomeDesktopDefaultUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Hide balance & Keystone',
+                      builder: buildHomeDesktopKeystoneUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Accounts',
+                      builder: buildHomeDesktopAccountsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Accounts - Scroll',
+                      builder: buildHomeDesktopAccountsScrollUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Notice - Password recovery',
+                      builder: buildHomeDesktopPasswordRecoveryNoticeUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Notice - Shield queued',
+                      builder: buildHomeDesktopShieldQueuedNoticeUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Notice - Sync failure',
+                      builder: buildHomeDesktopSyncFailureNoticeUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
             WidgetbookFolder(
               name: 'Onboarding',
               children: [
@@ -281,6 +333,36 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Incomplete deposit',
                       builder: buildSwapStatusIncompleteDepositUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Send',
+              children: [
+                WidgetbookComponent(
+                  name: 'Send page',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Empty state',
+                      builder: buildSendEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Shielded - filled',
+                      builder: buildSendShieldedFilledUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Shielded - memo too long',
+                      builder: buildSendMemoTooLongUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent recipient',
+                      builder: buildSendTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Contact selected',
+                      builder: buildSendContactSelectedUseCase,
                     ),
                   ],
                 ),
