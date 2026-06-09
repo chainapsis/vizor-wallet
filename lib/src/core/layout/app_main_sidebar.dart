@@ -49,7 +49,8 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 
   bool get _isHomeRoute => _matches('/home');
 
-  bool get _homeShouldBeActive => _isHomeRoute || _matches('/send');
+  bool get _homeShouldBeActive =>
+      _isHomeRoute || _matches('/send') || _matches('/receive');
 
   bool get _isAccountMenuOpen => _accountMenuEntry != null;
 

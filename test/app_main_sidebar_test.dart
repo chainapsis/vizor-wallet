@@ -84,6 +84,28 @@ void main() {
     expect(find.text('send route'), findsNothing);
   });
 
+  testWidgets('sidebar keeps Home active and clickable on receive routes', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(_syncedSyncState, initialLocation: '/receive'),
+    );
+    await tester.pump();
+
+    final homeItem = tester.widget<AppSidebarItem>(
+      find.byKey(const ValueKey('sidebar_home_button')),
+    );
+    expect(homeItem.active, isTrue);
+    expect(homeItem.onTap, isNotNull);
+    expect(find.text('receive route'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('sidebar_home_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('home route'), findsOneWidget);
+    expect(find.text('receive route'), findsNothing);
+  });
+
   testWidgets('sidebar accounts popover shows boundaries and click cursors', (
     tester,
   ) async {
@@ -163,18 +185,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Account 8'), findsOneWidget);
-    final listBottom =
-        tester
-            .getBottomLeft(find.byKey(const ValueKey('sidebar_accounts_list')))
-            .dy;
-    final lastRowBottom =
-        tester
-            .getBottomLeft(
-              find.byKey(
-                const ValueKey('sidebar_account_popover_row_account-8'),
-              ),
-            )
-            .dy;
+    final listBottom = tester
+        .getBottomLeft(find.byKey(const ValueKey('sidebar_accounts_list')))
+        .dy;
+    final lastRowBottom = tester
+        .getBottomLeft(
+          find.byKey(const ValueKey('sidebar_account_popover_row_account-8')),
+        )
+        .dy;
     expect(
       listBottom - lastRowBottom,
       moreOrLessEquals(AppSpacing.xs, epsilon: 0.1),
@@ -324,12 +342,12 @@ void main() {
     );
     await tester.pump();
 
-    final indicatorLeft =
-        tester
-            .getTopLeft(find.byKey(const ValueKey('sidebar_sync_indicator')))
-            .dx;
-    final textLeft =
-        tester.getTopLeft(find.byKey(const ValueKey('sidebar_sync_text'))).dx;
+    final indicatorLeft = tester
+        .getTopLeft(find.byKey(const ValueKey('sidebar_sync_indicator')))
+        .dx;
+    final textLeft = tester
+        .getTopLeft(find.byKey(const ValueKey('sidebar_sync_text')))
+        .dx;
 
     expect(indicatorLeft, moreOrLessEquals(AppSpacing.xs, epsilon: 0.1));
     expect(
@@ -505,22 +523,26 @@ Widget _sidebarHarness(
     routes: [
       GoRoute(
         path: '/home',
-        builder:
-            (_, _) => const AppDesktopShell(
-              sidebar: AppMainSidebar(),
-              pane: AppDesktopPane(child: Text('home route')),
-            ),
+        builder: (_, _) => const AppDesktopShell(
+          sidebar: AppMainSidebar(),
+          pane: AppDesktopPane(child: Text('home route')),
+        ),
       ),
       GoRoute(path: '/accounts', builder: (_, _) => const Text('accounts')),
       GoRoute(
         path: '/send',
-        builder:
-            (_, _) => const AppDesktopShell(
-              sidebar: AppMainSidebar(),
-              pane: AppDesktopPane(child: Text('send route')),
-            ),
+        builder: (_, _) => const AppDesktopShell(
+          sidebar: AppMainSidebar(),
+          pane: AppDesktopPane(child: Text('send route')),
+        ),
       ),
-      GoRoute(path: '/receive', builder: (_, _) => const Text('receive')),
+      GoRoute(
+        path: '/receive',
+        builder: (_, _) => const AppDesktopShell(
+          sidebar: AppMainSidebar(),
+          pane: AppDesktopPane(child: Text('receive route')),
+        ),
+      ),
       GoRoute(path: '/swap', builder: (_, _) => const Text('swap')),
       GoRoute(path: '/voting', builder: (_, _) => const Text('voting')),
       GoRoute(
