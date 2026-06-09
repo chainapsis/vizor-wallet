@@ -12,8 +12,8 @@ import '../../core/widgets/app_tooltip.dart';
 import '../settings/widgets/custom_endpoint_settings_panel.dart';
 import 'shared/onboarding_welcome_art.dart';
 
-/// Welcome-specific button width. The redesigned Figma CTA stack is 256 dp
-/// wide (node 1136:17519).
+/// Welcome-specific button width. The Figma CTA stack is 256 dp wide
+/// (node 1136:17519).
 const double _welcomeActionWidth = 256;
 
 /// Onboarding entry point — the Figma "Split View" at node 215:2688

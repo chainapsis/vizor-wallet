@@ -58,8 +58,9 @@ final _homeZecUsdUnitPriceProvider = FutureProvider.autoDispose<double?>((
   if (!ref.watch(swapFeatureEnabledProvider)) return null;
 
   final provider = ref.read(swapIntentProvider);
-  final pricingProvider =
-      provider is SwapPricingProvider ? provider as SwapPricingProvider : null;
+  final pricingProvider = provider is SwapPricingProvider
+      ? provider as SwapPricingProvider
+      : null;
   if (pricingProvider == null) return null;
 
   try {
@@ -189,10 +190,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       late final Future<rust_sync.ShieldTransparentResult> resultFuture;
 
       if (Platform.isMacOS) {
-        final password =
-            ref
-                .read(appSecurityProvider.notifier)
-                .requireSessionPasswordForNativeSecretUse();
+        final password = ref
+            .read(appSecurityProvider.notifier)
+            .requireSessionPasswordForNativeSecretUse();
         resultFuture = rust_sync
             .shieldTransparentBalanceWithMacosStoredMnemonic(
               dbPath: dbPath,
@@ -345,8 +345,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         sync.orchardBalance +
         sync.saplingPendingBalance +
         sync.orchardPendingBalance;
-    final zecUsdUnitPrice =
-        ref.watch(_homeZecUsdUnitPriceProvider).asData?.value;
+    final zecUsdUnitPrice = ref
+        .watch(_homeZecUsdUnitPriceProvider)
+        .asData
+        ?.value;
     final shieldedFiatBalanceText = _formatFiatBalance(
       shieldedBalance,
       zecUsdUnitPrice: zecUsdUnitPrice,
@@ -360,8 +362,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         !sync.hasAccountScopedData &&
         sync.failure == null;
     final isDark = context.appTheme == AppThemeData.dark;
-    final backgroundVariant =
-        isImportingForBackground ? 'importing' : 'default';
+    final backgroundVariant = isImportingForBackground
+        ? 'importing'
+        : 'default';
     final backgroundTheme = isDark ? 'dark' : 'light';
 
     return Stack(
@@ -384,60 +387,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               children: [
                 SizedBox.expand(
                   child: walletAsync.when(
-                    loading:
-                        () => const Center(child: CircularProgressIndicator()),
-                    error:
-                        (err, _) => Center(
-                          child: Text(
-                            'Something went wrong. Try again in a moment.\n\n'
-                            'Details: $err',
-                            style: AppTypography.bodyMedium.copyWith(
-                              color: context.colors.text.warning,
-                            ),
-                          ),
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (err, _) => Center(
+                      child: Text(
+                        'Something went wrong. Try again in a moment.\n\n'
+                        'Details: $err',
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: context.colors.text.warning,
                         ),
-                    data:
-                        (_) => _HomePane(
-                          sync: sync,
-                          hasActivitySyncData: hasActivitySyncData,
-                          isActivityLoading: isActivityLoading,
-                          passwordRotationRecoveryFailed:
-                              bootstrap.passwordRotationRecoveryFailed,
-                          canBackgroundSync: _canBackgroundSync,
-                          privacyModeEnabled: privacyModeEnabled,
-                          shieldedBalanceText: _formatZec(shieldedBalance),
-                          shieldedFiatBalanceText: shieldedFiatBalanceText,
-                          transparentBalanceText: _formatZec(
-                            transparentBalance,
-                          ),
-                          hasTransparentBalance:
-                              transparentBalance > BigInt.zero,
-                          canShieldBalance: canShieldTransparentBalance,
-                          isShieldingBalance: _isShieldingBalance,
-                          shieldBalanceError: _shieldBalanceError,
-                          shieldBalanceErrorDetail: _shieldBalanceErrorDetail,
-                          onTogglePrivacyMode:
-                              () =>
-                                  ref
-                                      .read(privacyModeProvider.notifier)
-                                      .toggle(),
-                          onShieldBalancePressed:
-                              () => unawaited(_shieldTransparentBalance()),
-                          onDismissShieldBalanceError:
-                              _dismissShieldBalanceError,
-                          onSyncInBackground:
-                              () =>
-                                  ref
-                                      .read(syncProvider.notifier)
-                                      .enableBackgroundSync(),
-                          onStopBackgroundSync:
-                              () =>
-                                  ref
-                                      .read(syncProvider.notifier)
-                                      .disableBackgroundSync(),
-                          onRetrySync:
-                              () => ref.read(syncProvider.notifier).startSync(),
-                        ),
+                      ),
+                    ),
+                    data: (_) => _HomePane(
+                      sync: sync,
+                      hasActivitySyncData: hasActivitySyncData,
+                      isActivityLoading: isActivityLoading,
+                      passwordRotationRecoveryFailed:
+                          bootstrap.passwordRotationRecoveryFailed,
+                      canBackgroundSync: _canBackgroundSync,
+                      privacyModeEnabled: privacyModeEnabled,
+                      shieldedBalanceText: _formatZec(shieldedBalance),
+                      shieldedFiatBalanceText: shieldedFiatBalanceText,
+                      transparentBalanceText: _formatZec(transparentBalance),
+                      hasTransparentBalance: transparentBalance > BigInt.zero,
+                      canShieldBalance: canShieldTransparentBalance,
+                      isShieldingBalance: _isShieldingBalance,
+                      shieldBalanceError: _shieldBalanceError,
+                      shieldBalanceErrorDetail: _shieldBalanceErrorDetail,
+                      onTogglePrivacyMode: () =>
+                          ref.read(privacyModeProvider.notifier).toggle(),
+                      onShieldBalancePressed: () =>
+                          unawaited(_shieldTransparentBalance()),
+                      onDismissShieldBalanceError: _dismissShieldBalanceError,
+                      onSyncInBackground: () => ref
+                          .read(syncProvider.notifier)
+                          .enableBackgroundSync(),
+                      onStopBackgroundSync: () => ref
+                          .read(syncProvider.notifier)
+                          .disableBackgroundSync(),
+                      onRetrySync: () =>
+                          ref.read(syncProvider.notifier).startSync(),
+                    ),
                   ),
                 ),
                 if (_showKeystoneShieldSigning)
@@ -628,10 +618,9 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         iconName: AppIcons.warning,
         message: syncFailure.userMessage,
         actionLabel: syncFailure.actionLabel,
-        onTap:
-            syncFailure.showSettingsAction
-                ? () => context.push('/settings/endpoint')
-                : widget.onRetrySync,
+        onTap: syncFailure.showSettingsAction
+            ? () => context.push('/settings/endpoint')
+            : widget.onRetrySync,
       );
     }
     if (widget.sync.isBackgroundMode) {
@@ -656,11 +645,10 @@ class _HomePaneState extends ConsumerState<_HomePane> {
   List<ActivityRowData> _activityRows(BuildContext context) {
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
-    final swapItems =
-        accountUuid == null || !swapFeatureEnabled
-            ? const <SwapActivityRowItem>[]
-            : ref.watch(swapActivityRowItemsProvider(accountUuid)).value ??
-                const <SwapActivityRowItem>[];
+    final swapItems = accountUuid == null || !swapFeatureEnabled
+        ? const <SwapActivityRowItem>[]
+        : ref.watch(swapActivityRowItemsProvider(accountUuid)).value ??
+              const <SwapActivityRowItem>[];
     final entries = <_HomeActivityEntry>[
       if (widget.hasActivitySyncData)
         for (final tx in widget.sync.recentTransactions)
@@ -787,511 +775,6 @@ DateTime? _transactionActivityTimestamp(rust_sync.TransactionInfo tx) {
   return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
 }
 
-class _HomeBalanceCard extends StatefulWidget {
-  const _HomeBalanceCard({
-    required this.shieldedBalanceText,
-    required this.transparentBalanceText,
-    required this.hasTransparentBalance,
-    required this.canShieldBalance,
-    required this.isShieldingBalance,
-    required this.privacyModeEnabled,
-    required this.onTogglePrivacyMode,
-    required this.onShieldBalancePressed,
-  });
-
-  final String shieldedBalanceText;
-  final String transparentBalanceText;
-  final bool hasTransparentBalance;
-  final bool canShieldBalance;
-  final bool isShieldingBalance;
-  final bool privacyModeEnabled;
-  final VoidCallback onTogglePrivacyMode;
-  final VoidCallback onShieldBalancePressed;
-
-  @override
-  State<_HomeBalanceCard> createState() => _HomeBalanceCardState();
-}
-
-class _HomeBalanceCardState extends State<_HomeBalanceCard> {
-  bool _isShieldBalanceHovered = false;
-
-  static const _shieldedCardHeight = 216.0;
-  static const _transparentStripHeight = 56.0;
-  static const _shieldedCardBorderWidth = 1.5;
-  static const _shieldedCardBorderColor = Color(0x12FFFFFF);
-  static const _outerCardPadding = 2.0;
-  static const _outerCardRadius = 18.0;
-  static const _actionButtonMinWidth = 196.0;
-
-  @override
-  void didUpdateWidget(covariant _HomeBalanceCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_isShieldBalanceHovered &&
-        (!widget.hasTransparentBalance ||
-            !widget.canShieldBalance ||
-            widget.isShieldingBalance)) {
-      _isShieldBalanceHovered = false;
-    }
-  }
-
-  void _handleShieldBalanceHoverChanged(bool hovered) {
-    if (_isShieldBalanceHovered == hovered) return;
-    setState(() {
-      _isShieldBalanceHovered = hovered;
-    });
-  }
-
-  BoxDecoration _homeCardDecoration({
-    required AppColors colors,
-    required BorderRadius borderRadius,
-  }) {
-    return BoxDecoration(
-      color: colors.background.homeCard,
-      borderRadius: borderRadius,
-    );
-  }
-
-  BoxDecoration _shieldBalanceHoverDecoration({
-    required AppColors colors,
-    required double progress,
-  }) {
-    const minRadius = 0.64;
-    const maxRadius = 1.45;
-    final radius = minRadius + (maxRadius - minRadius) * progress;
-
-    return BoxDecoration(
-      gradient: RadialGradient(
-        center: const Alignment(0.86, 0.80),
-        radius: radius,
-        colors: [
-          colors.button.primary.bg.withValues(alpha: progress),
-          colors.button.primary.bg.withValues(alpha: 0),
-        ],
-        stops: const [0.19, 1.0],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final currencyTickerLower = kZcashDefaultCurrencyTicker.toLowerCase();
-    final displayedShieldedBalance = hideIfPrivacyMode(
-      '${widget.shieldedBalanceText} $currencyTickerLower',
-      privacyModeEnabled: widget.privacyModeEnabled,
-    );
-    final isDark = AppTheme.of(context) == AppThemeData.dark;
-    final targetStripHeight =
-        widget.hasTransparentBalance ? _transparentStripHeight : 0.0;
-    final isShieldBalanceHoverActive =
-        widget.canShieldBalance &&
-        !widget.isShieldingBalance &&
-        _isShieldBalanceHovered;
-    final shieldBalanceContentColor =
-        isShieldBalanceHoverActive
-            ? colors.button.primary.label
-            : widget.isShieldingBalance
-            ? colors.text.homeCard
-            : widget.canShieldBalance
-            ? colors.text.homeCard
-            : colors.text.secondary.withValues(alpha: 0.64);
-    final shieldBalanceChevronColor =
-        isShieldBalanceHoverActive
-            ? colors.background.utilitySuccessStrong
-            : shieldBalanceContentColor;
-    final transparentStrip =
-        widget.hasTransparentBalance
-            ? _HomeTransparentBalanceStrip(
-              key: const ValueKey('transparent-balance-strip'),
-              balanceText: widget.transparentBalanceText,
-              canShieldBalance: widget.canShieldBalance,
-              isShieldingBalance: widget.isShieldingBalance,
-              privacyModeEnabled: widget.privacyModeEnabled,
-              shieldBalanceContentColor: shieldBalanceContentColor,
-              shieldBalanceChevronColor: shieldBalanceChevronColor,
-              onShieldBalancePressed: widget.onShieldBalancePressed,
-              onShieldBalanceHoverChanged: _handleShieldBalanceHoverChanged,
-            )
-            : const SizedBox.shrink(key: ValueKey('transparent-balance-empty'));
-
-    return TweenAnimationBuilder<double>(
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOutCubic,
-      tween: Tween<double>(begin: targetStripHeight, end: targetStripHeight),
-      builder: (context, stripHeight, _) {
-        final cardHeight = _shieldedCardHeight + stripHeight;
-        final revealProgress = (stripHeight / _transparentStripHeight).clamp(
-          0.0,
-          1.0,
-        );
-        final shieldedCardRadius = BorderRadius.circular(
-          stripHeight > 0 ? AppRadii.medium : 0.0,
-        );
-        final shieldedCardBorderColor =
-            Color.lerp(
-              const Color(0x00FFFFFF),
-              _shieldedCardBorderColor,
-              revealProgress,
-            )!;
-        final outerCardBorderRadius = BorderRadius.circular(_outerCardRadius);
-        final innerCardBorderRadius = BorderRadius.circular(
-          _outerCardRadius - _outerCardPadding,
-        );
-
-        return ClipRRect(
-          borderRadius: outerCardBorderRadius,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            curve: Curves.easeOut,
-            decoration: _homeCardDecoration(
-              colors: colors,
-              borderRadius: outerCardBorderRadius,
-            ),
-            child: Stack(
-              clipBehavior: Clip.hardEdge,
-              children: [
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: TweenAnimationBuilder<double>(
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOutCubic,
-                      tween: Tween<double>(
-                        end: isShieldBalanceHoverActive ? 1.0 : 0.0,
-                      ),
-                      builder: (context, hoverProgress, _) {
-                        return DecoratedBox(
-                          decoration: _shieldBalanceHoverDecoration(
-                            colors: colors,
-                            progress: hoverProgress,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(_outerCardPadding),
-                  child: ClipRRect(
-                    borderRadius: innerCardBorderRadius,
-                    child: SizedBox(
-                      height: cardHeight,
-                      child: Stack(
-                        clipBehavior: Clip.hardEdge,
-                        children: [
-                          Positioned(
-                            left: 0,
-                            top: 0,
-                            right: 0,
-                            height: _shieldedCardHeight,
-                            child: ClipRRect(
-                              borderRadius: shieldedCardRadius,
-                              child: DecoratedBox(
-                                decoration: _homeCardDecoration(
-                                  colors: colors,
-                                  borderRadius: shieldedCardRadius,
-                                ),
-                                child: DecoratedBox(
-                                  position: DecorationPosition.foreground,
-                                  decoration: BoxDecoration(
-                                    borderRadius: shieldedCardRadius,
-                                    border: Border.all(
-                                      color: shieldedCardBorderColor,
-                                      width: _shieldedCardBorderWidth,
-                                    ),
-                                  ),
-                                  child: Stack(
-                                    children: [
-                                      Positioned.fill(
-                                        child: IgnorePointer(
-                                          child: Stack(
-                                            children: [
-                                              Positioned.fill(
-                                                child: DecoratedBox(
-                                                  decoration: BoxDecoration(
-                                                    gradient: LinearGradient(
-                                                      begin:
-                                                          Alignment.centerLeft,
-                                                      end:
-                                                          Alignment.centerRight,
-                                                      colors:
-                                                          isDark
-                                                              ? [
-                                                                colors
-                                                                    .background
-                                                                    .homeCard
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.90,
-                                                                    ),
-                                                                colors
-                                                                    .background
-                                                                    .homeCard
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.82,
-                                                                    ),
-                                                                colors
-                                                                    .background
-                                                                    .homeCard
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.48,
-                                                                    ),
-                                                                colors
-                                                                    .background
-                                                                    .homeCard
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.00,
-                                                                    ),
-                                                              ]
-                                                              : [
-                                                                colors
-                                                                    .background
-                                                                    .homeCard
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.98,
-                                                                    ),
-                                                                colors
-                                                                    .background
-                                                                    .homeCard
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.95,
-                                                                    ),
-                                                                colors
-                                                                    .background
-                                                                    .homeCard
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.70,
-                                                                    ),
-                                                                colors
-                                                                    .background
-                                                                    .homeCard
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.00,
-                                                                    ),
-                                                              ],
-                                                      stops: const [
-                                                        0.0,
-                                                        0.28,
-                                                        0.56,
-                                                        0.86,
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                              Positioned.fill(
-                                                child: Align(
-                                                  alignment:
-                                                      Alignment.centerRight,
-                                                  child: Image.asset(
-                                                    isDark
-                                                        ? 'assets/illustrations/home_balance_card_bg_dark.png'
-                                                        : 'assets/illustrations/home_balance_card_bg_light.png',
-                                                    fit: BoxFit.cover,
-                                                    width: 604,
-                                                    height: _shieldedCardHeight,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                      Positioned.fill(
-                                        child: Padding(
-                                          padding: const EdgeInsets.fromLTRB(
-                                            AppSpacing.sm,
-                                            AppSpacing.md,
-                                            AppSpacing.sm,
-                                            AppSpacing.md,
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Container(
-                                                    padding:
-                                                        const EdgeInsets.all(
-                                                          AppSpacing.xxs,
-                                                        ),
-                                                    child: Row(
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: [
-                                                        _HomeBalanceShieldIcon(
-                                                          isDark: isDark,
-                                                          iconColor:
-                                                              colors
-                                                                  .text
-                                                                  .homeCard,
-                                                        ),
-                                                        const SizedBox(
-                                                          width: AppSpacing.xs,
-                                                        ),
-                                                        Text(
-                                                          'Shielded Balance',
-                                                          style: AppTypography
-                                                              .labelLarge
-                                                              .copyWith(
-                                                                color:
-                                                                    colors
-                                                                        .text
-                                                                        .homeCard,
-                                                              ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  const Spacer(),
-                                                  _IconPillButton(
-                                                    iconName:
-                                                        widget.privacyModeEnabled
-                                                            ? AppIcons.eyeClosed
-                                                            : AppIcons.eye,
-                                                    onPressed:
-                                                        widget
-                                                            .onTogglePrivacyMode,
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(
-                                                height: AppSpacing.xs,
-                                              ),
-                                              Text(
-                                                displayedShieldedBalance,
-                                                key: const ValueKey(
-                                                  'home_shielded_balance_text',
-                                                ),
-                                                style: AppTypography
-                                                    .displayMedium
-                                                    .copyWith(
-                                                      color:
-                                                          colors.text.homeCard,
-                                                    ),
-                                              ),
-                                              const Spacer(),
-                                              Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  AppButton(
-                                                    key: const ValueKey(
-                                                      'home_send_button',
-                                                    ),
-                                                    onPressed:
-                                                        () => context.push(
-                                                          '/send',
-                                                        ),
-                                                    variant:
-                                                        AppButtonVariant
-                                                            .primary,
-                                                    minWidth:
-                                                        _actionButtonMinWidth,
-                                                    leading: const AppIcon(
-                                                      AppIcons.plane,
-                                                    ),
-                                                    child: const Text('Send'),
-                                                  ),
-                                                  const SizedBox(
-                                                    width: AppSpacing.xs,
-                                                  ),
-                                                  AppButton(
-                                                    key: const ValueKey(
-                                                      'home_receive_button',
-                                                    ),
-                                                    onPressed:
-                                                        () => context.push(
-                                                          '/receive',
-                                                        ),
-                                                    variant:
-                                                        AppButtonVariant
-                                                            .secondary,
-                                                    minWidth:
-                                                        _actionButtonMinWidth,
-                                                    focusRingColor:
-                                                        isDark
-                                                            ? null
-                                                            : colors
-                                                                .button
-                                                                .secondary
-                                                                .bg,
-                                                    leading: const AppIcon(
-                                                      AppIcons.arrowDownCircle,
-                                                    ),
-                                                    child: const Text(
-                                                      'Receive',
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            left: 0,
-                            top: _shieldedCardHeight,
-                            right: 0,
-                            height: stripHeight,
-                            child: SizedBox(
-                              height: stripHeight,
-                              child: ClipRect(
-                                child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 220),
-                                  switchInCurve: Curves.easeOutCubic,
-                                  switchOutCurve: Curves.easeInCubic,
-                                  transitionBuilder: (child, animation) {
-                                    final curved = CurvedAnimation(
-                                      parent: animation,
-                                      curve: Curves.easeOutCubic,
-                                      reverseCurve: Curves.easeInCubic,
-                                    );
-                                    return ClipRect(
-                                      child: SizeTransition(
-                                        sizeFactor: curved,
-                                        axisAlignment: -1,
-                                        child: SlideTransition(
-                                          position: Tween<Offset>(
-                                            begin: const Offset(0, -0.85),
-                                            end: Offset.zero,
-                                          ).animate(curved),
-                                          child: child,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  child: transparentStrip,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
 class _HomeTransparentBalanceStrip extends StatelessWidget {
   const _HomeTransparentBalanceStrip({
     required this.balanceText,
@@ -1361,18 +844,15 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
             if (canShieldBalance || isShieldingBalance) ...[
               const SizedBox(width: _itemGap),
               MouseRegion(
-                cursor:
-                    canHoverShieldBalance
-                        ? SystemMouseCursors.click
-                        : SystemMouseCursors.basic,
-                onEnter:
-                    canHoverShieldBalance
-                        ? (_) => onShieldBalanceHoverChanged(true)
-                        : null,
-                onExit:
-                    canHoverShieldBalance
-                        ? (_) => onShieldBalanceHoverChanged(false)
-                        : null,
+                cursor: canHoverShieldBalance
+                    ? SystemMouseCursors.click
+                    : SystemMouseCursors.basic,
+                onEnter: canHoverShieldBalance
+                    ? (_) => onShieldBalanceHoverChanged(true)
+                    : null,
+                onExit: canHoverShieldBalance
+                    ? (_) => onShieldBalanceHoverChanged(false)
+                    : null,
                 child: _HomeShieldBalanceButton(
                   enabled: canShieldBalance,
                   isLoading: isShieldingBalance,
@@ -1413,8 +893,9 @@ class _HomeShieldBalanceButton extends StatelessWidget {
       button: true,
       enabled: isInteractive,
       child: MouseRegion(
-        cursor:
-            isInteractive ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        cursor: isInteractive
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: isInteractive ? onPressed : null,
@@ -1445,84 +926,6 @@ class _HomeShieldBalanceButton extends StatelessWidget {
                 ],
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HomeBalanceShieldIcon extends StatelessWidget {
-  const _HomeBalanceShieldIcon({required this.isDark, required this.iconColor});
-
-  final bool isDark;
-  final Color iconColor;
-
-  @override
-  Widget build(BuildContext context) {
-    const patternWidth = 896.0;
-    const patternHeight = 1007.0;
-
-    return SizedBox(
-      width: 20,
-      height: 20,
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.center,
-        children: [
-          IgnorePointer(
-            child: OverflowBox(
-              minWidth: 0,
-              minHeight: 0,
-              maxWidth: patternWidth,
-              maxHeight: patternHeight,
-              alignment: Alignment.center,
-              child: Opacity(
-                opacity: 0.10,
-                child: Image.asset(
-                  isDark
-                      ? 'assets/illustrations/home_balance_card_pattern_dark.png'
-                      : 'assets/illustrations/home_balance_card_pattern_light.png',
-                  width: patternWidth,
-                  height: patternHeight,
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ),
-          ),
-          AppIcon(AppIcons.shieldKeyhole, size: 20, color: iconColor),
-        ],
-      ),
-    );
-  }
-}
-
-class _IconPillButton extends StatelessWidget {
-  const _IconPillButton({required this.iconName, required this.onPressed});
-
-  final String iconName;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onPressed,
-        child: Container(
-          width: 32,
-          height: 32,
-          padding: const EdgeInsets.all(AppSpacing.xs),
-          decoration: BoxDecoration(
-            color: colors.button.secondary.bg,
-            borderRadius: BorderRadius.circular(AppRadii.full),
-          ),
-          child: AppIcon(
-            iconName,
-            size: 16,
-            color: colors.button.secondary.label,
           ),
         ),
       ),
@@ -1593,15 +996,13 @@ class _HomeNoticeCard extends StatelessWidget {
                     preferBelow: false,
                     positionDelegate: _positionShieldErrorTooltip,
                     decoration: BoxDecoration(
-                      color:
-                          isDark
-                              ? colors.surface.tooltip
-                              : colors.background.inverse,
+                      color: isDark
+                          ? colors.surface.tooltip
+                          : colors.background.inverse,
                       borderRadius: BorderRadius.circular(AppRadii.xSmall),
-                      border:
-                          isDark
-                              ? Border.all(color: colors.border.regular)
-                              : null,
+                      border: isDark
+                          ? Border.all(color: colors.border.regular)
+                          : null,
                     ),
                     textStyle: AppTypography.bodySmall.copyWith(
                       color: isDark ? colors.text.accent : colors.text.inverse,
@@ -1633,23 +1034,19 @@ class _HomeNoticeCard extends StatelessWidget {
 Offset _positionShieldErrorTooltip(TooltipPositionContext context) {
   const edgeMargin = AppSpacing.md;
   final targetTop = context.target.dy - (context.targetSize.height / 2);
-  final y =
-      (targetTop - _shieldErrorTooltipGap - context.tooltipSize.height)
-          .clamp(
-            edgeMargin,
-            context.overlaySize.height -
-                context.tooltipSize.height -
-                edgeMargin,
-          )
-          .toDouble();
+  final y = (targetTop - _shieldErrorTooltipGap - context.tooltipSize.height)
+      .clamp(
+        edgeMargin,
+        context.overlaySize.height - context.tooltipSize.height - edgeMargin,
+      )
+      .toDouble();
 
   final flexibleSpace = context.overlaySize.width - context.tooltipSize.width;
-  final x =
-      flexibleSpace <= edgeMargin * 2
-          ? flexibleSpace / 2
-          : (context.target.dx - (context.tooltipSize.width / 2))
-              .clamp(edgeMargin, flexibleSpace - edgeMargin)
-              .toDouble();
+  final x = flexibleSpace <= edgeMargin * 2
+      ? flexibleSpace / 2
+      : (context.target.dx - (context.tooltipSize.width / 2))
+            .clamp(edgeMargin, flexibleSpace - edgeMargin)
+            .toDouble();
 
   return Offset(x, y);
 }
@@ -1754,23 +1151,22 @@ class _HomeDesktopPane extends StatelessWidget {
                 padding: EdgeInsets.only(
                   top: hasTransparentBalance ? AppSpacing.s : AppSpacing.md,
                 ),
-                sliver:
-                    activityRows.isEmpty
-                        ? _HomeDesktopEmptyActivitySliver(
-                          isLoading: isActivityLoading,
-                        )
-                        : _HomeDesktopCenteredSliver(
-                          padding: const EdgeInsets.fromLTRB(
-                            AppSpacing.s,
-                            0,
-                            AppSpacing.s,
-                            AppSpacing.sm,
-                          ),
-                          child: _HomeDesktopActivityCard(
-                            rows: activityRows.take(5).toList(),
-                            onSeeAll: onActivity,
-                          ),
+                sliver: activityRows.isEmpty
+                    ? _HomeDesktopEmptyActivitySliver(
+                        isLoading: isActivityLoading,
+                      )
+                    : _HomeDesktopCenteredSliver(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.s,
+                          0,
+                          AppSpacing.s,
+                          AppSpacing.sm,
                         ),
+                        child: _HomeDesktopActivityCard(
+                          rows: activityRows.take(5).toList(),
+                          onSeeAll: onActivity,
+                        ),
+                      ),
               ),
             ],
           );
@@ -1845,8 +1241,8 @@ class _HomeImportingContent extends StatelessWidget {
     final normalizedAccountName = accountName?.trim();
     final detailText =
         normalizedAccountName != null && normalizedAccountName.isNotEmpty
-            ? 'Importing $normalizedAccountName\nKeep Vizor open & running.'
-            : 'It might take some time.\nKeep Vizor open & running.';
+        ? 'Importing $normalizedAccountName\nKeep Vizor open & running.'
+        : 'It might take some time.\nKeep Vizor open & running.';
     return SizedBox(
       width: 396,
       height: 624,
@@ -1974,24 +1370,21 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
         widget.canShieldBalance &&
         !widget.isShieldingBalance &&
         _isShieldBalanceHovered;
-    final shieldBalanceContentColor =
-        isShieldBalanceHoverActive
-            ? colors.button.primary.label
-            : widget.isShieldingBalance || widget.canShieldBalance
-            ? colors.text.homeCard
-            : colors.text.secondary.withValues(alpha: 0.64);
-    final shieldBalanceChevronColor =
-        isShieldBalanceHoverActive
-            ? colors.background.utilitySuccessStrong
-            : shieldBalanceContentColor;
+    final shieldBalanceContentColor = isShieldBalanceHoverActive
+        ? colors.button.primary.label
+        : widget.isShieldingBalance || widget.canShieldBalance
+        ? colors.text.homeCard
+        : colors.text.secondary.withValues(alpha: 0.64);
+    final shieldBalanceChevronColor = isShieldBalanceHoverActive
+        ? colors.background.utilitySuccessStrong
+        : shieldBalanceContentColor;
     final cardRadius = BorderRadius.circular(AppRadii.large);
-    final shieldedCardRadius =
-        widget.hasTransparentBalance
-            ? const BorderRadius.vertical(
-              top: Radius.circular(AppRadii.large),
-              bottom: Radius.circular(AppRadii.medium),
-            )
-            : cardRadius;
+    final shieldedCardRadius = widget.hasTransparentBalance
+        ? const BorderRadius.vertical(
+            top: Radius.circular(AppRadii.large),
+            bottom: Radius.circular(AppRadii.medium),
+          )
+        : cardRadius;
 
     return SizedBox(
       width: 396,
@@ -2173,26 +1566,25 @@ class _HomeDesktopActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final fg =
-        primary ? colors.button.primary.label : colors.button.secondary.label;
+    final fg = primary
+        ? colors.button.primary.label
+        : colors.button.secondary.label;
     return _HomeDesktopInteractiveTarget(
       semanticsLabel: label,
       onTap: onTap,
       builder: (context, hovered, focused) {
-        final bg =
-            primary
-                ? hovered
-                    ? colors.button.primary.bgHover
-                    : colors.button.primary.bg
-                : hovered
-                ? colors.button.secondary.bgHover
-                : colors.button.secondary.bg;
-        final focusRingColor =
-            primary
-                ? hovered
-                    ? colors.button.primary.bgHover
-                    : colors.button.primary.bg
-                : colors.state.focusRing;
+        final bg = primary
+            ? hovered
+                  ? colors.button.primary.bgHover
+                  : colors.button.primary.bg
+            : hovered
+            ? colors.button.secondary.bgHover
+            : colors.button.secondary.bg;
+        final focusRingColor = primary
+            ? hovered
+                  ? colors.button.primary.bgHover
+                  : colors.button.primary.bg
+            : colors.state.focusRing;
 
         return SizedBox(
           height: 44,
@@ -2451,13 +1843,12 @@ class _HomeDesktopEmptyActivity extends StatelessWidget {
         final verticalOffset = compact ? 0.0 : 32.0;
         final availableIllustrationHeight =
             constraints.maxHeight - (compact ? 116.0 : 92.0);
-        final illustrationHeight =
-            math
-                .min(
-                  192.0,
-                  math.max(compact ? 64.0 : 96.0, availableIllustrationHeight),
-                )
-                .toDouble();
+        final illustrationHeight = math
+            .min(
+              192.0,
+              math.max(compact ? 64.0 : 96.0, availableIllustrationHeight),
+            )
+            .toDouble();
         final illustrationWidth = illustrationHeight * (246 / 192);
 
         return Center(
@@ -2862,28 +2253,22 @@ class _HomeDesktopProgressRingPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = (size.shortestSide / 2) - 1.5;
     final rect = Rect.fromCircle(center: center, radius: radius);
-    final trackPaint =
-        Paint()
-          ..color = trackColor
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..strokeCap = StrokeCap.round;
-    final progressPaint =
-        Paint()
-          ..color = progressColor
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..strokeCap = StrokeCap.round;
+    final trackPaint = Paint()
+      ..color = trackColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+    final progressPaint = Paint()
+      ..color = progressColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
     final segmentStep = math.pi * 2 / segmentCount;
     final segmentSweep = segmentStep - segmentGapAngle;
     final firstStartAngle = -math.pi + (segmentGapAngle / 2);
-    final filledSegments =
-        progress <= 0
-            ? 0
-            : math.max(
-              1,
-              math.min(segmentCount, (progress * segmentCount).ceil()),
-            );
+    final filledSegments = progress <= 0
+        ? 0
+        : math.max(1, math.min(segmentCount, (progress * segmentCount).ceil()));
 
     for (var index = 0; index < segmentCount; index++) {
       canvas.drawArc(

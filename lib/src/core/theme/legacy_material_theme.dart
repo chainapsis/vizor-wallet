@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 /// LEGACY Zcash Wallet Material theme — Stitch-based tokens.
 ///
 /// Superseded by the Figma-based AppTheme/AppColors system under `theme/`.
-/// Kept only so that pre-redesign screens keep rendering while the new
-/// design system is being rolled out. Do NOT consume from new screens; new
+/// Kept only so older screens keep rendering while the new design system is
+/// being rolled out. Do NOT consume from new screens; new
 /// code must use `context.colors` / `AppTheme.of(context)` instead.
 ///
 /// Delete this file once every screen has migrated off `Theme.of(context)`.

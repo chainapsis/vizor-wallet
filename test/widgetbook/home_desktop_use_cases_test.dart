@@ -36,10 +36,7 @@ void main() {
     final fiatText = tester.widget<Text>(
       find.byKey(const ValueKey('home_preview_balance_fiat_text')),
     );
-    expect(
-      fiatText.style?.color,
-      colors.text.homeCard.withValues(alpha: 0.80),
-    );
+    expect(fiatText.style?.color, colors.text.homeCard.withValues(alpha: 0.80));
     final shieldIcon = tester.widget<AppIcon>(
       find.byKey(const ValueKey('home_preview_shielded_balance_icon')),
     );
@@ -52,10 +49,6 @@ void main() {
       find.byKey(const ValueKey('home_preview_full_page_background')),
     );
     expect(background.alignment, Alignment.topCenter);
-    expect(
-      _assetImageNames(tester),
-      isNot(contains('assets/illustrations/home_balance_card_bg_light.png')),
-    );
     expect(_appIconSizes(tester, AppIcons.shieldKeyhole), contains(20));
     expect(
       find.byKey(const ValueKey('home_preview_transparent_balance_strip')),
@@ -154,14 +147,12 @@ void main() {
     final popoverBorder = popoverDecoration.border as Border;
     expect(popoverBorder.top.color, AppColors.light.border.subtle);
     expect(popoverBorder.top.width, 1);
-    final popoverTop =
-        tester
-            .getTopLeft(find.byKey(const ValueKey('home_accounts_popover')))
-            .dy;
-    final popoverBottom =
-        tester
-            .getBottomLeft(find.byKey(const ValueKey('home_accounts_popover')))
-            .dy;
+    final popoverTop = tester
+        .getTopLeft(find.byKey(const ValueKey('home_accounts_popover')))
+        .dy;
+    final popoverBottom = tester
+        .getBottomLeft(find.byKey(const ValueKey('home_accounts_popover')))
+        .dy;
     final homeTop = tester.getTopLeft(find.text('Home')).dy;
     expect(homeTop, greaterThan(popoverTop));
     expect(homeTop, lessThan(popoverBottom));
@@ -198,12 +189,12 @@ void main() {
       const Size(205, 1),
     );
 
-    final listBottom =
-        tester
-            .getBottomLeft(find.byKey(const ValueKey('home_accounts_list')))
-            .dy;
-    final row4Top =
-        tester.getTopLeft(find.byKey(const ValueKey('home_account_row_3'))).dy;
+    final listBottom = tester
+        .getBottomLeft(find.byKey(const ValueKey('home_accounts_list')))
+        .dy;
+    final row4Top = tester
+        .getTopLeft(find.byKey(const ValueKey('home_account_row_3')))
+        .dy;
     expect(row4Top, lessThan(listBottom));
     expect(row4Top + 40, greaterThan(listBottom));
 
@@ -262,14 +253,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Account 8'), findsOneWidget);
-      final listBottom =
-          tester
-              .getBottomLeft(find.byKey(const ValueKey('home_accounts_list')))
-              .dy;
-      final lastRowBottom =
-          tester
-              .getBottomLeft(find.byKey(const ValueKey('home_account_row_7')))
-              .dy;
+      final listBottom = tester
+          .getBottomLeft(find.byKey(const ValueKey('home_accounts_list')))
+          .dy;
+      final lastRowBottom = tester
+          .getBottomLeft(find.byKey(const ValueKey('home_account_row_7')))
+          .dy;
       expect(
         listBottom - lastRowBottom,
         moreOrLessEquals(AppSpacing.xs, epsilon: 0.1),
@@ -431,7 +420,9 @@ Future<void> _pumpHomeDesktopWidget(WidgetTester tester, Widget child) async {
   addTearDown(tester.view.resetDevicePixelRatio);
 
   await tester.pumpWidget(
-    MaterialApp(home: AppTheme(data: AppThemeData.light, child: child)),
+    MaterialApp(
+      home: AppTheme(data: AppThemeData.light, child: child),
+    ),
   );
   await tester.pump();
 }

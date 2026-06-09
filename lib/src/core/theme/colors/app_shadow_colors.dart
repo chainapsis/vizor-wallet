@@ -2,7 +2,7 @@ import 'package:flutter/painting.dart';
 
 import '../primitives.dart';
 
-/// Shadow colors from the redesign `Semantic/Shadows` tokens.
+/// Shadow colors from the Figma `Semantic/Shadows` tokens.
 class AppShadowColors {
   const AppShadowColors({
     required this.shadow1,

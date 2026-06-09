@@ -35,14 +35,12 @@ enum SendMemoMode {
   transparentUnavailable,
 }
 
-/// Presentational, state-driven layout for the redesigned **Send** compose
-/// screen.
+/// Presentational, state-driven layout for the **Send** compose screen.
 ///
 /// This widget owns no wallet/business logic — it renders a snapshot of the
 /// compose form from immutable props so the layout and visual states can be
-/// validated in Widgetbook before the redesign is wired into
-/// `send_screen.dart`. Callbacks are optional and default to no-ops in
-/// previews.
+/// validated in Widgetbook before it is wired into `send_screen.dart`.
+/// Callbacks are optional and default to no-ops in previews.
 ///
 /// The recipient pool indicator and the memo over-limit error both ride on
 /// [AppTextField.messageText] + [AppTextField.tone]:
@@ -78,7 +76,7 @@ class SendComposeView extends StatelessWidget {
     this.reviewButtonWidth = 196,
   });
 
-  /// Serif page title. Defaults to the redesign copy `Send ZEC`; the live
+  /// Serif page title. Defaults to the Figma copy `Send ZEC`; the live
   /// screen can thread the network-scoped currency ticker.
   final String title;
 
@@ -120,7 +118,8 @@ class SendComposeView extends StatelessWidget {
 
   // Reserved space for the caption overlay that AppTextField paints just
   // below each field (pool indicator / validation error). Mirrors the
-  // current send screen's spacing so the redesign stays vertically balanced.
+  // current send screen's spacing so the compose layout stays vertically
+  // balanced.
   static const _overlayReserve = 20.0;
   static const _fieldGap = AppSpacing.xs;
   static const _multilineOverlayReserve = 24.0;

@@ -88,8 +88,8 @@ Widget buildSendContactSelectedUseCase(BuildContext context) {
 }
 
 /// Desktop window chrome (sidebar + pane + back link) wrapping the compose
-/// view, mirroring `_SwapPageFrame` so the redesign previews in the same
-/// surface the real screen will live in.
+/// view, mirroring `_SwapPageFrame` so Widgetbook previews use the same
+/// surface the real screen lives in.
 class _SendPageFrame extends StatelessWidget {
   const _SendPageFrame({required this.child});
 

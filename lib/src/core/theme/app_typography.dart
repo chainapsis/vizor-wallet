@@ -3,7 +3,7 @@ import 'package:flutter/widgets.dart';
 /// Typography tokens from the Figma design system.
 ///
 /// Mirrors the Desktop mode in `3 Fonts.zip` for Headline, Body, Label, and
-/// Code tokens. A few pre-redesign `display*` aliases remain for existing
+/// Code tokens. A few older `display*` aliases remain for existing
 /// screens, but new surfaces should prefer the matching headline/body/label
 /// token name.
 ///
