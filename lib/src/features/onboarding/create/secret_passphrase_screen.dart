@@ -11,7 +11,6 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_chip.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -206,6 +205,9 @@ class _SecretPassphraseScreenState
       child: SensitivePrivacyOverlay(
         sensitiveContentVisible: _revealed && _mnemonic != null,
         controller: widget.privacyOverlayController,
+        borderRadius: BorderRadius.circular(
+          AppDesktopSidebarSurface.glassRadius,
+        ),
         child: OnboardingPaneScaffold(
           backTarget: OnboardingBackTarget.route(
             label: OnboardingStep.thingsToKnow.label,
@@ -448,44 +450,36 @@ class _SeedPhraseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final fill = revealed ? colors.background.base : colors.background.homeCard;
-    final minHeight = revealed ? 348.0 : 258.0;
+    final height = revealed ? 340.0 : 258.0;
 
-    return Container(
+    return SizedBox(
       width: double.infinity,
-      constraints: BoxConstraints(minHeight: minHeight),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.base,
-      ),
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
-      child: switch ((isLoading, error != null, mnemonic)) {
-        (true, _, _) => const Center(child: CircularProgressIndicator()),
-        (_, true, _) => _ErrorState(message: error!),
-        (_, _, String value) =>
-          revealed
-              ? Stack(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.xs),
-                      child: _SeedGrid(mnemonic: value),
+      height: height,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.background.homeCard,
+          borderRadius: BorderRadius.circular(AppRadii.large),
+        ),
+        child: switch ((isLoading, error != null, mnemonic)) {
+          (true, _, _) => const Center(child: CircularProgressIndicator()),
+          (_, true, _) => _ErrorState(message: error!),
+          (_, _, String value) =>
+            revealed
+                ? _SeedPhraseRevealContent(
+                    mnemonic: value,
+                    copied: copied,
+                    onCopyPressed: onCopyPressed,
+                  )
+                : const Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.base,
                     ),
-                    Positioned(
-                      top: 0,
-                      right: 0,
-                      child: _CopyButton(
-                        copied: copied,
-                        onPressed: onCopyPressed,
-                      ),
-                    ),
-                  ],
-                )
-              : const Center(child: _HiddenWarning()),
-        _ => const SizedBox.shrink(),
-      },
+                    child: Center(child: _HiddenWarning()),
+                  ),
+          _ => const SizedBox.shrink(),
+        },
+      ),
     );
   }
 }
@@ -543,14 +537,50 @@ class _HiddenWarning extends StatelessWidget {
   }
 }
 
-class _SeedGrid extends StatelessWidget {
-  const _SeedGrid({required this.mnemonic});
+class _SeedPhraseRevealContent extends StatelessWidget {
+  const _SeedPhraseRevealContent({
+    required this.mnemonic,
+    required this.copied,
+    required this.onCopyPressed,
+  });
 
   final String mnemonic;
+  final bool copied;
+  final Future<void> Function() onCopyPressed;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final textColor = colors.text.homeCard;
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.base,
+            ),
+            child: _SeedGrid(mnemonic: mnemonic, textColor: textColor),
+          ),
+        ),
+        Positioned(
+          top: AppSpacing.s,
+          right: AppSpacing.s,
+          child: _CopyButton(copied: copied, onPressed: onCopyPressed),
+        ),
+      ],
+    );
+  }
+}
+
+class _SeedGrid extends StatelessWidget {
+  const _SeedGrid({required this.mnemonic, required this.textColor});
+
+  final String mnemonic;
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
     final words = mnemonic.split(' ');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -560,28 +590,80 @@ class _SeedGrid extends StatelessWidget {
             Expanded(
               child: Text(
                 'Secret Passphrase',
-                style: AppTypography.bodyLarge.copyWith(
-                  color: colors.text.accent,
+                style: AppTypography.labelLarge.copyWith(
+                  color: textColor,
                   fontWeight: FontWeight.w500,
                 ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: AppSpacing.base),
+        const SizedBox(height: AppSpacing.sm),
         Wrap(
           spacing: AppSpacing.xxs,
-          runSpacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xxs,
           children: [
             for (var i = 0; i < words.length; i++)
-              AppChip(
-                width: 90,
-                leadingText: '${i + 1}'.padLeft(2, '0'),
-                label: words[i],
+              _SeedPhraseChip(
+                index: i + 1,
+                word: words[i],
+                textColor: textColor,
               ),
           ],
         ),
       ],
+    );
+  }
+}
+
+class _SeedPhraseChip extends StatelessWidget {
+  const _SeedPhraseChip({
+    required this.index,
+    required this.word,
+    required this.textColor,
+  });
+
+  final int index;
+  final String word;
+  final Color textColor;
+
+  static const double _width = 90;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: _width,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 25),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xxs),
+          child: Row(
+            children: [
+              Text(
+                index.toString().padLeft(2, '0'),
+                style: AppTypography.codeSmall.copyWith(
+                  color: textColor.withValues(alpha: 0.5),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              Flexible(
+                child: Text(
+                  word,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Geist',
+                    fontWeight: FontWeight.w400,
+                    fontSize: 14,
+                    height: 16 / 14,
+                    letterSpacing: -0.06,
+                  ).copyWith(color: textColor),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -598,7 +680,6 @@ class _CopyButton extends StatelessWidget {
       onPressed: () => onPressed(),
       variant: AppButtonVariant.primary,
       size: AppButtonSize.small,
-      minWidth: 61,
       trailing: AppIcon(copied ? AppIcons.check : AppIcons.copy),
       child: Text(copied ? 'Copied' : 'Copy'),
     );

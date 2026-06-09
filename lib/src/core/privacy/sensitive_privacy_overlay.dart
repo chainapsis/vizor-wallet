@@ -241,6 +241,7 @@ class SensitivePrivacyOverlay extends StatefulWidget {
     required this.sensitiveContentVisible,
     required this.child,
     this.controller,
+    this.borderRadius = BorderRadius.zero,
     super.key,
   });
 
@@ -249,6 +250,7 @@ class SensitivePrivacyOverlay extends StatefulWidget {
   final bool sensitiveContentVisible;
   final Widget child;
   final SensitivePrivacyOverlayController? controller;
+  final BorderRadiusGeometry borderRadius;
 
   @override
   State<SensitivePrivacyOverlay> createState() =>
@@ -311,9 +313,10 @@ class _SensitivePrivacyOverlayState extends State<SensitivePrivacyOverlay> {
           children: [
             widget.child,
             if (showShield)
-              const Positioned.fill(
+              Positioned.fill(
                 child: _SensitivePrivacyShield(
                   key: SensitivePrivacyOverlay.shieldKey,
+                  borderRadius: widget.borderRadius,
                 ),
               ),
           ],
@@ -324,7 +327,9 @@ class _SensitivePrivacyOverlayState extends State<SensitivePrivacyOverlay> {
 }
 
 class _SensitivePrivacyShield extends StatelessWidget {
-  const _SensitivePrivacyShield({super.key});
+  const _SensitivePrivacyShield({required this.borderRadius, super.key});
+
+  final BorderRadiusGeometry borderRadius;
 
   static const _lightScrim = Color(0x33141818);
   static const _darkScrim = Color(0x33626767);
@@ -338,7 +343,8 @@ class _SensitivePrivacyShield extends StatelessWidget {
     final iconColor = isDark ? _darkIcon : _darkSurface;
 
     return IgnorePointer(
-      child: ClipRect(
+      child: ClipRRect(
+        borderRadius: borderRadius,
         child: BackdropFilter(
           filter: ui.ImageFilter.blur(sigmaX: 30, sigmaY: 30),
           child: DecoratedBox(

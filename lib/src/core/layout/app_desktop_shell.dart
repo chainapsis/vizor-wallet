@@ -66,14 +66,14 @@ class AppDesktopSidebarSurface extends StatelessWidget {
   final Clip clipBehavior;
   final bool glass;
 
-  static const _glassRadius = 20.0;
+  static const glassRadius = 20.0;
   static const _glassBlur = 17.5;
 
   @override
   Widget build(BuildContext context) {
     if (glass) {
       final isDark = context.appTheme == AppThemeData.dark;
-      final radius = BorderRadius.circular(_glassRadius);
+      final radius = BorderRadius.circular(glassRadius);
       final fill =
           backgroundColor ??
           (isDark ? const Color(0xFF101010) : const Color(0xFFFFFFFF));
