@@ -154,6 +154,44 @@ void main() {
     expect(find.text('Alice'), findsOneWidget);
   });
 
+  testWidgets('contact picker shares scrollbar controller for long lists', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        addressBookRepository: _FakeAddressBookRepository([
+          for (var index = 0; index < 8; index++)
+            _contact(
+              id: 'zcash-$index',
+              label: 'Contact $index',
+              network: AddressBookNetwork.zcash,
+              address: '$_shieldedAddress$index',
+            ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('send_contacts_button')));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final scrollbar = tester.widget<RawScrollbar>(
+      find.byKey(const ValueKey('address_book_contact_picker_scrollbar')),
+    );
+    final listView = tester.widget<ListView>(
+      find.descendant(
+        of: find.byKey(const ValueKey('address_book_contact_picker_modal')),
+        matching: find.byType(ListView),
+      ),
+    );
+
+    expect(scrollbar.thumbVisibility, isTrue);
+    expect(scrollbar.controller, same(listView.controller));
+  });
+
   testWidgets('memo input only opens after a valid shielded address', (
     tester,
   ) async {
@@ -227,10 +265,7 @@ Widget _sendHarness({
   final router = GoRouter(
     initialLocation: '/send',
     routes: [
-      GoRoute(
-        path: '/send',
-        builder: (_, _) => SendScreen(prefill: prefill),
-      ),
+      GoRoute(path: '/send', builder: (_, _) => SendScreen(prefill: prefill)),
       GoRoute(path: '/send/review', builder: (_, _) => const SizedBox.shrink()),
     ],
   );

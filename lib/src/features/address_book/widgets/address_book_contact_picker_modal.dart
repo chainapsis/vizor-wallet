@@ -137,16 +137,18 @@ class _AddressBookContactPickerModalState
                   const SizedBox(height: AppSpacing.md),
                   Expanded(
                     child: contactsAsync.when(
-                      loading: () => const Center(
-                        child: SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: AppIcon(AppIcons.loader, size: 18),
-                        ),
-                      ),
-                      error: (_, _) => const _ContactPickerEmptyResult(
-                        title: "Couldn't load contacts. Try again.",
-                      ),
+                      loading:
+                          () => const Center(
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: AppIcon(AppIcons.loader, size: 18),
+                            ),
+                          ),
+                      error:
+                          (_, _) => const _ContactPickerEmptyResult(
+                            title: "Couldn't load contacts. Try again.",
+                          ),
                       data: (state) {
                         final contacts = _filteredContacts(state);
                         if (contacts.isEmpty) {
@@ -172,7 +174,7 @@ class _AddressBookContactPickerModalState
   }
 }
 
-class _ContactPickerList extends StatelessWidget {
+class _ContactPickerList extends StatefulWidget {
   const _ContactPickerList({
     required this.contacts,
     required this.showNetwork,
@@ -184,11 +186,31 @@ class _ContactPickerList extends StatelessWidget {
   final ValueChanged<AddressBookContact> onSelected;
 
   @override
+  State<_ContactPickerList> createState() => _ContactPickerListState();
+}
+
+class _ContactPickerListState extends State<_ContactPickerList> {
+  late final ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return RawScrollbar(
       key: const ValueKey('address_book_contact_picker_scrollbar'),
-      thumbVisibility: contacts.length > 5,
+      controller: _scrollController,
+      thumbVisibility: widget.contacts.length > 5,
       radius: const Radius.circular(AppRadii.full),
       thickness: 6,
       mainAxisMargin: 6,
@@ -200,18 +222,19 @@ class _ContactPickerList extends StatelessWidget {
         child: ScrollConfiguration(
           behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
           child: ListView.separated(
+            controller: _scrollController,
             padding: EdgeInsets.zero,
-            itemCount: contacts.length,
+            itemCount: widget.contacts.length,
             separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
             itemBuilder: (context, index) {
-              final contact = contacts[index];
+              final contact = widget.contacts[index];
               return _ContactPickerRow(
                 key: ValueKey(
                   'address_book_contact_picker_contact_${contact.id}',
                 ),
                 contact: contact,
-                showNetwork: showNetwork,
-                onTap: () => onSelected(contact),
+                showNetwork: widget.showNetwork,
+                onTap: () => widget.onSelected(contact),
               );
             },
           ),
