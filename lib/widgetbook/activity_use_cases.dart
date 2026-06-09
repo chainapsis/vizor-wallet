@@ -6,440 +6,269 @@ import 'package:flutter/widgets.dart';
 import '../src/core/layout/app_desktop_shell.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_back_link.dart';
-import '../src/core/widgets/app_decorative_divider.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/features/activity/models/activity_row_data.dart';
-import '../src/features/activity/swap_activity_row_mapper.dart';
-import '../src/features/activity/widgets/activity_table.dart';
-import '../src/features/swap/models/swap_models.dart';
+import '../src/features/activity/widgets/activity_feed.dart';
 
-Widget buildActivitySwapProgressExternalToZecUseCase(BuildContext context) {
-  return _ActivityScreenFrame(
-    rows: _swapActivityRows(
-      context,
-      swapRecord: _swapRecord(
-        id: 'figma-swap-progress-usdc-zec',
-        direction: SwapDirection.externalToZec,
-        status: SwapIntentStatus.processing,
-        sellAmountText: '101.23 USDC',
-        receiveEstimateText: '4.12 ZEC',
-        lastStatusCheckedAt: DateTime.now().subtract(
-          const Duration(minutes: 1),
-        ),
-      ),
-    ),
-  );
-}
-
-Widget buildActivitySwapProgressZecToExternalUseCase(BuildContext context) {
-  return _ActivityScreenFrame(
-    rows: _swapActivityRows(
-      context,
-      swapRecord: _swapRecord(
-        id: 'figma-swap-progress-zec-usdc',
-        direction: SwapDirection.zecToExternal,
-        status: SwapIntentStatus.processing,
-        sellAmountText: '4.12 ZEC',
-        receiveEstimateText: '110.12 USDC',
-        lastStatusCheckedAt: DateTime.now().subtract(
-          const Duration(minutes: 1),
-        ),
-      ),
-    ),
-  );
-}
-
-Widget buildActivitySwapSendingZecToExternalUseCase(BuildContext context) {
-  return _ActivityScreenFrame(
-    rows: _swapActivityRows(
-      context,
-      swapRecord: _swapRecord(
-        id: 'figma-swap-sending-zec-usdc',
-        direction: SwapDirection.zecToExternal,
-        status: SwapIntentStatus.awaitingDeposit,
-        sellAmountText: '4.12 ZEC',
-        receiveEstimateText: '110.12 USDC',
-        lastStatusCheckedAt: DateTime.now().subtract(
-          const Duration(minutes: 1),
-        ),
-      ),
-    ),
-  );
-}
-
-Widget buildActivitySwapConfirmingZecToExternalUseCase(BuildContext context) {
-  return _ActivityScreenFrame(
-    rows: _swapActivityRows(
-      context,
-      swapRecord: _swapRecord(
-        id: 'figma-swap-confirming-zec-usdc',
-        direction: SwapDirection.zecToExternal,
-        status: SwapIntentStatus.awaitingDeposit,
-        sellAmountText: '4.12 ZEC',
-        receiveEstimateText: '110.12 USDC',
-        depositTxHash: 'zec-deposit-txid',
-        lastStatusCheckedAt: DateTime.now().subtract(
-          const Duration(minutes: 1),
-        ),
-      ),
-    ),
-  );
-}
-
-Widget buildActivitySwapSuccessExternalToZecUseCase(BuildContext context) {
-  return _ActivityScreenFrame(
-    rows: _swapActivityRows(
-      context,
-      swapRecord: _swapRecord(
-        id: 'figma-swap-success-usdc-zec',
-        direction: SwapDirection.externalToZec,
-        status: SwapIntentStatus.complete,
-        sellAmountText: '101.23 USDC',
-        receiveEstimateText: '4.12 ZEC',
-        completedAt: DateTime.now().subtract(const Duration(minutes: 1)),
-      ),
-    ),
-  );
-}
-
-Widget buildActivitySwapSuccessZecToExternalUseCase(BuildContext context) {
-  return _ActivityScreenFrame(
-    rows: _swapActivityRows(
-      context,
-      swapRecord: _swapRecord(
-        id: 'figma-swap-success-zec-usdc',
-        direction: SwapDirection.zecToExternal,
-        status: SwapIntentStatus.complete,
-        sellAmountText: '4.12 ZEC',
-        receiveEstimateText: '112.10 USDC',
-        completedAt: DateTime.now().subtract(const Duration(minutes: 1)),
-      ),
-    ),
-  );
-}
-
-Widget buildActivitySwapFailedExternalToZecUseCase(BuildContext context) {
-  return _ActivityScreenFrame(
-    rows: _swapActivityRows(
-      context,
-      swapRecord: _swapRecord(
-        id: 'figma-swap-failed-usdc-zec',
-        direction: SwapDirection.externalToZec,
-        status: SwapIntentStatus.failed,
-        sellAmountText: '101.23 USDC',
-        receiveEstimateText: '4.12 ZEC',
-      ),
-    ),
-  );
-}
-
-Widget buildActivitySwapFailedZecToExternalUseCase(BuildContext context) {
-  return _ActivityScreenFrame(
-    rows: _swapActivityRows(
-      context,
-      swapRecord: _swapRecord(
-        id: 'figma-swap-failed-zec-usdc',
-        direction: SwapDirection.zecToExternal,
-        status: SwapIntentStatus.failed,
-        sellAmountText: '4.12 ZEC',
-        receiveEstimateText: '110.12 USDC',
-      ),
-    ),
-  );
-}
-
-class _ActivityScreenFrame extends StatelessWidget {
-  const _ActivityScreenFrame({required this.rows});
-
-  final List<ActivityRowData> rows;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return ColoredBox(
-      color: colors.background.base,
-      child: Center(
-        child: FittedBox(
-          fit: BoxFit.contain,
-          child: SizedBox(
-            width: 1080,
-            height: 720,
-            child: ColoredBox(
-              color: colors.background.base,
-              child: AppDesktopShell(
-                sidebar: const _PreviewActivitySidebar(),
-                pane: AppDesktopPane(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.md,
-                    AppSpacing.md,
-                    AppSpacing.md,
-                    0,
+Widget buildActivityPageUseCase(BuildContext context) {
+  return SizedBox(
+    width: 1080,
+    height: 720,
+    child: AppDesktopShell(
+      sidebar: const _ActivityUseCaseSidebar(),
+      pane: AppDesktopPane(
+        padding: EdgeInsets.zero,
+        child: ColoredBox(
+          key: const ValueKey('activity_page_pane_background'),
+          color: context.colors.macosUtility.window,
+          child: Stack(
+            children: [
+              const Positioned(
+                left: 0,
+                top: 0,
+                right: 0,
+                height: 48,
+                child: AppPaneToolbar(
+                  leading: AppBackLink(
+                    key: ValueKey('activity_page_back_button'),
+                    label: 'Home',
+                    minWidth: 60,
+                    onTap: _noop,
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: AppBackLink(
-                          label: 'Back',
-                          minWidth: 60,
-                          onTap: () {},
-                        ),
-                      ),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(
-                            top: AppSpacing.s,
-                            bottom: AppSpacing.s,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Center(
-                                child: Text(
-                                  'Activity',
-                                  style: AppTypography.displaySmall.copyWith(
-                                    color: colors.text.accent,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.sm),
-                              const Center(
-                                child: AppDecorativeDivider(width: 256),
-                              ),
-                              const SizedBox(height: AppSpacing.sm),
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.xs,
-                                  ),
-                                  child: ActivityTable(
-                                    rows: rows,
-                                    showPagination: true,
-                                    pinPaginationToBottom: true,
-                                    currentPage: 1,
-                                    totalPages: 10,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
+                  padding: EdgeInsets.only(
+                    left: AppSpacing.md,
+                    top: AppSpacing.xs,
+                    bottom: AppSpacing.xs,
                   ),
                 ),
               ),
-            ),
+              Positioned(
+                left: 0,
+                top: 48,
+                right: 0,
+                bottom: 0,
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(
+                    context,
+                  ).copyWith(scrollbars: false),
+                  child: SingleChildScrollView(
+                    key: const ValueKey('activity_page_scroll_view'),
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: SizedBox(
+                        width: 420,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: AppSpacing.sm),
+                          child: ActivityFeed(
+                            sections: _activitySections(context),
+                            rowKeyPrefix: 'activity_page',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
-List<ActivityRowData> _swapActivityRows(
-  BuildContext context, {
-  required SwapIntentRecord swapRecord,
-}) {
+void _noop() {}
+
+List<ActivityFeedSectionData> _activitySections(BuildContext context) {
   return [
-    buildSwapActivityRow(
-      context: context,
-      item: SwapActivityRowItem.fromRecord(swapRecord),
+    ActivityFeedSectionData(
+      title: 'This week',
+      rows: [
+        _activityRow(
+          context,
+          title: 'Swapping...',
+          iconName: AppIcons.swapArrows,
+          subtitle: 'USDC on Optimism',
+          amountText: '-26.60 USDC',
+          progress: 0.75,
+          childRows: [
+            _activityRow(
+              context,
+              title: 'Receiving ZEC...',
+              amountText: '+12.13 ZEC',
+              amountColor: context.colors.text.primary,
+              statusText: 'In progress',
+            ),
+          ],
+        ),
+        _activityRow(
+          context,
+          title: 'Received ZEC',
+          iconName: AppIcons.arrowDownCircle,
+          subtitle: 'Shielded',
+          subtitleIconName: AppIcons.shieldKeyholeOutline,
+          amountText: '+31.10 ZEC',
+          amountColor: context.colors.text.positiveStrong,
+        ),
+        _activityRow(
+          context,
+          title: 'Sent ZEC',
+          iconName: AppIcons.plane,
+          subtitle: 'Shielded',
+          subtitleIconName: AppIcons.shieldKeyholeOutline,
+          amountText: '-4.12 ZEC',
+        ),
+      ],
     ),
-    _failedSentRow(context),
-    _sentRow(context, selected: true),
-    _sentRow(context),
-    _sentRow(context),
+    ActivityFeedSectionData(
+      title: 'April 2026',
+      rows: [
+        _activityRow(
+          context,
+          title: 'Send failed',
+          iconName: AppIcons.plane,
+          subtitle: 'Transparent',
+          amountText: '1.11 ZEC',
+          amountIconName: AppIcons.arrowBack,
+          amountSubtitle: 'Refunded',
+          statusText: 'Failed',
+          statusIconName: AppIcons.skull,
+          statusColor: context.colors.text.destructive,
+        ),
+        _activityRow(
+          context,
+          title: 'Shielded',
+          iconName: AppIcons.shieldKeyholeOutline,
+          amountText: '0.30 ZEC',
+        ),
+      ],
+    ),
   ];
 }
 
-SwapIntentRecord _swapRecord({
-  required String id,
-  required SwapDirection direction,
-  required SwapIntentStatus status,
-  required String sellAmountText,
-  required String receiveEstimateText,
-  DateTime? completedAt,
-  String? depositTxHash,
-  DateTime? lastStatusCheckedAt,
+ActivityRowData _activityRow(
+  BuildContext context, {
+  required String title,
+  required String amountText,
+  String iconName = AppIcons.sync,
+  String? subtitle,
+  String? subtitleIconName,
+  String? amountIconName,
+  String? amountSubtitle,
+  String statusText = 'Completed',
+  String? statusIconName,
+  Color? statusColor,
+  Color? amountColor,
+  double? progress,
+  List<ActivityRowData> childRows = const [],
 }) {
-  final now = DateTime.now();
-  final externalAsset = SwapAsset.live(
-    assetId: 'figma-usdc-op',
-    symbol: 'USDC',
-    blockchain: 'op',
-    decimals: 6,
-  );
-  return SwapIntentRecord(
-    id: id,
-    providerLabel: 'NEAR Intents',
-    pairText: direction == SwapDirection.externalToZec
-        ? 'USDC -> ZEC'
-        : 'ZEC -> USDC',
-    sellAmountText: sellAmountText,
-    receiveEstimateText: receiveEstimateText,
-    status: status,
-    nextAction: status == SwapIntentStatus.complete
-        ? 'Completed'
-        : status == SwapIntentStatus.failed
-        ? 'Swap failed'
-        : 'In progress',
-    direction: direction,
-    externalAsset: externalAsset,
-    createdAt: now.subtract(const Duration(minutes: 8)),
-    updatedAt: now,
-    completedAt: completedAt,
-    depositTxHash: depositTxHash,
-    lastStatusCheckedAt: lastStatusCheckedAt,
-  );
-}
-
-ActivityRowData _failedSentRow(BuildContext context) {
   final colors = context.colors;
   return ActivityRowData(
-    title: 'Send failed',
-    leadingIconName: AppIcons.plane,
+    title: title,
+    leadingIconName: iconName,
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
-    subtitle: 'Transparent',
-    amountText: '1.11 ZEC',
-    amountIconName: AppIcons.arrowBack,
-    amountIconColor: colors.icon.regular,
-    amountColor: colors.text.accent,
-    amountSubtitle: 'Refunded',
-    statusText: 'Failed',
-    statusIconName: AppIcons.skull,
-    statusColor: colors.text.destructive,
-    timestampText: 'Apr, 25 10:25',
+    leadingProgressValue: progress,
+    subtitle: subtitle,
+    subtitleIconName: subtitleIconName,
+    amountText: amountText,
+    amountIconName: amountIconName,
+    amountIconColor: amountIconName == null ? null : colors.icon.regular,
+    amountColor: amountColor ?? colors.text.primary,
+    amountSubtitle: amountSubtitle,
+    statusText: statusText,
+    statusIconName: statusIconName,
+    statusColor: statusColor ?? colors.text.secondary,
+    timestampText: 'Today, 13:11',
+    childRows: childRows,
   );
 }
 
-ActivityRowData _sentRow(BuildContext context, {bool selected = false}) {
-  final colors = context.colors;
-  return ActivityRowData(
-    title: 'Sent',
-    leadingIconName: AppIcons.plane,
-    leadingBackgroundColor: colors.background.neutralSubtleOpacity,
-    leadingIconColor: colors.icon.regular,
-    subtitle: 'Shielded',
-    subtitleIconName: AppIcons.shieldKeyholeOutline,
-    amountText: '-4.12 ZEC',
-    amountColor: colors.text.accent,
-    statusText: 'Completed',
-    timestampText: 'Apr, 25 10:25',
-    selected: selected,
-  );
-}
-
-class _PreviewActivitySidebar extends StatelessWidget {
-  const _PreviewActivitySidebar();
+class _ActivityUseCaseSidebar extends StatelessWidget {
+  const _ActivityUseCaseSidebar();
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return AppDesktopSidebarSurface(
+      glass: true,
       clipBehavior: Clip.none,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xs),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(
-                left: AppSpacing.xs,
-                right: AppSpacing.xs,
-                bottom: AppSpacing.xs,
-              ),
-              child: Column(
-                children: [
-                  AppSidebarItem(
-                    label: 'Username',
-                    iconName: AppIcons.user,
-                    leadingGap: AppSpacing.xs,
-                    onTap: () {},
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  AppSidebarItem(
-                    label: 'Home',
-                    iconName: AppIcons.home,
-                    onTap: () {},
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  AppSidebarItem(
-                    label: 'Swap',
-                    iconName: AppIcons.swapArrows,
-                    onTap: () {},
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  AppSidebarItem(
-                    label: 'Address book',
-                    iconName: AppIcons.users,
-                    onTap: () {},
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  const AppSidebarItem(
-                    label: 'Activity',
-                    iconName: AppIcons.history,
-                    active: true,
-                  ),
-                ],
-              ),
+            const SizedBox(height: 40),
+            const AppSidebarItem(
+              label: 'Username',
+              iconName: AppIcons.user,
+              leadingGap: AppSpacing.xs,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppSidebarItem(
+              label: 'Home',
+              iconName: AppIcons.home,
+              onTap: () {},
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            AppSidebarItem(
+              label: 'Swap',
+              iconName: AppIcons.swapArrows,
+              onTap: () {},
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            const AppSidebarItem(
+              label: 'Activity',
+              iconName: AppIcons.history,
+              active: true,
             ),
             const Spacer(),
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.xs),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+            AppSidebarItem(
+              label: 'Settings',
+              iconName: AppIcons.cog,
+              onTap: () {},
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            AppSidebarItem(
+              label: 'Sign out',
+              iconName: AppIcons.logOut,
+              onTap: () {},
+            ),
+            const SizedBox(height: AppSpacing.md),
+            SizedBox(
+              height: 34,
+              child: Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  AppSidebarItem(
-                    label: 'Settings',
-                    iconName: AppIcons.cog,
-                    onTap: () {},
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  AppSidebarItem(
-                    label: 'Sign out',
-                    iconName: AppIcons.logOut,
-                    onTap: () {},
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  SizedBox(
-                    height: 34,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Positioned(
-                          left: -AppSpacing.md,
-                          top: 1,
-                          bottom: 1,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: colors.sync.lightSuccess,
-                              borderRadius: const BorderRadius.horizontal(
-                                right: Radius.circular(AppRadii.full),
-                              ),
-                            ),
-                            child: const SizedBox(width: 5),
-                          ),
+                  Positioned(
+                    left: -AppSpacing.sm,
+                    top: 1,
+                    bottom: 1,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colors.sync.lightSuccess,
+                        borderRadius: const BorderRadius.horizontal(
+                          right: Radius.circular(AppRadii.full),
                         ),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            '34% Syncing...',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.labelLarge.copyWith(
-                              color: colors.sync.textSyncing,
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
+                      child: const SizedBox(width: 5),
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '34% Syncing...',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.sync.textSyncing,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
+            const SizedBox(height: AppSpacing.sm),
           ],
         ),
       ),

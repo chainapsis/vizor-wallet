@@ -9,24 +9,6 @@ import 'models/activity_row_data.dart';
 
 const _activityAmountPrivacyMaskLength = 3;
 
-List<ActivityRowData> buildActivityRows({
-  required BuildContext context,
-  required Iterable<rust_sync.TransactionInfo> transactions,
-  bool privacyModeEnabled = false,
-  ValueChanged<rust_sync.TransactionInfo>? onTransactionTap,
-}) {
-  return [
-    ...transactions.map(
-      (tx) => buildTransactionActivityRow(
-        context: context,
-        transaction: tx,
-        privacyModeEnabled: privacyModeEnabled,
-        onTap: onTransactionTap == null ? null : () => onTransactionTap(tx),
-      ),
-    ),
-  ];
-}
-
 ActivityRowData buildTransactionActivityRow({
   required BuildContext context,
   required rust_sync.TransactionInfo transaction,
@@ -73,8 +55,8 @@ ActivityRowData buildTransactionActivityRow({
     amountColor: isFailed
         ? colors.text.accent
         : isInbound
-        ? colors.text.brandCrimson
-        : colors.text.accent,
+        ? colors.text.positiveStrong
+        : colors.text.primary,
     amountSubtitle: isFailed && amount != BigInt.zero ? 'Refunded' : null,
     statusText: isFailed
         ? 'Failed'
