@@ -2892,6 +2892,14 @@ void main() {
       find.byKey(const ValueKey('swap_external_asset_menu')),
       findsOneWidget,
     );
+    final assetModal = tester.widget<Container>(
+      find.byKey(const ValueKey('swap_external_asset_menu')),
+    );
+    final assetDecoration = assetModal.decoration as BoxDecoration;
+    expect(assetModal.clipBehavior, Clip.antiAlias);
+    expect(assetDecoration.color, AppThemeData.light.colors.background.base);
+    expect(assetDecoration.borderRadius, BorderRadius.circular(AppRadii.large));
+    expect(assetDecoration.boxShadow, _figmaModalSurfaceShadows);
     expect(
       find.byKey(const ValueKey('swap_asset_chain_badge_usdc')),
       findsWidgets,
@@ -7368,6 +7376,12 @@ void main() {
     expect(swapProvider.submittedDeposits, hasLength(1));
   });
 }
+
+const _figmaModalSurfaceShadows = [
+  BoxShadow(color: Color(0x14000000), offset: Offset(0, 14), blurRadius: 28),
+  BoxShadow(color: Color(0x08000000), offset: Offset(0, -6), blurRadius: 12),
+  BoxShadow(color: Color(0x0F000000), offset: Offset(0, 2), blurRadius: 8),
+];
 
 Widget _routerHarness(
   GoRouter router, {

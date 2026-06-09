@@ -2,13 +2,13 @@ import 'package:flutter/widgets.dart';
 
 /// Typography tokens from the Figma design system.
 ///
-/// Mirrors the `Desktop / {Display, Body, Label, Code}` group of the
-/// Figma token sheet (`Mode 1.tokens.json`) one-to-one — every named
-/// style there has a matching constant here, and changes to the sheet
-/// land in this file.
+/// Mirrors the Desktop mode in `3 Fonts.zip` for Headline, Body, Label, and
+/// Code tokens. A few pre-redesign `display*` aliases remain for existing
+/// screens, but new surfaces should prefer the matching headline/body/label
+/// token name.
 ///
-/// Naming maps Figma → Dart by full word and camelCase: `Display Medium`
-/// → `displayMedium`, `Body L` → `bodyLarge`, `Label S` → `labelSmall`,
+/// Naming maps Figma → Dart by full word and camelCase: `Headline M`
+/// → `headlineMedium`, `Body L` → `bodyLarge`, `Label S` → `labelSmall`,
 /// `Code M` → `codeMedium`. The one outlier is `Body M Medium`, the
 /// emphasis variant of the regular body — surfaced as
 /// [bodyMediumStrong].
@@ -42,14 +42,14 @@ abstract final class AppTypography {
     letterSpacing: -2,
   );
 
-  /// Display Medium — hero headlines (e.g. "Welcome to Vizor").
+  /// Display Medium — legacy alias for Headline XL.
   ///
-  /// Libre Caslon Text Regular, 45 / 52 px, letter-spacing −1.35.
+  /// Libre Caslon Text Regular, 45 / 48 px, letter-spacing −1.35.
   static const displayMedium = TextStyle(
     fontFamily: 'Libre Caslon Text',
     fontWeight: FontWeight.w400,
     fontSize: 45,
-    height: 52 / 45,
+    height: 48 / 45,
     letterSpacing: -1.35,
   );
 
@@ -67,23 +67,23 @@ abstract final class AppTypography {
 
   /// Headline Large — section headings inside content panes.
   ///
-  /// Libre Caslon Text Regular, 32 / 40 px, letter-spacing 0.
+  /// Libre Caslon Text Regular, 32 / 33 px, letter-spacing 0.
   static const headlineLarge = TextStyle(
     fontFamily: 'Libre Caslon Text',
     fontWeight: FontWeight.w400,
     fontSize: 32,
-    height: 40 / 32,
+    height: 33 / 32,
     letterSpacing: 0,
   );
 
   /// Headline Medium — sub-section headings.
   ///
-  /// Libre Caslon Text Regular, 28 / 36 px, letter-spacing −0.28.
+  /// Libre Caslon Text Regular, 28 / 30 px, letter-spacing −0.28.
   static const headlineMedium = TextStyle(
     fontFamily: 'Libre Caslon Text',
     fontWeight: FontWeight.w400,
     fontSize: 28,
-    height: 36 / 28,
+    height: 30 / 28,
     letterSpacing: -0.28,
   );
 
@@ -174,23 +174,23 @@ abstract final class AppTypography {
 
   /// Label M — button labels and inline UI copy at the same size.
   ///
-  /// Geist Medium, 12 / 16 px, letter-spacing −0.06.
+  /// Geist Medium, 14 / 16 px, letter-spacing −0.06.
   static const labelMedium = TextStyle(
     fontFamily: 'Geist',
     fontWeight: FontWeight.w500,
-    fontSize: 12,
-    height: 16 / 12,
+    fontSize: 14,
+    height: 16 / 14,
     letterSpacing: -0.06,
   );
 
   /// Label S — micro-copy: tag pills, status badges, dense controls.
   ///
-  /// Geist Medium, 11 / 14 px, letter-spacing 0.
+  /// Geist Medium, 13 / 14 px, letter-spacing 0.
   static const labelSmall = TextStyle(
     fontFamily: 'Geist',
     fontWeight: FontWeight.w500,
-    fontSize: 11,
-    height: 14 / 11,
+    fontSize: 13,
+    height: 14 / 13,
     letterSpacing: 0,
   );
 
@@ -213,12 +213,12 @@ abstract final class AppTypography {
   /// Code S — secondary monospace copy (e.g. mnemonic word indices,
   /// compact numeric metadata).
   ///
-  /// Geist Mono Medium, 12 / 17 px, letter-spacing 0.
+  /// Geist Mono Medium, 13 / 17 px, letter-spacing 0.
   static const codeSmall = TextStyle(
     fontFamily: 'Geist Mono',
     fontWeight: FontWeight.w500,
-    fontSize: 12,
-    height: 17 / 12,
+    fontSize: 13,
+    height: 17 / 13,
     letterSpacing: 0,
   );
 }

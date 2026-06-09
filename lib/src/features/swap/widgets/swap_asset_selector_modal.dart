@@ -27,6 +27,12 @@ class SwapAssetSelectorModal extends StatefulWidget {
 }
 
 class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
+  static const _modalSurfaceShadows = [
+    BoxShadow(color: Color(0x14000000), offset: Offset(0, 14), blurRadius: 28),
+    BoxShadow(color: Color(0x08000000), offset: Offset(0, -6), blurRadius: 12),
+    BoxShadow(color: Color(0x0F000000), offset: Offset(0, 2), blurRadius: 8),
+  ];
+
   late final TextEditingController _queryController;
   late final FocusNode _focusNode;
   late final ScrollController _scrollController;
@@ -87,10 +93,12 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
       key: const ValueKey('swap_external_asset_menu'),
       width: 312,
       height: 440,
+      clipBehavior: Clip.antiAlias,
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
       decoration: BoxDecoration(
-        color: colors.background.ground,
+        color: colors.background.base,
         borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: _modalSurfaceShadows,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -117,7 +125,7 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
           Container(
             height: 46,
             decoration: BoxDecoration(
-              color: colors.background.base,
+              color: colors.background.ground,
               border: Border.all(color: searchBorderColor, width: 1.5),
               borderRadius: BorderRadius.circular(AppRadii.small),
             ),

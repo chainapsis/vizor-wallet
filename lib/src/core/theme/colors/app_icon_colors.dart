@@ -54,8 +54,8 @@ class AppIconColors {
     warning: GoldPrimitives.p500Dark,
     destructive: PlumPrimitives.p400Dark,
     destructiveLight: PlumPrimitives.p300Dark,
-    success: GoldPrimitives.p500Dark,
-    brandCrimson: CrimsonPrimitives.p300Dark,
+    success: GreenPrimitives.p300Dark,
+    brandCrimson: CrimsonPrimitives.p400Dark,
   );
 
   static const light = AppIconColors(
@@ -68,7 +68,7 @@ class AppIconColors {
     warning: GoldPrimitives.p300Light,
     destructive: PlumPrimitives.p300Light,
     destructiveLight: PlumPrimitives.p200Light,
-    success: GoldPrimitives.p300Light,
+    success: GreenPrimitives.p500Light,
     brandCrimson: CrimsonPrimitives.p300Light,
   );
 }

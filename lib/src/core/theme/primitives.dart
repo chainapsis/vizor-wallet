@@ -109,6 +109,9 @@ abstract final class Primitives {
   static const p400Alpha35Dark = Color(0x59626767);
   static const p400Alpha35Light = Color(0x599A9A9A);
 
+  static const p500Alpha50Dark = Color(0x80858686);
+  static const p500Alpha50Light = Color(0x80858686);
+
   static const p700Alpha50Dark = Color(0x80C2C3C3);
   static const p700Alpha50Light = Color(0x804D5252);
 
@@ -193,52 +196,52 @@ abstract final class CrimsonPrimitives {
 /// Used for destructive actions and validation errors.
 abstract final class PlumPrimitives {
   static const p0Dark = Color(0xFF0B060D);
-  static const p0Light = Color(0xFFF6EDF8);
+  static const p0Light = Color(0xFFF6ECF9);
 
-  static const p50Dark = Color(0xFF2D1835);
-  static const p50Light = Color(0xFFE2CBE6);
+  static const p50Dark = Color(0xFF2F133A);
+  static const p50Light = Color(0xFFE6C5EC);
 
-  static const p100Dark = Color(0xFF492B54);
-  static const p100Light = Color(0xFFC598CD);
+  static const p100Dark = Color(0xFF4E205F);
+  static const p100Light = Color(0xFFCD8CD9);
 
-  static const p150Dark = Color(0xFF583465);
-  static const p150Light = Color(0xFFB67CC0);
+  static const p150Dark = Color(0xFF5E2673);
+  static const p150Light = Color(0xFFC06ECE);
 
-  static const p200Dark = Color(0xFF6C4077);
-  static const p200Light = Color(0xFFAC6CB7);
+  static const p200Dark = Color(0xFF772E89);
+  static const p200Light = Color(0xFFB85BC8);
 
-  static const p300Dark = Color(0xFF854E91);
-  static const p300Light = Color(0xFF9A59A6);
+  static const p300Dark = Color(0xFF9338A7);
+  static const p300Light = Color(0xFFAB40BF);
 
-  static const p400Dark = Color(0xFF9A59A6);
-  static const p400Light = Color(0xFF854E91);
+  static const p400Dark = Color(0xFFAB40BF);
+  static const p400Light = Color(0xFF9338A7);
 
-  static const p500Dark = Color(0xFFAC6CB7);
-  static const p500Light = Color(0xFF6C4077);
+  static const p500Dark = Color(0xFFB85BC8);
+  static const p500Light = Color(0xFF772E89);
 
-  static const p600Dark = Color(0xFFB67CC0);
-  static const p600Light = Color(0xFF583465);
+  static const p600Dark = Color(0xFFC06ECE);
+  static const p600Light = Color(0xFF5E2673);
 
-  static const p700Dark = Color(0xFFC598CD);
-  static const p700Light = Color(0xFF492B54);
+  static const p700Dark = Color(0xFFCD8CD9);
+  static const p700Light = Color(0xFF4E205F);
 
-  static const p800Dark = Color(0xFFE2CBE6);
-  static const p800Light = Color(0xFF2D1835);
+  static const p800Dark = Color(0xFFE6C5EC);
+  static const p800Light = Color(0xFF2F133A);
 
-  static const p900Dark = Color(0xFFF6EDF8);
-  static const p900Light = Color(0xFF0B060D);
+  static const p900Dark = Color(0xFFF6ECF9);
+  static const p900Light = Color(0xFF0C050E);
 
-  static const p400Alpha4Dark = Color(0x0AB760C4);
-  static const p400Alpha4Light = Color(0x0A854E91);
+  static const p400Alpha4Dark = Color(0x0AAB40BF);
+  static const p400Alpha4Light = Color(0x0A9338A7);
 
-  static const p400Alpha8Dark = Color(0x14B760C4);
-  static const p400Alpha8Light = Color(0x14854E91);
+  static const p400Alpha8Dark = Color(0x14AB40BF);
+  static const p400Alpha8Light = Color(0x149338A7);
 
-  static const p400Alpha15Dark = Color(0x26B760C4);
-  static const p400Alpha15Light = Color(0x26854E91);
+  static const p400Alpha15Dark = Color(0x26AB40BF);
+  static const p400Alpha15Light = Color(0x269338A7);
 
-  static const p400Alpha25Dark = Color(0x40B760C4);
-  static const p400Alpha25Light = Color(0x40854E91);
+  static const p400Alpha25Dark = Color(0x40AB40BF);
+  static const p400Alpha25Light = Color(0x409338A7);
 }
 
 /// Utility gold primitive ladder.
