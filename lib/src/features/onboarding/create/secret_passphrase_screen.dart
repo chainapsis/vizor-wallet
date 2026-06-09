@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:ui';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart' show CircularProgressIndicator;
 import 'package:flutter/services.dart';
@@ -207,23 +207,78 @@ class _SecretPassphraseScreenState
       child: SensitivePrivacyOverlay(
         sensitiveContentVisible: _revealed && _mnemonic != null,
         controller: widget.privacyOverlayController,
-        child: OnboardingPaneScaffold(
-          backTarget: OnboardingBackTarget.route(
-            label: OnboardingStep.thingsToKnow.label,
-            routePath: OnboardingStep.thingsToKnow.routePath,
-          ),
-          child: _HeroLayout(
-            mnemonic: _mnemonic,
-            isPreparing: _isPreparing,
-            submitPhase: _submitPhase,
-            revealed: _revealed,
-            copied: _copied,
-            prepareError: _prepareError,
-            submitError: _submitError,
-            onPrimaryPressed: _handlePrimaryAction,
-            onCopyPressed: _copyMnemonic,
-          ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const _SecretPassphraseBackground(),
+            OnboardingPaneScaffold(
+              backTarget: OnboardingBackTarget.route(
+                label: OnboardingStep.thingsToKnow.label,
+                routePath: OnboardingStep.thingsToKnow.routePath,
+              ),
+              bodyPadding: EdgeInsets.zero,
+              child: _HeroLayout(
+                mnemonic: _mnemonic,
+                isPreparing: _isPreparing,
+                submitPhase: _submitPhase,
+                revealed: _revealed,
+                copied: _copied,
+                prepareError: _prepareError,
+                submitError: _submitError,
+                onPrimaryPressed: _handlePrimaryAction,
+                onCopyPressed: _copyMnemonic,
+              ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _SecretPassphraseBackground extends StatelessWidget {
+  const _SecretPassphraseBackground();
+
+  static const double _basePaneWidth = 800;
+  static const double _basePaneHeight = 704;
+  static const double _baseImageWidth = 1080;
+  static const double _baseImageHeight = 720;
+  static const double _baseImageLeft = -272;
+  static const double _baseImageTop = -8;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.appTheme == AppThemeData.dark;
+    final asset = isDark
+        ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
+        : 'assets/illustrations/onboarding_secret_passphrase_background_light.png';
+
+    return DecoratedBox(
+      decoration: BoxDecoration(color: context.colors.background.window),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final scale = math.max(
+            constraints.maxWidth / _basePaneWidth,
+            constraints.maxHeight / _basePaneHeight,
+          );
+
+          return Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              Positioned(
+                left: _baseImageLeft * scale,
+                top: _baseImageTop * scale,
+                width: _baseImageWidth * scale,
+                height: _baseImageHeight * scale,
+                child: Image.asset(
+                  asset,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.topCenter,
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -252,37 +307,55 @@ class _HeroLayout extends StatelessWidget {
   final Future<void> Function() onPrimaryPressed;
   final Future<void> Function() onCopyPressed;
 
+  static const double _contentAreaWidth = 420;
+  static const double _contentPaddingX = 12;
+  static const double _contentPaddingY = 16;
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         Expanded(
           child: Center(
-            child: _HeroBlock(
-              mnemonic: mnemonic,
-              isPreparing: isPreparing,
-              revealed: revealed,
-              copied: copied,
-              prepareError: prepareError,
-              onCopyPressed: onCopyPressed,
+            child: SizedBox(
+              width: _contentAreaWidth,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: _contentPaddingX,
+                  vertical: _contentPaddingY,
+                ),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: _OnPageContent(
+                        mnemonic: mnemonic,
+                        isPreparing: isPreparing,
+                        revealed: revealed,
+                        copied: copied,
+                        prepareError: prepareError,
+                        onCopyPressed: onCopyPressed,
+                      ),
+                    ),
+                    _BottomActions(
+                      isPreparing: isPreparing,
+                      submitPhase: submitPhase,
+                      revealed: revealed,
+                      submitError: submitError,
+                      onPrimaryPressed: onPrimaryPressed,
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _BottomActions(
-          isPreparing: isPreparing,
-          submitPhase: submitPhase,
-          revealed: revealed,
-          submitError: submitError,
-          onPrimaryPressed: onPrimaryPressed,
         ),
       ],
     );
   }
 }
 
-class _HeroBlock extends StatelessWidget {
-  const _HeroBlock({
+class _OnPageContent extends StatelessWidget {
+  const _OnPageContent({
     required this.mnemonic,
     required this.isPreparing,
     required this.revealed,
@@ -298,24 +371,15 @@ class _HeroBlock extends StatelessWidget {
   final String? prepareError;
   final Future<void> Function() onCopyPressed;
 
+  static const double _sectionGap = 32;
+
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     return Column(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(
-          'Secret Passphrase',
-          style: AppTypography.displayLarge.copyWith(color: colors.text.accent),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(
-          'The master key to your wallet.',
-          style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: AppSpacing.lg),
+        const _TitleBlock(),
+        const SizedBox(height: _sectionGap),
         _SeedPhraseCard(
           mnemonic: mnemonic,
           isLoading: isPreparing,
@@ -323,6 +387,43 @@ class _HeroBlock extends StatelessWidget {
           copied: copied,
           error: prepareError,
           onCopyPressed: onCopyPressed,
+        ),
+      ],
+    );
+  }
+}
+
+class _TitleBlock extends StatelessWidget {
+  const _TitleBlock();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.center,
+          child: Text(
+            'Secret Passphrase',
+            style: AppTypography.displayLarge.copyWith(
+              fontFamily: 'Young Serif',
+              fontWeight: FontWeight.w400,
+              color: colors.text.accent,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.visible,
+            softWrap: false,
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Text(
+          'The master key to your wallet.',
+          style: AppTypography.bodyMediumStrong.copyWith(
+            color: colors.text.accent,
+          ),
+          textAlign: TextAlign.center,
         ),
       ],
     );
@@ -344,7 +445,7 @@ class _BottomActions extends StatelessWidget {
   final String? submitError;
   final Future<void> Function() onPrimaryPressed;
 
-  static const double _buttonWidth = 256;
+  static const double _buttonWidth = 196;
 
   @override
   Widget build(BuildContext context) {
@@ -402,61 +503,97 @@ class _SeedPhraseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final hiddenBlurSigma = revealed ? 0.0 : 12.5;
-    final radius = BorderRadius.circular(AppRadii.large);
+    final fill = revealed ? colors.background.base : colors.background.homeCard;
+    final minHeight = revealed ? 348.0 : 258.0;
 
-    return SizedBox(
-      width: 529,
-      height: 348,
-      child: ClipRRect(
-        borderRadius: radius,
-        child: DecoratedBox(
-          decoration: BoxDecoration(color: colors.background.base),
-          child: switch ((isLoading, error != null, mnemonic)) {
-            (true, _, _) => const Center(child: CircularProgressIndicator()),
-            (_, true, _) => _ErrorState(message: error!),
-            (_, _, String value) => Stack(
-              alignment: Alignment.center,
-              children: [
-                Positioned.fill(
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.lg),
-                    child: IgnorePointer(
-                      ignoring: !revealed,
-                      child: revealed
-                          ? _SeedGrid(mnemonic: value)
-                          : ImageFiltered(
-                              imageFilter: ImageFilter.blur(
-                                sigmaX: hiddenBlurSigma,
-                                sigmaY: hiddenBlurSigma,
-                              ),
-                              child: const _HiddenContents(),
-                            ),
+    return Container(
+      width: double.infinity,
+      constraints: BoxConstraints(minHeight: minHeight),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.base,
+      ),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+      ),
+      child: switch ((isLoading, error != null, mnemonic)) {
+        (true, _, _) => const Center(child: CircularProgressIndicator()),
+        (_, true, _) => _ErrorState(message: error!),
+        (_, _, String value) =>
+          revealed
+              ? Stack(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.xs),
+                      child: _SeedGrid(mnemonic: value),
                     ),
-                  ),
-                ),
-                if (!revealed)
-                  const Positioned.fill(
-                    child: Padding(
-                      padding: EdgeInsets.all(AppSpacing.lg),
-                      child: Center(child: _HiddenWarning()),
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: _CopyButton(
+                        copied: copied,
+                        onPressed: onCopyPressed,
+                      ),
                     ),
-                  ),
-                if (revealed)
-                  Positioned(
-                    top: AppSpacing.s,
-                    right: AppSpacing.s,
-                    child: _CopyButton(
-                      copied: copied,
-                      onPressed: onCopyPressed,
-                    ),
-                  ),
+                  ],
+                )
+              : const Center(child: _HiddenWarning()),
+        _ => const SizedBox.shrink(),
+      },
+    );
+  }
+}
+
+class _HiddenWarning extends StatelessWidget {
+  const _HiddenWarning();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final textColor = colors.text.homeCard;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: colors.background.brandCrimsonStrong,
+            borderRadius: BorderRadius.circular(AppRadii.xSmall),
+          ),
+          child: AppIcon(AppIcons.key, size: 24, color: textColor),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SizedBox(
+          width: 202,
+          child: Text.rich(
+            TextSpan(
+              style: AppTypography.headlineSmall.copyWith(color: textColor),
+              children: const [
+                TextSpan(text: 'You are about to see your '),
+                TextSpan(text: 'Secret Passphrase.'),
               ],
             ),
-            _ => const SizedBox.shrink(),
-          },
+            textAlign: TextAlign.center,
+          ),
         ),
-      ),
+        const SizedBox(height: AppSpacing.sm),
+        SizedBox(
+          width: 298,
+          child: Text(
+            'This phrase is the master key to your funds. Keep it safe, keep '
+            'it secret. If you lose it, no one can help you recover your '
+            'wallet. Not even us.',
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: textColor.withValues(alpha: 0.7),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -519,95 +656,6 @@ class _CopyButton extends StatelessWidget {
       minWidth: 61,
       trailing: AppIcon(copied ? AppIcons.check : AppIcons.copy),
       child: Text(copied ? 'Copied' : 'Copy'),
-    );
-  }
-}
-
-class _HiddenContents extends StatelessWidget {
-  const _HiddenContents();
-
-  @override
-  Widget build(BuildContext context) {
-    return ExcludeSemantics(
-      child: Opacity(opacity: 0.7, child: const _SeedPlaceholderGrid()),
-    );
-  }
-}
-
-class _SeedPlaceholderGrid extends StatelessWidget {
-  const _SeedPlaceholderGrid();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Secret Passphrase',
-          style: AppTypography.bodyLarge.copyWith(
-            color: colors.text.accent,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.base),
-        Wrap(
-          spacing: AppSpacing.xxs,
-          runSpacing: AppSpacing.xs,
-          children: [
-            for (var i = 0; i < 24; i++)
-              AppChip(
-                width: 90,
-                leadingText: '${i + 1}'.padLeft(2, '0'),
-                label: '------',
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _HiddenWarning extends StatelessWidget {
-  const _HiddenWarning();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        AppIcon(AppIcons.warning, size: 24, color: colors.icon.destructive),
-        const SizedBox(height: AppSpacing.md),
-        Text.rich(
-          TextSpan(
-            style: AppTypography.bodyMediumStrong.copyWith(
-              color: colors.text.accent,
-            ),
-            children: [
-              const TextSpan(text: 'You are about to see your '),
-              TextSpan(
-                text: 'Secret Passphrase.',
-                style: AppTypography.bodyMediumStrong.copyWith(
-                  color: colors.text.destructive,
-                ),
-              ),
-            ],
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: AppSpacing.md),
-        SizedBox(
-          width: 298,
-          child: Text(
-            'This phrase is the master key to your funds. Keep it safe, keep '
-            'it secret. If you lose it, no one can help you recover your '
-            'wallet. Not even us.',
-            textAlign: TextAlign.center,
-            style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
-          ),
-        ),
-      ],
     );
   }
 }
