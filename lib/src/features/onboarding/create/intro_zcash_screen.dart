@@ -106,14 +106,21 @@ class _TitleBlock extends StatelessWidget {
     final colors = context.colors;
     return Column(
       children: [
-        Text(
-          'The Shielded World',
-          style: AppTypography.displayLarge.copyWith(
-            fontFamily: 'Young Serif',
-            fontWeight: FontWeight.w400,
-            color: colors.text.accent,
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.center,
+          child: Text(
+            'The Shielded World',
+            style: AppTypography.displayLarge.copyWith(
+              fontFamily: 'Young Serif',
+              fontWeight: FontWeight.w400,
+              color: colors.text.accent,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.visible,
+            softWrap: false,
+            textAlign: TextAlign.center,
           ),
-          textAlign: TextAlign.center,
         ),
         const SizedBox(height: AppSpacing.sm),
         SizedBox(

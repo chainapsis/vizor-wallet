@@ -154,7 +154,7 @@ flutter:
           weight: 400
     - family: Young Serif
       fonts:
-        # Google Fonts OFL distribution; used as a local screen-level
+        # Upstream Young Serif assets; used as a local screen-level
         # override where Figma calls for Young Serif.
         - asset: assets/fonts/YoungSerif-Regular.ttf
           weight: 400
