@@ -47,7 +47,9 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       _matchedLocation == routePath ||
       _matchedLocation.startsWith('$routePath/');
 
-  bool get _homeShouldBeActive => _matches('/home') || _matches('/send');
+  bool get _isHomeRoute => _matches('/home');
+
+  bool get _homeShouldBeActive => _isHomeRoute || _matches('/send');
 
   bool get _isAccountMenuOpen => _accountMenuEntry != null;
 
@@ -375,7 +377,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       active: _homeShouldBeActive,
                       inactiveOpacity: 0.5,
                       onTap:
-                          _homeShouldBeActive
+                          isImporting || _isHomeRoute
                               ? null
                               : () => _navigateTo('/home'),
                     ),

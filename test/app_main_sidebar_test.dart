@@ -62,7 +62,9 @@ void main() {
     expect(find.text('About Vizor'), findsNothing);
   });
 
-  testWidgets('sidebar keeps Home active on send routes', (tester) async {
+  testWidgets('sidebar keeps Home active and clickable on send routes', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _sidebarHarness(_syncedSyncState, initialLocation: '/send'),
     );
@@ -72,8 +74,14 @@ void main() {
       find.byKey(const ValueKey('sidebar_home_button')),
     );
     expect(homeItem.active, isTrue);
-    expect(homeItem.onTap, isNull);
+    expect(homeItem.onTap, isNotNull);
     expect(find.text('send route'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('sidebar_home_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('home route'), findsOneWidget);
+    expect(find.text('send route'), findsNothing);
   });
 
   testWidgets('sidebar accounts popover shows boundaries and click cursors', (
