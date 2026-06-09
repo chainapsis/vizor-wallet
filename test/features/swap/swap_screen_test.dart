@@ -1506,7 +1506,7 @@ void main() {
       find.byKey(const ValueKey('swap_address_modal')),
     );
     final sidebarItemRect = tester.getRect(
-      find.byKey(const ValueKey('sidebar_send_button')),
+      find.byKey(const ValueKey('sidebar_swap_button')),
     );
 
     expect((modalRect.center.dx - paneRect.center.dx).abs(), lessThan(1));
@@ -1543,7 +1543,7 @@ void main() {
       find.byKey(const ValueKey('address_scan_camera_viewport')),
     );
     final sidebarItemRect = tester.getRect(
-      find.byKey(const ValueKey('sidebar_send_button')),
+      find.byKey(const ValueKey('sidebar_swap_button')),
     );
 
     expect(find.text('Scan the address QR Code'), findsOneWidget);
@@ -2125,7 +2125,7 @@ void main() {
     // Open the avatar picker and choose a non-default avatar.
     await tester.tap(find.byKey(const ValueKey('swap_address_avatar_button')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('swap_address_avatar_samurai')));
+    await tester.tap(find.byKey(const ValueKey('swap_address_avatar_pfp-02')));
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -2138,7 +2138,7 @@ void main() {
 
     expect(addressBookRepository.contacts, hasLength(1));
     expect(addressBookRepository.contacts.single.label, 'My USDC');
-    expect(addressBookRepository.contacts.single.profilePictureId, 'samurai');
+    expect(addressBookRepository.contacts.single.profilePictureId, 'pfp-02');
   });
 
   testWidgets('swap address modal shows EVM contacts across chains', (
@@ -3542,7 +3542,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await _openActivitySurface(tester);
-      expect(find.text('2/4 In progress'), findsOneWidget);
+      expect(find.text('Swapping...'), findsOneWidget);
+      expect(find.text('-1.5000 ZEC'), findsOneWidget);
 
       await _openActivityDetail(tester, 'confirming-deposit');
 
@@ -3796,7 +3797,7 @@ void main() {
     );
 
     expect(find.byType(ActivityScreen), findsOneWidget);
-    expect(find.textContaining('In progress'), findsWidgets);
+    expect(find.text('Swapping...'), findsWidgets);
     expect(find.text('Privacy check'), findsNothing);
 
     await _openSwapSurface(tester);
@@ -3820,8 +3821,8 @@ void main() {
 
     await _openActivitySurface(tester);
 
-    expect(find.textContaining('In progress'), findsWidgets);
     expect(find.text('Swapping...'), findsWidgets);
+    expect(find.text('Swapped'), findsWidgets);
     expect(find.text('ZEC deposit'), findsNothing);
 
     await _openActivityDetail(tester, 'swap-2a11');
@@ -4332,7 +4333,7 @@ void main() {
         sessionStore.savedIntents.single.nextAction,
         'Provider reports destination settlement complete',
       );
-      expect(find.text('Completed'), findsWidgets);
+      expect(find.text('Swapped'), findsOneWidget);
       await _openActivityDetail(tester, '0xcomplete');
 
       expect(find.text('Swap completed'), findsOneWidget);
@@ -7896,6 +7897,11 @@ Future<void> _sendShortcut(
 Future<void> _openActivitySurface(WidgetTester tester) async {
   final context = tester.element(find.byType(AppDesktopShell).first);
   GoRouter.of(context).go('/activity');
+  await _pumpUntilPresent(
+    tester,
+    find.byKey(const ValueKey('activity_screen_title_row')),
+  );
+  await tester.pump(const Duration(milliseconds: 250));
   await _pumpUntilAbsent(
     tester,
     find.byKey(const ValueKey('swap_compact_ticket')),
