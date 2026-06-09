@@ -32,6 +32,18 @@ void main() {
       find.byKey(const ValueKey('home_preview_balance_fiat_text')),
       findsOneWidget,
     );
+    final colors = AppThemeData.light.colors;
+    final fiatText = tester.widget<Text>(
+      find.byKey(const ValueKey('home_preview_balance_fiat_text')),
+    );
+    expect(
+      fiatText.style?.color,
+      colors.text.homeCard.withValues(alpha: 0.80),
+    );
+    final shieldIcon = tester.widget<AppIcon>(
+      find.byKey(const ValueKey('home_preview_shielded_balance_icon')),
+    );
+    expect(shieldIcon.color, colors.text.homeCard);
     expect(
       _assetImageNames(tester),
       contains('assets/illustrations/home_default_background_light.png'),

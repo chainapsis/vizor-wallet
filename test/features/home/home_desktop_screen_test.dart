@@ -5,6 +5,8 @@ import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
+import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
@@ -68,6 +70,20 @@ void main() {
       findsOneWidget,
     );
     expect(find.text(r'$10.02K'), findsOneWidget);
+
+    final colors = AppThemeData.light.colors;
+    final fiatText = tester.widget<Text>(
+      find.byKey(const ValueKey('home_desktop_balance_fiat_text')),
+    );
+    expect(
+      fiatText.style?.color,
+      colors.text.homeCard.withValues(alpha: 0.80),
+    );
+
+    final shieldIcon = tester.widget<AppIcon>(
+      find.byKey(const ValueKey('home_desktop_shielded_balance_icon')),
+    );
+    expect(shieldIcon.color, colors.text.homeCard);
   });
 
   testWidgets('home desktop content tracks pane center on scaled screens', (

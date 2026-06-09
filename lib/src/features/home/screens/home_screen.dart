@@ -1130,8 +1130,8 @@ class _HomeBalanceCardState extends State<_HomeBalanceCard> {
                                                           isDark: isDark,
                                                           iconColor:
                                                               colors
-                                                                  .icon
-                                                                  .brandCrimson,
+                                                                  .text
+                                                                  .homeCard,
                                                         ),
                                                         const SizedBox(
                                                           width: AppSpacing.xs,
@@ -2027,8 +2027,11 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                           children: [
                             AppIcon(
                               AppIcons.shieldKeyhole,
+                              key: const ValueKey(
+                                'home_desktop_shielded_balance_icon',
+                              ),
                               size: 20,
-                              color: colors.icon.brandCrimson,
+                              color: colors.text.homeCard,
                             ),
                             const SizedBox(width: AppSpacing.xs),
                             Text(
@@ -2054,7 +2057,9 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                               'home_desktop_balance_fiat_text',
                             ),
                             style: AppTypography.labelMedium.copyWith(
-                              color: colors.text.positiveStrong,
+                              color: colors.text.homeCard.withValues(
+                                alpha: 0.80,
+                              ),
                               fontWeight: FontWeight.w400,
                             ),
                           ),

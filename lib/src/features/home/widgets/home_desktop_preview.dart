@@ -1542,8 +1542,11 @@ class _BalanceCard extends StatelessWidget {
                         children: [
                           AppIcon(
                             AppIcons.shieldKeyhole,
+                            key: const ValueKey(
+                              'home_preview_shielded_balance_icon',
+                            ),
                             size: 20,
-                            color: colors.icon.brandCrimson,
+                            color: colors.text.homeCard,
                           ),
                           const SizedBox(width: AppSpacing.xs),
                           Text(
@@ -1618,12 +1621,27 @@ class _BalanceCard extends StatelessWidget {
                       ),
                       const Spacer(),
                       if (hasBalance) ...[
-                        Text(
-                          r'$1,200.12  +13.12% (24h)',
-                          key: const ValueKey('home_preview_balance_fiat_text'),
-                          style: _homeLabelMRegular.copyWith(
-                            color: _positiveStrongColor(context),
-                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              r'$1,200.12',
+                              key: const ValueKey(
+                                'home_preview_balance_fiat_text',
+                              ),
+                              style: _homeLabelMRegular.copyWith(
+                                color: colors.text.homeCard.withValues(
+                                  alpha: 0.80,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              '  + 13.12% (24h)',
+                              style: _homeLabelMRegular.copyWith(
+                                color: _positiveStrongColor(context),
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: AppSpacing.xs),
                       ],
