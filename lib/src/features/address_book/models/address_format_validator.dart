@@ -108,8 +108,8 @@ bool _isNearAddress(String value) {
 
 bool _isZcashAddress(String value, ZcashNetwork net) {
   final lower = value.toLowerCase();
-  // Bech32(m): unified + sapling addresses for this network only.
-  final bechPrefixes = [net.uaPrefix, '${net.saplingPrefix}1'];
+  // Bech32(m): unified + sapling + TEX addresses for this network only.
+  final bechPrefixes = [net.uaPrefix, '${net.saplingPrefix}1', net.texPrefix];
   for (final prefix in bechPrefixes) {
     if (lower.startsWith(prefix)) {
       return value.length >= 8 && _bech32Body.hasMatch(lower);

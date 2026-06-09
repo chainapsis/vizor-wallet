@@ -65,6 +65,7 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
     if (depositAddress == null || depositAddress.isEmpty) {
       throw StateError('Swap deposit address is missing');
     }
+    await _rejectTexDepositForKeystone(depositAddress);
 
     final amountZatoshi = zecDepositAmountZatoshiForIntent(intent);
     final dbPath = await getWalletDbPath();
@@ -174,6 +175,13 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
       log('SwapHardwareSigning: refreshAfterSend failed: $e');
     }
     return result;
+  }
+}
+
+Future<void> _rejectTexDepositForKeystone(String address) async {
+  final validation = await rust_sync.validateAddress(address: address);
+  if (validation.isValid && validation.addressType == 'tex') {
+    throw UnsupportedError('Keystone does not support TEX sends yet.');
   }
 }
 

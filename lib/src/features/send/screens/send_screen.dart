@@ -33,6 +33,10 @@ import '../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../models/send_prefill_args.dart';
 import 'send_review_screen.dart';
 
+final sendWalletDbPathProvider = Provider<Future<String> Function()>((ref) {
+  return getWalletDbPath;
+});
+
 class SendScreen extends ConsumerStatefulWidget {
   const SendScreen({super.key, this.prefill});
 
@@ -46,9 +50,10 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   @override
   Widget build(BuildContext context) {
     final walletAsync = ref.watch(walletProvider);
-    final activeAccountUuid = ref.watch(
-      accountProvider.select((value) => value.value?.activeAccountUuid),
-    );
+    final accountState = ref.watch(accountProvider).value;
+    final activeAccountUuid = accountState?.activeAccountUuid;
+    final activeAccountIsHardware =
+        accountState?.activeAccount?.isHardware ?? false;
     final sync = ref.watch(
       syncProvider.select(
         (value) =>
@@ -61,6 +66,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       key: ValueKey('$activeAccountUuid:${widget.prefill?.fingerprint ?? ''}'),
       walletAsync: walletAsync,
       activeAccountUuid: activeAccountUuid,
+      activeAccountIsHardware: activeAccountIsHardware,
       spendableBalance: spendableBalance,
       prefill: widget.prefill,
     );
@@ -72,12 +78,14 @@ class _SendComposeBody extends ConsumerStatefulWidget {
     super.key,
     required this.walletAsync,
     required this.activeAccountUuid,
+    required this.activeAccountIsHardware,
     required this.spendableBalance,
     this.prefill,
   });
 
   final AsyncValue<WalletState> walletAsync;
   final String? activeAccountUuid;
+  final bool activeAccountIsHardware;
   final BigInt spendableBalance;
   final SendPrefillArgs? prefill;
 
@@ -158,6 +166,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _singleLineFieldGap = AppSpacing.xs;
   static const _multilineFieldOverlayReserve = 24.0;
   static const _maxDebounceDuration = Duration(milliseconds: 300);
+  static const _hardwareTexUnsupportedText =
+      'Keystone does not support TEX sends yet.';
   final _addressController = _AddressTextEditingController();
   final _amountController = TextEditingController();
   final _memoController = TextEditingController();
@@ -294,11 +304,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final nextAddressType = result.isValid ? result.addressType : 'invalid';
       setState(() {
         _addressType = nextAddressType;
-        if (nextAddressType == 'transparent') {
+        if (_isTransparentLikeType(nextAddressType)) {
           _messageExpanded = false;
         }
       });
-      if (nextAddressType == 'transparent' && _memoController.text.isNotEmpty) {
+      if (_isTransparentLikeType(nextAddressType) &&
+          _memoController.text.isNotEmpty) {
         _memoController.clear();
       }
       _handleAddressValidationSettled();
@@ -362,15 +373,45 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool get _isShieldedAddress =>
       _addressType == 'unified' || _addressType == 'sapling';
 
-  bool get _isConfirmedTransparentAddress => _addressType == 'transparent';
+  bool get _isTexAddress => _addressType == 'tex';
 
-  bool get _showMemoControls => !_isConfirmedTransparentAddress;
+  bool get _isTransparentLikeAddress => _isTransparentLikeType(_addressType);
+
+  bool _isTransparentLikeType(String addressType) =>
+      addressType == 'transparent' || addressType == 'tex';
+
+  bool get _showMemoControls => !_isTransparentLikeAddress;
 
   String get _effectiveMemo =>
-      _isConfirmedTransparentAddress ? '' : _memoController.text.trim();
+      _isTransparentLikeAddress ? '' : _memoController.text.trim();
+
+  BigInt get _availableBalanceForCurrentAddress => widget.spendableBalance;
+
+  String get _insufficientBalanceText =>
+      _isTexAddress ? 'Insufficient balance' : 'Insufficient shielded balance';
+
+  String get _insufficientBalanceToCoverFeeText =>
+      '$_insufficientBalanceText to cover fee';
+
+  String get _insufficientBalanceIncludingFeeText =>
+      '$_insufficientBalanceText including fee';
+
+  String get _insufficientBalanceToCoverAmountAndFeeText =>
+      '$_insufficientBalanceText to cover amount and fee.';
+
+  String _insufficientBalanceWithFeeText(String feeText) =>
+      '$_insufficientBalanceText (fee: $feeText)';
+
+  bool get _isHardwareTexSend =>
+      _isTexAddress && widget.activeAccountIsHardware;
 
   bool get _showAmountError =>
-      _amountError != null && _amountError!.trim().isNotEmpty;
+      _amountError != null &&
+      _amountError!.trim().isNotEmpty &&
+      _amountError != _hardwareTexUnsupportedText;
+
+  String? get _ctaWarningText =>
+      _isHardwareTexSend ? _hardwareTexUnsupportedText : null;
 
   bool get _hasCurrentMaxQuote {
     final quote = _maxQuote;
@@ -397,6 +438,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       !_isResolvingMax &&
       _hasValidAddress &&
       _isAmountValid &&
+      !_isHardwareTexSend &&
       (!_isMaxMode || _hasCurrentMaxQuote) &&
       _memoError == null &&
       (_isShieldedAddress || _effectiveMemo.isEmpty);
@@ -414,6 +456,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   String? _maxEstimatePreconditionError() {
     if (widget.activeAccountUuid == null) return 'No active account';
     if (!_hasValidAddress) return 'Enter a valid address to use Max';
+    if (_isHardwareTexSend) return _hardwareTexUnsupportedText;
     return _memoError;
   }
 
@@ -450,7 +493,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     if (accountUuid == null || !_isMaxMode || seq != _maxSeq) return;
 
     try {
-      final dbPath = await getWalletDbPath();
+      final dbPath = await ref.read(sendWalletDbPathProvider).call();
       final endpoint = ref.read(rpcEndpointProvider);
       if (!mounted || !_isMaxMode || seq != _maxSeq) return;
 
@@ -468,7 +511,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         setState(() {
           _isResolvingMax = false;
           _maxQuote = null;
-          _amountError = 'Insufficient shielded balance to cover fee';
+          _amountError = _insufficientBalanceToCoverFeeText;
         });
         return;
       }
@@ -500,7 +543,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         _isResolvingMax = false;
         _maxQuote = null;
         if (msg.contains('insufficient')) {
-          _amountError = 'Insufficient shielded balance to cover fee';
+          _amountError = _insufficientBalanceToCoverFeeText;
         } else {
           _amountError = 'Max amount unavailable';
         }
@@ -526,14 +569,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       return;
     }
 
-    // Quick balance pre-check
-    final spendable = widget.spendableBalance;
-    if (zatoshi > spendable) {
-      setState(() => _amountError = 'Insufficient shielded balance');
-      return;
-    }
-
-    // Need valid address to estimate fee
     final address = _addressController.text.trim();
     if (address.isEmpty ||
         _addressType == 'invalid' ||
@@ -543,8 +578,21 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       return;
     }
 
+    if (_isHardwareTexSend) {
+      setState(() => _amountError = _hardwareTexUnsupportedText);
+      return;
+    }
+
+    final available = _availableBalanceForCurrentAddress;
+    if (zatoshi > available) {
+      setState(() => _amountError = _insufficientBalanceText);
+      return;
+    }
+
+    setState(() => _amountError = null);
+
     try {
-      final dbPath = await getWalletDbPath();
+      final dbPath = await ref.read(sendWalletDbPathProvider).call();
       final endpoint = ref.read(rpcEndpointProvider);
       if (!mounted || seq != _validateSeq) return;
       final memo = _effectiveMemo;
@@ -566,11 +614,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       if (!mounted || seq != _validateSeq) return;
 
       final totalNeeded = zatoshi + fee;
-      if (totalNeeded > spendable) {
+      if (totalNeeded > available) {
         final feeText = ZecAmount.fromZatoshi(fee).fee.toString();
-        setState(
-          () => _amountError = 'Insufficient shielded balance (fee: $feeText)',
-        );
+        setState(() => _amountError = _insufficientBalanceWithFeeText(feeText));
       } else {
         setState(() => _amountError = null);
       }
@@ -578,9 +624,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       if (!mounted || seq != _validateSeq) return;
       final msg = e.toString();
       if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
-        setState(
-          () => _amountError = 'Insufficient shielded balance including fee',
-        );
+        setState(() => _amountError = _insufficientBalanceIncludingFeeText);
       } else {
         log('Send: fee estimation failed (non-blocking): $e');
         setState(() => _amountError = null);
@@ -593,7 +637,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   String _friendlyError(String raw) {
     final lower = raw.toLowerCase();
     if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
-      return 'Insufficient shielded balance to cover amount and fee.';
+      return _insufficientBalanceToCoverAmountAndFeeText;
     }
     if (lower.contains('grpc connect failed') ||
         lower.contains('connection refused') ||
@@ -646,6 +690,14 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         return;
       }
 
+      if (_isHardwareTexSend) {
+        setState(() {
+          _error = _hardwareTexUnsupportedText;
+          _isSending = false;
+        });
+        return;
+      }
+
       if (amountZatoshi == null || amountZatoshi <= BigInt.zero) {
         setState(() {
           _error = 'Invalid amount';
@@ -663,17 +715,17 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       }
 
       // Check balance before proposing
-      final spendable = widget.spendableBalance;
-      if (amountZatoshi > spendable) {
+      final available = _availableBalanceForCurrentAddress;
+      if (amountZatoshi > available) {
         setState(() {
-          _error = 'Insufficient shielded balance.';
+          _error = '$_insufficientBalanceText.';
           _isSending = false;
         });
         return;
       }
 
       final memo = _effectiveMemo;
-      final dbPath = await getWalletDbPath();
+      final dbPath = await ref.read(sendWalletDbPathProvider).call();
       final endpoint = ref.read(rpcEndpointProvider);
       if (!mounted) return;
 
@@ -741,9 +793,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   @override
   Widget build(BuildContext context) {
-    final spendable = widget.spendableBalance;
+    final available = _availableBalanceForCurrentAddress;
     final visibleSpendableText = ZecAmount.fromZatoshi(
-      spendable,
+      available,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
     final spendableText = hideAmountIfPrivacyMode(
       visibleSpendableText,
@@ -763,6 +815,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     final addressMessage = switch (_addressType) {
       'unified' || 'sapling' => 'Shielded Address',
       'transparent' => 'Transparent Address',
+      'tex' => 'TEX address',
       'invalid' => 'Invalid address',
       'error' => 'Address validation failed',
       _ => null,
@@ -778,7 +831,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         size: 16,
         color: colors.text.destructive,
       ),
-      'transparent' => AppIcon(
+      'transparent' || 'tex' => AppIcon(
         AppIcons.transparentBalance,
         size: 16,
         color: colors.icon.muted,
@@ -786,9 +839,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _ => null,
     };
     final addressMessageStyle = switch (_addressType) {
-      'transparent' => AppTypography.labelMedium.copyWith(
-        color: colors.text.muted,
-      ),
+      'transparent' ||
+      'tex' => AppTypography.labelMedium.copyWith(color: colors.text.muted),
       _ => null,
     };
     final messageFieldVisible =
@@ -824,6 +876,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                       Expanded(
                         child: _SendComposeLayout(
                           messageFieldVisible: messageFieldVisible,
+                          ctaWarningText: _ctaWarningText,
                           reviewButton: AppButton(
                             key: const ValueKey('send_review_button'),
                             onPressed: _canReview ? _openReview : null,
@@ -1136,6 +1189,7 @@ class _SendPrefillNotice extends StatelessWidget {
 class _SendComposeLayout extends StatelessWidget {
   const _SendComposeLayout({
     required this.messageFieldVisible,
+    required this.ctaWarningText,
     required this.child,
     required this.reviewButton,
   });
@@ -1150,6 +1204,7 @@ class _SendComposeLayout extends StatelessWidget {
   static const _expandedBottomGap = 10.0;
 
   final bool messageFieldVisible;
+  final String? ctaWarningText;
   final Widget child;
   final Widget reviewButton;
 
@@ -1183,6 +1238,14 @@ class _SendComposeLayout extends StatelessWidget {
           ),
         ),
         const SizedBox(height: _contentToButtonGap),
+        if (ctaWarningText != null) ...[
+          SizedBox(
+            key: const ValueKey('send_cta_warning'),
+            width: _reviewButtonWidth,
+            child: _SendGlobalError(message: ctaWarningText!),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+        ],
         SizedBox(width: _reviewButtonWidth, child: reviewButton),
       ],
     );

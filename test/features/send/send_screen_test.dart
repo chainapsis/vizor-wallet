@@ -15,8 +15,17 @@ import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late _RustApiFake rustApi;
+
   setUpAll(() {
-    RustLib.initMock(api: _RustApiFake());
+    rustApi = _RustApiFake();
+    RustLib.initMock(api: rustApi);
+  });
+
+  setUp(() {
+    rustApi.reset();
   });
 
   tearDownAll(RustLib.dispose);
@@ -124,11 +133,169 @@ void main() {
     expect(find.text('Add a message'), findsNothing);
     expect(find.text('Encrypted, for Shielded Addresses only.'), findsNothing);
   });
+
+  testWidgets('hides imported memo controls for TEX recipients', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        prefill: const SendPrefillArgs(
+          id: 'zip321-tex',
+          source: 'ZIP-321',
+          address: _texAddress,
+          amountText: '0.5',
+          memoText: 'TEX memo',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    expect(find.text('TEX address'), findsOneWidget);
+    expect(find.text('TEX memo'), findsNothing);
+    expect(find.text('Add a message'), findsNothing);
+    expect(find.text('Encrypted, for Shielded Addresses only.'), findsNothing);
+  });
+
+  testWidgets('TEX review uses shielded balance and raw address', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(2000000000),
+        transparentBalance: BigInt.from(2000000000),
+        prefill: const SendPrefillArgs(
+          id: 'zip321-tex-balance',
+          source: 'ZIP-321',
+          address: _texAddress,
+          amountText: '1.0',
+          memoText: 'Dropped memo',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Insufficient shielded balance'), findsNothing);
+    expect(find.text('Insufficient balance'), findsNothing);
+
+    await tester.tap(find.text('Review'));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeToAddress, _texAddress);
+    expect(rustApi.lastProposeMemo, isNull);
+  });
+
+  testWidgets('TEX ignores transparent balance for availability', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(50000000),
+        transparentBalance: BigInt.from(2000000000),
+        prefill: const SendPrefillArgs(
+          id: 'zip321-tex-transparent-ignored',
+          source: 'ZIP-321',
+          address: _texAddress,
+          amountText: '1.0',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Insufficient balance'), findsOneWidget);
+
+    await tester.tap(find.text('Review'));
+    await tester.pumpAndSettle();
+
+    expect(rustApi.proposeSendCalls, 0);
+  });
+
+  testWidgets('hardware TEX sends are blocked inline before proposal', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        bootstrap: _hardwareBootstrap,
+        spendableBalance: BigInt.from(2000000000),
+        prefill: const SendPrefillArgs(
+          id: 'hardware-tex',
+          source: 'ZIP-321',
+          address: _texAddress,
+          amountText: '0.5',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Keystone does not support TEX sends yet.'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('send_cta_warning')), findsOneWidget);
+
+    await tester.tap(find.text('Review'));
+    await tester.pumpAndSettle();
+
+    expect(rustApi.proposeSendCalls, 0);
+  });
+
+  testWidgets('hardware TEX address explains unsupported state before amount', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        bootstrap: _hardwareBootstrap,
+        spendableBalance: BigInt.from(2000000000),
+        prefill: const SendPrefillArgs(
+          id: 'hardware-tex-no-amount',
+          source: 'ZIP-321',
+          address: _texAddress,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    expect(_fieldText(tester, 'send_amount_field'), isEmpty);
+    expect(
+      find.text('Keystone does not support TEX sends yet.'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('send_cta_warning')), findsOneWidget);
+    expect(find.text('TEX address'), findsOneWidget);
+    expect(rustApi.proposeSendCalls, 0);
+  });
 }
 
 Widget _sendHarness({
   SendPrefillArgs? prefill,
   AddressBookRepository? addressBookRepository,
+  AppBootstrapState? bootstrap,
+  BigInt? spendableBalance,
+  BigInt? transparentBalance,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -143,8 +310,14 @@ Widget _sendHarness({
 
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap),
-      syncProvider.overrideWith(_FakeSyncNotifier.new),
+      appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
+      sendWalletDbPathProvider.overrideWithValue(() async => '/tmp/test.db'),
+      syncProvider.overrideWith(
+        () => _FakeSyncNotifier(
+          spendableBalance: spendableBalance ?? BigInt.from(500000000),
+          transparentBalance: transparentBalance ?? BigInt.zero,
+        ),
+      ),
       if (addressBookRepository != null)
         addressBookRepositoryProvider.overrideWithValue(addressBookRepository),
     ],
@@ -223,21 +396,67 @@ final _bootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
+final _hardwareBootstrap = AppBootstrapState(
+  initialLocation: '/send',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Keystone',
+        order: 0,
+        isHardware: true,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1activeaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: kZcashDefaultNetworkName,
+  rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
 class _FakeSyncNotifier extends SyncNotifier {
+  _FakeSyncNotifier({
+    required this.spendableBalance,
+    required this.transparentBalance,
+  });
+
+  final BigInt spendableBalance;
+  final BigInt transparentBalance;
+
   @override
   Future<SyncState> build() async => SyncState(
     accountUuid: 'account-1',
     hasAccountScopedData: true,
-    spendableBalance: BigInt.from(500000000),
-    totalBalance: BigInt.from(500000000),
+    spendableBalance: spendableBalance,
+    transparentBalance: transparentBalance,
+    totalBalance: spendableBalance + transparentBalance,
   );
 }
 
 class _RustApiFake implements RustLibApi {
+  int proposeSendCalls = 0;
+  String? lastProposeToAddress;
+  String? lastProposeMemo;
+
+  void reset() {
+    proposeSendCalls = 0;
+    lastProposeToAddress = null;
+    lastProposeMemo = null;
+  }
+
   @override
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
   }) async {
+    if (address == _texAddress) {
+      return const AddressValidationResult(isValid: true, addressType: 'tex');
+    }
     if (address == _transparentAddress) {
       return const AddressValidationResult(
         isValid: true,
@@ -260,9 +479,30 @@ class _RustApiFake implements RustLibApi {
   }
 
   @override
+  Future<ProposalResult> crateApiSyncProposeSend({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String sendFlowId,
+    required String toAddress,
+    required BigInt amountZatoshi,
+    String? memo,
+  }) async {
+    proposeSendCalls++;
+    lastProposeToAddress = toAddress;
+    lastProposeMemo = memo;
+    return ProposalResult(
+      proposalId: BigInt.one,
+      needsSaplingParams: false,
+      feeZatoshi: BigInt.from(10000),
+    );
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 const _shieldedAddress =
     'u1testshieldedaddress000000000000000000000000000000000000000000000000000';
 const _transparentAddress = 't1transparentdestination0000000000000000000';
+const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';

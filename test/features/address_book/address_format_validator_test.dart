@@ -61,8 +61,10 @@ void main() {
       });
 
       test('rejects wrong length', () {
-        expect(addressFormatIssue(AddressBookNetwork.ethereum, '0x1234'),
-            isNotNull);
+        expect(
+          addressFormatIssue(AddressBookNetwork.ethereum, '0x1234'),
+          isNotNull,
+        );
       });
 
       test('rejects non-hex characters', () {
@@ -303,6 +305,37 @@ void main() {
         );
       });
 
+      test('accepts TEX addresses for the active Zcash network', () {
+        const mainnetTex = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
+        const testnetTex = 'textest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy';
+        const regtestTex = 'texregtest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy';
+
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.zcash,
+            mainnetTex,
+            zcashNetwork: ZcashNetwork.mainnet,
+          ),
+          isNull,
+        );
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.zcash,
+            testnetTex,
+            zcashNetwork: ZcashNetwork.testnet,
+          ),
+          isNull,
+        );
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.zcash,
+            regtestTex,
+            zcashNetwork: ZcashNetwork.regtest,
+          ),
+          isNull,
+        );
+      });
+
       test('rejects an EVM address tagged as Zcash', () {
         expect(
           addressFormatIssue(
@@ -337,11 +370,18 @@ void main() {
           ),
           isNotNull,
         );
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.zcash,
+            'textest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy',
+            zcashNetwork: ZcashNetwork.mainnet,
+          ),
+          isNotNull,
+        );
       });
 
       test('honours the active Zcash network for its own prefixes', () {
-        const testnetUa =
-            'utest1qpw508d6qejxtdg4y5r3zarvary0c5xw7kqqqqqq';
+        const testnetUa = 'utest1qpw508d6qejxtdg4y5r3zarvary0c5xw7kqqqqqq';
         expect(
           addressFormatIssue(
             AddressBookNetwork.zcash,
@@ -452,7 +492,9 @@ void main() {
 
       test('rejects uppercase / invalid characters', () {
         expect(
-            addressFormatIssue(AddressBookNetwork.near, 'Alice.NEAR'), isNotNull);
+          addressFormatIssue(AddressBookNetwork.near, 'Alice.NEAR'),
+          isNotNull,
+        );
         expect(addressFormatIssue(AddressBookNetwork.near, 'a'), isNotNull);
       });
 
