@@ -100,6 +100,27 @@ void main() {
         tester.getTopLeft(find.byKey(_submitButtonKey)).dy,
         referenceButtonTop,
       );
+
+      await tester.binding.setSurfaceSize(const Size(1080, 900));
+      await tester.pump();
+
+      expect(
+        tester.widget<Scrollbar>(find.byType(Scrollbar)).thumbVisibility,
+        isFalse,
+      );
+      expect(
+        tester.getTopLeft(_wordField(0)).dy,
+        greaterThan(referenceFirstFieldTop),
+      );
+      expect(
+        tester.getTopLeft(find.byKey(_submitButtonKey)).dy,
+        greaterThan(referenceButtonTop),
+      );
+      expect(
+        tester.getBottomLeft(find.byType(SingleChildScrollView)).dy -
+            tester.getBottomLeft(find.byKey(_submitButtonKey)).dy,
+        closeTo(16, 0.1),
+      );
     },
   );
 

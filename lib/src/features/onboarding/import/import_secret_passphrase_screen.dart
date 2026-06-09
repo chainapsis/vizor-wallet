@@ -43,6 +43,9 @@ class _ImportSecretPassphraseScreenState
   static const _onPageContentHeight = 580.0;
   static const _buttonHeight = 44.0;
   static const _layoutHeight = _onPageContentHeight + _buttonHeight;
+  static const _referenceBottomPadding = AppSpacing.sm;
+  static const _referenceContentHeight =
+      _layoutHeight + _referenceBottomPadding;
   static const _scrollBottomPadding = AppSpacing.base;
   static const _titleTop = 35.0;
   static const _passphraseTop = 173.0;
@@ -372,12 +375,24 @@ class _ImportSecretPassphraseScreenState
           final scrollController = _effectiveBodyScrollController;
 
           Widget buildContent(double height) {
+            final useExpandedLayout =
+                !needsScrolling && height > _referenceContentHeight;
+            final buttonTop = useExpandedLayout
+                ? height - _buttonHeight - _referenceBottomPadding
+                : _onPageContentHeight;
+            final mainTop = useExpandedLayout
+                ? (buttonTop - _onPageContentHeight) / 2
+                : 0.0;
+
             return SizedBox(
               width: _contentWidth,
               height: height,
-              child: Column(
+              child: Stack(
                 children: [
-                  SizedBox(
+                  Positioned(
+                    top: mainTop,
+                    left: 0,
+                    right: 0,
                     height: _onPageContentHeight,
                     child: Stack(
                       children: [
@@ -434,12 +449,19 @@ class _ImportSecretPassphraseScreenState
                       ],
                     ),
                   ),
-                  AppButton(
-                    key: const ValueKey('import_secret_submit_button'),
-                    onPressed: _canSubmit ? _submit : null,
-                    minWidth: _buttonWidth,
-                    trailing: const AppIcon(AppIcons.chevronForward),
-                    child: Text(_isSubmitting ? 'Importing...' : 'Import'),
+                  Positioned(
+                    top: buttonTop,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: AppButton(
+                        key: const ValueKey('import_secret_submit_button'),
+                        onPressed: _canSubmit ? _submit : null,
+                        minWidth: _buttonWidth,
+                        trailing: const AppIcon(AppIcons.chevronForward),
+                        child: Text(_isSubmitting ? 'Importing...' : 'Import'),
+                      ),
+                    ),
                   ),
                 ],
               ),
