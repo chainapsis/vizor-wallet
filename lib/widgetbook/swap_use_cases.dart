@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../src/core/layout/app_desktop_shell.dart';
+import '../src/core/layout/app_pane_scroll_scaffold.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_back_link.dart';
 import '../src/core/widgets/app_button.dart';
@@ -1227,6 +1228,27 @@ class _SwapWidgetFrame extends StatelessWidget {
   }
 }
 
+void _noop() {}
+
+class _SwapPreviewPageTitle extends StatelessWidget {
+  const _SwapPreviewPageTitle();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Text(
+      'Swap',
+      textAlign: TextAlign.center,
+      style: AppTypography.displaySmall.copyWith(
+        fontFamily: 'Young Serif',
+        fontWeight: FontWeight.w500,
+        fontFeatures: const [FontFeature.enable('case')],
+        color: colors.text.accent,
+      ),
+    );
+  }
+}
+
 class _SwapPageFrame extends StatelessWidget {
   const _SwapPageFrame({required this.child});
 
@@ -1235,95 +1257,42 @@ class _SwapPageFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth.isFinite
-            ? constraints.maxWidth
-            : 1080.0;
-        final height = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : 720.0;
-
-        return SizedBox(
-          width: width,
-          height: height,
-          child: ColoredBox(
-            color: colors.background.base,
-            child: AppDesktopShell(
-              sidebar: const _PreviewSwapSidebar(),
-              pane: AppDesktopPane(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: AppBackLink(
-                        label: 'Back',
-                        minWidth: 60,
-                        onTap: () {},
-                      ),
+    return SizedBox(
+      width: 1080,
+      height: 720,
+      child: ColoredBox(
+        color: colors.background.base,
+        child: AppDesktopShell(
+          sidebar: const _PreviewSwapSidebar(),
+          pane: AppDesktopPane(
+            padding: EdgeInsets.zero,
+            child: AppPaneScrollScaffold(
+              toolbar: const AppPaneToolbar(
+                leading: AppBackLink(label: 'Back', minWidth: 60, onTap: _noop),
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.s,
+                      vertical: AppSpacing.sm,
                     ),
-                    const SizedBox(height: AppSpacing.s),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.s,
-                        ),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final bodyHeight = constraints.maxHeight.isFinite
-                                ? constraints.maxHeight
-                                : 0.0;
-                            return Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Positioned.fill(
-                                  child: SingleChildScrollView(
-                                    child: ConstrainedBox(
-                                      constraints: BoxConstraints(
-                                        minHeight: constraints.maxHeight,
-                                      ),
-                                      child: Center(
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              'Swap',
-                                              style: AppTypography.displaySmall
-                                                  .copyWith(
-                                                    color: colors.text.accent,
-                                                  ),
-                                            ),
-                                            const SizedBox(
-                                              height: AppSpacing.md,
-                                            ),
-                                            child,
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                if (bodyHeight >= 520)
-                                  const Positioned(
-                                    left: 0,
-                                    bottom: 0,
-                                    child: SwapNearIntentsAttribution(),
-                                  ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const _SwapPreviewPageTitle(),
+                        const SizedBox(height: AppSpacing.md),
+                        child,
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -1336,77 +1305,57 @@ class _SwapPageModalFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth.isFinite
-            ? constraints.maxWidth
-            : 1080.0;
-        final height = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : 720.0;
-
-        return SizedBox(
-          width: width,
-          height: height,
-          child: ColoredBox(
-            color: colors.background.base,
-            child: AppDesktopShell(
-              sidebar: const _PreviewSwapSidebar(),
-              pane: AppDesktopPane(
-                padding: EdgeInsets.zero,
-                child: Stack(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: AppBackLink(
-                              label: 'Back',
-                              minWidth: 60,
-                              onTap: () {},
+    return SizedBox(
+      width: 1080,
+      height: 720,
+      child: ColoredBox(
+        color: colors.background.base,
+        child: AppDesktopShell(
+          sidebar: const _PreviewSwapSidebar(),
+          pane: AppDesktopPane(
+            padding: EdgeInsets.zero,
+            child: Stack(
+              children: [
+                AppPaneScrollScaffold(
+                  toolbar: const AppPaneToolbar(
+                    leading: AppBackLink(
+                      label: 'Back',
+                      minWidth: 60,
+                      onTap: _noop,
+                    ),
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.s,
+                          vertical: AppSpacing.sm,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const _SwapPreviewPageTitle(),
+                            const SizedBox(height: AppSpacing.md),
+                            _SwapComposerPreview(
+                              initialState: _figmaNode3State,
+                              actionLabel: 'Add refund address',
+                              showActionButton: false,
                             ),
-                          ),
-                          const SizedBox(height: AppSpacing.s),
-                          Expanded(
-                            child: Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    'Swap',
-                                    style: AppTypography.displaySmall.copyWith(
-                                      color: colors.text.accent,
-                                    ),
-                                  ),
-                                  const SizedBox(height: AppSpacing.md),
-                                  _SwapComposerPreview(
-                                    initialState: _figmaNode3State,
-                                    actionLabel: 'Add refund address',
-                                    showActionButton: false,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+                            const SizedBox(height: AppSpacing.md),
+                            const SwapNearIntentsAttribution(centered: true),
+                          ],
+                        ),
                       ),
                     ),
-                    const Positioned(
-                      left: AppSpacing.md,
-                      bottom: 56,
-                      child: SwapNearIntentsAttribution(),
-                    ),
-                    AppPaneModalOverlay(onDismiss: () {}, child: child),
-                  ],
+                  ),
                 ),
-              ),
+                AppPaneModalOverlay(onDismiss: _noop, child: child),
+              ],
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -1741,18 +1690,23 @@ class _SwapComposerPreviewState extends State<_SwapComposerPreview> {
               widget.zecAvailableZatoshi ?? BigInt.from(1234560000),
         ),
         if (widget.showActionButton) ...[
-          const SizedBox(height: 38),
-          SizedBox(
-            width: 256,
-            child: AppButton(
-              onPressed: () {},
-              variant: AppButtonVariant.secondary,
-              size: AppButtonSize.large,
-              child: SizedBox(
-                width: 184,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(widget.actionLabel, maxLines: 1),
+          const SizedBox(height: AppSpacing.md),
+          const SwapNearIntentsAttribution(centered: true),
+          const SizedBox(height: AppSpacing.md),
+          Center(
+            child: SizedBox(
+              width: 232,
+              child: AppButton(
+                onPressed: () {},
+                variant: AppButtonVariant.primary,
+                size: AppButtonSize.large,
+                minWidth: 232,
+                child: SizedBox(
+                  width: 168,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(widget.actionLabel, maxLines: 1),
+                  ),
                 ),
               ),
             ),
