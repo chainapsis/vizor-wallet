@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/services.dart';
@@ -42,6 +43,22 @@ class SettingsUninstallScreen extends ConsumerStatefulWidget {
 }
 
 enum SettingsUninstallStage { confirm, gate, removing, done }
+
+// The wipe itself is pure Dart/Rust and platform-agnostic; only the copy
+// references the host platform.
+final String _wipeSubtitle =
+    'Vizor will delete wallet data and secure storage '
+    'from ${Platform.isMacOS
+        ? 'this Mac'
+        : Platform.isWindows
+        ? 'this PC'
+        : 'this device'}.';
+
+final String _finishSubtitle = Platform.isMacOS
+    ? 'To finish uninstallation, remove the Vizor app from Applications.'
+    : Platform.isWindows
+    ? 'To finish uninstallation, uninstall Vizor from Windows settings.'
+    : 'To finish uninstallation, remove the Vizor app from this device.';
 
 class _SettingsUninstallScreenState
     extends ConsumerState<SettingsUninstallScreen>
@@ -464,9 +481,7 @@ class _UninstallConfirmView extends StatelessWidget {
     return _UninstallCard(
       helmetOpacity: const AlwaysStoppedAnimation(1),
       title: 'Uninstall Vizor',
-      subtitle:
-          'Vizor will delete wallet data and secure storage '
-          'from this Mac.',
+      subtitle: _wipeSubtitle,
       subtitleWidth: 240,
       action: SizedBox(
         width: 256,
@@ -565,9 +580,7 @@ class _UninstallRemovingView extends StatelessWidget {
     return _UninstallCard(
       helmetOpacity: const AlwaysStoppedAnimation(1),
       title: 'Removing data...',
-      subtitle:
-          'Vizor will delete wallet data and secure storage '
-          'from this Mac.',
+      subtitle: _wipeSubtitle,
       subtitleWidth: 240,
       action: SizedBox(
         width: 256,
@@ -671,9 +684,7 @@ class _UninstallDoneViewState extends State<_UninstallDoneView>
     return _UninstallCard(
       helmetOpacity: _helmetOpacity,
       title: 'Your data has been removed',
-      subtitle:
-          'To finish uninstallation, remove the Vizor app '
-          'from Applications.',
+      subtitle: _finishSubtitle,
       subtitleWidth: 240,
       action: AppButton(
         onPressed: widget.onClose,
