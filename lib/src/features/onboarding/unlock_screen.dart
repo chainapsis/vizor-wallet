@@ -199,7 +199,9 @@ class _UnlockContent extends StatelessWidget {
   final VoidCallback onForgotPassword;
 
   static const double _contentWidth = 256;
-  static const double _titleWidth = 347;
+  // Wide enough to keep 'Welcome Back' on one line at displayLarge 60px;
+  // at the previous 347 the title wrapped and overflowed the fixed canvas.
+  static const double _titleWidth = 430;
   static const double _fieldGroupHeight = 66;
 
   @override

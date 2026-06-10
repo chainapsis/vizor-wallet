@@ -381,95 +381,110 @@ class _ImportSecretPassphraseScreenState
             child: Column(
               children: [
                 Expanded(
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.s,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: _titleWidth,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight,
+                        ),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: AppSpacing.s,
+                            ),
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(
-                                  'Welcome, Adventurer',
-                                  style: AppTypography.displayLarge.copyWith(
-                                    color: colors.text.accent,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: AppSpacing.sm),
                                 SizedBox(
-                                  width: _subtitleWidth,
-                                  child: Text(
-                                    'Import your wallet by entering your Secret Passphrase.',
+                                  width: _titleWidth,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'Welcome, Adventurer',
+                                        style: AppTypography.displayLarge
+                                            .copyWith(
+                                              color: colors.text.accent,
+                                            ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: AppSpacing.sm),
+                                      SizedBox(
+                                        width: _subtitleWidth,
+                                        child: Text(
+                                          'Import your wallet by entering your Secret Passphrase.',
+                                          style: AppTypography.bodyMedium
+                                              .copyWith(
+                                                color: colors.text.accent,
+                                              ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.lg),
+                                SizedBox(
+                                  width: _gridWidth,
+                                  child: Wrap(
+                                    alignment: WrapAlignment.center,
+                                    spacing: AppSpacing.s,
+                                    runSpacing: AppSpacing.s,
+                                    children: List.generate(
+                                      _wordCount,
+                                      (index) => _MnemonicWordCell(
+                                        index: index,
+                                        controller: _controllers[index],
+                                        focusNode: _focusNodes[index],
+                                        wordList: _mnemonicWordList,
+                                        autocompleteEnabled: () =>
+                                            _autocompleteEnabled,
+                                        onAutocompleteReactivationRequested:
+                                            () => _reactivateAutocomplete(
+                                              _controllers[index],
+                                            ),
+                                        destructive:
+                                            _showValidationError &&
+                                            _controllers[index].text
+                                                .trim()
+                                                .isNotEmpty,
+                                        autofocus: index == 0,
+                                        onMoveNext: () =>
+                                            _moveToNextWord(index),
+                                        onMovePrevious: () =>
+                                            _moveToPreviousWord(index),
+                                        onSuggestionSelected: (word) =>
+                                            _handleSuggestionSelected(
+                                              index,
+                                              word,
+                                            ),
+                                        onChanged: (value) =>
+                                            _handleWordChanged(index, value),
+                                        onSubmitted: () {
+                                          if (index == _wordCount - 1) {
+                                            _submit();
+                                          } else {
+                                            _moveToNextWord(index);
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                if (_errorText != null) ...[
+                                  const SizedBox(height: AppSpacing.s),
+                                  Text(
+                                    _errorText!,
                                     style: AppTypography.bodyMedium.copyWith(
-                                      color: colors.text.accent,
+                                      color: colors.text.destructive,
                                     ),
                                     textAlign: TextAlign.center,
                                   ),
-                                ),
+                                ],
                               ],
                             ),
                           ),
-                          const SizedBox(height: AppSpacing.lg),
-                          SizedBox(
-                            width: _gridWidth,
-                            child: Wrap(
-                              alignment: WrapAlignment.center,
-                              spacing: AppSpacing.s,
-                              runSpacing: AppSpacing.s,
-                              children: List.generate(
-                                _wordCount,
-                                (index) => _MnemonicWordCell(
-                                  index: index,
-                                  controller: _controllers[index],
-                                  focusNode: _focusNodes[index],
-                                  wordList: _mnemonicWordList,
-                                  autocompleteEnabled: () =>
-                                      _autocompleteEnabled,
-                                  onAutocompleteReactivationRequested: () =>
-                                      _reactivateAutocomplete(
-                                        _controllers[index],
-                                      ),
-                                  destructive:
-                                      _showValidationError &&
-                                      _controllers[index].text
-                                          .trim()
-                                          .isNotEmpty,
-                                  autofocus: index == 0,
-                                  onMoveNext: () => _moveToNextWord(index),
-                                  onMovePrevious: () =>
-                                      _moveToPreviousWord(index),
-                                  onSuggestionSelected: (word) =>
-                                      _handleSuggestionSelected(index, word),
-                                  onChanged: (value) =>
-                                      _handleWordChanged(index, value),
-                                  onSubmitted: () {
-                                    if (index == _wordCount - 1) {
-                                      _submit();
-                                    } else {
-                                      _moveToNextWord(index);
-                                    }
-                                  },
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (_errorText != null) ...[
-                            const SizedBox(height: AppSpacing.s),
-                            Text(
-                              _errorText!,
-                              style: AppTypography.bodyMedium.copyWith(
-                                color: colors.text.destructive,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ],
+                        ),
                       ),
                     ),
                   ),
