@@ -212,11 +212,15 @@ final _routerProvider = Provider<GoRouter>((ref) {
         : null,
     routes: kAppFormFactor == AppFormFactor.mobile
         ? buildMobileRoutes(
-            entryRoutes: appEntryRoutes(ref, bootstrap),
+            entryRoutes: [
+              ...appAuthRoutes(ref, bootstrap),
+              ...appDesktopOnboardingRoutes(ref),
+            ],
             swapFeatureEnabled: swapFeatureEnabled,
           )
         : [
-            ...appEntryRoutes(ref, bootstrap),
+            ...appAuthRoutes(ref, bootstrap),
+            ...appDesktopOnboardingRoutes(ref),
             ..._desktopRoutes(swapFeatureEnabled),
           ],
   );
@@ -289,7 +293,10 @@ String? appRedirect({
 
 /// Entry, onboarding, and auth routes shared by the desktop and mobile
 /// route trees.
-List<RouteBase> appEntryRoutes(Ref ref, AppBootstrapState bootstrap) => [
+/// Auth and utility routes shared verbatim by the desktop and mobile
+/// route trees: root redirect, blocking-storage failure, unlock flow,
+/// and the public legal pages.
+List<RouteBase> appAuthRoutes(Ref ref, AppBootstrapState bootstrap) => [
   GoRoute(
     path: '/',
     redirect: (_, _) {
@@ -309,6 +316,20 @@ List<RouteBase> appEntryRoutes(Ref ref, AppBootstrapState bootstrap) => [
     path: '/storage-unavailable',
     builder: (_, _) => const StorageUnavailableScreen(),
   ),
+  GoRoute(path: '/unlock', builder: (_, _) => const UnlockScreen()),
+  GoRoute(
+    path: '/lost-password',
+    builder: (_, _) => const LostPasswordScreen(),
+  ),
+  GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
+  GoRoute(path: '/privacy', builder: (_, _) => const PrivacyPolicyScreen()),
+];
+
+/// Desktop onboarding tree: welcome, the create/import/keystone
+/// split-view shells, and the keystone entry aliases. The mobile tree
+/// replaces these with single-pane mobile onboarding screens (same
+/// route paths, so the shared guard keeps working).
+List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
   // Onboarding-route transitions. Desktop acrylic visibly stutters
   // through a snapped page swap, so each route gets a custom
   // page builder that lets contents enter while the acrylic stays
@@ -571,13 +592,6 @@ List<RouteBase> appEntryRoutes(Ref ref, AppBootstrapState bootstrap) => [
       ),
     ],
   ),
-  GoRoute(path: '/unlock', builder: (_, _) => const UnlockScreen()),
-  GoRoute(
-    path: '/lost-password',
-    builder: (_, _) => const LostPasswordScreen(),
-  ),
-  GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
-  GoRoute(path: '/privacy', builder: (_, _) => const PrivacyPolicyScreen()),
   GoRoute(
     path: '/import-keystone',
     redirect: (_, _) => KeystoneOnboardingStep.howToConnect.routePath,
@@ -587,6 +601,8 @@ List<RouteBase> appEntryRoutes(Ref ref, AppBootstrapState bootstrap) => [
     redirect: (_, _) => KeystoneOnboardingStep.howToConnect.routePath,
   ),
 ];
+
+/// Main application routes for the desktop (large-form-factor) tree.
 
 /// Main application routes for the desktop (large-form-factor) tree.
 List<RouteBase> _desktopRoutes(bool swapFeatureEnabled) => [
