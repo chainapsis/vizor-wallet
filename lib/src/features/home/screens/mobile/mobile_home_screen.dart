@@ -13,6 +13,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/sync_provider.dart';
+import '../../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../../../activity/activity_feed_sections.dart';
 import '../../../activity/activity_row_mapper.dart';
 import '../../../activity/swap_activity_row_items_provider.dart';
@@ -46,7 +47,11 @@ class MobileHomeScreen extends ConsumerWidget {
       bottom: false,
       child: Column(
         children: [
-          const MobileTopNavAccount(),
+          Builder(
+            builder: (context) => MobileTopNavAccount(
+              onAccountTap: () => showMobileAccountsSheet(context),
+            ),
+          ),
           Expanded(
             child: isImporting
                 ? _ImportingView(progress: sync.displayPercentage)
