@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart' show CupertinoPage;
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/onboarding/mobile/mobile_create_steps.dart';
 import '../../features/onboarding/mobile/mobile_onboarding_scaffold.dart';
 import '../../features/onboarding/mobile/mobile_welcome_screen.dart';
 import '../theme/app_theme.dart';
@@ -26,9 +27,27 @@ List<RouteBase> mobileOnboardingRoutes() => [
       child: const MobileWelcomeScreen(showBackButton: true),
     ),
   ),
-  _step('/onboarding/intro'),
-  _step('/onboarding/address-types'),
-  _step('/onboarding/things-to-know'),
+  GoRoute(
+    path: '/onboarding/intro',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileOnboardingIntroScreen(),
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/address-types',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileAddressTypesScreen(),
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/things-to-know',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileThingsToKnowScreen(),
+    ),
+  ),
   _step('/onboarding/secret-passphrase'),
   _step('/onboarding/set-passcode'),
   _step('/onboarding/biometrics'),

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_screen.dart';
 
 Widget _app({String initialLocation = '/welcome'}) {
@@ -48,8 +49,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_welcome_create')));
     await tester.pumpAndSettle();
 
-    // Placeholder step until OB-3 lands.
-    expect(find.text('Coming soon'), findsOneWidget);
+    expect(find.byType(MobileOnboardingIntroScreen), findsOneWidget);
 
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pumpAndSettle();
