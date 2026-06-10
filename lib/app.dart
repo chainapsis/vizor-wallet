@@ -45,6 +45,7 @@ import 'src/features/onboarding/lost_password_screen.dart';
 import 'src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'src/features/onboarding/shared/set_password_screen.dart';
 import 'src/features/onboarding/storage_unavailable_screen.dart';
+import 'src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/receive/screens/receive_screen.dart';
@@ -214,13 +215,21 @@ final _routerProvider = Provider<GoRouter>((ref) {
     routes: kAppFormFactor == AppFormFactor.mobile
         ? buildMobileRoutes(
             entryRoutes: [
-              ...appAuthRoutes(ref, bootstrap),
+              ...appAuthRoutes(
+                ref,
+                bootstrap,
+                unlockScreen: const MobileUnlockScreen(),
+              ),
               ...mobileOnboardingRoutes(),
             ],
             swapFeatureEnabled: swapFeatureEnabled,
           )
         : [
-            ...appAuthRoutes(ref, bootstrap),
+            ...appAuthRoutes(
+              ref,
+              bootstrap,
+              unlockScreen: const UnlockScreen(),
+            ),
             ...appDesktopOnboardingRoutes(ref),
             ..._desktopRoutes(swapFeatureEnabled),
           ],
@@ -297,7 +306,11 @@ String? appRedirect({
 /// Auth and utility routes shared verbatim by the desktop and mobile
 /// route trees: root redirect, blocking-storage failure, unlock flow,
 /// and the public legal pages.
-List<RouteBase> appAuthRoutes(Ref ref, AppBootstrapState bootstrap) => [
+List<RouteBase> appAuthRoutes(
+  Ref ref,
+  AppBootstrapState bootstrap, {
+  required Widget unlockScreen,
+}) => [
   GoRoute(
     path: '/',
     redirect: (_, _) {
@@ -317,7 +330,7 @@ List<RouteBase> appAuthRoutes(Ref ref, AppBootstrapState bootstrap) => [
     path: '/storage-unavailable',
     builder: (_, _) => const StorageUnavailableScreen(),
   ),
-  GoRoute(path: '/unlock', builder: (_, _) => const UnlockScreen()),
+  GoRoute(path: '/unlock', builder: (_, _) => unlockScreen),
   GoRoute(
     path: '/lost-password',
     builder: (_, _) => const LostPasswordScreen(),
