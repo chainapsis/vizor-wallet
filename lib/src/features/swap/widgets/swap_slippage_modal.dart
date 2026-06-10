@@ -4,8 +4,8 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_modal_card.dart';
 import '../models/swap_models.dart';
-import 'swap_modal_controls.dart';
 
 class SwapSlippageModal extends StatefulWidget {
   const SwapSlippageModal({
@@ -128,45 +128,30 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
     final selectedBps = _selectedBps;
     final canSubmit = selectedBps != null;
 
-    return Container(
+    return AppModalCard(
       key: const ValueKey('swap_slippage_modal'),
-      width: 312,
-      height: 398,
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              SwapModalIconBadge(
-                iconName: AppIcons.cog,
-                iconColor: colors.icon.regular,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Slippage',
-                style: AppTypography.bodyLarge.copyWith(
-                  fontWeight: FontWeight.w500,
-                  color: colors.text.accent,
-                ),
-              ),
-            ],
+          Text(
+            'Slippage',
+            style: AppTypography.bodyLarge.copyWith(
+              fontWeight: FontWeight.w600,
+              color: colors.text.accent,
+            ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSpacing.sm),
           for (final bps in swapSlippagePresetBps) ...[
             _SlippageRadioCard(
               bps: bps,
-              height: bps == swapSlippagePresetBps.first ? 34 : 40,
               selected: _selectedPresetBps == bps,
               onTap: () => _selectPreset(bps),
             ),
-            if (bps != swapSlippagePresetBps.last) const SizedBox(height: 8),
+            if (bps != swapSlippagePresetBps.last)
+              const SizedBox(height: AppSpacing.xs),
           ],
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.xs),
           _SlippageCustomRadioCard(
             controller: _customController,
             focusNode: _customFocusNode,
@@ -175,19 +160,29 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
             onTap: _selectCustom,
             onChanged: _handleCustomChanged,
           ),
-          const Spacer(),
-          SwapModalButtons(
-            primaryKey: const ValueKey('swap_slippage_update_button'),
+          const SizedBox(height: AppSpacing.sm),
+          if (_customValueInvalid) ...[
+            Text(
+              'Slippage must be 0.1 - 5%',
+              key: const ValueKey('swap_slippage_error_message'),
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.destructive,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s),
+          ],
+          AppModalActions(
             cancelKey: const ValueKey('swap_slippage_cancel_button'),
-            primaryLabel: _customValueInvalid
-                ? 'Slippage must be 0.1 - 5%'
-                : 'Update',
-            primaryEnabled: canSubmit,
-            onPrimary: () {
-              final value = _selectedBps;
-              if (value == null) return;
-              widget.onSubmitted(value);
-            },
+            actionKey: const ValueKey('swap_slippage_update_button'),
+            actionLabel: 'Update',
+            onAction: canSubmit
+                ? () {
+                    final value = _selectedBps;
+                    if (value == null) return;
+                    widget.onSubmitted(value);
+                  }
+                : null,
             onCancel: widget.onCancel,
           ),
         ],
@@ -199,13 +194,11 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
 class _SlippageRadioCard extends StatelessWidget {
   const _SlippageRadioCard({
     required this.bps,
-    required this.height,
     required this.selected,
     required this.onTap,
   });
 
   final int bps;
-  final double height;
   final bool selected;
   final VoidCallback onTap;
 
@@ -219,50 +212,32 @@ class _SlippageRadioCard extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
-          height: height,
-          padding: const EdgeInsets.fromLTRB(8, 4, 12, 4),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: selected ? colors.border.strong : colors.border.regular,
-              width: selected ? 2 : 1.5,
-            ),
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  child: Text(
-                    formatSwapSlippage(bps),
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.accent,
+          height: 40,
+          decoration: _slippageRowDecoration(colors, selected: selected),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 12, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    child: Text(
+                      formatSwapSlippage(bps),
+                      style: AppTypography.labelLarge.copyWith(
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                        color: colors.text.accent,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              Container(
-                width: 16,
-                height: 16,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: selected
-                      ? colors.background.inverse
-                      : colors.background.neutralSubtleOpacity,
-                  borderRadius: BorderRadius.circular(AppRadii.full),
-                ),
-                child: selected
-                    ? AppIcon(
-                        AppIcons.check,
-                        size: 12,
-                        color: colors.icon.inverse,
-                      )
-                    : null,
-              ),
-            ],
+                _SlippageRadioIndicator(selected: selected),
+              ],
+            ),
           ),
         ),
       ),
@@ -290,15 +265,19 @@ class _SlippageCustomRadioCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final borderColor = invalid
-        ? colors.border.utilityDestructive
-        : selected
-        ? colors.border.strong
-        : colors.border.regular;
     final valueColor = invalid ? colors.text.destructive : colors.text.accent;
-    final valueStyle = AppTypography.labelLarge.copyWith(color: valueColor);
+    // The entered value uses Geist Regular; label / suffix stay SemiBold.
+    final valueStyle = AppTypography.labelLarge.copyWith(
+      fontWeight: FontWeight.w400,
+      color: valueColor,
+    );
     final hintStyle = AppTypography.labelLarge.copyWith(
+      fontWeight: FontWeight.w600,
       color: colors.text.accent.withValues(alpha: 0.4),
+    );
+    final fixedLabelStyle = AppTypography.labelLarge.copyWith(
+      fontWeight: FontWeight.w600,
+      color: invalid ? colors.text.destructive : colors.text.accent,
     );
     final inputWidth = _slippageInputWidth(
       context,
@@ -315,86 +294,117 @@ class _SlippageCustomRadioCard extends StatelessWidget {
         onTap: onTap,
         child: Container(
           height: 40,
-          padding: const EdgeInsets.fromLTRB(8, 4, 12, 4),
-          decoration: BoxDecoration(
-            border: Border.all(color: borderColor, width: selected ? 2 : 1.5),
-            borderRadius: BorderRadius.circular(AppRadii.medium),
+          decoration: _slippageRowDecoration(
+            colors,
+            selected: selected,
+            invalid: invalid,
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  child: Row(
-                    children: [
-                      Text(
-                        'Custom',
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.accent,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      SizedBox(
-                        width: inputWidth,
-                        height: 18,
-                        child: TextField(
-                          key: const ValueKey('swap_slippage_custom_input'),
-                          controller: controller,
-                          focusNode: focusNode,
-                          onTap: onTap,
-                          onChanged: onChanged,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          inputFormatters: const [
-                            _SlippageCustomInputFormatter(),
-                          ],
-                          style: valueStyle,
-                          textAlign: TextAlign.right,
-                          cursorColor: valueColor,
-                          decoration: InputDecoration.collapsed(
-                            hintText: '0.1-5',
-                            hintStyle: hintStyle,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 12, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      children: [
+                        Text('Custom', style: fixedLabelStyle),
+                        const SizedBox(width: 4),
+                        SizedBox(
+                          width: inputWidth,
+                          height: 18,
+                          child: TextField(
+                            key: const ValueKey('swap_slippage_custom_input'),
+                            controller: controller,
+                            focusNode: focusNode,
+                            onTap: onTap,
+                            onChanged: onChanged,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            inputFormatters: const [
+                              _SlippageCustomInputFormatter(),
+                            ],
+                            style: valueStyle,
+                            textAlign: TextAlign.right,
+                            cursorColor: valueColor,
+                            decoration: InputDecoration.collapsed(
+                              hintText: '0.1-5',
+                              hintStyle: hintStyle,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        key: const ValueKey('swap_slippage_custom_percent'),
-                        '%',
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.accent,
+                        const SizedBox(width: 4),
+                        Text(
+                          key: const ValueKey('swap_slippage_custom_percent'),
+                          '%',
+                          style: fixedLabelStyle,
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              Container(
-                width: 16,
-                height: 16,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: selected
-                      ? colors.background.inverse
-                      : colors.background.neutralSubtleOpacity,
-                  borderRadius: BorderRadius.circular(AppRadii.full),
-                ),
-                child: selected
-                    ? AppIcon(
-                        AppIcons.check,
-                        size: 12,
-                        color: colors.icon.inverse,
-                      )
-                    : null,
-              ),
-            ],
+                _SlippageRadioIndicator(selected: selected),
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Filled-row decoration shared by the preset and custom slippage cards.
+///
+/// Per the redesign each row sits on `Foreground/Neutral/Ground`. Only the
+/// selected row gains a 2dp `Border/Neutral/Strong` outline (destructive when
+/// the custom value is out of range); unselected rows have no border.
+BoxDecoration _slippageRowDecoration(
+  AppColors colors, {
+  required bool selected,
+  bool invalid = false,
+}) {
+  return BoxDecoration(
+    color: colors.background.ground,
+    borderRadius: BorderRadius.circular(AppRadii.medium),
+    boxShadow: appSurfaceShadow(colors),
+    border: selected
+        ? Border.all(
+            color: invalid
+                ? colors.border.utilityDestructive
+                : colors.border.strong,
+            width: 2,
+          )
+        : null,
+  );
+}
+
+/// 16dp circular radio indicator: filled with `Foreground/Neutral/Inverse`
+/// plus a 12dp check when selected, otherwise a subtle empty circle.
+class _SlippageRadioIndicator extends StatelessWidget {
+  const _SlippageRadioIndicator({required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: 16,
+      height: 16,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: selected
+            ? colors.background.inverse
+            : colors.background.neutralSubtleOpacity,
+        borderRadius: BorderRadius.circular(AppRadii.full),
+      ),
+      child: selected
+          ? AppIcon(AppIcons.check, size: 12, color: colors.icon.inverse)
+          : null,
     );
   }
 }
@@ -449,4 +459,3 @@ class _SlippageCustomInputFormatter extends TextInputFormatter {
     return oldValue;
   }
 }
-

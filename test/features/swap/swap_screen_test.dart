@@ -1634,7 +1634,7 @@ void main() {
     await pumpStatus(AddressQrCameraStatus.denied, onRetry: () {});
 
     expect(find.text("You've denied Camera access"), findsOneWidget);
-    expect(find.text('Allow camera'), findsOneWidget);
+    expect(find.text('Request again'), findsOneWidget);
     expect(
       tester
           .getSize(find.byKey(const ValueKey('address_scan_retry_button')))
@@ -1665,7 +1665,7 @@ void main() {
       tester
           .getSize(find.byKey(const ValueKey('address_scan_camera_footer')))
           .height,
-      32,
+      36,
     );
     expect(
       find.byKey(const ValueKey('address_scan_camera_border')),
@@ -1682,7 +1682,7 @@ void main() {
       find.byKey(const ValueKey('address_scan_loading_overlay')),
       findsOneWidget,
     );
-    expect(find.text('Loading...'), findsOneWidget);
+    expect(find.text('Loading'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('address_scan_camera_border')),
       findsOneWidget,
@@ -3093,10 +3093,12 @@ void main() {
     final customCardTop = tester
         .getTopLeft(find.byKey(const ValueKey('swap_slippage_custom_card')))
         .dy;
-    expect(customCardTop - slippageModalTop, 218);
+    // Card top padding (24) + title line (24) + 16 gap + three 40dp preset
+    // rows with 8dp gaps (3×40 + 3×8 = 144) puts the custom row 208dp down.
+    expect(customCardTop - slippageModalTop, 208);
     expect(
       tester.getSize(find.byKey(const ValueKey('swap_slippage_50bps'))).height,
-      34,
+      40,
     );
     final customInputFinder = find.byKey(
       const ValueKey('swap_slippage_custom_input'),
@@ -7509,10 +7511,11 @@ void main() {
   });
 }
 
+// Shared modal card shadow (core/widgets/app_modal_card.dart appModalShadow).
 const _figmaModalSurfaceShadows = [
-  BoxShadow(color: Color(0x14000000), offset: Offset(0, 14), blurRadius: 28),
-  BoxShadow(color: Color(0x08000000), offset: Offset(0, -6), blurRadius: 12),
   BoxShadow(color: Color(0x0F000000), offset: Offset(0, 2), blurRadius: 8),
+  BoxShadow(color: Color(0x08000000), offset: Offset(0, -6), blurRadius: 12),
+  BoxShadow(color: Color(0x14000000), offset: Offset(0, 14), blurRadius: 28),
 ];
 
 Widget _routerHarness(

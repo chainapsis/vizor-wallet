@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_modal_card.dart';
 import '../models/swap_models.dart';
 import 'swap_asset_icon.dart';
 import 'swap_modal_controls.dart';
@@ -27,12 +28,6 @@ class SwapAssetSelectorModal extends StatefulWidget {
 }
 
 class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
-  static const _modalSurfaceShadows = [
-    BoxShadow(color: Color(0x14000000), offset: Offset(0, 14), blurRadius: 28),
-    BoxShadow(color: Color(0x08000000), offset: Offset(0, -6), blurRadius: 12),
-    BoxShadow(color: Color(0x0F000000), offset: Offset(0, 2), blurRadius: 8),
-  ];
-
   late final TextEditingController _queryController;
   late final FocusNode _focusNode;
   late final ScrollController _scrollController;
@@ -85,9 +80,11 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
     final colors = context.colors;
     final assets = _filteredAssets;
     final hasQuery = _queryController.text.isNotEmpty;
+    // Spec: the 1.5dp border slot is transparent at rest and only paints the
+    // active token (Border/Neutral/medium) when the field is focused or filled.
     final searchBorderColor = _focusNode.hasFocus || hasQuery
         ? colors.border.medium
-        : colors.border.regular;
+        : colors.border.medium.withValues(alpha: 0);
 
     return Container(
       key: const ValueKey('swap_external_asset_menu'),
@@ -98,23 +95,18 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
       decoration: BoxDecoration(
         color: colors.background.base,
         borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: _modalSurfaceShadows,
+        boxShadow: appModalShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              SwapModalIconBadge(
-                iconName: AppIcons.coins,
-                iconColor: colors.icon.regular,
-              ),
-              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'Select asset',
                   style: AppTypography.bodyLarge.copyWith(
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                     color: colors.text.accent,
                   ),
                 ),
@@ -151,6 +143,8 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
                       focusNode: _focusNode,
                       onChanged: (_) => setState(() {}),
                       textInputAction: TextInputAction.search,
+                      // Inputs/Field master: typed value Label M Medium,
+                      // placeholder Label M Regular (Geist 14/16, -0.06).
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                       ),
@@ -158,6 +152,7 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
                       decoration: InputDecoration.collapsed(
                         hintText: 'Search token or chain',
                         hintStyle: AppTypography.labelLarge.copyWith(
+                          fontWeight: FontWeight.w400,
                           color: colors.text.muted,
                         ),
                       ),
@@ -185,7 +180,9 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
                       child: Text(
                         'No tokens or chains found',
                         textAlign: TextAlign.center,
+                        // Spec: Label M Regular (Geist 14/16, weight 400).
                         style: AppTypography.labelLarge.copyWith(
+                          fontWeight: FontWeight.w400,
                           color: colors.text.secondary,
                         ),
                       ),
@@ -212,7 +209,7 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
                           padding: EdgeInsets.zero,
                           itemCount: assets.length,
                           separatorBuilder: (_, _) =>
-                              const SizedBox(height: AppSpacing.xxs),
+                              const SizedBox(height: AppSpacing.xs),
                           itemBuilder: (context, index) {
                             final asset = assets[index];
                             return _AssetMenuRow(
@@ -254,10 +251,10 @@ class _AssetMenuRow extends StatelessWidget {
         onTap: onTap,
         child: Container(
           height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           decoration: BoxDecoration(
             color: selected ? colors.background.neutralSubtleOpacity : null,
-            borderRadius: BorderRadius.circular(AppRadii.xSmall),
+            borderRadius: BorderRadius.circular(AppRadii.small),
           ),
           child: Row(
             children: [
@@ -285,7 +282,11 @@ class _AssetMenuRow extends StatelessWidget {
                       asset.chainLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelMedium.copyWith(
+                      // Spec: chain name is Label M Regular (Geist 14/16, -0.06,
+                      // weight 400) — same metrics as the ticker above, regular
+                      // weight. labelMedium would be 13/14 Medium, which is wrong.
+                      style: AppTypography.labelLarge.copyWith(
+                        fontWeight: FontWeight.w400,
                         color: colors.text.secondary,
                       ),
                     ),
