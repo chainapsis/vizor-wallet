@@ -5,14 +5,13 @@
 ```bash
 # Always use fvm, never bare flutter
 fvm flutter run
-fvm flutter test
+fvm flutter test      # mobile-tagged tests auto-skip (dart_test.yaml)
 fvm flutter analyze
 
-# Mobile form factor: runs AND tests targeting the mobile UI must pass
-# the token define (desktop is the default). Details in the
-# "Design Token Form Factor" section below.
+# Mobile form factor: mobile-targeted runs and tests pass the token
+# define. Details in the "Design Token Form Factor" section below.
 fvm flutter run --dart-define=VIZOR_FORM_FACTOR=mobile
-fvm flutter test --dart-define=VIZOR_FORM_FACTOR=mobile
+fvm flutter test --tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile
 
 # Rust tests (run from project root or rust/)
 cd rust && cargo test
@@ -46,8 +45,8 @@ release builds. Source of truth:
 
 - **Every mobile-targeted invocation** — `run`, `build`, `test`, and
   `drive` alike. The test binary is compiled per-lane like any other
-  build, so widget tests that assert mobile-mode UI need
-  `fvm flutter test --dart-define=VIZOR_FORM_FACTOR=mobile` too.
+  build, so widget tests that assert mobile-mode UI need the define too
+  (full lane command in "Test lanes" below).
 - Desktop (macOS) runs, widgetbook, and plain `fvm flutter test` need no
   flag — the default is `desktop`.
 
@@ -55,19 +54,37 @@ release builds. Source of truth:
 
 - **Debug app run on a phone**: fails fast at startup (assert in
   `lib/main.dart`) with the exact flag to pass.
-- **Tests**: there is NO guard. A mobile-UI test run without the define
-  silently resolves desktop values, so expectations fail with
-  wrong-looking sizes (button height 44 instead of 50, body font 14
-  instead of 16). Before debugging a "wrong metrics" test failure, check
-  the lane first.
+- **Tests**: the default lane never runs mobile-tagged tests (they
+  auto-skip — see "Test lanes" below), so the only risk is the mobile
+  lane itself: `--run-skipped` without the define resolves desktop
+  values. `test/mobile_lane_sanity_test.dart` fails first, by name, in
+  that case.
 - **Release builds**: no guard either — release/CI lanes for iOS/Android
   must hardcode the define or they ship desktop tokens.
 
-### One lane per invocation
+### Test lanes
 
-A single `flutter test` run compiles exactly one form factor; desktop
-and mobile expectations cannot mix in one run. Either split suites
-across two lanes, or write lane-agnostic assertions:
+A single `flutter test` invocation compiles exactly one form factor —
+the define cannot vary per test. Mobile-UI tests are opt-in via the
+`mobile` tag:
+
+- A test file that asserts mobile-mode UI MUST start with
+  `@Tags(['mobile'])`.
+- `dart_test.yaml` marks the `mobile` tag as skipped by default, so the
+  plain desktop lane (`fvm flutter test`, no flags) never runs them —
+  they report as skipped with the mobile-lane command as the reason.
+- The mobile lane re-enables them:
+  `fvm flutter test --tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile`
+  (`--tags mobile` scopes the run to mobile tests, `--run-skipped`
+  lifts the tag's default skip, the define compiles the mobile token
+  set). Note `--run-skipped` lifts every skip inside the selected
+  tests, so don't use `skip:` to park a broken mobile test — comment it
+  out or fix it.
+- `test/mobile_lane_sanity_test.dart` (tagged `mobile`) asserts the
+  define, so a mobile-lane run missing `--dart-define` fails loudly by
+  name instead of as confusing metric mismatches.
+
+Untagged tests may run in either lane and must be lane-agnostic:
 
 - Compare against token constants, not literal numbers:
   `expect(style, AppTypography.bodyMedium)` passes in both lanes;
@@ -77,8 +94,6 @@ across two lanes, or write lane-agnostic assertions:
   `AppAssetSizeDesktop` / `AppAssetSizeMobile`,
   `AppButtonSizingDesktop` / `AppButtonSizingMobile`,
   `AppInputSizingDesktop` / `AppInputSizingMobile`.
-- To restrict a test to one lane:
-  `skip: kAppFormFactor != AppFormFactor.mobile`.
 - `test/core/theme/design_tokens_test.dart` follows these rules and
   passes in both lanes — use it as the reference.
 
@@ -703,9 +718,10 @@ Important desktop design rule:
 ## Testing
 
 - Rust unit tests: `cd rust && cargo test` — 11 tests covering key derivation, address encoding / Orchard-only UA derivation, determinism, and PROPOSAL_STORE lifecycle (idempotent discard, consume-on-entry, replay rejection). Tests that need a DB use `tempfile::tempdir()`.
-- Dart unit tests: `fvm flutter test` (desktop token lane). Mobile-UI
-  tests need `fvm flutter test --dart-define=VIZOR_FORM_FACTOR=mobile` —
-  see "Design Token Form Factor" above.
+- Dart unit tests: `fvm flutter test` (mobile-tagged tests auto-skip).
+  Mobile-UI tests:
+  `fvm flutter test --tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile`.
+  Lane rules in "Design Token Form Factor" above.
 - Integration tests: `fvm flutter test integration_test/` (requires device/simulator)
 - Flutter regtest E2E notes:
   - Run app tests with `--dart-define=ZCASH_DEFAULT_NETWORK=regtest`; do not use the old `ZCASH_USE_E2E_STORAGE` path. Secure storage and wallet DB names are network-scoped.
