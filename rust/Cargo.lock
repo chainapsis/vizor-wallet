@@ -940,7 +940,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.3.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=eba70e327a37eb4e7c15608f9b78f7bf02dff74d#eba70e327a37eb4e7c15608f9b78f7bf02dff74d"
+source = "git+https://github.com/valargroup/librustzcash?rev=8cb690c1812d8ef00eaf88bacbda236067042e89#8cb690c1812d8ef00eaf88bacbda236067042e89"
 dependencies = [
  "blake2b_simd",
  "corez",
@@ -965,7 +965,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.1"
-source = "git+https://github.com/valargroup/librustzcash?rev=eba70e327a37eb4e7c15608f9b78f7bf02dff74d#eba70e327a37eb4e7c15608f9b78f7bf02dff74d"
+source = "git+https://github.com/valargroup/librustzcash?rev=8cb690c1812d8ef00eaf88bacbda236067042e89#8cb690c1812d8ef00eaf88bacbda236067042e89"
 dependencies = [
  "blake2b_simd",
 ]
@@ -2300,7 +2300,7 @@ dependencies = [
 [[package]]
 name = "pczt"
 version = "0.7.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=eba70e327a37eb4e7c15608f9b78f7bf02dff74d#eba70e327a37eb4e7c15608f9b78f7bf02dff74d"
+source = "git+https://github.com/valargroup/librustzcash?rev=8cb690c1812d8ef00eaf88bacbda236067042e89#8cb690c1812d8ef00eaf88bacbda236067042e89"
 dependencies = [
  "blake2b_simd",
  "bls12_381",
@@ -3935,7 +3935,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree"
 version = "0.3.2"
-source = "git+https://github.com/valargroup/zcash_voting?rev=1942eac09e76940f2d4a933496d5f0d82790ac99#1942eac09e76940f2d4a933496d5f0d82790ac99"
+source = "git+https://github.com/valargroup/zcash_voting?rev=c27574f2dd1bdd24d1e1629956a4ebfbe5d25a79#c27574f2dd1bdd24d1e1629956a4ebfbe5d25a79"
 dependencies = [
  "anyhow",
  "ff",
@@ -3951,7 +3951,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree-client"
 version = "0.5.2"
-source = "git+https://github.com/valargroup/zcash_voting?rev=1942eac09e76940f2d4a933496d5f0d82790ac99#1942eac09e76940f2d4a933496d5f0d82790ac99"
+source = "git+https://github.com/valargroup/zcash_voting?rev=c27574f2dd1bdd24d1e1629956a4ebfbe5d25a79#c27574f2dd1bdd24d1e1629956a4ebfbe5d25a79"
 dependencies = [
  "base64",
  "ff",
@@ -4383,7 +4383,7 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.12.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=eba70e327a37eb4e7c15608f9b78f7bf02dff74d#eba70e327a37eb4e7c15608f9b78f7bf02dff74d"
+source = "git+https://github.com/valargroup/librustzcash?rev=8cb690c1812d8ef00eaf88bacbda236067042e89#8cb690c1812d8ef00eaf88bacbda236067042e89"
 dependencies = [
  "bech32",
  "bs58",
@@ -4396,7 +4396,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.23.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=eba70e327a37eb4e7c15608f9b78f7bf02dff74d#eba70e327a37eb4e7c15608f9b78f7bf02dff74d"
+source = "git+https://github.com/valargroup/librustzcash?rev=8cb690c1812d8ef00eaf88bacbda236067042e89#8cb690c1812d8ef00eaf88bacbda236067042e89"
 dependencies = [
  "async-trait",
  "base64",
@@ -4451,7 +4451,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_sqlite"
 version = "0.21.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=eba70e327a37eb4e7c15608f9b78f7bf02dff74d#eba70e327a37eb4e7c15608f9b78f7bf02dff74d"
+source = "git+https://github.com/valargroup/librustzcash?rev=8cb690c1812d8ef00eaf88bacbda236067042e89#8cb690c1812d8ef00eaf88bacbda236067042e89"
 dependencies = [
  "bip32",
  "bitflags",
@@ -4497,7 +4497,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.4.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=eba70e327a37eb4e7c15608f9b78f7bf02dff74d#eba70e327a37eb4e7c15608f9b78f7bf02dff74d"
+source = "git+https://github.com/valargroup/librustzcash?rev=8cb690c1812d8ef00eaf88bacbda236067042e89#8cb690c1812d8ef00eaf88bacbda236067042e89"
 dependencies = [
  "corez",
  "hex",
@@ -4507,7 +4507,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.14.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=eba70e327a37eb4e7c15608f9b78f7bf02dff74d#eba70e327a37eb4e7c15608f9b78f7bf02dff74d"
+source = "git+https://github.com/valargroup/librustzcash?rev=8cb690c1812d8ef00eaf88bacbda236067042e89#8cb690c1812d8ef00eaf88bacbda236067042e89"
 dependencies = [
  "bech32",
  "bip32",
@@ -4549,7 +4549,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.28.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=eba70e327a37eb4e7c15608f9b78f7bf02dff74d#eba70e327a37eb4e7c15608f9b78f7bf02dff74d"
+source = "git+https://github.com/valargroup/librustzcash?rev=8cb690c1812d8ef00eaf88bacbda236067042e89#8cb690c1812d8ef00eaf88bacbda236067042e89"
 dependencies = [
  "blake2b_simd",
  "block-buffer 0.11.0-rc.3",
@@ -4579,7 +4579,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.28.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=eba70e327a37eb4e7c15608f9b78f7bf02dff74d#eba70e327a37eb4e7c15608f9b78f7bf02dff74d"
+source = "git+https://github.com/valargroup/librustzcash?rev=8cb690c1812d8ef00eaf88bacbda236067042e89#8cb690c1812d8ef00eaf88bacbda236067042e89"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -4600,7 +4600,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.9.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=eba70e327a37eb4e7c15608f9b78f7bf02dff74d#eba70e327a37eb4e7c15608f9b78f7bf02dff74d"
+source = "git+https://github.com/valargroup/librustzcash?rev=8cb690c1812d8ef00eaf88bacbda236067042e89#8cb690c1812d8ef00eaf88bacbda236067042e89"
 dependencies = [
  "corez",
  "document-features",
@@ -4638,7 +4638,7 @@ dependencies = [
 [[package]]
 name = "zcash_transparent"
 version = "0.8.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=eba70e327a37eb4e7c15608f9b78f7bf02dff74d#eba70e327a37eb4e7c15608f9b78f7bf02dff74d"
+source = "git+https://github.com/valargroup/librustzcash?rev=8cb690c1812d8ef00eaf88bacbda236067042e89#8cb690c1812d8ef00eaf88bacbda236067042e89"
 dependencies = [
  "bip32",
  "bs58",
@@ -4662,7 +4662,7 @@ dependencies = [
 [[package]]
 name = "zcash_voting"
 version = "1.0.0"
-source = "git+https://github.com/valargroup/zcash_voting?rev=1942eac09e76940f2d4a933496d5f0d82790ac99#1942eac09e76940f2d4a933496d5f0d82790ac99"
+source = "git+https://github.com/valargroup/zcash_voting?rev=c27574f2dd1bdd24d1e1629956a4ebfbe5d25a79#c27574f2dd1bdd24d1e1629956a4ebfbe5d25a79"
 dependencies = [
  "anyhow",
  "base64",
@@ -4824,7 +4824,7 @@ dependencies = [
 [[package]]
 name = "zip321"
 version = "0.8.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=eba70e327a37eb4e7c15608f9b78f7bf02dff74d#eba70e327a37eb4e7c15608f9b78f7bf02dff74d"
+source = "git+https://github.com/valargroup/librustzcash?rev=8cb690c1812d8ef00eaf88bacbda236067042e89#8cb690c1812d8ef00eaf88bacbda236067042e89"
 dependencies = [
  "base64",
  "nom",
