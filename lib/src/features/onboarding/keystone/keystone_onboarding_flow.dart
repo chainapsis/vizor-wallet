@@ -1,12 +1,14 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/motion/onboarding_motion.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../rust/wallet/keystone.dart' show KeystoneAccountInfo;
+import '../shared/onboarding_chrome.dart';
+
+export '../shared/onboarding_chrome.dart' show OnboardingBackTarget;
 
 enum KeystoneOnboardingStep {
   howToConnect,
@@ -153,71 +155,24 @@ class KeystoneOnboardingShell extends StatelessWidget {
 class KeystoneOnboardingTrailingPane extends StatelessWidget {
   const KeystoneOnboardingTrailingPane({
     required this.child,
+    this.backTarget,
     this.overlay,
+    this.bodyPadding = const EdgeInsets.fromLTRB(12, 16, 12, 16),
     super.key,
   });
 
   final Widget child;
+  final OnboardingBackTarget? backTarget;
   final Widget? overlay;
+  final EdgeInsetsGeometry bodyPadding;
 
   @override
   Widget build(BuildContext context) {
-    final overlay = this.overlay;
-    if (overlay == null) {
-      return AppDesktopPane(child: child);
-    }
-
-    return AppDesktopPane(
-      padding: EdgeInsets.zero,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Padding(padding: const EdgeInsets.all(AppSpacing.md), child: child),
-          overlay,
-        ],
-      ),
-    );
-  }
-}
-
-class KeystoneBackRow extends StatelessWidget {
-  const KeystoneBackRow({required this.routePath, this.routeExtra, super.key});
-
-  final String routePath;
-  final Object? routeExtra;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      height: 32,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => context.go(routePath, extra: routeExtra),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.chevronBackward,
-                  size: AppIconSize.medium,
-                  color: colors.text.accent,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return OnboardingPaneChrome(
+      backTarget: backTarget,
+      overlay: overlay,
+      bodyPadding: bodyPadding,
+      child: child,
     );
   }
 }
@@ -238,81 +193,16 @@ class _Sidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppDesktopSidebarSurface(
-      child: Stack(
-        children: [
-          const Positioned.fill(child: _SidebarIllustration()),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.xs),
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.xs),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (var i = 0; i < _steps.length; i++) ...[
-                      _KeystoneSidebarItem(
-                        label: _steps[i].label,
-                        iconName: _steps[i].iconName,
-                        active: _steps[i] == activeStep,
-                      ),
-                      if (i != _steps.length - 1)
-                        const SizedBox(height: AppSpacing.xs),
-                    ],
-                  ],
-                ),
-              ),
-            ),
+    return OnboardingSidebarChrome(
+      steps: [
+        for (final step in _steps)
+          OnboardingSidebarStepData(
+            label: step.label,
+            iconName: step.iconName,
+            active: step == activeStep,
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _KeystoneSidebarItem extends StatelessWidget {
-  const _KeystoneSidebarItem({
-    required this.label,
-    required this.iconName,
-    required this.active,
-  });
-
-  final String label;
-  final String iconName;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: active ? colors.state.selectedOpacity : null,
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      padding: const EdgeInsets.only(
-        left: AppSpacing.xs,
-        top: AppSpacing.xs,
-        bottom: AppSpacing.xs,
-      ),
-      child: Row(
-        children: [
-          AppIcon(iconName, size: 20, color: colors.icon.accent),
-          const SizedBox(width: AppSpacing.s),
-          Expanded(
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-          ),
-        ],
-      ),
+      ],
+      illustration: const _SidebarIllustration(),
     );
   }
 }

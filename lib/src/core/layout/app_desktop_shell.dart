@@ -13,6 +13,7 @@ class AppDesktopShell extends StatelessWidget {
   const AppDesktopShell({
     required this.sidebar,
     required this.pane,
+    this.background,
     this.backgroundColor,
     this.sidebarWidth = 256,
     super.key,
@@ -20,24 +21,33 @@ class AppDesktopShell extends StatelessWidget {
 
   final Widget sidebar;
   final Widget pane;
+  final Widget? background;
   final Color? backgroundColor;
   final double sidebarWidth;
 
   @override
   Widget build(BuildContext context) {
+    final background = this.background;
     return Scaffold(
       backgroundColor: backgroundColor ?? context.colors.macosUtility.window,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xs),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(width: sidebarWidth, child: sidebar),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(child: pane),
-            ],
-          ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (background != null)
+              Positioned.fill(child: IgnorePointer(child: background)),
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.xs),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(width: sidebarWidth, child: sidebar),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(child: pane),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -58,14 +68,14 @@ class AppDesktopSidebarSurface extends StatelessWidget {
   final Clip clipBehavior;
   final bool glass;
 
-  static const _glassRadius = 20.0;
+  static const glassRadius = 20.0;
   static const _glassBlur = 17.5;
 
   @override
   Widget build(BuildContext context) {
     if (glass) {
       final colors = context.colors;
-      final radius = BorderRadius.circular(_glassRadius);
+      final radius = BorderRadius.circular(glassRadius);
       final fill = backgroundColor ?? colors.macosUtility.navPanel;
       final thinBorderColor = colors.macosUtility.thinBorder;
       final innerHighlightColor = colors.macosUtility.innerBorder;
@@ -124,18 +134,20 @@ class AppDesktopPane extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(AppSpacing.md),
     this.backgroundColor,
+    this.paintBackground = true,
     super.key,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
   final Color? backgroundColor;
+  final bool paintBackground;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: backgroundColor ?? Colors.transparent,
+        color: paintBackground ? backgroundColor ?? Colors.transparent : null,
         borderRadius: BorderRadius.circular(AppWindowSizing.paneRadius),
       ),
       clipBehavior: Clip.antiAlias,

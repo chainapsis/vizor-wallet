@@ -30,12 +30,12 @@ class _KeystoneSelectAccountScreenState
     final selected = state.selectedAccount;
 
     return KeystoneOnboardingTrailingPane(
+      backTarget: OnboardingBackTarget.route(
+        label: KeystoneOnboardingStep.scanQrCode.label,
+        routePath: KeystoneOnboardingStep.scanQrCode.routePath,
+      ),
       child: Column(
         children: [
-          KeystoneBackRow(
-            routePath: KeystoneOnboardingStep.scanQrCode.routePath,
-          ),
-          const SizedBox(height: AppSpacing.s),
           Expanded(
             child: Center(
               child: Padding(

@@ -36,11 +36,15 @@ void main() {
     );
     final backLabelStyle = tester.widget<Text>(backLabelFinder).style;
     expect(backLabelStyle?.fontSize, 14);
-    expect(backLabelStyle?.height, 18 / 14);
-    expect(backLabelStyle?.color, AppThemeData.light.colors.text.accent);
+    expect(backLabelStyle?.height, 16 / 14);
+    expect(backLabelStyle?.color, AppThemeData.light.colors.button.ghost.label);
+    final paneTopLeft = tester.getTopLeft(find.byType(AppDesktopPane));
     expect(
       tester.getTopLeft(backLabelFinder).dx,
-      moreOrLessEquals(308, epsilon: 0.1),
+      moreOrLessEquals(
+        paneTopLeft.dx + AppSpacing.sm + 16 + AppSpacing.xxs,
+        epsilon: 0.1,
+      ),
     );
     expect(
       tester.getSize(
@@ -81,9 +85,9 @@ void main() {
     final shieldedTabLabel = tester.widget<Text>(find.text('Shielded'));
     expect(shieldedTabLabel.style?.fontFamily, 'Geist');
     expect(shieldedTabLabel.style?.fontWeight, FontWeight.w400);
-    expect(shieldedTabLabel.style?.fontSize, 14);
-    expect(shieldedTabLabel.style?.height, 16 / 14);
-    expect(shieldedTabLabel.style?.letterSpacing, -0.06);
+    expect(shieldedTabLabel.style?.fontSize, 13);
+    expect(shieldedTabLabel.style?.height, 14 / 13);
+    expect(shieldedTabLabel.style?.letterSpacing, 0);
   });
 
   testWidgets('compacts receive addresses without shielded edge color', (
@@ -106,8 +110,8 @@ void main() {
     expect(shieldedSpan.style?.fontFamily, 'Geist');
     expect(shieldedSpan.style?.fontWeight, FontWeight.w500);
     expect(shieldedSpan.style?.fontSize, 14);
-    expect(shieldedSpan.style?.height, 18 / 14);
-    expect(shieldedSpan.style?.letterSpacing, -0.14);
+    expect(shieldedSpan.style?.height, 16 / 14);
+    expect(shieldedSpan.style?.letterSpacing, -0.06);
     expect('...'.allMatches(shieldedSpan.toPlainText()).length, 1);
     expect(shieldedSpan.children, hasLength(1));
     expect((shieldedSpan.children!.single as TextSpan).style?.color, isNull);

@@ -377,6 +377,10 @@ class _KeystoneWalletBirthdayScreenState
     };
 
     return KeystoneOnboardingTrailingPane(
+      backTarget: OnboardingBackTarget.route(
+        label: KeystoneOnboardingStep.selectAccount.label,
+        routePath: KeystoneOnboardingStep.selectAccount.routePath,
+      ),
       overlay: _isUnknownBirthdayConfirmOpen
           ? ImportBirthdayUnknownHeightModal(
               onConfirm: _confirmUnknownBirthday,
@@ -394,10 +398,6 @@ class _KeystoneWalletBirthdayScreenState
           : null,
       child: Column(
         children: [
-          KeystoneBackRow(
-            routePath: KeystoneOnboardingStep.selectAccount.routePath,
-          ),
-          const SizedBox(height: AppSpacing.s),
           Expanded(
             child: Column(
               children: [

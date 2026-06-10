@@ -2,16 +2,15 @@ import 'package:flutter/widgets.dart';
 
 /// Typography tokens from the Figma design system.
 ///
-/// Mirrors the Desktop mode in `3 Fonts.zip` for Headline, Body, Label, and
-/// Code tokens. A few older `display*` aliases remain for existing
-/// screens, but new surfaces should prefer the matching headline/body/label
-/// token name.
+/// Mirrors the desktop Figma token sheet (`Desktop.tokens.json`). Public
+/// names are kept stable for existing call sites, so the old `display*`
+/// constants are aliases onto the current headline scale.
 ///
-/// Naming maps Figma → Dart by full word and camelCase: `Headline M`
-/// → `headlineMedium`, `Body L` → `bodyLarge`, `Label S` → `labelSmall`,
-/// `Code M` → `codeMedium`. The one outlier is `Body M Medium`, the
-/// emphasis variant of the regular body — surfaced as
-/// [bodyMediumStrong].
+/// Naming maps Figma → Dart by full word and camelCase where possible:
+/// `Headline L` → `headlineLarge`, `Body L` → `bodyLarge`,
+/// `Label S` → `labelSmall`, `Code M` → `codeMedium`. The one outlier is
+/// `Body M Medium`, the emphasis variant of the regular body — surfaced
+/// as [bodyMediumStrong].
 ///
 /// Font sizes and letter spacings are authored in logical pixels. Line
 /// heights are stored as the unitless multiplier Flutter expects
@@ -31,18 +30,19 @@ import 'package:flutter/widgets.dart';
 abstract final class AppTypography {
   // ─── Display ──────────────────────────────────────────────────────
 
-  /// Display Large — largest onboarding/welcome headline.
+  /// Legacy display alias for Headline XL — largest onboarding/welcome
+  /// headline.
   ///
-  /// Libre Caslon Text Regular, 60 / 62.4 px, letter-spacing −2.
+  /// Libre Caslon Text Regular, 45 / 48 px, letter-spacing −1.35.
   static const displayLarge = TextStyle(
     fontFamily: 'Libre Caslon Text',
     fontWeight: FontWeight.w400,
-    fontSize: 60,
-    height: 62.4 / 60,
-    letterSpacing: -2,
+    fontSize: 45,
+    height: 48 / 45,
+    letterSpacing: -1.35,
   );
 
-  /// Display Medium — legacy alias for Headline XL.
+  /// Legacy display alias for Headline XL — hero headlines.
   ///
   /// Libre Caslon Text Regular, 45 / 48 px, letter-spacing −1.35.
   static const displayMedium = TextStyle(
@@ -53,16 +53,16 @@ abstract final class AppTypography {
     letterSpacing: -1.35,
   );
 
-  /// Display Small — step-level headlines inside onboarding flows
-  /// (e.g. "Welcome to the Shielded World").
+  /// Legacy display alias for Headline L — step-level headlines inside
+  /// onboarding flows.
   ///
-  /// Libre Caslon Text Regular, 36 / 44 px, letter-spacing −0.72.
+  /// Libre Caslon Text Regular, 32 / 33 px, letter-spacing 0.
   static const displaySmall = TextStyle(
     fontFamily: 'Libre Caslon Text',
     fontWeight: FontWeight.w400,
-    fontSize: 36,
-    height: 44 / 36,
-    letterSpacing: -0.72,
+    fontSize: 32,
+    height: 33 / 32,
+    letterSpacing: 0,
   );
 
   /// Headline Large — section headings inside content panes.
@@ -160,27 +160,26 @@ abstract final class AppTypography {
 
   // ─── Label ────────────────────────────────────────────────────────
 
-  /// Label L — button labels at the compact (Small) button size; nav
-  /// item text in side panels.
-  ///
-  /// Geist Medium, 14 / 18 px, letter-spacing −0.14.
-  static const labelLarge = TextStyle(
-    fontFamily: 'Geist',
-    fontWeight: FontWeight.w500,
-    fontSize: 14,
-    height: 18 / 14,
-    letterSpacing: -0.14,
-  );
-
-  /// Label M — button labels and inline UI copy at the same size.
+  /// Label M — button labels and nav item text.
   ///
   /// Geist Medium, 14 / 16 px, letter-spacing −0.06.
-  static const labelMedium = TextStyle(
+  static const labelLarge = TextStyle(
     fontFamily: 'Geist',
     fontWeight: FontWeight.w500,
     fontSize: 14,
     height: 16 / 14,
     letterSpacing: -0.06,
+  );
+
+  /// Label S — compact label copy.
+  ///
+  /// Geist Medium, 13 / 14 px, letter-spacing 0.
+  static const labelMedium = TextStyle(
+    fontFamily: 'Geist',
+    fontWeight: FontWeight.w500,
+    fontSize: 13,
+    height: 14 / 13,
+    letterSpacing: 0,
   );
 
   /// Label S — micro-copy: tag pills, status badges, dense controls.

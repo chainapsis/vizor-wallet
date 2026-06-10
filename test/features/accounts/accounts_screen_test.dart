@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
@@ -70,7 +71,15 @@ void main() {
     );
     expect(
       tester.getTopLeft(backLabelFinder).dy,
-      moreOrLessEquals(paneTopLeft.dy + AppSpacing.xs + 7, epsilon: 0.1),
+      moreOrLessEquals(
+        paneTopLeft.dy +
+            AppSpacing.xs +
+            (AppBackLink.height -
+                    AppTypography.labelLarge.fontSize! *
+                        AppTypography.labelLarge.height!) /
+                2,
+        epsilon: 0.1,
+      ),
     );
     expect(find.text('Current'), findsOneWidget);
     expect(find.text('Other'), findsOneWidget);

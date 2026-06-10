@@ -36,10 +36,13 @@ class ImportWalletBirthdayScreen extends ConsumerStatefulWidget {
 
 class _ImportWalletBirthdayScreenState
     extends ConsumerState<ImportWalletBirthdayScreen> {
-  static const _titleWidth = 574.0;
-  static const _subtitleWidth = 270.0;
+  static const _manualHeightErrorText =
+      "That doesn't look like a valid block height.";
+  static const _titleWidth = 396.0;
+  static const _subtitleWidth = 226.0;
   static const _widgetWidth = 304.0;
-  static const _buttonWidth = 256.0;
+  static const _fieldWidth = 256.0;
+  static const _buttonWidth = 230.0;
   static const _messageHeight = 16.0;
 
   late final TextEditingController _manualHeightController;
@@ -338,13 +341,13 @@ class _ImportWalletBirthdayScreenState
     final text = _manualHeightController.text.trim();
     if (text.isEmpty) return null;
     final parsed = int.tryParse(text);
-    if (parsed == null) return "That doesn't look like a valid block height.";
+    if (parsed == null) return _manualHeightErrorText;
     if (parsed < _minimumBirthdayHeight) {
-      return "That doesn't look like a valid block height.";
+      return _manualHeightErrorText;
     }
     final maximumHeight = _metadata?.tipHeight;
     if (maximumHeight != null && parsed > maximumHeight) {
-      return "That doesn't look like a valid block height.";
+      return _manualHeightErrorText;
     }
     if (_metadataError != null) return _metadataError;
     return null;
@@ -380,6 +383,13 @@ class _ImportWalletBirthdayScreenState
     };
 
     return ImportOnboardingTrailingPane(
+      backTarget: OnboardingBackTarget.callback(
+        label: ImportOnboardingStep.secretPassphrase.label,
+        onTap: () => context.go(
+          '/import',
+          extra: ImportSecretPassphraseArgs(mnemonic: widget.args.mnemonic),
+        ),
+      ),
       overlay: _isUnknownBirthdayConfirmOpen
           ? ImportBirthdayUnknownHeightModal(
               onConfirm: _confirmUnknownBirthday,
@@ -397,13 +407,6 @@ class _ImportWalletBirthdayScreenState
           : null,
       child: Column(
         children: [
-          _BackRow(
-            onTap: () => context.go(
-              '/import',
-              extra: ImportSecretPassphraseArgs(mnemonic: widget.args.mnemonic),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s),
           Expanded(
             child: Column(
               children: [
@@ -419,8 +422,10 @@ class _ImportWalletBirthdayScreenState
                           SizedBox(
                             width: _titleWidth,
                             child: Text(
-                              'Around when did you\ncreate your wallet?',
+                              'Around when did you create your wallet?',
                               style: AppTypography.displayLarge.copyWith(
+                                fontFamily: 'Young Serif',
+                                fontWeight: FontWeight.w400,
                                 color: context.colors.text.accent,
                               ),
                               textAlign: TextAlign.center,
@@ -432,7 +437,7 @@ class _ImportWalletBirthdayScreenState
                             child: Text(
                               'It helps us import your wallet faster.',
                               style: AppTypography.bodyMedium.copyWith(
-                                color: context.colors.text.accent,
+                                color: context.colors.text.primary,
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -450,7 +455,7 @@ class _ImportWalletBirthdayScreenState
                                 const SizedBox(height: AppSpacing.md),
                                 if (activeTab == ImportBirthdayTab.date)
                                   _DatePickerField(
-                                    width: _widgetWidth,
+                                    width: _fieldWidth,
                                     valueText: _selectedDate == null
                                         ? null
                                         : _formatDate(_selectedDate!),
@@ -461,7 +466,7 @@ class _ImportWalletBirthdayScreenState
                                   _BlockHeightField(
                                     controller: _manualHeightController,
                                     focusNode: _manualHeightFocusNode,
-                                    width: _widgetWidth,
+                                    width: _fieldWidth,
                                     errorText: _manualHeightError,
                                     onChanged: (value) {
                                       setState(() {
@@ -471,7 +476,7 @@ class _ImportWalletBirthdayScreenState
                                   ),
                                 const SizedBox(height: AppSpacing.xxs),
                                 SizedBox(
-                                  width: _widgetWidth,
+                                  width: _fieldWidth,
                                   height: _messageHeight,
                                   child: activeTab == ImportBirthdayTab.date
                                       ? _InlineMessage(text: _dateMessage)
@@ -501,7 +506,7 @@ class _ImportWalletBirthdayScreenState
                         trailing: const AppIcon(AppIcons.chevronForward),
                         child: Text(buttonLabel),
                       ),
-                      const SizedBox(height: AppSpacing.xs),
+                      const SizedBox(height: AppSpacing.s),
                       AppButton(
                         key: const ValueKey('import_birthday_skip_button'),
                         onPressed: _isSubmitting
@@ -524,47 +529,6 @@ class _ImportWalletBirthdayScreenState
   }
 }
 
-class _BackRow extends StatelessWidget {
-  const _BackRow({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      height: 32,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onTap,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.chevronBackward,
-                  size: AppIconSize.medium,
-                  color: colors.text.accent,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _BirthdayTabRow extends StatelessWidget {
   const _BirthdayTabRow({required this.activeTab, required this.onTabSelected});
 
@@ -574,49 +538,52 @@ class _BirthdayTabRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _TabLabel(
-          label: 'Enter the Date',
-          active: activeTab == ImportBirthdayTab.date,
-          onTap: () => onTabSelected(ImportBirthdayTab.date),
-          activeColor: colors.text.accent,
-          inactiveColor: colors.text.muted,
-        ),
-        const SizedBox(width: 10),
-        _TabLabel(
-          label: 'Enter the Block Height',
-          active: activeTab == ImportBirthdayTab.blockHeight,
-          onTap: () => onTabSelected(ImportBirthdayTab.blockHeight),
-          activeColor: colors.text.accent,
-          inactiveColor: colors.text.muted,
-        ),
-      ],
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _TabLabel(
+            iconName: AppIcons.calendar,
+            label: 'Enter the date',
+            active: activeTab == ImportBirthdayTab.date,
+            onTap: () => onTabSelected(ImportBirthdayTab.date),
+            color: colors.text.accent,
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          _TabLabel(
+            iconName: AppIcons.block,
+            label: 'Enter the block height',
+            active: activeTab == ImportBirthdayTab.blockHeight,
+            onTap: () => onTabSelected(ImportBirthdayTab.blockHeight),
+            color: colors.text.accent,
+          ),
+        ],
+      ),
     );
   }
 }
 
 class _TabLabel extends StatelessWidget {
   const _TabLabel({
+    required this.iconName,
     required this.label,
     required this.active,
     required this.onTap,
-    required this.activeColor,
-    required this.inactiveColor,
+    required this.color,
   });
 
+  final String iconName;
   final String label;
   final bool active;
   final VoidCallback onTap;
-  final Color activeColor;
-  final Color inactiveColor;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
     final style = active
-        ? AppTypography.bodyMediumStrong.copyWith(color: activeColor)
-        : AppTypography.bodyMedium.copyWith(color: inactiveColor);
+        ? AppTypography.bodyMediumStrong.copyWith(color: color)
+        : AppTypography.bodyMedium.copyWith(color: color);
     return Semantics(
       button: true,
       selected: active,
@@ -625,7 +592,26 @@ class _TabLabel extends StatelessWidget {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onTap,
-          child: Text(label, style: style),
+          child: Opacity(
+            opacity: active ? 1 : 0.5,
+            child: SizedBox(
+              height: 25,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xxs,
+                  vertical: 2,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppIcon(iconName, size: 16, color: color),
+                    const SizedBox(width: AppSpacing.xxs),
+                    Text(label, style: style, textAlign: TextAlign.center),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -662,24 +648,28 @@ class _DatePickerField extends StatelessWidget {
           child: Container(
             width: width,
             height: 46,
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+            padding: const EdgeInsets.only(left: AppSpacing.s, right: 10),
             decoration: BoxDecoration(
-              color: colors.background.base,
+              color: colors.surface.input,
               borderRadius: BorderRadius.circular(AppRadii.small),
-              border: Border.all(color: colors.border.medium, width: 1.5),
+              border: Border.all(color: const Color(0x00000000), width: 1.5),
+              boxShadow: _birthdayFieldSurfaceShadow(colors),
             ),
             child: Row(
               children: [
                 Expanded(
                   child: Text(
                     valueText ?? 'mm/dd/yyyy',
-                    style: AppTypography.labelLarge.copyWith(color: valueColor),
+                    style: AppTypography.labelLarge.copyWith(
+                      color: valueColor,
+                      fontWeight: FontWeight.w400,
+                    ),
                   ),
                 ),
                 AppIcon(
                   AppIcons.calendar,
                   size: 20,
-                  color: enabled ? colors.icon.accent : colors.icon.regular,
+                  color: enabled ? colors.icon.accent : colors.icon.disabled,
                 ),
               ],
             ),
@@ -712,16 +702,24 @@ class _BlockHeightField extends StatelessWidget {
     final borderColor = hasError
         ? colors.border.utilityDestructive
         : focusNode.hasFocus
-        ? colors.border.medium
-        : colors.border.subtle;
+        ? colors.background.inverse
+        : const Color(0x00000000);
 
     return Container(
       width: width,
       height: 46,
       decoration: BoxDecoration(
-        color: colors.background.base,
+        color: hasError
+            ? Color.alphaBlend(
+                colors.background.utilityDestructiveAlphaSubtle,
+                colors.surface.input,
+              )
+            : colors.surface.input,
         borderRadius: BorderRadius.circular(AppRadii.small),
         border: Border.all(color: borderColor, width: 1.5),
+        boxShadow: hasError
+            ? const <BoxShadow>[]
+            : _birthdayFieldSurfaceShadow(colors),
       ),
       child: Row(
         children: [
@@ -744,12 +742,14 @@ class _BlockHeightField extends StatelessWidget {
               onChanged: onChanged,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.accent,
+                fontWeight: FontWeight.w500,
               ),
               cursorColor: colors.text.accent,
               decoration: material.InputDecoration.collapsed(
-                hintText: 'Block Height',
+                hintText: 'Block height',
                 hintStyle: AppTypography.labelLarge.copyWith(
                   color: colors.text.muted,
+                  fontWeight: FontWeight.w400,
                 ),
               ),
             ),
@@ -772,21 +772,40 @@ class _InlineMessage extends StatelessWidget {
       return const SizedBox.shrink();
     }
     final colors = context.colors;
+    final errorColor = colors.border.utilityDestructive;
     return Row(
       children: [
-        AppIcon(AppIcons.warning, size: 16, color: colors.text.destructive),
+        AppIcon(AppIcons.warning, size: 16, color: errorColor),
         const SizedBox(width: AppSpacing.xxs),
         Expanded(
           child: Text(
             text!,
-            style: AppTypography.labelMedium.copyWith(
-              color: colors.text.destructive,
+            style: AppTypography.labelLarge.copyWith(
+              color: errorColor,
+              fontWeight: FontWeight.w400,
             ),
           ),
         ),
       ],
     );
   }
+}
+
+List<BoxShadow> _birthdayFieldSurfaceShadow(AppColors colors) {
+  return [
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 2),
+      blurRadius: 4,
+    ),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 1),
+      blurRadius: 2,
+    ),
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+  ];
 }
 
 DateTime _clampDate(DateTime value, DateTime min, DateTime max) {

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -20,6 +21,7 @@ class ImportBirthdayUnknownHeightModal extends StatelessWidget {
     final colors = context.colors;
 
     return AppPaneModalOverlay(
+      borderRadius: BorderRadius.circular(AppDesktopSidebarSurface.glassRadius),
       onDismiss: onCancel,
       child: Container(
         width: 312,

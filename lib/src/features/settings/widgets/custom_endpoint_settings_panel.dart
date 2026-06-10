@@ -286,7 +286,6 @@ class CustomEndpointForm extends StatelessWidget {
               autofocus: true,
               leading: const AppIcon(AppIcons.endpoint),
               leadingSlotWidth: 32,
-              trailingSlotWidth: 40,
               inputHorizontalPadding: AppSpacing.s,
               keyboardType: TextInputType.url,
               textInputAction: TextInputAction.done,
