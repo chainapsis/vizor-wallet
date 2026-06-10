@@ -272,18 +272,23 @@ class SoftwareWalletImportAccount {
 /// Result of software mnemonic import with ZIP32 account discovery.
 class SoftwareWalletImportWithDiscoveryResult {
   final List<SoftwareWalletImportAccount> accounts;
+  final bool didImportPrimaryAccount;
 
-  const SoftwareWalletImportWithDiscoveryResult({required this.accounts});
+  const SoftwareWalletImportWithDiscoveryResult({
+    required this.accounts,
+    required this.didImportPrimaryAccount,
+  });
 
   @override
-  int get hashCode => accounts.hashCode;
+  int get hashCode => accounts.hashCode ^ didImportPrimaryAccount.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is SoftwareWalletImportWithDiscoveryResult &&
           runtimeType == other.runtimeType &&
-          accounts == other.accounts;
+          accounts == other.accounts &&
+          didImportPrimaryAccount == other.didImportPrimaryAccount;
 }
 
 /// Result of wallet creation, containing the mnemonic, unified address, and account UUID.

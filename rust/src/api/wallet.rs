@@ -30,6 +30,7 @@ pub struct AccountCreationResult {
 /// Result of software mnemonic import with ZIP32 account discovery.
 pub struct SoftwareWalletImportWithDiscoveryResult {
     pub accounts: Vec<SoftwareWalletImportAccount>,
+    pub did_import_primary_account: bool,
 }
 
 /// A software account created by mnemonic import.
@@ -219,69 +220,152 @@ pub fn import_software_wallet_with_account_discovery(
             &lightwalletd_url,
         ));
 
+        import_discovered_software_wallet_accounts(
+            network,
+            &db_path,
+            &seed,
+            birthday_height,
+            first_name,
+            is_first_wallet_account,
+            first_account_number,
+            discovered_indices,
+        )
+    })
+}
+
+fn import_discovered_software_wallet_accounts(
+    network: WalletNetwork,
+    db_path: &str,
+    seed: &secrecy::SecretVec<u8>,
+    birthday_height: Option<u64>,
+    first_name: String,
+    is_first_wallet_account: bool,
+    first_account_number: u32,
+    discovered_indices: Vec<u32>,
+) -> Result<SoftwareWalletImportWithDiscoveryResult, String> {
+    let existing_seed_accounts = if is_first_wallet_account {
+        None
+    } else {
+        Some(keys::existing_software_seed_account_state(
+            db_path, network, seed,
+        )?)
+    };
+    let primary_already_exists = existing_seed_accounts
+        .as_ref()
+        .is_some_and(|state| state.contains(0));
+    let import_as_derived = is_first_wallet_account
+        || existing_seed_accounts
+            .as_ref()
+            .is_some_and(|state| state.has_derived_account);
+
+    let mut accounts = Vec::new();
+    let mut did_import_primary_account = false;
+    if primary_already_exists {
+        log::info!(
+            "software account discovery: account 0 already exists for this mnemonic; scanning for higher accounts"
+        );
+    }
+
+    if !primary_already_exists {
         let (account_uuid, unified_address) = if is_first_wallet_account {
-            keys::init_db_and_create_account(
-                &db_path,
+            keys::init_db_and_create_account(db_path, network, seed, birthday_height, &first_name)?
+        } else if import_as_derived {
+            keys::import_derived_account_at_index(
+                db_path,
                 network,
-                &seed,
+                seed,
                 birthday_height,
                 &first_name,
+                0,
             )?
         } else {
-            keys::add_account_at_index(&db_path, network, &first_name, &seed, birthday_height, 0)?
+            keys::add_account_at_index(db_path, network, &first_name, seed, birthday_height, 0)?
         };
 
-        let mut accounts = vec![SoftwareWalletImportAccount {
+        accounts.push(SoftwareWalletImportAccount {
             account_uuid,
             unified_address,
             zip32_account_index: 0,
             name: first_name,
-            is_seed_anchor: is_first_wallet_account,
-        }];
+            is_seed_anchor: import_as_derived,
+        });
+        did_import_primary_account = true;
+    }
 
-        let mut next_name_number = first_account_number + 1;
-        for account_index in discovered_indices {
-            let name = format!("Account {next_name_number}");
-            let import_result = if is_first_wallet_account {
-                keys::import_derived_account_at_index(
-                    &db_path,
-                    network,
-                    &seed,
-                    birthday_height,
-                    &name,
-                    account_index,
-                )
-            } else {
-                keys::add_account_at_index(
-                    &db_path,
-                    network,
-                    &name,
-                    &seed,
-                    birthday_height,
-                    account_index,
-                )
-            };
+    let mut next_name_number =
+        first_account_number + if did_import_primary_account { 1 } else { 0 };
+    let mut missing_account_import_error = None;
+    for account_index in discovered_indices {
+        if existing_seed_accounts
+            .as_ref()
+            .is_some_and(|state| state.contains(account_index))
+        {
+            log::info!(
+                "software account discovery: account {account_index} already exists for this mnemonic"
+            );
+            continue;
+        }
 
-            match import_result {
-                Ok((account_uuid, unified_address)) => {
-                    accounts.push(SoftwareWalletImportAccount {
-                        account_uuid,
-                        unified_address,
-                        zip32_account_index: account_index,
-                        name,
-                        is_seed_anchor: is_first_wallet_account,
-                    });
-                    next_name_number += 1;
-                }
-                Err(e) => {
-                    log::warn!(
-                        "software account discovery: failed to import account {account_index}: {e}"
-                    );
+        let name = format!("Account {next_name_number}");
+        let import_result = if import_as_derived {
+            keys::import_derived_account_at_index(
+                db_path,
+                network,
+                seed,
+                birthday_height,
+                &name,
+                account_index,
+            )
+        } else {
+            keys::add_account_at_index(
+                db_path,
+                network,
+                &name,
+                seed,
+                birthday_height,
+                account_index,
+            )
+        };
+
+        match import_result {
+            Ok((account_uuid, unified_address)) => {
+                accounts.push(SoftwareWalletImportAccount {
+                    account_uuid,
+                    unified_address,
+                    zip32_account_index: account_index,
+                    name,
+                    is_seed_anchor: import_as_derived,
+                });
+                next_name_number += 1;
+            }
+            Err(e) => {
+                log::warn!(
+                    "software account discovery: failed to import account {account_index}: {e}"
+                );
+                if e != keys::DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE
+                    && missing_account_import_error.is_none()
+                {
+                    missing_account_import_error = Some(e);
                 }
             }
         }
+    }
 
-        Ok(SoftwareWalletImportWithDiscoveryResult { accounts })
+    if accounts.is_empty() {
+        if let Some(error) = missing_account_import_error {
+            return Err(error);
+        }
+        if existing_seed_accounts
+            .as_ref()
+            .is_some_and(|state| !state.is_empty())
+        {
+            return Err(keys::DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE.to_string());
+        }
+    }
+
+    Ok(SoftwareWalletImportWithDiscoveryResult {
+        accounts,
+        did_import_primary_account,
     })
 }
 
@@ -521,4 +605,86 @@ pub fn get_transparent_address(
         let network = parse_network_and_migrate(&db_path, &network)?;
         keys::get_transparent_address_from_db(&db_path, network, account_uuid.as_deref())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_reimport_existing_mnemonic_adds_only_missing_higher_accounts() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic).unwrap();
+
+        keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "Account 1",
+        )
+        .unwrap();
+
+        let result = import_discovered_software_wallet_accounts(
+            WalletNetwork::Main,
+            db_path_str,
+            &seed,
+            None,
+            "Account 2".to_string(),
+            false,
+            2,
+            vec![1],
+        )
+        .unwrap();
+
+        assert!(!result.did_import_primary_account);
+        assert_eq!(result.accounts.len(), 1);
+        assert_eq!(result.accounts[0].zip32_account_index, 1);
+        assert_eq!(result.accounts[0].name, "Account 2");
+        assert!(result.accounts[0].is_seed_anchor);
+
+        let state =
+            keys::existing_software_seed_account_state(db_path_str, WalletNetwork::Main, &seed)
+                .unwrap();
+        assert!(state.contains(0));
+        assert!(state.contains(1));
+        assert!(state.has_derived_account);
+    }
+
+    #[test]
+    fn test_reimport_existing_mnemonic_without_new_accounts_keeps_duplicate_error() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic).unwrap();
+
+        keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "Account 1",
+        )
+        .unwrap();
+
+        let error = match import_discovered_software_wallet_accounts(
+            WalletNetwork::Main,
+            db_path_str,
+            &seed,
+            None,
+            "Account 2".to_string(),
+            false,
+            2,
+            vec![],
+        ) {
+            Ok(_) => panic!("same mnemonic without missing accounts should fail"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error, keys::DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE);
+    }
 }

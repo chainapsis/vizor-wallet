@@ -31,7 +31,8 @@ use crate::wallet::{
     network::WalletNetwork,
 };
 
-const DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE: &str = "This account is already in your wallet.";
+pub(crate) const DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE: &str =
+    "This account is already in your wallet.";
 const DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE: &str = "This Keystone account is already in your wallet.";
 const MIN_MNEMONIC_WORD_COUNT: usize = 12;
 const MAX_MNEMONIC_WORD_COUNT: usize = 24;
@@ -438,6 +439,59 @@ pub struct AccountInfo {
     pub unified_address: String,
     pub is_seed_anchor: bool,
     pub is_hardware: bool,
+}
+
+pub struct SoftwareSeedAccountState {
+    pub account_indices: HashSet<u32>,
+    pub has_derived_account: bool,
+}
+
+impl SoftwareSeedAccountState {
+    pub fn is_empty(&self) -> bool {
+        self.account_indices.is_empty()
+    }
+
+    pub fn contains(&self, account_index: u32) -> bool {
+        self.account_indices.contains(&account_index)
+    }
+}
+
+pub fn existing_software_seed_account_state(
+    db_path: &str,
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+) -> Result<SoftwareSeedAccountState, String> {
+    let seed_fp = SeedFingerprint::from_seed(seed.expose_secret())
+        .ok_or("Invalid seed length for fingerprint")?;
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let account_ids = db
+        .get_account_ids()
+        .map_err(|e| format!("Failed to list accounts: {e}"))?;
+
+    let mut account_indices = HashSet::new();
+    let mut has_derived_account = false;
+    for id in account_ids {
+        let account = db
+            .get_account(id)
+            .map_err(|e| format!("Failed to get account: {e}"))?
+            .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
+        let Some(derivation) = account.source().key_derivation() else {
+            continue;
+        };
+        if derivation.seed_fingerprint() != &seed_fp {
+            continue;
+        }
+
+        account_indices.insert(u32::from(derivation.account_index()));
+        if matches!(account.source(), AccountSource::Derived { .. }) {
+            has_derived_account = true;
+        }
+    }
+
+    Ok(SoftwareSeedAccountState {
+        account_indices,
+        has_derived_account,
+    })
 }
 
 /// List all accounts in the wallet database.

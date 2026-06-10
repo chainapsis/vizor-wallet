@@ -221,6 +221,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final accounts = state.value?.accounts ?? [];
       final accountName = name ?? 'Account ${accounts.length + 1}';
       final isFirstWalletAccount = accounts.isEmpty;
+      final previousActiveAccountUuid = state.value?.activeAccountUuid;
+      final previousActiveAddress = state.value?.activeAddress;
 
       if (isFirstWalletAccount) {
         await _deleteExistingDb(dbPath);
@@ -258,21 +260,30 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             isSeedAnchor: result.accounts[i].isSeedAnchor,
           ),
       ];
-      final primaryAccount = result.accounts.first;
       final updatedAccounts = [...accounts, ...importedAccounts];
       await _saveAccounts(updatedAccounts);
-      await _storage.writeString(_activeAccountKey, primaryAccount.accountUuid);
+      final activeAccountUuid = result.didImportPrimaryAccount
+          ? result.accounts.first.accountUuid
+          : previousActiveAccountUuid;
+      final activeAddress = result.didImportPrimaryAccount
+          ? result.accounts.first.unifiedAddress
+          : previousActiveAddress;
+      if (activeAccountUuid == null) {
+        await _storage.delete(_activeAccountKey);
+      } else if (result.didImportPrimaryAccount) {
+        await _storage.writeString(_activeAccountKey, activeAccountUuid);
+      }
 
       state = AsyncData(
         AccountState(
           accounts: updatedAccounts,
-          activeAccountUuid: primaryAccount.accountUuid,
-          activeAddress: primaryAccount.unifiedAddress,
+          activeAccountUuid: activeAccountUuid,
+          activeAddress: activeAddress,
         ),
       );
 
       log(
-        'importAccount: success, primary=${primaryAccount.accountUuid}, '
+        'importAccount: success, active=$activeAccountUuid, '
         'accounts=${result.accounts.map((a) => a.zip32AccountIndex).join(',')}',
       );
     } catch (e, st) {

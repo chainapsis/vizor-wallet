@@ -6225,8 +6225,10 @@ impl SseDecode for crate::api::wallet::SoftwareWalletImportWithDiscoveryResult {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_accounts =
             <Vec<crate::api::wallet::SoftwareWalletImportAccount>>::sse_decode(deserializer);
+        let mut var_didImportPrimaryAccount = <bool>::sse_decode(deserializer);
         return crate::api::wallet::SoftwareWalletImportWithDiscoveryResult {
             accounts: var_accounts,
+            did_import_primary_account: var_didImportPrimaryAccount,
         };
     }
 }
@@ -7967,7 +7969,11 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::wallet::SoftwareWalletImportA
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::wallet::SoftwareWalletImportWithDiscoveryResult {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [self.accounts.into_into_dart().into_dart()].into_dart()
+        [
+            self.accounts.into_into_dart().into_dart(),
+            self.did_import_primary_account.into_into_dart().into_dart(),
+        ]
+        .into_dart()
     }
 }
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
@@ -9564,6 +9570,7 @@ impl SseEncode for crate::api::wallet::SoftwareWalletImportWithDiscoveryResult {
             self.accounts,
             serializer,
         );
+        <bool>::sse_encode(self.did_import_primary_account, serializer);
     }
 }
 

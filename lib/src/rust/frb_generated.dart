@@ -6551,10 +6551,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   dco_decode_software_wallet_import_with_discovery_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 1)
-      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
     return SoftwareWalletImportWithDiscoveryResult(
       accounts: dco_decode_list_software_wallet_import_account(arr[0]),
+      didImportPrimaryAccount: dco_decode_bool(arr[1]),
     );
   }
 
@@ -8494,7 +8495,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_accounts = sse_decode_list_software_wallet_import_account(
       deserializer,
     );
-    return SoftwareWalletImportWithDiscoveryResult(accounts: var_accounts);
+    var var_didImportPrimaryAccount = sse_decode_bool(deserializer);
+    return SoftwareWalletImportWithDiscoveryResult(
+      accounts: var_accounts,
+      didImportPrimaryAccount: var_didImportPrimaryAccount,
+    );
   }
 
   @protected
@@ -10242,6 +10247,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_list_software_wallet_import_account(self.accounts, serializer);
+    sse_encode_bool(self.didImportPrimaryAccount, serializer);
   }
 
   @protected
