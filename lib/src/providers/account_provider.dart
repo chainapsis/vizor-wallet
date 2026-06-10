@@ -46,6 +46,16 @@ class WalletCreationCurrentBlockHeightException implements Exception {
   String toString() => kWalletCreationCurrentBlockHeightErrorMessage;
 }
 
+class WalletResetException implements Exception {
+  const WalletResetException({required this.cause, required this.dbDeleted});
+
+  final Object cause;
+  final bool dbDeleted;
+
+  @override
+  String toString() => cause.toString();
+}
+
 class AccountNotifier extends AsyncNotifier<AccountState> {
   static final _storage = AppSecureStore.instance;
 
@@ -511,7 +521,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
     final error = firstError;
     if (error != null) {
-      Error.throwWithStackTrace(error, firstStackTrace ?? StackTrace.current);
+      Error.throwWithStackTrace(
+        WalletResetException(cause: error, dbDeleted: dbDeleted),
+        firstStackTrace ?? StackTrace.current,
+      );
     }
     // Clear the account state BEFORE flipping security back to locked: the
     // router derives requiresUnlock from hasWallet && !isUnlocked, so the

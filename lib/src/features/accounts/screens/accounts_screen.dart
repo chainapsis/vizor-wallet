@@ -181,15 +181,16 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     AccountRemoveProgressCallback? onProgress,
   ) async {
     if (_blockDestructiveWalletChangeIfVotingSubmissionInProgress()) return;
-    final syncNotifier = ref.read(syncProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
 
     onProgress?.call(AccountRemoveProgress.stoppingSync);
-    await runWithSyncPausedForAccountMutation(ref, () async {
-      onProgress?.call(AccountRemoveProgress.removingAccount);
-      await accountNotifier.resetWallet();
-      syncNotifier.clearCachedWalletDbPath();
-    }, resumeAfterMutation: false);
+    await runWithSyncPausedForWalletReset(
+      ref,
+      accountNotifier.resetWallet,
+      onResetting: () {
+        onProgress?.call(AccountRemoveProgress.removingAccount);
+      },
+    );
     if (!mounted) return;
     _closeModal();
     context.go('/welcome');

@@ -11,6 +11,8 @@ Future<T> runWithSyncPausedForAccountMutation<T>(
   FutureOr<void> Function()? onStoppingSync,
   FutureOr<void> Function()? onSyncPaused,
   bool resumeAfterMutation = true,
+  bool resumeAfterFailure = true,
+  bool Function(Object error, StackTrace stackTrace)? shouldResumeAfterFailure,
 }) async {
   final hasExistingAccounts =
       (ref.read(accountProvider).value?.accounts ?? const <AccountInfo>[])
@@ -25,9 +27,11 @@ Future<T> runWithSyncPausedForAccountMutation<T>(
   );
   // `resumeAfterMutation: false` means "don't resume after a SUCCESSFUL
   // mutation" (e.g. a full wallet reset that ends with no wallet to sync).
-  // When the action throws, the wallet still exists, so sync must resume
-  // either way or the app is left with polling silently stopped.
+  // Non-destructive failures still resume by default, but destructive reset
+  // callers can opt out once the action may have already deleted the wallet DB.
   var succeeded = false;
+  Object? failure;
+  StackTrace? failureStackTrace;
   try {
     if (pause.hadWorkToPause) {
       await onSyncPaused?.call();
@@ -35,9 +39,46 @@ Future<T> runWithSyncPausedForAccountMutation<T>(
     final result = await action();
     succeeded = true;
     return result;
+  } catch (e, st) {
+    failure = e;
+    failureStackTrace = st;
+    rethrow;
   } finally {
-    if (resumeAfterMutation || !succeeded) {
+    final shouldResume = succeeded
+        ? resumeAfterMutation
+        : shouldResumeAfterFailure?.call(
+                failure as Object,
+                failureStackTrace ?? StackTrace.current,
+              ) ??
+              resumeAfterFailure;
+    if (shouldResume) {
       syncNotifier.resumeAfterWalletMutation(pause);
     }
   }
+}
+
+Future<void> runWithSyncPausedForWalletReset(
+  WidgetRef ref,
+  Future<void> Function() resetWallet, {
+  FutureOr<void> Function()? onStoppingSync,
+  FutureOr<void> Function()? onSyncPaused,
+  FutureOr<void> Function()? onResetting,
+}) {
+  final syncNotifier = ref.read(syncProvider.notifier);
+  return runWithSyncPausedForAccountMutation<void>(
+    ref,
+    () async {
+      await onResetting?.call();
+      try {
+        await resetWallet();
+      } finally {
+        syncNotifier.clearCachedWalletDbPath();
+      }
+    },
+    onStoppingSync: onStoppingSync,
+    onSyncPaused: onSyncPaused,
+    resumeAfterMutation: false,
+    shouldResumeAfterFailure: (error, stackTrace) =>
+        error is! WalletResetException || !error.dbDeleted,
+  );
 }

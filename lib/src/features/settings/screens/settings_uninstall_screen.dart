@@ -18,7 +18,6 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
-import '../../../providers/sync_provider.dart';
 import '../../../providers/voting/voting_submission_guard_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../../swap/providers/swap_activity_store.dart';
@@ -223,14 +222,10 @@ class _SettingsUninstallScreenState
     _progressController.value = 0;
     unawaited(_progressController.animateTo(0.9, curve: Curves.easeOutCubic));
 
-    final syncNotifier = ref.read(syncProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
 
     try {
-      await runWithSyncPausedForAccountMutation(ref, () async {
-        await accountNotifier.resetWallet();
-        syncNotifier.clearCachedWalletDbPath();
-      }, resumeAfterMutation: false);
+      await runWithSyncPausedForWalletReset(ref, accountNotifier.resetWallet);
       if (!mounted) return;
       await _progressController.animateTo(
         1,
