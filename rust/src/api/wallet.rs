@@ -1,6 +1,12 @@
 use std::panic;
 
 use crate::wallet::{keys, network::WalletNetwork};
+use tonic::transport::Channel;
+use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
+use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
+
+const SOFTWARE_ACCOUNT_DISCOVERY_MAX_INDEX: u32 = 20;
+const SOFTWARE_ACCOUNT_DISCOVERY_BATCHES: &[(u32, u32)] = &[(1, 4), (5, 9), (10, 14), (15, 20)];
 
 /// Result of wallet creation, containing the mnemonic, unified address, and account UUID.
 pub struct WalletCreationResult {
@@ -19,6 +25,20 @@ pub struct WalletImportResult {
 pub struct AccountCreationResult {
     pub account_uuid: String,
     pub unified_address: String,
+}
+
+/// Result of software mnemonic import with ZIP32 account discovery.
+pub struct SoftwareWalletImportWithDiscoveryResult {
+    pub accounts: Vec<SoftwareWalletImportAccount>,
+}
+
+/// A software account created by mnemonic import.
+pub struct SoftwareWalletImportAccount {
+    pub account_uuid: String,
+    pub unified_address: String,
+    pub zip32_account_index: u32,
+    pub name: String,
+    pub is_seed_anchor: bool,
 }
 
 /// Account info returned by list_accounts.
@@ -163,6 +183,229 @@ pub fn add_account(
             account_uuid,
             unified_address,
         })
+    })
+}
+
+/// Import a software mnemonic and discover additional ZIP32 accounts with
+/// transparent history. `account'=0` must be imported successfully; discovery
+/// for higher account indices is best-effort.
+pub fn import_software_wallet_with_account_discovery(
+    mnemonic: String,
+    birthday_height: Option<u64>,
+    network: String,
+    db_path: String,
+    first_account_name: Option<String>,
+    lightwalletd_url: String,
+    is_first_wallet_account: bool,
+    next_account_number: u32,
+) -> Result<SoftwareWalletImportWithDiscoveryResult, String> {
+    catch(|| {
+        let network = if is_first_wallet_account {
+            keys::parse_network(&network)?
+        } else {
+            parse_network_and_migrate(&db_path, &network)?
+        };
+        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let first_account_number = next_account_number.max(1);
+        let first_name = first_account_name
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| format!("Account {first_account_number}"));
+
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let discovered_indices = rt.block_on(discover_used_software_account_indices(
+            network,
+            &seed,
+            birthday_height,
+            &lightwalletd_url,
+        ));
+
+        let (account_uuid, unified_address) = if is_first_wallet_account {
+            keys::init_db_and_create_account(
+                &db_path,
+                network,
+                &seed,
+                birthday_height,
+                &first_name,
+            )?
+        } else {
+            keys::add_account_at_index(&db_path, network, &first_name, &seed, birthday_height, 0)?
+        };
+
+        let mut accounts = vec![SoftwareWalletImportAccount {
+            account_uuid,
+            unified_address,
+            zip32_account_index: 0,
+            name: first_name,
+            is_seed_anchor: is_first_wallet_account,
+        }];
+
+        let mut next_name_number = first_account_number + 1;
+        for account_index in discovered_indices {
+            let name = format!("Account {next_name_number}");
+            let import_result = if is_first_wallet_account {
+                keys::import_derived_account_at_index(
+                    &db_path,
+                    network,
+                    &seed,
+                    birthday_height,
+                    &name,
+                    account_index,
+                )
+            } else {
+                keys::add_account_at_index(
+                    &db_path,
+                    network,
+                    &name,
+                    &seed,
+                    birthday_height,
+                    account_index,
+                )
+            };
+
+            match import_result {
+                Ok((account_uuid, unified_address)) => {
+                    accounts.push(SoftwareWalletImportAccount {
+                        account_uuid,
+                        unified_address,
+                        zip32_account_index: account_index,
+                        name,
+                        is_seed_anchor: is_first_wallet_account,
+                    });
+                    next_name_number += 1;
+                }
+                Err(e) => {
+                    log::warn!(
+                        "software account discovery: failed to import account {account_index}: {e}"
+                    );
+                }
+            }
+        }
+
+        Ok(SoftwareWalletImportWithDiscoveryResult { accounts })
+    })
+}
+
+async fn discover_used_software_account_indices(
+    network: WalletNetwork,
+    seed: &secrecy::SecretVec<u8>,
+    birthday_height: Option<u64>,
+    lightwalletd_url: &str,
+) -> Vec<u32> {
+    let start_height = discovery_start_height(network, birthday_height);
+    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
+        Ok(client) => client,
+        Err(e) => {
+            log::warn!("software account discovery: could not open lightwalletd channel: {e}");
+            return Vec::new();
+        }
+    };
+    let tip = match crate::wallet::sync_engine::get_latest_block(&mut client).await {
+        Ok(tip) => tip.height,
+        Err(e) => {
+            log::warn!("software account discovery: could not get chain tip: {e}");
+            return Vec::new();
+        }
+    };
+    if tip < start_height {
+        log::warn!(
+            "software account discovery: birthday height {start_height} is above chain tip {tip}"
+        );
+        return Vec::new();
+    }
+
+    let mut discovered = Vec::new();
+    for &(start, end) in SOFTWARE_ACCOUNT_DISCOVERY_BATCHES {
+        let mut found_in_batch = false;
+        for account_index in start..=end.min(SOFTWARE_ACCOUNT_DISCOVERY_MAX_INDEX) {
+            if software_account_first_taddr_has_history(
+                &mut client,
+                network,
+                seed,
+                account_index,
+                start_height,
+                tip,
+            )
+            .await
+            {
+                discovered.push(account_index);
+                found_in_batch = true;
+            }
+        }
+        if !found_in_batch {
+            break;
+        }
+    }
+
+    discovered
+}
+
+async fn software_account_first_taddr_has_history(
+    client: &mut CompactTxStreamerClient<Channel>,
+    network: WalletNetwork,
+    seed: &secrecy::SecretVec<u8>,
+    account_index: u32,
+    start_height: u64,
+    tip_height: u64,
+) -> bool {
+    let address = match keys::software_account_first_external_transparent_address(
+        network,
+        seed,
+        account_index,
+    ) {
+        Ok(address) => address,
+        Err(e) => {
+            log::warn!(
+                    "software account discovery: could not derive account {account_index} transparent address: {e}"
+                );
+            return false;
+        }
+    };
+
+    let mut stream = match crate::wallet::sync_engine::get_taddress_txids(
+        client,
+        address.clone(),
+        start_height,
+        tip_height,
+    )
+    .await
+    {
+        Ok(stream) => stream,
+        Err(e) => {
+            log::warn!(
+                "software account discovery: failed to query account {account_index} address {address} from {start_height} to {tip_height}: {e}"
+            );
+            return false;
+        }
+    };
+
+    match crate::wallet::sync_engine::next_stream_message(
+        &mut stream,
+        "software account discovery get_taddress_txids stream",
+    )
+    .await
+    {
+        Ok(Some(_)) => {
+            log::info!(
+                "software account discovery: account {account_index} has transparent history"
+            );
+            true
+        }
+        Ok(None) => false,
+        Err(e) => {
+            log::warn!(
+                "software account discovery: failed while reading account {account_index} address {address} from {start_height} to {tip_height}: {e}"
+            );
+            false
+        }
+    }
+}
+
+fn discovery_start_height(network: WalletNetwork, birthday_height: Option<u64>) -> u64 {
+    birthday_height.unwrap_or_else(|| {
+        network
+            .activation_height(NetworkUpgrade::Sapling)
+            .map(|h| u32::from(h) as u64)
+            .unwrap_or(0)
     })
 }
 

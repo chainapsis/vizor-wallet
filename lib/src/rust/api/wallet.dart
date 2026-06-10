@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `parse_network_and_migrate`
+// These functions are ignored because they are not marked as `pub`: `catch`, `discover_used_software_account_indices`, `discovery_start_height`, `parse_network_and_migrate`, `software_account_first_taddr_has_history`
 
 /// Get the latest block height from lightwalletd.
 Future<BigInt> getLatestBlockHeight({required String lightwalletdUrl}) =>
@@ -63,6 +63,31 @@ Future<AccountCreationResult> addAccount({
   mnemonic: mnemonic,
   birthdayHeight: birthdayHeight,
 );
+
+/// Import a software mnemonic and discover additional ZIP32 accounts with
+/// transparent history. `account'=0` must be imported successfully; discovery
+/// for higher account indices is best-effort.
+Future<SoftwareWalletImportWithDiscoveryResult>
+importSoftwareWalletWithAccountDiscovery({
+  required String mnemonic,
+  BigInt? birthdayHeight,
+  required String network,
+  required String dbPath,
+  String? firstAccountName,
+  required String lightwalletdUrl,
+  required bool isFirstWalletAccount,
+  required int nextAccountNumber,
+}) =>
+    RustLib.instance.api.crateApiWalletImportSoftwareWalletWithAccountDiscovery(
+      mnemonic: mnemonic,
+      birthdayHeight: birthdayHeight,
+      network: network,
+      dbPath: dbPath,
+      firstAccountName: firstAccountName,
+      lightwalletdUrl: lightwalletdUrl,
+      isFirstWalletAccount: isFirstWalletAccount,
+      nextAccountNumber: nextAccountNumber,
+    );
 
 /// Import a hardware wallet account using a UFVK (no mnemonic/seed needed).
 Future<AccountCreationResult> importHardwareAccount({
@@ -206,6 +231,59 @@ class AccountInfo {
           unifiedAddress == other.unifiedAddress &&
           isSeedAnchor == other.isSeedAnchor &&
           isHardware == other.isHardware;
+}
+
+/// A software account created by mnemonic import.
+class SoftwareWalletImportAccount {
+  final String accountUuid;
+  final String unifiedAddress;
+  final int zip32AccountIndex;
+  final String name;
+  final bool isSeedAnchor;
+
+  const SoftwareWalletImportAccount({
+    required this.accountUuid,
+    required this.unifiedAddress,
+    required this.zip32AccountIndex,
+    required this.name,
+    required this.isSeedAnchor,
+  });
+
+  @override
+  int get hashCode =>
+      accountUuid.hashCode ^
+      unifiedAddress.hashCode ^
+      zip32AccountIndex.hashCode ^
+      name.hashCode ^
+      isSeedAnchor.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SoftwareWalletImportAccount &&
+          runtimeType == other.runtimeType &&
+          accountUuid == other.accountUuid &&
+          unifiedAddress == other.unifiedAddress &&
+          zip32AccountIndex == other.zip32AccountIndex &&
+          name == other.name &&
+          isSeedAnchor == other.isSeedAnchor;
+}
+
+/// Result of software mnemonic import with ZIP32 account discovery.
+class SoftwareWalletImportWithDiscoveryResult {
+  final List<SoftwareWalletImportAccount> accounts;
+
+  const SoftwareWalletImportWithDiscoveryResult({required this.accounts});
+
+  @override
+  int get hashCode => accounts.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SoftwareWalletImportWithDiscoveryResult &&
+          runtimeType == other.runtimeType &&
+          accounts == other.accounts;
 }
 
 /// Result of wallet creation, containing the mnemonic, unified address, and account UUID.
