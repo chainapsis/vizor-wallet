@@ -290,6 +290,11 @@ class _SetPasswordOnPageContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fieldLabelStyle = AppTypography.labelLarge.copyWith(
+      color: context.colors.text.secondary,
+      fontWeight: FontWeight.w400,
+    );
+
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -316,6 +321,7 @@ class _SetPasswordOnPageContent extends StatelessWidget {
                         child: PasswordTextField(
                           key: const ValueKey('set_password_password_field'),
                           label: 'Password',
+                          labelStyle: fieldLabelStyle,
                           hintText: 'Min. 8 characters and symbols',
                           controller: passwordController,
                           messageText: passwordMessage,
@@ -340,6 +346,7 @@ class _SetPasswordOnPageContent extends StatelessWidget {
                         child: PasswordTextField(
                           key: const ValueKey('set_password_confirm_field'),
                           label: 'Confirm password',
+                          labelStyle: fieldLabelStyle,
                           hintText: 'Confirm password',
                           controller: confirmController,
                           messageText: confirmMessage,

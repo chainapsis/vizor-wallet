@@ -93,12 +93,9 @@ class _ImportOnboardingWindowBackground extends StatelessWidget {
         isDark
             ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
             : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
-      _ => null,
+      ImportOnboardingStep.setPassword =>
+        'assets/illustrations/onboarding_set_password_background_light.png',
     };
-
-    if (asset == null) {
-      return const SizedBox.shrink();
-    }
 
     return DecoratedBox(
       decoration: BoxDecoration(color: context.colors.background.window),

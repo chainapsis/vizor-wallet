@@ -28,6 +28,7 @@ class AppTextField extends StatefulWidget {
     this.messageText,
     this.messageIcon,
     this.messageStyle,
+    this.labelStyle,
     this.tone = AppTextFieldTone.neutral,
     this.showClearButton = false,
     this.clearButtonRequiresText = true,
@@ -76,6 +77,7 @@ class AppTextField extends StatefulWidget {
   final String? messageText;
   final Widget? messageIcon;
   final TextStyle? messageStyle;
+  final TextStyle? labelStyle;
   final AppTextFieldTone tone;
   final bool showClearButton;
   final bool clearButtonRequiresText;
@@ -251,9 +253,14 @@ class _AppTextFieldState extends State<AppTextField> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final titleStyle = AppTypography.labelMedium.copyWith(
+    final defaultTitleStyle = AppTypography.labelMedium.copyWith(
       color: colors.text.secondary,
     );
+    final titleStyle = widget.labelStyle == null
+        ? defaultTitleStyle
+        : widget.labelStyle!.copyWith(
+            color: widget.labelStyle!.color ?? colors.text.secondary,
+          );
     final hintStyle =
         widget.hintStyle ??
         AppTypography.labelLarge.copyWith(color: colors.text.muted);
