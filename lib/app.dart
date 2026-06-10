@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'src/app_bootstrap.dart';
 import 'src/core/config/swap_feature_config.dart';
 import 'src/core/layout/app_layout.dart';
+import 'src/core/navigation/mobile_routes.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
@@ -200,10 +201,24 @@ final _routerProvider = Provider<GoRouter>((ref) {
       swapFeatureEnabled: swapFeatureEnabled,
       state: state,
     ),
-    routes: [
-      ...appEntryRoutes(ref, bootstrap),
-      ..._desktopRoutes(swapFeatureEnabled),
-    ],
+    // The mobile tree only carries the routes that exist on mobile so
+    // far; anything else (desktop-only paths, stale deep links) falls
+    // back to home instead of the error screen.
+    onException: kAppFormFactor == AppFormFactor.mobile
+        ? (context, state, router) {
+            log('router: no mobile route for ${state.uri}, falling back');
+            router.go('/home');
+          }
+        : null,
+    routes: kAppFormFactor == AppFormFactor.mobile
+        ? buildMobileRoutes(
+            entryRoutes: appEntryRoutes(ref, bootstrap),
+            swapFeatureEnabled: swapFeatureEnabled,
+          )
+        : [
+            ...appEntryRoutes(ref, bootstrap),
+            ..._desktopRoutes(swapFeatureEnabled),
+          ],
   );
 });
 

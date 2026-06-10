@@ -14,7 +14,8 @@ const double kMobileTopNavHeight = 72;
 /// - [MobileTopNav.steps] — back button + centered progress track. Used
 ///   by multi-step flows (onboarding, send wizard).
 /// - [MobileTopNav.back] — back button + centered serif title. Used by
-///   pushed detail screens.
+///   pushed detail screens; with a null [onBack] the button is omitted
+///   and only the centered title remains (tab roots like Activity).
 ///
 /// Metrics come from Figma node 4237:92733 (393×72; not tokenized as
 /// variables yet, so they live here as constants). The Back-variant
@@ -210,10 +211,11 @@ class MobileTopNav extends StatelessWidget {
             ),
           ),
         ),
-        Positioned(
-          left: AppSpacing.s,
-          child: _BackButton(size: _backButtonSize, onTap: onBack),
-        ),
+        if (onBack != null)
+          Positioned(
+            left: AppSpacing.s,
+            child: _BackButton(size: _backButtonSize, onTap: onBack),
+          ),
       ],
     );
   }
