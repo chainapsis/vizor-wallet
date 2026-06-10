@@ -461,15 +461,56 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   ///
   /// This also clears voting state held in this process for every account
   /// before the wallet DB and voting sidecar DB are deleted.
+  ///
+  /// The wipe is best-effort: every deletion step is attempted even if an
+  /// earlier one throws, so a partial failure (e.g. a keychain error during
+  /// deleteAll) cannot strand secrets behind an already-deleted DB. The first
+  /// error is rethrown after all attempts so callers still see the failure
+  /// and can retry; every step is idempotent.
   Future<void> resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
-    final dbPath = await _getDbPath();
+
+    Object? firstError;
+    StackTrace? firstStackTrace;
+    void recordError(String step, Object e, StackTrace st) {
+      log('resetWallet: $step failed: $e\n$st');
+      firstError ??= e;
+      firstStackTrace ??= st;
+    }
+
+    String? dbPath;
+    try {
+      dbPath = await _getDbPath();
+    } catch (e, st) {
+      recordError('db path lookup', e, st);
+    }
+    // _resetVotingProcessStateForAccount is already best-effort internally
+    // and falls back to its own db path lookup when dbPath is null.
     for (final account in state.value?.accounts ?? const <AccountInfo>[]) {
       await _resetVotingProcessStateForAccount(account.uuid, dbPath: dbPath);
     }
-    await _deleteExistingDb(dbPath);
-    await _storage.deleteAll();
-    ref.read(appSecurityProvider.notifier).reset();
+    if (dbPath != null) {
+      try {
+        await _deleteExistingDb(dbPath);
+      } catch (e, st) {
+        recordError('wallet db deletion', e, st);
+      }
+    }
+    try {
+      await _storage.deleteAll();
+    } catch (e, st) {
+      recordError('secure storage wipe', e, st);
+    }
+    try {
+      ref.read(appSecurityProvider.notifier).reset();
+    } catch (e, st) {
+      recordError('app security reset', e, st);
+    }
+
+    final error = firstError;
+    if (error != null) {
+      Error.throwWithStackTrace(error, firstStackTrace ?? StackTrace.current);
+    }
     state = const AsyncData(AccountState());
     log('resetWallet: all data cleared');
   }
