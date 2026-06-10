@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/core/theme/app_icon_size.dart';
 import 'package:zcash_wallet/src/core/theme/app_radii.dart';
 import 'package:zcash_wallet/src/core/theme/app_sizing.dart';
@@ -9,7 +10,41 @@ import 'package:zcash_wallet/src/core/theme/app_typography.dart';
 import 'package:zcash_wallet/src/core/theme/primitives.dart';
 
 void main() {
-  test('desktop sizing tokens match 1 Sizing.zip', () {
+  test('token selectors resolve to the compiled form factor set', () {
+    // `flutter test` runs with the default define (desktop) unless a
+    // --dart-define=VIZOR_FORM_FACTOR=mobile lane overrides it; this test
+    // is form-factor agnostic so it passes in both lanes.
+    final mobile = kAppFormFactor == AppFormFactor.mobile;
+
+    expect(
+      AppTypography.bodyMedium,
+      mobile
+          ? AppTypographyMobile.bodyMedium
+          : AppTypographyDesktop.bodyMedium,
+    );
+    expect(
+      AppTypography.displayLarge,
+      mobile
+          ? AppTypographyMobile.displayLarge
+          : AppTypographyDesktop.displayLarge,
+    );
+    expect(
+      AppButtonSizing.largeHeight,
+      mobile
+          ? AppButtonSizingMobile.largeHeight
+          : AppButtonSizingDesktop.largeHeight,
+    );
+    expect(
+      AppInputSizing.height,
+      mobile ? AppInputSizingMobile.height : AppInputSizingDesktop.height,
+    );
+    expect(
+      AppAssetSize.size,
+      mobile ? AppAssetSizeMobile.size : AppAssetSizeDesktop.size,
+    );
+  });
+
+  test('desktop sizing tokens match 1 Sizing-new.zip', () {
     expect(AppSpacing.xxs, 4);
     expect(AppSpacing.xs, 8);
     expect(AppSpacing.s, 12);
@@ -28,17 +63,17 @@ void main() {
     expect(AppRadii.xLarge, 32);
     expect(AppRadii.full, 999);
 
-    expect(AppAssetSize.size, 32);
-    expect(AppAssetSize.icon, 16);
-    expect(AppAssetSize.padding, 4);
-    expect(AppIconSize.medium, AppAssetSize.icon);
+    expect(AppAssetSizeDesktop.size, 32);
+    expect(AppAssetSizeDesktop.icon, 16);
+    expect(AppAssetSizeDesktop.padding, 4);
+    expect(AppIconSize.medium, AppAssetSizeDesktop.icon);
 
-    expect(AppButtonSizing.largeHeight, 44);
+    expect(AppButtonSizingDesktop.largeHeight, 44);
 
-    expect(AppInputSizing.height, 46);
-    expect(AppInputSizing.iconWrapWidth, 32);
-    expect(AppInputSizing.iconSize, 20);
-    expect(AppInputSizing.radius, AppRadii.small);
+    expect(AppInputSizingDesktop.height, 46);
+    expect(AppInputSizingDesktop.iconWrapWidth, 32);
+    expect(AppInputSizingDesktop.iconSize, 20);
+    expect(AppInputSizingDesktop.radius, AppRadii.small);
 
     expect(AppWindowSizing.minWidth, 1080);
     expect(AppWindowSizing.minHeight, 720);
@@ -48,39 +83,114 @@ void main() {
     expect(AppWindowSizing.paneRadius, 20);
   });
 
-  test('desktop font tokens match 3 Fonts.zip', () {
-    expect(AppTypography.displayMedium.fontFamily, 'Libre Caslon Text');
-    expect(AppTypography.displayMedium.fontWeight, FontWeight.w400);
-    expect(AppTypography.displayMedium.fontSize, 45);
-    expect(AppTypography.displayMedium.height, 48 / 45);
-    expect(AppTypography.displayMedium.letterSpacing, -1.35);
+  test('mobile sizing tokens match 1 Sizing-new.zip', () {
+    expect(AppAssetSizeMobile.size, 40);
+    expect(AppAssetSizeMobile.icon, 18);
+    expect(AppAssetSizeMobile.padding, 0);
 
-    expect(AppTypography.headlineLarge.fontFamily, 'Libre Caslon Text');
-    expect(AppTypography.headlineLarge.fontWeight, FontWeight.w400);
-    expect(AppTypography.headlineLarge.fontSize, 32);
-    expect(AppTypography.headlineLarge.height, 33 / 32);
+    expect(AppButtonSizingMobile.largeHeight, 50);
 
-    expect(AppTypography.headlineMedium.fontFamily, 'Libre Caslon Text');
-    expect(AppTypography.headlineMedium.fontWeight, FontWeight.w400);
-    expect(AppTypography.headlineMedium.fontSize, 28);
-    expect(AppTypography.headlineMedium.height, 30 / 28);
-    expect(AppTypography.headlineMedium.letterSpacing, -0.28);
+    expect(AppInputSizingMobile.height, 60);
+    expect(AppInputSizingMobile.iconWrapWidth, 36);
+    expect(AppInputSizingMobile.iconSize, 24);
+    // Figma `Input/Radii` aliases `Radii.SM` (16) on mobile; the Figma
+    // radii scale is shifted one tier against Dart's, so `SM` = `medium`.
+    expect(AppInputSizingMobile.radius, AppRadii.medium);
+  });
 
-    expect(AppTypography.labelMedium.fontFamily, 'Geist');
-    expect(AppTypography.labelMedium.fontWeight, FontWeight.w500);
-    expect(AppTypography.labelMedium.fontSize, 13);
-    expect(AppTypography.labelMedium.height, 14 / 13);
-    expect(AppTypography.labelMedium.letterSpacing, 0);
+  test('desktop font tokens match 3 Fonts-new.zip', () {
+    expect(AppTypographyDesktop.displayMedium.fontFamily, 'Libre Caslon Text');
+    expect(AppTypographyDesktop.displayMedium.fontWeight, FontWeight.w400);
+    expect(AppTypographyDesktop.displayMedium.fontSize, 45);
+    expect(AppTypographyDesktop.displayMedium.height, 48 / 45);
+    expect(AppTypographyDesktop.displayMedium.letterSpacing, -1.35);
 
-    expect(AppTypography.labelSmall.fontFamily, 'Geist');
-    expect(AppTypography.labelSmall.fontWeight, FontWeight.w500);
-    expect(AppTypography.labelSmall.fontSize, 13);
-    expect(AppTypography.labelSmall.height, 14 / 13);
+    expect(AppTypographyDesktop.headlineLarge.fontFamily, 'Libre Caslon Text');
+    expect(AppTypographyDesktop.headlineLarge.fontWeight, FontWeight.w400);
+    expect(AppTypographyDesktop.headlineLarge.fontSize, 32);
+    expect(AppTypographyDesktop.headlineLarge.height, 33 / 32);
 
-    expect(AppTypography.codeSmall.fontFamily, 'Geist Mono');
-    expect(AppTypography.codeSmall.fontWeight, FontWeight.w500);
-    expect(AppTypography.codeSmall.fontSize, 13);
-    expect(AppTypography.codeSmall.height, 17 / 13);
+    expect(AppTypographyDesktop.headlineMedium.fontFamily, 'Libre Caslon Text');
+    expect(AppTypographyDesktop.headlineMedium.fontWeight, FontWeight.w400);
+    expect(AppTypographyDesktop.headlineMedium.fontSize, 28);
+    expect(AppTypographyDesktop.headlineMedium.height, 30 / 28);
+    expect(AppTypographyDesktop.headlineMedium.letterSpacing, -0.28);
+
+    expect(AppTypographyDesktop.headlineSmall.fontSize, 16);
+    expect(AppTypographyDesktop.headlineSmall.height, 20 / 16);
+
+    expect(AppTypographyDesktop.bodyLarge.fontSize, 16);
+    expect(AppTypographyDesktop.bodyLarge.height, 24 / 16);
+    expect(AppTypographyDesktop.bodyMedium.fontSize, 14);
+    expect(AppTypographyDesktop.bodyMedium.height, 21 / 14);
+    expect(AppTypographyDesktop.bodyMediumStrong.fontSize, 14);
+    expect(AppTypographyDesktop.bodyMediumStrong.fontWeight, FontWeight.w500);
+    expect(AppTypographyDesktop.bodySmall.fontSize, 12);
+    expect(AppTypographyDesktop.bodySmall.height, 18 / 12);
+    expect(AppTypographyDesktop.bodyExtraSmall.fontSize, 11);
+    expect(AppTypographyDesktop.bodyExtraSmall.height, 16 / 11);
+
+    expect(AppTypographyDesktop.labelLarge.fontSize, 14);
+    expect(AppTypographyDesktop.labelLarge.height, 16 / 14);
+
+    expect(AppTypographyDesktop.labelMedium.fontFamily, 'Geist');
+    expect(AppTypographyDesktop.labelMedium.fontWeight, FontWeight.w500);
+    expect(AppTypographyDesktop.labelMedium.fontSize, 13);
+    expect(AppTypographyDesktop.labelMedium.height, 14 / 13);
+    expect(AppTypographyDesktop.labelMedium.letterSpacing, 0);
+
+    expect(AppTypographyDesktop.labelSmall.fontFamily, 'Geist');
+    expect(AppTypographyDesktop.labelSmall.fontWeight, FontWeight.w500);
+    expect(AppTypographyDesktop.labelSmall.fontSize, 13);
+    expect(AppTypographyDesktop.labelSmall.height, 14 / 13);
+
+    expect(AppTypographyDesktop.codeSmall.fontFamily, 'Geist Mono');
+    expect(AppTypographyDesktop.codeSmall.fontWeight, FontWeight.w500);
+    expect(AppTypographyDesktop.codeSmall.fontSize, 13);
+    expect(AppTypographyDesktop.codeSmall.height, 17 / 13);
+  });
+
+  test('mobile font tokens match 3 Fonts-new.zip', () {
+    // Headline XL scales DOWN on mobile (45 → 40); families, weights,
+    // and letter spacings are identical to desktop across all styles.
+    expect(AppTypographyMobile.displayLarge.fontFamily, 'Libre Caslon Text');
+    expect(AppTypographyMobile.displayLarge.fontWeight, FontWeight.w400);
+    expect(AppTypographyMobile.displayLarge.fontSize, 40);
+    expect(AppTypographyMobile.displayLarge.height, 40 / 40);
+    expect(AppTypographyMobile.displayLarge.letterSpacing, -1.35);
+
+    // Headline L / M and Code M / S are mode-invariant.
+    expect(AppTypographyMobile.headlineLarge, AppTypographyDesktop.headlineLarge);
+    expect(
+      AppTypographyMobile.headlineMedium,
+      AppTypographyDesktop.headlineMedium,
+    );
+    expect(AppTypographyMobile.codeMedium, AppTypographyDesktop.codeMedium);
+    expect(AppTypographyMobile.codeSmall, AppTypographyDesktop.codeSmall);
+
+    expect(AppTypographyMobile.headlineSmall.fontSize, 18);
+    expect(AppTypographyMobile.headlineSmall.height, 22 / 18);
+
+    expect(AppTypographyMobile.bodyLarge.fontSize, 18);
+    expect(AppTypographyMobile.bodyLarge.height, 26 / 18);
+    expect(AppTypographyMobile.bodyLarge.letterSpacing, -0.24);
+    expect(AppTypographyMobile.bodyMedium.fontSize, 16);
+    expect(AppTypographyMobile.bodyMedium.height, 25 / 16);
+    expect(AppTypographyMobile.bodyMedium.letterSpacing, -0.21);
+    expect(AppTypographyMobile.bodyMediumStrong.fontSize, 16);
+    expect(AppTypographyMobile.bodyMediumStrong.height, 25 / 16);
+    expect(AppTypographyMobile.bodyMediumStrong.fontWeight, FontWeight.w500);
+    expect(AppTypographyMobile.bodySmall.fontSize, 14);
+    expect(AppTypographyMobile.bodySmall.height, 20 / 14);
+    expect(AppTypographyMobile.bodyExtraSmall.fontSize, 13);
+    expect(AppTypographyMobile.bodyExtraSmall.height, 18 / 13);
+
+    expect(AppTypographyMobile.labelLarge.fontSize, 16);
+    expect(AppTypographyMobile.labelLarge.height, 17 / 16);
+    expect(AppTypographyMobile.labelLarge.letterSpacing, -0.06);
+    expect(AppTypographyMobile.labelMedium.fontSize, 14);
+    expect(AppTypographyMobile.labelMedium.height, 15 / 14);
+    expect(AppTypographyMobile.labelSmall, AppTypographyMobile.labelMedium);
   });
 
   test('semantic color tokens match 2 Color Theme.zip', () {

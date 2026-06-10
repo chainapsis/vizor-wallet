@@ -8,6 +8,11 @@ fvm flutter run
 fvm flutter test
 fvm flutter analyze
 
+# iOS/Android runs MUST pass the mobile token define (desktop is the
+# default; a mismatched debug build fails fast at startup).
+# See lib/src/core/layout/app_form_factor.dart.
+fvm flutter run --dart-define=VIZOR_FORM_FACTOR=mobile
+
 # Rust tests (run from project root or rust/)
 cd rust && cargo test
 
