@@ -507,18 +507,22 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       } catch (e, st) {
         recordError('secure storage wipe', e, st);
       }
-      try {
-        ref.read(appSecurityProvider.notifier).reset();
-      } catch (e, st) {
-        recordError('app security reset', e, st);
-      }
     }
 
     final error = firstError;
     if (error != null) {
       Error.throwWithStackTrace(error, firstStackTrace ?? StackTrace.current);
     }
+    // Clear the account state BEFORE flipping security back to locked: the
+    // router derives requiresUnlock from hasWallet && !isUnlocked, so the
+    // reverse order bounces a locked-start session to /unlock mid-uninstall
+    // (the /settings/uninstall exemption only covers the no-wallet branch).
     state = const AsyncData(AccountState());
+    try {
+      ref.read(appSecurityProvider.notifier).reset();
+    } catch (e, st) {
+      log('resetWallet: app security reset failed: $e\n$st');
+    }
     log('resetWallet: all data cleared');
   }
 
