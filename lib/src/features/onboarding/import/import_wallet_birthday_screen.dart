@@ -36,6 +36,8 @@ class ImportWalletBirthdayScreen extends ConsumerStatefulWidget {
 
 class _ImportWalletBirthdayScreenState
     extends ConsumerState<ImportWalletBirthdayScreen> {
+  static const _manualHeightErrorText =
+      "That doesn't look like a valid block height.";
   static const _titleWidth = 396.0;
   static const _subtitleWidth = 226.0;
   static const _widgetWidth = 304.0;
@@ -339,13 +341,13 @@ class _ImportWalletBirthdayScreenState
     final text = _manualHeightController.text.trim();
     if (text.isEmpty) return null;
     final parsed = int.tryParse(text);
-    if (parsed == null) return "That doesn't look like a valid block height.";
+    if (parsed == null) return _manualHeightErrorText;
     if (parsed < _minimumBirthdayHeight) {
-      return "That doesn't look like a valid block height.";
+      return _manualHeightErrorText;
     }
     final maximumHeight = _metadata?.tipHeight;
     if (maximumHeight != null && parsed > maximumHeight) {
-      return "That doesn't look like a valid block height.";
+      return _manualHeightErrorText;
     }
     if (_metadataError != null) return _metadataError;
     return null;
@@ -474,7 +476,7 @@ class _ImportWalletBirthdayScreenState
                                   ),
                                 const SizedBox(height: AppSpacing.xxs),
                                 SizedBox(
-                                  width: _widgetWidth,
+                                  width: _fieldWidth,
                                   height: _messageHeight,
                                   child: activeTab == ImportBirthdayTab.date
                                       ? _InlineMessage(text: _dateMessage)
@@ -698,7 +700,7 @@ class _BlockHeightField extends StatelessWidget {
     final colors = context.colors;
     final hasError = errorText != null;
     final borderColor = hasError
-        ? colors.border.utilityDestructiveSubtle
+        ? colors.border.utilityDestructive
         : focusNode.hasFocus
         ? colors.background.inverse
         : const Color(0x00000000);
@@ -740,7 +742,7 @@ class _BlockHeightField extends StatelessWidget {
               onChanged: onChanged,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.accent,
-                fontWeight: FontWeight.w400,
+                fontWeight: FontWeight.w500,
               ),
               cursorColor: colors.text.accent,
               decoration: material.InputDecoration.collapsed(
@@ -770,15 +772,17 @@ class _InlineMessage extends StatelessWidget {
       return const SizedBox.shrink();
     }
     final colors = context.colors;
+    final errorColor = colors.border.utilityDestructive;
     return Row(
       children: [
-        AppIcon(AppIcons.warning, size: 16, color: colors.text.destructive),
+        AppIcon(AppIcons.warning, size: 16, color: errorColor),
         const SizedBox(width: AppSpacing.xxs),
         Expanded(
           child: Text(
             text!,
-            style: AppTypography.labelMedium.copyWith(
-              color: colors.text.destructive,
+            style: AppTypography.labelLarge.copyWith(
+              color: errorColor,
+              fontWeight: FontWeight.w400,
             ),
           ),
         ),
