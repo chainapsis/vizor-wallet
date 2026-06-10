@@ -4,9 +4,8 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-use ::transparent::keys::{IncomingViewingKey as _, NonHardenedChildIndex};
 use bip0039::{Count, English, Language, Mnemonic};
-use rusqlite::{named_params, OptionalExtension};
+use rusqlite::named_params;
 use secrecy::{ExposeSecret, SecretVec};
 use zcash_client_backend::data_api::{
     chain::ChainState, Account as _, AccountBirthday, AccountPurpose, AccountSource, WalletRead,
@@ -26,8 +25,7 @@ use crate::wallet::{
     db::{
         open_wallet_db_for_read_with_timeout, open_wallet_db_with_timeout,
         with_wallet_db_write_lock, WalletDatabase, ACCOUNT_MUTATION_DB_BUSY_TIMEOUT,
-        LEDGER_TRANSPARENT_SCAN_TABLE, READ_DB_BUSY_TIMEOUT, TRANSPARENT_WATCH_TABLE,
-        WALLET_DB_BUSY_TIMEOUT,
+        READ_DB_BUSY_TIMEOUT, WALLET_DB_BUSY_TIMEOUT,
     },
     network::WalletNetwork,
 };
@@ -499,9 +497,6 @@ fn delete_account_rows(db_path: &str, account_id: AccountUuid) -> Result<(), Str
         }
     }
 
-    delete_ledger_transparent_scan_rows(&tx, account_uuid_bytes)?;
-    delete_transparent_watch_rows(&tx, account_uuid_bytes)?;
-
     tx.execute(
         r#"
         WITH account_transactions AS (
@@ -544,64 +539,6 @@ fn delete_account_rows(db_path: &str, account_id: AccountUuid) -> Result<(), Str
 
     tx.commit()
         .map_err(|e| format!("Failed to commit account deletion: {e}"))
-}
-
-fn delete_ledger_transparent_scan_rows(
-    tx: &rusqlite::Transaction<'_>,
-    account_uuid: &[u8],
-) -> Result<(), String> {
-    let table_exists = tx
-        .query_row(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
-            rusqlite::params![LEDGER_TRANSPARENT_SCAN_TABLE],
-            |_| Ok(()),
-        )
-        .optional()
-        .map_err(|e| format!("Failed to check Ledger transparent scan table: {e}"))?
-        .is_some();
-
-    if !table_exists {
-        return Ok(());
-    }
-
-    tx.execute(
-        &format!(
-            "DELETE FROM {LEDGER_TRANSPARENT_SCAN_TABLE}
-             WHERE account_uuid = :account_uuid"
-        ),
-        named_params![":account_uuid": account_uuid],
-    )
-    .map(|_| ())
-    .map_err(|e| format!("Failed to delete Ledger transparent scan state: {e}"))
-}
-
-fn delete_transparent_watch_rows(
-    tx: &rusqlite::Transaction<'_>,
-    account_uuid: &[u8],
-) -> Result<(), String> {
-    let table_exists = tx
-        .query_row(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
-            rusqlite::params![TRANSPARENT_WATCH_TABLE],
-            |_| Ok(()),
-        )
-        .optional()
-        .map_err(|e| format!("Failed to check transparent watch table: {e}"))?
-        .is_some();
-
-    if !table_exists {
-        return Ok(());
-    }
-
-    tx.execute(
-        &format!(
-            "DELETE FROM {TRANSPARENT_WATCH_TABLE}
-             WHERE account_uuid = :account_uuid"
-        ),
-        named_params![":account_uuid": account_uuid],
-    )
-    .map(|_| ())
-    .map_err(|e| format!("Failed to delete transparent watch state: {e}"))
 }
 
 /// Parse an account UUID string into AccountUuid.
@@ -706,22 +643,6 @@ fn orchard_address_request() -> UnifiedAddressRequest {
     .expect("valid receiver requirements")
 }
 
-fn source_uses_zip32_account_zero(source: &AccountSource) -> bool {
-    let derivation = match source {
-        AccountSource::Derived { derivation, .. } => Some(derivation),
-        AccountSource::Imported {
-            purpose:
-                AccountPurpose::Spending {
-                    derivation: Some(derivation),
-                },
-            ..
-        } => Some(derivation),
-        _ => None,
-    };
-
-    derivation.is_some_and(|d| d.account_index() == zip32::AccountId::ZERO)
-}
-
 /// Get the transparent address from an existing wallet database.
 pub fn get_transparent_address_from_db(
     db_path: &str,
@@ -732,47 +653,19 @@ pub fn get_transparent_address_from_db(
 
     let account_id = resolve_account_id(&db, account_uuid)?;
 
-    let account = db
-        .get_account(account_id)
-        .map_err(|e| format!("Failed to get account: {e}"))?
-        .ok_or("Account not found")?;
-    if !source_uses_zip32_account_zero(account.source()) {
-        return Err("Transparent receive address is only supported for account 0.".to_string());
-    }
+    let current_ua = db
+        .get_last_generated_address_matching(account_id, UnifiedAddressRequest::AllAvailableKeys)
+        .map_err(|e| format!("Failed to get current generated address: {e}"))?
+        .ok_or_else(|| "No tracked transparent address available".to_string())?;
+    let taddr = current_ua.transparent().ok_or_else(|| {
+        "Current generated address does not include a transparent receiver".to_string()
+    })?;
 
-    let ufvk = account.ufvk().ok_or("Account does not have a UFVK")?;
-    if ufvk.transparent().is_none() {
-        return Err("Account does not have a transparent key".to_string());
-    }
-
-    if is_keystone_style_ufvk(ufvk) {
-        let taddr = ufvk
-            .transparent()
-            .expect("checked above")
-            .derive_external_ivk()
-            .map_err(|e| format!("Failed to derive transparent external key: {e}"))?
-            .derive_address(NonHardenedChildIndex::ZERO)
-            .map_err(|e| format!("Failed to derive transparent receive address: {e}"))?;
-
-        Ok(encode_transparent_address(
-            &network.b58_pubkey_address_prefix(),
-            &network.b58_script_address_prefix(),
-            &taddr,
-        ))
-    } else {
-        let (ua, _) = ufvk
-            .default_address(UnifiedAddressRequest::AllAvailableKeys)
-            .map_err(|e| format!("Failed to derive default unified address: {e}"))?;
-        let taddr = ua
-            .transparent()
-            .ok_or("Default unified address does not include a transparent receiver")?;
-
-        Ok(encode_transparent_address(
-            &network.b58_pubkey_address_prefix(),
-            &network.b58_script_address_prefix(),
-            taddr,
-        ))
-    }
+    Ok(encode_transparent_address(
+        &network.b58_pubkey_address_prefix(),
+        &network.b58_script_address_prefix(),
+        taddr,
+    ))
 }
 
 /// Validate that a wallet database exists and has at least one account.
@@ -908,197 +801,6 @@ mod tests {
     }
 
     #[test]
-    fn test_get_transparent_address_stays_fixed_after_receive_rotation() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("wallet.db");
-        let db_path_str = db_path.to_str().unwrap();
-
-        let phrase = generate_mnemonic();
-        let seed = mnemonic_to_seed(&phrase).unwrap();
-
-        let (uuid, default_address) =
-            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
-                .unwrap();
-        let transparent_address =
-            get_transparent_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap();
-
-        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
-        let renewed_address = crate::wallet::sync::get_next_available_address(
-            db_path_str,
-            WalletNetwork::Main,
-            &uuid,
-            crate::wallet::sync::AddressRequestKind::Shielded,
-        )
-        .unwrap();
-
-        assert_ne!(default_address, renewed_address);
-        assert_eq!(
-            transparent_address,
-            get_transparent_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_get_transparent_address_for_software_uses_all_available_default_receiver() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("wallet.db");
-        let db_path_str = db_path.to_str().unwrap();
-
-        let seed_tag = software_seed_tag_with_nonzero_all_available_transparent_index();
-        let seed = SecretVec::new(vec![seed_tag; 32]);
-        let usk = UnifiedSpendingKey::from_seed(
-            &WalletNetwork::Main,
-            seed.expose_secret(),
-            zip32::AccountId::ZERO,
-        )
-        .unwrap();
-        let ufvk = usk.to_unified_full_viewing_key();
-        let (ua, _) = ufvk
-            .default_address(UnifiedAddressRequest::AllAvailableKeys)
-            .unwrap();
-        let expected_taddr = encode_transparent_address(
-            &WalletNetwork::Main.b58_pubkey_address_prefix(),
-            &WalletNetwork::Main.b58_script_address_prefix(),
-            ua.transparent().unwrap(),
-        );
-        let external_zero = ufvk
-            .transparent()
-            .unwrap()
-            .derive_external_ivk()
-            .unwrap()
-            .derive_address(NonHardenedChildIndex::ZERO)
-            .unwrap();
-        let external_zero = encode_transparent_address(
-            &WalletNetwork::Main.b58_pubkey_address_prefix(),
-            &WalletNetwork::Main.b58_script_address_prefix(),
-            &external_zero,
-        );
-        assert_ne!(expected_taddr, external_zero);
-
-        let (uuid, _) =
-            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
-                .unwrap();
-
-        assert_eq!(
-            expected_taddr,
-            get_transparent_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_get_transparent_address_for_keystone_style_uses_external_zero() {
-        use zcash_address::unified::{Encoding, Fvk, Ufvk};
-        use zcash_protocol::consensus::NetworkType;
-
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("wallet.db");
-        let db_path_str = db_path.to_str().unwrap();
-
-        let seed_tag = software_seed_tag_with_nonzero_all_available_transparent_index();
-        let seed = SecretVec::new(vec![seed_tag; 32]);
-        let account_index = zip32::AccountId::ZERO;
-        let usk = UnifiedSpendingKey::from_seed(
-            &WalletNetwork::Main,
-            seed.expose_secret(),
-            account_index,
-        )
-        .unwrap();
-        let full_ufvk = usk.to_unified_full_viewing_key();
-        let orchard_fvk = full_ufvk.orchard().unwrap().to_bytes();
-        let transparent_fvk = full_ufvk
-            .transparent()
-            .unwrap()
-            .serialize()
-            .try_into()
-            .unwrap();
-        let keystone_style_ufvk =
-            Ufvk::try_from_items(vec![Fvk::Orchard(orchard_fvk), Fvk::P2pkh(transparent_fvk)])
-                .unwrap()
-                .encode(&NetworkType::Main);
-        let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
-            .unwrap()
-            .to_bytes();
-        let external_zero = full_ufvk
-            .transparent()
-            .unwrap()
-            .derive_external_ivk()
-            .unwrap()
-            .derive_address(NonHardenedChildIndex::ZERO)
-            .unwrap();
-        let expected_taddr = encode_transparent_address(
-            &WalletNetwork::Main.b58_pubkey_address_prefix(),
-            &WalletNetwork::Main.b58_script_address_prefix(),
-            &external_zero,
-        );
-
-        let (uuid, _) = import_hardware_account(
-            db_path_str,
-            WalletNetwork::Main,
-            "Keystone",
-            &keystone_style_ufvk,
-            &seed_fingerprint,
-            u32::from(account_index),
-            None,
-        )
-        .unwrap();
-
-        assert_eq!(
-            expected_taddr,
-            get_transparent_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_get_transparent_address_rejects_nonzero_zip32_account() {
-        use zcash_address::unified::{Encoding, Fvk, Ufvk};
-        use zcash_protocol::consensus::NetworkType;
-
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("wallet.db");
-        let db_path_str = db_path.to_str().unwrap();
-
-        let phrase = generate_mnemonic();
-        let seed = mnemonic_to_seed(&phrase).unwrap();
-        let account_index = zip32::AccountId::try_from(1u32).unwrap();
-        let usk = UnifiedSpendingKey::from_seed(
-            &WalletNetwork::Main,
-            seed.expose_secret(),
-            account_index,
-        )
-        .unwrap();
-        let full_ufvk = usk.to_unified_full_viewing_key();
-        let orchard_fvk = full_ufvk.orchard().unwrap().to_bytes();
-        let transparent_fvk = full_ufvk
-            .transparent()
-            .unwrap()
-            .serialize()
-            .try_into()
-            .unwrap();
-        let keystone_style_ufvk =
-            Ufvk::try_from_items(vec![Fvk::Orchard(orchard_fvk), Fvk::P2pkh(transparent_fvk)])
-                .unwrap()
-                .encode(&NetworkType::Main);
-        let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
-            .unwrap()
-            .to_bytes();
-
-        let (uuid, _) = import_hardware_account(
-            db_path_str,
-            WalletNetwork::Main,
-            "Keystone account 1",
-            &keystone_style_ufvk,
-            &seed_fingerprint,
-            u32::from(account_index),
-            None,
-        )
-        .unwrap();
-
-        let error = get_transparent_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid))
-            .unwrap_err();
-        assert!(error.contains("account 0"), "{error}");
-    }
-
-    #[test]
     fn test_get_next_available_address_rotates_keystone_style_imported_account() {
         use zcash_address::unified::{Encoding, Fvk, Ufvk};
         use zcash_protocol::consensus::NetworkType;
@@ -1178,38 +880,6 @@ mod tests {
         assert!(debug.contains("Orchard"));
         assert!(!debug.contains("Sapling"));
         assert!(!debug.contains("P2pkh"));
-    }
-
-    fn software_seed_tag_with_nonzero_all_available_transparent_index() -> u8 {
-        (0u8..=u8::MAX)
-            .find(|tag| {
-                let seed = vec![*tag; 32];
-                let Ok(usk) = UnifiedSpendingKey::from_seed(
-                    &WalletNetwork::Main,
-                    &seed,
-                    zip32::AccountId::ZERO,
-                ) else {
-                    return false;
-                };
-                let ufvk = usk.to_unified_full_viewing_key();
-                let Ok((ua, _)) = ufvk.default_address(UnifiedAddressRequest::AllAvailableKeys)
-                else {
-                    return false;
-                };
-                let Some(all_available_taddr) = ua.transparent() else {
-                    return false;
-                };
-                let external_zero = ufvk
-                    .transparent()
-                    .unwrap()
-                    .derive_external_ivk()
-                    .unwrap()
-                    .derive_address(NonHardenedChildIndex::ZERO)
-                    .unwrap();
-
-                all_available_taddr != &external_zero
-            })
-            .expect("test fixture seed with nonzero all-available transparent index")
     }
 
     #[test]
@@ -1319,48 +989,6 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_account_removes_ledger_transparent_scan_state() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("wallet.db");
-        let db_path_str = db_path.to_str().unwrap();
-
-        let first_phrase = generate_mnemonic();
-        let first_seed = mnemonic_to_seed(&first_phrase).unwrap();
-        let (first_uuid, _) = init_db_and_create_account(
-            db_path_str,
-            WalletNetwork::Main,
-            &first_seed,
-            None,
-            "first",
-        )
-        .unwrap();
-
-        let second_phrase = generate_mnemonic();
-        let second_seed = mnemonic_to_seed(&second_phrase).unwrap();
-        let (second_uuid, _) = add_account(
-            db_path_str,
-            WalletNetwork::Main,
-            "second",
-            &second_seed,
-            None,
-        )
-        .unwrap();
-
-        seed_ledger_transparent_scan_state(db_path_str, &first_uuid, &second_uuid);
-
-        delete_account(db_path_str, WalletNetwork::Main, &second_uuid).unwrap();
-
-        assert_eq!(
-            ledger_transparent_scan_row_count(db_path_str, &second_uuid),
-            0
-        );
-        assert_eq!(
-            ledger_transparent_scan_row_count(db_path_str, &first_uuid),
-            1
-        );
-    }
-
-    #[test]
     fn test_delete_account_handles_internal_sent_note_to_deleted_account() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
@@ -1432,45 +1060,6 @@ mod tests {
         let accounts = list_accounts(db_path_str, WalletNetwork::Main).unwrap();
         assert_eq!(accounts.len(), 2);
         assert!(accounts.iter().any(|account| account.uuid == first_uuid));
-    }
-
-    fn seed_ledger_transparent_scan_state(db_path: &str, first_uuid: &str, second_uuid: &str) {
-        let conn = rusqlite::Connection::open(db_path).unwrap();
-        conn.execute(
-            &format!(
-                "CREATE TABLE {LEDGER_TRANSPARENT_SCAN_TABLE} (
-                    account_uuid BLOB NOT NULL,
-                    key_scope INTEGER NOT NULL,
-                    checked_height INTEGER NOT NULL,
-                    PRIMARY KEY (account_uuid, key_scope)
-                )"
-            ),
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            &format!(
-                "INSERT INTO {LEDGER_TRANSPARENT_SCAN_TABLE}
-                 (account_uuid, key_scope, checked_height)
-                 VALUES (?1, 0, 100), (?2, 0, 200), (?2, 1, 200)"
-            ),
-            rusqlite::params![uuid_bytes(first_uuid), uuid_bytes(second_uuid)],
-        )
-        .unwrap();
-    }
-
-    fn ledger_transparent_scan_row_count(db_path: &str, account_uuid: &str) -> i64 {
-        let conn = rusqlite::Connection::open(db_path).unwrap();
-        conn.query_row(
-            &format!(
-                "SELECT COUNT(*)
-                 FROM {LEDGER_TRANSPARENT_SCAN_TABLE}
-                 WHERE account_uuid = ?1"
-            ),
-            rusqlite::params![uuid_bytes(account_uuid)],
-            |row| row.get(0),
-        )
-        .unwrap()
     }
 
     fn seed_internal_sent_note_to_account(db_path: &str, from_uuid: &str, to_uuid: &str) {
@@ -1561,19 +1150,13 @@ mod tests {
     }
 
     fn account_row_id(conn: &rusqlite::Connection, account_uuid: &str) -> i64 {
+        let uuid = uuid::Uuid::parse_str(account_uuid).unwrap();
         conn.query_row(
             "SELECT id FROM accounts WHERE uuid = ?1",
-            rusqlite::params![uuid_bytes(account_uuid)],
+            rusqlite::params![uuid.as_bytes().as_slice()],
             |row| row.get(0),
         )
         .unwrap()
-    }
-
-    fn uuid_bytes(account_uuid: &str) -> Vec<u8> {
-        uuid::Uuid::parse_str(account_uuid)
-            .unwrap()
-            .into_bytes()
-            .to_vec()
     }
 
     #[test]
