@@ -18,9 +18,9 @@ void main() {
     await tester.pumpWidget(_birthdayHarness());
     await tester.pump();
 
-    expect(_cursorForText(tester, 'Enter the Date'), SystemMouseCursors.click);
+    expect(_cursorForText(tester, 'Enter the date'), SystemMouseCursors.click);
     expect(
-      _cursorForText(tester, 'Enter the Block Height'),
+      _cursorForText(tester, 'Enter the block height'),
       SystemMouseCursors.click,
     );
   });

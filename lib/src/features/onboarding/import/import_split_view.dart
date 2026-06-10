@@ -88,7 +88,8 @@ class _ImportOnboardingWindowBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final asset = switch (activeStep) {
-      ImportOnboardingStep.secretPassphrase =>
+      ImportOnboardingStep.secretPassphrase ||
+      ImportOnboardingStep.walletBirthdayHeight =>
         isDark
             ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
             : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
