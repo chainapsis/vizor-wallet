@@ -233,6 +233,13 @@ back to onboarding.
   `lib/src/core/security/password_policy.dart` for all password validation.
 - The charset validation message must stay exactly:
   `Use only English letters, numbers, and symbols.`
+- **Mobile passcode**: the mobile form factor sets and unlocks the wallet
+  with a 6-digit passcode instead of a typed password. The digit string
+  is stored verbatim as the wallet password through the same
+  `appSecurityProvider` prepare/commit path — there is no separate
+  credential model. The desktop min-8 policy applies only to the typed
+  password UI; the mobile passcode screens validate exactly 6 digits
+  (`kMobilePasscodeLength`).
 
 ### Dart Provider Structure
 

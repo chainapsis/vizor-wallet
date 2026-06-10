@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/onboarding/mobile/mobile_create_steps.dart';
 import '../../features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../../features/onboarding/mobile/mobile_onboarding_scaffold.dart';
+import '../../features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../../features/onboarding/mobile/mobile_welcome_screen.dart';
 import '../../features/onboarding/shared/onboarding_flow_args.dart';
 import '../theme/app_theme.dart';
@@ -62,7 +63,15 @@ List<RouteBase> mobileOnboardingRoutes() => [
       );
     },
   ),
-  _step('/onboarding/set-passcode'),
+  GoRoute(
+    path: '/onboarding/set-passcode',
+    redirect: (_, state) =>
+        state.extra is SetPasswordScreenArgs ? null : '/welcome',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: MobilePasscodeScreen(args: state.extra as SetPasswordScreenArgs),
+    ),
+  ),
   _step('/onboarding/biometrics'),
   _step('/import'),
   _step('/import/manual'),
