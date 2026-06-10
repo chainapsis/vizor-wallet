@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_screen.dart';
 
 Widget _app({String initialLocation = '/welcome'}) {
@@ -65,7 +66,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('mobile_welcome_import')));
     await tester.pumpAndSettle();
-    expect(find.text('Coming soon'), findsOneWidget);
+    expect(find.byType(MobileImportMethodScreen), findsOneWidget);
   });
 
   testWidgets('keystone shows the unsupported sheet', (tester) async {
