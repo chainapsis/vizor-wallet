@@ -9,7 +9,7 @@ import 'package:zcash_wallet/src/features/activity/swap_activity_row_mapper.dart
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 
 void main() {
-  testWidgets('maps swap records to shared activity table rows', (
+  testWidgets('maps swap records to shared activity feed rows', (
     tester,
   ) async {
     ActivityRowData? row;
@@ -64,6 +64,7 @@ void main() {
     expect(row!.childRows, hasLength(1));
     expect(row!.childRows.single.title, 'Depositing USDC...');
     expect(row!.childRows.single.amountText, '+0.21 USDC');
+    expect(row!.childRows.single.leadingIconName, AppIcons.swapArrows);
     expect(row!.childRows.single.statusText, 'In progress');
     expect(row!.childRows.single.statusIconName, AppIcons.loader);
     expect(row!.childRows.single.timestampText, '1m ago');
@@ -340,6 +341,7 @@ void main() {
     expect(row!.childRows, hasLength(1));
     expect(row!.childRows.single.title, 'USDC Deposited');
     expect(row!.childRows.single.amountText, '+0.21 USDC');
+    expect(row!.childRows.single.leadingIconName, AppIcons.swapArrows);
     expect(row!.childRows.single.timestampText, '1m ago');
   });
 }

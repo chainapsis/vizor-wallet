@@ -107,7 +107,7 @@ void main() {
     );
     await _pumpUntilPresent(tester, find.text('Swapping...'));
 
-    expect(find.text('Recent Activity'), findsOneWidget);
+    expect(find.text('Recent activity'), findsOneWidget);
     expect(find.text('Swapping...'), findsOneWidget);
     expect(find.text('-1.0000 ZEC'), findsOneWidget);
 
@@ -180,7 +180,7 @@ Widget _appHarness(
       appBootstrapProvider.overrideWithValue(
         _bootstrap(initialLocation, network: network),
       ),
-      syncProvider.overrideWith(FakeSyncNotifier.new),
+      syncProvider.overrideWith(() => FakeSyncNotifier(_syncedSyncState)),
       if (swapEnabled != null)
         swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
       swapIntentProvider.overrideWithValue(const _FakeSwapProvider()),
@@ -226,6 +226,11 @@ AppBootstrapState _bootstrap(
     passwordRotationRecoveryFailed: false,
   );
 }
+
+final _syncedSyncState = SyncState(
+  accountUuid: 'account-1',
+  hasAccountScopedData: true,
+);
 
 class _FakeSwapActivityStore implements SwapActivityStore {
   const _FakeSwapActivityStore(this.records);

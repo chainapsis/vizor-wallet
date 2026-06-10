@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import 'account_modal_card.dart';
@@ -26,8 +25,8 @@ class AccountProfilePictureModal extends StatefulWidget {
 
 class _AccountProfilePictureModalState
     extends State<AccountProfilePictureModal> {
-  static const _optionSize = AppProfilePictureSize.large;
-  static const _gridWidth = 189.0;
+  static const _optionSize = AppProfilePictureSize.navLarge;
+  static const _gridWidth = 280.0;
 
   late String _selectedId = _initialSelectedId();
   bool _isSubmitting = false;
@@ -120,25 +119,10 @@ class _AccountProfilePictureModalState
             const SizedBox(height: AppSpacing.xs),
           ],
           const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              AppButton(
-                onPressed: _isSubmitting ? null : widget.onCancel,
-                variant: AppButtonVariant.ghost,
-                size: AppButtonSize.medium,
-                height: kAccountModalButtonHeight,
-                child: const Text('Cancel'),
-              ),
-              const Spacer(),
-              AppButton(
-                onPressed: _canUpdate ? _submit : null,
-                variant: AppButtonVariant.primary,
-                size: AppButtonSize.medium,
-                height: kAccountModalButtonHeight,
-                minWidth: kAccountModalButtonMinWidth,
-                child: Text(_isSubmitting ? 'Updating...' : 'Update'),
-              ),
-            ],
+          AccountModalActions(
+            onCancel: _isSubmitting ? null : widget.onCancel,
+            actionLabel: _isSubmitting ? 'Updating...' : 'Update',
+            onAction: _canUpdate ? _submit : null,
           ),
         ],
       ),
@@ -158,7 +142,7 @@ class _AccountProfilePictureModalHeader extends StatelessWidget {
       children: [
         AppProfilePicture(
           profilePictureId: profilePictureId,
-          size: AppProfilePictureSize.xLarge,
+          size: AppProfilePictureSize.xxLarge,
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
@@ -166,7 +150,7 @@ class _AccountProfilePictureModalHeader extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: AppTypography.bodyLarge.copyWith(
             color: context.colors.text.accent,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ],
@@ -198,10 +182,10 @@ class _ProfilePictureOptionButton extends StatefulWidget {
 class _ProfilePictureOptionButtonState
     extends State<_ProfilePictureOptionButton> {
   static const _focusRingWidth = 2.0;
-  static const _checkBadgeSize = 14.0;
-  static const _checkIconSize = 9.0;
-  static const _checkRight = -2.0;
-  static const _checkBottom = -2.0;
+  static const _checkBadgeSize = 20.0;
+  static const _checkIconSize = 14.0;
+  static const _checkRight = -3.0;
+  static const _checkBottom = -3.0;
 
   bool _isHovered = false;
   bool _isFocused = false;
@@ -253,7 +237,7 @@ class _ProfilePictureOptionButtonState
                           color: colors.state.focusRing,
                           width: _focusRingWidth,
                         ),
-                        borderRadius: BorderRadius.circular(widget.size.radius),
+                        shape: BoxShape.circle,
                       ),
                     ),
                   ),
@@ -270,6 +254,10 @@ class _ProfilePictureOptionButtonState
                       height: _checkBadgeSize,
                       decoration: BoxDecoration(
                         color: colors.background.inverse,
+                        border: Border.all(
+                          color: colors.background.base,
+                          width: 2,
+                        ),
                         shape: BoxShape.circle,
                       ),
                       child: Center(

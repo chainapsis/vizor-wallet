@@ -14,7 +14,9 @@ import 'chip_use_cases.dart';
 import 'context_menu_use_cases.dart';
 import 'color_use_cases.dart';
 import 'icon_use_cases.dart';
+import 'receive_use_cases.dart';
 import 'screen_use_cases.dart';
+import 'send_use_cases.dart';
 import 'swap_use_cases.dart';
 import 'text_field_use_cases.dart';
 import 'token_use_cases.dart';
@@ -67,15 +69,6 @@ class WidgetbookApp extends StatelessWidget {
               name: 'Onboarding',
               children: [
                 WidgetbookComponent(
-                  name: 'Accounts',
-                  useCases: [
-                    WidgetbookUseCase(
-                      name: 'Many Accounts',
-                      builder: buildAccountsManyUseCase,
-                    ),
-                  ],
-                ),
-                WidgetbookComponent(
                   name: 'Welcome',
                   useCases: [
                     WidgetbookUseCase(
@@ -103,6 +96,66 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Enabled',
                       builder: buildLostPasswordEnabledUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Accounts',
+              children: [
+                WidgetbookComponent(
+                  name: 'Screen',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Other account menu',
+                      builder: buildAccountsOtherMenuUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Current account menu',
+                      builder: buildAccountsCurrentMenuUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Edit account',
+                      builder: buildAccountsEditAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Profile picture',
+                      builder: buildAccountsProfilePictureUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Remove account',
+                      builder: buildAccountsRemoveUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Many accounts',
+                      builder: buildAccountsManyUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Receive',
+              children: [
+                WidgetbookComponent(
+                  name: 'Desktop',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Shielded',
+                      builder: buildReceiveDesktopShieldedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent',
+                      builder: buildReceiveDesktopTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Shielded modal',
+                      builder: buildReceiveDesktopShieldedModalUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent modal',
+                      builder: buildReceiveDesktopTransparentModalUseCase,
                     ),
                   ],
                 ),
@@ -287,6 +340,36 @@ class WidgetbookApp extends StatelessWidget {
               ],
             ),
             WidgetbookFolder(
+              name: 'Send',
+              children: [
+                WidgetbookComponent(
+                  name: 'Send page',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Empty state',
+                      builder: buildSendEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Shielded - filled',
+                      builder: buildSendShieldedFilledUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Shielded - memo too long',
+                      builder: buildSendMemoTooLongUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent recipient',
+                      builder: buildSendTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Contact selected',
+                      builder: buildSendContactSelectedUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
               name: 'Address book',
               children: [
                 WidgetbookComponent(
@@ -349,39 +432,11 @@ class WidgetbookApp extends StatelessWidget {
               name: 'Activity',
               children: [
                 WidgetbookComponent(
-                  name: 'Swap Activity',
+                  name: 'Page',
                   useCases: [
                     WidgetbookUseCase(
-                      name: 'In progress - Non-ZEC to ZEC',
-                      builder: buildActivitySwapProgressExternalToZecUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'In progress - ZEC to Non-ZEC',
-                      builder: buildActivitySwapProgressZecToExternalUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Sending - ZEC to Non-ZEC',
-                      builder: buildActivitySwapSendingZecToExternalUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Confirming - ZEC to Non-ZEC',
-                      builder: buildActivitySwapConfirmingZecToExternalUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Success - Non-ZEC to ZEC',
-                      builder: buildActivitySwapSuccessExternalToZecUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Success - ZEC to Non-ZEC',
-                      builder: buildActivitySwapSuccessZecToExternalUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Failed - Non-ZEC to ZEC',
-                      builder: buildActivitySwapFailedExternalToZecUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Failed - ZEC to Non-ZEC',
-                      builder: buildActivitySwapFailedZecToExternalUseCase,
+                      name: 'Default',
+                      builder: buildActivityPageUseCase,
                     ),
                   ],
                 ),

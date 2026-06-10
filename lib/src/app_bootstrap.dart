@@ -378,8 +378,9 @@ AccountInfo mergeBootstrappedAccountInfo({
     // Rust can recover Keystone accounts when older stored metadata lost this bit.
     isHardware: (storedAccount?.isHardware ?? false) || rustAccount.isHardware,
     isSeedAnchor: rustAccount.isSeedAnchor,
-    profilePictureId:
-        storedAccount?.profilePictureId ?? kDefaultProfilePictureId,
+    profilePictureId: normalizeProfilePictureId(
+      storedAccount?.profilePictureId ?? kDefaultProfilePictureId,
+    ),
   );
 }
 

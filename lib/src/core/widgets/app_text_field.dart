@@ -8,6 +8,8 @@ import 'app_tooltip.dart';
 
 enum AppTextFieldTone { neutral, destructive, success, brandCrimson }
 
+const _appTextFieldInputIconSize = AppInputSizing.iconSize;
+
 class AppTextField extends StatefulWidget {
   const AppTextField({
     super.key,
@@ -284,8 +286,8 @@ class _AppTextFieldState extends State<AppTextField> {
       AppTextFieldTone.brandCrimson => colors.icon.brandCrimson,
     };
     final gap = _multiline ? AppSpacing.xs : AppSpacing.xxs;
-    final shellHeight = _multiline ? 148.0 : 46.0;
-    const shellRadius = AppRadii.small;
+    final shellHeight = _multiline ? 148.0 : AppInputSizing.height;
+    const shellRadius = AppInputSizing.radius;
     final useFixedSlotLayout =
         !_multiline &&
         (widget.leadingSlotWidth != null ||
@@ -463,11 +465,11 @@ class _AppTextFieldState extends State<AppTextField> {
                                     child: IconTheme.merge(
                                       data: IconThemeData(
                                         color: leadingIconColor,
-                                        size: 20,
+                                        size: _appTextFieldInputIconSize,
                                       ),
                                       child: SizedBox(
-                                        width: 20,
-                                        height: 20,
+                                        width: _appTextFieldInputIconSize,
+                                        height: _appTextFieldInputIconSize,
                                         child: widget.leading,
                                       ),
                                     ),
@@ -507,8 +509,8 @@ class _AppTextFieldState extends State<AppTextField> {
                                   0,
                                 ),
                                 child: SizedBox(
-                                  width: 20,
-                                  height: 20,
+                                  width: _appTextFieldInputIconSize,
+                                  height: _appTextFieldInputIconSize,
                                   child: trailingWidget,
                                 ),
                               ),
@@ -520,18 +522,20 @@ class _AppTextFieldState extends State<AppTextField> {
                           children: [
                             if (widget.leading != null)
                               SizedBox(
-                                width: widget.leadingSlotWidth ?? 32,
+                                width:
+                                    widget.leadingSlotWidth ??
+                                    AppInputSizing.iconWrapWidth,
                                 height: shellHeight,
                                 child: Align(
                                   alignment: Alignment.centerRight,
                                   child: IconTheme.merge(
                                     data: IconThemeData(
                                       color: leadingIconColor,
-                                      size: 20,
+                                      size: _appTextFieldInputIconSize,
                                     ),
                                     child: SizedBox(
-                                      width: 20,
-                                      height: 20,
+                                      width: _appTextFieldInputIconSize,
+                                      height: _appTextFieldInputIconSize,
                                       child: widget.leading,
                                     ),
                                   ),
@@ -561,8 +565,8 @@ class _AppTextFieldState extends State<AppTextField> {
                                     clearButton ??
                                     Center(
                                       child: SizedBox(
-                                        width: 20,
-                                        height: 20,
+                                        width: _appTextFieldInputIconSize,
+                                        height: _appTextFieldInputIconSize,
                                         child: trailingWidget,
                                       ),
                                     ),
@@ -580,11 +584,11 @@ class _AppTextFieldState extends State<AppTextField> {
                                 IconTheme.merge(
                                   data: IconThemeData(
                                     color: leadingIconColor,
-                                    size: AppIconSize.large,
+                                    size: _appTextFieldInputIconSize,
                                   ),
                                   child: SizedBox(
-                                    width: AppIconSize.large,
-                                    height: AppIconSize.large,
+                                    width: _appTextFieldInputIconSize,
+                                    height: _appTextFieldInputIconSize,
                                     child: widget.leading,
                                   ),
                                 ),
@@ -599,15 +603,15 @@ class _AppTextFieldState extends State<AppTextField> {
                               if (clearButton != null) ...[
                                 const SizedBox(width: AppSpacing.xs),
                                 SizedBox(
-                                  width: 20,
-                                  height: 20,
+                                  width: _appTextFieldInputIconSize,
+                                  height: _appTextFieldInputIconSize,
                                   child: clearButton,
                                 ),
                               ] else if (trailingWidget != null) ...[
                                 const SizedBox(width: AppSpacing.xs),
                                 SizedBox(
-                                  width: 20,
-                                  height: 20,
+                                  width: _appTextFieldInputIconSize,
+                                  height: _appTextFieldInputIconSize,
                                   child: trailingWidget,
                                 ),
                               ],

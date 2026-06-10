@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/account_name_policy.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
@@ -13,6 +12,7 @@ class AccountNameModal extends StatefulWidget {
     required this.accountName,
     required this.profilePictureId,
     required this.onCancel,
+    required this.onChangeProfilePicture,
     required this.onUpdate,
     super.key,
   });
@@ -20,6 +20,7 @@ class AccountNameModal extends StatefulWidget {
   final String accountName;
   final String profilePictureId;
   final VoidCallback onCancel;
+  final VoidCallback onChangeProfilePicture;
   final Future<void> Function(String name) onUpdate;
 
   @override
@@ -107,7 +108,10 @@ class _AccountNameModalState extends State<AccountNameModal> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _AccountNameModalHeader(profilePictureId: widget.profilePictureId),
+          _AccountNameModalHeader(
+            profilePictureId: widget.profilePictureId,
+            onTap: _isSubmitting ? null : widget.onChangeProfilePicture,
+          ),
           const SizedBox(height: AppSpacing.md),
           SizedBox(
             height: _messageText == null
@@ -131,25 +135,10 @@ class _AccountNameModalState extends State<AccountNameModal> {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              AppButton(
-                onPressed: _isSubmitting ? null : widget.onCancel,
-                variant: AppButtonVariant.ghost,
-                size: AppButtonSize.medium,
-                height: kAccountModalButtonHeight,
-                child: const Text('Cancel'),
-              ),
-              const Spacer(),
-              AppButton(
-                onPressed: _canUpdate ? _submit : null,
-                variant: AppButtonVariant.primary,
-                size: AppButtonSize.medium,
-                height: kAccountModalButtonHeight,
-                minWidth: kAccountModalButtonMinWidth,
-                child: Text(_isSubmitting ? 'Updating...' : 'Update'),
-              ),
-            ],
+          AccountModalActions(
+            onCancel: _isSubmitting ? null : widget.onCancel,
+            actionLabel: _isSubmitting ? 'Updating...' : 'Update',
+            onAction: _canUpdate ? _submit : null,
           ),
         ],
       ),
@@ -158,14 +147,15 @@ class _AccountNameModalState extends State<AccountNameModal> {
 }
 
 class _AccountNameModalHeader extends StatelessWidget {
-  const _AccountNameModalHeader({required this.profilePictureId});
+  const _AccountNameModalHeader({required this.profilePictureId, this.onTap});
 
   final String profilePictureId;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SizedBox(
+    final avatar = SizedBox(
       width: 56,
       height: 56,
       child: Stack(
@@ -176,11 +166,12 @@ class _AccountNameModalHeader extends StatelessWidget {
             size: AppProfilePictureSize.xLarge,
           ),
           Positioned(
-            right: -6,
+            right: -3,
             bottom: -3,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: colors.background.inverse,
+                border: Border.all(color: colors.background.base, width: 3),
                 shape: BoxShape.circle,
               ),
               child: SizedBox(
@@ -197,6 +188,22 @@ class _AccountNameModalHeader extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+
+    final onTap = this.onTap;
+    if (onTap == null) return avatar;
+
+    return Semantics(
+      button: true,
+      label: 'Change profile picture',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: avatar,
+        ),
       ),
     );
   }

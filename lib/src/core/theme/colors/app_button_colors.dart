@@ -147,13 +147,13 @@ class AppDisabledButtonColors {
   final Color label;
 
   static const dark = AppDisabledButtonColors(
-    bg: Primitives.p100Dark,
-    label: Primitives.p400Dark,
+    bg: Primitives.p300Alpha20Dark,
+    label: Primitives.p500Alpha50Dark,
   );
 
   static const light = AppDisabledButtonColors(
-    bg: Primitives.p150Light,
-    label: Primitives.p500Light,
+    bg: Primitives.p300Alpha20Light,
+    label: Primitives.p500Alpha50Light,
   );
 }
 
@@ -177,19 +177,19 @@ class AppDestructiveButtonColors {
   final Color label;
 
   static const dark = AppDestructiveButtonColors(
-    bg: PlumPrimitives.p400Dark,
-    bgHover: PlumPrimitives.p300Dark,
-    bgPressed: PlumPrimitives.p300Dark,
+    bg: PlumPrimitives.p200Dark,
+    bgHover: PlumPrimitives.p150Dark,
+    bgPressed: PlumPrimitives.p150Dark,
     border: Primitives.p900Alpha10Dark,
     borderHover: Primitives.p900Alpha10Dark,
     borderPressed: Primitives.p900Alpha10Dark,
-    label: PlumPrimitives.p50Dark,
+    label: PlumPrimitives.p800Dark,
   );
 
   static const light = AppDestructiveButtonColors(
-    bg: PlumPrimitives.p300Light,
-    bgHover: PlumPrimitives.p400Light,
-    bgPressed: PlumPrimitives.p400Light,
+    bg: PlumPrimitives.p500Light,
+    bgHover: PlumPrimitives.p600Light,
+    bgPressed: PlumPrimitives.p600Light,
     border: Primitives.p900Alpha5Light,
     borderHover: Primitives.p900Alpha5Light,
     borderPressed: Primitives.p900Alpha5Light,

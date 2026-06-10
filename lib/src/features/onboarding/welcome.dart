@@ -104,11 +104,8 @@ class _Pane extends StatelessWidget {
           Positioned.fill(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final heroWidth =
-                    (constraints.maxWidth - _welcomePaneWidth).clamp(
-                      0.0,
-                      double.infinity,
-                    );
+                final heroWidth = (constraints.maxWidth - _welcomePaneWidth)
+                    .clamp(0.0, double.infinity);
                 return Stack(
                   children: [
                     Positioned(
@@ -142,9 +139,7 @@ class _Pane extends StatelessWidget {
                       ),
                     if (!showBackButton && showEndpointSettings)
                       AppPaneModalOverlay(
-                        borderRadius: BorderRadius.circular(
-                          AppRadii.xSmall,
-                        ),
+                        borderRadius: BorderRadius.circular(AppRadii.xSmall),
                         onDismiss: onDismissEndpointSettings,
                         child: CustomEndpointSettingsPanel(
                           key: const ValueKey(
@@ -173,10 +168,7 @@ class _Pane extends StatelessWidget {
 }
 
 class _WelcomeHeroPane extends StatelessWidget {
-  const _WelcomeHeroPane({
-    required this.width,
-    required this.height,
-  });
+  const _WelcomeHeroPane({required this.width, required this.height});
 
   static final _foregroundColor = AppTextColors.light.inverse;
   static const _textBottomInset = _welcomeCanvasHeight - 493;

@@ -33,19 +33,19 @@ class _Sizing {
   final TextStyle labelStyle;
 }
 
-// Large button — the primary CTA. Uses `labelLarge` (14px).
+// Large button — the primary CTA. Uses Desktop `Label M`.
 const _largeSizing = _Sizing(
-  height: 44,
+  height: AppButtonSizing.largeHeight,
   padding: EdgeInsets.symmetric(
     horizontal: AppSpacing.sm,
     vertical: AppSpacing.xs,
   ),
   gap: AppSpacing.xxs,
   iconSize: 20,
-  labelStyle: AppTypography.labelLarge,
+  labelStyle: AppTypography.labelMedium,
 );
 
-// Medium button — standard inline action. Uses `labelLarge` (14px).
+// Medium button — standard inline action. Uses Desktop `Label M`.
 const _mediumSizing = _Sizing(
   height: 32,
   padding: EdgeInsets.symmetric(
@@ -54,16 +54,16 @@ const _mediumSizing = _Sizing(
   ),
   gap: AppSpacing.xxs,
   iconSize: AppIconSize.medium,
-  labelStyle: AppTypography.labelLarge,
+  labelStyle: AppTypography.labelMedium,
 );
 
-// Small (compact) button — inline/dense actions. Uses `labelMedium` (12px).
+// Small (compact) button — inline/dense actions. Uses Desktop `Label S`.
 const _smallSizing = _Sizing(
   height: 24,
   padding: EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
   gap: AppSpacing.xxs,
   iconSize: AppIconSize.medium,
-  labelStyle: AppTypography.labelMedium,
+  labelStyle: AppTypography.labelSmall,
 );
 
 class _VariantPalette {

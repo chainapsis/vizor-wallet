@@ -103,6 +103,31 @@ void main() {
 
     expect(updateCount, 0);
   });
+
+  testWidgets('lays out modal actions as equal-width Figma buttons', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const _AccountNameModalHarness());
+
+    final cancelButton = find.byKey(
+      const ValueKey('account_modal_cancel_button'),
+    );
+    final actionButton = find.byKey(
+      const ValueKey('account_modal_action_button'),
+    );
+
+    expect(tester.getSize(cancelButton).height, 36);
+    expect(tester.getSize(actionButton).height, 36);
+    expect(
+      tester.getSize(cancelButton).width,
+      moreOrLessEquals(tester.getSize(actionButton).width, epsilon: 0.1),
+    );
+    expect(tester.getSize(cancelButton).width, greaterThanOrEqualTo(96));
+    expect(
+      tester.getTopLeft(actionButton).dx - tester.getTopRight(cancelButton).dx,
+      moreOrLessEquals(AppSpacing.s, epsilon: 0.1),
+    );
+  });
 }
 
 Future<void> _loadAppFonts() async {
@@ -128,8 +153,9 @@ class _AccountNameModalHarness extends StatelessWidget {
           body: Center(
             child: AccountNameModal(
               accountName: 'Account 2',
-              profilePictureId: 'knight',
+              profilePictureId: 'pfp-01',
               onCancel: () {},
+              onChangeProfilePicture: () {},
               onUpdate: onUpdate ?? (_) async {},
             ),
           ),

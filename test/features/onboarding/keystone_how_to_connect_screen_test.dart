@@ -15,7 +15,7 @@ import 'package:zcash_wallet/src/features/onboarding/keystone/keystone_onboardin
 void main() {
   setUpAll(_loadAppFonts);
 
-  testWidgets('renders the redesigned Keystone start content', (tester) async {
+  testWidgets('renders the Keystone start content', (tester) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(_keystoneScreen());
 
@@ -55,14 +55,11 @@ void main() {
     expect(find.text('Scan QR route'), findsOneWidget);
   });
 
-  test(
-    'sidebar metadata matches the redesigned Keystone navigation labels',
-    () {
-      expect(KeystoneOnboardingStep.howToConnect.iconName, AppIcons.book);
-      expect(KeystoneOnboardingStep.selectAccount.label, 'Select Account');
-      expect(KeystoneOnboardingStep.selectAccount.iconName, AppIcons.user);
-    },
-  );
+  test('sidebar metadata matches the Keystone navigation labels', () {
+    expect(KeystoneOnboardingStep.howToConnect.iconName, AppIcons.book);
+    expect(KeystoneOnboardingStep.selectAccount.label, 'Select Account');
+    expect(KeystoneOnboardingStep.selectAccount.iconName, AppIcons.user);
+  });
 }
 
 Future<void> _loadAppFonts() async {

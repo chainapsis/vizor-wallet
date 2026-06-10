@@ -30,16 +30,40 @@ void main() {
 
     expect(decoration.color, AppThemeData.light.colors.background.inverse);
     expect(border?.top.color, AppThemeData.light.colors.border.subtleOpacity);
-    expect(decoration.boxShadow?.map((shadow) => shadow.color), [
-      AppThemeData.light.colors.background.neutralScrim,
-      AppThemeData.light.colors.background.neutralScrim,
-    ]);
+    expect(decoration.boxShadow, appContextMenuShadow);
 
     final text = tester.widget<Text>(find.text('Remove contact'));
-    expect(text.style?.color, AppThemeData.light.colors.text.destructive);
+    expect(text.style?.color, AppThemeData.light.colors.text.destructiveLight);
+    final icon = tester.widget<AppIcon>(find.byType(AppIcon));
+    expect(icon.color, AppThemeData.light.colors.icon.destructiveLight);
   });
 
-  testWidgets('AppContextMenuItem applies the hover state token', (
+  testWidgets('AppContextMenuDivider uses the inverse opacity border token', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _ThemedHarness(
+        theme: AppThemeData.dark,
+        child: const AppContextMenu(children: [AppContextMenuDivider()]),
+      ),
+    );
+
+    final decoration =
+        tester
+                .widget<DecoratedBox>(
+                  find
+                      .descendant(
+                        of: find.byType(AppContextMenuDivider),
+                        matching: find.byType(DecoratedBox),
+                      )
+                      .first,
+                )
+                .decoration
+            as BoxDecoration;
+    expect(decoration.color, AppThemeData.dark.colors.border.inverseOpacity);
+  });
+
+  testWidgets('AppContextMenuItem applies the inverse-surface hover token', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -63,7 +87,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final decoration = _itemDecoration(tester);
-    expect(decoration.color, AppThemeData.dark.colors.state.hover);
+    expect(decoration.color, AppThemeData.dark.colors.state.hoverOpacity);
 
     await gesture.removePointer();
   });

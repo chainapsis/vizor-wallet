@@ -64,13 +64,13 @@ class AppBackgroundColors {
 
   static const dark = AppBackgroundColors(
     window: Color(0xFF0F0F0F),
-    ground: Primitives.p0Dark,
-    base: Primitives.p50Dark,
-    raised: Primitives.p100Dark,
-    overlay: Primitives.p150Dark,
+    ground: Primitives.p50Dark,
+    base: Primitives.p100Dark,
+    raised: Primitives.p150Dark,
+    overlay: Primitives.p200Dark,
     inverse: Primitives.p800Dark,
-    neutralScrim: Primitives.p400Alpha20Dark,
-    neutralSubtleOpacity: Primitives.p400Alpha35Dark,
+    neutralScrim: Primitives.p0Alpha50Dark,
+    neutralSubtleOpacity: Primitives.p400Alpha20Dark,
     neutralStrongOpacity: Primitives.p300Alpha50Dark,
     brandCrimsonSubtle: CrimsonPrimitives.p100Dark,
     brandCrimsonStrong: CrimsonPrimitives.p400Dark,
@@ -80,19 +80,19 @@ class AppBackgroundColors {
     utilityDestructiveAlpha: PlumPrimitives.p400Alpha25Dark,
     utilitySuccessSubtle: GoldPrimitives.p150Dark,
     utilitySuccessStrong: GoldPrimitives.p500Dark,
-    utilitySuccessAlpha: GoldPrimitives.p300Alpha15Dark,
+    utilitySuccessAlpha: GreenPrimitives.p300Alpha15Dark,
     homeCard: Primitives.p50Dark,
   );
 
   static const light = AppBackgroundColors(
-    window: Color(0xFFF5F5F5),
+    window: Color(0xFFF7F7F7),
     ground: Primitives.p0Light,
     base: Primitives.p50Light,
     raised: Primitives.p100Light,
     overlay: Primitives.p150Light,
     inverse: Primitives.p800Light,
-    neutralScrim: Primitives.p900Alpha20Light,
-    neutralSubtleOpacity: Primitives.p400Alpha20Light,
+    neutralScrim: Primitives.p900Alpha50Light,
+    neutralSubtleOpacity: Primitives.p300Alpha20Light,
     neutralStrongOpacity: Primitives.p300Alpha35Light,
     brandCrimsonSubtle: CrimsonPrimitives.p0Light,
     brandCrimsonStrong: CrimsonPrimitives.p300Light,
@@ -102,7 +102,7 @@ class AppBackgroundColors {
     utilityDestructiveAlpha: PlumPrimitives.p400Alpha15Light,
     utilitySuccessSubtle: GoldPrimitives.p50Light,
     utilitySuccessStrong: GoldPrimitives.p300Light,
-    utilitySuccessAlpha: GoldPrimitives.p300Alpha25Light,
+    utilitySuccessAlpha: GreenPrimitives.p300Alpha15Light,
     homeCard: Primitives.p800Light,
   );
 }

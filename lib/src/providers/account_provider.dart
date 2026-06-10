@@ -330,6 +330,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String uuid,
     String profilePictureId,
   ) async {
+    final normalizedProfilePictureId = normalizeProfilePictureId(
+      profilePictureId,
+    );
     if (!isKnownProfilePictureId(profilePictureId)) {
       throw ArgumentError.value(
         profilePictureId,
@@ -342,13 +345,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     final updated = prev.accounts
         .map(
           (a) => a.uuid == uuid
-              ? a.copyWith(profilePictureId: profilePictureId)
+              ? a.copyWith(profilePictureId: normalizedProfilePictureId)
               : a,
         )
         .toList();
     await _saveAccounts(updated);
     state = AsyncData(prev.copyWith(accounts: updated));
-    log('updateProfilePicture: $uuid → $profilePictureId');
+    log('updateProfilePicture: $uuid → $normalizedProfilePictureId');
   }
 
   /// Remove an account from the wallet.
