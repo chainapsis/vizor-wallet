@@ -1345,7 +1345,7 @@ void main() {
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('swap_review_button'))).width,
-      closeTo(256, 1),
+      closeTo(232, 1),
     );
     expect(
       find.descendant(
@@ -1405,17 +1405,31 @@ void main() {
     final attributionWordmarkRect = tester.getRect(
       find.byKey(const ValueKey('swap_near_intents_wordmark')),
     );
+    // Pinned layout (pane taller than the design height): the title sits at
+    // a fixed offset below the toolbar, the attribution slot + CTA pin to the
+    // bottom, and the composer centers in the flexible middle — so the gaps
+    // around the panel are the 24dp column gap plus equal centering slack.
     final paneRect = tester.getRect(find.byType(AppDesktopPane));
-    expect(ticketRect.top - titleRect.bottom, closeTo(AppSpacing.md, 1));
-    expect((ticketRect.center.dy - 491).abs(), lessThan(48));
+    expect(
+      titleRect.top,
+      closeTo(paneRect.top + AppPaneScrollScaffold.toolbarHeight + 16, 1),
+    );
+    final attributionSlotTop =
+        attributionRect.top - (32 - attributionRect.height) / 2;
+    final attributionSlotBottom =
+        attributionRect.bottom + (32 - attributionRect.height) / 2;
+    final slackAbove = ticketRect.top - titleRect.bottom - AppSpacing.md;
+    final slackBelow =
+        attributionSlotTop - settingsRowRect.bottom - AppSpacing.md;
+    expect(slackAbove, greaterThanOrEqualTo(-1));
+    expect(slackAbove, closeTo(slackBelow, 1));
+    expect(
+      reviewButtonRect.top - attributionSlotBottom,
+      closeTo(AppSpacing.md, 1),
+    );
     expect(ticketRect.height, lessThan(440));
     expect(reviewButtonRect.center.dx, closeTo(ticketRect.center.dx, 1));
     expect(settingsRowRect.height, closeTo(32, 1));
-    // The desktop body centers the composer inside an Expanded region, so the
-    // gap to the pinned review-button footer is centering slack rather than a
-    // fixed inset. After the redesign-2 typography tokens shrank the composer
-    // content height, that slack settled at 43.5 (was 38 under the old tokens).
-    expect(reviewButtonRect.top - settingsRowRect.bottom, closeTo(43.5, 1));
     expect(rateLineRect.center.dy, closeTo(settingsRowRect.center.dy, 1));
     expect(attributionRect.width, closeTo(90, 1));
     expect(attributionRect.height, closeTo(27.52, 1));
@@ -1449,17 +1463,19 @@ void main() {
       'assets/icons/near_intents_wordmark.svg',
     );
     expect(
-      attributionPoweredRect.left,
-      closeTo(attributionWordmarkRect.left, 1),
+      attributionPoweredRect.center.dx,
+      closeTo(attributionWordmarkRect.center.dx, 1),
     );
     expect(
       attributionWordmarkRect.top - attributionPoweredRect.bottom,
       closeTo(6.2, 1),
     );
-    expect(attributionRect.left, closeTo(paneRect.left + AppSpacing.md, 1));
+    expect(attributionRect.center.dx, closeTo(ticketRect.center.dx, 1));
+    // The lockup is centered inside its 32dp slot, so the button gap is the
+    // 24dp column gap plus half the slot slack.
     expect(
-      paneRect.bottom - attributionRect.bottom,
-      closeTo(AppSpacing.md + 0.48, 1),
+      reviewButtonRect.top - attributionRect.bottom,
+      closeTo(AppSpacing.md + (32 - attributionRect.height) / 2, 1),
     );
     expect(find.byKey(const ValueKey('swap_ticket_tabs')), findsNothing);
     expect(
@@ -1508,7 +1524,6 @@ void main() {
     expect(find.text('Ethereum address or account'), findsOneWidget);
     expect(find.text('NEAR or Ethereum address'), findsNothing);
 
-    final paneRect = tester.getRect(find.byType(AppDesktopPane));
     final modalRect = tester.getRect(
       find.byKey(const ValueKey('swap_address_modal')),
     );
@@ -1516,6 +1531,7 @@ void main() {
       find.byKey(const ValueKey('sidebar_swap_button')),
     );
 
+    final paneRect = tester.getRect(find.byType(AppDesktopPane));
     expect((modalRect.center.dx - paneRect.center.dx).abs(), lessThan(1));
     expect((modalRect.center.dy - paneRect.center.dy).abs(), lessThan(1));
     expect(modalRect.left, greaterThan(sidebarItemRect.right));
@@ -1542,7 +1558,6 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_address_scan_button')));
     await tester.pump(const Duration(milliseconds: 100));
 
-    final paneRect = tester.getRect(find.byType(AppDesktopPane));
     final modalRect = tester.getRect(
       find.byKey(const ValueKey('address_scan_modal')),
     );
@@ -1555,6 +1570,7 @@ void main() {
 
     expect(find.text('Scan the address QR Code'), findsOneWidget);
     expect(find.byKey(const ValueKey('swap_address_modal')), findsNothing);
+    final paneRect = tester.getRect(find.byType(AppDesktopPane));
     expect((modalRect.center.dx - paneRect.center.dx).abs(), lessThan(1));
     expect((modalRect.center.dy - paneRect.center.dy).abs(), lessThan(1));
     expect(modalRect.left, greaterThan(sidebarItemRect.right));
@@ -2709,7 +2725,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(swapProvider.requests, isEmpty);
-      expect(find.text('Review swap'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('swap_review_cancel_button')),
+        findsNothing,
+      );
     },
   );
 
@@ -3922,7 +3941,6 @@ void main() {
     );
     final controller = scrollView.controller!;
     expect(controller.position.maxScrollExtent, greaterThan(0));
-    final paneRect = tester.getRect(find.byType(AppDesktopPane));
     final pane = tester.widget<AppDesktopPane>(find.byType(AppDesktopPane));
     expect(pane.backgroundColor, isNull);
 
@@ -3930,6 +3948,7 @@ void main() {
     // included), pinned at the right pane edge.
     final scrollbarFinder = find.byKey(AppPaneScrollScaffold.scrollbarKey);
     final scrollbarRect = tester.getRect(scrollbarFinder);
+    final paneRect = tester.getRect(find.byType(AppDesktopPane));
     expect((scrollbarRect.right - paneRect.right).abs(), lessThan(1));
     expect((scrollbarRect.top - paneRect.top).abs(), lessThan(1));
     expect((scrollbarRect.bottom - paneRect.bottom).abs(), lessThan(1));
@@ -4075,10 +4094,10 @@ void main() {
     );
     expect(gutter.padding.resolve(TextDirection.ltr).right, 0);
 
-    final paneRect = tester.getRect(find.byType(AppDesktopPane));
     final attributionRect = tester.getRect(
       find.byKey(const ValueKey('swap_near_intents_attribution')),
     );
+    final paneRect = tester.getRect(find.byType(AppDesktopPane));
     expect(attributionRect.left, closeTo(paneRect.left + AppSpacing.md, 1));
     expect(paneRect.bottom - attributionRect.bottom, closeTo(AppSpacing.md, 1));
 
@@ -5183,7 +5202,7 @@ void main() {
 
     expect(_fieldText(tester, 'swap_amount_field'), '105');
     expect(_fieldText(tester, 'swap_receive_amount_field'), '105');
-    expect(find.text('1.5000 ZEC'), findsOneWidget);
+    expect(find.text('1.5000'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
     await tester.pumpAndSettle();
@@ -5280,7 +5299,7 @@ void main() {
 
     expect(_fieldText(tester, 'swap_receive_amount_field'), '105.26');
     expect(_fieldText(tester, 'swap_amount_field'), '105');
-    expect(find.text('1.5000 ZEC'), findsOneWidget);
+    expect(find.text('1.5000'), findsOneWidget);
     expect(swapProvider.requests, isEmpty);
   });
 
@@ -5485,7 +5504,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_review_cancel_button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Review swap'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('swap_review_cancel_button')),
+      findsNothing,
+    );
     expect(_fieldText(tester, 'swap_amount_field'), '1.5');
     expect(_destinationSummaryText(tester), '0x529084...169ee7');
   });
@@ -5787,7 +5809,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Review swap'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('swap_review_cancel_button')),
+      findsNothing,
+    );
     expect(
       find.byKey(const ValueKey('swap_quote_error_message')),
       findsOneWidget,
@@ -5925,7 +5950,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('swap_compact_ticket')), findsOneWidget);
-    expect(find.text('Review swap'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('swap_review_cancel_button')),
+      findsNothing,
+    );
     expect(_fieldText(tester, 'swap_amount_field'), isEmpty);
     expect(_destinationSummaryText(tester), isEmpty);
   });
@@ -5964,7 +5992,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(swapProvider.requests, isEmpty);
-    expect(find.text('Review swap'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('swap_review_cancel_button')),
+      findsNothing,
+    );
     expect(
       find.textContaining('Could not prepare a fresh wallet receive address.'),
       findsOneWidget,
