@@ -256,8 +256,6 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                     accountName: modalAccount.name,
                     profilePictureId: modalAccount.profilePictureId,
                     onCancel: _closeModal,
-                    onChangeProfilePicture: () =>
-                        _showProfilePictureModal(modalAccount),
                     onUpdate: (name) =>
                         _updateAccountName(modalAccount.uuid, name),
                   ),

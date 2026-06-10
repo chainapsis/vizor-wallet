@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart'
     show Scrollbar, ScrollbarTheme, ScrollbarThemeData;
+import 'package:flutter/services.dart' show TextInputAction, TextInputType;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,10 +12,10 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/rpc_endpoint_latency_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
-import '../widgets/custom_endpoint_settings_panel.dart';
 
 class SettingsEndpointScreen extends ConsumerStatefulWidget {
   const SettingsEndpointScreen({super.key});
@@ -25,6 +26,16 @@ class SettingsEndpointScreen extends ConsumerStatefulWidget {
 }
 
 enum _EndpointTab { list, custom }
+
+/// Minimum height the floating update bar occupies, and the matching minimum
+/// bottom padding the scroll view reserves so the bar never overlaps the last
+/// preset card. Shared by [_SettingsEndpointPaneState] and [_FloatingUpdateBar]
+/// so the reserved space and the rendered bar stay in lockstep.
+const double _kFloatingBarMinHeight = 96.0;
+
+/// Extra breathing room between the last card and the top of the bar once the
+/// bar grows past its minimum (e.g. when wrapped error text is shown).
+const double _kFloatingBarGap = 12.0;
 
 class _SettingsEndpointScreenState
     extends ConsumerState<SettingsEndpointScreen> {
@@ -176,7 +187,7 @@ class _SettingsEndpointScreenState
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: EdgeInsets.zero,
         child: _SettingsEndpointPane(
           current: current,
           latencyState: latencyState,
@@ -199,7 +210,7 @@ class _SettingsEndpointScreenState
   }
 }
 
-class _SettingsEndpointPane extends StatelessWidget {
+class _SettingsEndpointPane extends StatefulWidget {
   const _SettingsEndpointPane({
     required this.current,
     required this.latencyState,
@@ -230,160 +241,238 @@ class _SettingsEndpointPane extends StatelessWidget {
   final ValueChanged<String> onCustomChanged;
   final Future<void> Function() onSubmit;
 
-  static const _widgetWidth = 352.0;
-  static const _buttonWidth = 256.0;
+  @override
+  State<_SettingsEndpointPane> createState() => _SettingsEndpointPaneState();
+}
+
+class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
+  static const _contentWidth = 420.0;
+
+  final _scrollController = ScrollController();
+  final _floatingBarKey = GlobalKey();
+
+  /// Latest measured floating-bar height. Drives the reserved scroll padding so
+  /// it tracks the bar's real rendered size (e.g. wrapped error text) instead of
+  /// a fixed guess. Defaults to the shared minimum.
+  double _floatingBarHeight = _kFloatingBarMinHeight;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _measureFloatingBar() {
+    final box =
+        _floatingBarKey.currentContext?.findRenderObject() as RenderBox?;
+    final measured = box?.hasSize == true ? box!.size.height : null;
+    if (measured == null) return;
+    // Only rebuild when the value actually moves to avoid a layout feedback loop.
+    if ((measured - _floatingBarHeight).abs() < 0.5) return;
+    setState(() {
+      _floatingBarHeight = measured;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final showFloatingBar =
+        widget.activeTab == _EndpointTab.list &&
+        (widget.canUpdate || widget.isSubmitting || widget.submitError != null);
 
-    return SizedBox.expand(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Align(alignment: Alignment.centerLeft, child: AppRouteBackLink()),
-          const SizedBox(height: AppSpacing.s),
-          Expanded(
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Endpoint',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.displaySmall.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  CurrentEndpointText(
-                    current: current,
-                    latencyState: latencyState,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _EndpointSelector(
-                    width: _widgetWidth,
-                    current: current,
-                    latencyState: latencyState,
-                    activeTab: activeTab,
-                    selectedPresetId: selectedPresetId,
-                    customController: customController,
-                    customMessageText: customMessageText,
-                    onSelectTab: onSelectTab,
-                    onSelectPreset: onSelectPreset,
-                    onCustomChanged: onCustomChanged,
-                    onSubmit: onSubmit,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  if (submitError != null) ...[
-                    SizedBox(
-                      width: _widgetWidth,
-                      child: Text(
-                        submitError!,
-                        textAlign: TextAlign.center,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: colors.text.destructive,
+    if (showFloatingBar) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _measureFloatingBar();
+      });
+    }
+
+    // When the bar sits at its minimum height (the no-error case) the reserve
+    // stays at exactly the shared minimum — no behavior change. Once wrapped
+    // error text grows the bar past the minimum, the gap is added on top of the
+    // real height so the bar never overlaps the last preset card.
+    final reservedBottomPadding = showFloatingBar
+        ? (_floatingBarHeight <= _kFloatingBarMinHeight
+              ? _kFloatingBarMinHeight
+              : _floatingBarHeight + _kFloatingBarGap)
+        : 0.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _EndpointPaneToolbar(),
+        Expanded(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ScrollbarTheme(
+                data: ScrollbarThemeData(
+                  thumbColor: WidgetStatePropertyAll(colors.background.overlay),
+                  thickness: const WidgetStatePropertyAll(6),
+                  radius: const Radius.circular(AppRadii.full),
+                  thumbVisibility: const WidgetStatePropertyAll(true),
+                  trackVisibility: const WidgetStatePropertyAll(false),
+                  crossAxisMargin: 3,
+                  mainAxisMargin: 3,
+                ),
+                child: Scrollbar(
+                  controller: _scrollController,
+                  child: SingleChildScrollView(
+                    controller: _scrollController,
+                    padding: EdgeInsets.only(bottom: reservedBottomPadding),
+                    child: Center(
+                      child: SizedBox(
+                        width: _contentWidth,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.s,
+                            vertical: AppSpacing.sm,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                'Endpoint',
+                                textAlign: TextAlign.center,
+                                style: AppTypography.headlineLarge.copyWith(
+                                  color: colors.text.accent,
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.s),
+                              _CurrentEndpointSubtitle(
+                                current: widget.current,
+                                latencyState: widget.latencyState,
+                              ),
+                              const SizedBox(height: AppSpacing.base),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: AppSpacing.xs,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    _EndpointTabs(
+                                      activeTab: widget.activeTab,
+                                      onSelect: widget.onSelectTab,
+                                    ),
+                                    const SizedBox(height: AppSpacing.md),
+                                    switch (widget.activeTab) {
+                                      _EndpointTab.list => _PresetList(
+                                        networkName: widget.current.networkName,
+                                        latencyState: widget.latencyState,
+                                        currentPresetId:
+                                            widget.current.effectivePresetId,
+                                        pendingPresetId:
+                                            widget.selectedPresetId,
+                                        onSelect: widget.onSelectPreset,
+                                      ),
+                                      _EndpointTab.custom => _CustomEndpointTab(
+                                        controller: widget.customController,
+                                        messageText: widget.customMessageText,
+                                        submitError: widget.submitError,
+                                        isSubmitting: widget.isSubmitting,
+                                        canUpdate: widget.canUpdate,
+                                        onChanged: widget.onCustomChanged,
+                                        onSubmit: widget.onSubmit,
+                                      ),
+                                    },
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xs),
-                  ],
-                  AppButton(
-                    onPressed: canUpdate ? onSubmit : null,
-                    variant: AppButtonVariant.primary,
-                    minWidth: _buttonWidth,
-                    trailing: const AppIcon(AppIcons.chevronForward),
-                    child: Text(isSubmitting ? 'Updating...' : 'Update'),
                   ),
-                ],
+                ),
               ),
-            ),
+              if (showFloatingBar)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  // The scrim box is the 420 content column in the design,
+                  // not the full pane width.
+                  child: Center(
+                    child: SizedBox(
+                      width: _contentWidth,
+                      child: _FloatingUpdateBar(
+                        key: _floatingBarKey,
+                        submitError: widget.submitError,
+                        isSubmitting: widget.isSubmitting,
+                        canUpdate: widget.canUpdate,
+                        showButton: widget.canUpdate || widget.isSubmitting,
+                        onSubmit: widget.onSubmit,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
-        ],
+        ),
+      ],
+    );
+  }
+}
+
+class _EndpointPaneToolbar extends StatelessWidget {
+  const _EndpointPaneToolbar();
+
+  static const _height = 48.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: _height,
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: AppSpacing.md,
+          top: AppSpacing.xs,
+          bottom: AppSpacing.xs,
+        ),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: AppRouteBackLink(minWidth: 60),
+        ),
       ),
     );
   }
 }
 
-class _EndpointSelector extends StatelessWidget {
-  const _EndpointSelector({
-    required this.width,
+class _CurrentEndpointSubtitle extends StatelessWidget {
+  const _CurrentEndpointSubtitle({
     required this.current,
     required this.latencyState,
-    required this.activeTab,
-    required this.selectedPresetId,
-    required this.customController,
-    required this.customMessageText,
-    required this.onSelectTab,
-    required this.onSelectPreset,
-    required this.onCustomChanged,
-    required this.onSubmit,
   });
 
-  final double width;
   final RpcEndpointConfig current;
   final RpcEndpointLatencyState latencyState;
-  final _EndpointTab activeTab;
-  final String? selectedPresetId;
-  final TextEditingController customController;
-  final String? customMessageText;
-  final ValueChanged<_EndpointTab> onSelectTab;
-  final ValueChanged<String> onSelectPreset;
-  final ValueChanged<String> onCustomChanged;
-  final Future<void> Function() onSubmit;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
+    final preset = findRpcEndpointPresetByUrl(
+      current.normalizedLightwalletdUrl,
+      networkName: current.networkName,
+    );
+    final latency = latencyState.sampleForUrl(
+      current.normalizedLightwalletdUrl,
+    );
+    final text = [
+      'Current: ${current.hostPort}',
+      if (latency != null) latency.label,
+      if (preset?.isDefault ?? false) '(Default)',
+    ].join(' ');
 
-    return Container(
-      width: width,
-      height: 395,
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.xs,
-        AppSpacing.sm,
-        AppSpacing.xs,
-        AppSpacing.xs,
-      ),
-      decoration: BoxDecoration(
-        color: colors.background.base,
-        borderRadius: BorderRadius.circular(AppRadii.xLarge),
-      ),
-      child: Column(
-        children: [
-          _EndpointTabs(activeTab: activeTab, onSelect: onSelectTab),
-          const SizedBox(height: AppSpacing.sm),
-          Expanded(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: colors.background.ground,
-                borderRadius: BorderRadius.circular(AppRadii.large),
-              ),
-              child: switch (activeTab) {
-                _EndpointTab.list => _PresetList(
-                  networkName: current.networkName,
-                  latencyState: latencyState,
-                  selectedPresetId: selectedPresetId,
-                  onSelect: onSelectPreset,
-                ),
-                _EndpointTab.custom => Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.xs,
-                    AppSpacing.s,
-                    AppSpacing.sm,
-                    AppSpacing.xs,
-                  ),
-                  child: CustomEndpointForm(
-                    controller: customController,
-                    messageText: customMessageText,
-                    onChanged: onCustomChanged,
-                    onSubmit: onSubmit,
-                  ),
-                ),
-              },
-            ),
-          ),
-        ],
+    return Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+      style: AppTypography.labelLarge.copyWith(
+        color: context.colors.text.accent,
       ),
     );
   }
@@ -392,30 +481,34 @@ class _EndpointSelector extends StatelessWidget {
 class _EndpointTabs extends StatelessWidget {
   const _EndpointTabs({required this.activeTab, required this.onSelect});
 
+  static const _width = 304.0;
+
   final _EndpointTab activeTab;
   final ValueChanged<_EndpointTab> onSelect;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 32,
-      child: Row(
-        children: [
-          Expanded(
-            child: _EndpointTabButton(
-              label: 'Select from list',
+    return Center(
+      child: SizedBox(
+        width: _width,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _EndpointTabButton(
+              label: 'Select from the list',
+              icon: AppIcons.endpoint,
               selected: activeTab == _EndpointTab.list,
               onTap: () => onSelect(_EndpointTab.list),
             ),
-          ),
-          Expanded(
-            child: _EndpointTabButton(
-              label: 'Custom Endpoint',
+            const SizedBox(width: AppSpacing.xs),
+            _EndpointTabButton(
+              label: 'Custom endpoint',
+              icon: AppIcons.edit,
               selected: activeTab == _EndpointTab.custom,
               onTap: () => onSelect(_EndpointTab.custom),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -424,132 +517,141 @@ class _EndpointTabs extends StatelessWidget {
 class _EndpointTabButton extends StatelessWidget {
   const _EndpointTabButton({
     required this.label,
+    required this.icon,
     required this.selected,
     required this.onTap,
   });
 
   final String label;
+  final String icon;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final labelStyle = selected
+        ? AppTypography.bodyMediumStrong
+        : AppTypography.bodyMedium;
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xxs,
+        vertical: 2,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppIcon(icon, size: 16, color: colors.icon.accent),
+          const SizedBox(width: AppSpacing.xxs),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: labelStyle.copyWith(color: colors.text.accent),
+            ),
+          ),
+        ],
+      ),
+    );
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: Center(
-          child: Text(
-            label,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelMedium.copyWith(
-              color: selected ? colors.text.accent : colors.text.secondary,
-              fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
-            ),
-          ),
-        ),
+        child: selected ? content : Opacity(opacity: 0.5, child: content),
       ),
     );
   }
 }
 
-class _PresetList extends StatefulWidget {
+class _PresetList extends StatelessWidget {
   const _PresetList({
     required this.networkName,
     required this.latencyState,
-    required this.selectedPresetId,
+    required this.currentPresetId,
+    required this.pendingPresetId,
     required this.onSelect,
   });
 
   final String networkName;
   final RpcEndpointLatencyState latencyState;
-  final String? selectedPresetId;
+  final String currentPresetId;
+  final String? pendingPresetId;
   final ValueChanged<String> onSelect;
 
   @override
-  State<_PresetList> createState() => _PresetListState();
-}
-
-class _PresetListState extends State<_PresetList> {
-  final _scrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     final groups = <String, List<RpcEndpointPreset>>{};
-    for (final preset in rpcEndpointPresetsForNetwork(widget.networkName)) {
+    for (final preset in rpcEndpointPresetsForNetwork(networkName)) {
       groups.putIfAbsent(preset.region, () => []).add(preset);
     }
+    final entries = groups.entries.toList();
 
-    return ScrollbarTheme(
-      data: ScrollbarThemeData(
-        thumbColor: WidgetStatePropertyAll(colors.background.overlay),
-        thickness: const WidgetStatePropertyAll(6),
-        radius: const Radius.circular(AppRadii.full),
-        thumbVisibility: const WidgetStatePropertyAll(true),
-        trackVisibility: const WidgetStatePropertyAll(false),
-        crossAxisMargin: 3,
-        mainAxisMargin: 3,
-      ),
-      child: Scrollbar(
-        controller: _scrollController,
-        child: SingleChildScrollView(
-          controller: _scrollController,
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.xs,
-            AppSpacing.s,
-            AppSpacing.sm,
-            AppSpacing.xs,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < entries.length; i++) ...[
+          _PresetRegionSegment(
+            label: entries[i].key,
+            presets: entries[i].value,
+            latencyState: latencyState,
+            currentPresetId: currentPresetId,
+            pendingPresetId: pendingPresetId,
+            onSelect: onSelect,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final entry in groups.entries) ...[
-                _PresetRegionLabel(label: entry.key),
-                const SizedBox(height: AppSpacing.xs),
-                for (final preset in entry.value) ...[
-                  _PresetCard(
-                    preset: preset,
-                    latency: widget.latencyState.sampleForUrl(preset.url),
-                    selected: preset.id == widget.selectedPresetId,
-                    onTap: () => widget.onSelect(preset.id),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                ],
-                const SizedBox(height: AppSpacing.xs),
-              ],
-            ],
-          ),
-        ),
-      ),
+          if (i != entries.length - 1) const SizedBox(height: AppSpacing.md),
+        ],
+      ],
     );
   }
 }
 
-class _PresetRegionLabel extends StatelessWidget {
-  const _PresetRegionLabel({required this.label});
+class _PresetRegionSegment extends StatelessWidget {
+  const _PresetRegionSegment({
+    required this.label,
+    required this.presets,
+    required this.latencyState,
+    required this.currentPresetId,
+    required this.pendingPresetId,
+    required this.onSelect,
+  });
 
   final String label;
+  final List<RpcEndpointPreset> presets;
+  final RpcEndpointLatencyState latencyState;
+  final String currentPresetId;
+  final String? pendingPresetId;
+  final ValueChanged<String> onSelect;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-      child: Text(
-        label,
-        style: AppTypography.labelMedium.copyWith(
-          color: context.colors.text.secondary,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(AppSpacing.xxs),
+          child: Text(
+            label,
+            style: AppTypography.labelMedium.copyWith(
+              color: context.colors.text.secondary,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
         ),
-      ),
+        const SizedBox(height: AppSpacing.s),
+        for (var i = 0; i < presets.length; i++) ...[
+          _PresetCard(
+            preset: presets[i],
+            latency: latencyState.sampleForUrl(presets[i].url),
+            isCurrent: presets[i].id == currentPresetId,
+            isSelected: presets[i].id == pendingPresetId,
+            onTap: () => onSelect(presets[i].id),
+          ),
+          if (i != presets.length - 1) const SizedBox(height: AppSpacing.xs),
+        ],
+      ],
     );
   }
 }
@@ -558,18 +660,31 @@ class _PresetCard extends StatelessWidget {
   const _PresetCard({
     required this.preset,
     required this.latency,
-    required this.selected,
+    required this.isCurrent,
+    required this.isSelected,
     required this.onTap,
   });
 
   final RpcEndpointPreset preset;
   final RpcEndpointLatencySample? latency;
-  final bool selected;
+
+  /// Currently applied endpoint (`current.effectivePresetId`).
+  final bool isCurrent;
+
+  /// Pending user selection (`_selectedPresetId`).
+  final bool isSelected;
+
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final bordered = isCurrent || isSelected;
+    // Current card demotes to the regular border while a different row is
+    // the pending selection.
+    final borderColor = isCurrent && !isSelected
+        ? colors.border.regular
+        : colors.border.strong;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -577,43 +692,69 @@ class _PresetCard extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
-          height: 56,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: Border.all(
-              color: selected ? colors.border.strong : colors.border.regular,
-              width: selected ? 2 : 1.5,
-              strokeAlign: BorderSide.strokeAlignInside,
-            ),
+          constraints: const BoxConstraints(minHeight: 40),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xs,
+            AppSpacing.xxs,
+            AppSpacing.s,
+            AppSpacing.xxs,
           ),
+          decoration: BoxDecoration(
+            color: colors.background.ground,
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+            boxShadow: bordered
+                ? _selectedPresetCardShadow(colors)
+                : _presetCardShadow(colors),
+          ),
+          foregroundDecoration: bordered
+              ? BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppRadii.medium),
+                  border: Border.all(
+                    color: borderColor,
+                    width: 2,
+                    strokeAlign: BorderSide.strokeAlignInside,
+                  ),
+                )
+              : null,
           child: Row(
             children: [
               Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      preset.hostPort,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
-                    if (latency != null)
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.xs,
+                    vertical: AppSpacing.xxs,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        latency!.label,
+                        preset.hostPort,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelMedium.copyWith(
-                          color: colors.text.secondary,
+                          color: colors.text.accent,
+                          fontWeight: isCurrent
+                              ? FontWeight.w600
+                              : FontWeight.w500,
                         ),
                       ),
-                  ],
+                      if (latency != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          latency!.label,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.labelMedium.copyWith(
+                            color: isCurrent
+                                ? colors.text.accent
+                                : colors.text.secondary,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(width: AppSpacing.xs),
-              _PresetIndicator(selected: selected),
+              _PresetIndicator(isCurrent: isCurrent),
             ],
           ),
         ),
@@ -622,10 +763,44 @@ class _PresetCard extends StatelessWidget {
   }
 }
 
-class _PresetIndicator extends StatelessWidget {
-  const _PresetIndicator({required this.selected});
+List<BoxShadow> _presetCardShadow(AppColors colors) {
+  return [
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 0.5),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 2),
+      blurRadius: 2,
+    ),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 1),
+      blurRadius: 1,
+    ),
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 0.5),
+  ];
+}
 
-  final bool selected;
+List<BoxShadow> _selectedPresetCardShadow(AppColors colors) {
+  return [
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 2),
+      blurRadius: 4,
+    ),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 1),
+      blurRadius: 2,
+    ),
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+  ];
+}
+
+class _PresetIndicator extends StatelessWidget {
+  const _PresetIndicator({required this.isCurrent});
+
+  final bool isCurrent;
 
   @override
   Widget build(BuildContext context) {
@@ -635,12 +810,12 @@ class _PresetIndicator extends StatelessWidget {
       width: 16,
       height: 16,
       decoration: BoxDecoration(
-        color: selected
+        color: isCurrent
             ? colors.background.inverse
             : colors.background.neutralSubtleOpacity,
         shape: BoxShape.circle,
       ),
-      child: selected
+      child: isCurrent
           ? Center(
               child: AppIcon(
                 AppIcons.check,
@@ -649,6 +824,311 @@ class _PresetIndicator extends StatelessWidget {
               ),
             )
           : null,
+    );
+  }
+}
+
+class _FloatingUpdateBar extends StatelessWidget {
+  const _FloatingUpdateBar({
+    super.key,
+    required this.submitError,
+    required this.isSubmitting,
+    required this.canUpdate,
+    required this.showButton,
+    required this.onSubmit,
+  });
+
+  final String? submitError;
+  final bool isSubmitting;
+  final bool canUpdate;
+  final bool showButton;
+  final Future<void> Function() onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return Stack(
+      alignment: Alignment.bottomCenter,
+      children: [
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    colors.macosUtility.windowTransparent,
+                    colors.macosUtility.window,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        Container(
+          constraints: const BoxConstraints(minHeight: _kFloatingBarMinHeight),
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+          alignment: Alignment.bottomCenter,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (submitError != null) ...[
+                SizedBox(
+                  width: 396,
+                  child: Text(
+                    submitError!,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.destructive,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+              ],
+              if (showButton)
+                AppButton(
+                  onPressed: canUpdate ? onSubmit : null,
+                  variant: AppButtonVariant.primary,
+                  minWidth: 196,
+                  child: Text(isSubmitting ? 'Updating...' : 'Update endpoint'),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CustomEndpointTab extends StatelessWidget {
+  const _CustomEndpointTab({
+    required this.controller,
+    required this.messageText,
+    required this.submitError,
+    required this.isSubmitting,
+    required this.canUpdate,
+    required this.onChanged,
+    required this.onSubmit,
+  });
+
+  final TextEditingController controller;
+  final String? messageText;
+  final String? submitError;
+  final bool isSubmitting;
+  final bool canUpdate;
+  final ValueChanged<String> onChanged;
+  final Future<void> Function() onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _CustomEndpointHeroCard(
+          controller: controller,
+          messageText: messageText,
+          onChanged: onChanged,
+          onSubmit: onSubmit,
+        ),
+        const SizedBox(height: AppSpacing.xxs),
+        const _CustomEndpointInfo(),
+        const SizedBox(height: AppSpacing.xxs),
+        if (submitError != null) ...[
+          Text(
+            submitError!,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.destructive,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+        ],
+        Center(
+          child: AppButton(
+            onPressed: canUpdate ? onSubmit : null,
+            variant: AppButtonVariant.primary,
+            minWidth: 196,
+            child: Text(isSubmitting ? 'Updating...' : 'Customize endpoint'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CustomEndpointHeroCard extends StatelessWidget {
+  const _CustomEndpointHeroCard({
+    required this.controller,
+    required this.messageText,
+    required this.onChanged,
+    required this.onSubmit,
+  });
+
+  static const _height = 200.0;
+
+  // Figma: 1.5px rgba(255,255,255,0.07) in both modes — no semantic token.
+  static const _borderColor = Color(0x12FFFFFF);
+
+  // Export of Figma node 4083:457542 with the design's 30% art opacity and
+  // the bottom gradient to #1B1F1F baked in — drawn as-is, no code overlay.
+  static const _backgroundAsset =
+      'assets/illustrations/settings_endpoint_custom_bg.png';
+
+  final TextEditingController controller;
+  final String? messageText;
+  final ValueChanged<String> onChanged;
+  final Future<void> Function() onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return Container(
+      height: _height,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: colors.background.homeCard,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        border: Border.all(color: _borderColor, width: 1.5),
+      ),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset(
+              _backgroundAsset,
+              fit: BoxFit.cover,
+              alignment: Alignment.bottomCenter,
+            ),
+          ),
+          Positioned(
+            top: AppSpacing.sm,
+            right: AppSpacing.sm,
+            child: AppIcon(
+              AppIcons.endpoint,
+              size: 32,
+              color: colors.text.homeCard.withValues(alpha: 0.5),
+            ),
+          ),
+          Positioned.fill(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sm,
+                AppSpacing.sm,
+                AppSpacing.sm,
+                AppSpacing.xs,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Custom endpoint',
+                    style: AppTypography.headlineLarge.copyWith(
+                      color: colors.text.homeCard,
+                    ),
+                  ),
+                  const Spacer(),
+                  _CustomEndpointField(
+                    controller: controller,
+                    messageText: messageText,
+                    onChanged: onChanged,
+                    onSubmit: onSubmit,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CustomEndpointField extends StatelessWidget {
+  const _CustomEndpointField({
+    required this.controller,
+    required this.messageText,
+    required this.onChanged,
+    required this.onSubmit,
+  });
+
+  // Input shell (46) + 4 gap + reserved 16px message line.
+  static const _height = 66.0;
+
+  final TextEditingController controller;
+  final String? messageText;
+  final ValueChanged<String> onChanged;
+  final Future<void> Function() onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return SizedBox(
+      height: _height,
+      child: AppTextField(
+        label: 'Custom endpoint',
+        showLabel: false,
+        hintText: '<hostname>:<port>',
+        hintStyle: AppTypography.labelMedium.copyWith(
+          fontWeight: FontWeight.w400,
+          color: colors.text.muted,
+        ),
+        controller: controller,
+        autofocus: true,
+        trailingSlotWidth: 40,
+        inputHorizontalPadding: AppSpacing.s,
+        keyboardType: TextInputType.url,
+        textInputAction: TextInputAction.done,
+        messageText: messageText,
+        tone: messageText == null
+            ? AppTextFieldTone.neutral
+            : AppTextFieldTone.destructive,
+        onChanged: onChanged,
+        onSubmitted: (_) => onSubmit(),
+      ),
+    );
+  }
+}
+
+class _CustomEndpointInfo extends StatelessWidget {
+  const _CustomEndpointInfo();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.md,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppIcon(AppIcons.book, size: 20, color: colors.icon.accent),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            "If the endpoint is configured wrong, your wallet won't be able "
+            'to sync with the Zcash network.',
+            style: AppTypography.bodyMediumStrong.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'The wallet will show the balance from the last time it was '
+            "successfully connected. It won't show any "
+            '$kZcashDefaultCurrencyTicker you recently received.',
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.primary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

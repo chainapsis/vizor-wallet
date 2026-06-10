@@ -7,22 +7,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../main.dart' show log;
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/security/password_policy.dart';
+import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_chip.dart';
-import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/password_text_field.dart';
-import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../widgets/confirm_access_card.dart';
+import '../widgets/settings_pane_backdrop.dart';
 
 class SettingsSeedPhraseScreen extends ConsumerStatefulWidget {
   const SettingsSeedPhraseScreen({this.privacyOverlayController, super.key});
@@ -360,45 +359,55 @@ class _SettingsSeedPhraseScreenState
       },
     );
 
-    return AppDesktopShell(
+    return AppDesktopBackdropShell(
+      background: SettingsPaneBackdrop(
+        art: _stage == _SettingsSeedPhraseStage.reveal
+            ? SettingsBackdropArt.vault
+            : SettingsBackdropArt.castle,
+      ),
       sidebar: const AppMainSidebar(),
-      pane: AppDesktopPane(
-        padding: EdgeInsets.zero,
-        child: SensitivePrivacyOverlay(
-          sensitiveContentVisible:
-              _stage == _SettingsSeedPhraseStage.reveal && _mnemonic != null,
-          controller: widget.privacyOverlayController,
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: _SettingsSeedPhrasePane(
-              onBeforeNavigateBack: () => _clearSensitiveState(),
-              child: switch (_stage) {
-                _SettingsSeedPhraseStage.password => _PasswordGateView(
-                  passwordController: _passwordController,
-                  messageText: _passwordError ?? _passwordPolicyMessage,
+      pane: SensitivePrivacyOverlay(
+        sensitiveContentVisible:
+            _stage == _SettingsSeedPhraseStage.reveal && _mnemonic != null,
+        controller: widget.privacyOverlayController,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            0,
+            AppSpacing.md,
+            AppSpacing.md,
+          ),
+          child: _SettingsSeedPhrasePane(
+            onBeforeNavigateBack: () => _clearSensitiveState(),
+            child: switch (_stage) {
+              _SettingsSeedPhraseStage.password => Center(
+                child: ConfirmAccessCard(
+                  subtitle: 'To view the secret passphrase.',
+                  controller: _passwordController,
+                  errorText: _passwordError ?? _passwordPolicyMessage,
                   isSubmitting: _isSubmitting,
                   canSubmit: _canSubmit,
                   onChanged: _handlePasswordChanged,
                   onSubmit: _submitPassword,
                 ),
-                _SettingsSeedPhraseStage.reveal => _SeedPhraseRevealView(
-                  mnemonic: _mnemonic,
-                  birthdayHeight: _birthdayHeight,
-                  birthdayBlockTime: _birthdayBlockTime,
-                  birthdayHeightLoading: _isBirthdayHeightLoading,
-                  birthdayDateLoading: _isBirthdayDateLoading,
-                  errorText: _revealError,
-                  phraseCopied: _copiedTarget == _SeedPhraseCopyTarget.phrase,
-                  birthdayDateCopied:
-                      _copiedTarget == _SeedPhraseCopyTarget.birthdayDate,
-                  birthdayHeightCopied:
-                      _copiedTarget == _SeedPhraseCopyTarget.birthdayHeight,
-                  onCopyPressed: _copyMnemonic,
-                  onCopyBirthdayDatePressed: _copyBirthdayDate,
-                  onCopyBirthdayHeightPressed: _copyBirthdayHeight,
-                ),
-              },
-            ),
+              ),
+              _SettingsSeedPhraseStage.reveal => _SeedPhraseRevealView(
+                mnemonic: _mnemonic,
+                birthdayHeight: _birthdayHeight,
+                birthdayBlockTime: _birthdayBlockTime,
+                birthdayHeightLoading: _isBirthdayHeightLoading,
+                birthdayDateLoading: _isBirthdayDateLoading,
+                errorText: _revealError,
+                phraseCopied: _copiedTarget == _SeedPhraseCopyTarget.phrase,
+                birthdayDateCopied:
+                    _copiedTarget == _SeedPhraseCopyTarget.birthdayDate,
+                birthdayHeightCopied:
+                    _copiedTarget == _SeedPhraseCopyTarget.birthdayHeight,
+                onCopyPressed: _copyMnemonic,
+                onCopyBirthdayDatePressed: _copyBirthdayDate,
+                onCopyBirthdayHeightPressed: _copyBirthdayHeight,
+              ),
+            },
           ),
         ),
       ),
@@ -421,11 +430,11 @@ class _SettingsSeedPhrasePane extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: AppRouteBackLink(onBeforeNavigate: onBeforeNavigateBack),
+          AppPaneToolbar(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            backLinkMinWidth: 60,
+            onBeforeNavigate: onBeforeNavigateBack,
           ),
-          const SizedBox(height: AppSpacing.s),
           Expanded(child: child),
         ],
       ),
@@ -433,102 +442,14 @@ class _SettingsSeedPhrasePane extends StatelessWidget {
   }
 }
 
-class _PasswordGateView extends StatelessWidget {
-  const _PasswordGateView({
-    required this.passwordController,
-    required this.messageText,
-    required this.isSubmitting,
-    required this.canSubmit,
-    required this.onChanged,
-    required this.onSubmit,
-  });
+const _seedPhraseCardWidth = 396.0;
 
-  final TextEditingController passwordController;
-  final String? messageText;
-  final bool isSubmitting;
-  final bool canSubmit;
-  final VoidCallback onChanged;
-  final Future<void> Function() onSubmit;
-
-  static const _contentWidth = 304.0;
-  static const _buttonWidth = 256.0;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return Column(
-      children: [
-        Expanded(
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Enter Password',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.displaySmall.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.s),
-                SizedBox(
-                  width: 270,
-                  child: Text(
-                    'Enter your password to continue.',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                const AppDecorativeDivider(width: 256),
-                const SizedBox(height: AppSpacing.sm),
-                SizedBox(
-                  width: _contentWidth,
-                  height: 86,
-                  child: PasswordTextField(
-                    label: 'Password',
-                    hintText: 'Enter Your Password',
-                    leadingSlotWidth: 32,
-                    trailingSlotWidth: 40,
-                    inputHorizontalPadding: AppSpacing.s,
-                    controller: passwordController,
-                    autofocus: true,
-                    enabled: !isSubmitting,
-                    messageText: messageText,
-                    tone: messageText == null
-                        ? AppTextFieldTone.neutral
-                        : AppTextFieldTone.destructive,
-                    onChanged: (_) => onChanged(),
-                    onSubmitted: (_) {
-                      onSubmit();
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        AppButton(
-          onPressed: canSubmit
-              ? () {
-                  onSubmit();
-                }
-              : null,
-          variant: AppButtonVariant.primary,
-          minWidth: _buttonWidth,
-          trailing: const AppIcon(AppIcons.chevronForward),
-          child: Text(
-            isSubmitting ? 'Checking password...' : 'View Secret Passphrase',
-          ),
-        ),
-      ],
-    );
-  }
-}
+List<BoxShadow> _seedCardShadows(Color color) => [
+  BoxShadow(color: color, blurRadius: 0.5),
+  BoxShadow(color: color, offset: const Offset(0, 2), blurRadius: 2),
+  BoxShadow(color: color, offset: const Offset(0, 1), blurRadius: 1),
+  BoxShadow(color: color, blurRadius: 0.5),
+];
 
 class _SeedPhraseRevealView extends StatelessWidget {
   const _SeedPhraseRevealView({
@@ -568,30 +489,38 @@ class _SeedPhraseRevealView extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Secret Passphrase',
+            'Secret passphrase',
             textAlign: TextAlign.center,
-            style: AppTypography.displaySmall.copyWith(
+            style: AppTypography.headlineLarge.copyWith(
               color: colors.text.accent,
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
-          const AppDecorativeDivider(width: 256),
-          const SizedBox(height: AppSpacing.md),
-          if (errorText == null && mnemonic != null)
-            _SeedPhraseCard(
-              mnemonic: mnemonic!,
+          const SizedBox(height: AppSpacing.s),
+          Text(
+            'This is the master key to your wallet.\n'
+            "Don't share it with anyone.",
+            textAlign: TextAlign.center,
+            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+          ),
+          const SizedBox(height: AppSpacing.base),
+          if (errorText == null && mnemonic != null) ...[
+            _SeedWordsCard(
+              words: mnemonic!.split(' '),
+              phraseCopied: phraseCopied,
+              onCopyPressed: onCopyPressed,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _SeedBirthdayCard(
               birthdayHeight: birthdayHeight,
               birthdayBlockTime: birthdayBlockTime,
               birthdayHeightLoading: birthdayHeightLoading,
               birthdayDateLoading: birthdayDateLoading,
-              phraseCopied: phraseCopied,
               birthdayDateCopied: birthdayDateCopied,
               birthdayHeightCopied: birthdayHeightCopied,
-              onCopyPressed: onCopyPressed,
               onCopyBirthdayDatePressed: onCopyBirthdayDatePressed,
               onCopyBirthdayHeightPressed: onCopyBirthdayHeightPressed,
-            )
-          else
+            ),
+          ] else
             _SeedPhraseErrorCard(
               message:
                   errorText ??
@@ -603,42 +532,105 @@ class _SeedPhraseRevealView extends StatelessWidget {
   }
 }
 
-const _seedPhraseCardWidth = 537.0;
-const _seedPhraseOuterRadius = 28.0;
-const _seedPhraseInnerRadius = AppRadii.large;
+class _SeedWordsCard extends StatelessWidget {
+  const _SeedWordsCard({
+    required this.words,
+    required this.phraseCopied,
+    required this.onCopyPressed,
+  });
 
-class _SeedPhraseCard extends StatelessWidget {
-  const _SeedPhraseCard({
-    required this.mnemonic,
+  final List<String> words;
+  final bool phraseCopied;
+  final Future<void> Function() onCopyPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return Container(
+      width: _seedPhraseCardWidth,
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: _seedCardShadows(colors.shadows.subtle),
+      ),
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.base,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Secret passphrase',
+                  style: AppTypography.bodyLarge.copyWith(
+                    color: colors.text.accent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Wrap(
+                  spacing: AppSpacing.xxs,
+                  runSpacing: AppSpacing.xxs,
+                  children: [
+                    for (var i = 0; i < words.length; i++)
+                      AppChip(
+                        width: 90,
+                        leadingText: '${i + 1}'.padLeft(2, '0'),
+                        label: words[i],
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            top: AppSpacing.s,
+            right: AppSpacing.s,
+            child: AppButton(
+              onPressed: () {
+                onCopyPressed();
+              },
+              variant: AppButtonVariant.primary,
+              size: AppButtonSize.small,
+              trailing: AppIcon(phraseCopied ? AppIcons.check : AppIcons.copy),
+              child: Text(phraseCopied ? 'Copied' : 'Copy'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SeedBirthdayCard extends StatelessWidget {
+  const _SeedBirthdayCard({
     required this.birthdayHeight,
     required this.birthdayBlockTime,
     required this.birthdayHeightLoading,
     required this.birthdayDateLoading,
-    required this.phraseCopied,
     required this.birthdayDateCopied,
     required this.birthdayHeightCopied,
-    required this.onCopyPressed,
     required this.onCopyBirthdayDatePressed,
     required this.onCopyBirthdayHeightPressed,
   });
 
-  final String mnemonic;
   final int? birthdayHeight;
   final int? birthdayBlockTime;
   final bool birthdayHeightLoading;
   final bool birthdayDateLoading;
-  final bool phraseCopied;
   final bool birthdayDateCopied;
   final bool birthdayHeightCopied;
-  final Future<void> Function() onCopyPressed;
   final Future<void> Function() onCopyBirthdayDatePressed;
   final Future<void> Function() onCopyBirthdayHeightPressed;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final isDark = AppTheme.of(context) == AppThemeData.dark;
-    final words = mnemonic.split(' ');
     final blockTime = birthdayBlockTime;
     final birthdayDate = blockTime == null || blockTime <= 0
         ? '-'
@@ -647,190 +639,48 @@ class _SeedPhraseCard extends StatelessWidget {
         ? '-'
         : birthdayHeight.toString();
 
-    return SizedBox(
+    return Container(
       width: _seedPhraseCardWidth,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(_seedPhraseOuterRadius),
-        child: DecoratedBox(
-          decoration: BoxDecoration(color: colors.background.base),
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.xxs),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _SeedWordsCard(
-                  words: words,
-                  isDark: isDark,
-                  phraseCopied: phraseCopied,
-                  onCopyPressed: onCopyPressed,
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.s,
-                    vertical: AppSpacing.sm,
-                  ),
-                  child: Column(
-                    children: [
-                      _SeedBirthdayRow(
-                        icon: AppIcons.calendar,
-                        label: 'Birthday date',
-                        value: birthdayDate,
-                        loading: birthdayDateLoading,
-                        copied: birthdayDateCopied,
-                        copyLabel: 'Copy date',
-                        onCopyPressed:
-                            birthdayDateLoading ||
-                                blockTime == null ||
-                                blockTime <= 0
-                            ? null
-                            : () {
-                                onCopyBirthdayDatePressed();
-                              },
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.s,
-                          vertical: AppSpacing.xs,
-                        ),
-                        child: Container(
-                          height: 1,
-                          color: colors.border.regular,
-                        ),
-                      ),
-                      _SeedBirthdayRow(
-                        icon: AppIcons.block,
-                        label: 'Birthday block height',
-                        value: birthdayHeightText,
-                        loading: birthdayHeightLoading,
-                        copied: birthdayHeightCopied,
-                        copyLabel: 'Copy height',
-                        onCopyPressed:
-                            birthdayHeightLoading ||
-                                birthdayHeight == null ||
-                                birthdayHeight! <= 0
-                            ? null
-                            : () {
-                                onCopyBirthdayHeightPressed();
-                              },
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: _seedCardShadows(colors.shadows.subtle),
       ),
-    );
-  }
-}
-
-class _SeedWordsCard extends StatelessWidget {
-  const _SeedWordsCard({
-    required this.words,
-    required this.isDark,
-    required this.phraseCopied,
-    required this.onCopyPressed,
-  });
-
-  final List<String> words;
-  final bool isDark;
-  final bool phraseCopied;
-  final Future<void> Function() onCopyPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return Stack(
-      fit: StackFit.passthrough,
-      clipBehavior: Clip.none,
-      children: [
-        DecoratedBox(
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(_seedPhraseInnerRadius),
-            boxShadow: isDark
-                ? const []
-                : const [
-                    BoxShadow(
-                      color: Color(0xFFE1E1E1),
-                      offset: Offset(0, 2),
-                      blurRadius: 2,
-                    ),
-                    BoxShadow(
-                      color: Color(0xFFE1E1E1),
-                      offset: Offset(0, 10),
-                      blurRadius: 15,
-                    ),
-                  ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _SeedBirthdayRow(
+            icon: AppIcons.calendar,
+            label: 'Birthday date',
+            value: birthdayDate,
+            loading: birthdayDateLoading,
+            copied: birthdayDateCopied,
+            onCopyPressed:
+                birthdayDateLoading || blockTime == null || blockTime <= 0
+                ? null
+                : () {
+                    onCopyBirthdayDatePressed();
+                  },
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(_seedPhraseInnerRadius),
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.base),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Secret Passphrase',
-                    style: AppTypography.bodyLarge.copyWith(
-                      color: colors.text.accent,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Wrap(
-                    spacing: AppSpacing.xxs,
-                    runSpacing: AppSpacing.xs,
-                    children: [
-                      for (var i = 0; i < words.length; i++)
-                        AppChip(
-                          width: 90,
-                          leadingText: '${i + 1}'.padLeft(2, '0'),
-                          label: words[i],
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+          const SizedBox(height: AppSpacing.xs),
+          _SeedBirthdayRow(
+            icon: AppIcons.block,
+            label: 'Birthday block height',
+            value: birthdayHeightText,
+            loading: birthdayHeightLoading,
+            copied: birthdayHeightCopied,
+            onCopyPressed:
+                birthdayHeightLoading ||
+                    birthdayHeight == null ||
+                    birthdayHeight! <= 0
+                ? null
+                : () {
+                    onCopyBirthdayHeightPressed();
+                  },
           ),
-        ),
-        if (isDark)
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: ShapeDecoration(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(_seedPhraseInnerRadius),
-                    side: BorderSide(
-                      color: colors.border.subtle,
-                      width: 1,
-                      strokeAlign: BorderSide.strokeAlignOutside,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        Positioned(
-          top: AppSpacing.s,
-          right: AppSpacing.s,
-          child: AppButton(
-            onPressed: () {
-              onCopyPressed();
-            },
-            variant: AppButtonVariant.primary,
-            size: AppButtonSize.medium,
-            minWidth: 96,
-            iconGap: 0,
-            trailing: AppIcon(phraseCopied ? AppIcons.check : AppIcons.copy),
-            child: Text(phraseCopied ? 'Copied' : 'Copy Phrase'),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -842,7 +692,6 @@ class _SeedBirthdayRow extends StatelessWidget {
     required this.value,
     required this.loading,
     required this.copied,
-    required this.copyLabel,
     required this.onCopyPressed,
   });
 
@@ -851,7 +700,6 @@ class _SeedBirthdayRow extends StatelessWidget {
   final String value;
   final bool loading;
   final bool copied;
-  final String copyLabel;
   final VoidCallback? onCopyPressed;
 
   @override
@@ -860,34 +708,30 @@ class _SeedBirthdayRow extends StatelessWidget {
     final hideCopyButton = onCopyPressed == null;
 
     return SizedBox(
-      height: 32,
+      height: 36,
       child: Row(
         children: [
+          AppIcon(icon, size: AppIconSize.medium, color: colors.icon.muted),
+          const SizedBox(width: AppSpacing.xxs),
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.xxs),
-              child: Row(
-                children: [
-                  AppIcon(
-                    icon,
-                    size: AppIconSize.medium,
-                    color: colors.icon.muted,
+            child: loading
+                ? _BirthdayLoadingValue(label: label)
+                : Text.rich(
+                    TextSpan(
+                      text: '$label: ',
+                      children: [
+                        TextSpan(
+                          text: value,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelMedium.copyWith(
+                      color: colors.text.primary,
+                      fontWeight: FontWeight.w400,
+                    ),
                   ),
-                  const SizedBox(width: AppSpacing.xxs),
-                  Flexible(
-                    child: loading
-                        ? _BirthdayLoadingValue(label: label)
-                        : Text(
-                            '$label: $value',
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.labelLarge.copyWith(
-                              color: colors.text.primary,
-                            ),
-                          ),
-                  ),
-                ],
-              ),
-            ),
           ),
           IgnorePointer(
             ignoring: hideCopyButton,
@@ -897,10 +741,11 @@ class _SeedBirthdayRow extends StatelessWidget {
                 onPressed: onCopyPressed,
                 variant: AppButtonVariant.ghost,
                 size: AppButtonSize.medium,
+                height: 36,
                 minWidth: 96,
                 iconGap: 0,
                 trailing: AppIcon(copied ? AppIcons.check : AppIcons.copy),
-                child: Text(copied ? 'Copied' : copyLabel),
+                child: Text(copied ? 'Copied' : 'Copy'),
               ),
             ),
           ),
@@ -918,7 +763,10 @@ class _BirthdayLoadingValue extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final style = AppTypography.labelLarge.copyWith(color: colors.text.primary);
+    final style = AppTypography.labelMedium.copyWith(
+      color: colors.text.primary,
+      fontWeight: FontWeight.w400,
+    );
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -980,37 +828,32 @@ class _SeedPhraseErrorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-    return SizedBox(
+    return Container(
       width: _seedPhraseCardWidth,
-      height: 348,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(_seedPhraseOuterRadius),
-        child: DecoratedBox(
-          decoration: BoxDecoration(color: colors.background.base),
-          child: Center(
-            child: SizedBox(
-              width: 320,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppIcon(
-                    AppIcons.warning,
-                    size: 24,
-                    color: colors.icon.destructive,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    message,
-                    textAlign: TextAlign.center,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.base,
+      ),
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: _seedCardShadows(colors.shadows.subtle),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppIcon(
+            AppIcons.warning,
+            size: AppIconSize.large,
+            color: colors.icon.destructive,
           ),
-        ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
+          ),
+        ],
       ),
     );
   }

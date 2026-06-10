@@ -183,9 +183,9 @@ class _ProfilePictureOptionButtonState
     extends State<_ProfilePictureOptionButton> {
   static const _focusRingWidth = 2.0;
   static const _checkBadgeSize = 20.0;
-  static const _checkIconSize = 14.0;
-  static const _checkRight = -3.0;
-  static const _checkBottom = -3.0;
+  static const _checkIconSize = 16.0;
+  static const _checkRight = -4.0;
+  static const _checkBottom = -4.0;
 
   bool _isHovered = false;
   bool _isFocused = false;

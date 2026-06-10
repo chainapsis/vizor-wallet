@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/account_name_policy.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
 import 'account_modal_card.dart';
@@ -12,7 +11,6 @@ class AccountNameModal extends StatefulWidget {
     required this.accountName,
     required this.profilePictureId,
     required this.onCancel,
-    required this.onChangeProfilePicture,
     required this.onUpdate,
     super.key,
   });
@@ -20,7 +18,6 @@ class AccountNameModal extends StatefulWidget {
   final String accountName;
   final String profilePictureId;
   final VoidCallback onCancel;
-  final VoidCallback onChangeProfilePicture;
   final Future<void> Function(String name) onUpdate;
 
   @override
@@ -108,23 +105,18 @@ class _AccountNameModalState extends State<AccountNameModal> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _AccountNameModalHeader(
-            profilePictureId: widget.profilePictureId,
-            onTap: _isSubmitting ? null : widget.onChangeProfilePicture,
-          ),
+          _AccountNameModalHeader(profilePictureId: widget.profilePictureId),
           const SizedBox(height: AppSpacing.md),
           SizedBox(
             height: _messageText == null
                 ? _fieldHeight
                 : _fieldWithMessageHeight,
             child: AppTextField(
-              label: 'Account name',
-              hintText: 'Account name',
+              label: 'New account name',
+              hintText: '1-20 characters',
               controller: _controller,
               autofocus: true,
               enabled: !_isSubmitting,
-              leading: const AppIcon(AppIcons.user, size: 20),
-              leadingSlotWidth: 32,
               inputHorizontalPadding: AppSpacing.s,
               messageText: _messageText,
               tone: _messageText == null
@@ -147,64 +139,30 @@ class _AccountNameModalState extends State<AccountNameModal> {
 }
 
 class _AccountNameModalHeader extends StatelessWidget {
-  const _AccountNameModalHeader({required this.profilePictureId, this.onTap});
+  const _AccountNameModalHeader({required this.profilePictureId});
 
   final String profilePictureId;
-  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final avatar = SizedBox(
-      width: 56,
-      height: 56,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          AppProfilePicture(
-            profilePictureId: profilePictureId,
-            size: AppProfilePictureSize.xLarge,
-          ),
-          Positioned(
-            right: -3,
-            bottom: -3,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: colors.background.inverse,
-                border: Border.all(color: colors.background.base, width: 3),
-                shape: BoxShape.circle,
-              ),
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: Center(
-                  child: AppIcon(
-                    AppIcons.edit,
-                    size: AppIconSize.medium,
-                    color: colors.icon.inverse,
-                  ),
-                ),
-              ),
+    return Row(
+      children: [
+        AppProfilePicture(
+          profilePictureId: profilePictureId,
+          size: AppProfilePictureSize.large,
+        ),
+        const SizedBox(width: AppSpacing.s),
+        Expanded(
+          child: Text(
+            'Account name',
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.bodyLarge.copyWith(
+              color: context.colors.text.accent,
+              fontWeight: FontWeight.w600,
             ),
           ),
-        ],
-      ),
-    );
-
-    final onTap = this.onTap;
-    if (onTap == null) return avatar;
-
-    return Semantics(
-      button: true,
-      label: 'Change profile picture',
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: avatar,
         ),
-      ),
+      ],
     );
   }
 }
