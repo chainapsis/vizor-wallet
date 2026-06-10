@@ -19,8 +19,8 @@ import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
+import '../activity_feed_sections.dart';
 import '../activity_row_mapper.dart';
-import '../models/activity_row_data.dart';
 import '../swap_activity_row_items_provider.dart';
 import '../swap_activity_row_mapper.dart';
 import '../widgets/activity_feed.dart';
@@ -283,11 +283,11 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         ? const <SwapActivityRowItem>[]
         : ref.watch(swapActivityRowItemsProvider(accountUuid)).value ??
               const <SwapActivityRowItem>[];
-    final entries = <_ActivityEntry>[
+    final entries = <ActivityEntry>[
       if (canRenderTransactions)
         for (final tx in transactions)
-          _ActivityEntry(
-            timestamp: _transactionActivityTimestamp(tx),
+          ActivityEntry(
+            timestamp: transactionActivityTimestamp(tx),
             row: buildTransactionActivityRow(
               context: context,
               transaction: tx,
@@ -296,7 +296,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
             ),
           ),
       for (final item in swapItems)
-        _ActivityEntry(
+        ActivityEntry(
           timestamp: item.activityTimestamp,
           row: buildSwapActivityRow(
             context: context,
@@ -305,8 +305,8 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
             onTap: () => _openSwapStatus(item.intentId),
           ),
         ),
-    ]..sort(_compareActivityEntries);
-    final sections = _activityFeedSections(entries);
+    ];
+    final sections = buildActivityFeedSections(entries);
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -498,84 +498,4 @@ class _ActivityScreenScrollbar extends StatelessWidget {
         .toDouble();
     controller.jumpTo(nextOffset);
   }
-}
-
-class _ActivityEntry {
-  const _ActivityEntry({required this.timestamp, required this.row});
-
-  final DateTime? timestamp;
-  final ActivityRowData row;
-}
-
-int _compareActivityEntries(_ActivityEntry a, _ActivityEntry b) {
-  final aTime = a.timestamp;
-  final bTime = b.timestamp;
-  if (aTime == null && bTime == null) return 0;
-  if (aTime == null) return 1;
-  if (bTime == null) return -1;
-  return bTime.compareTo(aTime);
-}
-
-DateTime? _transactionActivityTimestamp(rust_sync.TransactionInfo tx) {
-  final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
-  if (seconds <= BigInt.zero) return null;
-  return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
-}
-
-List<ActivityFeedSectionData> _activityFeedSections(
-  List<_ActivityEntry> entries,
-) {
-  final sections = <ActivityFeedSectionData>[];
-  List<ActivityRowData>? currentRows;
-  String? currentTitle;
-
-  for (final entry in entries) {
-    final title = _activitySectionTitle(entry.timestamp);
-    if (title != currentTitle) {
-      currentTitle = title;
-      currentRows = <ActivityRowData>[];
-      sections.add(ActivityFeedSectionData(title: title, rows: currentRows));
-    }
-    currentRows!.add(entry.row);
-  }
-
-  return sections;
-}
-
-String _activitySectionTitle(DateTime? timestamp) {
-  if (timestamp == null) return 'Earlier';
-
-  final local = timestamp.toLocal();
-  final now = DateTime.now();
-  final weekStart = _startOfWeek(now);
-  final nextWeekStart = weekStart.add(const Duration(days: 7));
-  if (!local.isBefore(weekStart) && local.isBefore(nextWeekStart)) {
-    return 'This week';
-  }
-
-  return '${_monthName(local.month)} ${local.year}';
-}
-
-DateTime _startOfWeek(DateTime date) {
-  final localDate = DateTime(date.year, date.month, date.day);
-  return localDate.subtract(Duration(days: date.weekday - DateTime.monday));
-}
-
-String _monthName(int month) {
-  const months = [
-    '',
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  return months[month];
 }

@@ -26,6 +26,8 @@ class ActivityFeed extends StatelessWidget {
     this.errorText,
     this.emptyText = 'No activity yet',
     this.rowKeyPrefix,
+    this.cardWidth = 396,
+    this.showHeader = true,
     super.key,
   });
 
@@ -35,16 +37,26 @@ class ActivityFeed extends StatelessWidget {
   final String emptyText;
   final String? rowKeyPrefix;
 
+  /// Fixed card width. The 396px default matches the desktop pane;
+  /// mobile passes null so cards stretch to the parent width.
+  final double? cardWidth;
+
+  /// Whether to render the desktop title row ("Activity" + filter).
+  /// Mobile surfaces provide their own top nav title instead.
+  final bool showHeader;
+
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: AppSpacing.s),
-          child: _ActivityFeedTitleRow(),
-        ),
-        const SizedBox(height: AppSpacing.lg),
+        if (showHeader) ...[
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: AppSpacing.s),
+            child: _ActivityFeedTitleRow(),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+        ],
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
           child: _ActivityFeedBody(
@@ -53,6 +65,7 @@ class ActivityFeed extends StatelessWidget {
             errorText: errorText,
             emptyText: emptyText,
             rowKeyPrefix: rowKeyPrefix,
+            cardWidth: cardWidth,
           ),
         ),
       ],
@@ -138,6 +151,7 @@ class _ActivityFeedBody extends StatelessWidget {
     required this.errorText,
     required this.emptyText,
     required this.rowKeyPrefix,
+    required this.cardWidth,
   });
 
   final List<ActivityFeedSectionData> sections;
@@ -145,6 +159,7 @@ class _ActivityFeedBody extends StatelessWidget {
   final String? errorText;
   final String emptyText;
   final String? rowKeyPrefix;
+  final double? cardWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -153,10 +168,11 @@ class _ActivityFeedBody extends StatelessWidget {
       return _ActivityFeedMessageCard(
         text: message,
         isError: errorText != null,
+        width: cardWidth,
       );
     }
     if (sections.isEmpty) {
-      return _ActivityFeedMessageCard(text: emptyText);
+      return _ActivityFeedMessageCard(text: emptyText, width: cardWidth);
     }
 
     var rowIndex = 0;
@@ -170,6 +186,7 @@ class _ActivityFeedBody extends StatelessWidget {
           if (sectionIndex > 0) const SizedBox(height: AppSpacing.md),
           _ActivityFeedCard(
             section: sections[sectionIndex],
+            width: cardWidth,
             rowKeyBuilder: rowKeyPrefix == null
                 ? null
                 : () => ValueKey('${rowKeyPrefix}_row_${rowIndex++}'),
@@ -182,16 +199,21 @@ class _ActivityFeedBody extends StatelessWidget {
 }
 
 class _ActivityFeedMessageCard extends StatelessWidget {
-  const _ActivityFeedMessageCard({required this.text, this.isError = false});
+  const _ActivityFeedMessageCard({
+    required this.text,
+    required this.width,
+    this.isError = false,
+  });
 
   final String text;
+  final double? width;
   final bool isError;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
-      width: 396,
+      width: width,
       height: 160,
       child: _ActivityFeedCardShell(
         child: Center(
@@ -210,16 +232,21 @@ class _ActivityFeedMessageCard extends StatelessWidget {
 }
 
 class _ActivityFeedCard extends StatelessWidget {
-  const _ActivityFeedCard({required this.section, this.rowKeyBuilder});
+  const _ActivityFeedCard({
+    required this.section,
+    required this.width,
+    this.rowKeyBuilder,
+  });
 
   final ActivityFeedSectionData section;
+  final double? width;
   final ValueKey<String> Function()? rowKeyBuilder;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
-      width: 396,
+      width: width,
       child: _ActivityFeedCardShell(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
