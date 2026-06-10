@@ -478,33 +478,40 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       firstStackTrace ??= st;
     }
 
-    String? dbPath;
-    try {
-      dbPath = await _getDbPath();
-    } catch (e, st) {
-      recordError('db path lookup', e, st);
-    }
-    // _resetVotingProcessStateForAccount is already best-effort internally
-    // and falls back to its own db path lookup when dbPath is null.
+    // Resolve the DB path before touching anything. Secure storage holds the
+    // randomized wallet DB name, so if this lookup fails we must abort with
+    // NOTHING deleted: wiping storage now would orphan the still-existing DB
+    // file (a retry would generate a fresh name and never find the old one).
+    final dbPath = await _getDbPath();
+
+    // Best-effort internally; tolerates per-account failures.
     for (final account in state.value?.accounts ?? const <AccountInfo>[]) {
       await _resetVotingProcessStateForAccount(account.uuid, dbPath: dbPath);
     }
-    if (dbPath != null) {
+
+    var dbDeleted = false;
+    try {
+      await _deleteExistingDb(dbPath);
+      dbDeleted = true;
+    } catch (e, st) {
+      recordError('wallet db deletion', e, st);
+    }
+    // Only wipe secure storage once the DB file is confirmed gone: the wipe
+    // destroys the stored DB name, which is the only way a retry can target
+    // the original DB file. After a successful DB delete the wipe stays
+    // retryable (deleteAll is idempotent and a regenerated DB name only
+    // no-ops the next, already-satisfied DB delete).
+    if (dbDeleted) {
       try {
-        await _deleteExistingDb(dbPath);
+        await _storage.deleteAll();
       } catch (e, st) {
-        recordError('wallet db deletion', e, st);
+        recordError('secure storage wipe', e, st);
       }
-    }
-    try {
-      await _storage.deleteAll();
-    } catch (e, st) {
-      recordError('secure storage wipe', e, st);
-    }
-    try {
-      ref.read(appSecurityProvider.notifier).reset();
-    } catch (e, st) {
-      recordError('app security reset', e, st);
+      try {
+        ref.read(appSecurityProvider.notifier).reset();
+      } catch (e, st) {
+        recordError('app security reset', e, st);
+      }
     }
 
     final error = firstError;
