@@ -52,6 +52,7 @@ abstract final class AppBackResolver {
     '/settings/secret-passphrase': 'Secret passphrase',
     '/settings/change-password': 'Change password',
     '/settings/endpoint': 'Endpoint',
+    '/settings/uninstall': 'Uninstall Vizor',
     '/onboarding/keystone': 'Connect Keystone',
     '/voting': 'Vote',
     '/voting/poll/:roundId': 'Voting round',
