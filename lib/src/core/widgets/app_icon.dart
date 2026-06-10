@@ -49,6 +49,8 @@ abstract final class AppIcons {
   static const eyeClosed = 'eye_closed';
   static const expand = 'expand';
   static const filter = 'filter';
+  static const github = 'github';
+  static const globe = 'globe';
   static const help = 'help';
   static const history = 'history';
   static const home = 'home';

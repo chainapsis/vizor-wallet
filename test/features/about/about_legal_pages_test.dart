@@ -63,12 +63,10 @@ void main() {
     expect(find.text('About Vizor Wallet'), findsOneWidget);
     expect(find.text('Version: 0.0.0 Public Beta'), findsOneWidget);
     expect(find.text('Built by the Keplr team'), findsOneWidget);
-    expect(find.text('Designed for shielded Zcash'), findsOneWidget);
-    expect(
-      find.text('Open source, verifiable, and self-custodial'),
-      findsOneWidget,
-    );
-    expect(find.text('GitHub'), findsOneWidget);
+    // The Figma About frame uses this heading on both the second and third
+    // paragraphs; the body copy mirrors the design verbatim.
+    expect(find.text('Designed for shielded Zcash'), findsNWidgets(2));
+    expect(find.text('Github'), findsOneWidget);
     expect(find.text('Website'), findsOneWidget);
   });
 
@@ -148,7 +146,7 @@ void main() {
     _expectScrollbarFillsPaneEdge(tester, const Size(1280, 900));
     _expectUtilityContentCentered(
       tester,
-      titleText: 'Terms of Use',
+      titleText: 'Terms of Usage',
       headingText: 'From the team that brought you Keplr Wallet.',
     );
 
@@ -194,7 +192,7 @@ void main() {
 
     _expectScrollbarFillsPaneEdge(tester, viewport);
 
-    final backTopBeforeScroll = tester.getTopLeft(find.text('Back')).dy;
+    final backTopBeforeScroll = tester.getTopLeft(find.text('Welcome')).dy;
     final headingTopBeforeScroll = tester
         .getTopLeft(
           find.text('From the team that brought you Keplr Wallet.').first,
@@ -205,7 +203,7 @@ void main() {
       const Offset(0, -160),
     );
     await tester.pumpAndSettle();
-    final backTopAfterScroll = tester.getTopLeft(find.text('Back')).dy;
+    final backTopAfterScroll = tester.getTopLeft(find.text('Welcome')).dy;
     final headingTopAfterScroll = tester
         .getTopLeft(
           find.text('From the team that brought you Keplr Wallet.').first,
@@ -232,12 +230,12 @@ void main() {
 
     final backLink = find.byType(AppBackLink);
     expect(
-      find.descendant(of: backLink, matching: find.text('Back')),
+      find.descendant(of: backLink, matching: find.text('Welcome')),
       findsOneWidget,
     );
 
     await tester.tap(
-      find.descendant(of: backLink, matching: find.text('Back')),
+      find.descendant(of: backLink, matching: find.text('Welcome')),
     );
     await tester.pumpAndSettle();
 
@@ -252,7 +250,7 @@ void main() {
     await tester.pumpWidget(_appHarness(_emptyBootstrap('/terms')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Terms of Use'), findsOneWidget);
+    expect(find.text('Terms of Usage'), findsOneWidget);
     expect(find.text('Private money. By default.'), findsNothing);
 
     await tester.pumpWidget(_appHarness(_emptyBootstrap('/privacy')));

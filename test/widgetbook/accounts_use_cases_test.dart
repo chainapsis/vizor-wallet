@@ -76,18 +76,18 @@ void main() {
     await _pumpAccountsUseCase(tester, buildAboutUtilityUseCase);
     expect(tester.takeException(), isNull);
     expect(find.text('About Vizor Wallet'), findsOneWidget);
-    expect(find.text('GitHub'), findsOneWidget);
+    expect(find.text('Github'), findsOneWidget);
     expect(find.text('Website'), findsOneWidget);
 
     await _pumpAccountsUseCase(tester, buildTermsUtilityUseCase);
     expect(tester.takeException(), isNull);
-    expect(find.text('Terms of Use'), findsOneWidget);
-    expect(find.text('Back'), findsOneWidget);
+    expect(find.text('Terms of Usage'), findsOneWidget);
+    expect(find.text('Welcome'), findsOneWidget);
 
     await _pumpAccountsUseCase(tester, buildPrivacyUtilityUseCase);
     expect(tester.takeException(), isNull);
     expect(find.text('Privacy Policy'), findsOneWidget);
-    expect(find.text('Back'), findsOneWidget);
+    expect(find.text('Welcome'), findsOneWidget);
   });
 }
 

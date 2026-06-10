@@ -16,6 +16,7 @@ import '../../../app_bootstrap.dart';
 import '../../../core/config/app_version_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/navigation/app_back_resolver.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
@@ -24,31 +25,32 @@ import '../../../providers/wallet_provider.dart';
 import '../../onboarding/shared/onboarding_welcome_art.dart';
 
 const _utilityPageScrollbarKey = ValueKey('utility-page-scrollbar');
-const _legalUpdatedLabel = 'Last Update:  ';
 const _utilityContentWidth = 420.0;
 const _vizorGithubUrl = 'https://github.com/chainapsis/vizor-wallet/';
 const _vizorWebsiteUrl = 'https://vizor.cash';
 
+// Body copy mirrors the Figma About frame (4086:478836) verbatim, including
+// the duplicated third heading and the unterminated first two sentences —
+// fix the design file first if those change.
 const _aboutParagraphs = [
   _UtilityParagraphData(
     heading: 'Built by the Keplr team',
     body:
         'We built Keplr, the wallet used by millions across Cosmos, Ethereum, '
-        'and Bitcoin. Vizor is our take on what a Zcash wallet should feel '
-        'like.',
+        'and Bitcoin. Vizor is our take on what a Zcash wallet should feel',
   ),
   _UtilityParagraphData(
     heading: 'Designed for shielded Zcash',
     body:
         'Vizor is built around shielded transactions, where the sender, '
         'recipient, and amount stay private. Transparent Zcash works too, but '
-        'private is the default here.',
+        'private is the default',
   ),
   _UtilityParagraphData(
-    heading: 'Open source, verifiable, and self-custodial',
+    heading: 'Designed for shielded Zcash',
     body:
-        "Vizor is Apache licensed. Your keys stay on your device. We don't "
-        "see your balances or your transactions.",
+        'Vizor is Apache licensed. Your keys stay on your device.\n'
+        "We don't see your balances or your transactions.",
   ),
 ];
 
@@ -78,6 +80,8 @@ class AboutScreen extends StatelessWidget {
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
         child: const _UtilityPane(
+          // Design: back chevron sits 16px into the pane, same as settings.
+          // The 16px inset is the AppPaneToolbar default.
           toolbar: AppPaneToolbar(),
           child: _AboutContent(),
         ),
@@ -92,7 +96,7 @@ class TermsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const _LegalScreen(
-      title: 'Terms of Use',
+      title: 'Terms of Usage',
       paragraphs: _legalParagraphs,
     );
   }
@@ -135,21 +139,40 @@ class _AboutContent extends StatelessWidget {
   }
 }
 
-class _LegalScreen extends StatelessWidget {
+class _LegalScreen extends ConsumerWidget {
   const _LegalScreen({required this.title, required this.paragraphs});
 
   final String title;
   final List<_UtilityParagraphData> paragraphs;
 
   @override
-  Widget build(BuildContext context) {
-    return _FullPaneShell(
-      child: _UtilityPane(
-        toolbar: const AppPaneToolbar(leading: _UtilityBackButton()),
-        child: _LegalContent(title: title, paragraphs: paragraphs),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pane = _UtilityPane(
+      toolbar: const AppPaneToolbar(
+        // The 16px inset is the AppPaneToolbar default.
+        leading: _UtilityBackButton(),
       ),
+      child: _LegalContent(title: title, paragraphs: paragraphs),
     );
+
+    // In the design these pages live inside the regular desktop shell with
+    // the glass nav sidebar. Pre-wallet they are public legal routes, so
+    // there is no account/sidebar context to show — fall back to the bare
+    // full-width pane.
+    if (_hasWallet(ref)) {
+      return AppDesktopShell(
+        sidebar: const AppMainSidebar(),
+        pane: AppDesktopPane(padding: EdgeInsets.zero, child: pane),
+      );
+    }
+    return _FullPaneShell(child: pane);
   }
+}
+
+bool _hasWallet(WidgetRef ref) {
+  final bootstrap = ref.watch(appBootstrapProvider);
+  final wallet = ref.watch(walletProvider).value;
+  return wallet?.hasWallet ?? bootstrap.hasWallet;
 }
 
 class _FullPaneShell extends StatelessWidget {
@@ -265,35 +288,19 @@ class _UtilityBackButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return AppBackLink(
-      label: 'Back',
-      semanticsLabel: context.canPop()
-          ? 'Back'
-          : 'Back to ${_defaultFallbackLabel(ref)}',
-      onTap: () => _navigateBack(context, ref),
-    );
-  }
-
-  void _navigateBack(BuildContext context, WidgetRef ref) {
+    // Mirror the standard pane toolbar: the back link is labeled with its
+    // destination ("Settings", "Home", ...), never a generic "Back".
     if (context.canPop()) {
-      context.pop();
-      return;
+      final target = AppBackResolver.resolve(context);
+      return AppBackLink(
+        label: target.label,
+        onTap: () => target.navigate(context),
+      );
     }
-    context.go(_defaultFallbackPath(ref));
-  }
-
-  String _defaultFallbackPath(WidgetRef ref) {
-    return _hasWallet(ref) ? '/home' : '/welcome';
-  }
-
-  String _defaultFallbackLabel(WidgetRef ref) {
-    return _hasWallet(ref) ? 'Home' : 'Welcome';
-  }
-
-  bool _hasWallet(WidgetRef ref) {
-    final bootstrap = ref.read(appBootstrapProvider);
-    final wallet = ref.read(walletProvider).value;
-    return wallet?.hasWallet ?? bootstrap.hasWallet;
+    final hasWallet = _hasWallet(ref);
+    final label = hasWallet ? 'Home' : 'Welcome';
+    final path = hasWallet ? '/home' : '/welcome';
+    return AppBackLink(label: label, onTap: () => context.go(path));
   }
 }
 
@@ -308,7 +315,7 @@ class _LegalContent extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _UtilityPageTitle(title: title, subtitle: _legalUpdatedLabel),
+        _UtilityPageTitle(title: title, subtitle: kVizorAboutVersionLabel),
         const SizedBox(height: AppSpacing.base),
         _UtilitySurface(child: _UtilityParagraphList(paragraphs: paragraphs)),
       ],
@@ -380,26 +387,33 @@ class _UtilitySurface extends StatelessWidget {
         vertical: AppSpacing.base,
       ),
       decoration: BoxDecoration(
-        color: AppTheme.of(context) == AppThemeData.light
-            ? colors.background.ground
-            : colors.background.base,
+        // Figma: semantic/foreground/neutral/ground in both modes
+        // (#ffffff light, #1b1f1f dark).
+        color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: _utilitySurfaceShadow(context),
+        boxShadow: _utilitySurfaceShadow(colors),
       ),
       child: child,
     );
   }
 }
 
-List<BoxShadow> _utilitySurfaceShadow(BuildContext context) {
-  final color = AppTheme.of(context) == AppThemeData.light
-      ? const Color(0x0D141818)
-      : const Color(0x00141818);
+// Figma "Shadow Surface" — four layers of Semantic/Shadows/Subtle
+// (alpha 0 in dark mode, so the card reads from fill contrast alone).
+List<BoxShadow> _utilitySurfaceShadow(AppColors colors) {
   return [
-    BoxShadow(color: color, blurRadius: 1),
-    BoxShadow(color: color, offset: const Offset(0, 1), blurRadius: 2),
-    BoxShadow(color: color, offset: const Offset(0, 2), blurRadius: 4),
-    BoxShadow(color: color, blurRadius: 1),
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 1),
+      blurRadius: 2,
+    ),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 2),
+      blurRadius: 4,
+    ),
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
   ];
 }
 
@@ -439,16 +453,18 @@ class _AboutLinkRow extends StatelessWidget {
       width: double.infinity,
       child: Wrap(
         alignment: WrapAlignment.center,
-        spacing: AppSpacing.xs,
+        spacing: AppSpacing.s,
         runSpacing: AppSpacing.xs,
         children: [
           _AboutLinkButton(
-            label: 'GitHub',
+            label: 'Github',
+            icon: AppIcons.github,
             semanticsLabel: 'Open Vizor GitHub',
             url: _vizorGithubUrl,
           ),
           _AboutLinkButton(
             label: 'Website',
+            icon: AppIcons.globe,
             semanticsLabel: 'Open Vizor website',
             url: _vizorWebsiteUrl,
           ),
@@ -461,11 +477,16 @@ class _AboutLinkRow extends StatelessWidget {
 class _AboutLinkButton extends StatelessWidget {
   const _AboutLinkButton({
     required this.label,
+    required this.icon,
     required this.semanticsLabel,
     required this.url,
   });
 
+  // Figma buttons stack: 24px ghost pills with a 16px icon and Label M.
+  static const _height = 24.0;
+
   final String label;
+  final String icon;
   final String semanticsLabel;
   final String url;
 
@@ -479,7 +500,8 @@ class _AboutLinkButton extends StatelessWidget {
         onPressed: () => unawaited(_launchAboutUrl(url)),
         variant: AppButtonVariant.ghost,
         size: AppButtonSize.medium,
-        leading: const AppIcon(AppIcons.link),
+        height: _height,
+        leading: AppIcon(icon),
         child: Text(label),
       ),
     );
