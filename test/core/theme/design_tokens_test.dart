@@ -68,9 +68,9 @@ void main() {
 
     expect(AppTypography.labelMedium.fontFamily, 'Geist');
     expect(AppTypography.labelMedium.fontWeight, FontWeight.w500);
-    expect(AppTypography.labelMedium.fontSize, 14);
-    expect(AppTypography.labelMedium.height, 16 / 14);
-    expect(AppTypography.labelMedium.letterSpacing, -0.06);
+    expect(AppTypography.labelMedium.fontSize, 13);
+    expect(AppTypography.labelMedium.height, 14 / 13);
+    expect(AppTypography.labelMedium.letterSpacing, 0);
 
     expect(AppTypography.labelSmall.fontFamily, 'Geist');
     expect(AppTypography.labelSmall.fontWeight, FontWeight.w500);

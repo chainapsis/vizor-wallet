@@ -18,15 +18,11 @@ class KeystoneHowToConnectScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return KeystoneOnboardingTrailingPane(
-      child: Column(
-        children: [
-          const KeystoneBackRow(routePath: '/welcome'),
-          const SizedBox(height: AppSpacing.xs),
-          Expanded(
-            child: _HeroLayout(buttonWidth: _buttonWidth, ref: ref),
-          ),
-        ],
+      backTarget: const OnboardingBackTarget.route(
+        label: 'Welcome',
+        routePath: '/welcome',
       ),
+      child: _HeroLayout(buttonWidth: _buttonWidth, ref: ref),
     );
   }
 }

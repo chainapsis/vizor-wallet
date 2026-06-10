@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart'
     show
+        Color,
+        Colors,
         InputDecoration,
         Scrollbar,
         ScrollbarTheme,
@@ -10,6 +12,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -38,22 +41,34 @@ class _ImportSecretPassphraseScreenState
   static const _minImportWordCount = 12;
   static const _wordCountStep = 3;
   static const _wordCount = 24;
-  static const _gridWidth = 588.0;
-  static const _titleWidth = 504.0;
-  static const _subtitleWidth = 343.0;
-  static const _buttonWidth = 256.0;
+  static const _contentWidth = 396.0;
+  static const _onPageContentHeight = 580.0;
+  static const _buttonHeight = 44.0;
+  static const _layoutHeight = _onPageContentHeight + _buttonHeight;
+  static const _referenceLayoutSlack = AppSpacing.sm;
+  static const _referenceContentHeight = _layoutHeight + _referenceLayoutSlack;
+  static const _scrollBottomPadding = AppSpacing.base;
+  static const _titleTop = 35.0;
+  static const _passphraseTop = 173.0;
+  static const _gridWidth = 396.0;
+  static const _subtitleWidth = 226.0;
+  static const _buttonWidth = 230.0;
 
   late final List<TextEditingController> _controllers;
   late final List<FocusNode> _focusNodes;
   late final List<String> _mnemonicWordList;
   late SensitivePrivacyOverlayController _privacyOverlayController;
   late bool _ownsPrivacyOverlayController;
+  ScrollController? _bodyScrollController;
 
   bool _isSubmitting = false;
   bool _showValidationError = false;
   bool _isApplyingProgrammaticChange = false;
   bool _autocompleteSuppressedForPrivacy = false;
   String? _submitError;
+
+  ScrollController get _effectiveBodyScrollController =>
+      _bodyScrollController ??= ScrollController();
 
   @override
   void initState() {
@@ -89,6 +104,7 @@ class _ImportSecretPassphraseScreenState
     for (final focusNode in _focusNodes) {
       focusNode.dispose();
     }
+    _bodyScrollController?.dispose();
     super.dispose();
   }
 
@@ -339,153 +355,230 @@ class _ImportSecretPassphraseScreenState
     final colors = context.colors;
 
     return ImportOnboardingTrailingPane(
+      backTarget: OnboardingBackTarget.callback(
+        label: 'Welcome',
+        onTap: _handleBack,
+      ),
       overlay: SensitivePrivacyOverlay(
         sensitiveContentVisible: _hasEnteredMnemonicWords,
         controller: _privacyOverlayController,
+        borderRadius: BorderRadius.circular(
+          AppDesktopSidebarSurface.glassRadius,
+        ),
         child: const SizedBox.expand(),
       ),
-      child: Column(
-        children: [
-          SizedBox(
-            height: 32,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _handleBack,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AppIcon(
-                        AppIcons.chevronBackward,
-                        size: AppIconSize.medium,
-                        color: colors.text.accent,
-                      ),
-                      const SizedBox(width: AppSpacing.xxs),
-                      Text(
-                        'Back',
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.accent,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final needsScrolling = constraints.maxHeight < _layoutHeight;
+          final contentHeight = needsScrolling
+              ? _layoutHeight + _scrollBottomPadding
+              : constraints.maxHeight;
+          final scrollController = _effectiveBodyScrollController;
+
+          Widget buildContent(double height) {
+            final useExpandedLayout =
+                !needsScrolling && height > _referenceContentHeight;
+            final buttonTop = useExpandedLayout
+                ? height - _buttonHeight
+                : _onPageContentHeight;
+            final mainTop = useExpandedLayout
+                ? (buttonTop - _onPageContentHeight) / 2
+                : 0.0;
+
+            return SizedBox(
+              width: _contentWidth,
+              height: height,
+              child: Stack(
+                children: [
+                  Positioned(
+                    top: mainTop,
+                    left: 0,
+                    right: 0,
+                    height: _onPageContentHeight,
+                    child: Stack(
+                      children: [
+                        Positioned(
+                          top: _titleTop,
+                          left: 0,
+                          right: 0,
+                          child: _ImportSecretTitle(
+                            textColor: colors.text.accent,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          Expanded(
-            child: Column(
-              children: [
-                Expanded(
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.s,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: _titleWidth,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Welcome, Adventurer',
-                                  style: AppTypography.displayLarge.copyWith(
-                                    color: colors.text.accent,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: AppSpacing.sm),
-                                SizedBox(
-                                  width: _subtitleWidth,
-                                  child: Text(
-                                    'Import your wallet by entering your Secret Passphrase.',
-                                    style: AppTypography.bodyMedium.copyWith(
-                                      color: colors.text.accent,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              ],
-                            ),
+                        Positioned(
+                          top: _passphraseTop,
+                          left: 0,
+                          right: 0,
+                          child: _ImportSecretPassphraseGrid(
+                            controllers: _controllers,
+                            focusNodes: _focusNodes,
+                            wordList: _mnemonicWordList,
+                            autocompleteEnabled: () => _autocompleteEnabled,
+                            onAutocompleteReactivationRequested: (index) =>
+                                _reactivateAutocomplete(_controllers[index]),
+                            onMoveNext: _moveToNextWord,
+                            onMovePrevious: _moveToPreviousWord,
+                            onSuggestionSelected: _handleSuggestionSelected,
+                            onChanged: _handleWordChanged,
+                            onSubmitted: (index) {
+                              if (index == _wordCount - 1) {
+                                _submit();
+                              } else {
+                                _moveToNextWord(index);
+                              }
+                            },
                           ),
-                          const SizedBox(height: AppSpacing.lg),
-                          SizedBox(
-                            width: _gridWidth,
-                            child: Wrap(
-                              alignment: WrapAlignment.center,
-                              spacing: AppSpacing.s,
-                              runSpacing: AppSpacing.s,
-                              children: List.generate(
-                                _wordCount,
-                                (index) => _MnemonicWordCell(
-                                  index: index,
-                                  controller: _controllers[index],
-                                  focusNode: _focusNodes[index],
-                                  wordList: _mnemonicWordList,
-                                  autocompleteEnabled: () =>
-                                      _autocompleteEnabled,
-                                  onAutocompleteReactivationRequested: () =>
-                                      _reactivateAutocomplete(
-                                        _controllers[index],
-                                      ),
-                                  destructive:
-                                      _showValidationError &&
-                                      _controllers[index].text
-                                          .trim()
-                                          .isNotEmpty,
-                                  autofocus: index == 0,
-                                  onMoveNext: () => _moveToNextWord(index),
-                                  onMovePrevious: () =>
-                                      _moveToPreviousWord(index),
-                                  onSuggestionSelected: (word) =>
-                                      _handleSuggestionSelected(index, word),
-                                  onChanged: (value) =>
-                                      _handleWordChanged(index, value),
-                                  onSubmitted: () {
-                                    if (index == _wordCount - 1) {
-                                      _submit();
-                                    } else {
-                                      _moveToNextWord(index);
-                                    }
-                                  },
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (_errorText != null) ...[
-                            const SizedBox(height: AppSpacing.s),
-                            Text(
+                        ),
+                        if (_errorText != null)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: Text(
                               _errorText!,
                               style: AppTypography.bodyMedium.copyWith(
                                 color: colors.text.destructive,
                               ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,
                             ),
-                          ],
-                        ],
+                          ),
+                      ],
+                    ),
+                  ),
+                  Positioned(
+                    top: buttonTop,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: AppButton(
+                        key: const ValueKey('import_secret_submit_button'),
+                        onPressed: _canSubmit ? _submit : null,
+                        minWidth: _buttonWidth,
+                        trailing: const AppIcon(AppIcons.chevronForward),
+                        child: Text(_isSubmitting ? 'Importing...' : 'Import'),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                AppButton(
-                  key: const ValueKey('import_secret_submit_button'),
-                  onPressed: _canSubmit ? _submit : null,
-                  minWidth: _buttonWidth,
-                  trailing: const AppIcon(AppIcons.chevronForward),
-                  child: Text(_isSubmitting ? 'Importing...' : 'Import'),
-                ),
-              ],
+                ],
+              ),
+            );
+          }
+
+          return Scrollbar(
+            controller: scrollController,
+            thumbVisibility: needsScrolling,
+            child: SingleChildScrollView(
+              controller: scrollController,
+              physics: needsScrolling
+                  ? null
+                  : const NeverScrollableScrollPhysics(),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: buildContent(contentHeight),
+              ),
             ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ImportSecretTitle extends StatelessWidget {
+  const _ImportSecretTitle({required this.textColor});
+
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.center,
+          child: Text(
+            'Welcome, adventurer',
+            style: AppTypography.displayLarge.copyWith(
+              fontFamily: 'Young Serif',
+              fontWeight: FontWeight.w400,
+              color: textColor,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.visible,
+            softWrap: false,
+            textAlign: TextAlign.center,
           ),
-        ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SizedBox(
+          width: _ImportSecretPassphraseScreenState._subtitleWidth,
+          child: Text(
+            'Import your wallet by entering your secret passphrase.',
+            style: AppTypography.bodyMediumStrong.copyWith(color: textColor),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ImportSecretPassphraseGrid extends StatelessWidget {
+  const _ImportSecretPassphraseGrid({
+    required this.controllers,
+    required this.focusNodes,
+    required this.wordList,
+    required this.autocompleteEnabled,
+    required this.onAutocompleteReactivationRequested,
+    required this.onMoveNext,
+    required this.onMovePrevious,
+    required this.onSuggestionSelected,
+    required this.onChanged,
+    required this.onSubmitted,
+  });
+
+  final List<TextEditingController> controllers;
+  final List<FocusNode> focusNodes;
+  final List<String> wordList;
+  final bool Function() autocompleteEnabled;
+  final ValueChanged<int> onAutocompleteReactivationRequested;
+  final bool Function(int index) onMoveNext;
+  final bool Function(int index) onMovePrevious;
+  final void Function(int index, String word) onSuggestionSelected;
+  final void Function(int index, String value) onChanged;
+  final ValueChanged<int> onSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
+    final wordSet = wordList.toSet();
+
+    return SizedBox(
+      width: _ImportSecretPassphraseScreenState._gridWidth,
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: AppSpacing.s,
+        runSpacing: AppSpacing.s,
+        children: List.generate(
+          _ImportSecretPassphraseScreenState._wordCount,
+          (index) => _MnemonicWordCell(
+            index: index,
+            controller: controllers[index],
+            focusNode: focusNodes[index],
+            wordList: wordList,
+            wordSet: wordSet,
+            autocompleteEnabled: autocompleteEnabled,
+            onAutocompleteReactivationRequested: () =>
+                onAutocompleteReactivationRequested(index),
+            autofocus: index == 0,
+            onMoveNext: () => onMoveNext(index),
+            onMovePrevious: () => onMovePrevious(index),
+            onSuggestionSelected: (word) => onSuggestionSelected(index, word),
+            onChanged: (value) => onChanged(index, value),
+            onSubmitted: () => onSubmitted(index),
+          ),
+        ),
       ),
     );
   }
@@ -497,6 +590,7 @@ class _MnemonicWordCell extends StatefulWidget {
     required this.controller,
     required this.focusNode,
     required this.wordList,
+    required this.wordSet,
     required this.onChanged,
     required this.onSubmitted,
     required this.onMoveNext,
@@ -504,7 +598,6 @@ class _MnemonicWordCell extends StatefulWidget {
     required this.onSuggestionSelected,
     required this.autocompleteEnabled,
     required this.onAutocompleteReactivationRequested,
-    this.destructive = false,
     this.autofocus = false,
   });
 
@@ -512,6 +605,7 @@ class _MnemonicWordCell extends StatefulWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final List<String> wordList;
+  final Set<String> wordSet;
   final ValueChanged<String> onChanged;
   final VoidCallback onSubmitted;
   final bool Function() onMoveNext;
@@ -519,7 +613,6 @@ class _MnemonicWordCell extends StatefulWidget {
   final ValueChanged<String> onSuggestionSelected;
   final bool Function() autocompleteEnabled;
   final VoidCallback onAutocompleteReactivationRequested;
-  final bool destructive;
   final bool autofocus;
 
   @override
@@ -737,22 +830,37 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
   ) {
     final colors = context.colors;
     final isFocused = focusNode.hasFocus;
-    final hasText = controller.text.trim().isNotEmpty;
+    final enteredWord = controller.text.trim().toLowerCase();
+    final hasText = enteredWord.isNotEmpty;
+    final isKnownMnemonicWord = hasText && widget.wordSet.contains(enteredWord);
+    final isInvalidUnfocused = hasText && !isFocused && !isKnownMnemonicWord;
+    final fieldRadius = BorderRadius.circular(AppRadii.small);
     final valueStyle = AppTypography.labelLarge.copyWith(
+      fontWeight: FontWeight.w400,
       color: colors.text.accent,
     );
-    final borderColor = widget.destructive
-        ? colors.border.utilityDestructive
-        : _hovered && !isFocused && !hasText
-        ? colors.border.regular
+    final hintStyle = AppTypography.labelLarge.copyWith(
+      fontWeight: FontWeight.w400,
+      color: colors.text.muted,
+    );
+    final shellColor = isInvalidUnfocused
+        ? Color.alphaBlend(
+            colors.background.utilityDestructiveAlphaSubtle,
+            colors.surface.input,
+          )
+        : colors.surface.input;
+    final borderColor = isInvalidUnfocused
+        ? colors.border.utilityDestructiveSubtle
         : isFocused
-        ? colors.border.medium
-        : colors.border.subtle;
-    final focusRingColor = widget.destructive
-        ? colors.border.utilityDestructive
-        : colors.state.focusRing;
+        ? colors.background.inverse
+        : _hovered
+        ? colors.border.subtleOpacity
+        : Colors.transparent;
+    final boxShadow = isInvalidUnfocused
+        ? const <BoxShadow>[]
+        : _mnemonicFieldSurfaceShadow(colors);
 
-    final numberColor = widget.destructive
+    final numberColor = isInvalidUnfocused
         ? colors.text.destructive
         : hasText || isFocused
         ? colors.text.accent
@@ -774,51 +882,30 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
           child: SizedBox(
             height: _fieldHeight,
             child: Stack(
-              clipBehavior: Clip.none,
               children: [
-                if (isFocused)
-                  Positioned(
-                    left: -2.5,
-                    top: -2.5,
-                    right: -2.5,
-                    bottom: -2.5,
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: focusRingColor,
-                            width: 2,
-                            strokeAlign: BorderSide.strokeAlignInside,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
                 Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: colors.background.base,
-                      borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                      color: shellColor,
+                      borderRadius: fieldRadius,
                       border: Border.all(
                         color: borderColor,
-                        width: hasText || isFocused || widget.destructive
-                            ? 1.5
-                            : 1,
+                        width: 1.5,
                         strokeAlign: BorderSide.strokeAlignInside,
                       ),
+                      boxShadow: boxShadow,
                     ),
                   ),
                 ),
                 Positioned.fill(
                   child: Opacity(
-                    opacity: _hovered && !isFocused && !widget.destructive
+                    opacity: _hovered && !isFocused && !isInvalidUnfocused
                         ? 1
                         : 0,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: colors.state.hover,
-                        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                        borderRadius: fieldRadius,
                       ),
                     ),
                   ),
@@ -876,8 +963,7 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                                   selectAllOnFocus: false,
                                   decoration: InputDecoration.collapsed(
                                     hintText: 'Word',
-                                    hintStyle: AppTypography.labelLarge
-                                        .copyWith(color: colors.text.muted),
+                                    hintStyle: hintStyle,
                                   ),
                                   onChanged: (value) {
                                     widget
@@ -946,6 +1032,23 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
       ),
     );
   }
+}
+
+List<BoxShadow> _mnemonicFieldSurfaceShadow(AppColors colors) {
+  return [
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 0.5),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 2),
+      blurRadius: 2,
+    ),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 1),
+      blurRadius: 1,
+    ),
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 0.5),
+  ];
 }
 
 class _MnemonicSuggestionPopover extends StatefulWidget {

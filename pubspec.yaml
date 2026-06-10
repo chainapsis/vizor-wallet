@@ -152,3 +152,9 @@ flutter:
         # The onboarding designs only use the Regular weight.
         - asset: assets/fonts/LibreCaslonText-Regular.ttf
           weight: 400
+    - family: Young Serif
+      fonts:
+        # Upstream Young Serif assets; used as a local screen-level
+        # override where Figma calls for Young Serif.
+        - asset: assets/fonts/YoungSerif-Regular.ttf
+          weight: 400

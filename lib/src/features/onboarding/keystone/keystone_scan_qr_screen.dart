@@ -69,12 +69,12 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return KeystoneOnboardingTrailingPane(
+      backTarget: OnboardingBackTarget.route(
+        label: KeystoneOnboardingStep.howToConnect.label,
+        routePath: KeystoneOnboardingStep.howToConnect.routePath,
+      ),
       child: Column(
         children: [
-          KeystoneBackRow(
-            routePath: KeystoneOnboardingStep.howToConnect.routePath,
-          ),
-          const SizedBox(height: AppSpacing.xs),
           Expanded(
             child: Center(
               child: Padding(

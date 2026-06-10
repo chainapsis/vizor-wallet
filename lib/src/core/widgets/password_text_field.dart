@@ -12,6 +12,7 @@ class PasswordTextField extends StatefulWidget {
     this.messageText,
     this.messageIcon,
     this.messageStyle,
+    this.labelStyle,
     this.hintText,
     this.showLabel = true,
     this.leadingSlotWidth,
@@ -32,6 +33,7 @@ class PasswordTextField extends StatefulWidget {
   final String? messageText;
   final Widget? messageIcon;
   final TextStyle? messageStyle;
+  final TextStyle? labelStyle;
   final String? hintText;
   final bool showLabel;
   final double? leadingSlotWidth;
@@ -67,6 +69,7 @@ class _PasswordTextFieldState extends State<PasswordTextField> {
       messageText: widget.messageText,
       messageIcon: widget.messageIcon,
       messageStyle: widget.messageStyle,
+      labelStyle: widget.labelStyle,
       hintText: widget.hintText,
       showLabel: widget.showLabel,
       leadingSlotWidth: widget.leadingSlotWidth,

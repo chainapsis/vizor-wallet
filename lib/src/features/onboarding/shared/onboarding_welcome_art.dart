@@ -34,10 +34,12 @@ class VizorWordmark extends StatelessWidget {
     super.key,
     this.width = _vizorWordmarkFrameWidth,
     this.height = _vizorWordmarkFrameHeight,
+    this.color,
   });
 
   final double width;
   final double height;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +53,10 @@ class VizorWordmark extends StatelessWidget {
           width: width * _vizorWordmarkArtworkWidth / _vizorWordmarkFrameWidth,
           height:
               height * _vizorWordmarkArtworkHeight / _vizorWordmarkFrameHeight,
-          colorFilter: ColorFilter.mode(colors.text.accent, BlendMode.srcIn),
+          colorFilter: ColorFilter.mode(
+            color ?? colors.text.accent,
+            BlendMode.srcIn,
+          ),
         ),
       ),
     );

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -165,11 +166,13 @@ class _ImportBirthdayCalendarOverlayState
   Widget build(BuildContext context) {
     final colors = context.colors;
     return AppPaneModalOverlay(
+      borderRadius: BorderRadius.circular(AppDesktopSidebarSurface.glassRadius),
       onDismiss: widget.onDismiss,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: colors.background.ground,
-          borderRadius: BorderRadius.circular(AppRadii.large),
+          color: colors.surface.input,
+          borderRadius: BorderRadius.circular(AppRadii.medium),
+          boxShadow: _calendarPanelShadow(colors),
         ),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.sm),
@@ -431,7 +434,7 @@ class _MonthCell extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: selected
-              ? colors.background.brandCrimsonStrong
+              ? colors.background.inverse
               : colors.background.ground.withValues(alpha: 0),
           borderRadius: BorderRadius.circular(AppRadii.xSmall),
         ),
@@ -530,7 +533,7 @@ class _YearCell extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: selected
-              ? colors.background.brandCrimsonStrong
+              ? colors.background.inverse
               : colors.background.ground.withValues(alpha: 0),
           borderRadius: BorderRadius.circular(AppRadii.xSmall),
         ),
@@ -655,7 +658,7 @@ class _DayCell extends StatelessWidget {
       child = Center(
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: colors.background.brandCrimsonStrong,
+            color: colors.background.inverse,
             shape: BoxShape.circle,
           ),
           child: SizedBox(width: size, height: size, child: child),
@@ -672,6 +675,17 @@ class _DayCell extends StatelessWidget {
       ),
     );
   }
+}
+
+List<BoxShadow> _calendarPanelShadow(AppColors colors) {
+  return [
+    BoxShadow(
+      color: colors.shadows.regular,
+      offset: const Offset(0, 4),
+      blurRadius: 16,
+    ),
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+  ];
 }
 
 DateTime _dateOnly(DateTime value) {

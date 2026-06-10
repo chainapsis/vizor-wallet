@@ -18,9 +18,9 @@ void main() {
     await tester.pumpWidget(_birthdayHarness());
     await tester.pump();
 
-    expect(_cursorForText(tester, 'Enter the Date'), SystemMouseCursors.click);
+    expect(_cursorForText(tester, 'Enter the date'), SystemMouseCursors.click);
     expect(
-      _cursorForText(tester, 'Enter the Block Height'),
+      _cursorForText(tester, 'Enter the block height'),
       SystemMouseCursors.click,
     );
   });
@@ -64,6 +64,32 @@ void main() {
     metadataCompleter.complete(_metadataFixture());
     await tester.pump();
   });
+
+  testWidgets('block height error state shows the design message', (
+    tester,
+  ) async {
+    await _setDesktopSurface(tester);
+    await tester.pumpWidget(
+      _birthdayHarness(
+        args: const ImportBirthdayArgs(
+          mnemonic: 'test mnemonic',
+          initialBirthdayHeight: 312009123,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final errorText = find.text("That doesn't look like a valid block height.");
+    expect(errorText, findsOneWidget);
+
+    final textWidget = tester.widget<Text>(errorText);
+    expect(
+      textWidget.style?.color,
+      AppThemeData.light.colors.border.utilityDestructive,
+    );
+    expect(textWidget.style?.fontWeight, FontWeight.w400);
+  });
 }
 
 Future<void> _setDesktopSurface(WidgetTester tester) async {
@@ -74,6 +100,7 @@ Future<void> _setDesktopSurface(WidgetTester tester) async {
 }
 
 Widget _birthdayHarness({
+  ImportBirthdayArgs args = const ImportBirthdayArgs(mnemonic: 'test mnemonic'),
   RpcEndpointFailoverNotifier Function()? failoverBuilder,
 }) {
   return ProviderScope(
@@ -86,10 +113,11 @@ Widget _birthdayHarness({
     child: MaterialApp(
       home: MediaQuery(
         data: const MediaQueryData(textScaler: TextScaler.linear(0.5)),
-        child: AppTheme(
-          data: AppThemeData.light,
-          child: const ImportWalletBirthdayScreen(
-            args: ImportBirthdayArgs(mnemonic: 'test mnemonic'),
+        child: Material(
+          type: MaterialType.transparency,
+          child: AppTheme(
+            data: AppThemeData.light,
+            child: ImportWalletBirthdayScreen(args: args),
           ),
         ),
       ),

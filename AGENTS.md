@@ -25,6 +25,22 @@ log stream --predicate 'subsystem == "frb_user"' --level info
 
 ```
 
+## Figma Layer Interpretation
+
+When reading or implementing Figma designs, distinguish app UI from
+operating-system chrome and presentation-only background layers.
+
+- Ignore layers named `_MacOS Light Mode` and `_MacOS Dark Mode`. These are
+  operating-system screenshots/images placed behind the design for presentation
+  context only, and are not part of the app UI.
+- In a `Screen` frame, ignore any `Controls` layer that is a sibling of
+  `Window Contents`. This represents the native OS window title/status bar
+  controls, not app content.
+- If a Figma screen uses this structure, treat the meaningful app UI as starting
+  inside `Window Contents`, specifically from the `Trailing Pane` layer onward.
+- Do not recreate, style, test, or otherwise implement the ignored OS/background
+  layers unless the user explicitly asks to work on native window chrome.
+
 ## UI Copy Conventions
 
 - **Sentence case is the project default for all user-facing strings**: button

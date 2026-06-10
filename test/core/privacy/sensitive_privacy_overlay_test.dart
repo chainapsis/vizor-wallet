@@ -90,6 +90,38 @@ void main() {
     expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
   });
 
+  testWidgets('applies configured privacy shield border radius', (
+    tester,
+  ) async {
+    final controller = SensitivePrivacyOverlayController(initiallySafe: false);
+    addTearDown(controller.dispose);
+    final radius = BorderRadius.circular(20);
+
+    await tester.pumpWidget(
+      AppTheme(
+        data: AppThemeData.light,
+        child: Directionality(
+          textDirection: TextDirection.ltr,
+          child: SensitivePrivacyOverlay(
+            sensitiveContentVisible: true,
+            controller: controller,
+            borderRadius: radius,
+            child: const SizedBox(width: 320, height: 240),
+          ),
+        ),
+      ),
+    );
+
+    final clip = tester.widget<ClipRRect>(
+      find.descendant(
+        of: find.byKey(SensitivePrivacyOverlay.shieldKey),
+        matching: find.byType(ClipRRect),
+      ),
+    );
+
+    expect(clip.borderRadius, radius);
+  });
+
   testWidgets('environment controller honors native macOS exposure events', (
     tester,
   ) async {

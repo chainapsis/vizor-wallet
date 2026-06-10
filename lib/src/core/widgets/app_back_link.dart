@@ -29,9 +29,18 @@ class AppBackLink extends StatefulWidget {
 class _AppBackLinkState extends State<AppBackLink> {
   bool _hovered = false;
 
+  static const _labelStyle = TextStyle(
+    fontFamily: 'Geist',
+    fontWeight: FontWeight.w500,
+    fontSize: 14,
+    height: 16 / 14,
+    letterSpacing: -0.06,
+  );
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final contentColor = colors.button.ghost.label;
 
     return Semantics(
       button: true,
@@ -51,22 +60,30 @@ class _AppBackLinkState extends State<AppBackLink> {
                 constraints: BoxConstraints(minWidth: widget.minWidth),
                 child: SizedBox(
                   height: AppBackLink.height,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AppIcon(
-                        AppIcons.chevronBackward,
-                        size: 16,
-                        color: colors.icon.accent,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(AppRadii.full),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.s,
                       ),
-                      const SizedBox(width: AppSpacing.xxs),
-                      Text(
-                        widget.label,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.accent,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AppIcon(
+                            AppIcons.chevronBackward,
+                            size: 16,
+                            color: contentColor,
+                          ),
+                          const SizedBox(width: AppSpacing.xxs),
+                          Text(
+                            widget.label,
+                            style: _labelStyle.copyWith(color: contentColor),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
