@@ -8,10 +8,11 @@ fvm flutter run
 fvm flutter test
 fvm flutter analyze
 
-# iOS/Android runs MUST pass the mobile token define (desktop is the
-# default; a mismatched debug build fails fast at startup).
-# See lib/src/core/layout/app_form_factor.dart.
+# Mobile form factor: runs AND tests targeting the mobile UI must pass
+# the token define (desktop is the default). Details in the
+# "Design Token Form Factor" section below.
 fvm flutter run --dart-define=VIZOR_FORM_FACTOR=mobile
+fvm flutter test --dart-define=VIZOR_FORM_FACTOR=mobile
 
 # Rust tests (run from project root or rust/)
 cd rust && cargo test
@@ -29,6 +30,77 @@ flutter_rust_bridge_codegen generate
 log stream --predicate 'subsystem == "frb_user"' --level info
 
 ```
+
+## Design Token Form Factor (VIZOR_FORM_FACTOR)
+
+UI design tokens (typography, component sizing) are selected at **build
+time**, not runtime. The Figma `Sizing` and `Fonts` variable collections
+have Desktop and Mobile modes; both are compiled in as const sets, and
+`--dart-define=VIZOR_FORM_FACTOR=desktop|mobile` (default: `desktop`)
+decides which one the unsuffixed token classes (`AppTypography.*`,
+`AppInputSizing.*`, ...) resolve to. The unused set is tree-shaken from
+release builds. Source of truth:
+`lib/src/core/layout/app_form_factor.dart` (`kAppFormFactor`).
+
+### When the define is required
+
+- **Every mobile-targeted invocation** — `run`, `build`, `test`, and
+  `drive` alike. The test binary is compiled per-lane like any other
+  build, so widget tests that assert mobile-mode UI need
+  `fvm flutter test --dart-define=VIZOR_FORM_FACTOR=mobile` too.
+- Desktop (macOS) runs, widgetbook, and plain `fvm flutter test` need no
+  flag — the default is `desktop`.
+
+### What happens when you forget it
+
+- **Debug app run on a phone**: fails fast at startup (assert in
+  `lib/main.dart`) with the exact flag to pass.
+- **Tests**: there is NO guard. A mobile-UI test run without the define
+  silently resolves desktop values, so expectations fail with
+  wrong-looking sizes (button height 44 instead of 50, body font 14
+  instead of 16). Before debugging a "wrong metrics" test failure, check
+  the lane first.
+- **Release builds**: no guard either — release/CI lanes for iOS/Android
+  must hardcode the define or they ship desktop tokens.
+
+### One lane per invocation
+
+A single `flutter test` run compiles exactly one form factor; desktop
+and mobile expectations cannot mix in one run. Either split suites
+across two lanes, or write lane-agnostic assertions:
+
+- Compare against token constants, not literal numbers:
+  `expect(style, AppTypography.bodyMedium)` passes in both lanes;
+  `expect(style.fontSize, 14)` passes only in the desktop lane.
+- To pin one mode regardless of lane, reference the explicit sets:
+  `AppTypographyDesktop` / `AppTypographyMobile`,
+  `AppAssetSizeDesktop` / `AppAssetSizeMobile`,
+  `AppButtonSizingDesktop` / `AppButtonSizingMobile`,
+  `AppInputSizingDesktop` / `AppInputSizingMobile`.
+- To restrict a test to one lane:
+  `skip: kAppFormFactor != AppFormFactor.mobile`.
+- `test/core/theme/design_tokens_test.dart` follows these rules and
+  passes in both lanes — use it as the reference.
+
+### Rules for new code
+
+- App code uses only the unsuffixed selectors. Reference the
+  `*Desktop` / `*Mobile` sets directly only in tooling that must show
+  both modes inside one binary (widgetbook galleries, token tests).
+- New tokens with per-mode values follow the same pattern: a `*Desktop`
+  + `*Mobile` const namespace pair plus a const selector in the
+  unsuffixed class. The `Spacing`, `Radii`, `Units`, and `Window` groups
+  are identical across Figma modes and stay single-mode (`AppSpacing`,
+  `AppRadii`, `AppWindowSizing`).
+- Form-factor branching in app code uses `kAppFormFactor` (const, so the
+  dead branch is tree-shaken) — never `Platform.isIOS`-style checks.
+  Runtime `Platform` checks remain only for OS-specific *behavior*
+  (keychain, background sync), not for choosing UI metrics or layout
+  shells.
+- Widgetbook is exempt from the platform/define match check: previewing
+  mobile tokens on a desktop host is legitimate —
+  `fvm flutter run -t lib/widgetbook.dart --dart-define=VIZOR_FORM_FACTOR=mobile`.
+  Only `lib/main.dart` asserts the match.
 
 ## Figma Layer Interpretation
 
@@ -631,7 +703,9 @@ Important desktop design rule:
 ## Testing
 
 - Rust unit tests: `cd rust && cargo test` — 11 tests covering key derivation, address encoding / Orchard-only UA derivation, determinism, and PROPOSAL_STORE lifecycle (idempotent discard, consume-on-entry, replay rejection). Tests that need a DB use `tempfile::tempdir()`.
-- Dart unit tests: `fvm flutter test`
+- Dart unit tests: `fvm flutter test` (desktop token lane). Mobile-UI
+  tests need `fvm flutter test --dart-define=VIZOR_FORM_FACTOR=mobile` —
+  see "Design Token Form Factor" above.
 - Integration tests: `fvm flutter test integration_test/` (requires device/simulator)
 - Flutter regtest E2E notes:
   - Run app tests with `--dart-define=ZCASH_DEFAULT_NETWORK=regtest`; do not use the old `ZCASH_USE_E2E_STORAGE` path. Secure storage and wallet DB names are network-scoped.
