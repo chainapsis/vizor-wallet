@@ -102,34 +102,6 @@ Future<void> showDesktopWindow() async {
   await windowManager.focus();
 }
 
-/// Re-pin window_manager's per-mode constraints after another layer flips
-/// the NSWindow styleMask.
-///
-/// The current startup path sets `.fullSizeContentView` natively before Dart
-/// runs, so this helper is not needed during initial launch. It remains useful
-/// for any future path that mutates the styleMask after window_manager has
-/// already applied constraints.
-///
-/// `setMinimumSize` doesn't strictly need the re-issue (window_manager
-/// writes `mainWindow.minSize` directly with no styleMask branch), but
-/// it's grouped here as a cheap belt-and-suspenders that keeps the
-/// "constraints" set conceptually atomic.
-///
-/// Pure constraint refresh — does NOT touch the window's current size,
-/// so it is safe to call from any future styleMask-changing path
-/// without snapping a user-resized window back to a default.
-Future<void> reapplyDesktopWindowConstraints({
-  AppLayoutMode mode = AppLayoutMode.large,
-}) async {
-  if (!isDesktopLayoutPlatform) return;
-  if (Platform.isWindows) {
-    await _applyWindowsClientAreaLayout(mode, resize: false);
-  } else {
-    await windowManager.setMinimumSize(mode.minimumSize);
-    await windowManager.setAspectRatio(mode.aspectRatio);
-  }
-}
-
 @immutable
 class AppLayoutState {
   final AppLayoutMode mode;

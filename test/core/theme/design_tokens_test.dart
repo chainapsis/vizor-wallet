@@ -150,20 +150,16 @@ void main() {
     final light = AppThemeData.light.colors.macosUtility;
     final dark = AppThemeData.dark.colors.macosUtility;
 
-    expect(light.scrollBar, const Color(0x1F1A1A1A));
     expect(light.window, const Color(0xFFF7F7F7));
     expect(light.windowTransparent, const Color(0x00F5F5F5));
     expect(light.navPanel, const Color(0x4DFFFFFF));
-    expect(light.disabledStopLight, const Color(0x1A1A1A1A));
     expect(light.font, const Color(0xD91A1A1A));
     expect(light.thinBorder, const Color(0x8CFFFFFF));
     expect(light.innerBorder, const Color(0x3B1A1A1A));
 
-    expect(dark.scrollBar, const Color(0x1FFFFFFF));
     expect(dark.window, const Color(0xFF0F0F0F));
     expect(dark.windowTransparent, const Color(0x000F0F0F));
     expect(dark.navPanel, const Color(0x4D1A1A1A));
-    expect(dark.disabledStopLight, const Color(0x1AFFFFFF));
     expect(dark.font, const Color(0xCCFFFFFF));
     expect(dark.thinBorder, const Color(0x3B1A1A1A));
     expect(dark.innerBorder, const Color(0x3B1A1A1A));

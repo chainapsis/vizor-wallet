@@ -22,12 +22,6 @@ void main() {
         'assets/fonts/GeistMono-Medium.ttf',
       ],
       'Libre Caslon Text': ['assets/fonts/LibreCaslonText-Regular.ttf'],
-      'Manrope': [
-        'assets/fonts/Manrope-Regular.ttf',
-        'assets/fonts/Manrope-SemiBold.ttf',
-        'assets/fonts/Manrope-Bold.ttf',
-        'assets/fonts/Manrope-ExtraBold.ttf',
-      ],
       'Inter': [
         'assets/fonts/Inter-Regular.ttf',
         'assets/fonts/Inter-Medium.ttf',
