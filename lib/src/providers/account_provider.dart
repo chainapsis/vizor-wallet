@@ -214,64 +214,78 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }) async {
     try {
       final dbPath = await _getDbPath();
-      final network = await _getNetwork();
+      final endpoint = ref.read(rpcEndpointProvider);
+      final network = (state.value?.accounts ?? const <AccountInfo>[]).isEmpty
+          ? endpoint.networkName
+          : await _getNetwork();
       final accounts = state.value?.accounts ?? [];
       final accountName = name ?? 'Account ${accounts.length + 1}';
+      final isFirstWalletAccount = accounts.isEmpty;
+      final previousActiveAccountUuid = state.value?.activeAccountUuid;
+      final previousActiveAddress = state.value?.activeAddress;
 
-      String accountUuid;
-      String unifiedAddress;
-
-      if (accounts.isEmpty) {
-        // First account — import wallet (init DB + import)
+      if (isFirstWalletAccount) {
         await _deleteExistingDb(dbPath);
-        final result = await rust_wallet.importWallet(
-          mnemonic: mnemonic,
-          birthdayHeight: birthdayHeight != null
-              ? BigInt.from(birthdayHeight)
-              : null,
-          network: network,
-          dbPath: dbPath,
-          accountName: accountName,
-        );
-        accountUuid = result.accountUuid;
-        unifiedAddress = result.unifiedAddress;
-        await _storage.writeString(_networkKey, network);
-      } else {
-        // Additional account
-        final result = await rust_wallet.addAccount(
-          dbPath: dbPath,
-          network: network,
-          name: accountName,
-          mnemonic: mnemonic,
-          birthdayHeight: birthdayHeight != null
-              ? BigInt.from(birthdayHeight)
-              : null,
-        );
-        accountUuid = result.accountUuid;
-        unifiedAddress = result.unifiedAddress;
       }
 
-      await _storage.writeAccountMnemonic(accountUuid, mnemonic);
-
-      final newAccount = AccountInfo(
-        uuid: accountUuid,
-        name: accountName,
-        order: accounts.length,
-        isSeedAnchor: accounts.isEmpty,
+      final result = await rust_wallet.importSoftwareWalletWithAccountDiscovery(
+        mnemonic: mnemonic,
+        birthdayHeight: birthdayHeight != null
+            ? BigInt.from(birthdayHeight)
+            : null,
+        network: network,
+        dbPath: dbPath,
+        firstAccountName: accountName,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        isFirstWalletAccount: isFirstWalletAccount,
+        nextAccountNumber: accounts.length + 1,
       );
-      final updatedAccounts = [...accounts, newAccount];
+      if (result.accounts.isEmpty) {
+        throw StateError('Software wallet import did not return an account.');
+      }
+      if (isFirstWalletAccount) {
+        await _storage.writeString(_networkKey, network);
+      }
+
+      for (final account in result.accounts) {
+        await _storage.writeAccountMnemonic(account.accountUuid, mnemonic);
+      }
+
+      final importedAccounts = [
+        for (var i = 0; i < result.accounts.length; i++)
+          AccountInfo(
+            uuid: result.accounts[i].accountUuid,
+            name: result.accounts[i].name,
+            order: accounts.length + i,
+            isSeedAnchor: result.accounts[i].isSeedAnchor,
+          ),
+      ];
+      final updatedAccounts = [...accounts, ...importedAccounts];
       await _saveAccounts(updatedAccounts);
-      await _storage.writeString(_activeAccountKey, accountUuid);
+      final activeAccountUuid = result.didImportPrimaryAccount
+          ? result.accounts.first.accountUuid
+          : previousActiveAccountUuid;
+      final activeAddress = result.didImportPrimaryAccount
+          ? result.accounts.first.unifiedAddress
+          : previousActiveAddress;
+      if (activeAccountUuid == null) {
+        await _storage.delete(_activeAccountKey);
+      } else if (result.didImportPrimaryAccount) {
+        await _storage.writeString(_activeAccountKey, activeAccountUuid);
+      }
 
       state = AsyncData(
         AccountState(
           accounts: updatedAccounts,
-          activeAccountUuid: accountUuid,
-          activeAddress: unifiedAddress,
+          activeAccountUuid: activeAccountUuid,
+          activeAddress: activeAddress,
         ),
       );
 
-      log('importAccount: success, uuid=$accountUuid');
+      log(
+        'importAccount: success, active=$activeAccountUuid, '
+        'accounts=${result.accounts.map((a) => a.zip32AccountIndex).join(',')}',
+      );
     } catch (e, st) {
       log('importAccount: ERROR: $e\n$st');
       rethrow;

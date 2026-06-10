@@ -4,6 +4,7 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
+use ::transparent::keys::{IncomingViewingKey as _, NonHardenedChildIndex};
 use bip0039::{Count, English, Language, Mnemonic};
 use rusqlite::named_params;
 use secrecy::{ExposeSecret, SecretVec};
@@ -30,7 +31,8 @@ use crate::wallet::{
     network::WalletNetwork,
 };
 
-const DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE: &str = "This account is already in your wallet.";
+pub(crate) const DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE: &str =
+    "This account is already in your wallet.";
 const DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE: &str = "This Keystone account is already in your wallet.";
 const MIN_MNEMONIC_WORD_COUNT: usize = 12;
 const MAX_MNEMONIC_WORD_COUNT: usize = 24;
@@ -189,34 +191,78 @@ fn make_birthday(network: WalletNetwork, birthday_height: Option<u64>) -> Accoun
     }
 }
 
-/// Add an additional account (from a different seed) to the wallet database.
-/// Uses import_account_ufvk with AccountPurpose::Spending so that accounts from
-/// different seeds can coexist in the same DB (create_account enforces single-seed).
-/// The first account should be created via init_db_and_create_account (Derived).
-pub fn add_account(
+fn zip32_account_id(account_index: u32) -> Result<zip32::AccountId, String> {
+    zip32::AccountId::try_from(account_index)
+        .map_err(|_| format!("Invalid ZIP32 account index: {account_index}"))
+}
+
+fn unified_spending_key_for_account(
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    account_index: u32,
+) -> Result<UnifiedSpendingKey, String> {
+    let account_id = zip32_account_id(account_index)?;
+    UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), account_id)
+        .map_err(|e| format!("USK derivation failed for account {account_index}: {e:?}"))
+}
+
+fn software_account_ufvk(
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    account_index: u32,
+) -> Result<UnifiedFullViewingKey, String> {
+    Ok(
+        unified_spending_key_for_account(network, seed, account_index)?
+            .to_unified_full_viewing_key(),
+    )
+}
+
+/// Return the transparent receiver at `m/44'/coin_type'/account'/0/0`.
+pub fn software_account_first_external_transparent_address(
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    account_index: u32,
+) -> Result<String, String> {
+    let ufvk = software_account_ufvk(network, seed, account_index)?;
+    let transparent_key = ufvk
+        .transparent()
+        .ok_or("Software account does not have a transparent key")?;
+    let external_ivk = transparent_key
+        .derive_external_ivk()
+        .map_err(|e| format!("Failed to derive transparent external IVK: {e}"))?;
+    let taddr = external_ivk
+        .derive_address(NonHardenedChildIndex::ZERO)
+        .map_err(|e| format!("Failed to derive transparent address index 0: {e}"))?;
+
+    Ok(encode_transparent_address(
+        &network.b58_pubkey_address_prefix(),
+        &network.b58_script_address_prefix(),
+        &taddr,
+    ))
+}
+
+fn import_ufvk_account(
     db_path: &str,
     network: WalletNetwork,
     name: &str,
     seed: &SecretVec<u8>,
     birthday_height: Option<u64>,
+    account_index: u32,
 ) -> Result<(String, String), String> {
     let birthday = make_birthday(network, birthday_height);
-
-    // Derive USK and UFVK from seed
     let seed_fp = SeedFingerprint::from_seed(seed.expose_secret())
         .ok_or("Invalid seed length for fingerprint")?;
-    let account_index = zip32::AccountId::ZERO;
-    let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), account_index)
-        .map_err(|e| format!("USK derivation failed: {e:?}"))?;
-    let ufvk = usk.to_unified_full_viewing_key();
-
-    // Import as UFVK with Spending purpose + derivation info
-    let derivation = Zip32Derivation::new(seed_fp, account_index);
+    let account_id = zip32_account_id(account_index)?;
+    let ufvk = software_account_ufvk(network, seed, account_index)?;
+    let derivation = Zip32Derivation::new(seed_fp, account_id);
     let purpose = AccountPurpose::Spending {
         derivation: Some(derivation),
     };
+    let (ua, _di) = ufvk
+        .default_address(shielded_address_request())
+        .map_err(|e| format!("Failed to derive address: {e}"))?;
 
-    let account_id = with_wallet_db_write_lock("keys.add_account", || {
+    let account_id = with_wallet_db_write_lock("keys.import_ufvk_account", || {
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
         let account = db
             .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
@@ -229,12 +275,34 @@ pub fn add_account(
             })?;
         Ok::<_, String>(account.id())
     })?;
-    let (ua, _di) = ufvk
-        .default_address(shielded_address_request())
-        .map_err(|e| format!("Failed to derive address: {e}"))?;
 
-    let uuid_str = account_id.expose_uuid().to_string();
-    Ok((uuid_str, ua.encode(&network)))
+    Ok((account_id.expose_uuid().to_string(), ua.encode(&network)))
+}
+
+/// Add an additional account (from a different seed) to the wallet database.
+/// Uses import_account_ufvk with AccountPurpose::Spending so that accounts from
+/// different seeds can coexist in the same DB (create_account enforces single-seed).
+/// The first account should be created via init_db_and_create_account (Derived).
+pub fn add_account(
+    db_path: &str,
+    network: WalletNetwork,
+    name: &str,
+    seed: &SecretVec<u8>,
+    birthday_height: Option<u64>,
+) -> Result<(String, String), String> {
+    add_account_at_index(db_path, network, name, seed, birthday_height, 0)
+}
+
+/// Add a software account for a specific ZIP32 account index as an imported UFVK.
+pub fn add_account_at_index(
+    db_path: &str,
+    network: WalletNetwork,
+    name: &str,
+    seed: &SecretVec<u8>,
+    birthday_height: Option<u64>,
+    account_index: u32,
+) -> Result<(String, String), String> {
+    import_ufvk_account(db_path, network, name, seed, birthday_height, account_index)
 }
 
 /// Import a hardware wallet account using a UFVK string (no seed/mnemonic needed).
@@ -337,12 +405,93 @@ pub fn init_db_and_create_account(
     Ok((uuid_str, ua.encode(&network)))
 }
 
+/// Import a same-seed software account for a specific ZIP32 account index as a
+/// derived account. This is used only after the first seed-anchor account has
+/// initialized the wallet DB with the same seed.
+pub fn import_derived_account_at_index(
+    db_path: &str,
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    birthday_height: Option<u64>,
+    name: &str,
+    account_index: u32,
+) -> Result<(String, String), String> {
+    let birthday = make_birthday(network, birthday_height);
+    let account_id = zip32_account_id(account_index)?;
+    let ufvk = software_account_ufvk(network, seed, account_index)?;
+    let (ua, _di) = ufvk
+        .default_address(shielded_address_request())
+        .map_err(|e| format!("Failed to derive address: {e}"))?;
+
+    let account = with_wallet_db_write_lock("keys.import_derived_account_at_index", || {
+        let mut db = open_wallet_db_for_mutation(db_path, network)?;
+        db.import_account_hd(name, seed, account_id, &birthday, None)
+            .map(|(account, _usk)| account)
+            .map_err(|e| format!("Failed to import derived account: {e}"))
+    })?;
+
+    Ok((account.id().expose_uuid().to_string(), ua.encode(&network)))
+}
+
 pub struct AccountInfo {
     pub uuid: String,
     pub name: String,
     pub unified_address: String,
     pub is_seed_anchor: bool,
     pub is_hardware: bool,
+}
+
+pub struct SoftwareSeedAccountState {
+    pub account_indices: HashSet<u32>,
+    pub has_derived_account: bool,
+}
+
+impl SoftwareSeedAccountState {
+    pub fn is_empty(&self) -> bool {
+        self.account_indices.is_empty()
+    }
+
+    pub fn contains(&self, account_index: u32) -> bool {
+        self.account_indices.contains(&account_index)
+    }
+}
+
+pub fn existing_software_seed_account_state(
+    db_path: &str,
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+) -> Result<SoftwareSeedAccountState, String> {
+    let seed_fp = SeedFingerprint::from_seed(seed.expose_secret())
+        .ok_or("Invalid seed length for fingerprint")?;
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let account_ids = db
+        .get_account_ids()
+        .map_err(|e| format!("Failed to list accounts: {e}"))?;
+
+    let mut account_indices = HashSet::new();
+    let mut has_derived_account = false;
+    for id in account_ids {
+        let account = db
+            .get_account(id)
+            .map_err(|e| format!("Failed to get account: {e}"))?
+            .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
+        let Some(derivation) = account.source().key_derivation() else {
+            continue;
+        };
+        if derivation.seed_fingerprint() != &seed_fp {
+            continue;
+        }
+
+        account_indices.insert(u32::from(derivation.account_index()));
+        if matches!(account.source(), AccountSource::Derived { .. }) {
+            has_derived_account = true;
+        }
+    }
+
+    Ok(SoftwareSeedAccountState {
+        account_indices,
+        has_derived_account,
+    })
 }
 
 /// List all accounts in the wallet database.
@@ -760,6 +909,57 @@ mod tests {
         // Verify we can read the address back
         let address2 = get_address_from_db(db_path_str, WalletNetwork::Main, None).unwrap();
         assert_eq!(address, address2);
+    }
+
+    #[test]
+    fn test_software_first_external_transparent_address_uses_zip32_account_index() {
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+
+        let account_0 =
+            software_account_first_external_transparent_address(WalletNetwork::Main, &seed, 0)
+                .unwrap();
+        let account_1 =
+            software_account_first_external_transparent_address(WalletNetwork::Main, &seed, 1)
+                .unwrap();
+
+        assert!(account_0.starts_with("t1"));
+        assert!(account_1.starts_with("t1"));
+        assert_ne!(account_0, account_1);
+    }
+
+    #[test]
+    fn test_import_derived_account_at_index_records_zip32_index() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+
+        init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "first").unwrap();
+        let (uuid, _address) = import_derived_account_at_index(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "third",
+            2,
+        )
+        .unwrap();
+
+        let listed_account = list_accounts(db_path_str, WalletNetwork::Main)
+            .unwrap()
+            .into_iter()
+            .find(|account| account.uuid == uuid)
+            .unwrap();
+        assert!(listed_account.is_seed_anchor);
+
+        let account_id = parse_account_uuid(&uuid).unwrap();
+        let db = open_wallet_db_for_read(db_path_str, WalletNetwork::Main).unwrap();
+        let account = db.get_account(account_id).unwrap().unwrap();
+        let derivation = account.source().key_derivation().unwrap();
+        assert_eq!(u32::from(derivation.account_index()), 2);
     }
 
     #[test]
