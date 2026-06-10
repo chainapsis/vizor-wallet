@@ -329,14 +329,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                     top: 0,
                     right: 0,
                     height: 48,
-                    child: AppPaneToolbar(
-                      padding: EdgeInsets.only(
-                        left: AppSpacing.md,
-                        top: AppSpacing.xs,
-                        bottom: AppSpacing.xs,
-                      ),
-                      backLinkMinWidth: 60,
-                    ),
+                    child: AppPaneToolbar(backLinkMinWidth: 60),
                   ),
                   Positioned(
                     left: 0,

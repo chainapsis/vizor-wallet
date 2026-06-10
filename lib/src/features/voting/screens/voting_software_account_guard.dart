@@ -40,15 +40,34 @@ class _VotingGuardScaffold extends StatelessWidget {
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: AppRouteBackLink(),
+            const Padding(
+              // Design: back chevron sits 16px into the pane on every toolbar.
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.sm,
+                AppSpacing.md,
+                AppSpacing.md,
+                0,
+              ),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: AppRouteBackLink(),
+              ),
             ),
-            Expanded(child: child),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.md,
+                  0,
+                  AppSpacing.md,
+                  AppSpacing.md,
+                ),
+                child: child,
+              ),
+            ),
           ],
         ),
       ),

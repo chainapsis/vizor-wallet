@@ -273,69 +273,82 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
           child: Stack(
             children: [
               Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
+                padding: const EdgeInsets.only(top: AppSpacing.md),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: AppRouteBackLink(minWidth: 60),
+                    const Padding(
+                      padding: EdgeInsets.only(left: AppSpacing.sm),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: AppRouteBackLink(minWidth: 60),
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.s),
                     Expanded(
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final viewportHeight = constraints.maxHeight.isFinite
-                              ? constraints.maxHeight
-                              : null;
-                          final primary = _SwapComposerStack(
-                            viewportHeight: viewportHeight,
-                            state: swapState,
-                            onAmountChanged: swapNotifier.updateAmount,
-                            onAmountFiatChanged: swapNotifier.updateAmountFiat,
-                            onReceiveAmountChanged:
-                                swapNotifier.updateReceiveAmount,
-                            onReceiveAmountFiatChanged:
-                                swapNotifier.updateReceiveAmountFiat,
-                            onToggleFiatInputMode:
-                                swapNotifier.toggleFiatInputMode,
-                            onToggleDirection: swapNotifier.toggleDirection,
-                            onOpenExternalAssetPicker: _openAssetSelector,
-                            onOpenDestinationAddress: _openAddressEditor,
-                            assetSelectorOpen:
-                                _swapModal == _SwapModalSurface.assetSelector,
-                            onOpenSlippageSettings: _openSlippageSettings,
-                            slippageSettingsOpen:
-                                _swapModal ==
-                                _SwapModalSurface.slippageSettings,
-                            onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
-                            onReviewQuote: openReview,
-                            zecAvailableText: zecAvailableText,
-                            zecAvailableZatoshi: sync.spendableBalance,
-                          );
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.md,
+                          0,
+                          AppSpacing.md,
+                          AppSpacing.md,
+                        ),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final viewportHeight =
+                                constraints.maxHeight.isFinite
+                                ? constraints.maxHeight
+                                : null;
+                            final primary = _SwapComposerStack(
+                              viewportHeight: viewportHeight,
+                              state: swapState,
+                              onAmountChanged: swapNotifier.updateAmount,
+                              onAmountFiatChanged:
+                                  swapNotifier.updateAmountFiat,
+                              onReceiveAmountChanged:
+                                  swapNotifier.updateReceiveAmount,
+                              onReceiveAmountFiatChanged:
+                                  swapNotifier.updateReceiveAmountFiat,
+                              onToggleFiatInputMode:
+                                  swapNotifier.toggleFiatInputMode,
+                              onToggleDirection: swapNotifier.toggleDirection,
+                              onOpenExternalAssetPicker: _openAssetSelector,
+                              onOpenDestinationAddress: _openAddressEditor,
+                              assetSelectorOpen:
+                                  _swapModal == _SwapModalSurface.assetSelector,
+                              onOpenSlippageSettings: _openSlippageSettings,
+                              slippageSettingsOpen:
+                                  _swapModal ==
+                                  _SwapModalSurface.slippageSettings,
+                              onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
+                              onReviewQuote: openReview,
+                              zecAvailableText: zecAvailableText,
+                              zecAvailableZatoshi: sync.spendableBalance,
+                            );
 
-                          return Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              Positioned.fill(
-                                child: SingleChildScrollView(
-                                  controller: _scrollController,
-                                  child: _SwapViewportFrame(
-                                    minHeight: viewportHeight,
-                                    alignment: Alignment.center,
-                                    child: primary,
+                            return Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Positioned.fill(
+                                  child: SingleChildScrollView(
+                                    controller: _scrollController,
+                                    child: _SwapViewportFrame(
+                                      minHeight: viewportHeight,
+                                      alignment: Alignment.center,
+                                      child: primary,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              if ((viewportHeight ?? 0) >= 520)
-                                const Positioned(
-                                  left: 0,
-                                  bottom: 0.48,
-                                  child: SwapNearIntentsAttribution(),
-                                ),
-                            ],
-                          );
-                        },
+                                if ((viewportHeight ?? 0) >= 520)
+                                  const Positioned(
+                                    left: 0,
+                                    bottom: 0.48,
+                                    child: SwapNearIntentsAttribution(),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ],

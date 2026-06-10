@@ -101,11 +101,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const AppPaneToolbar(
-                  padding: EdgeInsets.only(
-                    left: AppSpacing.md,
-                    top: AppSpacing.xs,
-                    bottom: AppSpacing.xs,
-                  ),
+                  // Design: back chevron sits 16px into the pane on every
+                  // settings/utility screen. The 16px inset is the
+                  // AppPaneToolbar default, so no padding override is needed.
                   backLinkMinWidth: 60,
                 ),
                 Expanded(

@@ -40,7 +40,7 @@ void main() {
     expect(backLabelStyle?.color, AppThemeData.light.colors.text.accent);
     expect(
       tester.getTopLeft(backLabelFinder).dx,
-      moreOrLessEquals(316, epsilon: 0.1),
+      moreOrLessEquals(308, epsilon: 0.1),
     );
     expect(
       tester.getSize(

@@ -370,45 +370,37 @@ class _SettingsSeedPhraseScreenState
         sensitiveContentVisible:
             _stage == _SettingsSeedPhraseStage.reveal && _mnemonic != null,
         controller: widget.privacyOverlayController,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.md,
-            0,
-            AppSpacing.md,
-            AppSpacing.md,
-          ),
-          child: _SettingsSeedPhrasePane(
-            onBeforeNavigateBack: () => _clearSensitiveState(),
-            child: switch (_stage) {
-              _SettingsSeedPhraseStage.password => Center(
-                child: ConfirmAccessCard(
-                  subtitle: 'To view the secret passphrase.',
-                  controller: _passwordController,
-                  errorText: _passwordError ?? _passwordPolicyMessage,
-                  isSubmitting: _isSubmitting,
-                  canSubmit: _canSubmit,
-                  onChanged: _handlePasswordChanged,
-                  onSubmit: _submitPassword,
-                ),
+        child: _SettingsSeedPhrasePane(
+          onBeforeNavigateBack: () => _clearSensitiveState(),
+          child: switch (_stage) {
+            _SettingsSeedPhraseStage.password => Center(
+              child: ConfirmAccessCard(
+                subtitle: 'To view the secret passphrase.',
+                controller: _passwordController,
+                errorText: _passwordError ?? _passwordPolicyMessage,
+                isSubmitting: _isSubmitting,
+                canSubmit: _canSubmit,
+                onChanged: _handlePasswordChanged,
+                onSubmit: _submitPassword,
               ),
-              _SettingsSeedPhraseStage.reveal => _SeedPhraseRevealView(
-                mnemonic: _mnemonic,
-                birthdayHeight: _birthdayHeight,
-                birthdayBlockTime: _birthdayBlockTime,
-                birthdayHeightLoading: _isBirthdayHeightLoading,
-                birthdayDateLoading: _isBirthdayDateLoading,
-                errorText: _revealError,
-                phraseCopied: _copiedTarget == _SeedPhraseCopyTarget.phrase,
-                birthdayDateCopied:
-                    _copiedTarget == _SeedPhraseCopyTarget.birthdayDate,
-                birthdayHeightCopied:
-                    _copiedTarget == _SeedPhraseCopyTarget.birthdayHeight,
-                onCopyPressed: _copyMnemonic,
-                onCopyBirthdayDatePressed: _copyBirthdayDate,
-                onCopyBirthdayHeightPressed: _copyBirthdayHeight,
-              ),
-            },
-          ),
+            ),
+            _SettingsSeedPhraseStage.reveal => _SeedPhraseRevealView(
+              mnemonic: _mnemonic,
+              birthdayHeight: _birthdayHeight,
+              birthdayBlockTime: _birthdayBlockTime,
+              birthdayHeightLoading: _isBirthdayHeightLoading,
+              birthdayDateLoading: _isBirthdayDateLoading,
+              errorText: _revealError,
+              phraseCopied: _copiedTarget == _SeedPhraseCopyTarget.phrase,
+              birthdayDateCopied:
+                  _copiedTarget == _SeedPhraseCopyTarget.birthdayDate,
+              birthdayHeightCopied:
+                  _copiedTarget == _SeedPhraseCopyTarget.birthdayHeight,
+              onCopyPressed: _copyMnemonic,
+              onCopyBirthdayDatePressed: _copyBirthdayDate,
+              onCopyBirthdayHeightPressed: _copyBirthdayHeight,
+            ),
+          },
         ),
       ),
     );
@@ -431,11 +423,20 @@ class _SettingsSeedPhrasePane extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           AppPaneToolbar(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
             backLinkMinWidth: 60,
             onBeforeNavigate: onBeforeNavigateBack,
           ),
-          Expanded(child: child),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                0,
+                AppSpacing.md,
+                AppSpacing.md,
+              ),
+              child: child,
+            ),
+          ),
         ],
       ),
     );

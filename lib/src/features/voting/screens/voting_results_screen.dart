@@ -76,7 +76,7 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
           children: [
             const Padding(
               padding: EdgeInsets.fromLTRB(
-                AppSpacing.md,
+                AppSpacing.sm,
                 AppSpacing.md,
                 AppSpacing.md,
                 0,

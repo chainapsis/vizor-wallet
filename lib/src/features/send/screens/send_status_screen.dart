@@ -470,7 +470,12 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.sm,
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.md,
+        ),
         child: Column(
           children: [
             const Align(
@@ -587,7 +592,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                     Positioned.fill(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.md,
+                          AppSpacing.sm,
                           AppSpacing.md,
                           0,
                           AppSpacing.md,
@@ -600,7 +605,10 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                             ),
                             Expanded(
                               child: Padding(
-                                padding: const EdgeInsets.only(right: 255),
+                                padding: const EdgeInsets.only(
+                                  left: AppSpacing.xs,
+                                  right: 255,
+                                ),
                                 child: Align(
                                   alignment: Alignment.centerLeft,
                                   child: TransactionReceiptView(

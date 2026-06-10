@@ -428,7 +428,12 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           fit: StackFit.expand,
           children: [
             Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sm,
+                AppSpacing.md,
+                AppSpacing.md,
+                AppSpacing.md,
+              ),
               child: Column(
                 children: [
                   Align(

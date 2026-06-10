@@ -314,41 +314,42 @@ class _SwapActivityDetailPaneContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final returnTarget = this.returnTarget;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.md,
-        AppSpacing.md,
-        0,
-      ),
+      padding: const EdgeInsets.only(top: AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (returnTarget != null) ...[
-            Align(
-              alignment: Alignment.centerLeft,
-              child: AppBackLink(
-                label: returnTarget.label,
-                minWidth: 60,
-                onTap: () => context.go(returnTarget.path),
+            Padding(
+              padding: const EdgeInsets.only(left: AppSpacing.sm),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: AppBackLink(
+                  label: returnTarget.label,
+                  minWidth: 60,
+                  onTap: () => context.go(returnTarget.path),
+                ),
               ),
             ),
             const SizedBox(height: AppSpacing.s),
           ],
           Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return Stack(
-                  children: [
-                    Positioned.fill(child: child),
-                    if (constraints.maxHeight >= 520)
-                      const Positioned(
-                        left: 0,
-                        bottom: AppSpacing.md,
-                        child: SwapNearIntentsAttribution(),
-                      ),
-                  ],
-                );
-              },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return Stack(
+                    children: [
+                      Positioned.fill(child: child),
+                      if (constraints.maxHeight >= 520)
+                        const Positioned(
+                          left: 0,
+                          bottom: AppSpacing.md,
+                          child: SwapNearIntentsAttribution(),
+                        ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ],

@@ -222,41 +222,32 @@ class _SettingsChangePasswordScreenState
     return AppDesktopBackdropShell(
       background: const SettingsPaneBackdrop(art: SettingsBackdropArt.castle),
       sidebar: const AppMainSidebar(),
-      pane: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md,
-          0,
-          AppSpacing.md,
-          AppSpacing.md,
-        ),
-        child: _SettingsChangePasswordPane(
-          onBeforeNavigateBack: _clearSensitiveState,
-          child: switch (_stage) {
-            _ChangePasswordStage.currentPassword => Center(
-              child: ConfirmAccessCard(
-                subtitle: 'Enter your current password first.',
-                controller: _currentPasswordController,
-                errorText:
-                    _currentPasswordError ?? _currentPasswordPolicyMessage,
-                isSubmitting: _isSubmitting,
-                canSubmit: _canContinue,
-                onChanged: _handleCurrentPasswordChanged,
-                onSubmit: _submitCurrentPassword,
-              ),
-            ),
-            _ChangePasswordStage.newPassword => _NewPasswordView(
-              passwordController: _passwordController,
-              confirmController: _confirmController,
+      pane: _SettingsChangePasswordPane(
+        onBeforeNavigateBack: _clearSensitiveState,
+        child: switch (_stage) {
+          _ChangePasswordStage.currentPassword => Center(
+            child: ConfirmAccessCard(
+              subtitle: 'Enter your current password first.',
+              controller: _currentPasswordController,
+              errorText: _currentPasswordError ?? _currentPasswordPolicyMessage,
               isSubmitting: _isSubmitting,
-              canSubmit: _canUpdate,
-              passwordMessage: _passwordMessage,
-              confirmMessage: _confirmMessage,
-              submitError: _submitError,
-              onChanged: _handleNewPasswordChanged,
-              onSubmit: _submitNewPassword,
+              canSubmit: _canContinue,
+              onChanged: _handleCurrentPasswordChanged,
+              onSubmit: _submitCurrentPassword,
             ),
-          },
-        ),
+          ),
+          _ChangePasswordStage.newPassword => _NewPasswordView(
+            passwordController: _passwordController,
+            confirmController: _confirmController,
+            isSubmitting: _isSubmitting,
+            canSubmit: _canUpdate,
+            passwordMessage: _passwordMessage,
+            confirmMessage: _confirmMessage,
+            submitError: _submitError,
+            onChanged: _handleNewPasswordChanged,
+            onSubmit: _submitNewPassword,
+          ),
+        },
       ),
     );
   }
@@ -278,11 +269,20 @@ class _SettingsChangePasswordPane extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           AppPaneToolbar(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
             backLinkMinWidth: 60,
             onBeforeNavigate: onBeforeNavigateBack,
           ),
-          Expanded(child: child),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                0,
+                AppSpacing.md,
+                AppSpacing.md,
+              ),
+              child: child,
+            ),
+          ),
         ],
       ),
     );

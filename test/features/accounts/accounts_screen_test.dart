@@ -64,7 +64,7 @@ void main() {
     expect(
       tester.getTopLeft(backLabelFinder).dx,
       moreOrLessEquals(
-        paneTopLeft.dx + AppSpacing.md + 16 + AppSpacing.xxs,
+        paneTopLeft.dx + AppSpacing.sm + 16 + AppSpacing.xxs,
         epsilon: 0.1,
       ),
     );

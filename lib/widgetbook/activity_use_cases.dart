@@ -36,7 +36,7 @@ Widget buildActivityPageUseCase(BuildContext context) {
                     onTap: _noop,
                   ),
                   padding: EdgeInsets.only(
-                    left: AppSpacing.md,
+                    left: AppSpacing.sm,
                     top: AppSpacing.xs,
                     bottom: AppSpacing.xs,
                   ),

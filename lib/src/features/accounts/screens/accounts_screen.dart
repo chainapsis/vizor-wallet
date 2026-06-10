@@ -228,7 +228,13 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const _AccountsPaneToolbar(),
+                const AppPaneToolbar(
+                  key: ValueKey('accounts_pane_toolbar'),
+                  leading: AppRouteBackLink(
+                    key: ValueKey('accounts_pane_back_button'),
+                    minWidth: 60,
+                  ),
+                ),
                 Expanded(
                   child: AppPaneScrollableFill(
                     child: _AccountsPane(
@@ -432,34 +438,6 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       if (account.uuid == uuid) return account;
     }
     return null;
-  }
-}
-
-class _AccountsPaneToolbar extends StatelessWidget {
-  const _AccountsPaneToolbar();
-
-  static const _height = 48.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      key: ValueKey('accounts_pane_toolbar'),
-      height: _height,
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: AppSpacing.md,
-          top: AppSpacing.xs,
-          bottom: AppSpacing.xs,
-        ),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: AppRouteBackLink(
-            key: ValueKey('accounts_pane_back_button'),
-            minWidth: 60,
-          ),
-        ),
-      ),
-    );
   }
 }
 

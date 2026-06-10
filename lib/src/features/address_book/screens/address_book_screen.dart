@@ -245,12 +245,23 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
         child: Stack(
           children: [
             Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
+              // Top-only here: _AddressBookPane carries the horizontal and
+              // bottom insets itself so the back link can sit at 16 (sm)
+              // while the table keeps md.
+              padding: const EdgeInsets.only(top: AppSpacing.md),
               child: contactsAsync.when(
                 loading: () => buildPane(
                   contactsAsync.asData?.value ?? const AddressBookState(),
                 ),
-                error: (_, _) => const _AddressBookError(),
+                error: (_, _) => const Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    0,
+                    AppSpacing.md,
+                    AppSpacing.md,
+                  ),
+                  child: _AddressBookError(),
+                ),
                 data: buildPane,
               ),
             ),
@@ -388,14 +399,22 @@ class _AddressBookPane extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: AppRouteBackLink(minWidth: 60),
+          const Padding(
+            padding: EdgeInsets.only(left: AppSpacing.sm, right: AppSpacing.md),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: AppRouteBackLink(minWidth: 60),
+            ),
           ),
           const SizedBox(height: AppSpacing.s),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                AppSpacing.s,
+                AppSpacing.md,
+                AppSpacing.md + AppSpacing.s,
+              ),
               child: Column(
                 children: [
                   Text(

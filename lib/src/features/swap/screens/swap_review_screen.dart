@@ -141,97 +141,98 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     );
     final startBlockedReason =
         _reviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
-            ? "You don't have enough ZEC for this swap. Try a smaller amount."
-            : null;
+        ? "You don't have enough ZEC for this swap. Try a smaller amount."
+        : null;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.md,
-          0,
-        ),
+        padding: const EdgeInsets.only(top: AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: AppBackLink(
-                label: 'Swap',
-                minWidth: 60,
-                onTap: _returnToSwap,
+            Padding(
+              padding: const EdgeInsets.only(left: AppSpacing.sm),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: AppBackLink(
+                  label: 'Swap',
+                  minWidth: 60,
+                  onTap: _returnToSwap,
+                ),
               ),
             ),
             const SizedBox(height: AppSpacing.s),
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return Stack(
-                    children: [
-                      Positioned.fill(
-                        child: SwapReviewPageScrollArea(
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              minHeight: constraints.maxHeight,
-                            ),
-                            child: Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SwapReviewPageContent(
-                                    quote: quote,
-                                    addressPlan: addressPlan,
-                                    addressBookContacts: addressBookContacts,
-                                    accountLabel: accountLabel,
-                                    accountProfilePictureId:
-                                        accountProfilePictureId,
-                                    expired: swapState.quoteExpired,
-                                    amountWarning:
-                                        swapState.reviewAmountDifferenceWarning,
-                                    startError: swapState.statusError,
-                                    startBlockedReason: startBlockedReason,
-                                    payFiatTextOverride:
-                                        _reviewFiatTextForAsset(
-                                          swapState,
-                                          quote: quote,
-                                          asset: quote.sellAsset,
-                                          amount: quote.sellAmount,
-                                        ),
-                                    receiveFiatTextOverride:
-                                        _reviewFiatTextForAsset(
-                                          swapState,
-                                          quote: quote,
-                                          asset: quote.receiveAsset,
-                                          amount: quote.receiveAmount,
-                                        ),
-                                  ),
-                                  const SizedBox(height: AppSpacing.sm),
-                                  SwapReviewPageActions(
-                                    expired: swapState.quoteExpired,
-                                    starting: swapState.startSubmitting,
-                                    startBlockedReason: startBlockedReason,
-                                    sendsZec: quote.direction.sendsZec,
-                                    onReviewAgain: _reviewAgain,
-                                    onCancelReview: _returnToSwap,
-                                    onStartIntent: _startIntent,
-                                  ),
-                                ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return Stack(
+                      children: [
+                        Positioned.fill(
+                          child: SwapReviewPageScrollArea(
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                minHeight: constraints.maxHeight,
+                              ),
+                              child: Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SwapReviewPageContent(
+                                      quote: quote,
+                                      addressPlan: addressPlan,
+                                      addressBookContacts: addressBookContacts,
+                                      accountLabel: accountLabel,
+                                      accountProfilePictureId:
+                                          accountProfilePictureId,
+                                      expired: swapState.quoteExpired,
+                                      amountWarning: swapState
+                                          .reviewAmountDifferenceWarning,
+                                      startError: swapState.statusError,
+                                      startBlockedReason: startBlockedReason,
+                                      payFiatTextOverride:
+                                          _reviewFiatTextForAsset(
+                                            swapState,
+                                            quote: quote,
+                                            asset: quote.sellAsset,
+                                            amount: quote.sellAmount,
+                                          ),
+                                      receiveFiatTextOverride:
+                                          _reviewFiatTextForAsset(
+                                            swapState,
+                                            quote: quote,
+                                            asset: quote.receiveAsset,
+                                            amount: quote.receiveAmount,
+                                          ),
+                                    ),
+                                    const SizedBox(height: AppSpacing.sm),
+                                    SwapReviewPageActions(
+                                      expired: swapState.quoteExpired,
+                                      starting: swapState.startSubmitting,
+                                      startBlockedReason: startBlockedReason,
+                                      sendsZec: quote.direction.sendsZec,
+                                      onReviewAgain: _reviewAgain,
+                                      onCancelReview: _returnToSwap,
+                                      onStartIntent: _startIntent,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                      if (constraints.maxHeight >= 520)
-                        const Positioned(
-                          left: 0,
-                          bottom: AppSpacing.md,
-                          child: SwapNearIntentsAttribution(),
-                        ),
-                    ],
-                  );
-                },
+                        if (constraints.maxHeight >= 520)
+                          const Positioned(
+                            left: 0,
+                            bottom: AppSpacing.md,
+                            child: SwapNearIntentsAttribution(),
+                          ),
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
           ],

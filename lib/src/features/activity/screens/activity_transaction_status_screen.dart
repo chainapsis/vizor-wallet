@@ -502,54 +502,58 @@ class _ActivityTransactionStatusScreenState
               ),
             ),
             Positioned.fill(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.md,
-                  AppSpacing.md,
-                  0,
-                  AppSpacing.md,
-                ),
-                child: Column(
-                  children: [
-                    const Align(
+              child: Column(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(
+                      left: AppSpacing.sm,
+                      top: AppSpacing.xs,
+                      bottom: AppSpacing.xs,
+                    ),
+                    child: Align(
                       alignment: Alignment.centerLeft,
                       child: AppRouteBackLink(),
                     ),
-                    const SizedBox(height: AppSpacing.s),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 255),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: TransactionReceiptView(
-                            phase: _phaseFor(tx),
-                            amountText: _amountText(
-                              tx,
-                              privacyModeEnabled: privacyModeEnabled,
-                            ),
-                            primaryBlock: _primaryBlockFor(
-                              context,
-                              tx,
-                              detail,
-                              addressBookContacts,
-                            ),
-                            extraBlocks: _extraBlocksFor(detail),
-                            dateText: _dateText(tx),
-                            feeText: _feeText(
-                              tx,
-                              privacyModeEnabled: privacyModeEnabled,
-                            ),
-                            error: error,
-                            useFailedReceiptLayout: useFailedReceiptLayout,
-                            showPrimaryCopyAction: true,
-                            pinActionsToBottom: true,
-                            onTransactionHashPressed: _openTransactionExplorer,
+                  ),
+                  const SizedBox(height: AppSpacing.s),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.md,
+                        0,
+                        255,
+                        AppSpacing.md,
+                      ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: TransactionReceiptView(
+                          phase: _phaseFor(tx),
+                          amountText: _amountText(
+                            tx,
+                            privacyModeEnabled: privacyModeEnabled,
                           ),
+                          primaryBlock: _primaryBlockFor(
+                            context,
+                            tx,
+                            detail,
+                            addressBookContacts,
+                          ),
+                          extraBlocks: _extraBlocksFor(detail),
+                          dateText: _dateText(tx),
+                          feeText: _feeText(
+                            tx,
+                            privacyModeEnabled: privacyModeEnabled,
+                          ),
+                          error: error,
+                          useFailedReceiptLayout: useFailedReceiptLayout,
+                          showPrimaryCopyAction: true,
+                          pinActionsToBottom: true,
+                          onTransactionHashPressed: _openTransactionExplorer,
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ],

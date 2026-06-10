@@ -9,7 +9,6 @@ import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
@@ -301,7 +300,7 @@ class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _EndpointPaneToolbar(),
+        const AppPaneToolbar(backLinkMinWidth: 60),
         Expanded(
           child: Stack(
             fit: StackFit.expand,
@@ -414,30 +413,6 @@ class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _EndpointPaneToolbar extends StatelessWidget {
-  const _EndpointPaneToolbar();
-
-  static const _height = 48.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      height: _height,
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: AppSpacing.md,
-          top: AppSpacing.xs,
-          bottom: AppSpacing.xs,
-        ),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: AppRouteBackLink(minWidth: 60),
-        ),
-      ),
     );
   }
 }

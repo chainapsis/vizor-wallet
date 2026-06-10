@@ -270,8 +270,9 @@ class _VotingTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
+      // Design: back chevron sits 16px into the pane on every top toolbar.
       padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
+        AppSpacing.sm,
         AppSpacing.md,
         AppSpacing.md,
         0,

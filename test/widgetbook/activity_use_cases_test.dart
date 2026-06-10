@@ -43,7 +43,7 @@ void main() {
       final backTopLeft = tester.getTopLeft(
         find.byKey(const ValueKey('activity_page_back_button')),
       );
-      expect(backTopLeft.dx, paneTopLeft.dx + AppSpacing.md);
+      expect(backTopLeft.dx, paneTopLeft.dx + AppSpacing.sm);
       expect(backTopLeft.dy, paneTopLeft.dy + AppSpacing.xs);
 
       expect(find.text('This week'), findsOneWidget);
