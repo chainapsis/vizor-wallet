@@ -22,11 +22,15 @@ class ReceiveTabs extends StatelessWidget {
   const ReceiveTabs({
     required this.selectedType,
     required this.onChanged,
+    this.width = 256,
     super.key,
   });
 
   final ReceiveAddressType selectedType;
   final ValueChanged<ReceiveAddressType> onChanged;
+
+  /// 256 matches the desktop pane; mobile stretches wider.
+  final double width;
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +45,7 @@ class ReceiveTabs extends StatelessWidget {
 
     return Container(
       key: const ValueKey('receive_address_type_tabs'),
-      width: 256,
+      width: width,
       height: 36,
       decoration: ShapeDecoration(
         color: colors.background.raised,
@@ -60,7 +64,7 @@ class ReceiveTabs extends StatelessWidget {
               padding: const EdgeInsets.all(2),
               child: Container(
                 key: const ValueKey('receive_address_type_tabs_indicator'),
-                width: 124,
+                width: (width - 8) / 2,
                 decoration: ShapeDecoration(
                   color: activeBg,
                   shape: const StadiumBorder(),
