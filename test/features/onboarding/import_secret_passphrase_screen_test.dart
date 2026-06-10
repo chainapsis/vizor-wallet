@@ -1,18 +1,23 @@
 import 'package:flutter/material.dart'
-    show MaterialApp, Scaffold, Scrollbar, TextField;
+    show Color, Colors, MaterialApp, Scaffold, Scrollbar, TextField;
+import 'package:flutter/painting.dart' show Border, BoxDecoration, FontWeight;
+import 'package:flutter/rendering.dart' show RenderBox;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart'
     show
         BackdropFilter,
         Column,
+        DecoratedBox,
         Expanded,
         Focus,
         FocusNode,
+        Offset,
         Scrollable,
         ScrollableState,
         SingleChildScrollView,
         Size,
         SizedBox,
+        Text,
         ValueKey,
         Widget;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -123,6 +128,68 @@ void main() {
       );
     },
   );
+
+  testWidgets('matches mnemonic word field visual states', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+
+    final colors = AppThemeData.light.colors;
+
+    final emptyDecoration = _fieldShellDecoration(tester, 1);
+    expect(_fieldBorder(emptyDecoration).top.color, Colors.transparent);
+    expect(_fieldBorder(emptyDecoration).top.width, 1.5);
+    expect(emptyDecoration.color, colors.surface.input);
+    expect(emptyDecoration.boxShadow, isNotEmpty);
+    expect(_fieldNumberColor(tester, '02'), colors.text.secondary);
+    expect(
+      _textField(tester, 1).decoration?.hintStyle?.fontWeight,
+      FontWeight.w400,
+    );
+
+    await tester.enterText(_wordField(0), 'zzz');
+    await tester.pump();
+
+    final focusedInvalidPrefixDecoration = _fieldShellDecoration(tester, 0);
+    expect(
+      _fieldBorder(focusedInvalidPrefixDecoration).top.color,
+      colors.background.inverse,
+    );
+    expect(focusedInvalidPrefixDecoration.color, colors.surface.input);
+    expect(focusedInvalidPrefixDecoration.boxShadow, isNotEmpty);
+    expect(_fieldNumberColor(tester, '01'), colors.text.accent);
+
+    _textField(tester, 1).focusNode!.requestFocus();
+    await tester.pump();
+
+    final invalidUnfocusedDecoration = _fieldShellDecoration(tester, 0);
+    expect(
+      _fieldBorder(invalidUnfocusedDecoration).top.color,
+      colors.border.utilityDestructiveSubtle,
+    );
+    expect(
+      invalidUnfocusedDecoration.color,
+      Color.alphaBlend(
+        colors.background.utilityDestructiveAlphaSubtle,
+        colors.surface.input,
+      ),
+    );
+    expect(invalidUnfocusedDecoration.boxShadow, isEmpty);
+    expect(_fieldNumberColor(tester, '01'), colors.text.destructive);
+
+    await tester.enterText(_wordField(2), 'abandon');
+    _textField(tester, 3).focusNode!.requestFocus();
+    await tester.pump();
+
+    final validUnfocusedDecoration = _fieldShellDecoration(tester, 2);
+    expect(
+      _fieldBorder(validUnfocusedDecoration).top.color,
+      Colors.transparent,
+    );
+    expect(validUnfocusedDecoration.color, colors.surface.input);
+    expect(validUnfocusedDecoration.boxShadow, isNotEmpty);
+    expect(_fieldNumberColor(tester, '03'), colors.text.accent);
+    expect(_textField(tester, 2).style?.fontWeight, FontWeight.w400);
+  });
 
   testWidgets('keeps autocomplete overlay stable while resizing the body', (
     tester,
@@ -562,6 +629,44 @@ const _submitButtonKey = ValueKey('import_secret_submit_button');
 
 AppButton _submitButton(WidgetTester tester) {
   return tester.widget<AppButton>(find.byKey(_submitButtonKey));
+}
+
+BoxDecoration _fieldShellDecoration(WidgetTester tester, int index) {
+  final fieldCenter = tester.getCenter(_wordField(index));
+  final candidates = <BoxDecoration>[];
+
+  for (final element in find.byType(DecoratedBox).evaluate()) {
+    final widget = element.widget as DecoratedBox;
+    final decoration = widget.decoration;
+    final renderObject = element.renderObject;
+    if (decoration is! BoxDecoration ||
+        decoration.border is! Border ||
+        renderObject is! RenderBox ||
+        !renderObject.attached) {
+      continue;
+    }
+
+    final size = renderObject.size;
+    if ((size.width - 120).abs() > 0.1 || (size.height - 36).abs() > 0.1) {
+      continue;
+    }
+
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    if (!(topLeft & size).contains(fieldCenter)) continue;
+    candidates.add(decoration);
+  }
+
+  expect(candidates, hasLength(1));
+  return candidates.single;
+}
+
+Border _fieldBorder(BoxDecoration decoration) {
+  return decoration.border! as Border;
+}
+
+Color? _fieldNumberColor(WidgetTester tester, String label) {
+  expect(find.text(label), findsOneWidget);
+  return tester.widget<Text>(find.text(label)).style?.color;
 }
 
 Future<void> _enterWords(WidgetTester tester, int count) async {

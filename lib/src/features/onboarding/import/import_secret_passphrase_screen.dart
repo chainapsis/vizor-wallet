@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart'
     show
+        Color,
+        Colors,
         InputDecoration,
         Scrollbar,
         ScrollbarTheme,
@@ -414,9 +416,6 @@ class _ImportSecretPassphraseScreenState
                             autocompleteEnabled: () => _autocompleteEnabled,
                             onAutocompleteReactivationRequested: (index) =>
                                 _reactivateAutocomplete(_controllers[index]),
-                            isDestructive: (index) =>
-                                _showValidationError &&
-                                _controllers[index].text.trim().isNotEmpty,
                             onMoveNext: _moveToNextWord,
                             onMovePrevious: _moveToPreviousWord,
                             onSuggestionSelected: _handleSuggestionSelected,
@@ -533,7 +532,6 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
     required this.wordList,
     required this.autocompleteEnabled,
     required this.onAutocompleteReactivationRequested,
-    required this.isDestructive,
     required this.onMoveNext,
     required this.onMovePrevious,
     required this.onSuggestionSelected,
@@ -546,7 +544,6 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
   final List<String> wordList;
   final bool Function() autocompleteEnabled;
   final ValueChanged<int> onAutocompleteReactivationRequested;
-  final bool Function(int index) isDestructive;
   final bool Function(int index) onMoveNext;
   final bool Function(int index) onMovePrevious;
   final void Function(int index, String word) onSuggestionSelected;
@@ -555,6 +552,8 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final wordSet = wordList.toSet();
+
     return SizedBox(
       width: _ImportSecretPassphraseScreenState._gridWidth,
       child: Wrap(
@@ -568,10 +567,10 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
             controller: controllers[index],
             focusNode: focusNodes[index],
             wordList: wordList,
+            wordSet: wordSet,
             autocompleteEnabled: autocompleteEnabled,
             onAutocompleteReactivationRequested: () =>
                 onAutocompleteReactivationRequested(index),
-            destructive: isDestructive(index),
             autofocus: index == 0,
             onMoveNext: () => onMoveNext(index),
             onMovePrevious: () => onMovePrevious(index),
@@ -591,6 +590,7 @@ class _MnemonicWordCell extends StatefulWidget {
     required this.controller,
     required this.focusNode,
     required this.wordList,
+    required this.wordSet,
     required this.onChanged,
     required this.onSubmitted,
     required this.onMoveNext,
@@ -598,7 +598,6 @@ class _MnemonicWordCell extends StatefulWidget {
     required this.onSuggestionSelected,
     required this.autocompleteEnabled,
     required this.onAutocompleteReactivationRequested,
-    this.destructive = false,
     this.autofocus = false,
   });
 
@@ -606,6 +605,7 @@ class _MnemonicWordCell extends StatefulWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final List<String> wordList;
+  final Set<String> wordSet;
   final ValueChanged<String> onChanged;
   final VoidCallback onSubmitted;
   final bool Function() onMoveNext;
@@ -613,7 +613,6 @@ class _MnemonicWordCell extends StatefulWidget {
   final ValueChanged<String> onSuggestionSelected;
   final bool Function() autocompleteEnabled;
   final VoidCallback onAutocompleteReactivationRequested;
-  final bool destructive;
   final bool autofocus;
 
   @override
@@ -831,27 +830,40 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
   ) {
     final colors = context.colors;
     final isFocused = focusNode.hasFocus;
-    final hasText = controller.text.trim().isNotEmpty;
+    final enteredWord = controller.text.trim().toLowerCase();
+    final hasText = enteredWord.isNotEmpty;
+    final isKnownMnemonicWord = hasText && widget.wordSet.contains(enteredWord);
+    final isInvalidUnfocused = hasText && !isFocused && !isKnownMnemonicWord;
     final fieldRadius = BorderRadius.circular(AppRadii.small);
     final valueStyle = AppTypography.labelLarge.copyWith(
+      fontWeight: FontWeight.w400,
       color: colors.text.accent,
     );
-    final borderColor = widget.destructive
-        ? colors.border.utilityDestructive
+    final hintStyle = AppTypography.labelLarge.copyWith(
+      fontWeight: FontWeight.w400,
+      color: colors.text.muted,
+    );
+    final shellColor = isInvalidUnfocused
+        ? Color.alphaBlend(
+            colors.background.utilityDestructiveAlphaSubtle,
+            colors.surface.input,
+          )
+        : colors.surface.input;
+    final borderColor = isInvalidUnfocused
+        ? colors.border.utilityDestructiveSubtle
         : isFocused
-        ? colors.border.strong
-        : hasText
-        ? colors.border.brandCrimsonStrong
+        ? colors.background.inverse
         : _hovered
-        ? colors.border.regular
-        : colors.border.subtle.withValues(alpha: 0);
+        ? colors.border.subtleOpacity
+        : Colors.transparent;
+    final boxShadow = isInvalidUnfocused
+        ? const <BoxShadow>[]
+        : _mnemonicFieldSurfaceShadow(colors);
 
-    final numberColor = widget.destructive
+    final numberColor = isInvalidUnfocused
         ? colors.text.destructive
-        : isFocused
+        : hasText || isFocused
         ? colors.text.accent
-        : hasText
-        ? colors.text.brandCrimson
         : colors.text.secondary;
 
     return Focus(
@@ -874,39 +886,20 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                 Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: isFocused
-                          ? colors.surface.inputFocus
-                          : colors.surface.input,
+                      color: shellColor,
                       borderRadius: fieldRadius,
                       border: Border.all(
                         color: borderColor,
-                        width: hasText || isFocused || widget.destructive
-                            ? 1.5
-                            : 1,
+                        width: 1.5,
                         strokeAlign: BorderSide.strokeAlignInside,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: colors.shadows.subtle,
-                          blurRadius: 0.5,
-                        ),
-                        BoxShadow(
-                          color: colors.shadows.subtle,
-                          offset: const Offset(0, 2),
-                          blurRadius: 2,
-                        ),
-                        BoxShadow(
-                          color: colors.shadows.subtle,
-                          offset: const Offset(0, 1),
-                          blurRadius: 1,
-                        ),
-                      ],
+                      boxShadow: boxShadow,
                     ),
                   ),
                 ),
                 Positioned.fill(
                   child: Opacity(
-                    opacity: _hovered && !isFocused && !widget.destructive
+                    opacity: _hovered && !isFocused && !isInvalidUnfocused
                         ? 1
                         : 0,
                     child: DecoratedBox(
@@ -970,8 +963,7 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                                   selectAllOnFocus: false,
                                   decoration: InputDecoration.collapsed(
                                     hintText: 'Word',
-                                    hintStyle: AppTypography.labelLarge
-                                        .copyWith(color: colors.text.muted),
+                                    hintStyle: hintStyle,
                                   ),
                                   onChanged: (value) {
                                     widget
@@ -1040,6 +1032,23 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
       ),
     );
   }
+}
+
+List<BoxShadow> _mnemonicFieldSurfaceShadow(AppColors colors) {
+  return [
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 0.5),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 2),
+      blurRadius: 2,
+    ),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 1),
+      blurRadius: 1,
+    ),
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 0.5),
+  ];
 }
 
 class _MnemonicSuggestionPopover extends StatefulWidget {
