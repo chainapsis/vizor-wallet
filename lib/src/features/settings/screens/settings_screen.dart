@@ -1066,19 +1066,5 @@ Color _settingsRowHoverBackgroundColor(BuildContext context) {
   return isDark ? colors.background.raised : colors.background.base;
 }
 
-List<BoxShadow> _settingsSurfaceShadow(AppColors colors) {
-  return [
-    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
-    BoxShadow(
-      color: colors.shadows.subtle,
-      offset: const Offset(0, 1),
-      blurRadius: 2,
-    ),
-    BoxShadow(
-      color: colors.shadows.subtle,
-      offset: const Offset(0, 2),
-      blurRadius: 4,
-    ),
-    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
-  ];
-}
+List<BoxShadow> _settingsSurfaceShadow(AppColors colors) =>
+    appSurfaceShadow(colors);
