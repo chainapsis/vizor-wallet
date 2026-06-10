@@ -69,6 +69,26 @@ void main() {
     expect(find.text('Primary Vault'), findsWidgets);
     expect(find.text('Account 20'), findsOneWidget);
   });
+
+  testWidgets('utility screen use cases render about and legal pages', (
+    tester,
+  ) async {
+    await _pumpAccountsUseCase(tester, buildAboutUtilityUseCase);
+    expect(tester.takeException(), isNull);
+    expect(find.text('About Vizor Wallet'), findsOneWidget);
+    expect(find.text('GitHub'), findsOneWidget);
+    expect(find.text('Website'), findsOneWidget);
+
+    await _pumpAccountsUseCase(tester, buildTermsUtilityUseCase);
+    expect(tester.takeException(), isNull);
+    expect(find.text('Terms of Use'), findsOneWidget);
+    expect(find.text('Back'), findsOneWidget);
+
+    await _pumpAccountsUseCase(tester, buildPrivacyUtilityUseCase);
+    expect(tester.takeException(), isNull);
+    expect(find.text('Privacy Policy'), findsOneWidget);
+    expect(find.text('Back'), findsOneWidget);
+  });
 }
 
 Future<void> _pumpAccountsUseCase(

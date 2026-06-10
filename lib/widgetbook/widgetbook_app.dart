@@ -170,6 +170,28 @@ class WidgetbookApp extends StatelessWidget {
               ],
             ),
             WidgetbookFolder(
+              name: 'Utility',
+              children: [
+                WidgetbookComponent(
+                  name: 'About and legal',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'About',
+                      builder: buildAboutUtilityUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Terms',
+                      builder: buildTermsUtilityUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Privacy',
+                      builder: buildPrivacyUtilityUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
               name: 'Receive',
               children: [
                 WidgetbookComponent(

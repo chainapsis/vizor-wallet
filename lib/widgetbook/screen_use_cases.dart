@@ -14,6 +14,7 @@ import '../src/core/layout/app_layout.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/features/accounts/screens/accounts_screen.dart';
+import '../src/features/about/screens/about_screen.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/settings/screens/settings_change_password_screen.dart';
 import '../src/features/settings/screens/settings_endpoint_screen.dart';
@@ -186,6 +187,18 @@ Widget _buildSettingsSubScreenUseCase(String path, Widget screen) {
   );
 }
 
+Widget buildAboutUtilityUseCase(BuildContext context) {
+  return _buildUtilityUseCase('/about', _accountsDesignState);
+}
+
+Widget buildTermsUtilityUseCase(BuildContext context) {
+  return _buildUtilityUseCase('/terms', const AccountState());
+}
+
+Widget buildPrivacyUtilityUseCase(BuildContext context) {
+  return _buildUtilityUseCase('/privacy', const AccountState());
+}
+
 Widget _buildAccountsUseCase(
   AccountState accountState, {
   String? initialOpenMenuAccountUuid,
@@ -205,6 +218,21 @@ Widget _buildAccountsUseCase(
       initialModalAccountUuid: initialModalAccountUuid,
       initialModal: initialModal,
     ),
+  );
+}
+
+Widget _buildUtilityUseCase(String initialLocation, AccountState accountState) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _utilityBootstrap(initialLocation, accountState),
+      ),
+      accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(accountState.activeAccountUuid),
+      ),
+    ],
+    child: _UtilityHarness(initialLocation: initialLocation),
   );
 }
 
@@ -422,6 +450,70 @@ class _SettingsHarnessState extends State<_SettingsHarness> {
   }
 }
 
+class _UtilityHarness extends StatefulWidget {
+  const _UtilityHarness({required this.initialLocation});
+
+  final String initialLocation;
+
+  @override
+  State<_UtilityHarness> createState() => _UtilityHarnessState();
+}
+
+class _UtilityHarnessState extends State<_UtilityHarness> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: widget.initialLocation,
+      routes: [
+        GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
+        GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
+        GoRoute(
+          path: '/privacy',
+          builder: (_, _) => const PrivacyPolicyScreen(),
+        ),
+        GoRoute(
+          path: '/home',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/home'),
+        ),
+        GoRoute(
+          path: '/send',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/send'),
+        ),
+        GoRoute(
+          path: '/receive',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/receive'),
+        ),
+        GoRoute(
+          path: '/activity',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/activity'),
+        ),
+        GoRoute(
+          path: '/settings',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/settings'),
+        ),
+        GoRoute(
+          path: '/welcome',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/welcome'),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Router.withConfig(config: _router);
+  }
+}
+
 class _WelcomeHarness extends StatefulWidget {
   @override
   State<_WelcomeHarness> createState() => _WelcomeHarnessState();
@@ -599,6 +691,25 @@ AppBootstrapState _accountsBootstrap(
     privacyModeEnabled: false,
     isPasswordConfigured: true,
     isUnlocked: true,
+    passwordRotationRecoveryFailed: false,
+  );
+}
+
+AppBootstrapState _utilityBootstrap(
+  String initialLocation,
+  AccountState accountState,
+) {
+  final hasWallet = accountState.accounts.isNotEmpty;
+  return AppBootstrapState(
+    initialLocation: initialLocation,
+    initialAccountState: accountState,
+    initialSyncSnapshot: AppSyncSnapshot.empty,
+    network: 'main',
+    rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+    themeMode: ThemeMode.system,
+    privacyModeEnabled: false,
+    isPasswordConfigured: hasWallet,
+    isUnlocked: hasWallet,
     passwordRotationRecoveryFailed: false,
   );
 }

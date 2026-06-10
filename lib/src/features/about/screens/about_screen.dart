@@ -1,9 +1,7 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart'
     show
-        Colors,
         Scaffold,
         Scrollbar,
         ScrollbarTheme,
@@ -20,15 +18,14 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
-import '../../../core/widgets/app_decorative_divider.dart';
+import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../onboarding/shared/onboarding_welcome_art.dart';
 
 const _utilityPageScrollbarKey = ValueKey('utility-page-scrollbar');
-const _backLinkContentGap = AppSpacing.s;
 const _legalUpdatedLabel = 'Last Update:  ';
-const _paragraphWidth = 352.0;
-const _maxSidebarPaneContentWidth = 752.0;
+const _utilityContentWidth = 420.0;
 const _vizorGithubUrl = 'https://github.com/chainapsis/vizor-wallet/';
 const _vizorWebsiteUrl = 'https://vizor.cash';
 
@@ -80,7 +77,10 @@ class AboutScreen extends StatelessWidget {
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
-        child: const _AboutScrollView(),
+        child: const _UtilityPane(
+          toolbar: AppPaneToolbar(),
+          child: _AboutContent(),
+        ),
       ),
     );
   }
@@ -118,17 +118,18 @@ class _AboutContent extends StatelessWidget {
     return const Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        Opacity(opacity: 0.5, child: VizorWordmark(width: 74, height: 27.925)),
+        SizedBox(height: AppSpacing.base),
         _UtilityPageTitle(
           title: 'About Vizor Wallet',
           subtitle: kVizorAboutVersionLabel,
         ),
-        SizedBox(height: AppSpacing.md),
-        AppDecorativeDivider(width: 256),
-        SizedBox(height: AppSpacing.md),
-        _UtilityParagraphList(paragraphs: _aboutParagraphs),
+        SizedBox(height: AppSpacing.base),
+        _UtilitySurface(
+          child: _UtilityParagraphList(paragraphs: _aboutParagraphs),
+        ),
+        SizedBox(height: AppSpacing.base),
         _AboutLinkRow(),
-        SizedBox(height: AppSpacing.md),
-        VizorWordmark(width: 74, height: 27.925),
       ],
     );
   }
@@ -143,7 +144,10 @@ class _LegalScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _FullPaneShell(
-      child: _LegalScrollView(title: title, paragraphs: paragraphs),
+      child: _UtilityPane(
+        toolbar: const AppPaneToolbar(leading: _UtilityBackButton()),
+        child: _LegalContent(title: title, paragraphs: paragraphs),
+      ),
     );
   }
 }
@@ -156,7 +160,7 @@ class _FullPaneShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: context.colors.macosUtility.window,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.xs),
@@ -167,14 +171,17 @@ class _FullPaneShell extends StatelessWidget {
   }
 }
 
-class _AboutScrollView extends StatefulWidget {
-  const _AboutScrollView();
+class _UtilityPane extends StatefulWidget {
+  const _UtilityPane({required this.toolbar, required this.child});
+
+  final Widget toolbar;
+  final Widget child;
 
   @override
-  State<_AboutScrollView> createState() => _AboutScrollViewState();
+  State<_UtilityPane> createState() => _UtilityPaneState();
 }
 
-class _AboutScrollViewState extends State<_AboutScrollView> {
+class _UtilityPaneState extends State<_UtilityPane> {
   final _scrollController = ScrollController();
 
   @override
@@ -185,115 +192,42 @@ class _AboutScrollViewState extends State<_AboutScrollView> {
 
   @override
   Widget build(BuildContext context) {
-    return _UtilityScrollbar(
-      controller: _scrollController,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        widget.toolbar,
+        Expanded(
+          child: _UtilityScrollbar(
             controller: _scrollController,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: AppRouteBackLink(),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  controller: _scrollController,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
                     ),
-                    const SizedBox(height: _backLinkContentGap),
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: math.max(
-                          0,
-                          constraints.maxHeight -
-                              (AppSpacing.md * 2) -
-                              AppBackLink.height -
-                              _backLinkContentGap,
-                        ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.s,
+                        vertical: AppSpacing.sm,
                       ),
                       child: Center(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(
-                            maxWidth: _maxSidebarPaneContentWidth,
+                            maxWidth: _utilityContentWidth,
                           ),
-                          child: const _AboutContent(),
+                          child: widget.child,
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _LegalScrollView extends StatefulWidget {
-  const _LegalScrollView({required this.title, required this.paragraphs});
-
-  final String title;
-  final List<_UtilityParagraphData> paragraphs;
-
-  @override
-  State<_LegalScrollView> createState() => _LegalScrollViewState();
-}
-
-class _LegalScrollViewState extends State<_LegalScrollView> {
-  final _scrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _UtilityScrollbar(
-      controller: _scrollController,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            controller: _scrollController,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: _UtilityBackButton(),
-                    ),
-                    const SizedBox(height: _backLinkContentGap),
-                    Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _UtilityPageTitle(
-                            title: widget.title,
-                            subtitle: _legalUpdatedLabel,
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                          const AppDecorativeDivider(width: 256),
-                          const SizedBox(height: AppSpacing.md),
-                          _UtilityParagraphList(paragraphs: widget.paragraphs),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -363,6 +297,25 @@ class _UtilityBackButton extends ConsumerWidget {
   }
 }
 
+class _LegalContent extends StatelessWidget {
+  const _LegalContent({required this.title, required this.paragraphs});
+
+  final String title;
+  final List<_UtilityParagraphData> paragraphs;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _UtilityPageTitle(title: title, subtitle: _legalUpdatedLabel),
+        const SizedBox(height: AppSpacing.base),
+        _UtilitySurface(child: _UtilityParagraphList(paragraphs: paragraphs)),
+      ],
+    );
+  }
+}
+
 class _UtilityPageTitle extends StatelessWidget {
   const _UtilityPageTitle({required this.title, required this.subtitle});
 
@@ -378,7 +331,9 @@ class _UtilityPageTitle extends StatelessWidget {
         Text(
           title,
           textAlign: TextAlign.center,
-          style: AppTypography.displaySmall.copyWith(color: colors.text.accent),
+          style: AppTypography.headlineLarge.copyWith(
+            color: colors.text.accent,
+          ),
         ),
         const SizedBox(height: AppSpacing.s),
         Text(
@@ -398,23 +353,54 @@ class _UtilityParagraphList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: _paragraphWidth,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var i = 0; i < paragraphs.length; i++) ...[
-              _UtilityParagraph(paragraph: paragraphs[i]),
-              if (i < paragraphs.length - 1)
-                const SizedBox(height: AppSpacing.md),
-            ],
-          ],
-        ),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < paragraphs.length; i++) ...[
+          _UtilityParagraph(paragraph: paragraphs[i]),
+          if (i < paragraphs.length - 1) const SizedBox(height: AppSpacing.md),
+        ],
+      ],
     );
   }
+}
+
+class _UtilitySurface extends StatelessWidget {
+  const _UtilitySurface({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.base,
+      ),
+      decoration: BoxDecoration(
+        color: AppTheme.of(context) == AppThemeData.light
+            ? colors.background.ground
+            : colors.background.base,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: _utilitySurfaceShadow(context),
+      ),
+      child: child,
+    );
+  }
+}
+
+List<BoxShadow> _utilitySurfaceShadow(BuildContext context) {
+  final color = AppTheme.of(context) == AppThemeData.light
+      ? const Color(0x0D141818)
+      : const Color(0x00141818);
+  return [
+    BoxShadow(color: color, blurRadius: 1),
+    BoxShadow(color: color, offset: const Offset(0, 1), blurRadius: 2),
+    BoxShadow(color: color, offset: const Offset(0, 2), blurRadius: 4),
+    BoxShadow(color: color, blurRadius: 1),
+  ];
 }
 
 class _UtilityParagraph extends StatelessWidget {
@@ -450,17 +436,18 @@ class _AboutLinkRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const SizedBox(
-      width: _paragraphWidth,
+      width: double.infinity,
       child: Wrap(
-        spacing: AppSpacing.md,
+        alignment: WrapAlignment.center,
+        spacing: AppSpacing.xs,
         runSpacing: AppSpacing.xs,
         children: [
-          _AboutTextLink(
+          _AboutLinkButton(
             label: 'GitHub',
             semanticsLabel: 'Open Vizor GitHub',
             url: _vizorGithubUrl,
           ),
-          _AboutTextLink(
+          _AboutLinkButton(
             label: 'Website',
             semanticsLabel: 'Open Vizor website',
             url: _vizorWebsiteUrl,
@@ -471,8 +458,8 @@ class _AboutLinkRow extends StatelessWidget {
   }
 }
 
-class _AboutTextLink extends StatefulWidget {
-  const _AboutTextLink({
+class _AboutLinkButton extends StatelessWidget {
+  const _AboutLinkButton({
     required this.label,
     required this.semanticsLabel,
     required this.url,
@@ -483,41 +470,17 @@ class _AboutTextLink extends StatefulWidget {
   final String url;
 
   @override
-  State<_AboutTextLink> createState() => _AboutTextLinkState();
-}
-
-class _AboutTextLinkState extends State<_AboutTextLink> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final textColor = colors.text.accent;
     return Semantics(
       button: true,
       link: true,
-      label: widget.semanticsLabel,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => unawaited(_launchAboutUrl(widget.url)),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text(
-              widget.label,
-              style: AppTypography.labelLarge.copyWith(
-                color: textColor,
-                decoration: _hovered
-                    ? TextDecoration.underline
-                    : TextDecoration.none,
-                decorationColor: textColor,
-              ),
-            ),
-          ),
-        ),
+      label: semanticsLabel,
+      child: AppButton(
+        onPressed: () => unawaited(_launchAboutUrl(url)),
+        variant: AppButtonVariant.ghost,
+        size: AppButtonSize.medium,
+        leading: const AppIcon(AppIcons.link),
+        child: Text(label),
       ),
     );
   }

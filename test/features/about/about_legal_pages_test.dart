@@ -10,7 +10,6 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
-import 'package:zcash_wallet/src/core/widgets/app_decorative_divider.dart';
 import 'package:zcash_wallet/src/features/about/screens/about_screen.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -18,6 +17,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import '../../fakes/fake_sync_notifier.dart';
 
 const _utilityPageScrollbarKey = ValueKey('utility-page-scrollbar');
+const _paneToolbarHeight = 48.0;
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -141,10 +141,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(
+      _utilityScaffoldBackground(tester),
+      AppThemeData.light.colors.macosUtility.window,
+    );
     _expectScrollbarFillsPaneEdge(tester, const Size(1280, 900));
     _expectUtilityContentCentered(
       tester,
-      const Size(1280, 900),
+      titleText: 'Terms of Use',
       headingText: 'From the team that brought you Keplr Wallet.',
     );
 
@@ -164,12 +168,14 @@ void main() {
     _expectScrollbarFillsPaneEdge(tester, const Size(1280, 900));
     _expectUtilityContentCentered(
       tester,
-      const Size(1280, 900),
+      titleText: 'About Vizor Wallet',
       headingText: 'Built by the Keplr team',
     );
   });
 
-  testWidgets('legal back row scrolls with the page content', (tester) async {
+  testWidgets('legal toolbar stays fixed while page content scrolls', (
+    tester,
+  ) async {
     const viewport = Size(1280, 520);
     await _setViewport(tester, viewport);
 
@@ -189,14 +195,25 @@ void main() {
     _expectScrollbarFillsPaneEdge(tester, viewport);
 
     final backTopBeforeScroll = tester.getTopLeft(find.text('Back')).dy;
+    final headingTopBeforeScroll = tester
+        .getTopLeft(
+          find.text('From the team that brought you Keplr Wallet.').first,
+        )
+        .dy;
     await tester.drag(
       find.byType(SingleChildScrollView),
       const Offset(0, -160),
     );
     await tester.pumpAndSettle();
     final backTopAfterScroll = tester.getTopLeft(find.text('Back')).dy;
+    final headingTopAfterScroll = tester
+        .getTopLeft(
+          find.text('From the team that brought you Keplr Wallet.').first,
+        )
+        .dy;
 
-    expect(backTopAfterScroll, lessThan(backTopBeforeScroll));
+    expect(backTopAfterScroll, moreOrLessEquals(backTopBeforeScroll));
+    expect(headingTopAfterScroll, lessThan(headingTopBeforeScroll));
   });
 
   testWidgets('legal back link reuses shared back link style', (tester) async {
@@ -292,7 +309,10 @@ Widget _routerHarness(GoRouter router, AppBootstrapState bootstrap) {
 
 void _expectScrollbarFillsPaneEdge(WidgetTester tester, Size viewport) {
   final scrollbarRect = tester.getRect(find.byKey(_utilityPageScrollbarKey));
-  expect(scrollbarRect.top, moreOrLessEquals(AppSpacing.xs));
+  expect(
+    scrollbarRect.top,
+    moreOrLessEquals(AppSpacing.xs + _paneToolbarHeight),
+  );
   expect(scrollbarRect.right, moreOrLessEquals(viewport.width - AppSpacing.xs));
   expect(
     scrollbarRect.bottom,
@@ -301,17 +321,21 @@ void _expectScrollbarFillsPaneEdge(WidgetTester tester, Size viewport) {
 }
 
 void _expectUtilityContentCentered(
-  WidgetTester tester,
-  Size viewport, {
+  WidgetTester tester, {
+  required String titleText,
   required String headingText,
 }) {
   final scrollbarRect = tester.getRect(find.byKey(_utilityPageScrollbarKey));
-  final dividerRect = tester.getRect(find.byType(AppDecorativeDivider).last);
-  expect(dividerRect.width, moreOrLessEquals(256));
-  expect(dividerRect.center.dx, moreOrLessEquals(scrollbarRect.center.dx));
+  final titleRect = tester.getRect(find.text(titleText));
+  expect(titleRect.center.dx, moreOrLessEquals(scrollbarRect.center.dx));
 
   final headingRect = tester.getRect(find.text(headingText).first);
   expect(headingRect.left, greaterThan(scrollbarRect.left + 100));
+  expect(headingRect.right, lessThan(scrollbarRect.right - 100));
+}
+
+Color? _utilityScaffoldBackground(WidgetTester tester) {
+  return tester.widget<Scaffold>(find.byType(Scaffold).last).backgroundColor;
 }
 
 AppBootstrapState _emptyBootstrap(String initialLocation) {
