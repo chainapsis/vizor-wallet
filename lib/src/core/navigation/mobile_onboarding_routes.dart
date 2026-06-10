@@ -1,18 +1,16 @@
 import 'package:flutter/cupertino.dart' show CupertinoPage;
-import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/onboarding/mobile/mobile_biometrics_screen.dart';
 import '../../features/onboarding/mobile/mobile_create_steps.dart';
 import '../../features/onboarding/mobile/mobile_import_birthday_screen.dart';
 import '../../features/onboarding/mobile/mobile_import_manual_screen.dart';
 import '../../features/onboarding/mobile/mobile_import_review_screen.dart';
 import '../../features/onboarding/mobile/mobile_import_screens.dart';
 import '../../features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
-import '../../features/onboarding/mobile/mobile_onboarding_scaffold.dart';
 import '../../features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../../features/onboarding/mobile/mobile_welcome_screen.dart';
 import '../../features/onboarding/shared/onboarding_flow_args.dart';
-import '../theme/app_theme.dart';
 
 /// Mobile onboarding tree: single-pane screens pushed as
 /// [CupertinoPage]s (edge-swipe back) under the same route paths as the
@@ -76,7 +74,13 @@ List<RouteBase> mobileOnboardingRoutes() => [
       child: MobilePasscodeScreen(args: state.extra as SetPasswordScreenArgs),
     ),
   ),
-  _step('/onboarding/biometrics'),
+  GoRoute(
+    path: '/onboarding/biometrics',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileBiometricsScreen(),
+    ),
+  ),
   GoRoute(
     path: '/import',
     pageBuilder: (context, state) => CupertinoPage(
@@ -128,31 +132,3 @@ List<RouteBase> mobileOnboardingRoutes() => [
     redirect: (_, _) => '/welcome',
   ),
 ];
-
-/// Placeholder route for steps that land in follow-up commits.
-GoRoute _step(String path) => GoRoute(
-  path: path,
-  pageBuilder: (context, state) =>
-      CupertinoPage(key: state.pageKey, child: const _PendingStepScreen()),
-);
-
-class _PendingStepScreen extends StatelessWidget {
-  const _PendingStepScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return MobileOnboardingStepScaffold(
-      progress: 0.1,
-      onBack: () => Navigator.of(context).maybePop(),
-      title: 'Coming soon',
-      child: Center(
-        child: Text(
-          'This step is being built.',
-          style: AppTypography.bodyMedium.copyWith(
-            color: context.colors.text.secondary,
-          ),
-        ),
-      ),
-    );
-  }
-}
