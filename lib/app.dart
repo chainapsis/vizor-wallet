@@ -194,527 +194,536 @@ final _routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: bootstrap.initialLocation,
     refreshListenable: refresh,
-    redirect: (context, state) {
-      final walletAsync = ref.read(walletProvider);
-      final security = ref.read(appSecurityProvider);
-      final isStorageUnavailable =
-          state.matchedLocation == '/storage-unavailable';
-
-      if (bootstrap.hasBlockingFailure) {
-        return isStorageUnavailable ? null : '/storage-unavailable';
-      }
-
-      // Don't redirect on error — let the error screen show instead of onboarding
-      if (walletAsync.hasError) return null;
-
-      final wallet = walletAsync.value;
-      final hasWallet = wallet?.hasWallet ?? bootstrap.hasWallet;
-      final isUnlocked = security.isUnlocked || bootstrap.isUnlocked;
-      final requiresUnlock = hasWallet && !isUnlocked;
-      final isOnboarding =
-          state.matchedLocation == '/welcome' ||
-          state.matchedLocation == '/add-account' ||
-          state.matchedLocation.startsWith('/onboarding/') ||
-          state.matchedLocation.startsWith('/import');
-      final isPublicLegal =
-          state.matchedLocation == '/terms' ||
-          state.matchedLocation == '/privacy';
-      final isUnlock = state.matchedLocation == '/unlock';
-      final isLostPassword = state.matchedLocation == '/lost-password';
-      final isUnlockFlow = isUnlock || isLostPassword;
-      final isSwap =
-          state.matchedLocation.startsWith('/swap') ||
-          state.matchedLocation.startsWith('/activity/swap');
-
-      log(
-        'router redirect: location=${state.matchedLocation}, hasWallet=$hasWallet, '
-        'requiresUnlock=$requiresUnlock, isOnboarding=$isOnboarding',
-      );
-
-      if (isStorageUnavailable) {
-        if (!hasWallet) return '/welcome';
-        return requiresUnlock ? '/unlock' : '/home';
-      }
-      if (!hasWallet && isUnlockFlow) return '/welcome';
-      if (!hasWallet && !isOnboarding && !isPublicLegal) return '/welcome';
-      if (!hasWallet && state.matchedLocation == '/add-account') {
-        return '/welcome';
-      }
-      // `/lost-password` is intentionally part of the unlock flow: a locked
-      // wallet must be able to reach its local reset path from `/unlock`.
-      if (requiresUnlock && !isUnlockFlow && !isPublicLegal) return '/unlock';
-      if (!requiresUnlock && isUnlockFlow) {
-        return hasWallet ? '/home' : '/welcome';
-      }
-      if (hasWallet && state.matchedLocation == '/welcome') {
-        return requiresUnlock ? '/unlock' : '/home';
-      }
-      if (!swapFeatureEnabled && isSwap) return '/home';
-      return null;
-    },
+    redirect: (context, state) => appRedirect(
+      ref: ref,
+      bootstrap: bootstrap,
+      swapFeatureEnabled: swapFeatureEnabled,
+      state: state,
+    ),
     routes: [
-      GoRoute(
-        path: '/',
-        redirect: (_, _) {
-          if (bootstrap.hasBlockingFailure) return '/storage-unavailable';
-          final walletAsync = ref.read(walletProvider);
-          final security = ref.read(appSecurityProvider);
-          if (walletAsync.hasError) return '/home'; // home shows error state
-          final wallet = walletAsync.value;
-          final hasWallet = wallet?.hasWallet ?? bootstrap.hasWallet;
-          final isUnlocked = security.isUnlocked || bootstrap.isUnlocked;
-          if (!hasWallet) return '/welcome';
-          if (!isUnlocked) return '/unlock';
-          return '/home';
-        },
-      ),
-      GoRoute(
-        path: '/storage-unavailable',
-        builder: (_, _) => const StorageUnavailableScreen(),
-      ),
-      // Onboarding-route transitions. Desktop acrylic visibly stutters
-      // through a snapped page swap, so each route gets a custom
-      // page builder that lets contents enter while the acrylic stays
-      // composited continuously. Welcome cross-fades; IntroZcash
-      // delegates the page-level transition to its own widget tree
-      // (sidebar slides, trailing pane fades) so the two halves can
-      // drive separate motion against the shared route animation.
-      // Other routes stay on the GoRouter default.
-      GoRoute(
-        path: '/welcome',
-        pageBuilder: (context, state) => CustomTransitionPage<void>(
-          key: state.pageKey,
-          transitionDuration: kOnboardingForwardDuration,
-          reverseTransitionDuration: kOnboardingReverseDuration,
-          child: const WelcomeScreen(),
-          transitionsBuilder: _onboardingFadeTransition,
-        ),
-      ),
-      GoRoute(
-        path: '/add-account',
-        pageBuilder: (context, state) => CustomTransitionPage<void>(
-          key: state.pageKey,
-          transitionDuration: kOnboardingForwardDuration,
-          reverseTransitionDuration: kOnboardingReverseDuration,
-          child: const WelcomeScreen(showBackButton: true),
-          transitionsBuilder: _onboardingFadeTransition,
-        ),
-      ),
-      ShellRoute(
-        pageBuilder: (context, state, child) => CustomTransitionPage<void>(
-          key: state.pageKey,
-          transitionDuration: kOnboardingForwardDuration,
-          reverseTransitionDuration: kOnboardingReverseDuration,
-          child: OnboardingSplitViewShell(
-            activeStep: onboardingStepFromLocation(state.matchedLocation),
-            showPasswordStep: !ref
-                .read(appSecurityProvider)
-                .isPasswordConfigured,
-            child: child,
-          ),
-          transitionsBuilder: (_, _, _, child) => child,
-        ),
-        routes: [
-          GoRoute(
-            path: '/onboarding/intro',
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: const IntroZcashScreen(),
-              transitionsBuilder: _onboardingFadeTransition,
-            ),
-          ),
-          GoRoute(
-            path: '/onboarding/address-types',
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: const AddressTypesScreen(),
-              transitionsBuilder: _onboardingFadeTransition,
-            ),
-          ),
-          GoRoute(
-            path: '/onboarding/things-to-know',
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: const ThingsToKnowScreen(),
-              transitionsBuilder: _onboardingFadeTransition,
-            ),
-          ),
-          GoRoute(
-            path: '/onboarding/secret-passphrase',
-            pageBuilder: (context, state) {
-              final args = state.extra is CreateSecretPassphraseArgs
-                  ? state.extra as CreateSecretPassphraseArgs
-                  : null;
-
-              return CustomTransitionPage<void>(
-                key: state.pageKey,
-                transitionDuration: kOnboardingForwardDuration,
-                reverseTransitionDuration: kOnboardingReverseDuration,
-                child: SecretPassphraseScreen(args: args),
-                transitionsBuilder: _onboardingFadeTransition,
-              );
-            },
-          ),
-          GoRoute(
-            path: '/onboarding/set-password',
-            redirect: (_, state) {
-              final args = state.extra;
-              if (args is SetPasswordScreenArgs &&
-                  args.flow == SetPasswordFlow.create) {
-                return null;
-              }
-              return OnboardingStep.secretPassphrase.routePath;
-            },
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: SetPasswordScreen(
-                args: state.extra as SetPasswordScreenArgs,
-              ),
-              transitionsBuilder: _onboardingFadeTransition,
-            ),
-          ),
-        ],
-      ),
-      ShellRoute(
-        pageBuilder: (context, state, child) => CustomTransitionPage<void>(
-          key: state.pageKey,
-          transitionDuration: kOnboardingForwardDuration,
-          reverseTransitionDuration: kOnboardingReverseDuration,
-          child: KeystoneOnboardingShell(
-            activeStep: keystoneOnboardingStepFromLocation(
-              state.matchedLocation,
-            ),
-            showPasswordStep: !ref
-                .read(appSecurityProvider)
-                .isPasswordConfigured,
-            child: child,
-          ),
-          transitionsBuilder: (_, _, _, child) => child,
-        ),
-        routes: [
-          GoRoute(
-            path: KeystoneOnboardingStep.howToConnect.routePath,
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: const KeystoneHowToConnectScreen(),
-              transitionsBuilder: _onboardingFadeTransition,
-            ),
-          ),
-          GoRoute(
-            path: KeystoneOnboardingStep.scanQrCode.routePath,
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: const KeystoneScanQrScreen(),
-              transitionsBuilder: _onboardingFadeTransition,
-            ),
-          ),
-          GoRoute(
-            path: KeystoneOnboardingStep.selectAccount.routePath,
-            redirect: (_, _) {
-              final accounts = ref.read(keystoneOnboardingProvider).accounts;
-              return accounts.isEmpty
-                  ? KeystoneOnboardingStep.scanQrCode.routePath
-                  : null;
-            },
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: const KeystoneSelectAccountScreen(),
-              transitionsBuilder: _onboardingFadeTransition,
-            ),
-          ),
-          GoRoute(
-            path: KeystoneOnboardingStep.walletBirthdayHeight.routePath,
-            redirect: (_, _) {
-              final state = ref.read(keystoneOnboardingProvider);
-              if (state.accounts.isEmpty) {
-                return KeystoneOnboardingStep.scanQrCode.routePath;
-              }
-              return state.selectedAccount == null
-                  ? KeystoneOnboardingStep.selectAccount.routePath
-                  : null;
-            },
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: const KeystoneWalletBirthdayScreen(),
-              transitionsBuilder: _onboardingFadeTransition,
-            ),
-          ),
-          GoRoute(
-            path: KeystoneOnboardingStep.setPassword.routePath,
-            redirect: (_, state) {
-              final args = state.extra;
-              if (args is SetPasswordScreenArgs &&
-                  args.flow == SetPasswordFlow.importKeystone) {
-                return null;
-              }
-              return KeystoneOnboardingStep.walletBirthdayHeight.routePath;
-            },
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: SetPasswordScreen(
-                args: state.extra as SetPasswordScreenArgs,
-              ),
-              transitionsBuilder: _onboardingFadeTransition,
-            ),
-          ),
-        ],
-      ),
-      ShellRoute(
-        pageBuilder: (context, state, child) => CustomTransitionPage<void>(
-          key: state.pageKey,
-          transitionDuration: kOnboardingForwardDuration,
-          reverseTransitionDuration: kOnboardingReverseDuration,
-          child: ImportOnboardingShell(
-            activeStep: importOnboardingStepFromLocation(state.matchedLocation),
-            showPasswordStep: !ref
-                .read(appSecurityProvider)
-                .isPasswordConfigured,
-            child: child,
-          ),
-          transitionsBuilder: (_, _, _, child) => child,
-        ),
-        routes: [
-          GoRoute(
-            path: '/import',
-            pageBuilder: (context, state) {
-              final args = state.extra is ImportSecretPassphraseArgs
-                  ? state.extra as ImportSecretPassphraseArgs
-                  : null;
-
-              return CustomTransitionPage<void>(
-                key: state.pageKey,
-                transitionDuration: kOnboardingForwardDuration,
-                reverseTransitionDuration: kOnboardingReverseDuration,
-                child: ImportSecretPassphraseScreen(args: args),
-                transitionsBuilder: _onboardingFadeTransition,
-              );
-            },
-          ),
-          GoRoute(
-            path: '/import/birthday',
-            redirect: (_, state) =>
-                state.extra is ImportBirthdayArgs ? null : '/import',
-            pageBuilder: (context, state) => CustomTransitionPage<void>(
-              key: state.pageKey,
-              transitionDuration: kOnboardingForwardDuration,
-              reverseTransitionDuration: kOnboardingReverseDuration,
-              child: ImportWalletBirthdayScreen(
-                args: state.extra as ImportBirthdayArgs,
-              ),
-              transitionsBuilder: _onboardingFadeTransition,
-            ),
-          ),
-          GoRoute(
-            path: '/import/set-password',
-            redirect: (_, state) {
-              final args = state.extra;
-              if (args is SetPasswordScreenArgs &&
-                  args.flow == SetPasswordFlow.importWallet) {
-                return null;
-              }
-              return '/import';
-            },
-            pageBuilder: (context, state) {
-              final args = state.extra as SetPasswordScreenArgs;
-
-              return CustomTransitionPage<void>(
-                key: state.pageKey,
-                transitionDuration: kOnboardingForwardDuration,
-                reverseTransitionDuration: kOnboardingReverseDuration,
-                child: SetPasswordScreen(args: args),
-                transitionsBuilder: _onboardingFadeTransition,
-              );
-            },
-          ),
-        ],
-      ),
-      GoRoute(path: '/unlock', builder: (_, _) => const UnlockScreen()),
-      GoRoute(
-        path: '/lost-password',
-        builder: (_, _) => const LostPasswordScreen(),
-      ),
-      GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
-      GoRoute(path: '/privacy', builder: (_, _) => const PrivacyPolicyScreen()),
-      GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
-      GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
-      GoRoute(
-        path: '/address-book',
-        builder: (_, _) => const AddressBookScreen(),
-      ),
-      GoRoute(path: '/activity', builder: (_, _) => const ActivityScreen()),
-      GoRoute(
-        path: '/activity/swap/:swapId',
-        builder: (_, state) {
-          final swapId = state.pathParameters['swapId'];
-          if (swapId == null || swapId.isEmpty) {
-            return const ActivityScreen();
-          }
-          return SwapActivityDetailScreen(
-            swapIntentId: swapId,
-            returnTarget: SwapActivityReturnTarget.fromQueryValue(
-              state.uri.queryParameters[swapActivityReturnQueryKey],
-            ),
-            autoSignZecDeposit:
-                state.uri.queryParameters[swapActivitySignQueryKey] ==
-                swapActivitySignZecDepositValue,
-          );
-        },
-      ),
-      GoRoute(
-        path: '/activity/tx/:txid',
-        builder: (_, state) {
-          final txid = state.pathParameters['txid'];
-          if (txid == null || txid.isEmpty) {
-            return const ActivityScreen();
-          }
-          final txKind = state.uri.queryParameters['kind'];
-          final extra = state.extra;
-          if (extra is ActivityTransactionStatusArgs) {
-            final args = extra.txKind == null && txKind != null
-                ? ActivityTransactionStatusArgs(
-                    txidHex: extra.txidHex,
-                    txKind: txKind,
-                    initialTransaction: extra.initialTransaction,
-                    initialDetail: extra.initialDetail,
-                  )
-                : extra;
-            return ActivityTransactionStatusScreen(args: args);
-          }
-          return ActivityTransactionStatusScreen(
-            args: ActivityTransactionStatusArgs(txidHex: txid, txKind: txKind),
-          );
-        },
-      ),
-      GoRoute(
-        path: '/send',
-        builder: (_, state) {
-          final extra = state.extra;
-          return SendScreen(prefill: extra is SendPrefillArgs ? extra : null);
-        },
-      ),
-      GoRoute(
-        path: '/swap',
-        redirect: (_, _) => swapFeatureEnabled ? null : '/home',
-        builder: (_, _) => const SwapScreen(),
-      ),
-      GoRoute(
-        path: '/swap/review',
-        redirect: (_, _) => swapFeatureEnabled ? null : '/home',
-        builder: (_, _) => const SwapReviewScreen(),
-      ),
-      GoRoute(
-        path: '/send/review',
-        builder: (_, state) {
-          final args = state.extra;
-          if (args is! SendReviewArgs) return const SendScreen();
-          return SendReviewScreen(args: args);
-        },
-      ),
-      GoRoute(
-        path: '/send/keystone/scan',
-        builder: (_, _) => const KeystoneSendScanScreen(),
-      ),
-      GoRoute(
-        path: '/send/status',
-        builder: (_, state) {
-          final args = state.extra;
-          if (args is KeystoneBroadcastArgs) {
-            return SendStatusScreen(args: args.reviewArgs, keystone: args);
-          }
-          if (args is! SendReviewArgs) return const SendScreen();
-          return SendStatusScreen(args: args);
-        },
-      ),
-      GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
-      GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
-      GoRoute(
-        path: '/import-keystone',
-        redirect: (_, _) => KeystoneOnboardingStep.howToConnect.routePath,
-      ),
-      GoRoute(
-        path: '/import-keystone/set-password',
-        redirect: (_, _) => KeystoneOnboardingStep.howToConnect.routePath,
-      ),
-      GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
-      GoRoute(
-        path: '/settings/secret-passphrase',
-        builder: (_, _) => const SettingsSeedPhraseScreen(),
-      ),
-      GoRoute(
-        path: '/settings/change-password',
-        builder: (_, _) => const SettingsChangePasswordScreen(),
-      ),
-      GoRoute(
-        path: '/settings/endpoint',
-        builder: (_, _) => const SettingsEndpointScreen(),
-      ),
-      GoRoute(
-        path: '/voting',
-        builder: (_, _) => _guardVotingScreen(const VotingPollsScreen()),
-      ),
-      GoRoute(
-        path: '/voting/poll/:roundId',
-        builder: (_, state) => _guardVotingScreen(
-          VotingProposalDetailScreen(
-            roundId: state.pathParameters['roundId'] ?? '',
-          ),
-        ),
-      ),
-      GoRoute(
-        path: '/voting/poll/:roundId/review',
-        builder: (_, state) => _guardVotingScreen(
-          VotingReviewScreen(roundId: state.pathParameters['roundId'] ?? ''),
-        ),
-      ),
-      GoRoute(
-        path: '/voting/poll/:roundId/status',
-        builder: (_, state) => _guardVotingScreen(
-          VotingStatusScreen(
-            roundId: state.pathParameters['roundId'] ?? '',
-            accountUuid: state.uri.queryParameters['account'],
-          ),
-        ),
-      ),
-      GoRoute(
-        path: '/voting/keystone/scan',
-        builder: (_, _) => _guardVotingScreen(const KeystoneVotingScanScreen()),
-      ),
-      GoRoute(
-        path: '/voting/poll/:roundId/submitted',
-        builder: (_, state) => _guardVotingScreen(
-          VotingSubmissionConfirmationScreen(
-            roundId: state.pathParameters['roundId'] ?? '',
-            accountUuid: state.uri.queryParameters['account'],
-          ),
-        ),
-      ),
-      GoRoute(
-        path: '/voting/poll/:roundId/results',
-        builder: (_, state) => _guardVotingScreen(
-          VotingResultsScreen(roundId: state.pathParameters['roundId'] ?? ''),
-        ),
-      ),
+      ...appEntryRoutes(ref, bootstrap),
+      ..._desktopRoutes(swapFeatureEnabled),
     ],
   );
 });
+
+/// Shared route guard for both the desktop and mobile route trees:
+/// blocking storage failure, wallet existence, unlock state, onboarding
+/// reachability, and the swap feature gate.
+String? appRedirect({
+  required Ref ref,
+  required AppBootstrapState bootstrap,
+  required bool swapFeatureEnabled,
+  required GoRouterState state,
+}) {
+  final walletAsync = ref.read(walletProvider);
+  final security = ref.read(appSecurityProvider);
+  final isStorageUnavailable = state.matchedLocation == '/storage-unavailable';
+
+  if (bootstrap.hasBlockingFailure) {
+    return isStorageUnavailable ? null : '/storage-unavailable';
+  }
+
+  // Don't redirect on error — let the error screen show instead of onboarding
+  if (walletAsync.hasError) return null;
+
+  final wallet = walletAsync.value;
+  final hasWallet = wallet?.hasWallet ?? bootstrap.hasWallet;
+  final isUnlocked = security.isUnlocked || bootstrap.isUnlocked;
+  final requiresUnlock = hasWallet && !isUnlocked;
+  final isOnboarding =
+      state.matchedLocation == '/welcome' ||
+      state.matchedLocation == '/add-account' ||
+      state.matchedLocation.startsWith('/onboarding/') ||
+      state.matchedLocation.startsWith('/import');
+  final isPublicLegal =
+      state.matchedLocation == '/terms' || state.matchedLocation == '/privacy';
+  final isUnlock = state.matchedLocation == '/unlock';
+  final isLostPassword = state.matchedLocation == '/lost-password';
+  final isUnlockFlow = isUnlock || isLostPassword;
+  final isSwap =
+      state.matchedLocation.startsWith('/swap') ||
+      state.matchedLocation.startsWith('/activity/swap');
+
+  log(
+    'router redirect: location=${state.matchedLocation}, hasWallet=$hasWallet, '
+    'requiresUnlock=$requiresUnlock, isOnboarding=$isOnboarding',
+  );
+
+  if (isStorageUnavailable) {
+    if (!hasWallet) return '/welcome';
+    return requiresUnlock ? '/unlock' : '/home';
+  }
+  if (!hasWallet && isUnlockFlow) return '/welcome';
+  if (!hasWallet && !isOnboarding && !isPublicLegal) return '/welcome';
+  if (!hasWallet && state.matchedLocation == '/add-account') {
+    return '/welcome';
+  }
+  // `/lost-password` is intentionally part of the unlock flow: a locked
+  // wallet must be able to reach its local reset path from `/unlock`.
+  if (requiresUnlock && !isUnlockFlow && !isPublicLegal) return '/unlock';
+  if (!requiresUnlock && isUnlockFlow) {
+    return hasWallet ? '/home' : '/welcome';
+  }
+  if (hasWallet && state.matchedLocation == '/welcome') {
+    return requiresUnlock ? '/unlock' : '/home';
+  }
+  if (!swapFeatureEnabled && isSwap) return '/home';
+  return null;
+}
+
+/// Entry, onboarding, and auth routes shared by the desktop and mobile
+/// route trees.
+List<RouteBase> appEntryRoutes(Ref ref, AppBootstrapState bootstrap) => [
+  GoRoute(
+    path: '/',
+    redirect: (_, _) {
+      if (bootstrap.hasBlockingFailure) return '/storage-unavailable';
+      final walletAsync = ref.read(walletProvider);
+      final security = ref.read(appSecurityProvider);
+      if (walletAsync.hasError) return '/home'; // home shows error state
+      final wallet = walletAsync.value;
+      final hasWallet = wallet?.hasWallet ?? bootstrap.hasWallet;
+      final isUnlocked = security.isUnlocked || bootstrap.isUnlocked;
+      if (!hasWallet) return '/welcome';
+      if (!isUnlocked) return '/unlock';
+      return '/home';
+    },
+  ),
+  GoRoute(
+    path: '/storage-unavailable',
+    builder: (_, _) => const StorageUnavailableScreen(),
+  ),
+  // Onboarding-route transitions. Desktop acrylic visibly stutters
+  // through a snapped page swap, so each route gets a custom
+  // page builder that lets contents enter while the acrylic stays
+  // composited continuously. Welcome cross-fades; IntroZcash
+  // delegates the page-level transition to its own widget tree
+  // (sidebar slides, trailing pane fades) so the two halves can
+  // drive separate motion against the shared route animation.
+  // Other routes stay on the GoRouter default.
+  GoRoute(
+    path: '/welcome',
+    pageBuilder: (context, state) => CustomTransitionPage<void>(
+      key: state.pageKey,
+      transitionDuration: kOnboardingForwardDuration,
+      reverseTransitionDuration: kOnboardingReverseDuration,
+      child: const WelcomeScreen(),
+      transitionsBuilder: _onboardingFadeTransition,
+    ),
+  ),
+  GoRoute(
+    path: '/add-account',
+    pageBuilder: (context, state) => CustomTransitionPage<void>(
+      key: state.pageKey,
+      transitionDuration: kOnboardingForwardDuration,
+      reverseTransitionDuration: kOnboardingReverseDuration,
+      child: const WelcomeScreen(showBackButton: true),
+      transitionsBuilder: _onboardingFadeTransition,
+    ),
+  ),
+  ShellRoute(
+    pageBuilder: (context, state, child) => CustomTransitionPage<void>(
+      key: state.pageKey,
+      transitionDuration: kOnboardingForwardDuration,
+      reverseTransitionDuration: kOnboardingReverseDuration,
+      child: OnboardingSplitViewShell(
+        activeStep: onboardingStepFromLocation(state.matchedLocation),
+        showPasswordStep: !ref.read(appSecurityProvider).isPasswordConfigured,
+        child: child,
+      ),
+      transitionsBuilder: (_, _, _, child) => child,
+    ),
+    routes: [
+      GoRoute(
+        path: '/onboarding/intro',
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: const IntroZcashScreen(),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
+      GoRoute(
+        path: '/onboarding/address-types',
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: const AddressTypesScreen(),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
+      GoRoute(
+        path: '/onboarding/things-to-know',
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: const ThingsToKnowScreen(),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
+      GoRoute(
+        path: '/onboarding/secret-passphrase',
+        pageBuilder: (context, state) {
+          final args = state.extra is CreateSecretPassphraseArgs
+              ? state.extra as CreateSecretPassphraseArgs
+              : null;
+
+          return CustomTransitionPage<void>(
+            key: state.pageKey,
+            transitionDuration: kOnboardingForwardDuration,
+            reverseTransitionDuration: kOnboardingReverseDuration,
+            child: SecretPassphraseScreen(args: args),
+            transitionsBuilder: _onboardingFadeTransition,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/onboarding/set-password',
+        redirect: (_, state) {
+          final args = state.extra;
+          if (args is SetPasswordScreenArgs &&
+              args.flow == SetPasswordFlow.create) {
+            return null;
+          }
+          return OnboardingStep.secretPassphrase.routePath;
+        },
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: SetPasswordScreen(args: state.extra as SetPasswordScreenArgs),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
+    ],
+  ),
+  ShellRoute(
+    pageBuilder: (context, state, child) => CustomTransitionPage<void>(
+      key: state.pageKey,
+      transitionDuration: kOnboardingForwardDuration,
+      reverseTransitionDuration: kOnboardingReverseDuration,
+      child: KeystoneOnboardingShell(
+        activeStep: keystoneOnboardingStepFromLocation(state.matchedLocation),
+        showPasswordStep: !ref.read(appSecurityProvider).isPasswordConfigured,
+        child: child,
+      ),
+      transitionsBuilder: (_, _, _, child) => child,
+    ),
+    routes: [
+      GoRoute(
+        path: KeystoneOnboardingStep.howToConnect.routePath,
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: const KeystoneHowToConnectScreen(),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
+      GoRoute(
+        path: KeystoneOnboardingStep.scanQrCode.routePath,
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: const KeystoneScanQrScreen(),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
+      GoRoute(
+        path: KeystoneOnboardingStep.selectAccount.routePath,
+        redirect: (_, _) {
+          final accounts = ref.read(keystoneOnboardingProvider).accounts;
+          return accounts.isEmpty
+              ? KeystoneOnboardingStep.scanQrCode.routePath
+              : null;
+        },
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: const KeystoneSelectAccountScreen(),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
+      GoRoute(
+        path: KeystoneOnboardingStep.walletBirthdayHeight.routePath,
+        redirect: (_, _) {
+          final state = ref.read(keystoneOnboardingProvider);
+          if (state.accounts.isEmpty) {
+            return KeystoneOnboardingStep.scanQrCode.routePath;
+          }
+          return state.selectedAccount == null
+              ? KeystoneOnboardingStep.selectAccount.routePath
+              : null;
+        },
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: const KeystoneWalletBirthdayScreen(),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
+      GoRoute(
+        path: KeystoneOnboardingStep.setPassword.routePath,
+        redirect: (_, state) {
+          final args = state.extra;
+          if (args is SetPasswordScreenArgs &&
+              args.flow == SetPasswordFlow.importKeystone) {
+            return null;
+          }
+          return KeystoneOnboardingStep.walletBirthdayHeight.routePath;
+        },
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: SetPasswordScreen(args: state.extra as SetPasswordScreenArgs),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
+    ],
+  ),
+  ShellRoute(
+    pageBuilder: (context, state, child) => CustomTransitionPage<void>(
+      key: state.pageKey,
+      transitionDuration: kOnboardingForwardDuration,
+      reverseTransitionDuration: kOnboardingReverseDuration,
+      child: ImportOnboardingShell(
+        activeStep: importOnboardingStepFromLocation(state.matchedLocation),
+        showPasswordStep: !ref.read(appSecurityProvider).isPasswordConfigured,
+        child: child,
+      ),
+      transitionsBuilder: (_, _, _, child) => child,
+    ),
+    routes: [
+      GoRoute(
+        path: '/import',
+        pageBuilder: (context, state) {
+          final args = state.extra is ImportSecretPassphraseArgs
+              ? state.extra as ImportSecretPassphraseArgs
+              : null;
+
+          return CustomTransitionPage<void>(
+            key: state.pageKey,
+            transitionDuration: kOnboardingForwardDuration,
+            reverseTransitionDuration: kOnboardingReverseDuration,
+            child: ImportSecretPassphraseScreen(args: args),
+            transitionsBuilder: _onboardingFadeTransition,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/import/birthday',
+        redirect: (_, state) =>
+            state.extra is ImportBirthdayArgs ? null : '/import',
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: ImportWalletBirthdayScreen(
+            args: state.extra as ImportBirthdayArgs,
+          ),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
+      GoRoute(
+        path: '/import/set-password',
+        redirect: (_, state) {
+          final args = state.extra;
+          if (args is SetPasswordScreenArgs &&
+              args.flow == SetPasswordFlow.importWallet) {
+            return null;
+          }
+          return '/import';
+        },
+        pageBuilder: (context, state) {
+          final args = state.extra as SetPasswordScreenArgs;
+
+          return CustomTransitionPage<void>(
+            key: state.pageKey,
+            transitionDuration: kOnboardingForwardDuration,
+            reverseTransitionDuration: kOnboardingReverseDuration,
+            child: SetPasswordScreen(args: args),
+            transitionsBuilder: _onboardingFadeTransition,
+          );
+        },
+      ),
+    ],
+  ),
+  GoRoute(path: '/unlock', builder: (_, _) => const UnlockScreen()),
+  GoRoute(
+    path: '/lost-password',
+    builder: (_, _) => const LostPasswordScreen(),
+  ),
+  GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
+  GoRoute(path: '/privacy', builder: (_, _) => const PrivacyPolicyScreen()),
+  GoRoute(
+    path: '/import-keystone',
+    redirect: (_, _) => KeystoneOnboardingStep.howToConnect.routePath,
+  ),
+  GoRoute(
+    path: '/import-keystone/set-password',
+    redirect: (_, _) => KeystoneOnboardingStep.howToConnect.routePath,
+  ),
+];
+
+/// Main application routes for the desktop (large-form-factor) tree.
+List<RouteBase> _desktopRoutes(bool swapFeatureEnabled) => [
+  GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+  GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
+  GoRoute(path: '/address-book', builder: (_, _) => const AddressBookScreen()),
+  GoRoute(path: '/activity', builder: (_, _) => const ActivityScreen()),
+  GoRoute(
+    path: '/activity/swap/:swapId',
+    builder: (_, state) {
+      final swapId = state.pathParameters['swapId'];
+      if (swapId == null || swapId.isEmpty) {
+        return const ActivityScreen();
+      }
+      return SwapActivityDetailScreen(
+        swapIntentId: swapId,
+        returnTarget: SwapActivityReturnTarget.fromQueryValue(
+          state.uri.queryParameters[swapActivityReturnQueryKey],
+        ),
+        autoSignZecDeposit:
+            state.uri.queryParameters[swapActivitySignQueryKey] ==
+            swapActivitySignZecDepositValue,
+      );
+    },
+  ),
+  GoRoute(
+    path: '/activity/tx/:txid',
+    builder: (_, state) {
+      final txid = state.pathParameters['txid'];
+      if (txid == null || txid.isEmpty) {
+        return const ActivityScreen();
+      }
+      final txKind = state.uri.queryParameters['kind'];
+      final extra = state.extra;
+      if (extra is ActivityTransactionStatusArgs) {
+        final args = extra.txKind == null && txKind != null
+            ? ActivityTransactionStatusArgs(
+                txidHex: extra.txidHex,
+                txKind: txKind,
+                initialTransaction: extra.initialTransaction,
+                initialDetail: extra.initialDetail,
+              )
+            : extra;
+        return ActivityTransactionStatusScreen(args: args);
+      }
+      return ActivityTransactionStatusScreen(
+        args: ActivityTransactionStatusArgs(txidHex: txid, txKind: txKind),
+      );
+    },
+  ),
+  GoRoute(
+    path: '/send',
+    builder: (_, state) {
+      final extra = state.extra;
+      return SendScreen(prefill: extra is SendPrefillArgs ? extra : null);
+    },
+  ),
+  GoRoute(
+    path: '/swap',
+    redirect: (_, _) => swapFeatureEnabled ? null : '/home',
+    builder: (_, _) => const SwapScreen(),
+  ),
+  GoRoute(
+    path: '/swap/review',
+    redirect: (_, _) => swapFeatureEnabled ? null : '/home',
+    builder: (_, _) => const SwapReviewScreen(),
+  ),
+  GoRoute(
+    path: '/send/review',
+    builder: (_, state) {
+      final args = state.extra;
+      if (args is! SendReviewArgs) return const SendScreen();
+      return SendReviewScreen(args: args);
+    },
+  ),
+  GoRoute(
+    path: '/send/keystone/scan',
+    builder: (_, _) => const KeystoneSendScanScreen(),
+  ),
+  GoRoute(
+    path: '/send/status',
+    builder: (_, state) {
+      final args = state.extra;
+      if (args is KeystoneBroadcastArgs) {
+        return SendStatusScreen(args: args.reviewArgs, keystone: args);
+      }
+      if (args is! SendReviewArgs) return const SendScreen();
+      return SendStatusScreen(args: args);
+    },
+  ),
+  GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
+  GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
+  GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+  GoRoute(
+    path: '/settings/secret-passphrase',
+    builder: (_, _) => const SettingsSeedPhraseScreen(),
+  ),
+  GoRoute(
+    path: '/settings/change-password',
+    builder: (_, _) => const SettingsChangePasswordScreen(),
+  ),
+  GoRoute(
+    path: '/settings/endpoint',
+    builder: (_, _) => const SettingsEndpointScreen(),
+  ),
+  GoRoute(
+    path: '/voting',
+    builder: (_, _) => _guardVotingScreen(const VotingPollsScreen()),
+  ),
+  GoRoute(
+    path: '/voting/poll/:roundId',
+    builder: (_, state) => _guardVotingScreen(
+      VotingProposalDetailScreen(
+        roundId: state.pathParameters['roundId'] ?? '',
+      ),
+    ),
+  ),
+  GoRoute(
+    path: '/voting/poll/:roundId/review',
+    builder: (_, state) => _guardVotingScreen(
+      VotingReviewScreen(roundId: state.pathParameters['roundId'] ?? ''),
+    ),
+  ),
+  GoRoute(
+    path: '/voting/poll/:roundId/status',
+    builder: (_, state) => _guardVotingScreen(
+      VotingStatusScreen(
+        roundId: state.pathParameters['roundId'] ?? '',
+        accountUuid: state.uri.queryParameters['account'],
+      ),
+    ),
+  ),
+  GoRoute(
+    path: '/voting/keystone/scan',
+    builder: (_, _) => _guardVotingScreen(const KeystoneVotingScanScreen()),
+  ),
+  GoRoute(
+    path: '/voting/poll/:roundId/submitted',
+    builder: (_, state) => _guardVotingScreen(
+      VotingSubmissionConfirmationScreen(
+        roundId: state.pathParameters['roundId'] ?? '',
+        accountUuid: state.uri.queryParameters['account'],
+      ),
+    ),
+  ),
+  GoRoute(
+    path: '/voting/poll/:roundId/results',
+    builder: (_, state) => _guardVotingScreen(
+      VotingResultsScreen(roundId: state.pathParameters['roundId'] ?? ''),
+    ),
+  ),
+];
 
 Widget _guardVotingScreen(Widget child) {
   return VotingSoftwareAccountGuard(child: child);
