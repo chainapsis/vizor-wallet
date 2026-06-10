@@ -14,6 +14,7 @@ import 'chip_use_cases.dart';
 import 'context_menu_use_cases.dart';
 import 'color_use_cases.dart';
 import 'icon_use_cases.dart';
+import 'mobile_shell_use_cases.dart';
 import 'receive_use_cases.dart';
 import 'screen_use_cases.dart';
 import 'send_use_cases.dart';
@@ -570,6 +571,27 @@ class WidgetbookApp extends StatelessWidget {
                 WidgetbookUseCase(
                   name: 'Narrow width',
                   builder: buildContextMenuNarrowUseCase,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'Mobile Shell',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Top nav variants',
+                  builder: buildMobileTopNavVariantsUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Tab bar',
+                  builder: buildMobileTabBarUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Shell',
+                  builder: buildMobileShellUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Sheet',
+                  builder: buildMobileSheetUseCase,
                 ),
               ],
             ),
