@@ -237,9 +237,10 @@ back to onboarding.
   with a 6-digit passcode instead of a typed password. The digit string
   is stored verbatim as the wallet password through the same
   `appSecurityProvider` prepare/commit path — there is no separate
-  credential model. The desktop min-8 policy applies only to the typed
-  password UI; the mobile passcode screens validate exactly 6 digits
-  (`kMobilePasscodeLength`).
+  credential model. `kWalletPasswordMinLength` is form-factor dependent
+  (6 on mobile, 8 on desktop) because the security provider enforces it
+  on commit; the mobile passcode screens additionally require exactly
+  6 digits (`kMobilePasscodeLength`).
 
 ### Dart Provider Structure
 
