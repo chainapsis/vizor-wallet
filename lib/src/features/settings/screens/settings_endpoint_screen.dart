@@ -1,5 +1,3 @@
-import 'package:flutter/material.dart'
-    show Scrollbar, ScrollbarTheme, ScrollbarThemeData;
 import 'package:flutter/services.dart' show TextInputAction, TextInputType;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +6,7 @@ import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -247,19 +246,12 @@ class _SettingsEndpointPane extends StatefulWidget {
 class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
   static const _contentWidth = 420.0;
 
-  final _scrollController = ScrollController();
   final _floatingBarKey = GlobalKey();
 
   /// Latest measured floating-bar height. Drives the reserved scroll padding so
   /// it tracks the bar's real rendered size (e.g. wrapped error text) instead of
   /// a fixed guess. Defaults to the shared minimum.
   double _floatingBarHeight = _kFloatingBarMinHeight;
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
 
   void _measureFloatingBar() {
     final box =
@@ -297,121 +289,98 @@ class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
               : _floatingBarHeight + _kFloatingBarGap)
         : 0.0;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Stack(
+      fit: StackFit.expand,
       children: [
-        const AppPaneToolbar(backLinkMinWidth: 60),
-        Expanded(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              ScrollbarTheme(
-                data: ScrollbarThemeData(
-                  thumbColor: WidgetStatePropertyAll(colors.background.overlay),
-                  thickness: const WidgetStatePropertyAll(6),
-                  radius: const Radius.circular(AppRadii.full),
-                  thumbVisibility: const WidgetStatePropertyAll(true),
-                  trackVisibility: const WidgetStatePropertyAll(false),
-                  crossAxisMargin: 3,
-                  mainAxisMargin: 3,
+        AppPaneScrollScaffold(
+          toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
+          padding: EdgeInsets.only(bottom: reservedBottomPadding),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              width: _contentWidth,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.s,
+                  vertical: AppSpacing.sm,
                 ),
-                child: Scrollbar(
-                  controller: _scrollController,
-                  child: SingleChildScrollView(
-                    controller: _scrollController,
-                    padding: EdgeInsets.only(bottom: reservedBottomPadding),
-                    child: Center(
-                      child: SizedBox(
-                        width: _contentWidth,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.s,
-                            vertical: AppSpacing.sm,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Text(
-                                'Endpoint',
-                                textAlign: TextAlign.center,
-                                style: AppTypography.headlineLarge.copyWith(
-                                  color: colors.text.accent,
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.s),
-                              _CurrentEndpointSubtitle(
-                                current: widget.current,
-                                latencyState: widget.latencyState,
-                              ),
-                              const SizedBox(height: AppSpacing.base),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: AppSpacing.xs,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    _EndpointTabs(
-                                      activeTab: widget.activeTab,
-                                      onSelect: widget.onSelectTab,
-                                    ),
-                                    const SizedBox(height: AppSpacing.md),
-                                    switch (widget.activeTab) {
-                                      _EndpointTab.list => _PresetList(
-                                        networkName: widget.current.networkName,
-                                        latencyState: widget.latencyState,
-                                        currentPresetId:
-                                            widget.current.effectivePresetId,
-                                        pendingPresetId:
-                                            widget.selectedPresetId,
-                                        onSelect: widget.onSelectPreset,
-                                      ),
-                                      _EndpointTab.custom => _CustomEndpointTab(
-                                        controller: widget.customController,
-                                        messageText: widget.customMessageText,
-                                        submitError: widget.submitError,
-                                        isSubmitting: widget.isSubmitting,
-                                        canUpdate: widget.canUpdate,
-                                        onChanged: widget.onCustomChanged,
-                                        onSubmit: widget.onSubmit,
-                                      ),
-                                    },
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Endpoint',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.headlineLarge.copyWith(
+                        color: colors.text.accent,
                       ),
                     ),
-                  ),
+                    const SizedBox(height: AppSpacing.s),
+                    _CurrentEndpointSubtitle(
+                      current: widget.current,
+                      latencyState: widget.latencyState,
+                    ),
+                    const SizedBox(height: AppSpacing.base),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppSpacing.xs,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _EndpointTabs(
+                            activeTab: widget.activeTab,
+                            onSelect: widget.onSelectTab,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          switch (widget.activeTab) {
+                            _EndpointTab.list => _PresetList(
+                              networkName: widget.current.networkName,
+                              latencyState: widget.latencyState,
+                              currentPresetId: widget.current.effectivePresetId,
+                              pendingPresetId: widget.selectedPresetId,
+                              onSelect: widget.onSelectPreset,
+                            ),
+                            _EndpointTab.custom => _CustomEndpointTab(
+                              controller: widget.customController,
+                              messageText: widget.customMessageText,
+                              submitError: widget.submitError,
+                              isSubmitting: widget.isSubmitting,
+                              canUpdate: widget.canUpdate,
+                              onChanged: widget.onCustomChanged,
+                              onSubmit: widget.onSubmit,
+                            ),
+                          },
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              if (showFloatingBar)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  // The scrim box is the 420 content column in the design,
-                  // not the full pane width.
-                  child: Center(
-                    child: SizedBox(
-                      width: _contentWidth,
-                      child: _FloatingUpdateBar(
-                        key: _floatingBarKey,
-                        submitError: widget.submitError,
-                        isSubmitting: widget.isSubmitting,
-                        canUpdate: widget.canUpdate,
-                        showButton: widget.canUpdate || widget.isSubmitting,
-                        onSubmit: widget.onSubmit,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+            ),
           ),
         ),
+        if (showFloatingBar)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            // The scrim box is the 420 content column in the design,
+            // not the full pane width.
+            child: Center(
+              child: SizedBox(
+                width: _contentWidth,
+                child: _FloatingUpdateBar(
+                  key: _floatingBarKey,
+                  submitError: widget.submitError,
+                  isSubmitting: widget.isSubmitting,
+                  canUpdate: widget.canUpdate,
+                  showButton: widget.canUpdate || widget.isSubmitting,
+                  onSubmit: widget.onSubmit,
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }

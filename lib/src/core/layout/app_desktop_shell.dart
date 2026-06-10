@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
-import 'package:flutter/material.dart' show Colors, Scaffold, Scrollbar;
+import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 
 import '../theme/app_theme.dart';
@@ -209,115 +209,6 @@ class AppPaneToolbar extends StatelessWidget {
             ? Align(alignment: Alignment.centerLeft, child: leadingWidget)
             : Row(children: [leadingWidget, const Spacer(), trailing!]),
       ),
-    );
-  }
-}
-
-class AppPaneScrollableFill extends StatefulWidget {
-  const AppPaneScrollableFill({
-    required this.child,
-    this.controller,
-    this.physics,
-    super.key,
-  });
-
-  final Widget child;
-  final ScrollController? controller;
-  final ScrollPhysics? physics;
-
-  @override
-  State<AppPaneScrollableFill> createState() => _AppPaneScrollableFillState();
-}
-
-class _AppPaneScrollableFillState extends State<AppPaneScrollableFill> {
-  late final ScrollController _internalController;
-  bool _isHovered = false;
-  bool _canScroll = false;
-
-  ScrollController get _effectiveController =>
-      widget.controller ?? _internalController;
-
-  @override
-  void initState() {
-    super.initState();
-    _internalController = ScrollController();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _updateCanScroll();
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant AppPaneScrollableFill oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _updateCanScroll();
-    });
-  }
-
-  @override
-  void dispose() {
-    _internalController.dispose();
-    super.dispose();
-  }
-
-  void _updateCanScroll() {
-    final controller = _effectiveController;
-    if (!controller.hasClients) return;
-    final canScroll = controller.positions.any(
-      (position) =>
-          position.hasContentDimensions && position.maxScrollExtent > 0,
-    );
-    if (canScroll == _canScroll) return;
-    setState(() {
-      _canScroll = canScroll;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final minHeight = constraints.hasBoundedHeight
-            ? constraints.maxHeight
-            : 0.0;
-        return NotificationListener<ScrollMetricsNotification>(
-          onNotification: (_) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              _updateCanScroll();
-            });
-            return false;
-          },
-          child: MouseRegion(
-            onEnter: (_) {
-              if (_isHovered) return;
-              setState(() {
-                _isHovered = true;
-              });
-            },
-            onExit: (_) {
-              if (!_isHovered) return;
-              setState(() {
-                _isHovered = false;
-              });
-            },
-            child: Scrollbar(
-              controller: _effectiveController,
-              thumbVisibility: _isHovered && _canScroll,
-              child: SingleChildScrollView(
-                controller: _effectiveController,
-                physics: widget.physics,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: minHeight),
-                  child: IntrinsicHeight(child: widget.child),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }

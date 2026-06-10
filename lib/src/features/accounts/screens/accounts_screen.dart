@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
@@ -225,33 +226,29 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         backgroundColor: Colors.transparent,
         child: Stack(
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const AppPaneToolbar(
-                  key: ValueKey('accounts_pane_toolbar'),
-                  leading: AppRouteBackLink(
-                    key: ValueKey('accounts_pane_back_button'),
-                    minWidth: 60,
-                  ),
+            AppPaneScrollScaffold(
+              toolbar: const AppPaneToolbar(
+                key: ValueKey('accounts_pane_toolbar'),
+                leading: AppRouteBackLink(
+                  key: ValueKey('accounts_pane_back_button'),
+                  minWidth: 60,
                 ),
-                Expanded(
-                  child: AppPaneScrollableFill(
-                    child: _AccountsPane(
-                      activeAccount: activeAccount,
-                      otherAccounts: otherAccounts,
-                      onSelectAccount: _handleAccountSelected,
-                      onCopyAddress: _copyAddress,
-                      onSendZec: _sendZec,
-                      onEditAccountName: _showAccountNameModal,
-                      onChangeProfilePicture: _showProfilePictureModal,
-                      onRemoveAccount: _showRemoveAccountModal,
-                      initialOpenMenuAccountUuid:
-                          widget.initialOpenMenuAccountUuid,
-                    ),
-                  ),
+              ),
+              // IntrinsicHeight keeps the pane's Spacer working: the column
+              // needs a bounded height even when content exceeds the viewport.
+              child: IntrinsicHeight(
+                child: _AccountsPane(
+                  activeAccount: activeAccount,
+                  otherAccounts: otherAccounts,
+                  onSelectAccount: _handleAccountSelected,
+                  onCopyAddress: _copyAddress,
+                  onSendZec: _sendZec,
+                  onEditAccountName: _showAccountNameModal,
+                  onChangeProfilePicture: _showProfilePictureModal,
+                  onRemoveAccount: _showRemoveAccountModal,
+                  initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
                 ),
-              ],
+              ),
             ),
             if (modalAccount != null && _activeModal != null)
               AppPaneModalOverlay(

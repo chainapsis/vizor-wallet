@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -97,53 +98,45 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         padding: EdgeInsets.zero,
         child: Stack(
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const AppPaneToolbar(
-                  // Design: back chevron sits 16px into the pane on every
-                  // settings/utility screen. The 16px inset is the
-                  // AppPaneToolbar default, so no padding override is needed.
-                  backLinkMinWidth: 60,
+            AppPaneScrollScaffold(
+              toolbar: const AppPaneToolbar(
+                // Design: back chevron sits 16px into the pane on every
+                // settings/utility screen. The 16px inset is the
+                // AppPaneToolbar default, so no padding override is needed.
+                backLinkMinWidth: 60,
+              ),
+              child: _SettingsPane(
+                accountName: activeAccountName,
+                profilePictureId: activeProfilePictureId,
+                profilePictureLabel: _profilePictureLabel(
+                  activeProfilePictureId,
                 ),
-                Expanded(
-                  child: AppPaneScrollableFill(
-                    child: _SettingsPane(
-                      accountName: activeAccountName,
-                      profilePictureId: activeProfilePictureId,
-                      profilePictureLabel: _profilePictureLabel(
-                        activeProfilePictureId,
-                      ),
-                      activeAccountIsHardware: activeAccountIsHardware,
-                      endpointLabel: endpointLabel,
-                      themeLabel: _themeLabel(themeMode),
-                      updateLabel: updateState == null
-                          ? null
-                          : _updateLabel(updateState),
-                      onSeedPhrase: () =>
-                          context.push('/settings/secret-passphrase'),
-                      onChangePassword: () =>
-                          context.push('/settings/change-password'),
-                      onEndpoint: () => context.push('/settings/endpoint'),
-                      onAccountName: hasActiveAccount
-                          ? () => _showModal(_SettingsModalType.accountName)
-                          : null,
-                      onProfilePicture: hasActiveAccount
-                          ? () => _showModal(_SettingsModalType.profilePicture)
-                          : null,
-                      onAddressBook: () => context.push('/address-book'),
-                      onTheme: () => _showModal(_SettingsModalType.theme),
-                      onUpdates: updateState == null
-                          ? null
-                          : () => _showModal(_SettingsModalType.updates),
-                      onAbout: () => context.push('/about'),
-                      onPrivacy: () => context.push('/privacy'),
-                      onTerms: () => context.push('/terms'),
-                      onUninstall: () => context.push('/settings/uninstall'),
-                    ),
-                  ),
-                ),
-              ],
+                activeAccountIsHardware: activeAccountIsHardware,
+                endpointLabel: endpointLabel,
+                themeLabel: _themeLabel(themeMode),
+                updateLabel: updateState == null
+                    ? null
+                    : _updateLabel(updateState),
+                onSeedPhrase: () => context.push('/settings/secret-passphrase'),
+                onChangePassword: () =>
+                    context.push('/settings/change-password'),
+                onEndpoint: () => context.push('/settings/endpoint'),
+                onAccountName: hasActiveAccount
+                    ? () => _showModal(_SettingsModalType.accountName)
+                    : null,
+                onProfilePicture: hasActiveAccount
+                    ? () => _showModal(_SettingsModalType.profilePicture)
+                    : null,
+                onAddressBook: () => context.push('/address-book'),
+                onTheme: () => _showModal(_SettingsModalType.theme),
+                onUpdates: updateState == null
+                    ? null
+                    : () => _showModal(_SettingsModalType.updates),
+                onAbout: () => context.push('/about'),
+                onPrivacy: () => context.push('/privacy'),
+                onTerms: () => context.push('/terms'),
+                onUninstall: () => context.push('/settings/uninstall'),
+              ),
             ),
             if (_activeModal != null)
               AppPaneModalOverlay(

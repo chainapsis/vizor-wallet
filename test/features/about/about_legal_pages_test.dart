@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
+import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/features/about/screens/about_screen.dart';
@@ -15,9 +16,6 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
-
-const _utilityPageScrollbarKey = ValueKey('utility-page-scrollbar');
-const _paneToolbarHeight = 48.0;
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -123,7 +121,9 @@ void main() {
     expect(find.text('home route'), findsOneWidget);
   });
 
-  testWidgets('utility scrollbars fill the pane edge', (tester) async {
+  testWidgets('utility scrollbar track spans the full pane height', (
+    tester,
+  ) async {
     await _setDesktopViewport(tester);
 
     await tester.pumpWidget(
@@ -306,15 +306,31 @@ Widget _routerHarness(GoRouter router, AppBootstrapState bootstrap) {
 }
 
 void _expectScrollbarFillsPaneEdge(WidgetTester tester, Size viewport) {
-  final scrollbarRect = tester.getRect(find.byKey(_utilityPageScrollbarKey));
-  expect(
-    scrollbarRect.top,
-    moreOrLessEquals(AppSpacing.xs + _paneToolbarHeight),
+  // Design model: the overlay scrollbar spans the FULL Trailing Pane height —
+  // from the pane top (toolbar band included) to the pane bottom — pinned at
+  // the right pane edge.
+  final scrollbarRect = tester.getRect(
+    find.byKey(AppPaneScrollScaffold.scrollbarKey),
   );
+  expect(scrollbarRect.top, moreOrLessEquals(AppSpacing.xs));
   expect(scrollbarRect.right, moreOrLessEquals(viewport.width - AppSpacing.xs));
   expect(
     scrollbarRect.bottom,
     moreOrLessEquals(viewport.height - AppSpacing.xs),
+  );
+
+  // Figma Scrollbar component spec: 6px capsule thumb centered in an 18px
+  // transparent track (6px insets), 12px end margins, solid theme thumb.
+  final scrollbar = tester.widget<RawScrollbar>(
+    find.byKey(AppPaneScrollScaffold.scrollbarKey),
+  );
+  expect(scrollbar.thickness, 6);
+  expect(scrollbar.crossAxisMargin, 6);
+  expect(scrollbar.mainAxisMargin, 12);
+  expect(scrollbar.radius, const Radius.circular(AppRadii.full));
+  expect(
+    scrollbar.thumbColor,
+    AppThemeData.light.colors.surface.scrollbarThumb,
   );
 }
 
@@ -323,7 +339,9 @@ void _expectUtilityContentCentered(
   required String titleText,
   required String headingText,
 }) {
-  final scrollbarRect = tester.getRect(find.byKey(_utilityPageScrollbarKey));
+  final scrollbarRect = tester.getRect(
+    find.byKey(AppPaneScrollScaffold.scrollbarKey),
+  );
   final titleRect = tester.getRect(find.text(titleText));
   expect(titleRect.center.dx, moreOrLessEquals(scrollbarRect.center.dx));
 

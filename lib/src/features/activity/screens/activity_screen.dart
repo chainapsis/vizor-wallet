@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +9,7 @@ import '../../../core/config/swap_feature_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
@@ -34,13 +34,11 @@ class ActivityScreen extends ConsumerStatefulWidget {
 }
 
 class _ActivityScreenState extends ConsumerState<ActivityScreen> {
-  final ScrollController _scrollController = ScrollController();
   List<rust_sync.TransactionInfo>? _transactions;
   String? _transactionsAccountUuid;
   bool _isLoading = true;
   String? _error;
   String? _activeAccountUuid;
-  bool _canScroll = false;
   Timer? _swapActivityRefreshTimer;
   String? _swapActivityRefreshAccountUuid;
 
@@ -53,23 +51,12 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
       _syncSwapActivityStatusRefresh();
-      _updateCanScroll();
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant ActivityScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _updateCanScroll();
     });
   }
 
   @override
   void dispose() {
     _swapActivityRefreshTimer?.cancel();
-    _scrollController.dispose();
     super.dispose();
   }
 
@@ -134,15 +121,6 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         _isLoading = false;
       });
     }
-  }
-
-  void _updateCanScroll() {
-    if (!_scrollController.hasClients) return;
-    final canScroll = _scrollController.position.maxScrollExtent > 0;
-    if (canScroll == _canScroll) return;
-    setState(() {
-      _canScroll = canScroll;
-    });
   }
 
   void _openTransactionStatus(rust_sync.TransactionInfo transaction) {
@@ -312,184 +290,27 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return NotificationListener<ScrollMetricsNotification>(
-              onNotification: (_) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  _updateCanScroll();
-                });
-                return false;
-              },
-              child: Stack(
-                children: [
-                  const Positioned(
-                    left: 0,
-                    top: 0,
-                    right: 0,
-                    height: 48,
-                    child: AppPaneToolbar(backLinkMinWidth: 60),
-                  ),
-                  Positioned(
-                    left: 0,
-                    top: 48,
-                    right: 0,
-                    bottom: 0,
-                    child: ScrollConfiguration(
-                      behavior: ScrollConfiguration.of(
-                        context,
-                      ).copyWith(scrollbars: false),
-                      child: SingleChildScrollView(
-                        key: const ValueKey('activity_screen_scroll_view'),
-                        controller: _scrollController,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            minHeight: constraints.maxHeight.isFinite
-                                ? constraints.maxHeight - 48
-                                : 0,
-                          ),
-                          child: Align(
-                            alignment: Alignment.topCenter,
-                            child: SizedBox(
-                              width: 420,
-                              child: Padding(
-                                padding: const EdgeInsets.only(
-                                  top: AppSpacing.sm,
-                                ),
-                                child: ActivityFeed(
-                                  sections: sections,
-                                  rowKeyPrefix: 'activity_screen',
-                                  isLoading:
-                                      _isLoading &&
-                                      !canRenderTransactions &&
-                                      sections.isEmpty,
-                                  errorText:
-                                      sections.isEmpty &&
-                                          loadedTransactions == null
-                                      ? _error
-                                      : null,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (isDesktopLayoutPlatform)
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: 18,
-                      child: _ActivityScreenScrollbar(
-                        controller: _scrollController,
-                        visible: _canScroll,
-                      ),
-                    ),
-                ],
+        child: AppPaneScrollScaffold(
+          toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
+          padding: const EdgeInsets.only(top: AppSpacing.sm),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              width: 420,
+              child: ActivityFeed(
+                sections: sections,
+                rowKeyPrefix: 'activity_screen',
+                isLoading:
+                    _isLoading && !canRenderTransactions && sections.isEmpty,
+                errorText: sections.isEmpty && loadedTransactions == null
+                    ? _error
+                    : null,
               ),
-            );
-          },
+            ),
+          ),
         ),
       ),
     );
-  }
-}
-
-class _ActivityScreenScrollbar extends StatelessWidget {
-  const _ActivityScreenScrollbar({
-    required this.controller,
-    required this.visible,
-  });
-
-  static const _thumbWidth = 6.0;
-  static const _thumbTopInset = 14.8212890625;
-  static const _thumbHeightFactor = 337.178955078125 / 704;
-
-  final ScrollController controller;
-  final bool visible;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox.expand(
-      key: const ValueKey('activity_screen_scrollbar'),
-      child: AnimatedBuilder(
-        animation: controller,
-        builder: (context, _) {
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              if (!visible ||
-                  !controller.hasClients ||
-                  !controller.position.hasContentDimensions ||
-                  controller.position.maxScrollExtent <= 0) {
-                return const SizedBox.shrink();
-              }
-
-              final height = constraints.maxHeight;
-              final thumbHeight = height * _thumbHeightFactor;
-              final maxTop = math.max(_thumbTopInset, height - thumbHeight);
-              final trackScrollExtent = maxTop - _thumbTopInset;
-              final scrollFraction =
-                  (controller.offset / controller.position.maxScrollExtent)
-                      .clamp(0.0, 1.0)
-                      .toDouble();
-              final top = _thumbTopInset + (trackScrollExtent * scrollFraction);
-
-              return Stack(
-                alignment: Alignment.topCenter,
-                children: [
-                  Positioned(
-                    top: top,
-                    left: 0,
-                    right: 0,
-                    height: thumbHeight,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onVerticalDragUpdate: (details) =>
-                          _handleThumbDragUpdate(details, trackScrollExtent),
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: Center(
-                          child: DecoratedBox(
-                            key: const ValueKey('activity_screen_scroll_thumb'),
-                            decoration: BoxDecoration(
-                              color: context.colors.background.overlay,
-                              borderRadius: BorderRadius.circular(
-                                AppRadii.full,
-                              ),
-                            ),
-                            child: const SizedBox(
-                              width: _thumbWidth,
-                              height: double.infinity,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-
-  void _handleThumbDragUpdate(
-    DragUpdateDetails details,
-    double trackScrollExtent,
-  ) {
-    if (!controller.hasClients || trackScrollExtent <= 0) return;
-    final position = controller.position;
-    final scrollDelta =
-        details.delta.dy / trackScrollExtent * position.maxScrollExtent;
-    final nextOffset = (controller.offset + scrollDelta)
-        .clamp(position.minScrollExtent, position.maxScrollExtent)
-        .toDouble();
-    controller.jumpTo(nextOffset);
   }
 }
 

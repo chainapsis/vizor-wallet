@@ -1,12 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart'
-    show
-        Scaffold,
-        Scrollbar,
-        ScrollbarTheme,
-        ScrollbarThemeData,
-        WidgetStatePropertyAll;
+import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -16,6 +10,7 @@ import '../../../app_bootstrap.dart';
 import '../../../core/config/app_version_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/navigation/app_back_resolver.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
@@ -24,7 +19,6 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../onboarding/shared/onboarding_welcome_art.dart';
 
-const _utilityPageScrollbarKey = ValueKey('utility-page-scrollbar');
 const _utilityContentWidth = 420.0;
 const _vizorGithubUrl = 'https://github.com/chainapsis/vizor-wallet/';
 const _vizorWebsiteUrl = 'https://vizor.cash';
@@ -194,90 +188,25 @@ class _FullPaneShell extends StatelessWidget {
   }
 }
 
-class _UtilityPane extends StatefulWidget {
+class _UtilityPane extends StatelessWidget {
   const _UtilityPane({required this.toolbar, required this.child});
 
   final Widget toolbar;
   final Widget child;
 
   @override
-  State<_UtilityPane> createState() => _UtilityPaneState();
-}
-
-class _UtilityPaneState extends State<_UtilityPane> {
-  final _scrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        widget.toolbar,
-        Expanded(
-          child: _UtilityScrollbar(
-            controller: _scrollController,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  controller: _scrollController,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.s,
-                        vertical: AppSpacing.sm,
-                      ),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(
-                            maxWidth: _utilityContentWidth,
-                          ),
-                          child: widget.child,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _UtilityScrollbar extends StatelessWidget {
-  const _UtilityScrollbar({required this.controller, required this.child});
-
-  final ScrollController controller;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return ScrollbarTheme(
-      data: ScrollbarThemeData(
-        thumbColor: WidgetStatePropertyAll(colors.background.overlay),
-        thickness: const WidgetStatePropertyAll(6),
-        radius: const Radius.circular(AppRadii.full),
-        thumbVisibility: const WidgetStatePropertyAll(true),
-        trackVisibility: const WidgetStatePropertyAll(false),
-        crossAxisMargin: 3,
-        mainAxisMargin: 3,
+    return AppPaneScrollScaffold(
+      toolbar: toolbar,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s,
+        vertical: AppSpacing.sm,
       ),
-      child: Scrollbar(
-        key: _utilityPageScrollbarKey,
-        controller: controller,
-        child: child,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: _utilityContentWidth),
+          child: child,
+        ),
       ),
     );
   }

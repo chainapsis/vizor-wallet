@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,7 +10,9 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
+import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
@@ -3915,33 +3918,61 @@ void main() {
 
     expect(tester.takeException(), isNull);
     final scrollView = tester.widget<SingleChildScrollView>(
-      find.byKey(const ValueKey('activity_screen_scroll_view')),
+      find.byKey(AppPaneScrollScaffold.scrollViewKey),
     );
     final controller = scrollView.controller!;
     expect(controller.position.maxScrollExtent, greaterThan(0));
     final paneRect = tester.getRect(find.byType(AppDesktopPane));
     final pane = tester.widget<AppDesktopPane>(find.byType(AppDesktopPane));
     expect(pane.backgroundColor, isNull);
-    final scrollbarRect = tester.getRect(
-      find.byKey(const ValueKey('activity_screen_scrollbar')),
-    );
-    expect((scrollbarRect.right - paneRect.right).abs(), lessThan(1));
-    final thumb = find.byKey(const ValueKey('activity_screen_scroll_thumb'));
-    expect(thumb, findsOneWidget);
-    final thumbDecoration =
-        tester.widget<DecoratedBox>(thumb).decoration as BoxDecoration;
-    expect(thumbDecoration.color, AppThemeData.light.colors.background.overlay);
-    expect(find.byType(RawScrollbar), findsNothing);
-    final beforeTop = tester.getTopLeft(thumb).dy;
 
+    // The overlay scrollbar spans the FULL pane height (toolbar band
+    // included), pinned at the right pane edge.
+    final scrollbarFinder = find.byKey(AppPaneScrollScaffold.scrollbarKey);
+    final scrollbarRect = tester.getRect(scrollbarFinder);
+    expect((scrollbarRect.right - paneRect.right).abs(), lessThan(1));
+    expect((scrollbarRect.top - paneRect.top).abs(), lessThan(1));
+    expect((scrollbarRect.bottom - paneRect.bottom).abs(), lessThan(1));
+
+    // Figma Scrollbar spec: 6px capsule thumb centered in the 18px
+    // transparent track (6px insets), 12px end margins, solid theme thumb.
+    final scrollbar = tester.widget<RawScrollbar>(scrollbarFinder);
+    expect(scrollbar.thickness, 6);
+    expect(scrollbar.crossAxisMargin, 6);
+    expect(scrollbar.mainAxisMargin, 12);
+    expect(scrollbar.radius, const Radius.circular(AppRadii.full));
+    expect(
+      scrollbar.thumbColor,
+      AppThemeData.light.colors.surface.scrollbarThumb,
+    );
+    expect(scrollbar.thumbVisibility, isFalse);
+
+    // Hovering the pane reveals the thumb while the content overflows.
+    final hover = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await hover.addPointer(location: Offset.zero);
+    addTearDown(hover.removePointer);
+    await hover.moveTo(paneRect.center);
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<RawScrollbar>(scrollbarFinder).thumbVisibility,
+      isTrue,
+    );
+
+    final backLinkTopBeforeScroll = tester
+        .getTopLeft(find.byType(AppRouteBackLink))
+        .dy;
     await tester.drag(
-      find.byKey(const ValueKey('activity_screen_scroll_view')),
+      find.byKey(AppPaneScrollScaffold.scrollViewKey),
       const Offset(0, -180),
     );
     await tester.pumpAndSettle();
 
     expect(controller.offset, greaterThan(0));
-    expect(tester.getTopLeft(thumb).dy, greaterThan(beforeTop));
+    // The toolbar band stays pinned while the feed scrolls underneath it.
+    expect(
+      tester.getTopLeft(find.byType(AppRouteBackLink)).dy,
+      backLinkTopBeforeScroll,
+    );
   });
 
   testWidgets('activity page renders all rows in the scroll feed', (
