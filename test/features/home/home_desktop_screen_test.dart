@@ -75,10 +75,7 @@ void main() {
     final fiatText = tester.widget<Text>(
       find.byKey(const ValueKey('home_desktop_balance_fiat_text')),
     );
-    expect(
-      fiatText.style?.color,
-      colors.text.homeCard.withValues(alpha: 0.80),
-    );
+    expect(fiatText.style?.color, colors.text.homeCard.withValues(alpha: 0.80));
 
     final shieldIcon = tester.widget<AppIcon>(
       find.byKey(const ValueKey('home_desktop_shielded_balance_icon')),
