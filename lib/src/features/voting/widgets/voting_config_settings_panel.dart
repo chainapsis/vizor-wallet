@@ -736,7 +736,6 @@ class _EditorCard extends StatelessWidget {
                 label: 'Title',
                 controller: nameController,
                 autofocus: !isEditing,
-                trailingSlotWidth: 40,
                 inputHorizontalPadding: AppSpacing.s,
                 textInputAction: TextInputAction.next,
                 messageText: nameMessage,
@@ -752,7 +751,6 @@ class _EditorCard extends StatelessWidget {
               child: AppTextField(
                 label: 'Static config URL',
                 controller: urlController,
-                trailingSlotWidth: 40,
                 inputHorizontalPadding: AppSpacing.s,
                 keyboardType: TextInputType.url,
                 textInputAction: TextInputAction.done,

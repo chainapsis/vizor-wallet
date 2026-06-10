@@ -205,7 +205,6 @@ class _UnlockContent extends StatelessWidget {
                 hintText: 'Enter password',
                 showLabel: false,
                 leadingSlotWidth: 32,
-                trailingSlotWidth: 40,
                 inputHorizontalPadding: AppSpacing.s,
                 controller: passwordController,
                 autofocus: false,

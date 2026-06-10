@@ -466,7 +466,6 @@ class _NewPasswordView extends StatelessWidget {
                                 ? AppTextFieldTone.neutral
                                 : AppTextFieldTone.destructive,
                             leadingSlotWidth: 32,
-                            trailingSlotWidth: 40,
                             inputHorizontalPadding: AppSpacing.s,
                             showVisibilityToggle: false,
                             enabled: !isSubmitting,

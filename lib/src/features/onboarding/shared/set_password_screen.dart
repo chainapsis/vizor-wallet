@@ -329,7 +329,6 @@ class _SetPasswordOnPageContent extends StatelessWidget {
                               ? AppTextFieldTone.neutral
                               : AppTextFieldTone.destructive,
                           leadingSlotWidth: 32,
-                          trailingSlotWidth: 40,
                           inputHorizontalPadding: AppSpacing.s,
                           autofocus: true,
                           showVisibilityToggle: false,
@@ -354,7 +353,6 @@ class _SetPasswordOnPageContent extends StatelessWidget {
                               ? AppTextFieldTone.neutral
                               : AppTextFieldTone.destructive,
                           leadingSlotWidth: 32,
-                          trailingSlotWidth: 40,
                           inputHorizontalPadding: AppSpacing.s,
                           showVisibilityToggle: false,
                           onChanged: (_) => onChanged(),
