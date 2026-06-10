@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 
 import '../../theme/app_theme.dart';
+import '../../widgets/app_toast.dart';
 
 /// Mobile counterpart of `AppDesktopShell`: a full-bleed body with the
 /// floating tab bar overlaid at the bottom.
@@ -21,7 +22,9 @@ class AppMobileShell extends StatelessWidget {
     return Scaffold(
       backgroundColor: context.colors.background.window,
       extendBody: true,
-      body: body,
+      // Desktop hosts toasts inside AppDesktopPane; the mobile shell is
+      // the equivalent surface, so it hosts them for all tab content.
+      body: AppToastHost(child: body),
       bottomNavigationBar: SafeArea(
         top: false,
         child: Padding(

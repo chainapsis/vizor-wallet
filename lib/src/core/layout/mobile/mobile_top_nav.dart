@@ -27,6 +27,8 @@ class MobileTopNav extends StatelessWidget {
     required this.accountName,
     this.balanceLabel,
     this.syncLabel,
+    this.syncLabelColor,
+    this.syncIndicatorColor,
     this.avatar,
     this.onAccountTap,
     super.key,
@@ -40,6 +42,8 @@ class MobileTopNav extends StatelessWidget {
       accountName = '',
       balanceLabel = null,
       syncLabel = null,
+      syncLabelColor = null,
+      syncIndicatorColor = null,
       avatar = null,
       onAccountTap = null,
       title = '';
@@ -49,6 +53,8 @@ class MobileTopNav extends StatelessWidget {
       accountName = '',
       balanceLabel = null,
       syncLabel = null,
+      syncLabelColor = null,
+      syncIndicatorColor = null,
       avatar = null,
       onAccountTap = null,
       progress = 0;
@@ -56,10 +62,14 @@ class MobileTopNav extends StatelessWidget {
   final _MobileTopNavVariant _variant;
 
   /// Account variant: display name, optional secondary balance line, and
-  /// the right-aligned sync status label.
+  /// the right-aligned sync status label. The label and edge-indicator
+  /// colors default to the synced tokens; pass overrides for syncing /
+  /// failed states.
   final String accountName;
   final String? balanceLabel;
   final String? syncLabel;
+  final Color? syncLabelColor;
+  final Color? syncIndicatorColor;
 
   /// Account variant: leading 40×40 avatar. Falls back to a plain
   /// surface circle until real profile pictures are wired in.
@@ -140,10 +150,15 @@ class MobileTopNav extends StatelessWidget {
         if (syncLabel != null) ...[
           Text(
             syncLabel!,
-            style: AppTypography.labelMedium.copyWith(color: colors.sync.text),
+            style: AppTypography.labelMedium.copyWith(
+              color: syncLabelColor ?? colors.sync.text,
+            ),
           ),
           const SizedBox(width: AppSpacing.s),
-          _SyncEdgeIndicator(size: _syncIndicatorSize, color: colors.sync.glow),
+          _SyncEdgeIndicator(
+            size: _syncIndicatorSize,
+            color: syncIndicatorColor ?? colors.sync.glow,
+          ),
         ] else
           const SizedBox(width: AppSpacing.sm),
       ],

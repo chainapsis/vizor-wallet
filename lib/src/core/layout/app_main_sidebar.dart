@@ -12,7 +12,6 @@ import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
 import '../../providers/privacy_mode_provider.dart';
 import '../../providers/receive_address_provider.dart';
-import '../../providers/sync_failure.dart';
 import '../../providers/sync_provider.dart';
 import '../../providers/voting/voting_rounds_provider.dart';
 import '../../providers/voting/voting_submission_guard_provider.dart';
@@ -21,6 +20,7 @@ import '../config/swap_feature_config.dart';
 import '../formatting/zec_amount.dart';
 import '../privacy/privacy_mask.dart';
 import '../profile_pictures.dart';
+import '../formatting/sync_status_label.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
 import '../widgets/app_profile_picture.dart';
@@ -956,14 +956,14 @@ class _SidebarSyncStatus extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final status = _SidebarSyncStatusData.from(sync);
+    final status = SyncStatusLabel.from(sync);
     final textColor = switch (status.kind) {
-      _SidebarSyncStatusKind.syncing => colors.sync.textSyncing,
-      _SidebarSyncStatusKind.failed => colors.sync.textError,
-      _SidebarSyncStatusKind.synced => colors.sync.text,
+      SyncStatusKind.syncing => colors.sync.textSyncing,
+      SyncStatusKind.failed => colors.sync.textError,
+      SyncStatusKind.synced => colors.sync.text,
     };
     final indicatorColor = switch (status.kind) {
-      _SidebarSyncStatusKind.failed => colors.sync.lightError,
+      SyncStatusKind.failed => colors.sync.lightError,
       _ => colors.sync.lightSuccess,
     };
 
@@ -1013,68 +1013,4 @@ class _SidebarSyncStatus extends StatelessWidget {
       ),
     );
   }
-}
-
-enum _SidebarSyncStatusKind { syncing, failed, synced }
-
-class _SidebarSyncStatusData {
-  const _SidebarSyncStatusData({
-    required this.kind,
-    required this.label,
-    required this.semanticsLabel,
-  });
-
-  final _SidebarSyncStatusKind kind;
-  final String label;
-  final String semanticsLabel;
-
-  factory _SidebarSyncStatusData.from(SyncState sync) {
-    final failure = sync.failure;
-    if (failure != null) {
-      final reason = _syncFailureReason(failure.kind);
-      return _SidebarSyncStatusData(
-        kind: _SidebarSyncStatusKind.failed,
-        label: 'Syncing failed. $reason...',
-        semanticsLabel: 'Syncing failed. $reason',
-      );
-    }
-
-    final complete =
-        !sync.isSyncing &&
-        (sync.percentage >= 1.0 ||
-            (sync.chainTipHeight > 0 &&
-                sync.scannedHeight >= sync.chainTipHeight));
-    if (!complete && (sync.isSyncing || sync.isBackgroundMode)) {
-      final pct = formatSidebarSyncPercentage(sync.displayPercentage);
-      return _SidebarSyncStatusData(
-        kind: _SidebarSyncStatusKind.syncing,
-        label: '$pct% Syncing...',
-        semanticsLabel: 'Syncing $pct percent',
-      );
-    }
-
-    return const _SidebarSyncStatusData(
-      kind: _SidebarSyncStatusKind.synced,
-      label: 'Vizor is synced',
-      semanticsLabel: 'Vizor is synced',
-    );
-  }
-}
-
-String _syncFailureReason(SyncFailureKind kind) {
-  return switch (kind) {
-    SyncFailureKind.network => 'Network error',
-    SyncFailureKind.endpoint => 'Endpoint error',
-    SyncFailureKind.databaseBusy => 'Wallet data busy',
-    SyncFailureKind.databaseFatal => 'Wallet data error',
-    SyncFailureKind.chainRecovery => 'Chain recovery',
-    SyncFailureKind.parseFatal => 'Data error',
-    SyncFailureKind.unknown => 'Unknown error',
-  };
-}
-
-@visibleForTesting
-String formatSidebarSyncPercentage(double progress) {
-  final pct = (progress.clamp(0.0, 1.0) * 100).toDouble();
-  return pct.clamp(0.0, 99.0).toStringAsFixed(0);
 }

@@ -9,6 +9,9 @@ import '../src/core/layout/mobile/mobile_top_nav.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
+import '../src/core/widgets/app_profile_picture.dart';
+import '../src/core/widgets/mobile/mobile_list_row.dart';
+import '../src/core/widgets/mobile/mobile_surface_card.dart';
 
 // Preview these with the mobile token lane for true metrics:
 // fvm flutter run -t lib/widgetbook.dart --dart-define=VIZOR_FORM_FACTOR=mobile
@@ -125,6 +128,51 @@ class _ShellPreviewState extends State<_ShellPreview> {
       ),
     );
   }
+}
+
+Widget buildMobileSurfaceCardUseCase(BuildContext context) {
+  return _phoneFrame(
+    context,
+    Padding(
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      child: MobileSurfaceCard(
+        child: Column(
+          children: [
+            MobileListRow(
+              leading: const AppProfilePicture(
+                profilePictureId: 'pfp-01',
+                size: AppProfilePictureSize.large,
+              ),
+              label: 'Account 1',
+              trailing: AppIcon(
+                AppIcons.copy,
+                size: AppIconSize.medium,
+                color: context.colors.icon.muted,
+              ),
+              onTap: () {},
+            ),
+            MobileListRow(
+              leading: AppIcon(
+                AppIcons.theme,
+                size: 20,
+                color: context.colors.icon.accent,
+              ),
+              label: 'Theme',
+              value: 'Dark',
+              showChevron: true,
+              onTap: () {},
+            ),
+            const MobileListRow(
+              label: 'Password',
+              value: 'Change',
+              showChevron: true,
+              enabled: false,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 Widget buildMobileSheetUseCase(BuildContext context) {

@@ -593,6 +593,10 @@ class WidgetbookApp extends StatelessWidget {
                   name: 'Sheet',
                   builder: buildMobileSheetUseCase,
                 ),
+                WidgetbookUseCase(
+                  name: 'Surface card and rows',
+                  builder: buildMobileSurfaceCardUseCase,
+                ),
               ],
             ),
             WidgetbookComponent(
