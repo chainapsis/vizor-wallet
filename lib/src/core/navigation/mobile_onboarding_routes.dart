@@ -3,6 +3,8 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/onboarding/mobile/mobile_create_steps.dart';
+import '../../features/onboarding/mobile/mobile_import_manual_screen.dart';
+import '../../features/onboarding/mobile/mobile_import_review_screen.dart';
 import '../../features/onboarding/mobile/mobile_import_screens.dart';
 import '../../features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../../features/onboarding/mobile/mobile_onboarding_scaffold.dart';
@@ -81,7 +83,13 @@ List<RouteBase> mobileOnboardingRoutes() => [
       child: const MobileImportMethodScreen(),
     ),
   ),
-  _step('/import/manual'),
+  GoRoute(
+    path: '/import/manual',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileImportManualScreen(),
+    ),
+  ),
   GoRoute(
     path: '/import/clipboard',
     pageBuilder: (context, state) => CupertinoPage(
@@ -89,7 +97,17 @@ List<RouteBase> mobileOnboardingRoutes() => [
       child: const MobileImportClipboardScreen(),
     ),
   ),
-  _step('/import/review'),
+  GoRoute(
+    path: '/import/review',
+    redirect: (_, state) =>
+        state.extra is MobileImportReviewArgs ? null : '/import',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: MobileImportReviewScreen(
+        args: state.extra as MobileImportReviewArgs,
+      ),
+    ),
+  ),
   _step('/import/birthday'),
   // Keystone onboarding has no mobile flow yet; the welcome button
   // shows the unsupported sheet and stray deep links land on welcome.
