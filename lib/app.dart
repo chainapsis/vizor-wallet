@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'src/app_bootstrap.dart';
 import 'src/core/config/swap_feature_config.dart';
 import 'src/core/layout/app_layout.dart';
+import 'src/core/navigation/mobile_onboarding_routes.dart';
 import 'src/core/navigation/mobile_routes.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
@@ -214,7 +215,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
         ? buildMobileRoutes(
             entryRoutes: [
               ...appAuthRoutes(ref, bootstrap),
-              ...appDesktopOnboardingRoutes(ref),
+              ...mobileOnboardingRoutes(),
             ],
             swapFeatureEnabled: swapFeatureEnabled,
           )
