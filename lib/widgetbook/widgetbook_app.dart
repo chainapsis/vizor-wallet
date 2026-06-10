@@ -136,6 +136,40 @@ class WidgetbookApp extends StatelessWidget {
               ],
             ),
             WidgetbookFolder(
+              name: 'Settings',
+              children: [
+                WidgetbookComponent(
+                  name: 'Screen',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Main',
+                      builder: buildSettingsMainUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Endpoint',
+                      builder: buildSettingsEndpointUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Secret passphrase gate',
+                      builder: buildSettingsSecretPassphraseGateUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Change password gate',
+                      builder: buildSettingsChangePasswordGateUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Uninstall confirm',
+                      builder: buildSettingsUninstallConfirmUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Uninstall done',
+                      builder: buildSettingsUninstallDoneUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
               name: 'Receive',
               children: [
                 WidgetbookComponent(

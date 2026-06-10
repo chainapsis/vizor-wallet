@@ -11,9 +11,15 @@ import 'package:go_router/go_router.dart';
 import '../src/app_bootstrap.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/layout/app_layout.dart';
+import '../src/core/theme/app_theme.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/features/accounts/screens/accounts_screen.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
+import '../src/features/settings/screens/settings_change_password_screen.dart';
+import '../src/features/settings/screens/settings_endpoint_screen.dart';
+import '../src/features/settings/screens/settings_screen.dart';
+import '../src/features/settings/screens/settings_seed_phrase_screen.dart';
+import '../src/features/settings/screens/settings_uninstall_screen.dart';
 import '../src/features/onboarding/unlock_screen.dart';
 import '../src/features/onboarding/welcome.dart';
 import '../src/providers/account_provider.dart';
@@ -106,6 +112,77 @@ Widget buildAccountsRemoveUseCase(BuildContext context) {
     _accountsDesignState,
     initialModalAccountUuid: 'preview-account-2',
     initialModal: AccountsScreenInitialModal.removeAccount,
+  );
+}
+
+Widget buildSettingsMainUseCase(BuildContext context) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _accountsBootstrap(_accountsDesignState, initialLocation: '/settings'),
+      ),
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(_accountsDesignState),
+      ),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(_accountsDesignState.activeAccountUuid),
+      ),
+    ],
+    child: _SettingsHarness(),
+  );
+}
+
+Widget buildSettingsEndpointUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/endpoint',
+    const SettingsEndpointScreen(),
+  );
+}
+
+Widget buildSettingsSecretPassphraseGateUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/secret-passphrase',
+    const SettingsSeedPhraseScreen(),
+  );
+}
+
+Widget buildSettingsChangePasswordGateUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/change-password',
+    const SettingsChangePasswordScreen(),
+  );
+}
+
+Widget buildSettingsUninstallConfirmUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/uninstall',
+    const SettingsUninstallScreen(),
+  );
+}
+
+/// Done stage demo: plays the badge motion (1000ms hold, then the helmet
+/// fades out over 500ms) on entry. Re-select the use case to replay.
+Widget buildSettingsUninstallDoneUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/uninstall',
+    const SettingsUninstallScreen(initialStage: SettingsUninstallStage.done),
+  );
+}
+
+Widget _buildSettingsSubScreenUseCase(String path, Widget screen) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _accountsBootstrap(_accountsDesignState, initialLocation: path),
+      ),
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(_accountsDesignState),
+      ),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(_accountsDesignState.activeAccountUuid),
+      ),
+    ],
+    child: _SettingsSubScreenHarness(path: path, screen: screen),
   );
 }
 
@@ -224,7 +301,124 @@ class _AccountsHarnessState extends State<_AccountsHarness> {
 
   @override
   Widget build(BuildContext context) {
-    return Router.withConfig(config: _router);
+    // Mirror the app-level `_DesktopOpaqueWindowBackground` underlay so
+    // transparent shells (backdrop screens) don't show Widgetbook chrome.
+    return ColoredBox(
+      color: context.colors.macosUtility.window,
+      child: Router.withConfig(config: _router),
+    );
+  }
+}
+
+class _SettingsSubScreenHarness extends StatefulWidget {
+  const _SettingsSubScreenHarness({required this.path, required this.screen});
+
+  final String path;
+  final Widget screen;
+
+  @override
+  State<_SettingsSubScreenHarness> createState() =>
+      _SettingsSubScreenHarnessState();
+}
+
+class _SettingsSubScreenHarnessState extends State<_SettingsSubScreenHarness> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: widget.path,
+      routes: [
+        GoRoute(path: widget.path, builder: (_, _) => widget.screen),
+        for (final path in [
+          '/settings',
+          '/home',
+          '/welcome',
+          '/unlock',
+          '/swap',
+          '/activity',
+          '/accounts',
+        ])
+          GoRoute(
+            path: path,
+            builder: (_, _) => _PreviewRoutePlaceholder(label: path),
+          ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Mirror the app-level `_DesktopOpaqueWindowBackground` underlay so
+    // transparent shells (backdrop screens) don't show Widgetbook chrome.
+    return ColoredBox(
+      color: context.colors.macosUtility.window,
+      child: Router.withConfig(config: _router),
+    );
+  }
+}
+
+class _SettingsHarness extends StatefulWidget {
+  @override
+  State<_SettingsHarness> createState() => _SettingsHarnessState();
+}
+
+class _SettingsHarnessState extends State<_SettingsHarness> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: '/settings',
+      routes: [
+        GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+        for (final path in const [
+          '/settings/secret-passphrase',
+          '/settings/change-password',
+          '/settings/endpoint',
+          '/settings/uninstall',
+          '/address-book',
+          '/about',
+          '/privacy',
+          '/terms',
+          '/home',
+          '/send',
+          '/receive',
+          '/activity',
+          '/accounts',
+          '/welcome',
+          '/unlock',
+        ])
+          GoRoute(
+            path: path,
+            builder: (_, _) => _PreviewRoutePlaceholder(label: path),
+          ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Mirror the app-level `_DesktopOpaqueWindowBackground` underlay so
+    // transparent shells (backdrop screens) don't show Widgetbook chrome.
+    return ColoredBox(
+      color: context.colors.macosUtility.window,
+      child: Router.withConfig(config: _router),
+    );
   }
 }
 
@@ -267,7 +461,12 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
 
   @override
   Widget build(BuildContext context) {
-    return Router.withConfig(config: _router);
+    // Mirror the app-level `_DesktopOpaqueWindowBackground` underlay so
+    // transparent shells (backdrop screens) don't show Widgetbook chrome.
+    return ColoredBox(
+      color: context.colors.macosUtility.window,
+      child: Router.withConfig(config: _router),
+    );
   }
 }
 
@@ -311,7 +510,12 @@ class _UnlockHarnessState extends State<_UnlockHarness> {
 
   @override
   Widget build(BuildContext context) {
-    return Router.withConfig(config: _router);
+    // Mirror the app-level `_DesktopOpaqueWindowBackground` underlay so
+    // transparent shells (backdrop screens) don't show Widgetbook chrome.
+    return ColoredBox(
+      color: context.colors.macosUtility.window,
+      child: Router.withConfig(config: _router),
+    );
   }
 }
 
@@ -381,9 +585,12 @@ final _accountsManyState = AccountState(
   activeAddress: 'u1widgetbookaccountsaddress',
 );
 
-AppBootstrapState _accountsBootstrap(AccountState accountState) {
+AppBootstrapState _accountsBootstrap(
+  AccountState accountState, {
+  String initialLocation = '/accounts',
+}) {
   return AppBootstrapState(
-    initialLocation: '/accounts',
+    initialLocation: initialLocation,
     initialAccountState: accountState,
     initialSyncSnapshot: AppSyncSnapshot.empty,
     network: 'main',
