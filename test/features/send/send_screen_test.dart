@@ -21,6 +21,21 @@ void main() {
 
   tearDownAll(RustLib.dispose);
 
+  testWidgets('uses shell window backing behind the send sidebar and pane', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+
+    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(
+      scaffold.backgroundColor,
+      AppThemeData.light.colors.macosUtility.window,
+    );
+  });
+
   testWidgets('prefills imported payment request into send compose', (
     tester,
   ) async {
@@ -86,6 +101,43 @@ void main() {
       find.byKey(const ValueKey('address_book_contact_picker_modal')),
       findsOneWidget,
     );
+    final contactModal = tester.widget<Container>(
+      find.byKey(const ValueKey('address_book_contact_picker_modal')),
+    );
+    final contactDecoration = contactModal.decoration as BoxDecoration;
+    expect(contactModal.clipBehavior, Clip.antiAlias);
+    expect(
+      contactModal.padding,
+      const EdgeInsets.fromLTRB(AppSpacing.sm, AppSpacing.md, AppSpacing.sm, 0),
+    );
+    expect(contactDecoration.color, AppThemeData.light.colors.background.base);
+    expect(
+      contactDecoration.borderRadius,
+      BorderRadius.circular(AppRadii.large),
+    );
+    expect(contactDecoration.boxShadow, _figmaModalSurfaceShadows);
+    expect(find.bySemanticsLabel('Close contacts'), findsOneWidget);
+    expect(find.text('Cancel'), findsNothing);
+    final contactScrollbar = tester.widget<RawScrollbar>(
+      find.byKey(const ValueKey('address_book_contact_picker_scrollbar')),
+    );
+    expect(contactScrollbar.thickness, 6);
+    expect(contactScrollbar.mainAxisMargin, 6);
+    expect(contactScrollbar.crossAxisMargin, 6);
+    final contactListGutter = tester.widget<Padding>(
+      find.byKey(const ValueKey('address_book_contact_picker_list_gutter')),
+    );
+    expect(contactListGutter.padding, const EdgeInsets.only(right: 22));
+    expect(
+      tester
+          .getSize(
+            find.byKey(
+              const ValueKey('address_book_contact_picker_contact_alice'),
+            ),
+          )
+          .height,
+      44,
+    );
     expect(find.text('Alice'), findsOneWidget);
     expect(find.text('Sol Friend'), findsNothing);
 
@@ -99,6 +151,78 @@ void main() {
       findsNothing,
     );
     expect(_fieldText(tester, 'send_address_field'), _shieldedAddress);
+    expect(find.text('Alice'), findsOneWidget);
+  });
+
+  testWidgets('contact picker shares scrollbar controller for long lists', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        addressBookRepository: _FakeAddressBookRepository([
+          for (var index = 0; index < 8; index++)
+            _contact(
+              id: 'zcash-$index',
+              label: 'Contact $index',
+              network: AddressBookNetwork.zcash,
+              address: '$_shieldedAddress$index',
+            ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('send_contacts_button')));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final scrollbar = tester.widget<RawScrollbar>(
+      find.byKey(const ValueKey('address_book_contact_picker_scrollbar')),
+    );
+    final listView = tester.widget<ListView>(
+      find.descendant(
+        of: find.byKey(const ValueKey('address_book_contact_picker_modal')),
+        matching: find.byType(ListView),
+      ),
+    );
+
+    expect(scrollbar.thumbVisibility, isTrue);
+    expect(scrollbar.controller, same(listView.controller));
+  });
+
+  testWidgets('memo input only opens after a valid shielded address', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add a memo'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('send_add_memo_card'))),
+      const Size(396, 128),
+    );
+
+    await tester.tap(find.text('Add a memo'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('send_memo_field')), findsNothing);
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Shielded → Shielded'), findsOneWidget);
+    expect(find.text('Add a memo'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('send_add_memo_card'))),
+      const Size(396, 128),
+    );
+
+    await tester.tap(find.text('Add a memo'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('send_memo_field')), findsOneWidget);
   });
 
   testWidgets('hides imported memo controls for transparent recipients', (
@@ -119,12 +243,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Transparent Address'), findsOneWidget);
+    expect(find.text('Shielded → Transparent'), findsOneWidget);
     expect(find.text('Transparent memo'), findsNothing);
-    expect(find.text('Add a message'), findsNothing);
-    expect(find.text('Encrypted, for Shielded Addresses only.'), findsNothing);
+    expect(find.text('Add a memo'), findsNothing);
+    expect(find.text('Encrypted, for shielded addresses only.'), findsNothing);
+    expect(find.byKey(const ValueKey('send_add_memo_card')), findsNothing);
+    expect(find.byKey(const ValueKey('send_memo_field')), findsNothing);
   });
 }
+
+const _figmaModalSurfaceShadows = [
+  BoxShadow(color: Color(0x14000000), offset: Offset(0, 14), blurRadius: 28),
+  BoxShadow(color: Color(0x08000000), offset: Offset(0, -6), blurRadius: 12),
+  BoxShadow(color: Color(0x0F000000), offset: Offset(0, 2), blurRadius: 8),
+];
 
 Widget _sendHarness({
   SendPrefillArgs? prefill,
@@ -133,10 +265,7 @@ Widget _sendHarness({
   final router = GoRouter(
     initialLocation: '/send',
     routes: [
-      GoRoute(
-        path: '/send',
-        builder: (_, _) => SendScreen(prefill: prefill),
-      ),
+      GoRoute(path: '/send', builder: (_, _) => SendScreen(prefill: prefill)),
       GoRoute(path: '/send/review', builder: (_, _) => const SizedBox.shrink()),
     ],
   );
@@ -197,13 +326,15 @@ Future<void> _setDesktopViewport(WidgetTester tester) async {
 }
 
 String _fieldText(WidgetTester tester, String keyValue) {
-  final editable = tester.widget<EditableText>(
-    find.descendant(
-      of: find.byKey(ValueKey(keyValue)),
-      matching: find.byType(EditableText),
-    ),
-  );
+  final editable = tester.widget<EditableText>(_editableIn(keyValue));
   return editable.controller.text;
+}
+
+Finder _editableIn(String keyValue) {
+  return find.descendant(
+    of: find.byKey(ValueKey(keyValue)),
+    matching: find.byType(EditableText),
+  );
 }
 
 final _bootstrap = AppBootstrapState(

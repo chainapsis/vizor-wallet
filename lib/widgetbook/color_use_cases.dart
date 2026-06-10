@@ -763,9 +763,15 @@ Widget buildStateUseCase(BuildContext context) {
     swatches: [
       TokenSwatch(
         name: 'state/hover',
-        description: 'Overlay on hover — layer over base',
+        description: 'Solid hover fill',
         dark: d.state.hover,
         light: l.state.hover,
+      ),
+      TokenSwatch(
+        name: 'state/neutral/alpha/hover-opacity',
+        description: 'Alpha overlay for hover states',
+        dark: d.state.hoverOpacity,
+        light: l.state.hoverOpacity,
       ),
       TokenSwatch(
         name: 'state/pressed',

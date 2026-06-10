@@ -8,6 +8,7 @@ class AppSyncColors {
     required this.text,
     required this.textSyncing,
     required this.textError,
+    required this.glow,
     required this.lightSuccess,
     required this.lightError,
   });
@@ -15,6 +16,7 @@ class AppSyncColors {
   final Color text;
   final Color textSyncing;
   final Color textError;
+  final Color glow;
   final Color lightSuccess;
   final Color lightError;
 
@@ -22,6 +24,7 @@ class AppSyncColors {
     text: GreenPrimitives.p900Dark,
     textSyncing: GreenPrimitives.p900Alpha65Dark,
     textError: Primitives.p900Alpha50Dark,
+    glow: Primitives.p500Dark,
     lightSuccess: GreenPrimitives.p300Dark,
     lightError: Primitives.p600Dark,
   );
@@ -30,6 +33,7 @@ class AppSyncColors {
     text: GreenPrimitives.p700Light,
     textSyncing: GreenPrimitives.p900Alpha65Light,
     textError: Primitives.p900Alpha50Light,
+    glow: GreenPrimitives.p200Light,
     lightSuccess: GreenPrimitives.p400Light,
     lightError: Primitives.p500Light,
   );

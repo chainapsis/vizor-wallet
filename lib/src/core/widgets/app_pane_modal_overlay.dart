@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -9,10 +7,14 @@ class AppPaneModalOverlay extends StatelessWidget {
   const AppPaneModalOverlay({
     required this.child,
     required this.onDismiss,
-    this.borderRadius,
+    this.borderRadius = defaultBorderRadius,
     this.alignment = Alignment.center,
     super.key,
   });
+
+  static const defaultBorderRadius = BorderRadius.all(
+    Radius.circular(AppWindowSizing.paneRadius),
+  );
 
   final Widget child;
   final VoidCallback onDismiss;
@@ -41,22 +43,19 @@ class AppPaneModalOverlay extends StatelessWidget {
           },
           child: _ModalClip(
             borderRadius: borderRadius,
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: onDismiss,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: colors.background.neutralScrim,
-                  ),
-                  child: Align(
-                    alignment: alignment,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {},
-                      child: child,
-                    ),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onDismiss,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colors.background.neutralScrim,
+                ),
+                child: Align(
+                  alignment: alignment,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {},
+                    child: child,
                   ),
                 ),
               ),

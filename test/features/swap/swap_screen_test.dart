@@ -30,7 +30,6 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferenc
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
-import 'package:zcash_wallet/src/features/activity/widgets/activity_table.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_review_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_amount_text.dart';
@@ -1844,6 +1843,52 @@ void main() {
     expect(_destinationSummaryText(tester), '0xd1220a...7b9adb');
   });
 
+  testWidgets('swap contact picker cancel returns to address editor', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        addressBookRepository: _FakeAddressBookRepository([
+          _addressBookContact(
+            id: 'usdc',
+            label: 'USDC Friend',
+            network: AddressBookNetwork.ethereum,
+            address: '0xd1220a0cf47c7b9be7a2e6ba89f429762e7b9adb',
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('swap_address_contacts_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('address_book_contact_picker_modal')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.bySemanticsLabel('Close contacts'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('address_book_contact_picker_modal')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('swap_address_modal')), findsOneWidget);
+  });
+
   testWidgets('swap address modal remembers submitted recipient', (
     tester,
   ) async {
@@ -2892,6 +2937,14 @@ void main() {
       find.byKey(const ValueKey('swap_external_asset_menu')),
       findsOneWidget,
     );
+    final assetModal = tester.widget<Container>(
+      find.byKey(const ValueKey('swap_external_asset_menu')),
+    );
+    final assetDecoration = assetModal.decoration as BoxDecoration;
+    expect(assetModal.clipBehavior, Clip.antiAlias);
+    expect(assetDecoration.color, AppThemeData.light.colors.background.base);
+    expect(assetDecoration.borderRadius, BorderRadius.circular(AppRadii.large));
+    expect(assetDecoration.boxShadow, _figmaModalSurfaceShadows);
     expect(
       find.byKey(const ValueKey('swap_asset_chain_badge_usdc')),
       findsWidgets,
@@ -3833,7 +3886,7 @@ void main() {
     );
     final now = DateTime.utc(2026, 5, 27, 12);
     final overflowIntents = [
-      for (var i = 0; i < 5; i++)
+      for (var i = 0; i < 12; i++)
         baseIntent.copyWith(
           id: 'swap-scroll-$i',
           accountUuid: 'account-1',
@@ -3862,10 +3915,19 @@ void main() {
     final controller = scrollView.controller!;
     expect(controller.position.maxScrollExtent, greaterThan(0));
     final paneRect = tester.getRect(find.byType(AppDesktopPane));
+    final pane = tester.widget<AppDesktopPane>(find.byType(AppDesktopPane));
+    expect(pane.backgroundColor, isNull);
     final scrollbarRect = tester.getRect(
       find.byKey(const ValueKey('activity_screen_scrollbar')),
     );
     expect((scrollbarRect.right - paneRect.right).abs(), lessThan(1));
+    final thumb = find.byKey(const ValueKey('activity_screen_scroll_thumb'));
+    expect(thumb, findsOneWidget);
+    final thumbDecoration =
+        tester.widget<DecoratedBox>(thumb).decoration as BoxDecoration;
+    expect(thumbDecoration.color, AppThemeData.light.colors.background.overlay);
+    expect(find.byType(RawScrollbar), findsNothing);
+    final beforeTop = tester.getTopLeft(thumb).dy;
 
     await tester.drag(
       find.byKey(const ValueKey('activity_screen_scroll_view')),
@@ -3874,9 +3936,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.offset, greaterThan(0));
+    expect(tester.getTopLeft(thumb).dy, greaterThan(beforeTop));
   });
 
-  testWidgets('activity page shows six rows before paginating', (tester) async {
+  testWidgets('activity page renders all rows in the scroll feed', (
+    tester,
+  ) async {
     await _setDesktopViewport(tester);
     final baseIntent = swapActivityFixtureIntents.firstWhere(
       (intent) => intent.id == 'swap-2a11',
@@ -3904,8 +3969,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('activity_screen_row_5')), findsOneWidget);
-    expect(find.byKey(const ValueKey('activity_screen_row_6')), findsNothing);
-    expect(find.byType(ActivityTablePagination), findsOneWidget);
+    expect(find.byKey(const ValueKey('activity_screen_row_6')), findsOneWidget);
+    final filterLabel = tester.widget<Text>(
+      find.byKey(const ValueKey('activity_screen_filter_label')),
+    );
+    expect(filterLabel.style?.color, AppThemeData.light.colors.text.disabled);
+    final filterIcon = tester.widget<AppIcon>(
+      find.byKey(const ValueKey('activity_screen_filter_icon')),
+    );
+    expect(filterIcon.name, AppIcons.filter);
+    expect(filterIcon.color, AppThemeData.light.colors.icon.disabled);
   });
 
   testWidgets('activity progress detail fits without scrollbar chrome', (
@@ -7368,6 +7441,12 @@ void main() {
     expect(swapProvider.submittedDeposits, hasLength(1));
   });
 }
+
+const _figmaModalSurfaceShadows = [
+  BoxShadow(color: Color(0x14000000), offset: Offset(0, 14), blurRadius: 28),
+  BoxShadow(color: Color(0x08000000), offset: Offset(0, -6), blurRadius: 12),
+  BoxShadow(color: Color(0x0F000000), offset: Offset(0, 2), blurRadius: 8),
+];
 
 Widget _routerHarness(
   GoRouter router, {

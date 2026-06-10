@@ -3,6 +3,7 @@ import 'app_border_colors.dart';
 import 'app_button_colors.dart';
 import 'app_fade_colors.dart';
 import 'app_icon_colors.dart';
+import 'app_macos_utility_colors.dart';
 import 'app_nav_panel_colors.dart';
 import 'app_shadow_colors.dart';
 import 'app_state_colors.dart';
@@ -15,6 +16,7 @@ export 'app_border_colors.dart';
 export 'app_button_colors.dart';
 export 'app_fade_colors.dart';
 export 'app_icon_colors.dart';
+export 'app_macos_utility_colors.dart';
 export 'app_nav_panel_colors.dart';
 export 'app_shadow_colors.dart';
 export 'app_state_colors.dart';
@@ -42,6 +44,7 @@ class AppColors {
     required this.navPanel,
     required this.shadows,
     required this.sync,
+    required this.macosUtility,
   });
 
   final AppBackgroundColors background;
@@ -55,6 +58,7 @@ class AppColors {
   final AppNavPanelColors navPanel;
   final AppShadowColors shadows;
   final AppSyncColors sync;
+  final AppMacosUtilityColors macosUtility;
 
   static const dark = AppColors(
     background: AppBackgroundColors.dark,
@@ -68,6 +72,7 @@ class AppColors {
     navPanel: AppNavPanelColors.dark,
     shadows: AppShadowColors.dark,
     sync: AppSyncColors.dark,
+    macosUtility: AppMacosUtilityColors.dark,
   );
 
   static const light = AppColors(
@@ -82,5 +87,6 @@ class AppColors {
     navPanel: AppNavPanelColors.light,
     shadows: AppShadowColors.light,
     sync: AppSyncColors.light,
+    macosUtility: AppMacosUtilityColors.light,
   );
 }

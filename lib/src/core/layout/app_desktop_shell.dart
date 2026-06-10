@@ -13,18 +13,20 @@ class AppDesktopShell extends StatelessWidget {
   const AppDesktopShell({
     required this.sidebar,
     required this.pane,
+    this.backgroundColor,
     this.sidebarWidth = 256,
     super.key,
   });
 
   final Widget sidebar;
   final Widget pane;
+  final Color? backgroundColor;
   final double sidebarWidth;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: backgroundColor ?? context.colors.macosUtility.window,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.xs),
@@ -62,17 +64,11 @@ class AppDesktopSidebarSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (glass) {
-      final isDark = context.appTheme == AppThemeData.dark;
+      final colors = context.colors;
       final radius = BorderRadius.circular(_glassRadius);
-      final fill =
-          backgroundColor ??
-          (isDark ? const Color(0xFF101010) : const Color(0xFFFFFFFF));
-      final thinBorderColor = isDark
-          ? const Color(0xFF1A1A1A).withValues(alpha: 0.23)
-          : const Color(0xFF1A1A1A).withValues(alpha: 0.06);
-      final innerHighlightColor = const Color(
-        0xFFFFFFFF,
-      ).withValues(alpha: isDark ? 0.15 : 0.04);
+      final fill = backgroundColor ?? colors.macosUtility.navPanel;
+      final thinBorderColor = colors.macosUtility.thinBorder;
+      final innerHighlightColor = colors.macosUtility.innerBorder;
 
       return DecoratedBox(
         decoration: BoxDecoration(
@@ -139,8 +135,8 @@ class AppDesktopPane extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: backgroundColor ?? context.colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+        color: backgroundColor ?? Colors.transparent,
+        borderRadius: BorderRadius.circular(AppWindowSizing.paneRadius),
       ),
       clipBehavior: Clip.antiAlias,
       child: AppToastHost(
@@ -307,6 +303,7 @@ class AppSidebarItem extends StatelessWidget {
     this.onTap,
     this.leadingGap = AppSpacing.md,
     this.inactiveOpacity = 1,
+    this.iconAnimated = true,
     super.key,
   }) : assert(iconName != null || leading != null);
 
@@ -317,6 +314,7 @@ class AppSidebarItem extends StatelessWidget {
   final VoidCallback? onTap;
   final double leadingGap;
   final double inactiveOpacity;
+  final bool iconAnimated;
 
   @override
   Widget build(BuildContext context) {
@@ -344,7 +342,13 @@ class AppSidebarItem extends StatelessWidget {
       ),
       child: Row(
         children: [
-          leading ?? AppIcon(iconName!, size: 20, color: iconColor),
+          leading ??
+              AppIcon(
+                iconName!,
+                size: 20,
+                color: iconColor,
+                animated: iconAnimated,
+              ),
           SizedBox(width: leadingGap),
           Expanded(
             child: Text(

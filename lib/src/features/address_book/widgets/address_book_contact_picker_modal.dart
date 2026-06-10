@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
@@ -35,6 +34,12 @@ class AddressBookContactPickerModal extends ConsumerStatefulWidget {
 
 class _AddressBookContactPickerModalState
     extends ConsumerState<AddressBookContactPickerModal> {
+  static const _modalSurfaceShadows = [
+    BoxShadow(color: Color(0x14000000), offset: Offset(0, 14), blurRadius: 28),
+    BoxShadow(color: Color(0x08000000), offset: Offset(0, -6), blurRadius: 12),
+    BoxShadow(color: Color(0x0F000000), offset: Offset(0, 2), blurRadius: 8),
+  ];
+
   late final TextEditingController _queryController;
   late final FocusNode _queryFocusNode;
 
@@ -81,37 +86,23 @@ class _AddressBookContactPickerModalState
       key: const ValueKey('address_book_contact_picker_modal'),
       width: 312,
       height: 440,
+      clipBehavior: Clip.antiAlias,
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
         AppSpacing.md,
         AppSpacing.sm,
-        AppSpacing.sm,
+        0,
       ),
       decoration: BoxDecoration(
-        color: colors.background.ground,
+        color: colors.background.base,
         borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: _modalSurfaceShadows,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: colors.background.base,
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: AppIcon(
-                    AppIcons.users,
-                    size: AppIconSize.medium,
-                    color: colors.icon.regular,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
               Expanded(
                 child: Text(
                   widget.title,
@@ -119,10 +110,11 @@ class _AddressBookContactPickerModalState
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.bodyLarge.copyWith(
                     color: colors.text.accent,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
+              const SizedBox(width: AppSpacing.xs),
               _ContactPickerIconButton(
                 semanticLabel: 'Close contacts',
                 iconName: AppIcons.cross,
@@ -130,55 +122,63 @@ class _AddressBookContactPickerModalState
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.sm),
-          AppTextField(
-            key: const ValueKey('address_book_contact_picker_search'),
-            label: 'Search',
-            showLabel: false,
-            controller: _queryController,
-            focusNode: _queryFocusNode,
-            hintText: widget.searchHint,
-            leading: const AppIcon(AppIcons.search),
-            leadingSlotWidth: 40,
-            trailingSlotWidth: 40,
-            inputHorizontalPadding: AppSpacing.xs,
-            showClearButton: true,
-            clearButtonRequiresText: false,
-            onChanged: (_) => setState(() {}),
-            onClear: () => setState(() {}),
-          ),
-          const SizedBox(height: AppSpacing.sm),
           Expanded(
-            child: contactsAsync.when(
-              loading: () => const Center(
-                child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: AppIcon(AppIcons.loader, size: 18),
-                ),
+            child: Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.sm),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.xs),
+                    child: AppTextField(
+                      key: const ValueKey('address_book_contact_picker_search'),
+                      label: 'Search',
+                      showLabel: false,
+                      controller: _queryController,
+                      focusNode: _queryFocusNode,
+                      hintText: widget.searchHint,
+                      leading: const AppIcon(AppIcons.search),
+                      leadingSlotWidth: AppInputSizing.iconWrapWidth,
+                      trailingSlotWidth: 40,
+                      inputHorizontalPadding: AppSpacing.s,
+                      showClearButton: true,
+                      onChanged: (_) => setState(() {}),
+                      onClear: () => setState(() {}),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Expanded(
+                    child: contactsAsync.when(
+                      loading:
+                          () => const Center(
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: AppIcon(AppIcons.loader, size: 18),
+                            ),
+                          ),
+                      error:
+                          (_, _) => const _ContactPickerEmptyResult(
+                            title: "Couldn't load contacts. Try again.",
+                          ),
+                      data: (state) {
+                        final contacts = _filteredContacts(state);
+                        if (contacts.isEmpty) {
+                          return _ContactPickerEmptyResult(
+                            title: widget.emptyTitle,
+                          );
+                        }
+                        return _ContactPickerList(
+                          contacts: contacts,
+                          showNetwork: widget.networks.length > 1,
+                          onSelected: widget.onSelected,
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
-              error: (_, _) => const _ContactPickerEmptyResult(
-                title: "Couldn't load contacts. Try again.",
-              ),
-              data: (state) {
-                final contacts = _filteredContacts(state);
-                if (contacts.isEmpty) {
-                  return _ContactPickerEmptyResult(title: widget.emptyTitle);
-                }
-                return _ContactPickerList(
-                  contacts: contacts,
-                  showNetwork: widget.networks.length > 1,
-                  onSelected: widget.onSelected,
-                );
-              },
             ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          AppButton(
-            onPressed: widget.onCancel,
-            variant: AppButtonVariant.ghost,
-            minWidth: 280,
-            child: const Text('Cancel'),
           ),
         ],
       ),
@@ -186,7 +186,7 @@ class _AddressBookContactPickerModalState
   }
 }
 
-class _ContactPickerList extends StatelessWidget {
+class _ContactPickerList extends StatefulWidget {
   const _ContactPickerList({
     required this.contacts,
     required this.showNetwork,
@@ -198,19 +198,119 @@ class _ContactPickerList extends StatelessWidget {
   final ValueChanged<AddressBookContact> onSelected;
 
   @override
+  State<_ContactPickerList> createState() => _ContactPickerListState();
+}
+
+class _ContactPickerListState extends State<_ContactPickerList> {
+  late final ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: EdgeInsets.zero,
-      children: [
-        for (final contact in contacts)
-          _ContactPickerRow(
-            key: ValueKey('address_book_contact_picker_contact_${contact.id}'),
-            contact: contact,
-            showNetwork: showNetwork,
-            onTap: () => onSelected(contact),
+    final colors = context.colors;
+    return RawScrollbar(
+      key: const ValueKey('address_book_contact_picker_scrollbar'),
+      controller: _scrollController,
+      thumbVisibility: widget.contacts.length > 5,
+      radius: const Radius.circular(AppRadii.full),
+      thickness: 6,
+      mainAxisMargin: 6,
+      crossAxisMargin: 6,
+      thumbColor: colors.background.overlay,
+      child: Padding(
+        key: const ValueKey('address_book_contact_picker_list_gutter'),
+        padding: const EdgeInsets.only(right: 22),
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+          child: ListView.separated(
+            controller: _scrollController,
+            padding: EdgeInsets.zero,
+            itemCount: widget.contacts.length,
+            separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
+            itemBuilder: (context, index) {
+              final contact = widget.contacts[index];
+              return _ContactPickerRow(
+                key: ValueKey(
+                  'address_book_contact_picker_contact_${contact.id}',
+                ),
+                contact: contact,
+                showNetwork: widget.showNetwork,
+                onTap: () => widget.onSelected(contact),
+              );
+            },
           ),
-      ],
+        ),
+      ),
     );
+  }
+}
+
+class _ContactPickerIconButton extends StatefulWidget {
+  const _ContactPickerIconButton({
+    required this.semanticLabel,
+    required this.iconName,
+    required this.onTap,
+  });
+
+  final String semanticLabel;
+  final String iconName;
+  final VoidCallback onTap;
+
+  @override
+  State<_ContactPickerIconButton> createState() =>
+      _ContactPickerIconButtonState();
+}
+
+class _ContactPickerIconButtonState extends State<_ContactPickerIconButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: true,
+      label: widget.semanticLabel,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => _setHovered(true),
+        onExit: (_) => _setHovered(false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: _hovered ? colors.background.ground : null,
+              borderRadius: BorderRadius.circular(AppRadii.xSmall),
+            ),
+            child: Center(
+              child: AppIcon(
+                widget.iconName,
+                size: AppIconSize.medium,
+                color: colors.icon.regular,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _setHovered(bool value) {
+    if (_hovered == value) return;
+    setState(() => _hovered = value);
   }
 }
 
@@ -244,11 +344,11 @@ class _ContactPickerRowState extends State<_ContactPickerRow> {
         behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
         child: Container(
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           decoration: BoxDecoration(
             color: _hovered ? colors.background.base : null,
-            borderRadius: BorderRadius.circular(AppRadii.xSmall),
+            borderRadius: BorderRadius.circular(AppRadii.small),
           ),
           child: Row(
             children: [
@@ -266,17 +366,18 @@ class _ContactPickerRowState extends State<_ContactPickerRow> {
                       widget.contact.label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelLarge.copyWith(
+                      style: AppTypography.labelMedium.copyWith(
                         color: colors.text.accent,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: AppSpacing.xxs),
                     Text(
                       widget.contact.addressPreview,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelMedium.copyWith(
                         color: colors.text.secondary,
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
                   ],
@@ -322,62 +423,5 @@ class _ContactPickerEmptyResult extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _ContactPickerIconButton extends StatefulWidget {
-  const _ContactPickerIconButton({
-    required this.semanticLabel,
-    required this.iconName,
-    required this.onTap,
-  });
-
-  final String semanticLabel;
-  final String iconName;
-  final VoidCallback onTap;
-
-  @override
-  State<_ContactPickerIconButton> createState() =>
-      _ContactPickerIconButtonState();
-}
-
-class _ContactPickerIconButtonState extends State<_ContactPickerIconButton> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: widget.semanticLabel,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => _setHovered(true),
-        onExit: (_) => _setHovered(false),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: widget.onTap,
-          child: Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: _hovered ? context.colors.background.base : null,
-              borderRadius: BorderRadius.circular(AppRadii.xSmall),
-            ),
-            child: Center(
-              child: AppIcon(
-                widget.iconName,
-                size: AppIconSize.medium,
-                color: context.colors.icon.regular,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _setHovered(bool value) {
-    if (_hovered == value) return;
-    setState(() => _hovered = value);
   }
 }

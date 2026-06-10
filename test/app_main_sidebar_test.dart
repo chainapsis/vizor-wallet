@@ -35,63 +35,198 @@ void main() {
     expect(find.text('Vizor is synced'), findsNothing);
   });
 
-  testWidgets('sidebar shows redesigned primary navigation', (tester) async {
-    await tester.pumpWidget(_sidebarHarness(SyncState()));
+  testWidgets('sidebar shows primary navigation', (tester) async {
+    await tester.pumpWidget(_sidebarHarness(_syncedSyncState));
     await tester.pump();
 
     expect(
       find.byKey(const ValueKey('sidebar_accounts_button')),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('sidebar_wallet_button')), findsOneWidget);
-    expect(find.byKey(const ValueKey('sidebar_send_button')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('sidebar_receive_button')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('sidebar_home_button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('sidebar_swap_button')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('sidebar_activity_button')),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('sidebar_swap_button')), findsOneWidget);
-    expect(find.byKey(const ValueKey('sidebar_voting_button')), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Swap'), findsOneWidget);
+    expect(find.text('Activity'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Sign out'), findsOneWidget);
+    expect(find.text('Wallet'), findsNothing);
+    expect(find.text('Send'), findsNothing);
+    expect(find.text('Receive'), findsNothing);
+    expect(find.text('Vote'), findsNothing);
+    expect(find.text('Address book'), findsNothing);
+    expect(find.text('About Vizor'), findsNothing);
+  });
+
+  testWidgets('sidebar keeps Home active and clickable on send routes', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(_syncedSyncState, initialLocation: '/send'),
+    );
+    await tester.pump();
+
+    final homeItem = tester.widget<AppSidebarItem>(
+      find.byKey(const ValueKey('sidebar_home_button')),
+    );
+    expect(homeItem.active, isTrue);
+    expect(homeItem.onTap, isNotNull);
+    expect(find.text('send route'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('sidebar_home_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('home route'), findsOneWidget);
+    expect(find.text('send route'), findsNothing);
+  });
+
+  testWidgets('sidebar accounts popover shows boundaries and click cursors', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(_syncedSyncState, accountState: _multiAccountState),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('sidebar_accounts_button')));
+    await tester.pump();
+
     expect(
-      find.byKey(const ValueKey('sidebar_address_book_button')),
+      find.byKey(const ValueKey('sidebar_accounts_popover')),
       findsOneWidget,
     );
-    expect(find.text('Wallet'), findsOneWidget);
-    expect(find.text('Send'), findsOneWidget);
-    expect(find.text('Receive'), findsOneWidget);
-    expect(find.text('Swap'), findsOneWidget);
-    expect(find.text('Vote'), findsOneWidget);
-    expect(find.text('Address book'), findsOneWidget);
-    expect(find.text('Activity'), findsOneWidget);
-    expect(find.byKey(const ValueKey('sidebar_home_button')), findsNothing);
-    expect(find.text('Home'), findsNothing);
-    expect(find.text('About Vizor'), findsNothing);
+    expect(find.text('My accounts'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('sidebar_accounts_divider_0')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('sidebar_accounts_actions_divider')),
+      findsOneWidget,
+    );
+
+    final popoverDecoration = _boxDecorationByKey(
+      tester,
+      const ValueKey('sidebar_accounts_popover'),
+    );
+    final popoverBorder = popoverDecoration.border as Border;
+    expect(popoverBorder.top.color, AppColors.light.border.subtle);
+    expect(popoverBorder.top.width, 1);
+    final scrollbar = tester.widget<RawScrollbar>(
+      find.byKey(const ValueKey('sidebar_accounts_scrollbar')),
+    );
+    expect(scrollbar.controller, isNotNull);
+    expect(scrollbar.thumbVisibility, isFalse);
+    expect(
+      DefaultTextStyle.of(
+        tester.element(find.text('My accounts')),
+      ).style.decoration,
+      TextDecoration.none,
+    );
+    expect(_cursorForText(tester, 'Primary Vault'), SystemMouseCursors.click);
+    expect(
+      _cursorForKey(tester, const ValueKey('sidebar_accounts_manage')),
+      SystemMouseCursors.click,
+    );
+    expect(
+      _cursorForKey(tester, const ValueKey('sidebar_accounts_add')),
+      SystemMouseCursors.click,
+    );
+  });
+
+  testWidgets('sidebar accounts popover scrolls long account list', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(_syncedSyncState, accountState: _manyAccountState),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('sidebar_accounts_button')));
+    await tester.pump();
+
+    final scrollbar = tester.widget<RawScrollbar>(
+      find.byKey(const ValueKey('sidebar_accounts_scrollbar')),
+    );
+    expect(scrollbar.controller, isNotNull);
+    expect(scrollbar.thumbVisibility, isTrue);
+    expect(find.text('Account 8'), findsNothing);
+
+    await tester.drag(
+      find.byKey(const ValueKey('sidebar_accounts_list')),
+      const Offset(0, -600),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Account 8'), findsOneWidget);
+    final listBottom =
+        tester
+            .getBottomLeft(find.byKey(const ValueKey('sidebar_accounts_list')))
+            .dy;
+    final lastRowBottom =
+        tester
+            .getBottomLeft(
+              find.byKey(
+                const ValueKey('sidebar_account_popover_row_account-8'),
+              ),
+            )
+            .dy;
+    expect(
+      listBottom - lastRowBottom,
+      moreOrLessEquals(AppSpacing.xs, epsilon: 0.1),
+    );
+  });
+
+  testWidgets('sidebar accounts popover closes on outside pane click', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(_syncedSyncState, accountState: _multiAccountState),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('sidebar_accounts_button')));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('sidebar_accounts_popover')),
+      findsOneWidget,
+    );
+
+    await tester.tapAt(const Offset(420, 120));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('sidebar_accounts_popover')),
+      findsNothing,
+    );
   });
 
   testWidgets('sidebar hides Swap when swap feature is disabled', (
     tester,
   ) async {
-    await tester.pumpWidget(_sidebarHarness(SyncState(), swapEnabled: false));
+    await tester.pumpWidget(
+      _sidebarHarness(_syncedSyncState, swapEnabled: false),
+    );
     await tester.pump();
 
     expect(find.byKey(const ValueKey('sidebar_swap_button')), findsNothing);
     expect(find.text('Swap'), findsNothing);
-    expect(find.byKey(const ValueKey('sidebar_wallet_button')), findsOneWidget);
-    expect(find.text('Wallet'), findsOneWidget);
-    expect(find.byKey(const ValueKey('sidebar_voting_button')), findsOneWidget);
-    expect(find.text('Vote'), findsOneWidget);
+    expect(find.byKey(const ValueKey('sidebar_home_button')), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('sidebar_address_book_button')),
+      find.byKey(const ValueKey('sidebar_activity_button')),
       findsOneWidget,
     );
-    expect(find.text('Address book'), findsOneWidget);
+    expect(find.text('Activity'), findsOneWidget);
   });
 
   testWidgets('sidebar Swap item opens the swap route', (tester) async {
-    await tester.pumpWidget(_sidebarHarness(SyncState()));
+    await tester.pumpWidget(_sidebarHarness(_syncedSyncState));
     await tester.pump();
 
     await tester.tap(find.text('Swap'));
@@ -100,41 +235,35 @@ void main() {
     expect(find.text('swap'), findsOneWidget);
   });
 
-  testWidgets('sidebar Vote item opens the voting route', (tester) async {
-    await tester.pumpWidget(_sidebarHarness(SyncState()));
+  testWidgets('sidebar Activity item opens the activity route', (tester) async {
+    await tester.pumpWidget(_sidebarHarness(_syncedSyncState));
     await tester.pump();
 
-    await tester.tap(find.text('Vote'));
+    await tester.tap(find.text('Activity'));
     await tester.pumpAndSettle();
 
-    expect(find.text('voting'), findsOneWidget);
+    expect(find.text('activity'), findsOneWidget);
   });
 
-  testWidgets('sidebar Address book item opens the address book route', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_sidebarHarness(SyncState()));
+  testWidgets('sidebar Settings item opens the settings route', (tester) async {
+    await tester.pumpWidget(_sidebarHarness(_syncedSyncState));
     await tester.pump();
 
-    await tester.tap(find.text('Address book'));
+    await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
 
-    expect(find.text('address book'), findsOneWidget);
+    expect(find.text('settings'), findsOneWidget);
   });
 
   testWidgets('sidebar keeps primary navigation item spacing consistent', (
     tester,
   ) async {
-    await tester.pumpWidget(_sidebarHarness(SyncState()));
+    await tester.pumpWidget(_sidebarHarness(_syncedSyncState));
     await tester.pump();
 
     final positions = [
-      tester.getTopLeft(find.text('Wallet')).dy,
-      tester.getTopLeft(find.text('Send')).dy,
-      tester.getTopLeft(find.text('Receive')).dy,
+      tester.getTopLeft(find.text('Home')).dy,
       tester.getTopLeft(find.text('Swap')).dy,
-      tester.getTopLeft(find.text('Vote')).dy,
-      tester.getTopLeft(find.text('Address book')).dy,
       tester.getTopLeft(find.text('Activity')).dy,
     ];
     final gaps = [
@@ -147,6 +276,46 @@ void main() {
     }
   });
 
+  testWidgets('sidebar disables only Swap and Activity while importing', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: false,
+          isSyncing: true,
+          displayPercentage: 0.32,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Importing...'), findsOneWidget);
+
+    await tester.tap(find.text('Swap'));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('swap'), findsNothing);
+
+    await tester.tap(find.text('Activity'));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('activity'), findsNothing);
+    expect(find.text('home route'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('sidebar_accounts_button')));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('sidebar_accounts_popover')),
+      findsOneWidget,
+    );
+
+    await tester.tapAt(const Offset(420, 120));
+    await tester.pump();
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+    expect(find.text('settings'), findsOneWidget);
+  });
+
   testWidgets('sidebar sync indicator is pinned to the sidebar edge', (
     tester,
   ) async {
@@ -155,12 +324,12 @@ void main() {
     );
     await tester.pump();
 
-    final indicatorLeft = tester
-        .getTopLeft(find.byKey(const ValueKey('sidebar_sync_indicator')))
-        .dx;
-    final textLeft = tester
-        .getTopLeft(find.byKey(const ValueKey('sidebar_sync_text')))
-        .dx;
+    final indicatorLeft =
+        tester
+            .getTopLeft(find.byKey(const ValueKey('sidebar_sync_indicator')))
+            .dx;
+    final textLeft =
+        tester.getTopLeft(find.byKey(const ValueKey('sidebar_sync_text'))).dx;
 
     expect(indicatorLeft, moreOrLessEquals(AppSpacing.xs, epsilon: 0.1));
     expect(
@@ -295,23 +464,62 @@ Color? _syncIndicatorColor(WidgetTester tester) {
   return (decoratedBox.decoration as BoxDecoration).color;
 }
 
+BoxDecoration _boxDecorationByKey(WidgetTester tester, Key key) {
+  final container = tester.widget<Container>(find.byKey(key));
+  return container.decoration! as BoxDecoration;
+}
+
+MouseCursor _cursorForText(WidgetTester tester, String text) {
+  final mouseRegion = tester.widget<MouseRegion>(
+    find
+        .ancestor(of: find.text(text), matching: find.byType(MouseRegion))
+        .first,
+  );
+  return mouseRegion.cursor;
+}
+
+MouseCursor _cursorForKey(WidgetTester tester, Key key) {
+  final mouseRegion = tester.widget<MouseRegion>(
+    find
+        .ancestor(of: find.byKey(key), matching: find.byType(MouseRegion))
+        .first,
+  );
+  return mouseRegion.cursor;
+}
+
+final _syncedSyncState = SyncState(
+  accountUuid: 'account-1',
+  hasAccountScopedData: true,
+);
+
 Widget _sidebarHarness(
   SyncState syncState, {
   AppThemeData themeData = AppThemeData.light,
   bool swapEnabled = true,
+  AccountState? accountState,
+  String initialLocation = '/home',
 }) {
+  final bootstrap = _bootstrapFor(accountState ?? _singleAccountState);
   final router = GoRouter(
-    initialLocation: '/home',
+    initialLocation: initialLocation,
     routes: [
       GoRoute(
         path: '/home',
-        builder: (_, _) => const AppDesktopShell(
-          sidebar: AppMainSidebar(),
-          pane: AppDesktopPane(child: Text('home route')),
-        ),
+        builder:
+            (_, _) => const AppDesktopShell(
+              sidebar: AppMainSidebar(),
+              pane: AppDesktopPane(child: Text('home route')),
+            ),
       ),
       GoRoute(path: '/accounts', builder: (_, _) => const Text('accounts')),
-      GoRoute(path: '/send', builder: (_, _) => const Text('send')),
+      GoRoute(
+        path: '/send',
+        builder:
+            (_, _) => const AppDesktopShell(
+              sidebar: AppMainSidebar(),
+              pane: AppDesktopPane(child: Text('send route')),
+            ),
+      ),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive')),
       GoRoute(path: '/swap', builder: (_, _) => const Text('swap')),
       GoRoute(path: '/voting', builder: (_, _) => const Text('voting')),
@@ -321,13 +529,17 @@ Widget _sidebarHarness(
       ),
       GoRoute(path: '/activity', builder: (_, _) => const Text('activity')),
       GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
+      GoRoute(
+        path: '/add-account',
+        builder: (_, _) => const Text('add account'),
+      ),
       GoRoute(path: '/unlock', builder: (_, _) => const Text('unlock')),
     ],
   );
 
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap),
+      appBootstrapProvider.overrideWithValue(bootstrap),
       syncProvider.overrideWith(() => _FakeSyncNotifier(syncState)),
       swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
     ],
@@ -338,20 +550,96 @@ Widget _sidebarHarness(
   );
 }
 
-final _bootstrap = AppBootstrapState(
+const _singleAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'account-1',
+      name: 'Primary Vault',
+      order: 0,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+  ],
+  activeAccountUuid: 'account-1',
+  activeAddress: 'u1accountsaddress',
+);
+
+const _multiAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'account-1',
+      name: 'Primary Vault',
+      order: 0,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+    AccountInfo(
+      uuid: 'account-2',
+      name: 'Trading Vault',
+      order: 1,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+  ],
+  activeAccountUuid: 'account-1',
+  activeAddress: 'u1accountsaddress',
+);
+
+const _manyAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'account-1',
+      name: 'Account 1',
+      order: 0,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+    AccountInfo(
+      uuid: 'account-2',
+      name: 'Account 2',
+      order: 1,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+    AccountInfo(
+      uuid: 'account-3',
+      name: 'Account 3',
+      order: 2,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+    AccountInfo(
+      uuid: 'account-4',
+      name: 'Account 4',
+      order: 3,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+    AccountInfo(
+      uuid: 'account-5',
+      name: 'Account 5',
+      order: 4,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+    AccountInfo(
+      uuid: 'account-6',
+      name: 'Account 6',
+      order: 5,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+    AccountInfo(
+      uuid: 'account-7',
+      name: 'Account 7',
+      order: 6,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+    AccountInfo(
+      uuid: 'account-8',
+      name: 'Account 8',
+      order: 7,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+  ],
+  activeAccountUuid: 'account-1',
+  activeAddress: 'u1accountsaddress',
+);
+
+AppBootstrapState _bootstrapFor(AccountState accountState) => AppBootstrapState(
   initialLocation: '/home',
-  initialAccountState: const AccountState(
-    accounts: [
-      AccountInfo(
-        uuid: 'account-1',
-        name: 'Primary Vault',
-        order: 0,
-        profilePictureId: kDefaultProfilePictureId,
-      ),
-    ],
-    activeAccountUuid: 'account-1',
-    activeAddress: 'u1accountsaddress',
-  ),
+  initialAccountState: accountState,
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),

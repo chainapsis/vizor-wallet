@@ -1260,7 +1260,7 @@ class _DesktopOpaqueWindowBackground extends StatelessWidget {
     if (!isDesktopLayoutPlatform) {
       return child;
     }
-    return ColoredBox(color: context.colors.background.window, child: child);
+    return ColoredBox(color: context.colors.macosUtility.window, child: child);
   }
 }
 

@@ -199,13 +199,22 @@ void main() {
     );
 
     final addressRect = tester.getRect(find.text(compactAddress));
-    final copyRect = tester.getRect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is AppIcon &&
-            widget.name == AppIcons.copy &&
-            widget.size == 16,
-      ),
+    final copyIconRects = find
+        .byWidgetPredicate(
+          (widget) =>
+              widget is AppIcon &&
+              widget.name == AppIcons.copy &&
+              widget.size == 16,
+        )
+        .evaluate()
+        .map((element) {
+          final renderObject = element.renderObject! as RenderBox;
+          return renderObject.localToGlobal(Offset.zero) & renderObject.size;
+        });
+    final copyRect = copyIconRects.singleWhere(
+      (rect) =>
+          rect.left > addressRect.right &&
+          (rect.center.dy - addressRect.center.dy).abs() <= AppSpacing.xs,
     );
     final copyGap = copyRect.left - addressRect.right;
     expect(copyGap, greaterThan(0));
