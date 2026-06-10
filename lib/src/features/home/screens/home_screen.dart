@@ -17,7 +17,7 @@ import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_main_sidebar.dart';
-import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
@@ -367,79 +367,63 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         : 'default';
     final backgroundTheme = isDark ? 'dark' : 'light';
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Positioned.fill(
-          child: _HomeFullPageBackground(
-            assetName:
-                'assets/illustrations/home_${backgroundVariant}_background_$backgroundTheme.png',
-          ),
-        ),
-        AppDesktopShell(
-          backgroundColor: Colors.transparent,
-          sidebar: const AppMainSidebar(),
-          pane: AppDesktopPane(
-            padding: EdgeInsets.zero,
-            backgroundColor: Colors.transparent,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                SizedBox.expand(
-                  child: walletAsync.when(
-                    loading: () =>
-                        const Center(child: CircularProgressIndicator()),
-                    error: (err, _) => Center(
-                      child: Text(
-                        'Something went wrong. Try again in a moment.\n\n'
-                        'Details: $err',
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: context.colors.text.warning,
-                        ),
-                      ),
-                    ),
-                    data: (_) => _HomePane(
-                      sync: sync,
-                      hasActivitySyncData: hasActivitySyncData,
-                      isActivityLoading: isActivityLoading,
-                      passwordRotationRecoveryFailed:
-                          bootstrap.passwordRotationRecoveryFailed,
-                      canBackgroundSync: _canBackgroundSync,
-                      privacyModeEnabled: privacyModeEnabled,
-                      shieldedBalanceText: _formatZec(shieldedBalance),
-                      shieldedFiatBalanceText: shieldedFiatBalanceText,
-                      transparentBalanceText: _formatZec(transparentBalance),
-                      hasTransparentBalance: transparentBalance > BigInt.zero,
-                      canShieldBalance: canShieldTransparentBalance,
-                      isShieldingBalance: _isShieldingBalance,
-                      shieldBalanceError: _shieldBalanceError,
-                      shieldBalanceErrorDetail: _shieldBalanceErrorDetail,
-                      onTogglePrivacyMode: () =>
-                          ref.read(privacyModeProvider.notifier).toggle(),
-                      onShieldBalancePressed: () =>
-                          unawaited(_shieldTransparentBalance()),
-                      onDismissShieldBalanceError: _dismissShieldBalanceError,
-                      onSyncInBackground: () => ref
-                          .read(syncProvider.notifier)
-                          .enableBackgroundSync(),
-                      onStopBackgroundSync: () => ref
-                          .read(syncProvider.notifier)
-                          .disableBackgroundSync(),
-                      onRetrySync: () =>
-                          ref.read(syncProvider.notifier).startSync(),
-                    ),
+    return AppDesktopBackdropShell(
+      background: _HomeFullPageBackground(
+        assetName:
+            'assets/illustrations/home_${backgroundVariant}_background_$backgroundTheme.png',
+      ),
+      sidebar: const AppMainSidebar(),
+      pane: Stack(
+        fit: StackFit.expand,
+        children: [
+          SizedBox.expand(
+            child: walletAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (err, _) => Center(
+                child: Text(
+                  'Something went wrong. Try again in a moment.\n\n'
+                  'Details: $err',
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: context.colors.text.warning,
                   ),
                 ),
-                if (_showKeystoneShieldSigning)
-                  KeystoneShieldSigningOverlay(
-                    onCancel: _closeKeystoneShieldSigning,
-                    onComplete: _closeKeystoneShieldSigning,
-                  ),
-              ],
+              ),
+              data: (_) => _HomePane(
+                sync: sync,
+                hasActivitySyncData: hasActivitySyncData,
+                isActivityLoading: isActivityLoading,
+                passwordRotationRecoveryFailed:
+                    bootstrap.passwordRotationRecoveryFailed,
+                canBackgroundSync: _canBackgroundSync,
+                privacyModeEnabled: privacyModeEnabled,
+                shieldedBalanceText: _formatZec(shieldedBalance),
+                shieldedFiatBalanceText: shieldedFiatBalanceText,
+                transparentBalanceText: _formatZec(transparentBalance),
+                hasTransparentBalance: transparentBalance > BigInt.zero,
+                canShieldBalance: canShieldTransparentBalance,
+                isShieldingBalance: _isShieldingBalance,
+                shieldBalanceError: _shieldBalanceError,
+                shieldBalanceErrorDetail: _shieldBalanceErrorDetail,
+                onTogglePrivacyMode: () =>
+                    ref.read(privacyModeProvider.notifier).toggle(),
+                onShieldBalancePressed: () =>
+                    unawaited(_shieldTransparentBalance()),
+                onDismissShieldBalanceError: _dismissShieldBalanceError,
+                onSyncInBackground: () =>
+                    ref.read(syncProvider.notifier).enableBackgroundSync(),
+                onStopBackgroundSync: () =>
+                    ref.read(syncProvider.notifier).disableBackgroundSync(),
+                onRetrySync: () => ref.read(syncProvider.notifier).startSync(),
+              ),
             ),
           ),
-        ),
-      ],
+          if (_showKeystoneShieldSigning)
+            KeystoneShieldSigningOverlay(
+              onCancel: _closeKeystoneShieldSigning,
+              onComplete: _closeKeystoneShieldSigning,
+            ),
+        ],
+      ),
     );
   }
 }
