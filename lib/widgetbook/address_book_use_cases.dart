@@ -119,31 +119,31 @@ const _addressBookContacts = <_AddressBookContact>[
   _AddressBookContact(
     name: 'Mike',
     addressPreview: 'u12345 ... 12345',
-    profilePictureId: 'knight',
+    profilePictureId: 'pfp-01',
     network: _AddressBookNetwork.zcash,
   ),
   _AddressBookContact(
     name: 'John',
     addressPreview: 'u12345 ... 12345',
-    profilePictureId: 'samurai',
+    profilePictureId: 'pfp-02',
     network: _AddressBookNetwork.zcash,
   ),
   _AddressBookContact(
     name: 'Bob',
     addressPreview: 'u12345 ... 12345',
-    profilePictureId: 'viking',
+    profilePictureId: 'pfp-03',
     network: _AddressBookNetwork.zcash,
   ),
   _AddressBookContact(
     name: 'Mike SOL',
     addressPreview: '43123 ... 43123',
-    profilePictureId: 'dragon',
+    profilePictureId: 'pfp-06',
     network: _AddressBookNetwork.solana,
   ),
   _AddressBookContact(
     name: 'Solana Binance',
     addressPreview: '43123 ... 43123',
-    profilePictureId: 'chest',
+    profilePictureId: 'pfp-08',
     network: _AddressBookNetwork.solana,
   ),
 ];
@@ -154,7 +154,7 @@ const _pickerContacts = <AddressBookContact>[
     label: 'Mike',
     network: AddressBookNetwork.ethereum,
     address: '0x1234567890abcdef1234567890abcdef12345678',
-    profilePictureId: 'knight',
+    profilePictureId: 'pfp-01',
     createdAtMs: 1,
     updatedAtMs: 1,
   ),
@@ -163,7 +163,7 @@ const _pickerContacts = <AddressBookContact>[
     label: 'John',
     network: AddressBookNetwork.ethereum,
     address: '0xabcdef1234567890abcdef1234567890abcdef12',
-    profilePictureId: 'samurai',
+    profilePictureId: 'pfp-02',
     createdAtMs: 2,
     updatedAtMs: 2,
   ),
@@ -172,7 +172,7 @@ const _pickerContacts = <AddressBookContact>[
     label: 'Zcash Contact',
     network: AddressBookNetwork.zcash,
     address: 'u1234567890abcdef1234567890abcdef1234567890abcdef',
-    profilePictureId: 'viking',
+    profilePictureId: 'pfp-03',
     createdAtMs: 3,
     updatedAtMs: 3,
   ),
@@ -867,7 +867,7 @@ class _ContactFormModal extends StatelessWidget {
   Widget build(BuildContext context) {
     return _AddressBookModalCard(
       header: _EditableContactAvatar(
-        profilePictureId: _isEdit ? 'chest' : kDefaultProfilePictureId,
+        profilePictureId: _isEdit ? 'pfp-08' : kDefaultProfilePictureId,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1331,7 +1331,7 @@ class _RemoveContactModal extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           const AppProfilePicture(
-            profilePictureId: 'knight',
+            profilePictureId: 'pfp-01',
             size: AppProfilePictureSize.xLarge,
           ),
           const SizedBox(height: AppSpacing.sm),

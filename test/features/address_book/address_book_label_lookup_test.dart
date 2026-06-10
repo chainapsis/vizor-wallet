@@ -12,7 +12,7 @@ AddressBookContact _contact({
     label: label,
     network: network,
     address: address,
-    profilePictureId: 'knight',
+    profilePictureId: 'pfp-01',
     createdAtMs: 0,
     updatedAtMs: 0,
   );

@@ -350,7 +350,7 @@ AddressBookContact _contact({
     label: label,
     network: AddressBookNetwork.zcash,
     address: address,
-    profilePictureId: 'knight',
+    profilePictureId: 'pfp-01',
     createdAtMs: 1,
     updatedAtMs: 1,
   );

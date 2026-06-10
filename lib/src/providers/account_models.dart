@@ -52,8 +52,9 @@ class AccountInfo {
         json['isSeedAnchor'] as bool? ??
         ((json['order'] as int? ?? 0) == 0 &&
             !(json['isHardware'] as bool? ?? false)),
-    profilePictureId:
-        json['profilePictureId'] as String? ?? kDefaultProfilePictureId,
+    profilePictureId: normalizeProfilePictureId(
+      json['profilePictureId'] as String? ?? kDefaultProfilePictureId,
+    ),
   );
 }
 

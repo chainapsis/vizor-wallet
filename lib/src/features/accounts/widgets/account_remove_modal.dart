@@ -44,8 +44,6 @@ class AccountRemoveModal extends StatefulWidget {
 }
 
 class _AccountRemoveModalState extends State<AccountRemoveModal> {
-  static const _destructiveButtonWidth = kAccountModalButtonMinWidth;
-  static const _destructiveLabelWidth = 84.0;
   static const _fieldHeight = 66.0;
 
   final _passwordController = TextEditingController();
@@ -181,7 +179,6 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     final swapRemovalBlockMessage = _swapRemovalBlockMessage;
 
     return AccountModalCard(
-      bottomPadding: AppSpacing.sm,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -241,36 +238,14 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
             ),
           ],
           const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              AppButton(
-                onPressed: _isSubmitting ? null : widget.onCancel,
-                variant: AppButtonVariant.ghost,
-                size: AppButtonSize.medium,
-                height: kAccountModalButtonHeight,
-                child: const Text('Cancel'),
-              ),
-              const SizedBox(width: AppSpacing.s),
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: AppButton(
-                    onPressed: _canSubmit ? _submit : null,
-                    variant: AppButtonVariant.destructive,
-                    size: AppButtonSize.medium,
-                    height: kAccountModalButtonHeight,
-                    minWidth: _destructiveButtonWidth,
-                    leading: _isSubmitting
-                        ? null
-                        : const AppIcon(
-                            AppIcons.trash,
-                            size: AppIconSize.medium,
-                          ),
-                    child: _submitButton,
-                  ),
-                ),
-              ),
-            ],
+          AccountModalActions(
+            onCancel: _isSubmitting ? null : widget.onCancel,
+            actionLabel: _submitButtonLabel,
+            onAction: _canSubmit ? _submit : null,
+            actionVariant: AppButtonVariant.destructive,
+            actionLeading: _isSubmitting || widget.isLastAccount
+                ? null
+                : const AppIcon(AppIcons.trash, size: AppIconSize.medium),
           ),
         ],
       ),
@@ -301,19 +276,6 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
         widget.isLastAccount ? 'Resetting...' : 'Removing account...',
       null => widget.isLastAccount ? 'Resetting...' : 'Removing account...',
     };
-  }
-
-  Widget get _submitButton {
-    final label = _submitButtonLabel;
-    return SizedBox(
-      width: _destructiveLabelWidth,
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        textAlign: TextAlign.center,
-      ),
-    );
   }
 }
 

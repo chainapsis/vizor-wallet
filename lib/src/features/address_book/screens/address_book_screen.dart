@@ -1154,7 +1154,9 @@ class _ContactFormModalState extends State<_ContactFormModal> {
       widget.draft.network,
       widget.draft.address,
     );
-    final addressMessage = showAddressError ? addressError : addressFormatWarning;
+    final addressMessage = showAddressError
+        ? addressError
+        : addressFormatWarning;
     final addressHasIssue = showAddressError || addressFormatWarning != null;
 
     return _AddressBookModalCard(
@@ -1729,7 +1731,7 @@ class _RemoveContactModal extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           AppProfilePicture(
-            profilePictureId: contact?.profilePictureId ?? 'chest',
+            profilePictureId: contact?.profilePictureId ?? 'pfp-08',
             size: AppProfilePictureSize.xLarge,
           ),
           const SizedBox(height: AppSpacing.sm),

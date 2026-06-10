@@ -3,11 +3,10 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart'
-    show CircularProgressIndicator, ScaffoldMessenger, SnackBar, Theme;
+    show CircularProgressIndicator, Colors, ScaffoldMessenger, SnackBar;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../../main.dart' show log;
@@ -331,175 +330,197 @@ class _ReceivePane extends StatelessWidget {
   final VoidCallback onCopy;
   final VoidCallback onShowHelp;
 
-  bool get _isShielded => selectedType == _ReceiveAddressType.shielded;
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _ReceivePaneToolbar(),
+        Expanded(
+          child: _ReceiveContentLayout(
+            selectedType: selectedType,
+            address: address,
+            errorText: errorText,
+            isLoading: isLoading,
+            isRenewingShielded: isRenewingShielded,
+            onTypeChanged: onTypeChanged,
+            onRenewShielded: onRenewShielded,
+            onCopy: onCopy,
+            onShowHelp: onShowHelp,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReceivePaneToolbar extends StatelessWidget {
+  const _ReceivePaneToolbar();
+
+  static const _height = 48.0;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return SizedBox.expand(
+    return const SizedBox(
+      height: _height,
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Align(alignment: Alignment.centerLeft, child: AppRouteBackLink()),
-            const SizedBox(height: AppSpacing.s),
-            Expanded(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 752),
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: _ReceiveMainContent(
-                          selectedType: selectedType,
-                          address: address,
-                          isLoading: isLoading,
-                          isRenewingShielded: isRenewingShielded,
-                          onTypeChanged: onTypeChanged,
-                          onRenewShielded: onRenewShielded,
-                          onShowHelp: onShowHelp,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      _CopyAddressButton(
-                        key: ValueKey(
-                          _isShielded
-                              ? 'receive_copy_shielded_address_button'
-                              : 'receive_copy_transparent_address_button',
-                        ),
-                        label: _isShielded
-                            ? 'Copy Shielded Address'
-                            : 'Copy Transparent Address',
-                        primary: _isShielded,
-                        enabled: address.isNotEmpty && !isLoading,
-                        onTap: onCopy,
-                      ),
-                      if (errorText != null) ...[
-                        const SizedBox(height: AppSpacing.s),
-                        Text(
-                          errorText!,
-                          textAlign: TextAlign.center,
-                          style: AppTypography.bodySmall.copyWith(
-                            color: colors.text.warning,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
+        padding: EdgeInsets.only(
+          left: AppSpacing.md,
+          top: AppSpacing.xs,
+          bottom: AppSpacing.xs,
+        ),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: AppRouteBackLink(
+            key: ValueKey('receive_pane_back_button'),
+            minWidth: 60,
+          ),
         ),
       ),
     );
   }
 }
 
-class _ReceiveMainContent extends StatelessWidget {
-  const _ReceiveMainContent({
+class _ReceiveContentLayout extends StatelessWidget {
+  const _ReceiveContentLayout({
     required this.selectedType,
     required this.address,
+    required this.errorText,
     required this.isLoading,
     required this.isRenewingShielded,
     required this.onTypeChanged,
     required this.onRenewShielded,
+    required this.onCopy,
     required this.onShowHelp,
   });
 
+  static const _contentWidth = 420.0;
+  static const _contentHeight = 656.0;
+  static const _contentHeightWithError = 724.0;
+
   final _ReceiveAddressType selectedType;
   final String address;
+  final String? errorText;
   final bool isLoading;
   final bool isRenewingShielded;
   final ValueChanged<_ReceiveAddressType> onTypeChanged;
   final VoidCallback? onRenewShielded;
+  final VoidCallback onCopy;
   final VoidCallback onShowHelp;
+
+  bool get _isShielded => selectedType == _ReceiveAddressType.shielded;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final contentHeight = errorText == null
+        ? _contentHeight
+        : _contentHeightWithError;
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final metrics = _ReceiveQrMetrics.fromConstraints(constraints);
-        final contentWidth = math.max(256.0, metrics.blockWidth);
-        final contentHeight = constraints.maxHeight.isFinite
+        final viewportHeight = constraints.maxHeight.isFinite
             ? constraints.maxHeight
-            : _ReceiveQrMetrics.baseContentHeight;
+            : contentHeight;
 
-        return Align(
-          alignment: Alignment.topCenter,
-          child: SizedBox(
-            width: contentWidth,
-            height: contentHeight,
-            child: Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.topCenter,
-              children: [
-                if (selectedType == _ReceiveAddressType.shielded)
-                  Positioned(
-                    left:
-                        (contentWidth - metrics.blockWidth) / 2 +
-                        (metrics.blockWidth - metrics.qrFrameWidth) / 2 +
-                        metrics.shieldBgLeft,
-                    top: metrics.blockTop + metrics.shieldBgTop,
-                    width: metrics.shieldBgWidth,
-                    height: metrics.shieldBgHeight,
-                    child: IgnorePointer(
-                      child: _ShieldQrBackground(color: colors.border.subtle),
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: math.max(viewportHeight, contentHeight),
+            ),
+            child: Center(
+              child: SizedBox(
+                width: _contentWidth,
+                height: contentHeight,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned(
+                      left: 12,
+                      top: 16,
+                      width: 396,
+                      height: 556,
+                      child: Stack(
+                        children: [
+                          Positioned(
+                            left: 70,
+                            top: 38.5,
+                            width: 256,
+                            height: 33,
+                            child: Text(
+                              'Receive $kZcashDefaultCurrencyTicker',
+                              maxLines: 1,
+                              style: AppTypography.headlineLarge.copyWith(
+                                color: colors.text.accent,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                          Positioned(
+                            left: 67,
+                            top: 103.5,
+                            width: 262,
+                            height: 414,
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 160),
+                              child: isLoading
+                                  ? const SizedBox(
+                                      key: ValueKey('loading'),
+                                      width: 262,
+                                      height: 414,
+                                      child: Center(
+                                        child: CircularProgressIndicator(),
+                                      ),
+                                    )
+                                  : _ReceiveQrBlock(
+                                      key: ValueKey(selectedType),
+                                      type: selectedType,
+                                      address: address,
+                                      renewing: isRenewingShielded,
+                                      onTypeChanged: onTypeChanged,
+                                      onRenew: onRenewShielded,
+                                      onShowHelp: onShowHelp,
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                Positioned(
-                  top: _ReceiveQrMetrics.contentInsetY,
-                  left: 0,
-                  right: 0,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Receive $kZcashDefaultCurrencyTicker',
-                        style: AppTypography.displaySmall.copyWith(
-                          color: colors.text.accent,
+                    Positioned(
+                      left: 95,
+                      top: 596,
+                      width: 230,
+                      height: 44,
+                      child: _CopyAddressButton(
+                        key: ValueKey(
+                          _isShielded
+                              ? 'receive_copy_shielded_address_button'
+                              : 'receive_copy_transparent_address_button',
+                        ),
+                        label: _isShielded
+                            ? 'Copy shielded address'
+                            : 'Copy transparent address',
+                        type: selectedType,
+                        enabled: address.isNotEmpty && !isLoading,
+                        onTap: onCopy,
+                      ),
+                    ),
+                    if (errorText != null)
+                      Positioned(
+                        left: 12,
+                        top: 656,
+                        width: 396,
+                        child: Text(
+                          errorText!,
+                          textAlign: TextAlign.center,
+                          style: AppTypography.bodySmall.copyWith(
+                            color: colors.text.warning,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.md),
-                      _ReceiveTabs(
-                        selectedType: selectedType,
-                        onChanged: onTypeChanged,
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
-                Positioned(
-                  left: (contentWidth - metrics.blockWidth) / 2,
-                  top: metrics.blockTop,
-                  width: metrics.blockWidth,
-                  height: metrics.blockHeight,
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 160),
-                    child: isLoading
-                        ? SizedBox(
-                            key: const ValueKey('loading'),
-                            width: metrics.blockWidth,
-                            height: metrics.blockHeight,
-                            child: const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                          )
-                        : _ReceiveQrBlock(
-                            key: ValueKey(selectedType),
-                            type: selectedType,
-                            address: address,
-                            renewing: isRenewingShielded,
-                            metrics: metrics,
-                            onRenew: onRenewShielded,
-                            onShowHelp: onShowHelp,
-                          ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         );
@@ -508,137 +529,99 @@ class _ReceiveMainContent extends StatelessWidget {
   }
 }
 
-class _ReceiveQrMetrics {
-  const _ReceiveQrMetrics({
-    required this.blockWidth,
-    required this.blockHeight,
-    required this.blockTop,
-    required this.qrFrameWidth,
-    required this.qrFrameHeight,
-    required this.qrSurfaceSize,
-    required this.qrTop,
-    required this.addressGap,
-    required this.shieldBgLeft,
-    required this.shieldBgTop,
-    required this.shieldBgWidth,
-    required this.shieldBgHeight,
-    required this.renewTop,
-    required this.renewSize,
-    required this.qrPaddingX,
-    required this.qrPaddingY,
+class _ReceiveQrBlock extends StatelessWidget {
+  const _ReceiveQrBlock({
+    required this.type,
+    required this.address,
+    required this.renewing,
+    required this.onTypeChanged,
+    required this.onRenew,
+    required this.onShowHelp,
+    super.key,
   });
 
-  static const _baseContentHeight = 520.0;
-  static const _contentInsetY = AppSpacing.md;
-  static const _fixedBeforeQr = 44.0 + AppSpacing.md + 36.0 + AppSpacing.md;
-  static const _baseBlockWidth = 356.0;
-  static const _baseBlockHeight = 344.0;
-  static const _baseQrSurfaceSize = 230.0;
-  static const _baseQrPaddingX = 16.0;
-  static const _baseQrPaddingY = 24.0;
-  static const _baseAddressGap = 10.0;
-  static const _addressLineHeight = 24.0;
-  static const _baseRenewTop = 268.533203125;
-  static const _baseRenewSize = 40.0;
-  static const _baseRenewOverlap =
-      _baseQrSurfaceSize + _baseQrPaddingY * 2 - _baseRenewTop;
-  static const _baseRenewBottomGap =
-      _baseBlockHeight -
-      _baseAddressGap -
-      _addressLineHeight -
-      _baseRenewTop -
-      _baseRenewSize;
-  static const _baseEmbeddedImageSize = 48.0;
-  static const _baseShieldBgWidth = 636.0;
-  static const _baseShieldBgHeight = 555.0;
-  static const _baseShieldBgCenterYOffset = 40.2333984375;
-  static const _minQrSurfaceSize = 112.0;
+  static const _width = 262.0;
+  static const _height = 414.0;
+  static const _tabsHeight = 36.0;
+  static const _tabsToQrGap = 32.0;
+  static const _qrFrameHeight = 310.0;
+  static const _qrSurfaceSize = 230.0;
+  static const _qrPaddingX = 16.0;
+  static const _qrPaddingY = 24.0;
+  static const _addressGap = 12.0;
+  static const _renewTop = 262.0;
+  static const _renewSize = 48.0;
 
-  static double get baseContentHeight => _baseContentHeight;
-  static double get contentInsetY => _contentInsetY;
-  static double get embeddedImageScale =>
-      _baseEmbeddedImageSize / _baseQrSurfaceSize;
+  final _ReceiveAddressType type;
+  final String address;
+  final bool renewing;
+  final ValueChanged<_ReceiveAddressType> onTypeChanged;
+  final VoidCallback? onRenew;
+  final VoidCallback onShowHelp;
 
-  final double blockWidth;
-  final double blockHeight;
-  final double blockTop;
-  final double qrFrameWidth;
-  final double qrFrameHeight;
-  final double qrSurfaceSize;
-  final double qrTop;
-  final double addressGap;
-  final double shieldBgLeft;
-  final double shieldBgTop;
-  final double shieldBgWidth;
-  final double shieldBgHeight;
-  final double renewTop;
-  final double renewSize;
-  final double qrPaddingX;
-  final double qrPaddingY;
+  bool get _isShielded => type == _ReceiveAddressType.shielded;
 
-  static _ReceiveQrMetrics fromConstraints(BoxConstraints constraints) {
-    final maxContentHeight = constraints.maxHeight.isFinite
-        ? constraints.maxHeight
-        : _baseContentHeight;
-    final maxContentWidth = constraints.maxWidth.isFinite
-        ? constraints.maxWidth
-        : 752.0;
-
-    const frameHeightExtra =
-        _baseQrPaddingY * 2 +
-        _baseRenewSize -
-        _baseRenewOverlap +
-        _baseRenewBottomGap;
-    const blockHeightExtra =
-        frameHeightExtra + _baseAddressGap + _addressLineHeight;
-    final maxSurfaceByHeight =
-        maxContentHeight -
-        _contentInsetY * 2 -
-        _fixedBeforeQr -
-        blockHeightExtra;
-    final maxSurfaceByWidth = maxContentWidth - _baseQrPaddingX * 2;
-
-    final qrSurfaceSize = math.max(
-      _minQrSurfaceSize,
-      math.min(maxSurfaceByHeight, maxSurfaceByWidth),
-    );
-    final scale = qrSurfaceSize / _baseQrSurfaceSize;
-    final qrFrameWidth = qrSurfaceSize + _baseQrPaddingX * 2;
-    final qrFrameHeight =
-        qrSurfaceSize +
-        _baseQrPaddingY * 2 +
-        _baseRenewSize +
-        _baseRenewBottomGap -
-        _baseRenewOverlap;
-    final shieldBgWidth = _baseShieldBgWidth * scale;
-    final shieldBgHeight = _baseShieldBgHeight * scale;
-    final computedBlockWidth = math.max(_baseBlockWidth, qrFrameWidth);
-    final blockHeight = qrFrameHeight + _baseAddressGap + _addressLineHeight;
-    final blockTop = math.max(
-      _contentInsetY + _fixedBeforeQr,
-      maxContentHeight - _contentInsetY - blockHeight,
-    );
-
-    return _ReceiveQrMetrics(
-      blockWidth: math.min(maxContentWidth, computedBlockWidth),
-      blockHeight: blockHeight,
-      blockTop: blockTop,
-      qrFrameWidth: qrFrameWidth,
-      qrFrameHeight: qrFrameHeight,
-      qrSurfaceSize: qrSurfaceSize,
-      qrTop: 0,
-      addressGap: _baseAddressGap,
-      shieldBgLeft: qrFrameWidth / 2 - shieldBgWidth / 2,
-      shieldBgTop:
-          qrFrameHeight / 2 -
-          _baseShieldBgCenterYOffset * scale -
-          shieldBgHeight / 2,
-      shieldBgWidth: shieldBgWidth,
-      shieldBgHeight: shieldBgHeight,
-      renewTop: qrSurfaceSize + _baseQrPaddingY * 2 - _baseRenewOverlap,
-      renewSize: _baseRenewSize,
-      qrPaddingX: _baseQrPaddingX,
-      qrPaddingY: _baseQrPaddingY,
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: _width,
+      height: _height,
+      child: Column(
+        children: [
+          SizedBox(
+            width: 256,
+            height: _tabsHeight,
+            child: _ReceiveTabs(selectedType: type, onChanged: onTypeChanged),
+          ),
+          const SizedBox(height: _tabsToQrGap),
+          SizedBox(
+            width: _width,
+            height: _qrFrameHeight + _addressGap + 24,
+            child: Column(
+              children: [
+                SizedBox(
+                  width: _width,
+                  height: _qrFrameHeight,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.topCenter,
+                    children: [
+                      Positioned(
+                        top: 0,
+                        child: _QrSurface(
+                          address: address,
+                          size: _qrSurfaceSize,
+                          paddingX: _qrPaddingX,
+                          paddingY: _qrPaddingY,
+                          type: type,
+                        ),
+                      ),
+                      if (_isShielded)
+                        Positioned(
+                          top: _renewTop,
+                          child: _RenewButton(
+                            key: const ValueKey(
+                              'receive_renew_shielded_address_button',
+                            ),
+                            renewing: renewing,
+                            size: _renewSize,
+                            onTap: onRenew,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: _addressGap),
+                _AddressLine(
+                  type: type,
+                  address: address,
+                  onShowHelp: onShowHelp,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -652,10 +635,16 @@ class _ReceiveTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final activeBg = colors.background.inverse;
-    final activeText = colors.text.inverse;
+    final shieldedActive = selectedType == _ReceiveAddressType.shielded;
+    final activeBg = shieldedActive
+        ? colors.background.inverse
+        : colors.background.ground;
+    final activeText = shieldedActive
+        ? colors.text.inverse
+        : colors.text.accent;
 
     return Container(
+      key: const ValueKey('receive_address_type_tabs'),
       width: 256,
       height: 36,
       decoration: ShapeDecoration(
@@ -674,6 +663,7 @@ class _ReceiveTabs extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(2),
               child: Container(
+                key: const ValueKey('receive_address_type_tabs_indicator'),
                 width: 124,
                 decoration: ShapeDecoration(
                   color: activeBg,
@@ -685,6 +675,7 @@ class _ReceiveTabs extends StatelessWidget {
           Row(
             children: [
               _ReceiveTab(
+                key: const ValueKey('receive_address_type_tab_shielded'),
                 label: 'Shielded',
                 iconName: AppIcons.shieldKeyhole,
                 active: selectedType == _ReceiveAddressType.shielded,
@@ -693,6 +684,7 @@ class _ReceiveTabs extends StatelessWidget {
                 onTap: () => onChanged(_ReceiveAddressType.shielded),
               ),
               _ReceiveTab(
+                key: const ValueKey('receive_address_type_tab_transparent'),
                 label: 'Transparent',
                 iconName: AppIcons.transparentBalance,
                 active: selectedType == _ReceiveAddressType.transparent,
@@ -716,6 +708,7 @@ class _ReceiveTab extends StatelessWidget {
     required this.activeTextColor,
     required this.inactiveTextColor,
     required this.onTap,
+    super.key,
   });
 
   final String label;
@@ -744,80 +737,16 @@ class _ReceiveTab extends StatelessWidget {
                   child: Text(
                     label,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelLarge.copyWith(color: color),
+                    style: AppTypography.labelMedium.copyWith(
+                      color: color,
+                      fontWeight: FontWeight.w400,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ReceiveQrBlock extends StatelessWidget {
-  const _ReceiveQrBlock({
-    required this.type,
-    required this.address,
-    required this.renewing,
-    required this.metrics,
-    required this.onRenew,
-    required this.onShowHelp,
-    super.key,
-  });
-
-  final _ReceiveAddressType type;
-  final String address;
-  final bool renewing;
-  final _ReceiveQrMetrics metrics;
-  final VoidCallback? onRenew;
-  final VoidCallback onShowHelp;
-
-  bool get _isShielded => type == _ReceiveAddressType.shielded;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: metrics.blockWidth,
-      height: metrics.blockHeight,
-      child: Column(
-        children: [
-          SizedBox(
-            width: metrics.qrFrameWidth,
-            height: metrics.qrFrameHeight,
-            child: Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.topCenter,
-              children: [
-                Positioned(
-                  top: metrics.qrTop,
-                  child: _QrSurface(
-                    address: address,
-                    size: metrics.qrSurfaceSize,
-                    paddingX: metrics.qrPaddingX,
-                    paddingY: metrics.qrPaddingY,
-                    type: type,
-                  ),
-                ),
-                if (_isShielded)
-                  Positioned(
-                    top: metrics.renewTop,
-                    child: _RenewButton(
-                      key: const ValueKey(
-                        'receive_renew_shielded_address_button',
-                      ),
-                      renewing: renewing,
-                      size: metrics.renewSize,
-                      onTap: onRenew,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          SizedBox(height: metrics.addressGap),
-          _AddressLine(type: type, address: address, onShowHelp: onShowHelp),
-        ],
       ),
     );
   }
@@ -843,11 +772,18 @@ class _QrSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final qrColor = colors.text.accent;
-    final qrBackground = colors.background.base;
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
+    final isShielded = type == _ReceiveAddressType.shielded;
+    final usesDarkQrSurface = isDark || isShielded;
+    final qrColor = usesDarkQrSurface
+        ? (isDark ? colors.text.accent : colors.text.inverse)
+        : colors.text.accent;
+    final qrBackground = usesDarkQrSurface
+        ? (isDark ? colors.background.ground : colors.background.inverse)
+        : colors.background.ground;
     final embeddedImageAsset = _ReceiveQrEmbeddedImage.assetFor(
       type,
-      Theme.of(context).brightness,
+      usesDarkQrSurface: usesDarkQrSurface,
     );
 
     return Container(
@@ -857,6 +793,11 @@ class _QrSurface extends StatelessWidget {
       decoration: BoxDecoration(
         color: qrBackground,
         borderRadius: BorderRadius.circular(_wrapperRadius),
+        border: Border.all(
+          color: usesDarkQrSurface
+              ? colors.border.subtle
+              : colors.border.inverseOpacity,
+        ),
       ),
       child: address.isNotEmpty
           ? _CachedQrBitmap(
@@ -864,7 +805,7 @@ class _QrSurface extends StatelessWidget {
               color: qrColor,
               size: size,
               embeddedImageAsset: embeddedImageAsset,
-              embeddedImageScale: _ReceiveQrMetrics.embeddedImageScale,
+              embeddedImageScale: 48 / size,
             )
           : Center(
               child: Text(
@@ -880,19 +821,20 @@ class _QrSurface extends StatelessWidget {
 }
 
 abstract final class _ReceiveQrEmbeddedImage {
-  static const _shieldLight = 'assets/icons/receive_qr_shield_light.png';
-  static const _shieldDark = 'assets/icons/receive_qr_shield_dark.png';
+  static const _shield = 'assets/icons/receive_qr_shield_crimson.png';
   static const _transparentLight =
       'assets/icons/receive_qr_transparent_light.png';
   static const _transparentDark =
       'assets/icons/receive_qr_transparent_dark.png';
 
-  static String assetFor(_ReceiveAddressType type, Brightness brightness) {
-    final isDark = brightness == Brightness.dark;
+  static String assetFor(
+    _ReceiveAddressType type, {
+    required bool usesDarkQrSurface,
+  }) {
     return switch (type) {
-      _ReceiveAddressType.shielded => isDark ? _shieldDark : _shieldLight,
+      _ReceiveAddressType.shielded => _shield,
       _ReceiveAddressType.transparent =>
-        isDark ? _transparentDark : _transparentLight,
+        usesDarkQrSurface ? _transparentLight : _transparentDark,
     };
   }
 }
@@ -1070,7 +1012,6 @@ class _RenewButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    const strokeWidth = 3.0;
 
     return MouseRegion(
       cursor: onTap == null || renewing
@@ -1082,65 +1023,41 @@ class _RenewButton extends StatelessWidget {
         child: SizedBox(
           width: size,
           height: size,
-          child: CustomPaint(
-            painter: _OutsideCircleBorderPainter(
-              color: colors.background.ground,
-              strokeWidth: strokeWidth,
+          child: DecoratedBox(
+            decoration: ShapeDecoration(
+              color: colors.background.homeCard,
+              shadows: [
+                BoxShadow(
+                  color: colors.macosUtility.window,
+                  blurRadius: 0,
+                  spreadRadius: 4,
+                ),
+              ],
+              shape: CircleBorder(
+                side: BorderSide(color: colors.border.inverseOpacity, width: 2),
+              ),
             ),
-            child: DecoratedBox(
-              decoration: ShapeDecoration(
-                color: colors.background.base,
-                shape: const CircleBorder(),
-              ),
-              child: Center(
-                child: renewing
-                    ? SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: colors.icon.accent,
-                        ),
-                      )
-                    : AppIcon(
-                        AppIcons.renew,
-                        size: 20,
-                        color: colors.icon.accent,
-                        semanticLabel: 'Generate new shielded address',
+            child: Center(
+              child: renewing
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: colors.text.homeCard,
                       ),
-              ),
+                    )
+                  : AppIcon(
+                      AppIcons.renew,
+                      size: AppIconSize.large,
+                      color: colors.text.homeCard,
+                      semanticLabel: 'Generate new shielded address',
+                    ),
             ),
           ),
         ),
       ),
     );
-  }
-}
-
-class _OutsideCircleBorderPainter extends CustomPainter {
-  const _OutsideCircleBorderPainter({
-    required this.color,
-    required this.strokeWidth,
-  });
-
-  final Color color;
-  final double strokeWidth;
-
-  @override
-  void paint(ui.Canvas canvas, ui.Size size) {
-    final radius = math.min(size.width, size.height) / 2 + strokeWidth / 2;
-    final center = ui.Offset(size.width / 2, size.height / 2);
-    final paint = ui.Paint()
-      ..color = color
-      ..style = ui.PaintingStyle.stroke
-      ..strokeWidth = strokeWidth;
-
-    canvas.drawCircle(center, radius, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _OutsideCircleBorderPainter oldDelegate) {
-    return oldDelegate.color != color || oldDelegate.strokeWidth != strokeWidth;
   }
 }
 
@@ -1164,14 +1081,14 @@ class _AddressLine extends StatelessWidget {
         children: [
           Flexible(
             child: RichText(
-              overflow: TextOverflow.ellipsis,
+              overflow: TextOverflow.clip,
               maxLines: 1,
               textAlign: TextAlign.center,
               text: TextSpan(
-                style: AppTypography.codeMedium.copyWith(
+                style: AppTypography.labelLarge.copyWith(
                   color: context.colors.text.accent,
                 ),
-                children: _addressSpans(context, type, address),
+                children: _addressSpans(context, address),
               ),
             ),
           ),
@@ -1187,11 +1104,7 @@ class _AddressLine extends StatelessWidget {
   }
 }
 
-List<TextSpan> _addressSpans(
-  BuildContext context,
-  _ReceiveAddressType type,
-  String address,
-) {
+List<TextSpan> _addressSpans(BuildContext context, String address) {
   if (address.isEmpty) {
     return [
       TextSpan(
@@ -1201,32 +1114,18 @@ List<TextSpan> _addressSpans(
     ];
   }
 
-  final compact = _compactAddress(address);
-  if (type == _ReceiveAddressType.transparent) {
-    return [TextSpan(text: compact)];
-  }
-
-  final success = context.colors.text.success;
-  if (compact.length <= 10) return [TextSpan(text: compact)];
-
-  final startHighlight = math.min(5, compact.length);
-  final endHighlight = math.max(startHighlight, compact.length - 5);
-  return [
-    TextSpan(
-      text: compact.substring(0, startHighlight),
-      style: TextStyle(color: success),
-    ),
-    TextSpan(text: compact.substring(startHighlight, endHighlight)),
-    TextSpan(
-      text: compact.substring(endHighlight),
-      style: TextStyle(color: success),
-    ),
-  ];
+  return [TextSpan(text: _compactAddress(address))];
 }
 
 String _compactAddress(String address) {
-  if (address.length <= 38) return address;
-  return '${address.substring(0, 17)}...${address.substring(address.length - 17)}';
+  const leadingLength = 13;
+  const trailingLength = 11;
+  const separator = ' ... ';
+  if (address.length <= leadingLength + trailingLength + separator.length) {
+    return address;
+  }
+  return '${address.substring(0, leadingLength)}$separator'
+      '${address.substring(address.length - trailingLength)}';
 }
 
 class _IconOnlyButton extends StatelessWidget {
@@ -1266,26 +1165,83 @@ class _IconOnlyButton extends StatelessWidget {
 class _CopyAddressButton extends StatelessWidget {
   const _CopyAddressButton({
     required this.label,
-    required this.primary,
+    required this.type,
     required this.enabled,
     required this.onTap,
     super.key,
   });
 
   final String label;
-  final bool primary;
+  final _ReceiveAddressType type;
   final bool enabled;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return AppButton(
-      onPressed: enabled ? onTap : null,
-      variant: primary ? AppButtonVariant.primary : AppButtonVariant.secondary,
-      size: AppButtonSize.large,
-      minWidth: 256,
-      trailing: const AppIcon(AppIcons.copy),
-      child: Text(label),
+    final colors = context.colors;
+    final isShielded = type == _ReceiveAddressType.shielded;
+    final background = enabled
+        ? (isShielded ? colors.button.primary.bg : colors.button.secondary.bg)
+        : colors.button.disabled.bg;
+    final labelColor = enabled
+        ? (isShielded
+              ? colors.button.primary.label
+              : colors.button.secondary.label)
+        : colors.button.disabled.label;
+    final borderColor = enabled && isShielded
+        ? colors.button.primary.border
+        : Colors.transparent;
+
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: enabled ? onTap : null,
+          child: DecoratedBox(
+            decoration: ShapeDecoration(
+              color: background,
+              shape: StadiumBorder(
+                side: isShielded
+                    ? BorderSide(color: borderColor, width: 1.5)
+                    : BorderSide.none,
+              ),
+            ),
+            child: SizedBox(
+              width: 230,
+              height: 44,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    AppIcon(
+                      isShielded
+                          ? AppIcons.shieldKeyhole
+                          : AppIcons.transparentBalance,
+                      size: 20,
+                      color: labelColor,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Flexible(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelMedium.copyWith(
+                          color: labelColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1301,20 +1257,27 @@ class _ReceiveInfoDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final title = _isShielded ? 'Shielded address' : 'Transparent address';
+    final subtitle = _isShielded
+        ? 'Strong privacy by default.'
+        : 'Publicly visible';
     final items = _isShielded
         ? const [
             _InfoItemData(
-              iconName: AppIcons.lock,
+              iconName: AppIcons.shieldKeyhole,
+              height: 63,
               text:
                   'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.',
             ),
             _InfoItemData(
               iconName: AppIcons.renew,
+              height: 63,
               text:
                   'A new Zcash Shielded address is generated only when you click the Renew button.',
             ),
             _InfoItemData(
               iconName: AppIcons.wallet,
+              height: 63,
               text:
                   'Each new address is a diversified address derived from the same key. They all receive to the same wallet.',
             ),
@@ -1322,221 +1285,160 @@ class _ReceiveInfoDialog extends StatelessWidget {
         : [
             const _InfoItemData(
               iconName: AppIcons.unlock,
+              height: 42,
               text:
                   'All tx details - sender, receiver, and amount - are publicly visible on-chain.',
             ),
             const _InfoItemData(
               iconName: AppIcons.dragon,
+              height: 84,
               text:
                   'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.',
             ),
             _InfoItemData(
               iconName: AppIcons.shieldAsset,
+              height: 105,
               text:
                   'After receiving $kZcashDefaultCurrencyTicker to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won\'t be able to send it.',
             ),
           ];
 
     return Container(
+      key: ValueKey(
+        _isShielded
+            ? 'receive_shielded_info_modal'
+            : 'receive_transparent_info_modal',
+      ),
       width: 312,
-      padding: const EdgeInsets.all(AppSpacing.md),
+      height: _isShielded ? 382 : 403,
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 28,
+            offset: const Offset(0, 14),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              _InfoHeaderIcon(
-                iconName: _isShielded
-                    ? AppIcons.shieldKeyhole
-                    : AppIcons.transparentBalance,
-                filled: _isShielded,
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _isShielded ? 'Shielded Address' : 'Transparent Address',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
-                    Text(
-                      _isShielded
-                          ? 'Strong privacy by default.'
-                          : 'Publicly visible',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Column(
-            children: [
-              for (final item in items)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                  child: _InfoItem(
-                    iconName: item.iconName,
-                    text: item.text,
-                    successIcon: _isShielded,
+          SizedBox(
+            width: 280,
+            height: 45,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodyLarge.copyWith(
+                    color: colors.text.accent,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-            ],
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          _DialogCloseButton(onTap: onClose),
+          const SizedBox(height: AppSpacing.md),
+          SizedBox(
+            width: 280,
+            height: _isShielded ? 205 : 247,
+            child: Column(
+              children: [
+                for (var i = 0; i < items.length; i++) ...[
+                  _InfoItem(data: items[i]),
+                  if (i != items.length - 1)
+                    const SizedBox(height: AppSpacing.xs),
+                ],
+              ],
+            ),
+          ),
+          const Spacer(),
+          SizedBox(
+            width: 280,
+            height: 36,
+            child: AppButton(
+              onPressed: onClose,
+              variant: AppButtonVariant.ghost,
+              size: AppButtonSize.medium,
+              height: 36,
+              minWidth: 280,
+              child: const Text('Close'),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _InfoHeaderIcon extends StatelessWidget {
-  const _InfoHeaderIcon({required this.iconName, required this.filled});
-
-  final String iconName;
-  final bool filled;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final bg = filled
-        ? colors.background.utilitySuccessStrong
-        : colors.background.raised;
-    final iconColor = filled ? colors.icon.inverse : colors.icon.accent;
-
-    return Container(
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-      child: Center(
-        child: AppIcon(iconName, color: iconColor, size: AppIconSize.medium),
-      ),
-    );
-  }
-}
-
 class _InfoItemData {
-  const _InfoItemData({required this.iconName, required this.text});
+  const _InfoItemData({
+    required this.iconName,
+    required this.height,
+    required this.text,
+  });
 
   final String iconName;
+  final double height;
   final String text;
 }
 
 class _InfoItem extends StatelessWidget {
-  const _InfoItem({
-    required this.iconName,
-    required this.text,
-    this.successIcon = false,
-  });
+  const _InfoItem({required this.data});
 
-  final String iconName;
-  final String text;
-  final bool successIcon;
+  final _InfoItemData data;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 24,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: AppIcon(
-              iconName,
-              size: AppIconSize.medium,
-              color: successIcon ? colors.icon.success : colors.icon.accent,
-            ),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.xs),
-        Expanded(
-          child: Text(
-            text,
-            style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DialogCloseButton extends StatefulWidget {
-  const _DialogCloseButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  State<_DialogCloseButton> createState() => _DialogCloseButtonState();
-}
-
-class _DialogCloseButtonState extends State<_DialogCloseButton> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          width: double.infinity,
-          height: 44,
-          decoration: ShapeDecoration(
-            color:
-                (_hovered
-                        ? colors.button.secondary.bgHover
-                        : colors.button.secondary.bg)
-                    .withValues(alpha: 0.98),
-            shape: const StadiumBorder(),
-          ),
-          child: Center(
-            child: Text(
-              'Close',
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.button.secondary.label,
+    return SizedBox(
+      height: data.height,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 24,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: AppIcon(
+                data.iconName,
+                size: AppIconSize.medium,
+                color: colors.icon.accent,
               ),
             ),
           ),
-        ),
+          const SizedBox(width: AppSpacing.s),
+          Expanded(
+            child: Text(
+              data.text,
+              maxLines: (data.height / 21).floor(),
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
+        ],
       ),
-    );
-  }
-}
-
-class _ShieldQrBackground extends StatelessWidget {
-  const _ShieldQrBackground({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return SvgPicture.asset(
-      'assets/illustrations/receive_shield_qr_bg.svg',
-      fit: BoxFit.fill,
-      excludeFromSemantics: true,
-      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
     );
   }
 }

@@ -13,8 +13,8 @@ import 'button_use_cases.dart';
 import 'chip_use_cases.dart';
 import 'context_menu_use_cases.dart';
 import 'color_use_cases.dart';
-import 'home_desktop_use_cases.dart';
 import 'icon_use_cases.dart';
+import 'receive_use_cases.dart';
 import 'screen_use_cases.dart';
 import 'send_use_cases.dart';
 import 'swap_use_cases.dart';
@@ -66,67 +66,8 @@ class WidgetbookApp extends StatelessWidget {
           name: 'Screens',
           children: [
             WidgetbookFolder(
-              name: 'Home',
-              children: [
-                WidgetbookComponent(
-                  name: 'Desktop',
-                  useCases: [
-                    WidgetbookUseCase(
-                      name: 'Importing',
-                      builder: buildHomeDesktopImportingUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'No balance',
-                      builder: buildHomeDesktopNoBalanceUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'No activity',
-                      builder: buildHomeDesktopNoActivityUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Default',
-                      builder: buildHomeDesktopDefaultUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Hide balance & Keystone',
-                      builder: buildHomeDesktopKeystoneUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Accounts',
-                      builder: buildHomeDesktopAccountsUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Accounts - Scroll',
-                      builder: buildHomeDesktopAccountsScrollUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Notice - Password recovery',
-                      builder: buildHomeDesktopPasswordRecoveryNoticeUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Notice - Shield queued',
-                      builder: buildHomeDesktopShieldQueuedNoticeUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Notice - Sync failure',
-                      builder: buildHomeDesktopSyncFailureNoticeUseCase,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            WidgetbookFolder(
               name: 'Onboarding',
               children: [
-                WidgetbookComponent(
-                  name: 'Accounts',
-                  useCases: [
-                    WidgetbookUseCase(
-                      name: 'Many Accounts',
-                      builder: buildAccountsManyUseCase,
-                    ),
-                  ],
-                ),
                 WidgetbookComponent(
                   name: 'Welcome',
                   useCases: [
@@ -155,6 +96,66 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Enabled',
                       builder: buildLostPasswordEnabledUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Accounts',
+              children: [
+                WidgetbookComponent(
+                  name: 'Screen',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Other account menu',
+                      builder: buildAccountsOtherMenuUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Current account menu',
+                      builder: buildAccountsCurrentMenuUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Edit account',
+                      builder: buildAccountsEditAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Profile picture',
+                      builder: buildAccountsProfilePictureUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Remove account',
+                      builder: buildAccountsRemoveUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Many accounts',
+                      builder: buildAccountsManyUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Receive',
+              children: [
+                WidgetbookComponent(
+                  name: 'Desktop',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Shielded',
+                      builder: buildReceiveDesktopShieldedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent',
+                      builder: buildReceiveDesktopTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Shielded modal',
+                      builder: buildReceiveDesktopShieldedModalUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent modal',
+                      builder: buildReceiveDesktopTransparentModalUseCase,
                     ),
                   ],
                 ),
