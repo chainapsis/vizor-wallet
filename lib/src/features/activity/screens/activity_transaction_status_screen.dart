@@ -506,7 +506,7 @@ class _ActivityTransactionStatusScreenState
                 children: [
                   const Padding(
                     padding: EdgeInsets.only(
-                      left: AppSpacing.sm,
+                      left: AppSpacing.xxs,
                       top: AppSpacing.xs,
                       bottom: AppSpacing.xs,
                     ),

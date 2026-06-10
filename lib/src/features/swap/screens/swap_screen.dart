@@ -278,7 +278,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const Padding(
-                      padding: EdgeInsets.only(left: AppSpacing.sm),
+                      padding: EdgeInsets.only(left: AppSpacing.xxs),
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: AppRouteBackLink(minWidth: 60),

@@ -1408,7 +1408,11 @@ void main() {
     expect(ticketRect.height, lessThan(440));
     expect(reviewButtonRect.center.dx, closeTo(ticketRect.center.dx, 1));
     expect(settingsRowRect.height, closeTo(32, 1));
-    expect(reviewButtonRect.top - settingsRowRect.bottom, closeTo(38, 1));
+    // The desktop body centers the composer inside an Expanded region, so the
+    // gap to the pinned review-button footer is centering slack rather than a
+    // fixed inset. After the redesign-2 typography tokens shrank the composer
+    // content height, that slack settled at 43.5 (was 38 under the old tokens).
+    expect(reviewButtonRect.top - settingsRowRect.bottom, closeTo(43.5, 1));
     expect(rateLineRect.center.dy, closeTo(settingsRowRect.center.dy, 1));
     expect(attributionRect.width, closeTo(90, 1));
     expect(attributionRect.height, closeTo(27.52, 1));

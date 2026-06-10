@@ -183,9 +183,10 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
               children: [
                 const Padding(
                   // Design: back chevron sits 16px into the pane on every
-                  // top toolbar.
+                  // top toolbar (4px pane padding + AppBackLink's 12px
+                  // internal inset).
                   padding: EdgeInsets.fromLTRB(
-                    AppSpacing.sm,
+                    AppSpacing.xxs,
                     AppSpacing.md,
                     AppSpacing.md,
                     0,

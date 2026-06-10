@@ -250,8 +250,11 @@ class _PreviewSendPaneToolbar extends StatelessWidget {
     return SizedBox(
       height: _height,
       child: Padding(
+        // AppBackLink now carries a 12px internal pill inset, so the toolbar
+        // padding drops from md (24) to s (12) to keep the chevron at the
+        // design position (pane + 24) instead of shifting it to pane + 36.
         padding: const EdgeInsets.only(
-          left: AppSpacing.md,
+          left: AppSpacing.s,
           top: AppSpacing.xs,
           bottom: AppSpacing.xs,
         ),

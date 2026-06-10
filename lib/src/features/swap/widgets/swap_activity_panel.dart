@@ -320,7 +320,7 @@ class _SwapActivityDetailPaneContent extends StatelessWidget {
         children: [
           if (returnTarget != null) ...[
             Padding(
-              padding: const EdgeInsets.only(left: AppSpacing.sm),
+              padding: const EdgeInsets.only(left: AppSpacing.xxs),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: AppBackLink(

@@ -45,9 +45,10 @@ class _VotingGuardScaffold extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Padding(
-              // Design: back chevron sits 16px into the pane on every toolbar.
+              // Design: back chevron sits 16px into the pane on every toolbar
+              // (4px pane padding + AppBackLink's 12px internal inset).
               padding: EdgeInsets.fromLTRB(
-                AppSpacing.sm,
+                AppSpacing.xxs,
                 AppSpacing.md,
                 AppSpacing.md,
                 0,

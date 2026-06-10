@@ -2538,7 +2538,7 @@ void main() {
     final reviewTitle = tester.widget<Text>(find.text('Review your answers'));
     expect(reviewTitle.textAlign, TextAlign.center);
     expect(reviewTitle.style?.fontFamily, 'Libre Caslon Text');
-    expect(reviewTitle.style?.fontSize, 36);
+    expect(reviewTitle.style?.fontSize, 32);
     expect(reviewTitle.style?.letterSpacing, 0);
     expect(find.text(longRoundDescription), findsNothing);
     expect(find.text('View more'), findsNothing);

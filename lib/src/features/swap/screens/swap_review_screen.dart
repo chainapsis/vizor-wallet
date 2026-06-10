@@ -152,7 +152,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.only(left: AppSpacing.sm),
+              padding: const EdgeInsets.only(left: AppSpacing.xxs),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: AppBackLink(

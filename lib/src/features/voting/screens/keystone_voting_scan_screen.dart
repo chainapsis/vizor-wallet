@@ -86,10 +86,11 @@ class _KeystoneVotingScanScreenState
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        // Back chevron sits 16px (sm) into the pane per the shared design
-        // rule; the centered content keeps md on the other sides.
+        // Back chevron sits 16px into the pane per the shared design rule
+        // (4px pane padding + AppBackLink's 12px internal inset); the centered
+        // content keeps md on the other sides.
         padding: const EdgeInsets.fromLTRB(
-          AppSpacing.sm,
+          AppSpacing.xxs,
           AppSpacing.md,
           AppSpacing.md,
           AppSpacing.md,

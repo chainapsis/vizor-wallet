@@ -246,8 +246,9 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
           children: [
             Padding(
               // Top-only here: _AddressBookPane carries the horizontal and
-              // bottom insets itself so the back link can sit at 16 (sm)
-              // while the table keeps md.
+              // bottom insets itself so the back link can sit at 16
+              // (4px pane padding + AppBackLink's 12px internal inset) while
+              // the table keeps md.
               padding: const EdgeInsets.only(top: AppSpacing.md),
               child: contactsAsync.when(
                 loading: () => buildPane(
@@ -400,7 +401,10 @@ class _AddressBookPane extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Padding(
-            padding: EdgeInsets.only(left: AppSpacing.sm, right: AppSpacing.md),
+            padding: EdgeInsets.only(
+              left: AppSpacing.xxs,
+              right: AppSpacing.md,
+            ),
             child: Align(
               alignment: Alignment.centerLeft,
               child: AppRouteBackLink(minWidth: 60),

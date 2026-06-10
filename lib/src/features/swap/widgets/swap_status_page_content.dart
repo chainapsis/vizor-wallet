@@ -525,6 +525,7 @@ class _StatusBadge extends StatelessWidget {
             height: 16,
             child: FittedBox(
               fit: BoxFit.scaleDown,
+              alignment: Alignment.topCenter,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

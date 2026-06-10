@@ -87,7 +87,7 @@ class _KeystoneSendScanScreenState
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: const EdgeInsets.fromLTRB(
-          AppSpacing.sm,
+          AppSpacing.xxs,
           AppSpacing.md,
           AppSpacing.md,
           AppSpacing.md,

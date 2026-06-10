@@ -161,12 +161,15 @@ class AppDesktopPane extends StatelessWidget {
 /// Pane-level back toolbar.
 ///
 /// Design rule (verified across every Figma section): the back chevron sits
-/// 16px (`AppSpacing.sm`) from the pane's left edge, inside a 48px toolbar
-/// band, and the label grows to the right. The default [padding] encodes that
-/// rule, so screens should NOT pass their own horizontal padding unless a
-/// design explicitly deviates. The vertical `xs` keeps the band visually
-/// balanced; because the back link is vertically centered within [height], the
-/// exact symmetric vertical padding does not move the link.
+/// 16px from the pane's left edge, inside a 48px toolbar band, and the label
+/// grows to the right. That 16px is composed of this toolbar's 4px
+/// (`AppSpacing.xxs`) left padding plus [AppBackLink]'s own 12px
+/// (`AppSpacing.s`) internal horizontal inset (the pill button's design inset).
+/// The default [padding] encodes the toolbar half of that rule, so screens
+/// should NOT pass their own horizontal padding unless a design explicitly
+/// deviates. The vertical `xs` keeps the band visually balanced; because the
+/// back link is vertically centered within [height], the exact symmetric
+/// vertical padding does not move the link.
 class AppPaneToolbar extends StatelessWidget {
   const AppPaneToolbar({
     this.onBeforeNavigate,
@@ -174,7 +177,7 @@ class AppPaneToolbar extends StatelessWidget {
     this.trailing,
     this.height = 48,
     this.padding = const EdgeInsets.only(
-      left: AppSpacing.sm,
+      left: AppSpacing.xxs,
       top: AppSpacing.xs,
       bottom: AppSpacing.xs,
     ),

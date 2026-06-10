@@ -429,7 +429,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                AppSpacing.sm,
+                AppSpacing.xxs,
                 AppSpacing.md,
                 AppSpacing.md,
                 AppSpacing.md,

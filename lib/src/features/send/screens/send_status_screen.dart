@@ -471,7 +471,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: const EdgeInsets.fromLTRB(
-          AppSpacing.sm,
+          AppSpacing.xxs,
           AppSpacing.md,
           AppSpacing.md,
           AppSpacing.md,
@@ -592,7 +592,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                     Positioned.fill(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.sm,
+                          AppSpacing.xxs,
                           AppSpacing.md,
                           0,
                           AppSpacing.md,
@@ -606,7 +606,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                             Expanded(
                               child: Padding(
                                 padding: const EdgeInsets.only(
-                                  left: AppSpacing.xs,
+                                  left: AppSpacing.sm + AppSpacing.xxs,
                                   right: 255,
                                 ),
                                 child: Align(
