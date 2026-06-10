@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
@@ -14,9 +15,11 @@ Widget _app({String initialLocation = '/welcome'}) {
     initialLocation: initialLocation,
     routes: mobileOnboardingRoutes(),
   );
-  return MaterialApp.router(
-    routerConfig: router,
-    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+  return ProviderScope(
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+    ),
   );
 }
 

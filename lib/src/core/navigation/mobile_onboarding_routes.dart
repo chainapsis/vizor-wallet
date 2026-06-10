@@ -3,8 +3,10 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/onboarding/mobile/mobile_create_steps.dart';
+import '../../features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../../features/onboarding/mobile/mobile_onboarding_scaffold.dart';
 import '../../features/onboarding/mobile/mobile_welcome_screen.dart';
+import '../../features/onboarding/shared/onboarding_flow_args.dart';
 import '../theme/app_theme.dart';
 
 /// Mobile onboarding tree: single-pane screens pushed as
@@ -48,7 +50,18 @@ List<RouteBase> mobileOnboardingRoutes() => [
       child: const MobileThingsToKnowScreen(),
     ),
   ),
-  _step('/onboarding/secret-passphrase'),
+  GoRoute(
+    path: '/onboarding/secret-passphrase',
+    pageBuilder: (context, state) {
+      final args = state.extra is CreateSecretPassphraseArgs
+          ? state.extra as CreateSecretPassphraseArgs
+          : null;
+      return CupertinoPage(
+        key: state.pageKey,
+        child: MobileSecretPassphraseScreen(args: args),
+      );
+    },
+  ),
   _step('/onboarding/set-passcode'),
   _step('/onboarding/biometrics'),
   _step('/import'),
