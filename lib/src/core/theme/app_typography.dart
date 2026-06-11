@@ -19,8 +19,9 @@
 /// `displayMedium` → `Headline XL`, `displaySmall` → `Headline L`).
 ///
 /// Font sizes and letter spacings are authored in logical pixels. The
-/// families and letter spacings are identical across modes; only font
-/// sizes and line heights differ. Line heights are stored as the
+/// sans families and letter spacings are identical across modes; the
+/// serif display scale differs by family (Desktop: Libre Caslon Text,
+/// Mobile: Young Serif) as well as size. Line heights are stored as the
 /// unitless multiplier Flutter expects (`TextStyle.height`) — computed
 /// as `figmaLineHeightPx / fontSizePx` so the original Figma design
 /// still reproduces exactly.
@@ -39,6 +40,9 @@ import '../layout/app_form_factor.dart';
 // ─── Mode-invariant styles (identical in both Figma modes) ───────────
 
 /// Figma `Headline L` — Libre Caslon Text Regular, 32 / 33 px.
+///
+/// Desktop keeps Libre Caslon Text; the mobile Figma frames resolve the
+/// `Fonts/Display/*` styles to Young Serif (see [_headlineLMobile]).
 const _headlineL = TextStyle(
   fontFamily: 'Libre Caslon Text',
   fontWeight: FontWeight.w400,
@@ -50,6 +54,28 @@ const _headlineL = TextStyle(
 /// Figma `Headline M` — Libre Caslon Text Regular, 28 / 30 px, −0.28.
 const _headlineM = TextStyle(
   fontFamily: 'Libre Caslon Text',
+  fontWeight: FontWeight.w400,
+  fontSize: 28,
+  height: 30 / 28,
+  letterSpacing: -0.28,
+);
+
+/// Figma `Headline L`, Mobile mode — Young Serif, 32 / 33 px.
+///
+/// The mobile `Fonts/Display/Headline *` styles resolve to the Young
+/// Serif family (single Regular cut; Figma's "Medium" style label maps
+/// onto it). Desktop stays on Libre Caslon Text.
+const _headlineLMobile = TextStyle(
+  fontFamily: 'Young Serif',
+  fontWeight: FontWeight.w400,
+  fontSize: 32,
+  height: 33 / 32,
+  letterSpacing: 0,
+);
+
+/// Figma `Headline M`, Mobile mode — Young Serif, 28 / 30 px, −0.28.
+const _headlineMMobile = TextStyle(
+  fontFamily: 'Young Serif',
   fontWeight: FontWeight.w400,
   fontSize: 28,
   height: 30 / 28,
@@ -173,9 +199,9 @@ abstract final class AppTypographyDesktop {
 /// font sizes and line heights differ (body/label scale up ~2 px for
 /// touch readability, `Headline XL` scales down 45 → 40).
 abstract final class AppTypographyMobile {
-  /// Figma `Headline XL` — 40 / 40 px, letter-spacing −1.35.
+  /// Figma `Headline XL` — Young Serif, 40 / 40 px, letter-spacing −1.35.
   static const displayLarge = TextStyle(
-    fontFamily: 'Libre Caslon Text',
+    fontFamily: 'Young Serif',
     fontWeight: FontWeight.w400,
     fontSize: 40,
     height: 40 / 40,
@@ -183,9 +209,9 @@ abstract final class AppTypographyMobile {
   );
 
   static const displayMedium = displayLarge;
-  static const displaySmall = _headlineL;
-  static const headlineLarge = _headlineL;
-  static const headlineMedium = _headlineM;
+  static const displaySmall = _headlineLMobile;
+  static const headlineLarge = _headlineLMobile;
+  static const headlineMedium = _headlineMMobile;
 
   /// Figma `Headline S` — Geist Medium, 18 / 22 px.
   static const headlineSmall = TextStyle(

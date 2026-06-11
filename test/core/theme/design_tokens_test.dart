@@ -151,20 +151,36 @@ void main() {
   });
 
   test('mobile font tokens match 3 Fonts-new.zip', () {
-    // Headline XL scales DOWN on mobile (45 → 40); families, weights,
-    // and letter spacings are identical to desktop across all styles.
-    expect(AppTypographyMobile.displayLarge.fontFamily, 'Libre Caslon Text');
+    // Headline XL scales DOWN on mobile (45 → 40) and the mobile serif
+    // display scale resolves to Young Serif (the mobile Figma frames'
+    // Fonts/Display styles); sans families, weights, and letter
+    // spacings are identical to desktop across all styles.
+    expect(AppTypographyMobile.displayLarge.fontFamily, 'Young Serif');
     expect(AppTypographyMobile.displayLarge.fontWeight, FontWeight.w400);
     expect(AppTypographyMobile.displayLarge.fontSize, 40);
     expect(AppTypographyMobile.displayLarge.height, 40 / 40);
     expect(AppTypographyMobile.displayLarge.letterSpacing, -1.35);
 
-    // Headline L / M and Code M / S are mode-invariant.
-    expect(AppTypographyMobile.headlineLarge, AppTypographyDesktop.headlineLarge);
+    // Headline L / M keep desktop metrics but swap to Young Serif.
+    expect(AppTypographyMobile.headlineLarge.fontFamily, 'Young Serif');
     expect(
-      AppTypographyMobile.headlineMedium,
-      AppTypographyDesktop.headlineMedium,
+      AppTypographyMobile.headlineLarge.fontSize,
+      AppTypographyDesktop.headlineLarge.fontSize,
     );
+    expect(
+      AppTypographyMobile.headlineLarge.height,
+      AppTypographyDesktop.headlineLarge.height,
+    );
+    expect(AppTypographyMobile.headlineMedium.fontFamily, 'Young Serif');
+    expect(
+      AppTypographyMobile.headlineMedium.fontSize,
+      AppTypographyDesktop.headlineMedium.fontSize,
+    );
+    expect(
+      AppTypographyMobile.headlineMedium.height,
+      AppTypographyDesktop.headlineMedium.height,
+    );
+    // Code M / S are mode-invariant.
     expect(AppTypographyMobile.codeMedium, AppTypographyDesktop.codeMedium);
     expect(AppTypographyMobile.codeSmall, AppTypographyDesktop.codeSmall);
 
