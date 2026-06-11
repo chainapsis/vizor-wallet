@@ -136,7 +136,7 @@ class _SwapDepositPageShell extends StatelessWidget {
             textAlign: TextAlign.center,
             style: appSerifDisplayStyle(color: colors.text.accent),
           ),
-          const SizedBox(height: AppSpacing.base),
+          const SizedBox(height: AppSpacing.lg),
           KeyedSubtree(
             key: const ValueKey('swap_activity_deposit_qr_panel'),
             child: _DepositQrCard(
@@ -148,7 +148,7 @@ class _SwapDepositPageShell extends StatelessWidget {
               now: now,
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.lg),
           _DepositDetailsList(
             amountText: amountText,
             depositAddress: depositAddress,
@@ -171,7 +171,8 @@ class _DepositConfirmActionArea extends StatelessWidget {
 
   static const _buttonHeight = 44.0;
   static const _buttonWidth = 196.0;
-  static const _buttonTopGap = AppSpacing.xl + AppSpacing.sm;
+  // Figma: 48px between the details list and the confirm button.
+  static const _buttonTopGap = AppSpacing.lg;
   static const _height = _buttonTopGap + _buttonHeight;
 
   final bool checking;
@@ -562,21 +563,15 @@ class _DepositExpiryLineState extends State<_DepositExpiryLine> {
             'Deposit within',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelLarge.copyWith(
-              color: onCardColor.withValues(alpha: 0.72),
-            ),
+            style: AppTypography.labelLarge.copyWith(color: onCardColor),
           ),
         ),
-        Container(
+        // Figma 'Time Wrap' carries only its 4px/2px inset — no fill or
+        // border; the time reads as plain text after the label.
+        Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.xxs,
             vertical: 2,
-          ),
-          decoration: BoxDecoration(
-            // Figma 'Time Wrap' chip uses a 4px radius; the radii scale starts
-            // at xSmall (8), so this geometry value is a literal.
-            color: onCardColor.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(4),
           ),
           child: Text(
             _expiresInLabel,

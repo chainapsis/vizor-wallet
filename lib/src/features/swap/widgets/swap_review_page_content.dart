@@ -297,18 +297,27 @@ class _SwapReviewDetailCard extends StatelessWidget {
     return ReviewWrapCard(
       key: const ValueKey('swap_review_details'),
       children: [
-        ReviewListRow(
-          label: 'Slippage tolerance',
-          value: slippageToleranceTextOverride ?? _slippageToleranceText(quote),
-        ),
-        ReviewListRow(
-          label: 'Guaranteed minimum',
-          value: compactSwapAmountText(quote.minimumReceiveText),
-          trailingIconName: AppIcons.help,
-          trailingIconColor: colors.icon.muted,
-          trailingIconTooltip: swapMinimumReceiveTooltip(
-            quote.receiveAsset.symbol,
-          ),
+        // One Figma `List` group: consecutive 32px rows stack with no gap —
+        // the card's 16px child gap applies only around the divider.
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ReviewListRow(
+              label: 'Slippage tolerance',
+              value:
+                  slippageToleranceTextOverride ??
+                  _slippageToleranceText(quote),
+            ),
+            ReviewListRow(
+              label: 'Guaranteed minimum',
+              value: compactSwapAmountText(quote.minimumReceiveText),
+              trailingIconName: AppIcons.help,
+              trailingIconColor: colors.icon.muted,
+              trailingIconTooltip: swapMinimumReceiveTooltip(
+                quote.receiveAsset.symbol,
+              ),
+            ),
+          ],
         ),
         const ReviewWrapDivider(),
         ReviewListRow(

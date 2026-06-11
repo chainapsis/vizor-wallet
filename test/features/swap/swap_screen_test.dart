@@ -588,7 +588,7 @@ void main() {
             find.byKey(const ValueKey('swap_activity_route_step_0_active')),
           )
           .height,
-      84,
+      90,
     );
     expect(
       tester
@@ -887,8 +887,9 @@ void main() {
 
     expect(titleRect.left, lessThan(checkedRect.left));
     expect(checkedRect.right, greaterThan(titleRect.right));
-    // The active step's description is indented by AppSpacing.xs under its title.
-    expect(descriptionRect.left - titleRect.left, closeTo(AppSpacing.xs, 1));
+    // The active step's description sits flush with its title column; the
+    // Figma block pads vertically, not horizontally.
+    expect(descriptionRect.left - titleRect.left, closeTo(0, 1));
   });
 
   testWidgets('status details tab shows all rows in the detail card', (
@@ -7797,78 +7798,83 @@ Widget _statusTestPage({
   bool showTabs = true,
   List<SwapStatusDetailRowData>? details,
 }) {
-  return SwapStatusPageContent(
-    title: title,
-    payAsset: payAsset,
-    receiveAsset: receiveAsset,
-    payDetailText: payDetailText,
-    receiveDetailText: receiveDetailText,
-    payAmountText: payAmountText,
-    receiveAmountText: receiveAmountText,
-    statusLabel: statusLabel,
-    badgeKind: badgeKind,
-    progressIndex: progressIndex,
-    progressAdvanceInterval: progressAdvanceInterval,
-    activeTab: activeTab,
-    showTabs: showTabs,
-    steps: const [
-      SwapStatusStepData(
-        title: 'USDC source deposit',
-        state: SwapStatusStepState.pending,
-        completeTitle: 'USDC Deposited',
-        activeTitle: 'Depositing USDC...',
-        pendingTitle: 'Deposit USDC',
-        lastCheckedLabel: 'Last check: just now',
-        description: 'Waiting for the source chain.',
-      ),
-      SwapStatusStepData(
-        title: 'Deposit confirmation',
-        state: SwapStatusStepState.pending,
-        activeTitle: 'Deposit confirmation...',
-        lastCheckedLabel: 'Last check: just now',
-        description: 'Confirming the deposit.',
-      ),
-      SwapStatusStepData(
-        title: 'Swap',
-        state: SwapStatusStepState.pending,
-        activeTitle: 'Swap...',
-        lastCheckedLabel: 'Last check: just now',
-        description: 'The provider is executing the swap route.',
-      ),
-      SwapStatusStepData(
-        title: 'Send ZEC',
-        state: SwapStatusStepState.pending,
-        activeTitle: 'Send ZEC...',
-        lastCheckedLabel: 'Last check: just now',
-        description: 'Delivering ZEC.',
-      ),
-    ],
-    details:
-        details ??
-        const [
-          SwapStatusDetailRowData(
-            label: 'USDC refund address',
-            value: '0x123kjhc ... 4x98g20',
-          ),
-          SwapStatusDetailRowData(
-            label: 'Deposit USDC to',
-            value: '0x123kjhc ... 4x98g20',
-          ),
-          SwapStatusDetailRowData(
-            label: 'Swap fee',
-            value: 'Included in shown rate',
-            help: true,
-          ),
-          SwapStatusDetailRowData(
-            label: 'Slippage tolerance',
-            value: '0.25 USDC (0.5%)',
-          ),
-          SwapStatusDetailRowData(
-            label: 'Guaranteed minimum',
-            value: '0.249 ZEC',
-            help: true,
-          ),
-        ],
+  // The real screens host this content in a scroll view; the 800x600 test
+  // surface is shorter than the full progress page, so scroll here too
+  // instead of overflowing the column.
+  return SingleChildScrollView(
+    child: SwapStatusPageContent(
+      title: title,
+      payAsset: payAsset,
+      receiveAsset: receiveAsset,
+      payDetailText: payDetailText,
+      receiveDetailText: receiveDetailText,
+      payAmountText: payAmountText,
+      receiveAmountText: receiveAmountText,
+      statusLabel: statusLabel,
+      badgeKind: badgeKind,
+      progressIndex: progressIndex,
+      progressAdvanceInterval: progressAdvanceInterval,
+      activeTab: activeTab,
+      showTabs: showTabs,
+      steps: const [
+        SwapStatusStepData(
+          title: 'USDC source deposit',
+          state: SwapStatusStepState.pending,
+          completeTitle: 'USDC Deposited',
+          activeTitle: 'Depositing USDC...',
+          pendingTitle: 'Deposit USDC',
+          lastCheckedLabel: 'Last check: just now',
+          description: 'Waiting for the source chain.',
+        ),
+        SwapStatusStepData(
+          title: 'Deposit confirmation',
+          state: SwapStatusStepState.pending,
+          activeTitle: 'Deposit confirmation...',
+          lastCheckedLabel: 'Last check: just now',
+          description: 'Confirming the deposit.',
+        ),
+        SwapStatusStepData(
+          title: 'Swap',
+          state: SwapStatusStepState.pending,
+          activeTitle: 'Swap...',
+          lastCheckedLabel: 'Last check: just now',
+          description: 'The provider is executing the swap route.',
+        ),
+        SwapStatusStepData(
+          title: 'Send ZEC',
+          state: SwapStatusStepState.pending,
+          activeTitle: 'Send ZEC...',
+          lastCheckedLabel: 'Last check: just now',
+          description: 'Delivering ZEC.',
+        ),
+      ],
+      details:
+          details ??
+          const [
+            SwapStatusDetailRowData(
+              label: 'USDC refund address',
+              value: '0x123kjhc ... 4x98g20',
+            ),
+            SwapStatusDetailRowData(
+              label: 'Deposit USDC to',
+              value: '0x123kjhc ... 4x98g20',
+            ),
+            SwapStatusDetailRowData(
+              label: 'Swap fee',
+              value: 'Included in shown rate',
+              help: true,
+            ),
+            SwapStatusDetailRowData(
+              label: 'Slippage tolerance',
+              value: '0.25 USDC (0.5%)',
+            ),
+            SwapStatusDetailRowData(
+              label: 'Guaranteed minimum',
+              value: '0.249 ZEC',
+              help: true,
+            ),
+          ],
+    ),
   );
 }
 

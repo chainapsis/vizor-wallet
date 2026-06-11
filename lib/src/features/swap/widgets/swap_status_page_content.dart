@@ -241,6 +241,12 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
           ),
           const SizedBox(height: AppSpacing.base),
           if (widget.showTabs) ...[
+            // The Figma `Swap Tabs` frame nominally adds a 12px inset above
+            // the tabs, but the design frame overflows its own 720px window
+            // by more than that — reproducing the inset makes the progress
+            // tab scroll at the reference window height. The page must fit
+            // without a scrollbar (all status frames hide the Scrollbar
+            // instance), so the inset is intentionally dropped.
             _StatusTabs(
               activeTab: widget.activeTab,
               onChanged: widget.onTabChanged,
@@ -345,7 +351,11 @@ class _StatusTabLabel extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: active ? null : onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+          // Figma `tab`: 4px horizontal / 2px vertical inset (25px row).
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xxs,
+            vertical: 2,
+          ),
           child: Text(label, maxLines: 1, softWrap: false, style: style),
         ),
       ),
@@ -362,7 +372,8 @@ class _SwapProgressRoute extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       key: const ValueKey('swap_progress_route'),
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      // Figma `_Swap Route`: 12px vertical inset inside the card, full width.
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -394,13 +405,13 @@ class _ProgressStep extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final complete = step.state == SwapStatusStepState.complete;
     final active = step.state == SwapStatusStepState.active;
     final isLast = index == count - 1;
     // Fixed per-step heights reproduce the Figma connector lengths: the active
-    // step reserves room for its 2-line description, pending/complete steps a
-    // single title row, and the last step has no trailing connector.
-    final height = active ? 84.0 : (isLast ? 24.0 : 37.0);
+    // step reserves room for its 2-line description (24 title + 8 gap + 58
+    // padded description), pending/complete steps a single title row, and the
+    // last step has no trailing connector.
+    final height = active ? 90.0 : (isLast ? 24.0 : 37.0);
     final title = step.titleForState(step.state);
     return SizedBox(
       key: ValueKey('swap_activity_route_step_${index}_${step.state.name}'),
@@ -454,13 +465,14 @@ class _ProgressStep extends StatelessWidget {
                           title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
+                          // Figma keeps every step title on the accent color
+                          // (light #141818 / dark #FFFFFF); only the weight
+                          // distinguishes the active step.
                           style: AppTypography.labelLarge.copyWith(
                             fontWeight: active
                                 ? FontWeight.w600
                                 : FontWeight.w500,
-                            color: active || complete
-                                ? colors.text.accent
-                                : colors.text.secondary,
+                            color: colors.text.accent,
                           ),
                         ),
                       ),
@@ -478,9 +490,11 @@ class _ProgressStep extends StatelessWidget {
                 ),
                 if (active && step.description != null) ...[
                   const SizedBox(height: AppSpacing.xs),
+                  // Figma pads the description block vertically (8px above
+                  // and below the 2-line text), flush with the title column.
                   Padding(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xs,
+                      vertical: AppSpacing.xs,
                     ),
                     child: Text(
                       step.description!,
@@ -588,6 +602,9 @@ class _SwapTerminalDetails extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _StatusRow(label: statusLabel, badgeKind: badgeKind),
+        // Figma keeps the Status row in its own `List` group, separated from
+        // the metadata rows by the card's 16px group gap.
+        const SizedBox(height: AppSpacing.sm),
         ..._detailRowsWithFeeDivider(rows),
       ],
     );
