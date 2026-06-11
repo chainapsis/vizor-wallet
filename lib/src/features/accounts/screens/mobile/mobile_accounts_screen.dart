@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show Scaffold, showGeneralDialog;
+import 'package:flutter/material.dart'
+    show Material, MaterialType, Scaffold, showGeneralDialog;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -59,8 +60,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     final canRemove = _canRemove(account, accounts);
 
     final anchorBox = anchorContext.findRenderObject()! as RenderBox;
-    final anchorRect =
-        anchorBox.localToGlobal(Offset.zero) & anchorBox.size;
+    final anchorRect = anchorBox.localToGlobal(Offset.zero) & anchorBox.size;
     final screen = MediaQuery.sizeOf(context);
 
     final action = await showGeneralDialog<_AccountAction>(
@@ -124,52 +124,57 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
                 AppSpacing.sm,
                 screen.width,
               ),
-              child: Container(
-                width: 220,
-                decoration: BoxDecoration(
-                  color: colors.background.homeCard,
-                  borderRadius: BorderRadius.circular(AppRadii.large),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    item(
-                      key: const ValueKey('mobile_account_menu_copy'),
-                      iconName: AppIcons.copy,
-                      label: 'Copy address',
-                      action: _AccountAction.copy,
-                    ),
-                    item(
-                      key: const ValueKey('mobile_account_menu_send'),
-                      iconName: AppIcons.plane,
-                      label: 'Send ZEC',
-                      action: _AccountAction.send,
-                    ),
-                    item(
-                      key: const ValueKey('mobile_account_menu_edit'),
-                      iconName: AppIcons.edit,
-                      label: 'Edit account',
-                      action: _AccountAction.edit,
-                    ),
-                    if (canRemove) ...[
-                      Container(
-                        height: 1,
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.sm,
-                        ),
-                        color: colors.text.homeCard.withValues(alpha: 0.15),
+              // Material ancestor: bare dialog routes have none, and
+              // Text would fall back to the debug underline style.
+              child: Material(
+                type: MaterialType.transparency,
+                child: Container(
+                  width: 220,
+                  decoration: BoxDecoration(
+                    color: colors.background.homeCard,
+                    borderRadius: BorderRadius.circular(AppRadii.large),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      item(
+                        key: const ValueKey('mobile_account_menu_copy'),
+                        iconName: AppIcons.copy,
+                        label: 'Copy address',
+                        action: _AccountAction.copy,
                       ),
                       item(
-                        key: const ValueKey('mobile_account_menu_remove'),
-                        iconName: AppIcons.trash,
-                        label: 'Remove account',
-                        action: _AccountAction.remove,
-                        color: colors.text.destructive,
+                        key: const ValueKey('mobile_account_menu_send'),
+                        iconName: AppIcons.plane,
+                        label: 'Send ZEC',
+                        action: _AccountAction.send,
                       ),
+                      item(
+                        key: const ValueKey('mobile_account_menu_edit'),
+                        iconName: AppIcons.edit,
+                        label: 'Edit account',
+                        action: _AccountAction.edit,
+                      ),
+                      if (canRemove) ...[
+                        Container(
+                          height: 1,
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.sm,
+                          ),
+                          color: colors.text.homeCard.withValues(alpha: 0.15),
+                        ),
+                        item(
+                          key: const ValueKey('mobile_account_menu_remove'),
+                          iconName: AppIcons.trash,
+                          label: 'Remove account',
+                          action: _AccountAction.remove,
+                          color: colors.text.destructive,
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
