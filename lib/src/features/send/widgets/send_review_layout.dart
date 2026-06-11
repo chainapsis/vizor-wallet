@@ -142,6 +142,8 @@ class SendReviewInfoSection extends StatelessWidget {
 /// The column is horizontally centered but top-pinned in the content area. In
 /// the Figma frames, the title starts 16px below `Content Area` rather than
 /// vertically centering the whole group in the pane.
+///
+/// Scrolling is owned by the containing pane scaffold.
 class SendReviewContentColumn extends StatelessWidget {
   const SendReviewContentColumn({
     required this.title,
@@ -161,56 +163,37 @@ class SendReviewContentColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final height = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : null;
-        final minHeight = height == null
-            ? 0.0
-            : height < (AppSpacing.sm * 2)
-            ? 0.0
-            : height - (AppSpacing.sm * 2);
-
-        return Align(
-          alignment: Alignment.topCenter,
-          child: SizedBox(
-            width: AppWindowSizing.contentAreaMaxWidth,
-            height: height,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.s,
-                vertical: AppSpacing.sm,
-              ),
-              child: SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: minHeight),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        title,
-                        textAlign: TextAlign.center,
-                        // Figma `Body L` SemiBold — branch pattern is the
-                        // bodyLarge token with an inline weight bump.
-                        style: AppTypography.bodyLarge.copyWith(
-                          color: colors.text.accent,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      for (final child in children) ...[
-                        const SizedBox(height: _sectionGap),
-                        child,
-                      ],
-                    ],
-                  ),
+    return Align(
+      alignment: Alignment.topCenter,
+      child: SizedBox(
+        width: AppWindowSizing.contentAreaMaxWidth,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s,
+            vertical: AppSpacing.sm,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                // Figma `Body L` SemiBold — branch pattern is the
+                // bodyLarge token with an inline weight bump.
+                style: AppTypography.bodyLarge.copyWith(
+                  color: colors.text.accent,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-            ),
+              for (final child in children) ...[
+                const SizedBox(height: _sectionGap),
+                child,
+              ],
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

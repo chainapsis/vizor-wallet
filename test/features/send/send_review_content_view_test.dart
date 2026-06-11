@@ -128,6 +128,7 @@ void main() {
       tester.getTopLeft(find.text('Review send')).dy,
       moreOrLessEquals(AppSpacing.sm),
     );
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
   });
 
   testWidgets('contact variant swaps the recipient row presentation', (

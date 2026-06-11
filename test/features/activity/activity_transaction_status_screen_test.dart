@@ -359,7 +359,7 @@ void main() {
 
     expect(find.byType(SendStatusContentView), findsOneWidget);
     expect(find.text('Send failed'), findsOneWidget);
-    expect(find.text('Failed, refunded minus tx fee'), findsOneWidget);
+    expect(find.text('Failed'), findsOneWidget);
   });
 
   testWidgets('shows the saved contact recipient for a sent transaction', (

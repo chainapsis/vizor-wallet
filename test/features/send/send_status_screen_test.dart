@@ -135,7 +135,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Send failed'), findsOneWidget);
-    expect(find.text('Failed, refunded minus tx fee'), findsOneWidget);
+    expect(find.text('Failed'), findsOneWidget);
     expect(
       find.text('The network rejected this transaction. Try again later.'),
       findsOneWidget,

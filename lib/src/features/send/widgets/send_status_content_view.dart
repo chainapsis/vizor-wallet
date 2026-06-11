@@ -133,7 +133,7 @@ class SendStatusContentView extends StatelessWidget {
             colors.text.positiveStrong,
           ),
           SendStatusPhase.failed => (
-            'Failed, refunded minus tx fee',
+            'Failed',
             AppIcons.cancel,
             colors.text.destructive,
           ),

@@ -96,7 +96,7 @@ void main() {
       await _pump(tester, _statusView(SendStatusPhase.failed));
 
       expect(find.text('Send failed'), findsOneWidget);
-      expect(find.text('Failed, refunded minus tx fee'), findsOneWidget);
+      expect(find.text('Failed'), findsOneWidget);
       expect(_icon(AppIcons.cancel), findsOneWidget);
       expect(_icon(AppIcons.uturnUp), findsOneWidget);
       expect(_icon(AppIcons.arrowDown), findsNothing);
@@ -116,9 +116,7 @@ void main() {
 
       // Rows on the dark card resolve dark-theme tokens.
       final darkColors = AppThemeData.dark.colors;
-      final statusText = tester.widget<Text>(
-        find.text('Failed, refunded minus tx fee'),
-      );
+      final statusText = tester.widget<Text>(find.text('Failed'));
       expect(statusText.style?.color, darkColors.text.destructive);
       final statusLabel = tester.widget<Text>(find.text('Status'));
       expect(statusLabel.style?.color, darkColors.text.destructive);
