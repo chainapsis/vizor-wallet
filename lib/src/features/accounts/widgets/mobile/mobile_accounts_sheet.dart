@@ -12,6 +12,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
+import '../../../../core/widgets/mobile/mobile_account_avatar.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_list_row.dart';
 import '../../../../providers/account_provider.dart';
@@ -132,10 +133,11 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
             // Centered so the stretch column can't blow the circle up
             // to full width; 56 px per the Figma accounts modal.
             Center(
-              child: AppProfilePicture(
+              child: MobileAccountAvatar(
                 profilePictureId:
                     active?.profilePictureId ?? kDefaultProfilePictureId,
                 size: AppProfilePictureSize.xLarge,
+                isHardware: active?.isHardware ?? false,
               ),
             ),
             const SizedBox(height: AppSpacing.s),
@@ -163,9 +165,10 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
                     for (final account in others)
                       MobileListRow(
                         key: ValueKey('account_row_${account.uuid}'),
-                        leading: AppProfilePicture(
+                        leading: MobileAccountAvatar(
                           profilePictureId: account.profilePictureId,
                           size: AppProfilePictureSize.large,
+                          isHardware: account.isHardware,
                         ),
                         label: account.name,
                         trailing: _CopyAddressButton(

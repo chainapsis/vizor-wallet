@@ -14,6 +14,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
+import '../../../../core/widgets/mobile/mobile_account_avatar.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_list_row.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
@@ -351,9 +352,10 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
   Widget _accountRow(AccountInfo account, {required bool enabled}) {
     return MobileListRow(
       key: ValueKey('mobile_accounts_row_${account.uuid}'),
-      leading: AppProfilePicture(
+      leading: MobileAccountAvatar(
         profilePictureId: account.profilePictureId,
         size: AppProfilePictureSize.large,
+        isHardware: account.isHardware,
       ),
       label: account.name,
       trailing: Builder(
@@ -439,9 +441,10 @@ class _RemoveAccountSheet extends StatelessWidget {
           children: [
             Row(
               children: [
-                AppProfilePicture(
+                MobileAccountAvatar(
                   profilePictureId: account.profilePictureId,
                   size: AppProfilePictureSize.large,
+                  isHardware: account.isHardware,
                 ),
                 const SizedBox(width: AppSpacing.s),
                 Expanded(

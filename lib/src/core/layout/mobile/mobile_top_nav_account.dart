@@ -7,6 +7,7 @@ import '../../formatting/sync_status_label.dart';
 import '../../profile_pictures.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_profile_picture.dart';
+import '../../widgets/mobile/mobile_account_avatar.dart';
 import 'mobile_top_nav.dart';
 
 /// [MobileTopNav.account] bound to live state: the active account's
@@ -33,9 +34,11 @@ class MobileTopNavAccount extends ConsumerWidget {
 
     return MobileTopNav.account(
       accountName: account?.name ?? '',
-      avatar: AppProfilePicture(
+      avatar: MobileAccountAvatar(
         profilePictureId: account?.profilePictureId ?? kDefaultProfilePictureId,
         size: AppProfilePictureSize.navLarge,
+        isHardware: account?.isHardware ?? false,
+        badgeRingColor: colors.background.window,
       ),
       syncLabel: status.label,
       syncLabelColor: labelColor,

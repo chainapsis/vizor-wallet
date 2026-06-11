@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/config/network_config.dart'
@@ -14,7 +15,6 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
-import '../../../../core/widgets/mobile/unsupported_sheet.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/receive_address_provider.dart';
 import '../../widgets/mobile/receive_address_info_sheet.dart';
@@ -120,9 +120,9 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
   }
 
   void _shareAddress() {
-    // TODO(mobile-share): hook up the platform share sheet (share_plus
-    // or equivalent); until then the gap is explicit.
-    unawaited(showUnsupportedSheet(context));
+    final address = _selectedAddress;
+    if (address.isEmpty) return;
+    unawaited(SharePlus.instance.share(ShareParams(text: address)));
   }
 
   @override
