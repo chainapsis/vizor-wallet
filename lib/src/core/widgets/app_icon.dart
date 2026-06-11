@@ -68,6 +68,7 @@ abstract final class AppIcons {
   static const renew = 'renew';
   static const scroll = 'scroll';
   static const search = 'search';
+  static const share = 'share';
   static const shieldAsset = 'shield_asset';
   static const shieldKeyhole = 'shield_keyhole';
   static const shieldKeyholeOutline = 'shield_keyhole_outline';

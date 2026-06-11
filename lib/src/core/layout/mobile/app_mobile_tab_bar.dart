@@ -138,7 +138,9 @@ class _TabBarItem extends StatelessWidget {
             child: AppIcon(
               item.iconName,
               size: AppMobileTabBar._iconSize,
-              color: active ? colors.navPanel.activeIcon : colors.icon.accent,
+              // Inactive items use the muted decorative tint per the
+              // Figma nav (grey, not the max-contrast accent).
+              color: active ? colors.navPanel.activeIcon : colors.icon.muted,
             ),
           ),
         ),

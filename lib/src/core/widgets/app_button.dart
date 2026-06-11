@@ -184,6 +184,7 @@ class AppButton extends StatefulWidget {
     this.focusRingColor,
     this.focusNode,
     this.autofocus = false,
+    this.expand = false,
   });
 
   /// Tap handler. `null` disables the button.
@@ -222,6 +223,13 @@ class AppButton extends StatefulWidget {
 
   final FocusNode? focusNode;
   final bool autofocus;
+
+  /// Opt-in full-width behavior. The pill normally stays intrinsic even
+  /// under tight constraints (the focus-ring Stack loosens them); with
+  /// `expand: true` the incoming constraints pass through, so wrapping
+  /// in `Expanded` or a stretched `Column` makes the pill fill — the
+  /// mobile Figma frames use full-width primary CTAs throughout.
+  final bool expand;
 
   @override
   State<AppButton> createState() => _AppButtonState();
@@ -375,6 +383,7 @@ class _AppButtonState extends State<AppButton> {
     final focusShell = Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.center,
+      fit: widget.expand ? StackFit.passthrough : StackFit.loose,
       children: [
         pill,
         Positioned(
