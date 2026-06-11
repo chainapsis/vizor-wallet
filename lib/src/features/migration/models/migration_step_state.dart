@@ -60,7 +60,16 @@ MigrationStepsModel migrationStepsModel({
       stepOne: MigrationStepOneState.waiting,
       stepTwo: MigrationStepTwoState.locked,
     ),
-    MigrationViewState.readyToMigrate ||
+    MigrationViewState.readyToMigrate =>
+      migrationHasSignedChildPczts(status)
+          ? const MigrationStepsModel(
+              stepOne: MigrationStepOneState.done,
+              stepTwo: MigrationStepTwoState.running,
+            )
+          : const MigrationStepsModel(
+              stepOne: MigrationStepOneState.done,
+              stepTwo: MigrationStepTwoState.ready,
+            ),
     MigrationViewState.paused => const MigrationStepsModel(
       stepOne: MigrationStepOneState.done,
       stepTwo: MigrationStepTwoState.ready,
@@ -81,15 +90,16 @@ MigrationStepsModel migrationStepsModel({
       stepOne: MigrationStepOneState.done,
       stepTwo: MigrationStepTwoState.done,
     ),
-    MigrationViewState.failedRecoverable => hasMigrationTxs
-        ? const MigrationStepsModel(
-            stepOne: MigrationStepOneState.done,
-            stepTwo: MigrationStepTwoState.error,
-          )
-        : const MigrationStepsModel(
-            stepOne: MigrationStepOneState.error,
-            stepTwo: MigrationStepTwoState.locked,
-          ),
+    MigrationViewState.failedRecoverable =>
+      hasMigrationTxs
+          ? const MigrationStepsModel(
+              stepOne: MigrationStepOneState.done,
+              stepTwo: MigrationStepTwoState.error,
+            )
+          : const MigrationStepsModel(
+              stepOne: MigrationStepOneState.error,
+              stepTwo: MigrationStepTwoState.locked,
+            ),
     MigrationViewState.failedTerminal ||
     MigrationViewState.abandoned => const MigrationStepsModel(
       stepOne: MigrationStepOneState.done,

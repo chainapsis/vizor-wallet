@@ -37,6 +37,9 @@ extension MigrationViewStateX on MigrationViewState {
 
   bool get shouldPollProgress => switch (this) {
     MigrationViewState.waitingDenomConfirmations ||
+    MigrationViewState.readyToMigrate ||
+    MigrationViewState.buildingSigningBatch ||
+    MigrationViewState.signingBatch ||
     MigrationViewState.broadcastScheduled ||
     MigrationViewState.broadcasting ||
     MigrationViewState.waitingMigrationConfirmations => true,
@@ -141,9 +144,26 @@ bool migrationHasBroadcastedUnconfirmedTransactions(
   return (status?.broadcastedTxCount ?? 0) > 0;
 }
 
+bool migrationHasSignedChildPczts(rust_sync.MigrationStatus? status) {
+  return (status?.signedChildPcztCount ?? 0) > 0;
+}
+
+bool migrationSignedChildrenMayFinalize(rust_sync.MigrationStatus? status) {
+  if (!migrationHasSignedChildPczts(status)) return false;
+  if (status?.phase == 'ready_to_migrate') return true;
+  if (status?.phase != 'waiting_denom_confirmations') return false;
+
+  final target = status?.denominationConfirmationTarget ?? 0;
+  if (target <= 0) return false;
+  return (status?.denominationConfirmationCount ?? 0) >= target;
+}
+
 bool migrationShouldWarnBeforeClose(rust_sync.MigrationStatus? status) {
   return migrationHasScheduledPendingBroadcasts(status) ||
-      migrationHasBroadcastedUnconfirmedTransactions(status);
+      migrationHasBroadcastedUnconfirmedTransactions(status) ||
+      migrationHasSignedChildPczts(status) ||
+      status?.phase == 'building_signing_batch' ||
+      status?.phase == 'signing_batch';
 }
 
 Duration? migrationRemainingScheduledSubmissionTime(

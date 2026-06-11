@@ -275,7 +275,7 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
   String get _keystoneModalTitle {
     final chunkLabel = _keystoneChunkLabel;
     return switch (_keystoneIntent) {
-      MigrationRunIntent.preparing => 'Sign split on your Keystone',
+      MigrationRunIntent.preparing => 'Sign migration on your Keystone',
       MigrationRunIntent.migrating when chunkLabel != null =>
         'Sign migration $chunkLabel',
       MigrationRunIntent.migrating => 'Sign migration on your Keystone',
@@ -302,7 +302,7 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     if (_keystoneIntent == MigrationRunIntent.migrating && chunkLabel != null) {
       return 'After this signature is ready, scan it back into Vizor.';
     }
-    return 'After you scanned, click Get Signature.';
+    return 'After you scanned, click Get signature.';
   }
 
   String get _keystonePrimaryLabel {
@@ -311,7 +311,7 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     if (_keystoneIntent == MigrationRunIntent.migrating && chunkLabel != null) {
       return 'Get signature $chunkLabel';
     }
-    return 'Get Signature';
+    return 'Get signature';
   }
 
   bool get _keystoneCanDismiss => !_keystoneCompleting;
@@ -468,7 +468,7 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
       try {
         request = switch (intent) {
           MigrationRunIntent.preparing =>
-            await rust_sync.prepareOrchardMigrationDenominationsPczt(
+            await rust_sync.prepareOrchardMigrationSingleQrPczt(
               dbPath: dbPath,
               network: networkName,
               accountUuid: accountUuid,
@@ -754,15 +754,22 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     });
     try {
       result = switch (session.intent) {
-        MigrationRunIntent.preparing =>
-          await rust_sync.completeOrchardMigrationDenominationsPczt(
+        MigrationRunIntent.preparing => await () async {
+          final security = ref.read(appSecurityProvider.notifier);
+          final password = security.requireSessionPasswordForNativeSecretUse();
+          final saltBase64 = await security
+              .requireSecretPayloadSaltForNativeSecretUse();
+          return rust_sync.completeOrchardMigrationSingleQrPczt(
             dbPath: dbPath,
             lightwalletdUrl: lightwalletdUrl,
             network: networkName,
             accountUuid: accountUuid,
             requestId: requestId,
             signedMessages: signedMessages,
-          ),
+            password: password,
+            saltBase64: saltBase64,
+          );
+        }(),
         MigrationRunIntent.migrating => await () async {
           final security = ref.read(appSecurityProvider.notifier);
           final password = security.requireSessionPasswordForNativeSecretUse();
@@ -1200,6 +1207,10 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     MigrationRunState runState,
   ) {
     if (runState.inFlight) return true;
+    if (status?.phase == 'ready_to_migrate' &&
+        migrationHasSignedChildPczts(status)) {
+      return true;
+    }
     return status?.phase == 'building_signing_batch' ||
         status?.phase == 'signing_batch' ||
         status?.phase == 'broadcasting';

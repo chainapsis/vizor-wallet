@@ -20,7 +20,9 @@ pub(crate) const MIGRATION_MAX_PREPARED_NOTES_PER_RUN: usize = 64;
 
 const RUNS_TABLE: &str = "vizor_migration_runs";
 const PREPARED_NOTES_TABLE: &str = "vizor_migration_prepared_notes";
+const PREP_TXS_TABLE: &str = "vizor_migration_prep_txs";
 const PENDING_TXS_TABLE: &str = "vizor_migration_pending_txs";
+const SIGNED_CHILD_PCZTS_TABLE: &str = "vizor_migration_signed_child_pczts";
 
 pub(crate) const PHASE_NO_ORCHARD_FUNDS: &str = "no_orchard_funds";
 pub(crate) const PHASE_WAITING_FOR_SPENDABLE_ORCHARD: &str = "waiting_for_spendable_orchard";
@@ -157,6 +159,35 @@ pub(crate) struct PendingMigrationTxInsert {
     pub metadata: PendingMigrationTxMetadata,
 }
 
+pub(crate) struct SignedMigrationPcztInsert {
+    pub message_id: String,
+    pub child_index: u32,
+    pub base_pczt: Vec<u8>,
+    pub signed_pczt: Vec<u8>,
+    pub target_height: u32,
+    pub expiry_height: u32,
+    pub value_zatoshi: u64,
+    pub fee_zatoshi: u64,
+    pub selected_note: PreparedOrchardNoteRef,
+    pub metadata: PendingMigrationTxMetadata,
+}
+
+pub(crate) struct SignedMigrationPczt {
+    pub base_pczt: Vec<u8>,
+    pub signed_pczt: Vec<u8>,
+    pub target_height: u32,
+    pub expiry_height: u32,
+    pub value_zatoshi: u64,
+    pub fee_zatoshi: u64,
+    pub selected_note: PreparedOrchardNoteRef,
+    pub metadata: PendingMigrationTxMetadata,
+}
+
+pub(crate) struct MigrationPrepTx {
+    pub txid_hex: String,
+    pub raw_tx: Vec<u8>,
+}
+
 pub(crate) struct DuePendingMigrationTx {
     pub txid_hex: String,
     pub raw_tx: Vec<u8>,
@@ -189,6 +220,7 @@ pub(crate) struct MigrationStatus {
     pub broadcasted_tx_count: u32,
     pub confirmed_tx_count: u32,
     pub total_count: u32,
+    pub signed_child_pczt_count: u32,
     pub message: Option<String>,
     pub can_abandon: bool,
     pub signing_batch_limit: u32,
@@ -237,6 +269,7 @@ pub(crate) fn migration_status(
         broadcasted_tx_count: 0,
         confirmed_tx_count: 0,
         total_count: 0,
+        signed_child_pczt_count: 0,
         message: None,
         can_abandon: false,
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
@@ -298,6 +331,71 @@ pub(crate) fn create_run(
         ],
     )
     .map_err(|e| format!("Create migration run: {e}"))?;
+    Ok(run_id)
+}
+
+pub(crate) fn create_run_with_prepared_notes_and_signed_children(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    plan: &DenominationPlan,
+    prepared_notes: &[PreparedOrchardNoteRef],
+    locked: bool,
+    signed_children: Vec<SignedMigrationPcztInsert>,
+    password: &[u8],
+    salt_base64: &str,
+    prep_txid: Option<&str>,
+    prep_raw_tx: Option<Vec<u8>>,
+) -> Result<String, String> {
+    if prep_raw_tx.is_some() && prep_txid.is_none() {
+        return Err("Migration prep raw transaction requires a txid".to_string());
+    }
+
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    if let Some(run) = active_run(&conn, account_uuid, network)? {
+        return Err(format!("Migration already active: {}", run.run_id));
+    }
+
+    let run_id = new_run_id(account_uuid);
+    let now = now_ms()?;
+    let phase = if prep_txid.is_some() {
+        PHASE_WAITING_DENOM_CONFIRMATIONS
+    } else {
+        PHASE_PREPARING_DENOMINATIONS
+    };
+    let target_values_json = serde_json::to_string(&plan.migration_outputs)
+        .map_err(|e| format!("Encode migration targets: {e}"))?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin migration run staging: {e}"))?;
+    tx.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
+              updated_at_ms, prep_txid, target_values_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8)"
+        ),
+        params![
+            run_id,
+            account_uuid,
+            network_name(network),
+            db_path,
+            phase,
+            now,
+            prep_txid,
+            target_values_json,
+        ],
+    )
+    .map_err(|e| format!("Create migration run: {e}"))?;
+    insert_prepared_notes_with_tx(&tx, &run_id, prepared_notes, locked)?;
+    if let Some(raw_tx) = prep_raw_tx {
+        let prep_txid = prep_txid.ok_or("Migration prep raw transaction requires a txid")?;
+        insert_prep_tx_with_tx(&tx, &run_id, prep_txid, raw_tx, password, salt_base64)?;
+    }
+    insert_signed_child_pczts_with_tx(&tx, &run_id, signed_children, password, salt_base64)?;
+    tx.commit()
+        .map_err(|e| format!("Commit migration run staging: {e}"))?;
     Ok(run_id)
 }
 
@@ -380,10 +478,22 @@ pub(crate) fn insert_prepared_notes(
 ) -> Result<(), String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
-    let lock_state = if locked { "locked" } else { "unlocked" };
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin prepared-note insert: {e}"))?;
+    insert_prepared_notes_with_tx(&tx, run_id, notes, locked)?;
+    tx.commit()
+        .map_err(|e| format!("Commit prepared-note insert: {e}"))?;
+    Ok(())
+}
+
+fn insert_prepared_notes_with_tx(
+    tx: &rusqlite::Transaction<'_>,
+    run_id: &str,
+    notes: &[PreparedOrchardNoteRef],
+    locked: bool,
+) -> Result<(), String> {
+    let lock_state = if locked { "locked" } else { "unlocked" };
     for note in notes {
         tx.execute(
             &format!(
@@ -404,8 +514,76 @@ pub(crate) fn insert_prepared_notes(
         )
         .map_err(|e| format!("Insert prepared migration note: {e}"))?;
     }
-    tx.commit()
-        .map_err(|e| format!("Commit prepared-note insert: {e}"))?;
+    Ok(())
+}
+
+fn insert_prep_tx_with_tx(
+    tx: &rusqlite::Transaction<'_>,
+    run_id: &str,
+    txid_hex: &str,
+    raw_tx: Vec<u8>,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<(), String> {
+    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration prep tx salt")?;
+    let encrypted_raw_tx =
+        secret_payload::encrypt_payload(Zeroizing::new(raw_tx), password, salt.as_slice())?;
+    tx.execute(
+        &format!(
+            "INSERT OR REPLACE INTO {PREP_TXS_TABLE}
+             (run_id, txid_hex, encrypted_raw_tx, status)
+             VALUES (?1, ?2, ?3, 'pending')"
+        ),
+        params![run_id, txid_hex, encrypted_raw_tx],
+    )
+    .map_err(|e| format!("Insert migration prep tx: {e}"))?;
+    Ok(())
+}
+
+pub(crate) fn pending_prep_tx_for_run(
+    db_path: &str,
+    run_id: &str,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<Option<MigrationPrepTx>, String> {
+    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration prep tx salt")?;
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let row = conn
+        .query_row(
+            &format!(
+                "SELECT txid_hex, encrypted_raw_tx
+                 FROM {PREP_TXS_TABLE}
+                 WHERE run_id = ?1 AND status = 'pending'"
+            ),
+            params![run_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()
+        .map_err(|e| format!("Read migration prep tx: {e}"))?;
+    let Some((txid_hex, encrypted_raw_tx)) = row else {
+        return Ok(None);
+    };
+    let raw_tx =
+        secret_payload::decrypt_payload(encrypted_raw_tx.as_bytes(), password, salt.as_slice())?;
+    Ok(Some(MigrationPrepTx {
+        txid_hex,
+        raw_tx: raw_tx.to_vec(),
+    }))
+}
+
+pub(crate) fn mark_prep_tx_broadcasted(db_path: &str, run_id: &str) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    conn.execute(
+        &format!(
+            "UPDATE {PREP_TXS_TABLE}
+             SET status = 'broadcasted'
+             WHERE run_id = ?1"
+        ),
+        params![run_id],
+    )
+    .map_err(|e| format!("Mark migration prep tx broadcasted: {e}"))?;
     Ok(())
 }
 
@@ -420,14 +598,54 @@ pub(crate) fn insert_pending_txs(
         return Ok(());
     }
 
-    let offsets = random_schedule_offsets(pending_txs.len());
-    let scheduled_start_ms = now_ms()?;
-    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin migration pending insert: {e}"))?;
+    insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
+    tx.commit()
+        .map_err(|e| format!("Commit migration pending insert: {e}"))?;
+    Ok(())
+}
+
+pub(crate) fn promote_signed_child_pczts_to_pending_txs(
+    db_path: &str,
+    run_id: &str,
+    pending_txs: Vec<PendingMigrationTxInsert>,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<(), String> {
+    if pending_txs.is_empty() {
+        return Ok(());
+    }
+
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin signed migration PCZT promotion: {e}"))?;
+    insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
+    tx.execute(
+        &format!("DELETE FROM {SIGNED_CHILD_PCZTS_TABLE} WHERE run_id = ?1"),
+        params![run_id],
+    )
+    .map_err(|e| format!("Delete promoted signed migration PCZTs: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("Commit signed migration PCZT promotion: {e}"))?;
+    Ok(())
+}
+
+fn insert_pending_txs_with_tx(
+    tx: &rusqlite::Transaction<'_>,
+    run_id: &str,
+    pending_txs: Vec<PendingMigrationTxInsert>,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<(), String> {
+    let offsets = random_schedule_offsets(pending_txs.len());
+    let scheduled_start_ms = now_ms()?;
+    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
 
     for (pending, offset_seconds) in pending_txs.into_iter().zip(offsets.into_iter()) {
         let encrypted_raw_tx = secret_payload::encrypt_payload(
@@ -486,10 +704,145 @@ pub(crate) fn insert_pending_txs(
         params![PHASE_BROADCAST_SCHEDULED, now, run_id],
     )
     .map_err(|e| format!("Mark migration broadcast scheduled: {e}"))?;
-
-    tx.commit()
-        .map_err(|e| format!("Commit migration pending insert: {e}"))?;
     Ok(())
+}
+
+fn insert_signed_child_pczts_with_tx(
+    tx: &rusqlite::Transaction<'_>,
+    run_id: &str,
+    signed_children: Vec<SignedMigrationPcztInsert>,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<(), String> {
+    if signed_children.is_empty() {
+        return Ok(());
+    }
+
+    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration PCZT salt")?;
+    for child in signed_children {
+        let encrypted_base_pczt = secret_payload::encrypt_payload(
+            Zeroizing::new(child.base_pczt),
+            password,
+            salt.as_slice(),
+        )?;
+        let encrypted_signed_pczt = secret_payload::encrypt_payload(
+            Zeroizing::new(child.signed_pczt),
+            password,
+            salt.as_slice(),
+        )?;
+        let selected_note_json = serde_json::to_string(&child.selected_note)
+            .map_err(|e| format!("Encode migration signed PCZT note: {e}"))?;
+        let metadata_json = serde_json::to_string(&child.metadata)
+            .map_err(|e| format!("Encode migration signed PCZT metadata: {e}"))?;
+
+        tx.execute(
+            &format!(
+                "INSERT OR REPLACE INTO {SIGNED_CHILD_PCZTS_TABLE}
+                 (run_id, message_id, child_index, encrypted_base_pczt,
+                  encrypted_signed_pczt, target_height, expiry_height,
+                  value_zatoshi, fee_zatoshi, selected_note_json,
+                  metadata_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"
+            ),
+            params![
+                run_id,
+                child.message_id,
+                child.child_index,
+                encrypted_base_pczt,
+                encrypted_signed_pczt,
+                child.target_height,
+                child.expiry_height,
+                child.value_zatoshi,
+                child.fee_zatoshi,
+                selected_note_json,
+                metadata_json,
+            ],
+        )
+        .map_err(|e| format!("Insert signed migration PCZT: {e}"))?;
+    }
+    Ok(())
+}
+
+pub(crate) fn signed_child_pczts_for_run(
+    db_path: &str,
+    run_id: &str,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<Vec<SignedMigrationPczt>, String> {
+    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration PCZT salt")?;
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT encrypted_base_pczt, encrypted_signed_pczt,
+                    target_height, expiry_height, value_zatoshi, fee_zatoshi,
+                    selected_note_json, metadata_json
+             FROM {SIGNED_CHILD_PCZTS_TABLE}
+             WHERE run_id = ?1
+             ORDER BY child_index ASC, message_id ASC"
+        ))
+        .map_err(|e| format!("Prepare signed migration PCZT query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, u32>(2)?,
+                row.get::<_, u32>(3)?,
+                row.get::<_, u64>(4)?,
+                row.get::<_, u64>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+            ))
+        })
+        .map_err(|e| format!("Query signed migration PCZTs: {e}"))?;
+
+    let mut signed = Vec::new();
+    for row in rows {
+        let (
+            encrypted_base_pczt,
+            encrypted_signed_pczt,
+            target_height,
+            expiry_height,
+            value_zatoshi,
+            fee_zatoshi,
+            selected_note_json,
+            metadata_json,
+        ) = row.map_err(|e| format!("Read signed migration PCZT: {e}"))?;
+        let base_pczt = secret_payload::decrypt_payload(
+            encrypted_base_pczt.as_bytes(),
+            password,
+            salt.as_slice(),
+        )?;
+        let signed_pczt = secret_payload::decrypt_payload(
+            encrypted_signed_pczt.as_bytes(),
+            password,
+            salt.as_slice(),
+        )?;
+        let selected_note = serde_json::from_str::<PreparedOrchardNoteRef>(&selected_note_json)
+            .map_err(|e| format!("Decode signed migration PCZT note: {e}"))?;
+        let metadata = serde_json::from_str::<PendingMigrationTxMetadata>(&metadata_json)
+            .map_err(|e| format!("Decode signed migration PCZT metadata: {e}"))?;
+
+        signed.push(SignedMigrationPczt {
+            base_pczt: base_pczt.to_vec(),
+            signed_pczt: signed_pczt.to_vec(),
+            target_height,
+            expiry_height,
+            value_zatoshi,
+            fee_zatoshi,
+            selected_note,
+            metadata,
+        });
+    }
+
+    Ok(signed)
+}
+
+pub(crate) fn signed_child_pczt_count(db_path: &str, run_id: &str) -> Result<u32, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    count_for_run(&conn, SIGNED_CHILD_PCZTS_TABLE, run_id)
 }
 
 pub(crate) fn due_pending_txs(
@@ -794,6 +1147,7 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
     let broadcasted_tx_count = count_pending_with_status(conn, &run.run_id, "broadcasted")?;
     let confirmed_tx_count = count_pending_with_status(conn, &run.run_id, "confirmed")?;
     let scheduled_broadcasts = scheduled_broadcasts_for_run(conn, &run.run_id)?;
+    let signed_child_pczt_count = count_for_run(conn, SIGNED_CHILD_PCZTS_TABLE, &run.run_id)?;
     let total_count = run.target_values_zatoshi.len() as u32;
     let phase = if total_count > 0 && confirmed_tx_count >= total_count {
         PHASE_COMPLETE.to_string()
@@ -832,6 +1186,7 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         broadcasted_tx_count,
         confirmed_tx_count,
         total_count,
+        signed_child_pczt_count,
         message: run.last_error,
         can_abandon,
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
@@ -1226,6 +1581,13 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             PRIMARY KEY (run_id, txid_hex, output_index)
         );
 
+        CREATE TABLE IF NOT EXISTS {PREP_TXS_TABLE} (
+            run_id TEXT PRIMARY KEY,
+            txid_hex TEXT NOT NULL,
+            encrypted_raw_tx TEXT NOT NULL,
+            status TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS {PENDING_TXS_TABLE} (
             run_id TEXT NOT NULL,
             txid_hex TEXT PRIMARY KEY,
@@ -1243,6 +1605,23 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         );
         CREATE INDEX IF NOT EXISTS idx_vizor_migration_pending_due
             ON {PENDING_TXS_TABLE}(status, scheduled_at_ms);
+
+        CREATE TABLE IF NOT EXISTS {SIGNED_CHILD_PCZTS_TABLE} (
+            run_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            child_index INTEGER NOT NULL,
+            encrypted_base_pczt TEXT NOT NULL,
+            encrypted_signed_pczt TEXT NOT NULL,
+            target_height INTEGER NOT NULL,
+            expiry_height INTEGER NOT NULL,
+            value_zatoshi INTEGER NOT NULL,
+            fee_zatoshi INTEGER NOT NULL,
+            selected_note_json TEXT NOT NULL,
+            metadata_json TEXT NOT NULL,
+            PRIMARY KEY (run_id, message_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_vizor_migration_signed_child_run
+            ON {SIGNED_CHILD_PCZTS_TABLE}(run_id, child_index);
 
         "
     ))

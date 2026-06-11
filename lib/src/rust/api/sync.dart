@@ -387,6 +387,36 @@ Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
       signedMessages: signedMessages,
     );
 
+Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationSingleQrPczt({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationSingleQrPczt(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
+Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String requestId,
+  required List<KeystoneSignedMigrationMessage> signedMessages,
+  required String password,
+  required String saltBase64,
+}) => RustLib.instance.api.crateApiSyncCompleteOrchardMigrationSingleQrPczt(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  requestId: requestId,
+  signedMessages: signedMessages,
+  password: password,
+  saltBase64: saltBase64,
+);
+
 Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationBatchPczt({
   required String dbPath,
   required String network,
@@ -1067,6 +1097,7 @@ class MigrationStatus {
   final int broadcastedTxCount;
   final int confirmedTxCount;
   final int totalCount;
+  final int signedChildPcztCount;
   final String? message;
   final bool canAbandon;
   final int signingBatchLimit;
@@ -1085,6 +1116,7 @@ class MigrationStatus {
     required this.broadcastedTxCount,
     required this.confirmedTxCount,
     required this.totalCount,
+    required this.signedChildPcztCount,
     this.message,
     required this.canAbandon,
     required this.signingBatchLimit,
@@ -1105,6 +1137,7 @@ class MigrationStatus {
       broadcastedTxCount.hashCode ^
       confirmedTxCount.hashCode ^
       totalCount.hashCode ^
+      signedChildPcztCount.hashCode ^
       message.hashCode ^
       canAbandon.hashCode ^
       signingBatchLimit.hashCode ^
@@ -1129,6 +1162,7 @@ class MigrationStatus {
           broadcastedTxCount == other.broadcastedTxCount &&
           confirmedTxCount == other.confirmedTxCount &&
           totalCount == other.totalCount &&
+          signedChildPcztCount == other.signedChildPcztCount &&
           message == other.message &&
           canAbandon == other.canAbandon &&
           signingBatchLimit == other.signingBatchLimit &&

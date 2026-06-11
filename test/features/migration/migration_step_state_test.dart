@@ -7,6 +7,8 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 rust_sync.MigrationStatus _status({
   String phase = 'ready_to_migrate',
   int pendingTxCount = 0,
+  int signedChildPcztCount = 0,
+  int denominationConfirmationCount = 0,
   int broadcastedTxCount = 0,
   int confirmedTxCount = 0,
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
@@ -15,9 +17,10 @@ rust_sync.MigrationStatus _status({
     phase: phase,
     targetValuesZatoshi: Uint64List(0),
     preparedNoteCount: 0,
-    denominationConfirmationCount: 0,
+    denominationConfirmationCount: denominationConfirmationCount,
     denominationConfirmationTarget: 3,
     pendingTxCount: pendingTxCount,
+    signedChildPcztCount: signedChildPcztCount,
     broadcastedTxCount: broadcastedTxCount,
     confirmedTxCount: confirmedTxCount,
     totalCount: 0,
@@ -93,6 +96,13 @@ void main() {
     final ready = _map(MigrationViewState.readyToMigrate);
     expect(ready.stepOne, MigrationStepOneState.done);
     expect(ready.stepTwo, MigrationStepTwoState.ready);
+
+    final readyWithSignedChildren = _map(
+      MigrationViewState.readyToMigrate,
+      status: _status(signedChildPcztCount: 4),
+    );
+    expect(readyWithSignedChildren.stepOne, MigrationStepOneState.done);
+    expect(readyWithSignedChildren.stepTwo, MigrationStepTwoState.running);
 
     expect(
       _map(MigrationViewState.paused).stepTwo,
@@ -205,6 +215,35 @@ void main() {
     expect(migrationHasBroadcastedUnconfirmedTransactions(confirmed), isFalse);
   });
 
+  test('signed child helpers wait for denomination readiness', () {
+    final waitingForConfirmations = _status(
+      phase: 'waiting_denom_confirmations',
+      signedChildPcztCount: 4,
+      denominationConfirmationCount: 2,
+    );
+    expect(migrationHasSignedChildPczts(waitingForConfirmations), isTrue);
+    expect(
+      migrationSignedChildrenMayFinalize(waitingForConfirmations),
+      isFalse,
+    );
+
+    final confirmedDenominations = _status(
+      phase: 'waiting_denom_confirmations',
+      signedChildPcztCount: 4,
+      denominationConfirmationCount: 3,
+    );
+    expect(migrationSignedChildrenMayFinalize(confirmedDenominations), isTrue);
+
+    final ready = _status(phase: 'ready_to_migrate', signedChildPcztCount: 4);
+    expect(migrationSignedChildrenMayFinalize(ready), isTrue);
+
+    final noSignedChildren = _status(
+      phase: 'ready_to_migrate',
+      signedChildPcztCount: 0,
+    );
+    expect(migrationSignedChildrenMayFinalize(noSignedChildren), isFalse);
+  });
+
   test('migration countdown label expands for hours and days', () {
     expect(migrationCountdownLabel(const Duration(seconds: 42)), '42s');
     expect(
@@ -253,6 +292,21 @@ void main() {
     );
     expect(migrationShouldWarnBeforeClose(confirming), isTrue);
     expect(migrationRemainingScheduledSubmissionTime(confirming, now), isNull);
+
+    expect(
+      migrationShouldWarnBeforeClose(_status(phase: 'building_signing_batch')),
+      isTrue,
+    );
+    expect(
+      migrationShouldWarnBeforeClose(_status(phase: 'signing_batch')),
+      isTrue,
+    );
+    expect(
+      migrationShouldWarnBeforeClose(
+        _status(phase: 'ready_to_migrate', signedChildPcztCount: 1),
+      ),
+      isTrue,
+    );
 
     final complete = _status(phase: 'complete', confirmedTxCount: 2);
     expect(migrationShouldWarnBeforeClose(complete), isFalse);

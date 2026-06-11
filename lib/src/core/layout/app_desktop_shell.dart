@@ -143,6 +143,10 @@ class _GlobalMigrationWarningBannerState
 
       final hasScheduledPendingBroadcasts =
           migrationHasScheduledPendingBroadcasts(status);
+      final signedChildrenMayFinalize = migrationSignedChildrenMayFinalize(
+        status,
+      );
+      final hasSignedChildren = migrationHasSignedChildPczts(status);
       final hadDueScheduledBroadcast = migrationHasDueScheduledBroadcast(
         status,
         DateTime.now(),
@@ -150,19 +154,25 @@ class _GlobalMigrationWarningBannerState
       final hasBroadcastedUnconfirmed =
           migrationHasBroadcastedUnconfirmedTransactions(status);
 
-      if (hasScheduledPendingBroadcasts) {
+      if (hasScheduledPendingBroadcasts ||
+          signedChildrenMayFinalize ||
+          hasSignedChildren) {
         await ref
             .read(migrationRunControllerProvider.notifier)
             .broadcastDueScheduled();
       }
 
-      if (hadDueScheduledBroadcast || hasBroadcastedUnconfirmed) {
+      if (hadDueScheduledBroadcast ||
+          hasBroadcastedUnconfirmed ||
+          hasSignedChildren) {
         await ref.read(syncProvider.notifier).startSyncAnyway();
         ref.invalidate(activeOrchardMigrationStatusProvider);
         return;
       }
 
-      if (!hasScheduledPendingBroadcasts) {
+      if (!hasScheduledPendingBroadcasts &&
+          !signedChildrenMayFinalize &&
+          !hasSignedChildren) {
         await ref
             .read(syncProvider.notifier)
             .refreshAfterSend(
@@ -176,12 +186,15 @@ class _GlobalMigrationWarningBannerState
   }
 
   bool _showsMigrationWarning(rust_sync.MigrationStatus? status) {
-    return switch (status?.phase) {
-      'broadcast_scheduled' ||
-      'broadcasting' ||
-      'waiting_migration_confirmations' => true,
-      _ => false,
-    };
+    return migrationShouldWarnBeforeClose(status) ||
+        switch (status?.phase) {
+          'building_signing_batch' ||
+          'signing_batch' ||
+          'broadcast_scheduled' ||
+          'broadcasting' ||
+          'waiting_migration_confirmations' => true,
+          _ => false,
+        };
   }
 }
 

@@ -50,8 +50,9 @@ pub use send::{
 };
 pub(crate) use send::{
     complete_orchard_migration_batch_pczt, complete_orchard_migration_denominations_pczt,
-    discard_keystone_migration_request, keystone_migration_proof_status,
-    prepare_orchard_migration_batch_pczt, prepare_orchard_migration_denominations_pczt,
+    complete_orchard_migration_single_qr_pczt, discard_keystone_migration_request,
+    keystone_migration_proof_status, prepare_orchard_migration_batch_pczt,
+    prepare_orchard_migration_denominations_pczt, prepare_orchard_migration_single_qr_pczt,
     KeystoneSignedMigrationMessage,
 };
 pub(crate) use send::{

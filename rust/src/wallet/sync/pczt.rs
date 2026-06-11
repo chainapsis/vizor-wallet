@@ -280,6 +280,25 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     Ok(redacted.serialize())
 }
 
+pub(crate) fn set_orchard_anchor_and_witness(
+    pczt_bytes: &[u8],
+    anchor: orchard::Anchor,
+    witness: &orchard::tree::MerklePath,
+) -> Result<Vec<u8>, String> {
+    use pczt::roles::updater::{OrchardSpendWitness, Updater};
+
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
+
+    let updated = Updater::new(pczt)
+        .set_v6_orchard_anchor(anchor)
+        .map_err(|e| format!("Set Orchard anchor in PCZT: {e}"))?
+        .set_orchard_spend_witnesses([OrchardSpendWitness::from_merkle_path(0, witness.clone())])
+        .map_err(|e| format!("Set Orchard witness in PCZT: {e}"))?
+        .finish();
+
+    Ok(updated.serialize())
+}
+
 fn combine_pczts(proofs: &[u8], sigs: &[u8]) -> Result<pczt::Pczt, String> {
     use pczt::roles::combiner::Combiner;
 
