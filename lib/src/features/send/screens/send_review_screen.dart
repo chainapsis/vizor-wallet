@@ -27,46 +27,11 @@ import '../../address_book/models/address_book_label_lookup.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../services/sapling_params.dart';
+import '../services/send_flow.dart';
 import '../widgets/sapling_params_prompt.dart';
 import '../widgets/transaction_receipt_view.dart';
 
-class SendReviewArgs {
-  const SendReviewArgs({
-    required this.proposalId,
-    required this.sendFlowId,
-    required this.proposalAccountUuid,
-    required this.address,
-    required this.addressType,
-    required this.amountZatoshi,
-    required this.feeZatoshi,
-    required this.needsSaplingParams,
-    this.memo,
-  });
-
-  final BigInt proposalId;
-  final String sendFlowId;
-  final String proposalAccountUuid;
-  final String address;
-  final String addressType;
-  final BigInt amountZatoshi;
-  final BigInt feeZatoshi;
-  final bool needsSaplingParams;
-  final String? memo;
-
-  bool get isShielded => addressType == 'unified' || addressType == 'sapling';
-}
-
-class KeystoneBroadcastArgs {
-  const KeystoneBroadcastArgs({
-    required this.reviewArgs,
-    required this.pcztWithProofsBytes,
-    required this.pcztWithSignaturesBytes,
-  });
-
-  final SendReviewArgs reviewArgs;
-  final List<int> pcztWithProofsBytes;
-  final List<int> pcztWithSignaturesBytes;
-}
+export '../services/send_flow.dart' show KeystoneBroadcastArgs, SendReviewArgs;
 
 class SendReviewScreen extends ConsumerStatefulWidget {
   const SendReviewScreen({super.key, required this.args});
@@ -121,19 +86,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     if (_keystoneProposalConsumed || _discardScheduled) return;
     _discardScheduled = true;
     unawaited(
-      rust_sync
-          .discardProposal(
-            proposalId: widget.args.proposalId,
-            sendFlowId: widget.args.sendFlowId,
-          )
-          .then((_) {
-            log('SendReview: released proposal ${widget.args.proposalId}');
-          })
-          .catchError((Object e) {
-            log(
-              'SendReview: discardProposal cleanup failed (non-critical): $e',
-            );
-          }),
+      discardSendProposal(
+        proposalId: widget.args.proposalId,
+        sendFlowId: widget.args.sendFlowId,
+        logContext: 'SendReview',
+      ),
     );
   }
 
