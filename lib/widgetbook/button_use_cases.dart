@@ -164,6 +164,7 @@ Widget _buildSingle(
 String _labelForSize(AppButtonSize size) {
   return switch (size) {
     AppButtonSize.large => 'Create New Wallet',
+    AppButtonSize.mediumLarge => 'Add to contacts',
     AppButtonSize.medium => 'Review',
     AppButtonSize.small => 'Copy',
   };
