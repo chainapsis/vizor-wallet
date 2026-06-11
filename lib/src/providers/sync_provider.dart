@@ -1185,11 +1185,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         // The store commit can land in the account-scoped history view
         // a beat after the event arrives; delayed follow-ups close that
         // race (no-ops when the first refresh already saw it).
+        // ref.mounted: the notifier can be disposed with these timers
+        // pending (bootstrap reload swaps the ProviderScope).
         Timer(const Duration(seconds: 2), () {
-          if (!_requiresUnlock) _scheduleMempoolRefresh();
+          if (ref.mounted && !_requiresUnlock) _scheduleMempoolRefresh();
         });
         Timer(const Duration(seconds: 6), () {
-          if (!_requiresUnlock) _scheduleMempoolRefresh();
+          if (ref.mounted && !_requiresUnlock) _scheduleMempoolRefresh();
         });
       },
       onDone: () {

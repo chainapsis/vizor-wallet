@@ -74,6 +74,7 @@ class ForgotPasscodeSheet extends StatelessWidget {
             const SizedBox(height: AppSpacing.md),
             AppButton(
               key: const ValueKey('mobile_forgot_passcode_reset'),
+              expand: true,
               onPressed: () => Navigator.of(context).pop(true),
               child: const Text('Continue to reset Vizor'),
             ),

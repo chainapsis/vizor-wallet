@@ -238,13 +238,23 @@ class _MobileKeystoneScanScreenState
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Scan QR Code',
       subtitle: 'Prepare your Keystone wallet',
+      bottomArea: AppButton(
+        key: const ValueKey('mobile_keystone_scan_explainer'),
+        expand: true,
+        onPressed: () => context.push('/onboarding/address-types'),
+        trailing: const AppIcon(AppIcons.chevronForward),
+        child: const Text('Tell me how Zcash works'),
+      ),
       child: Center(
         child: KeystoneQrScannerCard(
           expectedUrType: 'zcash-accounts',
           decoding: _decoding,
           error: _error,
-          cardWidth: 352,
-          cameraHeight: 352,
+          // The Keystone Scan frames run the card edge-to-edge inside the
+          // 16 px content inset, with a 396 px viewfinder card (the 4 px
+          // outer padding sits on top of the 388 px camera area).
+          cardWidth: double.infinity,
+          cameraHeight: 388,
           onProgress: (progress) {
             if (!mounted) return;
             setState(() {
@@ -316,7 +326,9 @@ class MobileKeystoneSelectAccountScreen extends ConsumerWidget {
                   .read(keystoneOnboardingProvider.notifier)
                   .selectAccount(account),
             ),
-            const SizedBox(height: AppSpacing.xs),
+            // 10 px card gap measured from the Select Account frame
+            // (76 px row pitch with the 66 px card).
+            const SizedBox(height: 10),
           ],
         ],
       ),
@@ -349,14 +361,14 @@ class _AccountCard extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
-          height: 64,
+          height: 66,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           decoration: BoxDecoration(
             color: colors.background.ground,
             borderRadius: BorderRadius.circular(AppRadii.medium),
             border: Border.all(
               color: selected ? colors.border.strong : colors.border.subtle,
-              width: selected ? 1.5 : 1,
+              width: selected ? 2 : 1,
             ),
           ),
           child: Row(

@@ -132,7 +132,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
               width: 50,
               height: 50,
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.base),
             Text(
               'Welcome Back',
               textAlign: TextAlign.center,
@@ -150,10 +150,12 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
                 color: colors.text.secondary,
               ),
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.lg),
             PasscodeDots(length: kMobilePasscodeLength, filled: _entry.length),
             SizedBox(
-              height: 44,
+              // Tall enough to hold the error message ~30 px below the
+              // dots, where the Sign In Passcode frame places it.
+              height: 84,
               child: Center(
                 child: _error == null
                     ? null
