@@ -33,7 +33,7 @@ class PasscodeDots extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: i < filled
                       ? colors.icon.brandCrimson
-                      : colors.background.overlay.withValues(alpha: 0.35),
+                      : colors.background.overlay,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -81,7 +81,7 @@ class PasscodeNumpad extends StatelessWidget {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: enabled ? onTap : null,
-          child: SizedBox(height: 88, child: Center(child: child)),
+          child: SizedBox(height: 104, child: Center(child: child)),
         ),
       ),
     );
@@ -89,7 +89,11 @@ class PasscodeNumpad extends StatelessWidget {
     Widget digitKey(int digit) => key(
       Text(
         '$digit',
+        // One-off 64px serif per the Figma numpad — noticeably larger
+        // than Display L, so not a shared typography token.
         style: AppTypography.displayLarge.copyWith(
+          fontSize: 64,
+          height: 1,
           color: enabled ? colors.text.accent : colors.text.disabled,
         ),
       ),

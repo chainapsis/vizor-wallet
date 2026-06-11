@@ -11,7 +11,11 @@ import 'mobile_onboarding_scaffold.dart';
 /// passcode.
 const kMobileCreateStepCount = 5;
 
-double mobileCreateProgress(int step) => step / kMobileCreateStepCount;
+/// Track fill for step N. Denominator is one past the step count so the
+/// track is never empty on the first step nor full while the last step
+/// is still in progress (a full bar reads as "done" — the Figma frames
+/// always show a partial fill).
+double mobileCreateProgress(int step) => step / (kMobileCreateStepCount + 1);
 
 /// Step 1 — Figma `Onboarding 1 Intro` (4394:78213).
 class MobileOnboardingIntroScreen extends StatelessWidget {
@@ -31,13 +35,16 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
         children: [
           AppButton(
             key: const ValueKey('mobile_intro_continue'),
+            expand: true,
             onPressed: () => context.push('/onboarding/address-types'),
+            trailing: const AppIcon(AppIcons.chevronForward),
             child: const Text('Tell me how Zcash works'),
           ),
           const SizedBox(height: AppSpacing.s),
           _TextLinkButton(
             key: const ValueKey('mobile_intro_skip'),
             label: 'I know how to use Zcash',
+            trailingIconName: AppIcons.skip,
             onTap: () => context.push('/onboarding/secret-passphrase'),
           ),
         ],
@@ -85,7 +92,9 @@ class MobileAddressTypesScreen extends StatelessWidget {
           'Transparency.',
       bottomArea: AppButton(
         key: const ValueKey('mobile_address_types_continue'),
+        expand: true,
         onPressed: () => context.push('/onboarding/things-to-know'),
+        trailing: const AppIcon(AppIcons.chevronForward),
         child: const Text('Continue'),
       ),
       child: _SurfaceInfoCard(
@@ -102,6 +111,7 @@ class MobileAddressTypesScreen extends StatelessWidget {
             body:
                 'Address starts with u1 (or zs for legacy). Only you can '
                 'see your account balance and transaction history.',
+            boldRuns: const ['u1', 'zs'],
           ),
           _InfoSection(
             iconName: AppIcons.transparentBalance,
@@ -132,7 +142,9 @@ class MobileThingsToKnowScreen extends StatelessWidget {
       subtitle: 'Before you dive in.',
       bottomArea: AppButton(
         key: const ValueKey('mobile_things_to_know_continue'),
+        expand: true,
         onPressed: () => context.push('/onboarding/secret-passphrase'),
+        trailing: const AppIcon(AppIcons.chevronForward),
         child: const Text('Continue'),
       ),
       child: _SurfaceInfoCard(
@@ -181,7 +193,7 @@ class _DarkInfoCard extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: AppSpacing.md),
-          AppIcon(iconName, size: 28, color: colors.icon.brandCrimson),
+          AppIcon(iconName, size: 28, color: colors.text.homeCard),
           const SizedBox(height: AppSpacing.md),
           Text(
             text,
@@ -204,6 +216,7 @@ class _InfoSection {
     required this.title,
     required this.body,
     this.trailing,
+    this.boldRuns = const [],
   });
 
   final String iconName;
@@ -211,6 +224,39 @@ class _InfoSection {
   final String title;
   final String body;
   final Widget? trailing;
+
+  /// Substrings of [body] rendered bold, e.g. the `u1` / `zs` address
+  /// prefixes the Figma frame emphasizes. First occurrence only.
+  final List<String> boldRuns;
+
+  TextSpan bodySpan(TextStyle base) {
+    var spans = <TextSpan>[TextSpan(text: body)];
+    for (final run in boldRuns) {
+      final next = <TextSpan>[];
+      var applied = false;
+      for (final span in spans) {
+        final text = span.text!;
+        final i = applied || span.style != null ? -1 : text.indexOf(run);
+        if (i < 0) {
+          next.add(span);
+          continue;
+        }
+        applied = true;
+        if (i > 0) next.add(TextSpan(text: text.substring(0, i)));
+        next.add(
+          TextSpan(
+            text: run,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        );
+        if (i + run.length < text.length) {
+          next.add(TextSpan(text: text.substring(i + run.length)));
+        }
+      }
+      spans = next;
+    }
+    return TextSpan(style: base, children: spans);
+  }
 }
 
 class _SurfaceInfoCard extends StatelessWidget {
@@ -257,10 +303,9 @@ class _SurfaceInfoCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: AppSpacing.xs),
-            Text(
-              sections[i].body,
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.primary,
+            Text.rich(
+              sections[i].bodySpan(
+                AppTypography.bodyMedium.copyWith(color: colors.text.primary),
               ),
             ),
           ],
@@ -287,51 +332,64 @@ class _AddressChip extends StatelessWidget {
     final bg = emphasized
         ? colors.background.homeCard
         : colors.background.raised;
-    final prefixColor = emphasized
-        ? colors.text.brandCrimson
-        : colors.text.homeCard;
+    // The prefix sits on its own little badge — crimson for the shielded
+    // chip, dark for the transparent chip — with white prefix text, per
+    // the Figma address-type chips.
+    final badgeBg = emphasized
+        ? colors.background.brandCrimsonStrong
+        : colors.background.homeCard;
     final textColor = emphasized ? colors.text.homeCard : colors.text.primary;
     return Container(
       padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
+        horizontal: AppSpacing.xxs,
         vertical: AppSpacing.xxs,
       ),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
-      child: Text.rich(
-        TextSpan(
-          style: AppTypography.codeSmall,
-          children: [
-            TextSpan(
-              text: prefix,
-              style: TextStyle(
-                color: prefixColor,
-                backgroundColor: emphasized
-                    ? colors.background.brandCrimsonStrong
-                    : null,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+            decoration: BoxDecoration(
+              color: badgeBg,
+              borderRadius: BorderRadius.circular(AppRadii.xSmall),
+            ),
+            child: Text(
+              prefix,
+              style: AppTypography.codeSmall.copyWith(
+                color: colors.text.homeCard,
               ),
             ),
-            TextSpan(
-              text: ' $sample',
-              style: TextStyle(color: textColor),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: AppSpacing.xxs),
+          Text(
+            sample,
+            style: AppTypography.codeSmall.copyWith(color: textColor),
+          ),
+        ],
       ),
     );
   }
 }
 
 class _TextLinkButton extends StatelessWidget {
-  const _TextLinkButton({required this.label, required this.onTap, super.key});
+  const _TextLinkButton({
+    required this.label,
+    required this.onTap,
+    this.trailingIconName,
+    super.key,
+  });
 
   final String label;
   final VoidCallback onTap;
+  final String? trailingIconName;
 
   @override
   Widget build(BuildContext context) {
+    final color = context.colors.text.primary;
     return Semantics(
       button: true,
       label: label,
@@ -341,11 +399,18 @@ class _TextLinkButton extends StatelessWidget {
         child: SizedBox(
           height: 44,
           child: Center(
-            child: Text(
-              label,
-              style: AppTypography.labelLarge.copyWith(
-                color: context.colors.text.primary,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: AppTypography.labelLarge.copyWith(color: color),
+                ),
+                if (trailingIconName != null) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  AppIcon(trailingIconName!, size: 18, color: color),
+                ],
+              ],
             ),
           ),
         ),

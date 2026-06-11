@@ -28,6 +28,11 @@ class MobileBiometricsScreen extends StatelessWidget {
 
     return MobileOnboardingStepScaffold(
       progress: 1,
+      aboveTitle: Image.asset(
+        'assets/illustrations/biometrics_faceid_knight.png',
+        height: 300,
+        fit: BoxFit.contain,
+      ),
       title: 'Unlock your wallet with $method',
       subtitle:
           'This is an easy and fast way to sign in. You can switch back '
@@ -38,6 +43,7 @@ class MobileBiometricsScreen extends StatelessWidget {
         children: [
           AppButton(
             key: const ValueKey('mobile_biometrics_enable'),
+            expand: true,
             // TODO(mobile-biometrics): wire local authentication once
             // the dependency and security review land; passcode remains
             // the credential either way.
@@ -74,18 +80,7 @@ class MobileBiometricsScreen extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        children: [
-          const SizedBox(height: AppSpacing.md),
-          // TODO(mobile-biometrics): swap in the dedicated mirror-knight
-          // illustration once it is exported from Figma.
-          Image.asset(
-            'assets/illustrations/home_rest_character.png',
-            height: 260,
-            fit: BoxFit.contain,
-          ),
-        ],
-      ),
+      child: const SizedBox.shrink(),
     );
   }
 }

@@ -7,6 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/mobile/unsupported_sheet.dart';
+import '../shared/onboarding_welcome_art.dart' show VizorWordmark;
 
 /// Mobile welcome screen — Figma `Welcome` (node 4394:77936): full-bleed
 /// hero with the Vizor wordmark and "Private money. By default" tagline,
@@ -37,16 +38,9 @@ class MobileWelcomeScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Center(
-                  child: Image.asset(
-                    'assets/illustrations/welcome_badge.png',
-                    width: 50,
-                    height: 50,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.base),
                 AppButton(
                   key: const ValueKey('mobile_welcome_create'),
+                  expand: true,
                   onPressed: () => context.push('/onboarding/intro'),
                   child: const _ButtonLabel(
                     iconName: AppIcons.addNew,
@@ -56,6 +50,7 @@ class MobileWelcomeScreen extends StatelessWidget {
                 const SizedBox(height: AppSpacing.s),
                 AppButton(
                   key: const ValueKey('mobile_welcome_import'),
+                  expand: true,
                   variant: AppButtonVariant.secondary,
                   onPressed: () => context.push('/import'),
                   child: const _ButtonLabel(
@@ -68,6 +63,7 @@ class MobileWelcomeScreen extends StatelessWidget {
                 const SizedBox(height: AppSpacing.base),
                 AppButton(
                   key: const ValueKey('mobile_welcome_keystone'),
+                  expand: true,
                   variant: AppButtonVariant.ghost,
                   // TODO(mobile-keystone): wire the mobile Keystone
                   // onboarding once it is designed and built.
@@ -83,7 +79,11 @@ class MobileWelcomeScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.base),
-                Center(child: _LegalFooter()),
+                // Constrained so the legal text wraps onto two centered
+                // lines as in the Figma frame.
+                const Center(
+                  child: SizedBox(width: 240, child: _LegalFooter()),
+                ),
               ],
             ),
           ),
@@ -131,6 +131,8 @@ class _WelcomeHero extends StatelessWidget {
             bottom: AppSpacing.lg,
             child: Column(
               children: [
+                VizorWordmark(width: 90, height: 34, color: colors.text.homeCard),
+                const SizedBox(height: AppSpacing.xs),
                 Text(
                   'Private money.\nBy default',
                   textAlign: TextAlign.center,

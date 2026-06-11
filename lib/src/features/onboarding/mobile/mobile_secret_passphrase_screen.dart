@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
@@ -170,36 +171,86 @@ class _MobileSecretPassphraseScreenState
           ],
           AppButton(
             key: const ValueKey('mobile_secret_passphrase_primary'),
+            expand: true,
             onPressed: _error != null || _submitting ? null : _continue,
+            trailing: const AppIcon(AppIcons.chevronForward),
             child: Text(
               _submitting
                   ? 'Creating wallet...'
                   : _revealed
                   ? 'Continue'
-                  : 'Reveal the phrase',
+                  : 'Reveal phrase',
             ),
           ),
         ],
       ),
+      child: _revealed
+          ? SeedCard(
+              words: words,
+              onCopy: _copy,
+              copied: _copied,
+            )
+          : const _RevealWarningCard(),
+    );
+  }
+}
+
+/// Pre-reveal warning card — Figma `Onboarding 4 Secret Phrase` hidden
+/// variant: the words stay off-screen entirely; a centered key badge,
+/// headline, and caution paragraph fill the dark card instead.
+class _RevealWarningCard extends StatelessWidget {
+  const _RevealWarningCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 440),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: colors.background.homeCard,
+        borderRadius: BorderRadius.circular(AppRadii.xLarge),
+      ),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          SeedCard(
-            words: words,
-            obscured: !_revealed,
-            onCopy: _revealed ? _copy : null,
-            copied: _copied,
-          ),
-          if (!_revealed) ...[
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              'Anyone with these words can spend your funds. Write them '
-              'down and keep them offline.',
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: colors.background.brandCrimsonStrong,
+              borderRadius: BorderRadius.circular(AppRadii.medium),
+            ),
+            child: Center(
+              child: AppIcon(
+                AppIcons.key,
+                size: 24,
+                color: colors.text.homeCard,
               ),
             ),
-          ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            'You are about to see your\nSecret Passphrase.',
+            textAlign: TextAlign.center,
+            style: AppTypography.headlineSmall.copyWith(
+              color: colors.text.homeCard,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            child: Text(
+              'This phrase is the master key to your funds. Keep it safe, '
+              'keep it secret. If you lose it, no one can help you recover '
+              'your wallet. Not even us.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.homeCard.withValues(alpha: 0.7),
+              ),
+            ),
+          ),
         ],
       ),
     );

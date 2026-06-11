@@ -18,6 +18,8 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
     this.subtitle,
     this.onBack,
     this.bottomArea,
+    this.bottomAreaPadding,
+    this.aboveTitle,
     super.key,
   });
 
@@ -35,6 +37,14 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
   /// Pinned actions (primary button, secondary link) at the bottom.
   final Widget? bottomArea;
 
+  /// Override for the inset around [bottomArea] — pass
+  /// [EdgeInsets.zero] for full-bleed panels like the numeric keypad.
+  final EdgeInsets? bottomAreaPadding;
+
+  /// Optional hero content rendered above the title — the biometrics
+  /// frame puts its illustration first.
+  final Widget? aboveTitle;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -44,19 +54,28 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
       body: AppToastHost(
         child: SafeArea(
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               MobileTopNav.steps(progress: progress, onBack: onBack),
               Expanded(
                 child: SingleChildScrollView(
+                  // The title gets the near-full screen width (long serif
+                  // titles like "Zcash Address Types" stay on one line per
+                  // the Figma frames); the content keeps the standard sm
+                  // inset via the inner padding below.
                   padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.sm,
+                    AppSpacing.xs,
                     AppSpacing.md,
-                    AppSpacing.sm,
+                    AppSpacing.xs,
                     AppSpacing.md,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      if (aboveTitle != null) ...[
+                        aboveTitle!,
+                        const SizedBox(height: AppSpacing.md),
+                      ],
                       Text(
                         title,
                         textAlign: TextAlign.center,
@@ -75,19 +94,26 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
                         ),
                       ],
                       const SizedBox(height: AppSpacing.md),
-                      child,
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.xs,
+                        ),
+                        child: child,
+                      ),
                     ],
                   ),
                 ),
               ),
               if (bottomArea != null)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.sm,
-                    AppSpacing.s,
-                    AppSpacing.sm,
-                    AppSpacing.s,
-                  ),
+                  padding:
+                      bottomAreaPadding ??
+                      const EdgeInsets.fromLTRB(
+                        AppSpacing.sm,
+                        AppSpacing.s,
+                        AppSpacing.sm,
+                        AppSpacing.s,
+                      ),
                   child: bottomArea!,
                 ),
             ],
