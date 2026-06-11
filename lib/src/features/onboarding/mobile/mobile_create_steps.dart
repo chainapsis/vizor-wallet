@@ -111,8 +111,9 @@ class MobileAddressTypesScreen extends StatelessWidget {
               sample: 'vt42...',
               emphasized: true,
             ),
+            // Line break after "legacy)." matches the frame's wrap.
             body:
-                'Address starts with u1 (or zs for legacy). Only you can '
+                'Address starts with u1 (or zs for legacy).\nOnly you can '
                 'see your account balance and transaction history.',
             boldRuns: const ['u1', 'zs'],
           ),
@@ -188,24 +189,39 @@ class _DarkInfoCard extends StatelessWidget {
     final colors = context.colors;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
         color: colors.background.homeCard,
         borderRadius: BorderRadius.circular(AppRadii.large),
       ),
-      child: Column(
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
         children: [
-          const SizedBox(height: AppSpacing.md),
-          AppIcon(iconName, size: 28, color: colors.text.homeCard),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            text,
-            textAlign: TextAlign.center,
-            style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.homeCard,
+          // Figma `Card Pattern` (4394:81168): concentric shield
+          // outlines at ~4% alpha behind the card content.
+          Positioned.fill(
+            child: Image.asset(
+              'assets/illustrations/onboarding_card_pattern.png',
+              fit: BoxFit.cover,
             ),
           ),
-          const SizedBox(height: AppSpacing.xs),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            child: Column(
+              children: [
+                const SizedBox(height: AppSpacing.md),
+                AppIcon(iconName, size: 28, color: colors.text.homeCard),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  text,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.homeCard,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+              ],
+            ),
+          ),
         ],
       ),
     );

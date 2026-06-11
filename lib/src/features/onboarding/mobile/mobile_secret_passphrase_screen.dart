@@ -218,16 +218,17 @@ class _RevealWarningCard extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 44,
-            height: 44,
+            // 32 px crimson square per the Secret Phrase frame.
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
               color: colors.background.brandCrimsonStrong,
-              borderRadius: BorderRadius.circular(AppRadii.medium),
+              borderRadius: BorderRadius.circular(AppRadii.small),
             ),
             child: Center(
               child: AppIcon(
                 AppIcons.key,
-                size: 24,
+                size: 20,
                 color: colors.text.homeCard,
               ),
             ),

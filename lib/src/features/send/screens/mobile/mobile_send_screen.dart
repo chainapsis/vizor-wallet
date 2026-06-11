@@ -1350,13 +1350,12 @@ class _MemoSheetState extends State<_MemoSheet> {
     super.dispose();
   }
 
-  int get _remaining =>
-      _memoByteLimit - utf8.encode(_controller.text.trim()).length;
+  int get _usedBytes => utf8.encode(_controller.text.trim()).length;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final overLimit = _remaining < 0;
+    final overLimit = _usedBytes > _memoByteLimit;
 
     // Hosted in the floating card (pinned top), so the keyboard slides
     // in below the card and no inset compensation is needed.
@@ -1418,7 +1417,8 @@ class _MemoSheetState extends State<_MemoSheet> {
               ),
               const Spacer(),
               Text(
-                '$_remaining/$_memoByteLimit',
+                // Used/total bytes, like the Add Memo frame's "51/512".
+                '$_usedBytes/$_memoByteLimit',
                 style: AppTypography.bodyMedium.copyWith(
                   color: overLimit
                       ? colors.text.destructive

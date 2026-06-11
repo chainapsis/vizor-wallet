@@ -223,7 +223,9 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
                 ),
               ),
             ],
-            const SizedBox(height: AppSpacing.md),
+            // 48 from the field to Save edits per the Accounts Edits
+            // frame (field bottom 627 → button top 677).
+            const SizedBox(height: AppSpacing.lg),
             AppButton(
               key: const ValueKey('mobile_account_edit_save'),
               expand: true,

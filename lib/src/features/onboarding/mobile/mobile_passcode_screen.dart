@@ -174,8 +174,9 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
       progress: mobileCreateProgress(5),
       onBack: isSubmitting ? null : () => Navigator.of(context).maybePop(),
       title: isConfirm ? 'Confirm Passcode' : 'Create Passcode',
-      // The passcode frames title in Headline M, not the XL step title.
-      titleStyle: AppTypography.headlineMedium,
+      // The passcode frames title in Headline L (32, glyph extent 27-28
+      // in passcode1/confirm/5), not the XL step title.
+      titleStyle: AppTypography.headlineLarge,
       subtitle: isSubmitting
           ? 'Setting up your wallet...'
           : isConfirm

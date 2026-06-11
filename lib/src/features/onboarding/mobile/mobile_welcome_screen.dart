@@ -118,13 +118,13 @@ class _WelcomeHero extends StatelessWidget {
               ),
             ),
           ),
-          // Figma 4600:50544: logo 96×36 at y=242, tagline at y=297,
-          // tagline baseline block ends 70 px above the hero's bottom
-          // edge.
+          // Figma `Welcome` (welcome_c render): logo 96×36, 19 to the
+          // tagline, 48 to the 50 px crest badge, whose bottom sits
+          // 17 px above the hero's bottom edge.
           Positioned(
             left: 0,
             right: 0,
-            bottom: 70,
+            bottom: 17,
             child: Column(
               children: [
                 VizorWordmark(width: 96, height: 36, color: colors.text.homeCard),
@@ -135,6 +135,12 @@ class _WelcomeHero extends StatelessWidget {
                   style: AppTypography.displayLarge.copyWith(
                     color: colors.text.homeCard,
                   ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Image.asset(
+                  'assets/illustrations/welcome_badge.png',
+                  width: 50,
+                  height: 50,
                 ),
               ],
             ),
