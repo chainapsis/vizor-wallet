@@ -83,7 +83,8 @@ void main() {
     expect(find.text('John'), findsOneWidget);
     expect(find.text('Theme'), findsOneWidget);
     expect(find.text('Dark'), findsOneWidget);
-    expect(find.text('About Vizor'), findsOneWidget);
+    // The About entry stays hidden until the legal documents are ready.
+    expect(find.text('About Vizor'), findsNothing);
     // Endpoint shows the live RPC host:port.
     expect(
       find.text(defaultRpcEndpointConfig('main').hostPort),

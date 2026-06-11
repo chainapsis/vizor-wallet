@@ -143,16 +143,9 @@ class MobileSettingsScreen extends ConsumerWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                MobileSurfaceCard(
-                  child: MobileListRow(
-                    key: const ValueKey('mobile_settings_about_row'),
-                    leading: _RowIcon(AppIcons.shieldKeyhole),
-                    label: 'About Vizor',
-                    showChevron: true,
-                    onTap: () => context.push('/about'),
-                  ),
-                ),
+                // The About row stays hidden until the legal documents
+                // are ready — the /about screen exists but must not be
+                // user-reachable (product decision, 2026-06).
               ],
             ),
           ),

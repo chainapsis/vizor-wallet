@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
@@ -228,28 +227,20 @@ class _LegalFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final base = AppTypography.bodySmall.copyWith(color: colors.text.muted);
-    final link = AppTypography.bodySmall.copyWith(
+    // The legal documents aren't ready yet, so Terms/Privacy render as
+    // plain text — no links until the /terms and /privacy screens may
+    // be user-reachable again (product decision, 2026-06).
+    final emphasis = AppTypography.bodySmall.copyWith(
       color: colors.text.secondary,
-      decoration: TextDecoration.underline,
     );
     return Text.rich(
       TextSpan(
         style: base,
         children: [
           const TextSpan(text: 'By using Vizor you agree to our '),
-          TextSpan(
-            text: 'Terms',
-            style: link,
-            recognizer: TapGestureRecognizer()
-              ..onTap = () => context.push('/terms'),
-          ),
+          TextSpan(text: 'Terms', style: emphasis),
           const TextSpan(text: ' and '),
-          TextSpan(
-            text: 'Privacy',
-            style: link,
-            recognizer: TapGestureRecognizer()
-              ..onTap = () => context.push('/privacy'),
-          ),
+          TextSpan(text: 'Privacy', style: emphasis),
         ],
       ),
       textAlign: TextAlign.center,
