@@ -179,4 +179,44 @@ void main() {
     expect(copied, [_shielded]);
     expect(find.text('Address copied'), findsOneWidget);
   });
+
+  testWidgets('the help icon opens the explainer for the selected pool', (
+    tester,
+  ) async {
+    await _pumpReceive(tester, _FakeReceiveAddressService());
+
+    await tester.tap(find.bySemanticsLabel('About this address type'));
+    await _settle(tester);
+    expect(find.text('Shielded address'), findsOneWidget);
+    expect(find.text('Strong privacy by default.'), findsOneWidget);
+    // The mobile explainer adapts the renew bullet to touch.
+    expect(
+      find.textContaining('tap the Renew button', findRichText: true),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('receive_address_info_close')));
+    await _settle(tester);
+    expect(find.text('Strong privacy by default.'), findsNothing);
+
+    await tester.tap(find.text('Transparent'));
+    await _settle(tester);
+    await tester.tap(find.bySemanticsLabel('About this address type'));
+    await _settle(tester);
+    expect(find.text('Transparent address'), findsOneWidget);
+    expect(find.text('Publicly visible'), findsOneWidget);
+    expect(
+      find.textContaining('publicly visible on-chain', findRichText: true),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('share surfaces the not-available-yet sheet', (tester) async {
+    await _pumpReceive(tester, _FakeReceiveAddressService());
+
+    await tester.tap(find.text('Share shielded address'));
+    await _settle(tester);
+
+    expect(find.text('Not available yet'), findsOneWidget);
+  });
 }

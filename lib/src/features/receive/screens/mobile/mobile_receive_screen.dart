@@ -7,13 +7,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/config/network_config.dart'
+    show kZcashDefaultCurrencyTicker;
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/mobile/unsupported_sheet.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/receive_address_provider.dart';
+import '../../widgets/mobile/receive_address_info_sheet.dart';
 import '../../widgets/receive_address_widgets.dart';
 
 const _renewShieldedAddressErrorMessage =
@@ -117,7 +121,8 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
 
   void _shareAddress() {
     // TODO(mobile-share): hook up the platform share sheet (share_plus
-    // or equivalent) — UI only for now per Phase 1 scope.
+    // or equivalent); until then the gap is explicit.
+    unawaited(showUnsupportedSheet(context));
   }
 
   @override
@@ -134,7 +139,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
           child: Column(
             children: [
               MobileTopNav.back(
-                title: 'Receive ZEC',
+                title: 'Receive $kZcashDefaultCurrencyTicker',
                 onBack: () => context.pop(),
               ),
               Expanded(
@@ -200,10 +205,9 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                     ReceiveAddressLine(
                       type: _selectedType,
                       address: _selectedAddress,
-                      // TODO(mobile-receive): address-type info sheet —
-                      // the desktop info dialog content isn't extracted
-                      // yet.
-                      onShowHelp: () {},
+                      onShowHelp: () => unawaited(
+                        showReceiveAddressInfoSheet(context, _selectedType),
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.md),
                     AppButton(

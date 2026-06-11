@@ -12,6 +12,8 @@ import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/network_config.dart'
+    show kZcashDefaultCurrencyTicker;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
@@ -646,4 +648,72 @@ class ReceiveCopyAddressButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// One bullet of the address-type explainer.
+class ReceiveAddressInfoItem {
+  const ReceiveAddressInfoItem({required this.iconName, required this.text});
+
+  final String iconName;
+  final String text;
+}
+
+/// Copy for the address-type explainer, shared by the desktop info
+/// dialog and the mobile info sheet so the two form factors cannot
+/// drift apart.
+String receiveAddressInfoTitle(ReceiveAddressType type) =>
+    type == ReceiveAddressType.shielded
+    ? 'Shielded address'
+    : 'Transparent address';
+
+String receiveAddressInfoSubtitle(ReceiveAddressType type) =>
+    type == ReceiveAddressType.shielded
+    ? 'Strong privacy by default.'
+    : 'Publicly visible';
+
+/// [touchUi] picks the interaction verb in the renew bullet ("tap" on
+/// phones, "click" with a pointer).
+List<ReceiveAddressInfoItem> receiveAddressInfoItems(
+  ReceiveAddressType type, {
+  required bool touchUi,
+}) {
+  if (type == ReceiveAddressType.shielded) {
+    return [
+      const ReceiveAddressInfoItem(
+        iconName: AppIcons.shieldKeyhole,
+        text:
+            'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.',
+      ),
+      ReceiveAddressInfoItem(
+        iconName: AppIcons.renew,
+        text:
+            'A new Zcash Shielded address is generated only when you '
+            '${touchUi ? 'tap' : 'click'} the Renew button.',
+      ),
+      const ReceiveAddressInfoItem(
+        iconName: AppIcons.wallet,
+        text:
+            'Each new address is a diversified address derived from the same key. They all receive to the same wallet.',
+      ),
+    ];
+  }
+  return [
+    const ReceiveAddressInfoItem(
+      iconName: AppIcons.unlock,
+      text:
+          'All tx details - sender, receiver, and amount - are publicly visible on-chain.',
+    ),
+    const ReceiveAddressInfoItem(
+      iconName: AppIcons.dragon,
+      text:
+          'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.',
+    ),
+    ReceiveAddressInfoItem(
+      iconName: AppIcons.shieldAsset,
+      text:
+          'After receiving $kZcashDefaultCurrencyTicker to your transparent '
+          "address, Vizor will guide you to shield the balance. Otherwise, "
+          "you won't be able to send it.",
+    ),
+  ];
 }

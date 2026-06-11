@@ -634,51 +634,22 @@ class _ReceiveInfoDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final title = _isShielded ? 'Shielded address' : 'Transparent address';
-    final subtitle = _isShielded
-        ? 'Strong privacy by default.'
-        : 'Publicly visible';
-    final items = _isShielded
-        ? const [
-            _InfoItemData(
-              iconName: AppIcons.shieldKeyhole,
-              height: 63,
-              text:
-                  'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.',
-            ),
-            _InfoItemData(
-              iconName: AppIcons.renew,
-              height: 63,
-              text:
-                  'A new Zcash Shielded address is generated only when you click the Renew button.',
-            ),
-            _InfoItemData(
-              iconName: AppIcons.wallet,
-              height: 63,
-              text:
-                  'Each new address is a diversified address derived from the same key. They all receive to the same wallet.',
-            ),
-          ]
-        : [
-            const _InfoItemData(
-              iconName: AppIcons.unlock,
-              height: 42,
-              text:
-                  'All tx details - sender, receiver, and amount - are publicly visible on-chain.',
-            ),
-            const _InfoItemData(
-              iconName: AppIcons.dragon,
-              height: 84,
-              text:
-                  'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.',
-            ),
-            _InfoItemData(
-              iconName: AppIcons.shieldAsset,
-              height: 105,
-              text:
-                  'After receiving $kZcashDefaultCurrencyTicker to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won\'t be able to send it.',
-            ),
-          ];
+    final title = receiveAddressInfoTitle(type);
+    final subtitle = receiveAddressInfoSubtitle(type);
+    // Copy and icons come from the shared explainer content; the fixed
+    // row heights are desktop-dialog layout.
+    final infoItems = receiveAddressInfoItems(type, touchUi: false);
+    final heights = _isShielded
+        ? const [63.0, 63.0, 63.0]
+        : const [42.0, 84.0, 105.0];
+    final items = [
+      for (var i = 0; i < infoItems.length; i++)
+        _InfoItemData(
+          iconName: infoItems[i].iconName,
+          height: heights[i],
+          text: infoItems[i].text,
+        ),
+    ];
 
     return Container(
       key: ValueKey(
