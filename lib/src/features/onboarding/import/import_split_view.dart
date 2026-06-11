@@ -175,6 +175,10 @@ class _SidebarIllustration extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final asset = switch (activeStep) {
+      ImportOnboardingStep.walletBirthdayHeight =>
+        isDark
+            ? 'assets/illustrations/onboarding_wallet_birthday_sidebar_dark.png'
+            : 'assets/illustrations/onboarding_wallet_birthday_sidebar_light.png',
       ImportOnboardingStep.setPassword =>
         isDark
             ? 'assets/illustrations/onboarding_set_password_sidebar_dark.png'
