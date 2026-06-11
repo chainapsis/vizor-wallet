@@ -79,7 +79,7 @@ use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::{
     consensus::{self, BlockHeight, NetworkConstants, Parameters},
     memo::{Memo, MemoBytes},
-    value::{Zatoshis, MAX_MONEY},
+    value::Zatoshis,
     PoolType, ShieldedProtocol,
 };
 
@@ -926,8 +926,8 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
     )
     .await?;
 
-    let run_id = super::migration::create_run(db_path, account_uuid, network, &stored.plan)?;
     let txid = result.txid.clone();
+    let run_id = super::migration::create_run(db_path, account_uuid, network, &stored.plan)?;
     let prepared_refs = stored
         .migrated_outputs
         .into_iter()
@@ -1438,31 +1438,17 @@ fn create_orchard_denomination_split_pczt(
         .orchard()
         .cloned()
         .ok_or("Orchard viewing key not available")?;
-    let recipient_scope = orchard::keys::Scope::External;
+    let recipient_scope = orchard::keys::Scope::Internal;
     let recipient = orchard_fvk.address_at(0u32, recipient_scope);
-    let internal_ovk = None;
+    let internal_ovk = Some(orchard_fvk.to_ovk(recipient_scope));
     let memo = MemoBytes::empty();
 
     let (target_height, anchor_height) = db
         .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before preparing denominations")?;
-
-    let selected_notes = db
-        .select_spendable_notes(
-            account_id,
-            TargetValue::AtLeast(Zatoshis::from_u64(MAX_MONEY).map_err(|_| "Bad max money value")?),
-            &[ShieldedProtocol::Orchard],
-            target_height,
-            ConfirmationsPolicy::default(),
-            &[],
-        )
-        .map_err(|e| format!("Failed to select Orchard notes: {e}"))?;
-    let orchard_notes = selected_notes
-        .take_orchard()
-        .into_iter()
-        .filter(|selected| selected.note().version() != orchard::note::NoteVersion::V3)
-        .collect::<Vec<_>>();
+    let orchard_notes =
+        select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
     if orchard_notes.is_empty() {
         return Ok(None);
     }
@@ -1598,31 +1584,17 @@ fn create_orchard_denomination_split_transaction(
         .orchard()
         .cloned()
         .ok_or("Orchard spending key not available")?;
-    let recipient_scope = orchard::keys::Scope::External;
+    let recipient_scope = orchard::keys::Scope::Internal;
     let recipient = orchard_fvk.address_at(0u32, recipient_scope);
-    let internal_ovk = None;
+    let internal_ovk = Some(orchard_fvk.to_ovk(recipient_scope));
     let memo = MemoBytes::empty();
 
     let (target_height, anchor_height) = db
         .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before preparing denominations")?;
-
-    let selected_notes = db
-        .select_spendable_notes(
-            account_id,
-            TargetValue::AtLeast(Zatoshis::from_u64(MAX_MONEY).map_err(|_| "Bad max money value")?),
-            &[ShieldedProtocol::Orchard],
-            target_height,
-            ConfirmationsPolicy::default(),
-            &[],
-        )
-        .map_err(|e| format!("Failed to select Orchard notes: {e}"))?;
-    let orchard_notes = selected_notes
-        .take_orchard()
-        .into_iter()
-        .filter(|selected| selected.note().version() != orchard::note::NoteVersion::V3)
-        .collect::<Vec<_>>();
+    let orchard_notes =
+        select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
     if orchard_notes.is_empty() {
         return Ok(None);
     }
@@ -1783,6 +1755,21 @@ fn create_orchard_denomination_split_transaction(
     }))
 }
 
+fn select_all_orchard_v2_notes(
+    db: &WalletDatabase,
+    account_id: AccountUuid,
+    anchor_height: BlockHeight,
+) -> Result<Vec<ReceivedNote<ReceivedNoteId, orchard::Note>>, String> {
+    db.get_unspent_orchard_notes_at_historical_height(account_id, anchor_height)
+        .map(|notes| {
+            notes
+                .into_iter()
+                .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)
+                .collect()
+        })
+        .map_err(|e| format!("Failed to select Orchard notes: {e}"))
+}
+
 fn split_output_values(plan: &super::migration::DenominationPlan) -> Vec<u64> {
     let mut outputs = plan.migration_outputs.clone();
     if let Some(change) = plan.orchard_change {
@@ -1819,6 +1806,7 @@ fn create_orchard_to_ironwood_transaction_from_note(
         .cloned()
         .ok_or("Orchard spending key not available")?;
     let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::Internal);
+    let internal_ovk = Some(orchard_fvk.to_ovk(orchard::keys::Scope::Internal));
     let memo = MemoBytes::empty();
 
     let (target_height, anchor_height) = db
@@ -1893,7 +1881,7 @@ fn create_orchard_to_ironwood_transaction_from_note(
         }
         builder
             .add_ironwood_output::<<ConservativeZip317FeeRule as FeeRule>::Error>(
-                None,
+                internal_ovk.clone(),
                 recipient,
                 ironwood_amount,
                 memo.clone(),
@@ -1983,6 +1971,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         .cloned()
         .ok_or("Orchard viewing key not available")?;
     let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::Internal);
+    let internal_ovk = Some(orchard_fvk.to_ovk(orchard::keys::Scope::Internal));
     let memo = MemoBytes::empty();
 
     let (target_height, anchor_height) = db
@@ -2057,7 +2046,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         }
         builder
             .add_ironwood_output::<<ConservativeZip317FeeRule as FeeRule>::Error>(
-                None,
+                internal_ovk.clone(),
                 recipient,
                 ironwood_amount,
                 memo.clone(),
