@@ -114,5 +114,41 @@ import UIKit
       binaryMessenger: messenger
     )
     eventChannel.setStreamHandler(SyncProgressStreamHandler.shared)
+
+    // EventChannel for screenshot detection — sensitive screens (secret
+    // passphrase) warn when the user captures them.
+    let screenshotChannel = FlutterEventChannel(
+      name: "com.zcash.wallet/screenshots",
+      binaryMessenger: messenger
+    )
+    screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+  }
+}
+
+/// Streams a tick to Dart whenever iOS reports a user screenshot.
+/// Lives in this file so it doesn't need a project.pbxproj entry.
+class ScreenshotStreamHandler: NSObject, FlutterStreamHandler {
+  private var observer: NSObjectProtocol?
+
+  func onListen(
+    withArguments arguments: Any?,
+    eventSink events: @escaping FlutterEventSink
+  ) -> FlutterError? {
+    observer = NotificationCenter.default.addObserver(
+      forName: UIApplication.userDidTakeScreenshotNotification,
+      object: nil,
+      queue: .main
+    ) { _ in
+      events(true)
+    }
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    if let observer = observer {
+      NotificationCenter.default.removeObserver(observer)
+      self.observer = nil
+    }
+    return nil
   }
 }

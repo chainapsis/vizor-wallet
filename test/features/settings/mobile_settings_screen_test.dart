@@ -121,11 +121,18 @@ void main() {
     expect(find.text('Light'), findsOneWidget);
   });
 
-  testWidgets('unshipped rows are disabled', (tester) async {
+  testWidgets('unshipped rows are disabled, shipped rows are not', (
+    tester,
+  ) async {
     await tester.pumpWidget(_app());
     await tester.pump();
 
-    final row = tester.widget<Text>(find.text('Secret Passphrase'));
-    expect(row.style?.color, AppThemeData.dark.colors.text.disabled);
+    // Address book has no mobile flow yet.
+    final addressBook = tester.widget<Text>(find.text('Address Book'));
+    expect(addressBook.style?.color, AppThemeData.dark.colors.text.disabled);
+
+    // The seed phrase flow shipped — its row renders active.
+    final seed = tester.widget<Text>(find.text('Secret Passphrase'));
+    expect(seed.style?.color, isNot(AppThemeData.dark.colors.text.disabled));
   });
 }

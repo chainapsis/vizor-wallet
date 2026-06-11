@@ -17,6 +17,7 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/theme_mode_provider.dart';
+import '../../../accounts/widgets/mobile/account_edit_sheets.dart';
 
 /// Mobile settings tab — Figma `SETTINGS` root frame (4494:65997).
 ///
@@ -55,10 +56,11 @@ class MobileSettingsScreen extends ConsumerWidget {
                   title: 'Account',
                   rows: [
                     MobileListRow(
+                      key: const ValueKey('mobile_settings_seed_row'),
                       leading: _RowIcon(AppIcons.key),
                       label: 'Secret Passphrase',
                       showChevron: true,
-                      enabled: false,
+                      onTap: () => context.push('/settings/seed-phrase'),
                     ),
                     MobileListRow(
                       leading: _RowIcon(AppIcons.lock),
@@ -67,6 +69,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                       onTap: () => _openChangePasscode(context),
                     ),
                     MobileListRow(
+                      key: const ValueKey('mobile_settings_pfp_row'),
                       leading: _RowIcon(AppIcons.user),
                       label: 'Profile Picture',
                       // Avatar → name → chevron, per the Figma row.
@@ -83,25 +86,32 @@ class MobileSettingsScreen extends ConsumerWidget {
                           Text(
                             profileLabel,
                             style: AppTypography.bodyMedium.copyWith(
-                              color: context.colors.text.disabled,
+                              color: context.colors.text.secondary,
                             ),
                           ),
                           const SizedBox(width: AppSpacing.xs),
                           AppIcon(
                             AppIcons.chevronForward,
                             size: AppIconSize.medium,
-                            color: context.colors.icon.disabled,
+                            color: context.colors.icon.muted,
                           ),
                         ],
                       ),
-                      enabled: false,
+                      enabled: account != null,
+                      onTap: account == null
+                          ? null
+                          : () => _updateProfilePicture(context, ref, account),
                     ),
                     MobileListRow(
+                      key: const ValueKey('mobile_settings_account_name_row'),
                       leading: _RowIcon(AppIcons.scroll),
                       label: 'Account Name',
                       value: account?.name ?? '',
                       showChevron: true,
-                      enabled: false,
+                      enabled: account != null,
+                      onTap: account == null
+                          ? null
+                          : () => _editAccount(context, ref, account),
                     ),
                     MobileListRow(
                       leading: _RowIcon(AppIcons.users),
@@ -116,11 +126,12 @@ class MobileSettingsScreen extends ConsumerWidget {
                   title: 'System',
                   rows: [
                     MobileListRow(
+                      key: const ValueKey('mobile_settings_endpoint_row'),
                       leading: _RowIcon(AppIcons.endpoint),
                       label: 'Endpoint',
                       value: endpoint,
                       showChevron: true,
-                      enabled: false,
+                      onTap: () => context.push('/settings/endpoint'),
                     ),
                     MobileListRow(
                       key: const ValueKey('mobile_settings_theme_row'),
@@ -135,10 +146,11 @@ class MobileSettingsScreen extends ConsumerWidget {
                 const SizedBox(height: AppSpacing.sm),
                 MobileSurfaceCard(
                   child: MobileListRow(
+                    key: const ValueKey('mobile_settings_about_row'),
                     leading: _RowIcon(AppIcons.shieldKeyhole),
                     label: 'About Vizor',
                     showChevron: true,
-                    enabled: false,
+                    onTap: () => context.push('/about'),
                   ),
                 ),
               ],
@@ -153,6 +165,51 @@ class MobileSettingsScreen extends ConsumerWidget {
     final changed = await context.push<bool>('/settings/change-password');
     if (changed == true && context.mounted) {
       showAppToast(context, 'Passcode updated');
+    }
+  }
+
+  Future<void> _editAccount(
+    BuildContext context,
+    WidgetRef ref,
+    AccountInfo account,
+  ) async {
+    final edits = await showAccountEditSheet(context, account: account);
+    if (edits == null || !context.mounted) return;
+    final saved = await applyAccountEdits(ref, account, edits);
+    if (!saved && context.mounted) {
+      showAppToast(
+        context,
+        "Couldn't save the account changes",
+        iconName: AppIcons.cross,
+      );
+    }
+  }
+
+  Future<void> _updateProfilePicture(
+    BuildContext context,
+    WidgetRef ref,
+    AccountInfo account,
+  ) async {
+    final picked = await showProfilePictureSheet(
+      context,
+      selectedId: account.profilePictureId,
+    );
+    if (picked == null ||
+        picked == account.profilePictureId ||
+        !context.mounted) {
+      return;
+    }
+    final saved = await applyAccountEdits(
+      ref,
+      account,
+      AccountEdits(profilePictureId: picked),
+    );
+    if (!saved && context.mounted) {
+      showAppToast(
+        context,
+        "Couldn't save the account changes",
+        iconName: AppIcons.cross,
+      );
     }
   }
 
