@@ -44,8 +44,8 @@ class KeystoneQrScannerCard extends StatefulWidget {
 
 class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     with WidgetsBindingObserver {
-  static const _cardWidth = 464.0;
-  static const _cameraWidth = 456.0;
+  static const _cardWidth = 396.0;
+  static const _cameraWidth = 396.0;
   static const _cameraHeight = 310.0;
   static const _outerRadius = 28.0;
   static const _cameraRadius = 24.0;
@@ -276,16 +276,32 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final cardSurface = context.appTheme == AppThemeData.dark
+        ? colors.background.base
+        : colors.background.ground;
     return SizedBox(
       width: _cardWidth,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            padding: const EdgeInsets.all(AppSpacing.xxs),
             decoration: BoxDecoration(
-              color: colors.background.base,
+              color: cardSurface,
               borderRadius: BorderRadius.circular(_outerRadius),
+              boxShadow: [
+                BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+                BoxShadow(
+                  color: colors.shadows.subtle,
+                  offset: const Offset(0, 1),
+                  blurRadius: 2,
+                ),
+                BoxShadow(
+                  color: colors.shadows.subtle,
+                  offset: const Offset(0, 2),
+                  blurRadius: 4,
+                ),
+                BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+              ],
             ),
             clipBehavior: Clip.antiAlias,
             child: Stack(
@@ -302,9 +318,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                             borderRadius: BorderRadius.circular(_cameraRadius),
                             clipBehavior: Clip.antiAliasWithSaveLayer,
                             child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: colors.background.base,
-                              ),
+                              decoration: BoxDecoration(color: cardSurface),
                               child: ValueListenableBuilder<MobileScannerState>(
                                 valueListenable: _controller,
                                 builder: (context, scannerState, _) {
@@ -393,11 +407,12 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                         ),
                                       if (accessStatus ==
                                           _CameraAccessStatus.requesting)
-                                        const _CameraPermissionPrompt(
+                                        _CameraPermissionPrompt(
+                                          backgroundColor: cardSurface,
                                           icon: AppIcons.camera,
-                                          title: 'Enable camera access',
+                                          title: 'Enable the Camera access',
                                           description:
-                                              'A camera is required to connect Keystone.\n'
+                                              'A Camera is required to connect Keystone.\n'
                                               'You can revert this in settings anytime later.',
                                           iconStyle: _CameraPermissionIconStyle
                                               .inverse,
@@ -405,6 +420,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                       if (accessStatus ==
                                           _CameraAccessStatus.unavailable)
                                         _CameraPermissionPrompt(
+                                          backgroundColor: cardSurface,
                                           icon: AppIcons.cameraDenied,
                                           title: 'Camera unavailable',
                                           description:
@@ -431,6 +447,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                       if (accessStatus ==
                                           _CameraAccessStatus.denied)
                                         _CameraPermissionPrompt(
+                                          backgroundColor: cardSurface,
                                           icon: AppIcons.cameraDenied,
                                           title: _cameraDeniedTitle,
                                           description: _cameraDeniedDescription,
@@ -697,6 +714,7 @@ enum _CameraPermissionIconStyle { inverse, raised }
 
 class _CameraPermissionPrompt extends StatelessWidget {
   const _CameraPermissionPrompt({
+    required this.backgroundColor,
     required this.icon,
     required this.title,
     required this.description,
@@ -704,6 +722,7 @@ class _CameraPermissionPrompt extends StatelessWidget {
     this.action,
   });
 
+  final Color backgroundColor;
   final String icon;
   final String title;
   final String description;
@@ -723,7 +742,7 @@ class _CameraPermissionPrompt extends StatelessWidget {
     };
 
     return DecoratedBox(
-      decoration: BoxDecoration(color: colors.background.base),
+      decoration: BoxDecoration(color: backgroundColor),
       child: Padding(
         padding: const EdgeInsets.only(top: AppSpacing.md),
         child: Center(

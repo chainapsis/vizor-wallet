@@ -21,11 +21,10 @@ void main() {
 
     expect(find.text('Connect Keystone'), findsOneWidget);
     expect(find.text('Prepare your Keystone wallet'), findsOneWidget);
-    expect(find.text('Before you start'), findsOneWidget);
-    expect(find.text('Check your firmware'), findsOneWidget);
-    expect(find.text('Get Cypherpunk firmware'), findsOneWidget);
-    expect(find.text('Next step'), findsOneWidget);
-    expect(find.text('Prepare to connect'), findsOneWidget);
+    expect(find.text('1. Check Keystone firmware'), findsOneWidget);
+    expect(find.text('Keystone Firmware'), findsOneWidget);
+    expect(find.text('2. Prepare to connect'), findsOneWidget);
+    expect(find.text('Unlock your Keystone.'), findsOneWidget);
     expect(find.text("I'm ready now"), findsOneWidget);
   });
 
@@ -70,8 +69,15 @@ Future<void> _loadAppFonts() async {
     ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
   final geistMono = FontLoader('Geist Mono')
     ..addFont(rootBundle.load('assets/fonts/GeistMono-Medium.ttf'));
+  final youngSerif = FontLoader('Young Serif')
+    ..addFont(rootBundle.load('assets/fonts/YoungSerif-Regular.ttf'));
 
-  await Future.wait([libreCaslonText.load(), geist.load(), geistMono.load()]);
+  await Future.wait([
+    libreCaslonText.load(),
+    geist.load(),
+    geistMono.load(),
+    youngSerif.load(),
+  ]);
 }
 
 Future<void> _setDesktopViewport(WidgetTester tester) async {
