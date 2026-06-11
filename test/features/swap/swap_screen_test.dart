@@ -23,6 +23,8 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/features/address_book/contact_label_generator.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/address_book/widgets/address_book_network_icon.dart';
@@ -1701,88 +1703,30 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Enabling "remember" requires a nickname before the address can be saved.
-    final beforeNickname = tester.widget<AppButton>(
-      find.byKey(const ValueKey('swap_address_update_button')),
-    );
-    expect(beforeNickname.onPressed, isNull);
-
-    await tester.enterText(
-      find.byKey(const ValueKey('swap_address_nickname_field')),
-      'My USDC',
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
-    await tester.pumpAndSettle();
-
-    expect(addressBookRepository.contacts, hasLength(1));
-    expect(
-      addressBookRepository.contacts.single.address,
-      '0xdbf03b407c01e7cd3cbea99509d93f8dddc8c6fb',
-    );
-    expect(
-      addressBookRepository.contacts.single.network,
-      AddressBookNetwork.ethereum,
-    );
-    expect(addressBookRepository.contacts.single.label, 'My USDC');
-  });
-
-  testWidgets('swap address modal requires a valid nickname to remember', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-    final addressBookRepository = _FakeAddressBookRepository();
-
-    await tester.pumpWidget(
-      _routerHarness(
-        GoRouter(
-          initialLocation: '/swap',
-          routes: [_swapRoute(), _swapActivityRoute()],
-        ),
-        seedSwapActivityFixtures: false,
-        addressBookRepository: addressBookRepository,
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey('swap_destination_field')),
-      '0xdbf03b407c01e7cd3cbea99509d93f8dddc8c6fb',
-    );
-    await tester.pumpAndSettle();
-
-    // No nickname field until the user opts to remember the address.
+    // Remembered addresses are saved hands-free: no label or avatar form
+    // appears, and the valid address alone enables Update.
     expect(
       find.byKey(const ValueKey('swap_address_nickname_field')),
       findsNothing,
     );
-
-    await tester.tap(
-      find.byKey(const ValueKey('swap_address_remember_toggle')),
-    );
+    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
     await tester.pumpAndSettle();
 
+    expect(addressBookRepository.contacts, hasLength(1));
+    final saved = addressBookRepository.contacts.single;
+    expect(saved.address, '0xdbf03b407c01e7cd3cbea99509d93f8dddc8c6fb');
+    expect(saved.network, AddressBookNetwork.ethereum);
+    // The label is auto-generated from the persona pool with an optional
+    // numeric suffix, and the avatar is a valid random pick.
     expect(
-      find.byKey(const ValueKey('swap_address_nickname_field')),
-      findsOneWidget,
+      kGeneratedContactPersonas.any((p) => saved.label.startsWith(p)),
+      isTrue,
+      reason: 'generated label was ${saved.label}',
     );
-
-    // A nickname over the 20-char limit surfaces the shared address-book label
-    // error and keeps the button disabled, so nothing is saved.
-    await tester.enterText(
-      find.byKey(const ValueKey('swap_address_nickname_field')),
-      'this nickname is definitely too long',
+    expect(
+      kProfilePictureOptions.map((o) => o.id),
+      contains(saved.profilePictureId),
     );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Use 1-20 characters'), findsOneWidget);
-    final blocked = tester.widget<AppButton>(
-      find.byKey(const ValueKey('swap_address_update_button')),
-    );
-    expect(blocked.onPressed, isNull);
-    expect(addressBookRepository.contacts, isEmpty);
   });
 
   testWidgets('swap address modal warns when the address is already saved', (
@@ -1819,11 +1763,6 @@ void main() {
     );
     await tester.tap(
       find.byKey(const ValueKey('swap_address_remember_toggle')),
-    );
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey('swap_address_nickname_field')),
-      'Duplicate',
     );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
@@ -1874,54 +1813,6 @@ void main() {
     notifier.selectExternalAsset(SwapAsset.sol);
     await tester.pumpAndSettle();
     expect(container.read(swapStateProvider).destinationText, isEmpty);
-  });
-
-  testWidgets('swap address modal saves the chosen avatar with the address', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-    final addressBookRepository = _FakeAddressBookRepository();
-
-    await tester.pumpWidget(
-      _routerHarness(
-        GoRouter(
-          initialLocation: '/swap',
-          routes: [_swapRoute(), _swapActivityRoute()],
-        ),
-        seedSwapActivityFixtures: false,
-        addressBookRepository: addressBookRepository,
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey('swap_destination_field')),
-      '0xdbf03b407c01e7cd3cbea99509d93f8dddc8c6fb',
-    );
-    await tester.tap(
-      find.byKey(const ValueKey('swap_address_remember_toggle')),
-    );
-    await tester.pumpAndSettle();
-
-    // Open the avatar picker and choose a non-default avatar.
-    await tester.tap(find.byKey(const ValueKey('swap_address_avatar_button')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('swap_address_avatar_pfp-02')));
-    await tester.pumpAndSettle();
-
-    await tester.enterText(
-      find.byKey(const ValueKey('swap_address_nickname_field')),
-      'My USDC',
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
-    await tester.pumpAndSettle();
-
-    expect(addressBookRepository.contacts, hasLength(1));
-    expect(addressBookRepository.contacts.single.label, 'My USDC');
-    expect(addressBookRepository.contacts.single.profilePictureId, 'pfp-02');
   });
 
   testWidgets('swap address modal shows EVM contacts across chains', (

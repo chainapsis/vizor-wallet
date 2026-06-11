@@ -17,6 +17,7 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../address_book/contact_label_generator.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
@@ -74,11 +75,6 @@ String _swapContactPickerTitle(SwapState state) {
 String _swapContactPickerEmptyTitle(SwapState state) {
   final role = state.direction.sendsZec ? 'recipients' : 'refunds';
   return 'No saved ${state.externalAsset.symbol} $role';
-}
-
-String _swapAddressBookLabel(SwapState state) {
-  final role = state.direction.sendsZec ? 'recipient' : 'refund';
-  return '${state.externalAsset.symbol} $role';
 }
 
 class _SwapScreenState extends ConsumerState<SwapScreen> {
@@ -141,24 +137,11 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     _closeSwapModal();
   }
 
-  Future<void> _rememberSwapAddress(
-    String value,
-    SwapState swapState,
-    String? nickname,
-    String profilePictureId,
-  ) async {
+  Future<void> _rememberSwapAddress(String value, SwapState swapState) async {
     final address = value.trim();
     if (address.isEmpty) return;
     final network = _addressBookNetworkForSwapDestination(swapState);
     if (network == null) return;
-
-    // The modal requires a nickname when "remember" is on; fall back to the
-    // auto-generated label only as a defensive default (e.g. an empty value
-    // slipping through from a future caller).
-    final trimmedNickname = nickname?.trim() ?? '';
-    final label = trimmedNickname.isEmpty
-        ? _swapAddressBookLabel(swapState)
-        : trimmedNickname;
 
     try {
       final current =
@@ -181,13 +164,20 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         return;
       }
 
+      // Remembered addresses are saved hands-free: a persona name from the
+      // app's keep-themed pool (deduped against existing labels) and a
+      // random avatar stand in for the removed label/picture form.
       await ref
           .read(addressBookProvider.notifier)
           .addContact(
-            label: label,
+            label: generateContactLabel(
+              existingLabels: [
+                for (final contact in current.contacts) contact.label,
+              ],
+            ),
             network: network,
             address: address,
-            profilePictureId: profilePictureId,
+            profilePictureId: randomContactProfilePictureId(),
           );
     } catch (_) {
       // Saving a convenience contact must not block the swap form update.
@@ -359,21 +349,13 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                       ),
                       _SwapModalSurface.addressEditor => SwapAddressEditModal(
                         state: swapState,
-                        onSubmitted:
-                            (value, remember, nickname, profilePictureId) {
-                              if (remember) {
-                                unawaited(
-                                  _rememberSwapAddress(
-                                    value,
-                                    swapState,
-                                    nickname,
-                                    profilePictureId,
-                                  ),
-                                );
-                              }
-                              swapNotifier.updateDestination(value);
-                              _closeSwapModal();
-                            },
+                        onSubmitted: (value, remember) {
+                          if (remember) {
+                            unawaited(_rememberSwapAddress(value, swapState));
+                          }
+                          swapNotifier.updateDestination(value);
+                          _closeSwapModal();
+                        },
                         onScan: _openAddressScanner,
                         onOpenContacts: _openAddressContactPicker,
                         onCancel: _closeSwapModal,
