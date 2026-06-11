@@ -24,6 +24,8 @@ class SwapActivityRowItem {
     this.completedAt,
     this.lastStatusCheckedAt,
     this.updatedAt,
+    this.receiveWalletTxidHex,
+    this.depositWalletTxidHex,
   });
 
   factory SwapActivityRowItem.fromRecord(SwapIntentRecord record) {
@@ -41,6 +43,10 @@ class SwapActivityRowItem {
       completedAt: record.completedAt,
       lastStatusCheckedAt: record.lastStatusCheckedAt,
       updatedAt: record.updatedAt,
+      receiveWalletTxidHex: swapChainTxidToWalletTxidHex(
+        record.destinationChainTxHash,
+      ),
+      depositWalletTxidHex: swapChainTxidToWalletTxidHex(record.depositTxHash),
     );
   }
 
@@ -57,6 +63,14 @@ class SwapActivityRowItem {
   final DateTime? completedAt;
   final DateTime? lastStatusCheckedAt;
   final DateTime? updatedAt;
+
+  /// Wallet-order txid of the ZEC payout (external→ZEC), used to absorb the
+  /// matching on-chain receive row into this swap's sub row.
+  final String? receiveWalletTxidHex;
+
+  /// Wallet-order txid of our ZEC deposit broadcast (ZEC→external), used to
+  /// suppress the duplicate standalone Sent row.
+  final String? depositWalletTxidHex;
 }
 
 List<SwapActivityRowItem> swapActivityRowItemsFromRecords(
@@ -70,6 +84,8 @@ ActivityRowData buildSwapActivityRow({
   required SwapActivityRowItem item,
   bool privacyModeEnabled = false,
   VoidCallback? onTap,
+  String? receivedAmountText,
+  VoidCallback? onReceivedLegTap,
 }) {
   final colors = context.colors;
   final failed = _swapActivityFailed(item.status);
@@ -87,7 +103,9 @@ ActivityRowData buildSwapActivityRow({
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
     leadingProgressValue: complete ? null : progress?.value,
-    subtitle: _swapActivityAssetSubtitle(sellAsset) ?? item.providerLabel,
+    subtitle: returnsFunds
+        ? '${sellAsset?.symbol ?? 'ZEC'} Refunded'
+        : _swapActivityAssetSubtitle(sellAsset) ?? item.providerLabel,
     amountText: _swapActivityAmountText(
       item,
       includeSign: !(returnsFunds || timedOut),
@@ -96,11 +114,7 @@ ActivityRowData buildSwapActivityRow({
     amountIconName: returnsFunds ? AppIcons.arrowBack : null,
     amountIconColor: returnsFunds ? colors.icon.regular : null,
     amountColor: colors.text.primary,
-    amountSubtitle: timedOut
-        ? 'Timeout'
-        : returnsFunds
-        ? 'Refunded'
-        : null,
+    amountSubtitle: timedOut ? 'Timeout' : null,
     amountSubtitleIconName: timedOut ? AppIcons.time : null,
     amountSubtitleIconColor: timedOut ? colors.text.secondary : null,
     statusText: _swapActivityStatusText(item.status, progress),
@@ -119,53 +133,56 @@ ActivityRowData buildSwapActivityRow({
         ? colors.text.brandCrimson
         : colors.text.secondary,
     timestampText: formatActivityTimestamp(item.activityTimestamp),
-    childRows: failed || returnsFunds || !_swapActivityShowsReceiveLeg(item)
-        ? const []
-        : _swapActivityChildRows(
-            context: context,
-            item: item,
-            receiveAsset: receiveAsset,
-            complete: complete,
-            privacyModeEnabled: privacyModeEnabled,
-          ),
+    childRows: _swapActivityChildRows(
+      context: context,
+      item: item,
+      receiveAsset: receiveAsset,
+      privacyModeEnabled: privacyModeEnabled,
+      receivedAmountText: receivedAmountText,
+      onReceivedLegTap: onReceivedLegTap,
+    ),
     onTap: onTap,
   );
 }
 
+/// Results-only sub rows: a single settled leg per swap group. In-progress
+/// legs render no sub row — the parent's progress ring carries that state.
 List<ActivityRowData> _swapActivityChildRows({
   required BuildContext context,
   required SwapActivityRowItem item,
   required SwapAsset? receiveAsset,
-  required bool complete,
   required bool privacyModeEnabled,
+  required String? receivedAmountText,
+  required VoidCallback? onReceivedLegTap,
 }) {
   final direction = item.direction;
   if (direction == null || receiveAsset == null) return const [];
-  if (!complete && _swapActivityProgress(item) == null) {
-    return const [];
-  }
+  if (item.status != SwapIntentStatus.complete) return const [];
 
   final colors = context.colors;
-  final active = !complete;
+  final receivesZec = direction == SwapDirection.externalToZec;
+  // The absorbed on-chain receive carries the real settled amount; fall back
+  // to the quote estimate until the payout tx is matched.
+  final amountText =
+      receivesZec && receivedAmountText != null && !privacyModeEnabled
+      ? receivedAmountText
+      : _swapActivityReceiveAmountText(
+          item,
+          privacyModeEnabled: privacyModeEnabled,
+        );
   return [
     ActivityRowData(
-      title: _swapActivityChildTitle(
-        direction: direction,
-        receiveAsset: receiveAsset,
-        complete: complete,
-      ),
+      title: receivesZec
+          ? 'Received ${receiveAsset.symbol}'
+          : 'Deposited ${receiveAsset.symbol}',
       leadingIconName: AppIcons.swapArrows,
       leadingBackgroundColor: colors.background.neutralSubtleOpacity,
       leadingIconColor: colors.icon.regular,
-      amountText: _swapActivityReceiveAmountText(
-        item,
-        privacyModeEnabled: privacyModeEnabled,
-      ),
+      amountText: amountText,
       amountColor: colors.text.primary,
-      statusText: active ? 'In progress' : 'Completed',
-      statusIconName: active ? AppIcons.loader : null,
-      statusColor: colors.text.secondary,
-      timestampText: _swapActivityChildTimestamp(item),
+      statusText: '',
+      timestampText: '',
+      onTap: receivesZec ? onReceivedLegTap : null,
     ),
   ];
 }
@@ -250,8 +267,9 @@ bool _swapActivityReturnsFunds(SwapActivityRowItem item) {
 String _swapActivityTitle(SwapIntentStatus status) {
   return switch (status) {
     SwapIntentStatus.complete => 'Swapped',
-    SwapIntentStatus.failed || SwapIntentStatus.expired => 'Swap failed',
-    SwapIntentStatus.refunded => 'Swap refunded',
+    SwapIntentStatus.failed ||
+    SwapIntentStatus.expired ||
+    SwapIntentStatus.refunded => 'Swap failed',
     _ => 'Swapping...',
   };
 }
@@ -274,52 +292,6 @@ String? _swapActivityAssetSubtitle(SwapAsset? asset) {
   if (asset == null) return null;
   if (asset.isNativeZec) return '${asset.symbol} ${asset.chainLabel}';
   return '${asset.symbol} on ${asset.chainLabel}';
-}
-
-String _swapActivityChildTitle({
-  required SwapDirection direction,
-  required SwapAsset receiveAsset,
-  required bool complete,
-}) {
-  if (direction == SwapDirection.externalToZec) {
-    return complete
-        ? '${receiveAsset.symbol} Received'
-        : 'Receiving ${receiveAsset.symbol} ...';
-  }
-  return complete
-      ? '${receiveAsset.symbol} Deposited'
-      : 'Depositing ${receiveAsset.symbol}...';
-}
-
-String _swapActivityChildTimestamp(SwapActivityRowItem item) {
-  final timestamp =
-      item.completedAt ?? item.lastStatusCheckedAt ?? item.updatedAt;
-  if (timestamp == null) return '--';
-  return _relativeActivityTimestamp(timestamp) ??
-      formatActivityTimestamp(timestamp);
-}
-
-String? _relativeActivityTimestamp(DateTime timestamp) {
-  final elapsed = DateTime.now().difference(timestamp.toLocal());
-  if (elapsed.isNegative) return null;
-  if (elapsed.inMinutes < 1) return 'just now';
-  if (elapsed.inHours < 1) return '${elapsed.inMinutes}m ago';
-  return null;
-}
-
-bool _swapActivityShowsReceiveLeg(SwapActivityRowItem item) {
-  return switch (item.status) {
-    SwapIntentStatus.depositObserved ||
-    SwapIntentStatus.processing ||
-    SwapIntentStatus.providerStatusUnknown ||
-    SwapIntentStatus.complete => true,
-    SwapIntentStatus.awaitingDeposit ||
-    SwapIntentStatus.awaitingExternalDeposit ||
-    SwapIntentStatus.incompleteDeposit ||
-    SwapIntentStatus.refunded ||
-    SwapIntentStatus.expired ||
-    SwapIntentStatus.failed => false,
-  };
 }
 
 _SwapActivityProgress? _swapActivityProgress(SwapActivityRowItem item) {
