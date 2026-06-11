@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/mobile/unsupported_sheet.dart';
 import '../shared/onboarding_welcome_art.dart' show VizorWordmark;
 
 /// Mobile welcome screen — Figma `Welcome` (node 4394:77936): full-bleed
@@ -65,14 +64,7 @@ class MobileWelcomeScreen extends StatelessWidget {
                   key: const ValueKey('mobile_welcome_keystone'),
                   expand: true,
                   variant: AppButtonVariant.ghost,
-                  // TODO(mobile-keystone): wire the mobile Keystone
-                  // onboarding once it is designed and built.
-                  onPressed: () => showUnsupportedSheet(
-                    context,
-                    message:
-                        'Connecting a Keystone on mobile is still in '
-                        'progress.',
-                  ),
+                  onPressed: () => context.push('/onboarding/keystone'),
                   child: const _ButtonLabel(
                     iconName: AppIcons.qr,
                     label: 'Connect Keystone',

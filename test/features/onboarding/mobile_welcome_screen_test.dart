@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_screen.dart';
 
 Widget _app({String initialLocation = '/welcome'}) {
@@ -69,17 +70,15 @@ void main() {
     expect(find.byType(MobileImportScreen), findsOneWidget);
   });
 
-  testWidgets('keystone shows the unsupported sheet', (tester) async {
+  testWidgets('keystone pushes the keystone intro step', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('mobile_welcome_keystone')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Not available yet'), findsOneWidget);
-    await tester.tap(find.text('OK'));
-    await tester.pumpAndSettle();
-    expect(find.text('Not available yet'), findsNothing);
+    expect(find.byType(MobileKeystoneIntroScreen), findsOneWidget);
+    expect(find.text('Connect Keystone'), findsOneWidget);
   });
 
   testWidgets('add-account variant shows back to home affordance', (

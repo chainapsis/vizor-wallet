@@ -26,6 +26,8 @@ class KeystoneQrScannerCard extends StatefulWidget {
     required this.onComplete,
     required this.unavailableMessage,
     this.decodingLabel = 'Reading QR...',
+    this.cardWidth,
+    this.cameraHeight,
     super.key,
   });
 
@@ -38,6 +40,11 @@ class KeystoneQrScannerCard extends StatefulWidget {
   final String unavailableMessage;
   final String decodingLabel;
 
+  /// Layout overrides for the mobile single-pane flow; the defaults keep
+  /// the desktop pane dimensions.
+  final double? cardWidth;
+  final double? cameraHeight;
+
   @override
   State<KeystoneQrScannerCard> createState() => _KeystoneQrScannerCardState();
 }
@@ -45,7 +52,6 @@ class KeystoneQrScannerCard extends StatefulWidget {
 class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     with WidgetsBindingObserver {
   static const _cardWidth = 464.0;
-  static const _cameraWidth = 456.0;
   static const _cameraHeight = 310.0;
   static const _outerRadius = 28.0;
   static const _cameraRadius = 24.0;
@@ -277,7 +283,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
-      width: _cardWidth,
+      width: widget.cardWidth ?? _cardWidth,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -293,8 +299,9 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                 Column(
                   children: [
                     SizedBox(
-                      width: _cameraWidth,
-                      height: _cameraHeight,
+                      width: (widget.cardWidth ?? _cardWidth) -
+                          AppSpacing.xxs * 2,
+                      height: widget.cameraHeight ?? _cameraHeight,
                       child: Stack(
                         fit: StackFit.expand,
                         children: [

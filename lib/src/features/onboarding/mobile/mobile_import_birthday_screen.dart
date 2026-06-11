@@ -30,11 +30,18 @@ enum _BirthdayEntryMode { date, blockHeight }
 class MobileImportBirthdayScreen extends ConsumerStatefulWidget {
   const MobileImportBirthdayScreen({
     required this.args,
+    this.onHeightConfirmed,
     this.loadChainMetadata = true,
     super.key,
   });
 
   final ImportBirthdayArgs args;
+
+  /// When set, confirming a height delegates to this callback instead
+  /// of the software-mnemonic import path — the Keystone flow shares
+  /// this screen but imports a hardware UFVK. Thrown errors surface
+  /// through the screen's standard error line.
+  final Future<void> Function(int height)? onHeightConfirmed;
 
   /// Test seam — widget tests disable the lightwalletd metadata fetch.
   @visibleForTesting
@@ -240,6 +247,25 @@ class _MobileImportBirthdayScreenState
   }
 
   Future<void> _submit(int height) async {
+    final onHeightConfirmed = widget.onHeightConfirmed;
+    if (onHeightConfirmed != null) {
+      setState(() {
+        _submitting = true;
+        _error = null;
+      });
+      try {
+        await onHeightConfirmed(height);
+      } catch (e, st) {
+        log('MobileImportBirthday: height confirm failed: $e\n$st');
+        if (!mounted) return;
+        setState(() {
+          _submitting = false;
+          _error = onboardingSubmitErrorMessage(e);
+        });
+      }
+      return;
+    }
+
     final security = ref.read(appSecurityProvider);
     if (!security.isPasswordConfigured) {
       context.push(

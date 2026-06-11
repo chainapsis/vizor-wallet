@@ -7,6 +7,7 @@ import '../../features/onboarding/mobile/mobile_import_birthday_screen.dart';
 import '../../features/onboarding/mobile/mobile_import_manual_screen.dart';
 import '../../features/onboarding/mobile/mobile_import_review_screen.dart';
 import '../../features/onboarding/mobile/mobile_import_screens.dart';
+import '../../features/onboarding/mobile/mobile_keystone_screens.dart';
 import '../../features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../../features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../../features/onboarding/mobile/mobile_welcome_screen.dart';
@@ -115,11 +116,40 @@ List<RouteBase> mobileOnboardingRoutes() => [
       ),
     ),
   ),
-  // Keystone onboarding has no mobile flow yet; the welcome button
-  // shows the unsupported sheet and stray deep links land on welcome.
-  GoRoute(path: '/import-keystone', redirect: (_, _) => '/welcome'),
+  // Keystone onboarding — same route paths as the desktop flow so the
+  // shared redirect guard and deep links treat them identically.
+  GoRoute(
+    path: '/onboarding/keystone',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileKeystoneIntroScreen(),
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/keystone/scan',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileKeystoneScanScreen(),
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/keystone/select-account',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileKeystoneSelectAccountScreen(),
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/keystone/birthday',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileKeystoneBirthdayScreen(),
+    ),
+  ),
+  // Legacy keystone aliases land on the mobile flow entry.
+  GoRoute(path: '/import-keystone', redirect: (_, _) => '/onboarding/keystone'),
   GoRoute(
     path: '/import-keystone/set-password',
-    redirect: (_, _) => '/welcome',
+    redirect: (_, _) => '/onboarding/keystone',
   ),
 ];
