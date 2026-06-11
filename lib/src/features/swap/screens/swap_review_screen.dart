@@ -112,10 +112,14 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     _hadReviewState = true;
 
     final accountState = ref.watch(accountProvider).value;
+    // The balance gate is pinned to the account the quote was created for.
+    // The swap provider clears reviewVisible on account switch, so the two
+    // accounts are equal whenever this screen renders content — pinning the
+    // review account keeps the gate correct even if that invariant changes.
     final sync = ref.watch(
       syncProvider.select(
         (value) => (value.value ?? SyncState()).scopedToAccount(
-          accountState?.activeAccountUuid,
+          swapState.reviewAccountUuid ?? accountState?.activeAccountUuid,
         ),
       ),
     );
