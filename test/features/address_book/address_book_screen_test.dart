@@ -6,8 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
+import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
@@ -381,6 +384,88 @@ void main() {
 
     expect(find.text('Edit contact'), findsNothing);
     expect(find.text('Copy address'), findsNothing);
+  });
+
+  testWidgets('renders the back link inside the pinned pane toolbar band', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final repo = _FakeAddressBookRepository([
+      _contact(id: 'mike', label: 'Mike', address: 'u1mike'),
+    ]);
+
+    await tester.pumpWidget(_addressBookHarness(repo));
+    await tester.pumpAndSettle();
+
+    // The redesign moved the back link out of hand-rolled pane content and into
+    // the shared AppPaneToolbar. Exactly one back link exists and it lives
+    // inside the toolbar (no pane-content copy lingers).
+    final backLink = find.byType(AppBackLink);
+    expect(backLink, findsOneWidget);
+    expect(
+      find.descendant(of: find.byType(AppPaneToolbar), matching: backLink),
+      findsOneWidget,
+    );
+
+    // It sits in the pinned 48px band at the top of the pane (not the window:
+    // the desktop shell sidebar offsets the pane horizontally), left-aligned
+    // against the toolbar, and above the 'Contacts' title.
+    final backRect = tester.getRect(backLink);
+    final toolbarRect = tester.getRect(find.byType(AppPaneToolbar));
+    expect(backRect.top, lessThan(AppPaneScrollScaffold.toolbarHeight));
+    expect(
+      backRect.bottom,
+      lessThanOrEqualTo(AppPaneScrollScaffold.toolbarHeight + 1),
+    );
+    // Chevron hugs the pane/toolbar left edge (small toolbar + back-link
+    // inset), not floated into the middle of the band.
+    expect(backRect.left - toolbarRect.left, lessThan(24));
+    expect(backRect.top, lessThan(tester.getTopLeft(find.text('Contacts')).dy));
+  });
+
+  testWidgets('keeps the last group card clear of the floating add button', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    // Enough contacts to overflow the 720px viewport so the pane must scroll
+    // and the bottom reserve under the floating button becomes load-bearing.
+    final repo = _FakeAddressBookRepository([
+      for (var i = 0; i < 18; i++)
+        _contact(id: 'c$i', label: 'Contact $i', address: 'u1contact$i'),
+    ]);
+
+    await tester.pumpWidget(_addressBookHarness(repo));
+    await tester.pumpAndSettle();
+
+    // The contacts list is now a non-scrolling Column; the single scroll
+    // surface is AppPaneScrollScaffold's SingleChildScrollView.
+    final scrollView = find.byKey(AppPaneScrollScaffold.scrollViewKey);
+    expect(scrollView, findsOneWidget);
+
+    // Drive the pane's own scroll surface to the bottom (drag up). The list
+    // overflows the viewport, so this exercises the measured bottom reserve.
+    await tester.drag(scrollView, const Offset(0, -2000));
+    await tester.pumpAndSettle();
+
+    // Guard against a vacuous assertion: the pane must have actually scrolled,
+    // which proves the list overflowed the viewport in the first place.
+    final scrollableState = tester.state<ScrollableState>(
+      find.descendant(of: scrollView, matching: find.byType(Scrollable)).first,
+    );
+    expect(scrollableState.position.pixels, greaterThan(0));
+
+    // The floating add button is a Stack sibling pinned to the pane bottom; the
+    // scaffold's measured bottom reserve must let the last row scroll clear of
+    // it instead of being permanently covered.
+    final floatingButton = find.byKey(
+      const ValueKey('address_book_add_contact_button'),
+    );
+    expect(floatingButton, findsOneWidget);
+    final lastRow = find.byKey(const ValueKey('address_book_contact_row_c17'));
+    expect(lastRow, findsOneWidget);
+    final lastRowBottom = tester.getRect(lastRow).bottom;
+    final floatingButtonTop = tester.getRect(floatingButton).top;
+    expect(lastRowBottom, lessThanOrEqualTo(floatingButtonTop + 0.5));
   });
 }
 

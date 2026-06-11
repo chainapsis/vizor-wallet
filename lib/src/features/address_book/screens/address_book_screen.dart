@@ -8,9 +8,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_context_menu.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -25,6 +25,21 @@ import '../models/address_book_contact.dart';
 import '../models/address_format_validator.dart';
 import '../providers/address_book_provider.dart';
 import '../widgets/address_book_network_icon.dart';
+
+/// Fixed content column width shared by the search field, group cards, and
+/// empty-state blocks (Figma contacts design).
+const double _kContactsContentWidth = 352;
+
+/// Fallback floating add-contact button extent used before the button has
+/// been measured: large button height (44) + its `AppSpacing.md` bottom
+/// offset.
+const double _kFloatingAddContactFallbackReserve = 68;
+
+/// Breathing room between the last group card and the top of the floating
+/// add-contact button, added on top of the measured button extent so the
+/// button's shadow never bleeds onto the card (matches the settings endpoint
+/// floating-bar gap).
+const double _kFloatingAddContactGap = 12;
 
 class AddressBookScreen extends ConsumerStatefulWidget {
   const AddressBookScreen({super.key});
@@ -48,6 +63,26 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
   AddressBookContact? _editingContact;
   AddressBookContact? _removingContact;
   String? _submitError;
+
+  final _floatingButtonKey = GlobalKey();
+
+  /// Latest measured height of the floating add-contact button (including its
+  /// internal bottom breathing room). Drives the scroll scaffold's reserved
+  /// bottom padding so the last group card scrolls clear of the button.
+  double _floatingButtonReserve = _kFloatingAddContactFallbackReserve;
+
+  void _measureFloatingButton() {
+    final box =
+        _floatingButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final measured = box?.hasSize == true ? box!.size.height : null;
+    if (measured == null) return;
+    // Only rebuild when the value actually moves to avoid a layout feedback
+    // loop.
+    if ((measured - _floatingButtonReserve).abs() < 0.5) return;
+    setState(() {
+      _floatingButtonReserve = measured;
+    });
+  }
 
   void _openAddContact() {
     setState(() {
@@ -225,17 +260,20 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
   @override
   Widget build(BuildContext context) {
     final contactsAsync = ref.watch(addressBookProvider);
-    Widget buildPane(AddressBookState state) {
-      return _AddressBookPane(
-        state: state,
-        onQueryChanged: (query) =>
-            ref.read(addressBookProvider.notifier).setQuery(query),
-        onAddContact: _openAddContact,
-        onEditContact: _openEditContact,
-        onCopyAddress: _copyAddress,
-        onSendContact: _sendToContact,
-        onRemoveContact: _openRemoveContact,
-      );
+    // Loading keeps the previous pane (or the empty state) so the toolbar and
+    // content stay stable; an error replaces the pane content only.
+    final AddressBookState? paneState = contactsAsync.when(
+      loading: () => contactsAsync.asData?.value ?? const AddressBookState(),
+      error: (_, _) => null,
+      data: (state) => state,
+    );
+    final showBottomAction = paneState?.hasContacts ?? false;
+
+    if (showBottomAction) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _measureFloatingButton();
+      });
     }
 
     return AppDesktopShell(
@@ -244,28 +282,46 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
         padding: EdgeInsets.zero,
         child: Stack(
           children: [
-            Padding(
-              // Top-only here: _AddressBookPane carries the horizontal and
-              // bottom insets itself so the back link can sit at 16
-              // (4px pane padding + AppBackLink's 12px internal inset) while
-              // the table keeps md.
-              padding: const EdgeInsets.only(top: AppSpacing.md),
-              child: contactsAsync.when(
-                loading: () => buildPane(
-                  contactsAsync.asData?.value ?? const AddressBookState(),
-                ),
-                error: (_, _) => const Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    AppSpacing.md,
-                    0,
-                    AppSpacing.md,
-                    AppSpacing.md,
-                  ),
-                  child: _AddressBookError(),
-                ),
-                data: buildPane,
+            AppPaneScrollScaffold(
+              toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
+              padding: EdgeInsets.only(
+                top: AppSpacing.md,
+                bottom: showBottomAction
+                    ? _floatingButtonReserve + _kFloatingAddContactGap
+                    : 0,
               ),
+              child: paneState == null
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                      child: _AddressBookError(),
+                    )
+                  : _AddressBookPane(
+                      state: paneState,
+                      onQueryChanged: (query) => ref
+                          .read(addressBookProvider.notifier)
+                          .setQuery(query),
+                      onAddContact: _openAddContact,
+                      onEditContact: _openEditContact,
+                      onCopyAddress: _copyAddress,
+                      onSendContact: _sendToContact,
+                      onRemoveContact: _openRemoveContact,
+                    ),
             ),
+            if (showBottomAction)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Center(
+                  child: Padding(
+                    key: _floatingButtonKey,
+                    padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                    child: _FloatingAddContactButton(
+                      onPressed: _openAddContact,
+                    ),
+                  ),
+                ),
+              ),
             if (_modal != null)
               AppPaneModalOverlay(onDismiss: _closeModal, child: _buildModal()),
           ],
@@ -391,129 +447,70 @@ class _AddressBookPane extends StatelessWidget {
   final ValueChanged<AddressBookContact> onSendContact;
   final ValueChanged<AddressBookContact> onRemoveContact;
 
-  bool get _showBottomAction => state.hasContacts;
-
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SizedBox.expand(
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    final showEmptySearch = state.hasContacts && state.filteredContacts.isEmpty;
+    final wantsCenteredState = !state.hasContacts || showEmptySearch;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // AppPaneScrollScaffold lays the scroll child out with a minHeight
+        // equal to the visible pane area below the toolbar band, so the empty
+        // states can center in the real viewport instead of a fixed-height
+        // box. minHeight is 0 when the pane height is unbounded (previews);
+        // fall back to top flow there because Expanded needs a bounded height.
+        final viewportHeight = constraints.minHeight;
+        final centerStates = wantsCenteredState && viewportHeight > 0;
+
+        Widget centeredState(Widget child) =>
+            centerStates ? Expanded(child: Center(child: child)) : child;
+
+        return SizedBox(
+          height: centerStates ? viewportHeight : null,
+          child: Column(
             children: [
-              const Padding(
-                padding: EdgeInsets.only(
-                  left: AppSpacing.xxs,
-                  right: AppSpacing.md,
-                ),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: AppRouteBackLink(minWidth: 60),
+              Text(
+                'Contacts',
+                textAlign: TextAlign.center,
+                style: AppTypography.headlineLarge.copyWith(
+                  color: colors.text.accent,
                 ),
               ),
-              const SizedBox(height: AppSpacing.s),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.md,
-                    AppSpacing.s,
-                    AppSpacing.md,
-                    AppSpacing.md + AppSpacing.s,
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        'Contacts',
-                        textAlign: TextAlign.center,
-                        style: AppTypography.headlineLarge.copyWith(
-                          color: colors.text.accent,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      Expanded(
-                        child: _AddressBookContent(
-                          state: state,
-                          onQueryChanged: onQueryChanged,
-                          onAddContact: onAddContact,
-                          onEditContact: onEditContact,
-                          onCopyAddress: onCopyAddress,
-                          onSendContact: onSendContact,
-                          onRemoveContact: onRemoveContact,
-                        ),
-                      ),
-                    ],
+              const SizedBox(height: AppSpacing.md),
+              if (!state.hasContacts)
+                centeredState(
+                  _AddressBookNoContacts(onAddContact: onAddContact),
+                )
+              else ...[
+                SizedBox(
+                  width: _kContactsContentWidth,
+                  child: _AddressBookSearchField(
+                    query: state.query,
+                    onChanged: onQueryChanged,
                   ),
                 ),
-              ),
+                if (state.filteredContacts.isEmpty)
+                  centeredState(const _EmptySearchResult())
+                else
+                  Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.base),
+                    child: SizedBox(
+                      width: _kContactsContentWidth,
+                      child: _AddressBookContactsList(
+                        contacts: state.filteredContacts,
+                        onEditContact: onEditContact,
+                        onCopyAddress: onCopyAddress,
+                        onSendContact: onSendContact,
+                        onRemoveContact: onRemoveContact,
+                      ),
+                    ),
+                  ),
+              ],
             ],
           ),
-          if (_showBottomAction)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: AppSpacing.md,
-              child: Center(
-                child: _FloatingAddContactButton(onPressed: onAddContact),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AddressBookContent extends StatelessWidget {
-  const _AddressBookContent({
-    required this.state,
-    required this.onQueryChanged,
-    required this.onAddContact,
-    required this.onEditContact,
-    required this.onCopyAddress,
-    required this.onSendContact,
-    required this.onRemoveContact,
-  });
-
-  final AddressBookState state;
-  final ValueChanged<String> onQueryChanged;
-  final VoidCallback onAddContact;
-  final ValueChanged<AddressBookContact> onEditContact;
-  final ValueChanged<AddressBookContact> onCopyAddress;
-  final ValueChanged<AddressBookContact> onSendContact;
-  final ValueChanged<AddressBookContact> onRemoveContact;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!state.hasContacts) {
-      return _AddressBookNoContacts(onAddContact: onAddContact);
-    }
-
-    return Align(
-      alignment: Alignment.topCenter,
-      child: SizedBox(
-        width: 352,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _AddressBookSearchField(
-              query: state.query,
-              onChanged: onQueryChanged,
-            ),
-            const SizedBox(height: AppSpacing.base),
-            Expanded(
-              child: state.filteredContacts.isEmpty
-                  ? const _EmptySearchResult()
-                  : _AddressBookContactsList(
-                      contacts: state.filteredContacts,
-                      onEditContact: onEditContact,
-                      onCopyAddress: onCopyAddress,
-                      onSendContact: onSendContact,
-                      onRemoveContact: onRemoveContact,
-                    ),
-            ),
-          ],
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -618,8 +615,11 @@ class _AddressBookContactsList extends StatelessWidget {
       );
     }
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+    // Non-scrolling: AppPaneScrollScaffold owns the pane's single scroll
+    // surface, and the bottom scroll reserve comes from the scaffold padding.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: children,
     );
   }
@@ -978,65 +978,57 @@ class _AddressBookNoContacts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.topCenter,
-      child: SizedBox(
-        width: 352,
-        height: 460,
-        child: Center(
-          child: SizedBox(
-            height: 286,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned(
-                  left: 76,
-                  top: -21,
-                  child: Image.asset(
-                    _addressBookEmptyContactsAsset(context),
-                    width: 200,
-                    height: 175,
-                    fit: BoxFit.contain,
-                  ),
-                ),
-                Positioned(
-                  left: 48,
-                  top: 186,
-                  child: SizedBox(
-                    width: 256,
-                    child: Column(
-                      children: [
-                        Text(
-                          'No contacts yet',
-                          textAlign: TextAlign.center,
-                          style: AppTypography.headlineSmall.copyWith(
-                            color: context.colors.text.accent,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.xxs),
-                        Text(
-                          'Add your first contact to get started.',
-                          textAlign: TextAlign.center,
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: context.colors.text.secondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 48,
-                  top: 263,
-                  child: _AddressBookAddButton(
-                    onPressed: onAddContact,
-                    minWidth: 256,
-                  ),
-                ),
-              ],
+    return SizedBox(
+      width: _kContactsContentWidth,
+      height: 286,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: 76,
+            top: -21,
+            child: Image.asset(
+              _addressBookEmptyContactsAsset(context),
+              width: 200,
+              height: 175,
+              fit: BoxFit.contain,
             ),
           ),
-        ),
+          Positioned(
+            left: 48,
+            top: 186,
+            child: SizedBox(
+              width: 256,
+              child: Column(
+                children: [
+                  Text(
+                    'No contacts yet',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.headlineSmall.copyWith(
+                      color: context.colors.text.accent,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    'Add your first contact to get started.',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: context.colors.text.secondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 48,
+            top: 263,
+            child: _AddressBookAddButton(
+              onPressed: onAddContact,
+              minWidth: 256,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1048,6 +1040,7 @@ class _EmptySearchResult extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
+      width: _kContactsContentWidth,
       height: 286,
       child: Stack(
         children: [
