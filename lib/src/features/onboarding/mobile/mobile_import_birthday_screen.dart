@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart'
-    show CupertinoDatePicker, CupertinoDatePickerMode;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,15 +13,17 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
+import '../import/import_birthday_calendar_overlay.dart'
+    show ImportBirthdayCalendarPanel;
 import '../import/import_birthday_estimator.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_onboarding_scaffold.dart';
 
-/// Mobile wallet-birthday step. No mobile Figma frame exists yet, so
-/// this adapts the desktop screen's two entry modes — wallet creation
-/// date (estimated to a height through the shared estimator) or a
-/// block height typed directly — into the onboarding card style.
+/// Mobile wallet-birthday step — Figma `Import — Calendar`
+/// (4575:112136): date-first selection through the shared desktop
+/// calendar panel in a sheet, with a typed block height as the
+/// secondary path for users who know it.
 class MobileImportBirthdayScreen extends ConsumerStatefulWidget {
   const MobileImportBirthdayScreen({
     required this.args,
@@ -103,41 +103,31 @@ class _MobileImportBirthdayScreenState
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
-    var candidate = _selectedDate ?? now.subtract(const Duration(days: 30));
-    await showAppMobileSheet<void>(
+    // Mainnet Sapling activation predates every wallet; a fallback only
+    // matters while the chain metadata is still loading.
+    final firstDate =
+        _metadata?.saplingActivationDate ?? DateTime(2018, 10, 28);
+    final lastDate = _metadata?.tipDate ?? now;
+    final initial = _selectedDate ?? lastDate;
+    final candidate = await showAppMobileSheet<DateTime>(
       context: context,
       builder: (sheetContext) => SafeArea(
         top: false,
-        child: SizedBox(
-          height: 320,
-          child: Column(
-            children: [
-              SizedBox(
-                height: 220,
-                child: CupertinoDatePicker(
-                  mode: CupertinoDatePickerMode.date,
-                  initialDateTime: candidate,
-                  minimumDate: _metadata?.saplingActivationDate,
-                  maximumDate: now,
-                  onDateTimeChanged: (value) => candidate = value,
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(AppSpacing.sm),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: AppButton(
-                    onPressed: () => Navigator.of(sheetContext).pop(),
-                    child: const Text('Use this date'),
-                  ),
-                ),
-              ),
-            ],
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          child: Center(
+            child: ImportBirthdayCalendarPanel(
+              initialMonth: initial,
+              selectedDate: _selectedDate,
+              firstDate: firstDate,
+              lastDate: lastDate,
+              onDateSelected: (date) => Navigator.of(sheetContext).pop(date),
+            ),
           ),
         ),
       ),
     );
-    if (!mounted) return;
+    if (candidate == null || !mounted) return;
     setState(() {
       _selectedDate = candidate;
       _estimating = true;
@@ -214,10 +204,10 @@ class _MobileImportBirthdayScreenState
     return MobileOnboardingStepScaffold(
       progress: 0.8,
       onBack: _submitting ? null : () => Navigator.of(context).maybePop(),
-      title: 'Wallet Birthday',
+      title: 'Around when did you create your wallet?',
       subtitle:
-          'When was this wallet created? Sync starts from there instead '
-          'of scanning the whole chain.',
+          'An estimate is enough — sync starts from there instead of '
+          'scanning the whole chain.',
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -244,6 +234,21 @@ class _MobileImportBirthdayScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          AppButton(
+            key: const ValueKey('mobile_import_birthday_date'),
+            onPressed: _estimating ? null : _pickDate,
+            child: Text(
+              _estimating
+                  ? 'Estimating height...'
+                  : _selectedDate == null
+                  ? 'Pick a date'
+                  : 'Created around '
+                        '${_selectedDate!.year}-'
+                        '${_selectedDate!.month.toString().padLeft(2, '0')}-'
+                        '${_selectedDate!.day.toString().padLeft(2, '0')}',
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
           Container(
             padding: const EdgeInsets.all(AppSpacing.sm),
             decoration: BoxDecoration(
@@ -254,7 +259,7 @@ class _MobileImportBirthdayScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Block height',
+                  'Or enter a block height',
                   style: AppTypography.labelMedium.copyWith(
                     color: colors.text.secondary,
                   ),
@@ -282,22 +287,6 @@ class _MobileImportBirthdayScreenState
                   ),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          AppButton(
-            key: const ValueKey('mobile_import_birthday_date'),
-            variant: AppButtonVariant.secondary,
-            onPressed: _estimating ? null : _pickDate,
-            child: Text(
-              _estimating
-                  ? 'Estimating height...'
-                  : _selectedDate == null
-                  ? 'Estimate from a date instead'
-                  : 'Estimated from '
-                        '${_selectedDate!.year}-'
-                        '${_selectedDate!.month.toString().padLeft(2, '0')}-'
-                        '${_selectedDate!.day.toString().padLeft(2, '0')}',
             ),
           ),
         ],

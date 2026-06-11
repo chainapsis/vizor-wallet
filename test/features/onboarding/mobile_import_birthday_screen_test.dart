@@ -9,6 +9,8 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_calendar_overlay.dart'
+    show ImportBirthdayCalendarPanel;
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_birthday_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 
@@ -73,5 +75,17 @@ void main() {
     );
     await tester.pump();
     expect(continueButton().onPressed, isNotNull);
+  });
+
+  testWidgets('pick a date opens the shared calendar panel in a sheet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_birthday_date')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ImportBirthdayCalendarPanel), findsOneWidget);
   });
 }
