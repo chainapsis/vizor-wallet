@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import 'mobile_import_screens.dart';
 import 'mobile_onboarding_scaffold.dart';
@@ -64,6 +65,29 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
   bool get _canReview =>
       kMnemonicWordCounts.contains(_accepted.length) &&
       _controller.text.trim().isEmpty;
+
+  /// "Continue to review" once accepting the typed word completes the
+  /// 24-word phrase, or once a valid shorter phrase sits accepted with
+  /// the field empty; otherwise the CTA accepts the next word.
+  bool get _primaryIsReview {
+    final raw = _controller.text.trim();
+    if (raw.isEmpty) return _canReview;
+    return _accepted.length + 1 == kMnemonicMaxWords;
+  }
+
+  bool get _primaryEnabled =>
+      _controller.text.trim().isNotEmpty || _canReview;
+
+  void _primaryAction() {
+    final raw = _controller.text.trim();
+    if (raw.isNotEmpty) {
+      // Accepting the 24th word auto-advances to review (see
+      // _acceptWord), so one tap covers both labels.
+      _onSubmitted(raw);
+      return;
+    }
+    if (_canReview) _review();
+  }
 
   void _acceptWord(String word) {
     setState(() {
@@ -138,12 +162,13 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
             ),
             const SizedBox(height: AppSpacing.xs),
           ],
-          if (_canReview)
-            AppButton(
-              key: const ValueKey('mobile_import_manual_review'),
-              onPressed: _review,
-              child: const Text('Review'),
-            ),
+          AppButton(
+            key: const ValueKey('mobile_import_manual_review'),
+            expand: true,
+            onPressed: _primaryEnabled ? _primaryAction : null,
+            trailing: const AppIcon(AppIcons.chevronForward),
+            child: Text(_primaryIsReview ? 'Continue to review' : 'Next word'),
+          ),
           if (_suggestions.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.xs),
             SizedBox(
@@ -246,9 +271,11 @@ class _WordField extends StatelessWidget {
               controller: controller,
               focusNode: focusNode,
               autofocus: true,
-              style: AppTypography.headlineMedium.copyWith(
+              // Large serif per the Figma word field ("Agent |").
+              style: AppTypography.displayLarge.copyWith(
                 color: colors.text.accent,
-                fontSize: 28,
+                fontSize: 34,
+                height: 1.2,
               ),
               cursorColor: colors.text.accent,
               backgroundCursorColor: colors.background.overlay,

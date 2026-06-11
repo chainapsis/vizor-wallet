@@ -36,7 +36,7 @@ class MobileImportReviewScreen extends StatelessWidget {
               extra: ImportBirthdayArgs(mnemonic: args.mnemonic),
             ),
             trailing: const AppIcon(AppIcons.chevronForward),
-            child: const Text('Continue'),
+            child: const Text('Confirm & import'),
           ),
           const SizedBox(height: AppSpacing.xs),
           Semantics(
