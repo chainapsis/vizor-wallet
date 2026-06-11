@@ -163,7 +163,7 @@ String _swapActivityStatusTitle(SwapIntent intent) {
     SwapIntentStatus.complete => 'Swap completed',
     SwapIntentStatus.incompleteDeposit => 'Incomplete deposit',
     SwapIntentStatus.failed || SwapIntentStatus.refunded => 'Swap failed',
-    _ => 'Swapping ...',
+    _ => 'Swap in progress...',
   };
 }
 

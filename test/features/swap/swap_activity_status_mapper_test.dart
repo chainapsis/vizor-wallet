@@ -26,7 +26,7 @@ void main() {
       ),
     );
 
-    expect(presentation.title, 'Swapping ...');
+    expect(presentation.title, 'Swap in progress...');
     expect(presentation.payAsset, SwapAsset.zec);
     expect(presentation.receiveAsset, SwapAsset.usdc);
     expect(presentation.payFiatText, r'$--');

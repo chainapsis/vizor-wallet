@@ -309,7 +309,7 @@ Widget buildSwapStatusProgressUseCase(BuildContext context) {
   return _SwapStatusPageFrame(
     backLabel: 'Activity',
     child: _SwapStatusPreview(
-      title: 'Swapping ...',
+      title: 'Swap in progress...',
       badgeKind: SwapStatusBadgeKind.liveQuote,
       activeTab: SwapStatusTab.progress,
       progressIndex: 0,
@@ -323,7 +323,7 @@ Widget buildSwapStatusProgressNextStepUseCase(BuildContext context) {
   return _SwapStatusPageFrame(
     backLabel: 'Activity',
     child: _SwapStatusPreview(
-      title: 'Swapping ...',
+      title: 'Swap in progress...',
       badgeKind: SwapStatusBadgeKind.liveQuote,
       activeTab: SwapStatusTab.progress,
       progressIndex: 1,
@@ -337,7 +337,7 @@ Widget buildSwapStatusLargeLeftAmountUseCase(BuildContext context) {
   return _SwapStatusPageFrame(
     backLabel: 'Activity',
     child: _SwapStatusPreview(
-      title: 'Swapping ...',
+      title: 'Swap in progress...',
       badgeKind: SwapStatusBadgeKind.liveQuote,
       activeTab: SwapStatusTab.progress,
       progressIndex: 0,
@@ -357,7 +357,7 @@ Widget buildSwapStatusLargeRightAmountUseCase(BuildContext context) {
   return _SwapStatusPageFrame(
     backLabel: 'Activity',
     child: _SwapStatusPreview(
-      title: 'Swapping ...',
+      title: 'Swap in progress...',
       badgeKind: SwapStatusBadgeKind.liveQuote,
       activeTab: SwapStatusTab.progress,
       progressIndex: 0,
@@ -377,7 +377,7 @@ Widget buildSwapStatusLargeAmountsUseCase(BuildContext context) {
   return _SwapStatusPageFrame(
     backLabel: 'Activity',
     child: _SwapStatusPreview(
-      title: 'Swapping ...',
+      title: 'Swap in progress...',
       badgeKind: SwapStatusBadgeKind.liveQuote,
       activeTab: SwapStatusTab.progress,
       progressIndex: 0,
@@ -1139,7 +1139,7 @@ class _SwapStatusDetailsPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _SwapStatusPreview(
-      title: 'Swapping ...',
+      title: 'Swap in progress...',
       badgeKind: SwapStatusBadgeKind.liveQuote,
       activeTab: SwapStatusTab.details,
       steps: _designProgressSteps,
