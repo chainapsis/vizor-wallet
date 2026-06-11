@@ -6,11 +6,11 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_button.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/sync_provider.dart';
+import 'forgot_passcode_sheet.dart';
 import 'mobile_passcode_screen.dart' show kMobilePasscodeLength;
 import 'passcode_widgets.dart';
 
@@ -95,24 +95,17 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
   Future<void> _showForgotPasscodeSheet() async {
     final confirmed = await showAppMobileSheet<bool>(
       context: context,
-      builder: (sheetContext) => const _ForgotPasscodeSheet(),
+      builder: (sheetContext) => const ForgotPasscodeSheet(),
     );
     if (confirmed != true || !mounted) return;
     await _resetWallet();
   }
 
-  /// Same reset sequence as the desktop lost-password flow: the only
-  /// recovery without the passcode is wiping the wallet and importing
-  /// again.
   Future<void> _resetWallet() async {
     setState(() => _submitting = true);
     final router = GoRouter.of(context);
-    final syncNotifier = ref.read(syncProvider.notifier);
-    final accountNotifier = ref.read(accountProvider.notifier);
     try {
-      await syncNotifier.clearSensitiveStateForLock();
-      await accountNotifier.resetWallet();
-      syncNotifier.clearCachedWalletDbPath();
+      await resetWalletForForgottenPasscode(ref);
     } catch (e, st) {
       log('MobileUnlockScreen._resetWallet: ERROR: $e\n$st');
       if (!mounted) return;
@@ -182,100 +175,6 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
               enabled: !_submitting,
             ),
             const SizedBox(height: AppSpacing.md),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Figma `Forgot Passcode` (4596:50252): the reset confirmation sheet.
-class _ForgotPasscodeSheet extends StatelessWidget {
-  const _ForgotPasscodeSheet();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Forgot Passcode?',
-                    style: AppTypography.headlineSmall.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ),
-                Semantics(
-                  button: true,
-                  label: 'Close',
-                  excludeSemantics: true,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Navigator.of(context).pop(false),
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: colors.background.raised,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          '✕',
-                          style: AppTypography.labelMedium.copyWith(
-                            color: colors.text.accent,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              "If you can't remember your passcode, the only way to "
-              'recover your account is to completely reset the Vizor app, '
-              'which means deleting all accounts and requiring you to '
-              'import accounts again.',
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.primary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppButton(
-              key: const ValueKey('mobile_forgot_passcode_reset'),
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Continue to reset Vizor'),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            Semantics(
-              button: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => Navigator.of(context).pop(false),
-                child: SizedBox(
-                  height: 44,
-                  child: Center(
-                    child: Text(
-                      'Cancel',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.primary,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
           ],
         ),
       ),

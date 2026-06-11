@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
@@ -9,6 +10,7 @@ import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
+import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_list_row.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
@@ -61,7 +63,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                       leading: _RowIcon(AppIcons.lock),
                       label: 'Password',
                       showChevron: true,
-                      enabled: false,
+                      onTap: () => _openChangePasscode(context),
                     ),
                     MobileListRow(
                       leading: _RowIcon(AppIcons.users),
@@ -125,6 +127,13 @@ class MobileSettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _openChangePasscode(BuildContext context) async {
+    final changed = await context.push<bool>('/settings/change-password');
+    if (changed == true && context.mounted) {
+      showAppToast(context, 'Passcode updated');
+    }
   }
 
   static String _themeLabel(ThemeMode mode) => switch (mode) {

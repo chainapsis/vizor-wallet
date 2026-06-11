@@ -7,6 +7,7 @@ import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
 import '../../features/send/screens/mobile/mobile_send_screen.dart';
+import '../../features/settings/screens/mobile/mobile_change_passcode_screen.dart';
 import '../../features/settings/screens/mobile/mobile_settings_screen.dart';
 import '../../features/swap/screens/mobile/mobile_swap_screen.dart';
 import '../layout/mobile/app_mobile_shell.dart';
@@ -60,6 +61,15 @@ List<RouteBase> buildMobileRoutes({
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: const MobileAccountsScreen(),
+      ),
+    ),
+    // Same path as the desktop change-password route so the shared
+    // redirect guard and deep links treat them identically.
+    GoRoute(
+      path: '/settings/change-password',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileChangePasscodeScreen(),
       ),
     ),
   ];
