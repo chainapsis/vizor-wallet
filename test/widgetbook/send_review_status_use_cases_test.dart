@@ -64,7 +64,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Send failed'), findsOneWidget);
-    expect(find.text('Failed, refunded minus tx fee'), findsOneWidget);
+    expect(find.text('Failed'), findsOneWidget);
     final card = tester.widget<ReviewWrapCard>(find.byType(ReviewWrapCard));
     expect(card.surfaceColor, Primitives.p50Dark);
     expect(find.byType(SendStatusContentView), findsOneWidget);
