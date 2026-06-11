@@ -144,6 +144,9 @@ void main() {
     await tester.tap(find.text('Edit contact'));
     await tester.pumpAndSettle();
 
+    // The label caption is now shown in edit mode too (was add-only before).
+    expect(find.text('Address label'), findsOneWidget);
+
     final labelFieldFinder = find.descendant(
       of: find.byKey(const ValueKey('address_book_contact_label_field')),
       matching: find.byType(TextField),
@@ -152,16 +155,21 @@ void main() {
 
     expect(labelField().controller?.text, 'Mike');
 
+    // In edit mode the primary action reads "Update".
+    final submitFinder = find.byKey(
+      const ValueKey('address_book_contact_submit_button'),
+    );
+    expect(
+      find.descendant(of: submitFinder, matching: find.text('Update')),
+      findsOneWidget,
+    );
+
     await tester.tap(find.bySemanticsLabel('Clear contact label'));
     await tester.pumpAndSettle();
 
     expect(labelField().controller?.text, isEmpty);
-    expect(
-      tester
-          .widget<AppButton>(find.widgetWithText(AppButton, 'Save changes'))
-          .onPressed,
-      isNull,
-    );
+    // An empty label is invalid, so the submit action is disabled.
+    expect(tester.widget<AppButton>(submitFinder).onPressed, isNull);
   });
 
   testWidgets('filters contacts into the empty search state', (tester) async {
@@ -179,7 +187,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('No contacts found'), findsOneWidget);
+    expect(find.text('No contacts were found'), findsOneWidget);
+    expect(find.text('Try to modify your search'), findsOneWidget);
     expect(find.text('Mike'), findsNothing);
   });
 
@@ -199,11 +208,17 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Change contact picture'));
     await tester.pumpAndSettle();
 
-    AppButton updateButton() {
-      return tester.widget<AppButton>(
-        find.widgetWithText(AppButton, 'Use this picture'),
-      );
-    }
+    // Picker is titled "Select contact picture" with an "Update" action.
+    expect(find.text('Select contact picture'), findsOneWidget);
+
+    final updateFinder = find.byKey(
+      const ValueKey('address_book_avatar_update_button'),
+    );
+    expect(
+      find.descendant(of: updateFinder, matching: find.text('Update')),
+      findsOneWidget,
+    );
+    AppButton updateButton() => tester.widget<AppButton>(updateFinder);
 
     expect(updateButton().onPressed, isNull);
 
@@ -297,6 +312,20 @@ void main() {
       find.byKey(const ValueKey('address_book_contact_menu_mike')),
     );
     await tester.pumpAndSettle();
+
+    // The redesigned context menu lists actions top-to-bottom as:
+    // Copy address, Send ZEC (Zcash only), Edit contact, Remove contact.
+    expect(
+      _menuItemOrder(tester, const [
+        'Copy address',
+        'Send ZEC',
+        'Edit contact',
+        'Remove contact',
+      ]),
+      isTrue,
+      reason: 'context menu items are out of order',
+    );
+
     await tester.tap(find.text('Send ZEC'));
     await tester.pumpAndSettle();
 
@@ -353,6 +382,20 @@ void main() {
     expect(find.text('Edit contact'), findsNothing);
     expect(find.text('Copy address'), findsNothing);
   });
+}
+
+/// Returns true when [labels] appear top-to-bottom in the given vertical
+/// order on screen. Each label must resolve to exactly one widget.
+bool _menuItemOrder(WidgetTester tester, List<String> labels) {
+  double? previousTop;
+  for (final label in labels) {
+    final finder = find.text(label);
+    if (finder.evaluate().length != 1) return false;
+    final top = tester.getTopLeft(finder).dy;
+    if (previousTop != null && top <= previousTop) return false;
+    previousTop = top;
+  }
+  return true;
 }
 
 Widget _addressBookHarness(

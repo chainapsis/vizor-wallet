@@ -12,8 +12,8 @@ import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_back_link.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_context_menu.dart';
-import '../src/core/widgets/app_decorative_divider.dart';
 import '../src/core/widgets/app_icon.dart';
+import '../src/core/widgets/app_modal_card.dart';
 import '../src/core/widgets/app_pane_modal_overlay.dart';
 import '../src/core/widgets/app_profile_picture.dart';
 import '../src/core/widgets/app_text_field.dart';
@@ -265,38 +265,43 @@ class _AddressBookPane extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox.expand(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Stack(
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: AppBackLink(label: 'Back', minWidth: 60, onTap: () {}),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-              child: Column(
-                children: [
-                  Text(
-                    'Address book',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.headlineLarge.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  const AppDecorativeDivider(width: 256),
-                  const SizedBox(height: AppSpacing.md),
-                  Expanded(child: _AddressBookContent(state: contentState)),
-                  if (_showBottomAction) ...[
-                    const SizedBox(height: AppSpacing.sm),
-                    const _AddressBookAddButton(),
-                  ],
-                ],
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: AppBackLink(label: 'Back', minWidth: 60, onTap: () {}),
               ),
-            ),
+              const SizedBox(height: AppSpacing.s),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Contacts',
+                        textAlign: TextAlign.center,
+                        style: AppTypography.headlineLarge.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Expanded(child: _AddressBookContent(state: contentState)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
+          if (_showBottomAction)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: AppSpacing.md,
+              child: Center(child: _FloatingAddContactButton(onPressed: () {})),
+            ),
         ],
       ),
     );
@@ -339,7 +344,7 @@ class _AddressBookContactsList extends StatelessWidget {
             const SizedBox(height: AppSpacing.base),
             Expanded(
               child: ListView(
-                padding: EdgeInsets.zero,
+                padding: const EdgeInsets.only(bottom: AppSpacing.lg),
                 children: [
                   _ContactGroup(
                     network: _AddressBookNetwork.zcash,
@@ -546,10 +551,10 @@ class _AddressBookNoContacts extends StatelessWidget {
                     ),
                   ),
                 ),
-                const Positioned(
+                Positioned(
                   left: 48,
                   top: 263,
-                  child: _AddressBookAddButton(),
+                  child: _AddressBookAddButton(onPressed: () {}, minWidth: 256),
                 ),
               ],
             ),
@@ -594,7 +599,7 @@ class _AddressBookSearchField extends StatelessWidget {
       label: 'Search',
       showLabel: false,
       initialValue: value,
-      hintText: 'Search for an address or label ...',
+      hintText: 'Search for label or network',
       autofocus: autofocus,
       leading: const AppIcon(AppIcons.search),
       leadingSlotWidth: 40,
@@ -617,22 +622,31 @@ class _ContactGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final contacts = [
       for (final contact in _addressBookContacts)
         if (contact.network == network) contact,
     ];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _ContactGroupLabel(network: network),
-        const SizedBox(height: AppSpacing.xs),
-        for (final contact in contacts)
-          _ContactRow(
-            contact: contact,
-            initialMenuOpen: initialOpenContactName == contact.name,
-          ),
-      ],
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: colors.background.base,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: appSurfaceShadow(colors),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ContactGroupLabel(network: network),
+          const SizedBox(height: AppSpacing.xs),
+          for (final contact in contacts)
+            _ContactRow(
+              contact: contact,
+              initialMenuOpen: initialOpenContactName == contact.name,
+            ),
+        ],
+      ),
     );
   }
 }
@@ -676,47 +690,44 @@ class _ContactRow extends StatelessWidget {
     final colors = context.colors;
     return SizedBox(
       height: 44,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-        child: Row(
-          children: [
-            AppProfilePicture(
-              profilePictureId: contact.profilePictureId,
-              size: AppProfilePictureSize.large,
-            ),
-            const SizedBox(width: AppSpacing.xs),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    contact.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.accent,
-                    ),
+      child: Row(
+        children: [
+          AppProfilePicture(
+            profilePictureId: contact.profilePictureId,
+            size: AppProfilePictureSize.large,
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  contact.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    contact.addressPreview,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: colors.text.secondary,
-                    ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  contact.addressPreview,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.text.secondary,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(width: AppSpacing.xs),
-            _WidgetbookContactMenuButton(
-              contact: contact,
-              initialOpen: initialMenuOpen,
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          _WidgetbookContactMenuButton(
+            contact: contact,
+            initialOpen: initialMenuOpen,
+          ),
+        ],
       ),
     );
   }
@@ -735,8 +746,8 @@ class _ContactContextMenu extends StatelessWidget {
     return AppContextMenu(
       children: [
         AppContextMenuItem(
-          iconName: AppIcons.scroll,
-          label: 'Edit contact',
+          iconName: AppIcons.copy,
+          label: 'Copy address',
           onTap: onAction,
         ),
         if (_canSend) ...[
@@ -749,8 +760,8 @@ class _ContactContextMenu extends StatelessWidget {
         ],
         const SizedBox(height: AppSpacing.xxs),
         AppContextMenuItem(
-          iconName: AppIcons.copy,
-          label: 'Copy address',
+          iconName: AppIcons.scroll,
+          label: 'Edit contact',
           onTap: onAction,
         ),
         const AppContextMenuDivider(),
@@ -766,16 +777,37 @@ class _ContactContextMenu extends StatelessWidget {
 }
 
 class _AddressBookAddButton extends StatelessWidget {
-  const _AddressBookAddButton();
+  const _AddressBookAddButton({required this.onPressed, this.minWidth});
+
+  final VoidCallback onPressed;
+  final double? minWidth;
 
   @override
   Widget build(BuildContext context) {
     return AppButton(
-      onPressed: () {},
+      key: const ValueKey('address_book_add_contact_button'),
+      onPressed: onPressed,
       variant: AppButtonVariant.secondary,
-      minWidth: 256,
-      leading: const AppIcon(AppIcons.users),
+      minWidth: minWidth,
+      leading: const AppIcon(AppIcons.addNew),
       child: const Text('Add contact'),
+    );
+  }
+}
+
+class _FloatingAddContactButton extends StatelessWidget {
+  const _FloatingAddContactButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadii.full),
+        boxShadow: appModalShadow,
+      ),
+      child: _AddressBookAddButton(onPressed: onPressed),
     );
   }
 }
@@ -807,7 +839,7 @@ class _EmptySearchResult extends StatelessWidget {
               child: Column(
                 children: [
                   Text(
-                    'No contacts found',
+                    'No contacts were found',
                     textAlign: TextAlign.center,
                     style: AppTypography.headlineSmall.copyWith(
                       color: context.colors.text.accent,
@@ -815,7 +847,7 @@ class _EmptySearchResult extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xxs),
                   Text(
-                    'Try a different search',
+                    'Try to modify your search',
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: context.colors.text.secondary,
@@ -865,20 +897,20 @@ class _ContactFormModal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _AddressBookModalCard(
-      header: _EditableContactAvatar(
-        profilePictureId: _isEdit ? 'pfp-08' : kDefaultProfilePictureId,
-      ),
+    return AppModalCard(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          _EditableContactAvatar(
+            profilePictureId: _isEdit ? 'pfp-08' : kDefaultProfilePictureId,
+          ),
+          const SizedBox(height: AppSpacing.md),
           SizedBox(
-            height: _isEdit ? 66 : 86,
+            height: 86,
             child: AppTextField(
-              label: 'Label',
-              showLabel: !_isEdit,
+              label: 'Address label',
               initialValue: _isEdit ? 'Mike' : null,
-              hintText: 'Add a label (1-20 characters)',
+              hintText: 'Add label 1-20 characters',
               trailing: _isEdit ? const AppIcon(AppIcons.cross) : null,
               trailingSlotWidth: 40,
               inputHorizontalPadding: AppSpacing.s,
@@ -900,18 +932,12 @@ class _ContactFormModal extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          AppButton(
-            onPressed: _isEdit ? () {} : null,
-            variant: AppButtonVariant.primary,
-            minWidth: 280,
-            child: Text(_isEdit ? 'Save changes' : 'Add contact'),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          AppButton(
-            onPressed: () {},
-            variant: AppButtonVariant.ghost,
-            minWidth: 280,
-            child: const Text('Cancel'),
+          AppModalActions(
+            cancelKey: const ValueKey('address_book_modal_cancel_button'),
+            actionKey: const ValueKey('address_book_contact_submit_button'),
+            onCancel: () {},
+            actionLabel: _isEdit ? 'Update' : 'Add contact',
+            onAction: _isEdit ? () {} : null,
           ),
         ],
       ),
@@ -1023,9 +1049,8 @@ class _ContactAvatarPickerModal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _AddressBookModalCard(
-      gap: AppSpacing.sm,
-      header: Column(
+    return AppModalCard(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           const AppProfilePicture(
@@ -1034,18 +1059,14 @@ class _ContactAvatarPickerModal extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'New contact',
+            'Select contact picture',
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyLarge.copyWith(
               color: context.colors.text.accent,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
             ),
           ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+          const SizedBox(height: AppSpacing.sm),
           SizedBox(
             width: 184,
             child: Padding(
@@ -1065,19 +1086,13 @@ class _ContactAvatarPickerModal extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          const AppButton(
-            onPressed: null,
-            variant: AppButtonVariant.primary,
-            minWidth: 280,
-            child: Text('Use this picture'),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          AppButton(
-            onPressed: () {},
-            variant: AppButtonVariant.ghost,
-            minWidth: 280,
-            child: const Text('Cancel'),
+          const SizedBox(height: AppSpacing.md),
+          AppModalActions(
+            cancelKey: const ValueKey('address_book_avatar_cancel_button'),
+            actionKey: const ValueKey('address_book_avatar_update_button'),
+            onCancel: () {},
+            actionLabel: 'Update',
+            onAction: null,
           ),
         ],
       ),
@@ -1175,78 +1190,58 @@ class _NetworkSelectorModal extends StatelessWidget {
         if (query.isEmpty || option.label.toLowerCase().contains(query)) option,
     ];
 
-    return _AddressBookModalCard(
-      gap: AppSpacing.xs,
-      header: Row(
+    return AppModalCard(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: context.colors.background.base,
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: AppIcon(
-                AppIcons.link,
-                size: AppIconSize.medium,
-                color: context.colors.icon.regular,
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Select network',
+              style: AppTypography.bodyLarge.copyWith(
+                color: context.colors.text.accent,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          const SizedBox(width: AppSpacing.xs),
-          Text(
-            'Select network',
-            style: AppTypography.bodyLarge.copyWith(
-              color: context.colors.text.accent,
-              fontWeight: FontWeight.w500,
-            ),
+          const SizedBox(height: AppSpacing.sm),
+          AppTextField(
+            key: const ValueKey('address_book_network_search_field'),
+            label: 'Search',
+            showLabel: false,
+            initialValue: initialQuery,
+            autofocus: true,
+            leading: const AppIcon(AppIcons.search),
+            leadingSlotWidth: 40,
+            trailingSlotWidth: 40,
+            inputHorizontalPadding: AppSpacing.xs,
+            showClearButton: true,
+            clearButtonRequiresText: false,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          SizedBox(
+            height: 230,
+            child: options.isEmpty
+                ? const _NetworkSelectorEmptyResult()
+                : ListView(
+                    padding: EdgeInsets.zero,
+                    children: [
+                      for (var index = 0; index < options.length; index += 1)
+                        _NetworkSelectorRow(
+                          option: options[index],
+                          selected: index == 0,
+                        ),
+                    ],
+                  ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          AppButton(
+            onPressed: () {},
+            variant: AppButtonVariant.ghost,
+            minWidth: 280,
+            child: const Text('Cancel'),
           ),
         ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.only(top: AppSpacing.xs),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppTextField(
-              key: const ValueKey('address_book_network_search_field'),
-              label: 'Search',
-              showLabel: false,
-              initialValue: initialQuery,
-              autofocus: true,
-              leading: const AppIcon(AppIcons.search),
-              leadingSlotWidth: 40,
-              trailingSlotWidth: 40,
-              inputHorizontalPadding: AppSpacing.xs,
-              showClearButton: true,
-              clearButtonRequiresText: false,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            SizedBox(
-              height: 230,
-              child: options.isEmpty
-                  ? const _NetworkSelectorEmptyResult()
-                  : ListView(
-                      padding: EdgeInsets.zero,
-                      children: [
-                        for (var index = 0; index < options.length; index += 1)
-                          _NetworkSelectorRow(
-                            option: options[index],
-                            selected: index == 0,
-                          ),
-                      ],
-                    ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            AppButton(
-              onPressed: () {},
-              variant: AppButtonVariant.ghost,
-              minWidth: 280,
-              child: const Text('Cancel'),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1326,8 +1321,8 @@ class _RemoveContactModal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _AddressBookModalCard(
-      header: Column(
+    return AppModalCard(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           const AppProfilePicture(
@@ -1340,72 +1335,24 @@ class _RemoveContactModal extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyLarge.copyWith(
               color: context.colors.text.accent,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
             ),
           ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+          const SizedBox(height: AppSpacing.sm),
           Text(
-            'Mike will be removed from your address book.',
+            'Mike will be removed from your contacts.',
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.secondary,
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          AppButton(
-            onPressed: () {},
-            variant: AppButtonVariant.destructive,
-            minWidth: 280,
-            child: const Text('Remove contact'),
+          AppModalActions(
+            onCancel: () {},
+            actionLabel: 'Remove contact',
+            actionVariant: AppButtonVariant.destructive,
+            onAction: () {},
           ),
-          const SizedBox(height: AppSpacing.s),
-          AppButton(
-            onPressed: () {},
-            variant: AppButtonVariant.ghost,
-            minWidth: 280,
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AddressBookModalCard extends StatelessWidget {
-  const _AddressBookModalCard({
-    required this.header,
-    required this.child,
-    this.gap = AppSpacing.md,
-  });
-
-  final Widget header;
-  final Widget child;
-  final double gap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 312,
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.md,
-        AppSpacing.sm,
-        AppSpacing.sm,
-      ),
-      decoration: BoxDecoration(
-        color: context.colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          header,
-          SizedBox(height: gap),
-          child,
         ],
       ),
     );
