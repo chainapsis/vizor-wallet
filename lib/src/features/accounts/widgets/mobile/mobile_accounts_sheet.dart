@@ -129,10 +129,14 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
               alignment: Alignment.centerRight,
               child: _CloseButton(onTap: () => Navigator.of(context).pop()),
             ),
-            AppProfilePicture(
-              profilePictureId:
-                  active?.profilePictureId ?? kDefaultProfilePictureId,
-              size: AppProfilePictureSize.xxLarge,
+            // Centered so the stretch column can't blow the circle up
+            // to full width; 56 px per the Figma accounts modal.
+            Center(
+              child: AppProfilePicture(
+                profilePictureId:
+                    active?.profilePictureId ?? kDefaultProfilePictureId,
+                size: AppProfilePictureSize.xLarge,
+              ),
             ),
             const SizedBox(height: AppSpacing.s),
             Text(

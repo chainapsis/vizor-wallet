@@ -175,6 +175,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                               paddingX: AppSpacing.sm,
                               paddingY: AppSpacing.sm,
                               type: _selectedType,
+                              badgeSize: 56,
                             ),
                             if (_isShielded)
                               Positioned(

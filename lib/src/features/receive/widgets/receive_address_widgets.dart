@@ -167,6 +167,7 @@ class ReceiveQrSurface extends StatelessWidget {
     required this.paddingX,
     required this.paddingY,
     required this.type,
+    this.badgeSize = 48,
     super.key,
   });
 
@@ -177,6 +178,10 @@ class ReceiveQrSurface extends StatelessWidget {
   final double paddingX;
   final double paddingY;
   final ReceiveAddressType type;
+
+  /// Diameter of the embedded pool badge — 48 on desktop, 56 in the
+  /// mobile receive frame.
+  final double badgeSize;
 
   @override
   Widget build(BuildContext context) {
@@ -214,7 +219,7 @@ class ReceiveQrSurface extends StatelessWidget {
               color: qrColor,
               size: size,
               embeddedImageAsset: embeddedImageAsset,
-              embeddedImageScale: 48 / size,
+              embeddedImageScale: badgeSize / size,
             )
           : Center(
               child: Text(

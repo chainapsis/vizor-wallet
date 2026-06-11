@@ -610,7 +610,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                         width: 40,
                         height: 40,
                         decoration: BoxDecoration(
-                          color: colors.background.ground,
+                          // Same subtle disc as the activity rows — a
+                          // white disc disappears on the window bg.
+                          color: colors.background.neutralSubtleOpacity,
                           shape: BoxShape.circle,
                         ),
                         child: Center(
@@ -739,8 +741,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       children: [
         Expanded(
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            // The Figma amount step keeps the amount near the top
+            // (~90 below the nav), not vertically centered.
+            mainAxisAlignment: MainAxisAlignment.start,
             children: [
+              const SizedBox(height: 90),
               if (showError)
                 Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.xs),

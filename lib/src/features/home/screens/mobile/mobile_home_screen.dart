@@ -313,16 +313,18 @@ class _PrivacyEyeButton extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
-          width: 32,
-          height: 32,
+          // 40 px disc, a step lighter than the card (#393C3C on
+          // #2E3232), per the Figma privacy toggle.
+          width: 40,
+          height: 40,
           decoration: BoxDecoration(
-            color: const Color(0xFFFFFFFF).withValues(alpha: 0.05),
+            color: const Color(0xFFFFFFFF).withValues(alpha: 0.06),
             shape: BoxShape.circle,
           ),
           child: Center(
             child: AppIcon(
               AppIcons.eye,
-              size: 16,
+              size: 18,
               color: context.colors.text.homeCard,
             ),
           ),

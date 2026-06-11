@@ -262,6 +262,12 @@ class _ProfilePictureSheetState extends State<_ProfilePictureSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Align(
+              alignment: Alignment.topRight,
+              child: MobileSheetClose(
+                onTap: () => Navigator.of(context).pop(),
+              ),
+            ),
             Center(
               child: AppProfilePicture(
                 profilePictureId: _selected,
@@ -277,10 +283,11 @@ class _ProfilePictureSheetState extends State<_ProfilePictureSheet> {
               ),
             ),
             const SizedBox(height: AppSpacing.md),
+            // 5-up grid of 56 px portraits per the Figma PFP modal.
             Wrap(
               alignment: WrapAlignment.center,
-              spacing: AppSpacing.s,
-              runSpacing: AppSpacing.s,
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
               children: [
                 for (final option in kProfilePictureOptions)
                   Semantics(
@@ -296,15 +303,15 @@ class _ProfilePictureSheetState extends State<_ProfilePictureSheet> {
                         children: [
                           AppProfilePicture(
                             profilePictureId: option.id,
-                            size: AppProfilePictureSize.large,
+                            size: AppProfilePictureSize.xLarge,
                           ),
                           if (option.id == _selected)
                             Positioned(
                               left: -2,
                               bottom: -2,
                               child: Container(
-                                width: 18,
-                                height: 18,
+                                width: 22,
+                                height: 22,
                                 decoration: BoxDecoration(
                                   color: colors.background.homeCard,
                                   shape: BoxShape.circle,
@@ -312,7 +319,7 @@ class _ProfilePictureSheetState extends State<_ProfilePictureSheet> {
                                 child: Center(
                                   child: AppIcon(
                                     AppIcons.check,
-                                    size: 12,
+                                    size: 14,
                                     color: colors.text.homeCard,
                                   ),
                                 ),
