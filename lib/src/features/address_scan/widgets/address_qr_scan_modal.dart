@@ -378,7 +378,7 @@ class _AddressQrScanTitle extends StatelessWidget {
       children: [
         Expanded(
           child: Text(
-            'Scan the address QR Code',
+            'Scan the address QR code',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyLarge.copyWith(
