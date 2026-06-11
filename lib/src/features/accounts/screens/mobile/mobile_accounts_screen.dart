@@ -8,10 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
-import '../../../../core/account_name_policy.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
-import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -23,6 +21,7 @@ import '../../../../providers/account_provider.dart';
 import '../../../../providers/receive_address_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/wallet_mutation_guard.dart';
+import '../../widgets/mobile/account_edit_sheets.dart';
 
 /// Mobile account management — Figma `Accounts` / `Accounts Edits` /
 /// `Remove` / `PFP Modal` (4514:53389 / 4514:84873 / 4514:85954 /
@@ -247,35 +246,20 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
   }
 
   Future<void> _showEditSheet(AccountInfo account) async {
-    final result = await showAppMobileSheet<_AccountEdits>(
-      context: context,
-      builder: (_) => _EditAccountSheet(account: account),
-    );
+    final result = await showAccountEditSheet(context, account: account);
     if (result == null || !mounted) return;
 
     setState(() => _busy = true);
-    final accountNotifier = ref.read(accountProvider.notifier);
-    try {
-      if (result.name != null) {
-        await accountNotifier.renameAccount(account.uuid, result.name!);
-      }
-      if (result.profilePictureId != null) {
-        await accountNotifier.updateProfilePicture(
-          account.uuid,
-          result.profilePictureId!,
-        );
-      }
-    } catch (e, st) {
-      log('MobileAccounts: edit failed: $e\n$st');
-      if (mounted) {
+    final saved = await applyAccountEdits(ref, account, result);
+    if (mounted) {
+      if (!saved) {
         showAppToast(
           context,
           "Couldn't save the account changes",
           iconName: AppIcons.cross,
         );
       }
-    } finally {
-      if (mounted) setState(() => _busy = false);
+      setState(() => _busy = false);
     }
   }
 
@@ -404,13 +388,6 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
 
 enum _AccountAction { copy, send, edit, remove }
 
-class _AccountEdits {
-  const _AccountEdits({this.name, this.profilePictureId});
-
-  final String? name;
-  final String? profilePictureId;
-}
-
 class _AccountsGroupCard extends StatelessWidget {
   const _AccountsGroupCard({required this.title, required this.children});
 
@@ -444,276 +421,6 @@ class _AccountsGroupCard extends StatelessWidget {
 
 /// Figma `Accounts Edits` (4514:84873): avatar with the pencil overlay
 /// opening the picture picker, the name field, and Save Edits.
-class _EditAccountSheet extends StatefulWidget {
-  const _EditAccountSheet({required this.account});
-
-  final AccountInfo account;
-
-  @override
-  State<_EditAccountSheet> createState() => _EditAccountSheetState();
-}
-
-class _EditAccountSheetState extends State<_EditAccountSheet> {
-  late final TextEditingController _nameController = TextEditingController(
-    text: widget.account.name,
-  );
-  final _nameFocusNode = FocusNode();
-  late String _profilePictureId = widget.account.profilePictureId;
-  String? _error;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _nameFocusNode.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickPicture() async {
-    final picked = await showAppMobileSheet<String>(
-      context: context,
-      builder: (_) => _ProfilePictureSheet(selectedId: _profilePictureId),
-    );
-    if (picked != null && mounted) {
-      setState(() => _profilePictureId = picked);
-    }
-  }
-
-  void _save() {
-    final name = normalizeAccountName(_nameController.text);
-    try {
-      validateAccountName(name);
-    } catch (e) {
-      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
-      return;
-    }
-    Navigator.of(context).pop(
-      _AccountEdits(
-        name: name == widget.account.name ? null : name,
-        profilePictureId: _profilePictureId == widget.account.profilePictureId
-            ? null
-            : _profilePictureId,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.md + MediaQuery.viewInsetsOf(context).bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: _SheetClose(onTap: () => Navigator.of(context).pop()),
-            ),
-            Center(
-              child: Semantics(
-                button: true,
-                label: 'Change profile picture',
-                excludeSemantics: true,
-                child: GestureDetector(
-                  key: const ValueKey('mobile_account_edit_avatar'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _pickPicture,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      AppProfilePicture(
-                        profilePictureId: _profilePictureId,
-                        size: AppProfilePictureSize.xLarge,
-                      ),
-                      Positioned(
-                        right: -4,
-                        bottom: -4,
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: colors.background.homeCard,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: AppIcon(
-                              AppIcons.edit,
-                              size: AppIconSize.medium,
-                              color: colors.text.homeCard,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              'Account name',
-              style: AppTypography.labelMedium.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.sm,
-                vertical: AppSpacing.s,
-              ),
-              decoration: BoxDecoration(
-                color: colors.background.ground,
-                borderRadius: BorderRadius.circular(AppRadii.medium),
-                border: Border.all(color: colors.border.subtle),
-              ),
-              child: EditableText(
-                key: const ValueKey('mobile_account_edit_name'),
-                controller: _nameController,
-                focusNode: _nameFocusNode,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.accent,
-                ),
-                cursorColor: colors.text.accent,
-                backgroundCursorColor: colors.background.overlay,
-              ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                _error!,
-                style: AppTypography.bodySmall.copyWith(
-                  color: colors.text.destructive,
-                ),
-              ),
-            ],
-            const SizedBox(height: AppSpacing.md),
-            AppButton(
-              key: const ValueKey('mobile_account_edit_save'),
-              expand: true,
-              onPressed: _save,
-              child: const Text('Save edits'),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            _SheetCancel(onTap: () => Navigator.of(context).pop()),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Figma `PFP Modal` (4514:85279): the avatar grid with the selection
-/// check and the update action.
-class _ProfilePictureSheet extends StatefulWidget {
-  const _ProfilePictureSheet({required this.selectedId});
-
-  final String selectedId;
-
-  @override
-  State<_ProfilePictureSheet> createState() => _ProfilePictureSheetState();
-}
-
-class _ProfilePictureSheetState extends State<_ProfilePictureSheet> {
-  late String _selected = widget.selectedId;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: AppProfilePicture(
-                profilePictureId: _selected,
-                size: AppProfilePictureSize.xLarge,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              'Select profile picture',
-              textAlign: TextAlign.center,
-              style: AppTypography.headlineSmall.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: AppSpacing.s,
-              runSpacing: AppSpacing.s,
-              children: [
-                for (final option in kProfilePictureOptions)
-                  Semantics(
-                    button: true,
-                    label: option.label,
-                    selected: option.id == _selected,
-                    excludeSemantics: true,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => setState(() => _selected = option.id),
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          AppProfilePicture(
-                            profilePictureId: option.id,
-                            size: AppProfilePictureSize.large,
-                          ),
-                          if (option.id == _selected)
-                            Positioned(
-                              left: -2,
-                              bottom: -2,
-                              child: Container(
-                                width: 18,
-                                height: 18,
-                                decoration: BoxDecoration(
-                                  color: colors.background.homeCard,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child: AppIcon(
-                                    AppIcons.check,
-                                    size: 12,
-                                    color: colors.text.homeCard,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppButton(
-              key: const ValueKey('mobile_account_pfp_update'),
-              expand: true,
-              onPressed: () => Navigator.of(context).pop(_selected),
-              child: const Text('Update picture'),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            _SheetCancel(onTap: () => Navigator.of(context).pop()),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Figma `Remove` (4514:85954): destructive confirmation.
 class _RemoveAccountSheet extends StatelessWidget {
   const _RemoveAccountSheet({required this.account});
 
@@ -745,7 +452,7 @@ class _RemoveAccountSheet extends StatelessWidget {
                     ),
                   ),
                 ),
-                _SheetClose(onTap: () => Navigator.of(context).pop(false)),
+                MobileSheetClose(onTap: () => Navigator.of(context).pop(false)),
               ],
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -766,7 +473,7 @@ class _RemoveAccountSheet extends StatelessWidget {
               child: const Text('Remove'),
             ),
             const SizedBox(height: AppSpacing.s),
-            _SheetCancel(onTap: () => Navigator.of(context).pop(false)),
+            MobileSheetCancel(onTap: () => Navigator.of(context).pop(false)),
           ],
         ),
       ),
@@ -775,64 +482,3 @@ class _RemoveAccountSheet extends StatelessWidget {
 }
 
 /// Circled X dismiss control in the sheet's top-right corner.
-class _SheetClose extends StatelessWidget {
-  const _SheetClose({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      label: 'Close',
-      button: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: colors.background.raised,
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: AppIcon(
-              AppIcons.cross,
-              size: AppIconSize.medium,
-              color: colors.icon.accent,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SheetCancel extends StatelessWidget {
-  const _SheetCancel({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          height: 44,
-          child: Center(
-            child: Text(
-              'Cancel',
-              style: AppTypography.labelLarge.copyWith(
-                color: context.colors.text.primary,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
