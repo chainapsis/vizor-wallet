@@ -25,12 +25,27 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
+  testWidgets('help opens the forgot-passcode reset sheet', (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    await tester.tap(find.bySemanticsLabel('Passcode help'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Forgot Passcode?'), findsOneWidget);
+    expect(find.text('Continue to reset Vizor'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Forgot Passcode?'), findsNothing);
+  });
+
   testWidgets('renders the numpad and fills dots while typing', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pump();
 
-    expect(find.text('Enter Passcode'), findsOneWidget);
-    expect(find.text('Forgot passcode?'), findsOneWidget);
+    expect(find.text('Welcome Back'), findsOneWidget);
+    expect(find.bySemanticsLabel('Passcode help'), findsOneWidget);
 
     await tester.tap(find.bySemanticsLabel('Digit 1'));
     await tester.pump();
@@ -44,5 +59,10 @@ void main() {
     await tester.pump();
     final after = tester.widget<PasscodeDots>(find.byType(PasscodeDots));
     expect(after.filled, 1);
+
+    // Delete hides again once the entry is cleared.
+    await tester.tap(find.bySemanticsLabel('Delete digit'));
+    await tester.pump();
+    expect(find.bySemanticsLabel('Delete digit'), findsNothing);
   });
 }
