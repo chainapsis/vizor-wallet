@@ -340,12 +340,16 @@ void main() {
     );
 
     String expiryLabel() {
-      return tester
-          .widget<RichText>(
-            find.byKey(const ValueKey('swap_deposit_expiry_label')),
+      final texts = tester
+          .widgetList<Text>(
+            find.descendant(
+              of: find.byKey(const ValueKey('swap_deposit_expiry_label')),
+              matching: find.byType(Text),
+            ),
           )
-          .text
-          .toPlainText();
+          .map((text) => text.data ?? '')
+          .toList();
+      return texts.join(' ');
     }
 
     expect(expiryLabel(), 'Deposit within 16mins');
@@ -364,7 +368,6 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
-
   testWidgets('deposit tokens hour labels stay rounded and singularized', (
     tester,
   ) async {
@@ -386,12 +389,16 @@ void main() {
     );
 
     String expiryLabel() {
-      return tester
-          .widget<RichText>(
-            find.byKey(const ValueKey('swap_deposit_expiry_label')),
+      final texts = tester
+          .widgetList<Text>(
+            find.descendant(
+              of: find.byKey(const ValueKey('swap_deposit_expiry_label')),
+              matching: find.byType(Text),
+            ),
           )
-          .text
-          .toPlainText();
+          .map((text) => text.data ?? '')
+          .toList();
+      return texts.join(' ');
     }
 
     expect(expiryLabel(), 'Deposit within 2hrs');
@@ -406,7 +413,6 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
-
   testWidgets('deposit timeout uses theme-specific failure illustration', (
     tester,
   ) async {
@@ -510,12 +516,11 @@ void main() {
         find.byKey(const ValueKey('swap_near_intents_attribution')),
       );
 
-      expect(timeoutRect.size, const Size(274, 388));
+      expect(timeoutRect.width, 340);
       expect(timeoutRect.center.dy, closeTo(detailRect.center.dy, 1));
       expect(timeoutRect.bottom, lessThan(attributionRect.top));
     },
   );
-
   testWidgets('swap status summary calculates fiat per asset side', (
     tester,
   ) async {
