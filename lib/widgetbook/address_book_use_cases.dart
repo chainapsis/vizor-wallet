@@ -1443,7 +1443,7 @@ class _AddressBookSidebar extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   const AppSidebarItem(
-                    label: 'Address book',
+                    label: 'Contacts',
                     iconName: AppIcons.users,
                     active: true,
                   ),

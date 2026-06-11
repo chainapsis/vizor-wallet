@@ -176,7 +176,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         // otherwise the chosen label/avatar would vanish with no feedback.
         final toastContext = _toastOverlayContextKey.currentContext;
         if (toastContext != null && toastContext.mounted) {
-          showAppToast(toastContext, 'Already in your address book');
+          showAppToast(toastContext, 'Already in your contacts');
         }
         return;
       }

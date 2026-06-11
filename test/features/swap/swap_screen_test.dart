@@ -1321,7 +1321,7 @@ void main() {
       find.byKey(const ValueKey('sidebar_swap_button')),
     );
 
-    expect(find.text('Scan the address QR Code'), findsOneWidget);
+    expect(find.text('Scan the address QR code'), findsOneWidget);
     expect(find.byKey(const ValueKey('swap_address_modal')), findsNothing);
     final paneRect = tester.getRect(find.byType(AppDesktopPane));
     expect((modalRect.center.dx - paneRect.center.dx).abs(), lessThan(1));
@@ -1825,7 +1825,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Already in your address book'), findsOneWidget);
+    expect(find.text('Already in your contacts'), findsOneWidget);
     // No duplicate created — still just the seeded contact.
     expect(addressBookRepository.contacts, hasLength(1));
 

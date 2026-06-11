@@ -372,7 +372,7 @@ class _SettingsList extends StatelessWidget {
             ),
             _SettingsRow(
               iconName: AppIcons.users,
-              label: 'Address book',
+              label: 'Contacts',
               onTap: onAddressBook,
             ),
           ],
