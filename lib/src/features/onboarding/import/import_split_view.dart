@@ -175,6 +175,10 @@ class _SidebarIllustration extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final asset = switch (activeStep) {
+      ImportOnboardingStep.secretPassphrase =>
+        isDark
+            ? 'assets/illustrations/onboarding_import_secret_passphrase_sidebar_dark.png'
+            : 'assets/illustrations/onboarding_import_secret_passphrase_sidebar_light.png',
       ImportOnboardingStep.walletBirthdayHeight =>
         isDark
             ? 'assets/illustrations/onboarding_wallet_birthday_sidebar_dark.png'
@@ -183,10 +187,6 @@ class _SidebarIllustration extends StatelessWidget {
         isDark
             ? 'assets/illustrations/onboarding_set_password_sidebar_dark.png'
             : 'assets/illustrations/onboarding_set_password_sidebar_light.png',
-      _ =>
-        isDark
-            ? 'assets/illustrations/onboarding_intro_sidebar_dark.png'
-            : 'assets/illustrations/onboarding_intro_sidebar_light.png',
     };
     return IgnorePointer(
       child: Align(
