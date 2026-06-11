@@ -27,7 +27,6 @@ import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../widgets/swap_address_edit_modal.dart';
 import '../widgets/swap_asset_selector_modal.dart';
 import '../widgets/swap_composer_panel.dart';
-import '../widgets/swap_serif_display.dart';
 import '../widgets/swap_near_intents_attribution.dart';
 import '../widgets/swap_slippage_modal.dart';
 
@@ -448,7 +447,7 @@ class _SwapPageTitle extends StatelessWidget {
       'Swap',
       key: const ValueKey('swap_page_title'),
       textAlign: TextAlign.center,
-      style: swapSerifDisplayStyle(color: colors.text.accent),
+      style: appSerifDisplayStyle(color: colors.text.accent),
     );
   }
 }

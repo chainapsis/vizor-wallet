@@ -68,7 +68,9 @@ class ReviewInfoRow extends StatelessWidget {
     this.bottomLeftText,
     this.trailingActionLabel,
     this.trailingActionIconName = AppIcons.eye,
+    this.trailingActionKey,
     this.onTrailingAction,
+    this.valueFit,
     super.key,
   });
 
@@ -101,8 +103,15 @@ class ReviewInfoRow extends StatelessWidget {
   /// 16px icon inside the trailing ghost button.
   final String trailingActionIconName;
 
+  /// Key on the trailing ghost button, for test lookups.
+  final Key? trailingActionKey;
+
   /// Tap handler for the trailing ghost button.
   final VoidCallback? onTrailingAction;
+
+  /// When set, the headline value shrinks to fit instead of truncating
+  /// (long swap amounts scale down rather than ellipsize).
+  final BoxFit? valueFit;
 
   /// Row height pinned by the Figma `_Review Info` component.
   static const height = 90.0;
@@ -110,11 +119,7 @@ class ReviewInfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final valueStyle = AppTypography.headlineLarge.copyWith(
-      fontFamily: 'Young Serif',
-      fontWeight: FontWeight.w400,
-      fontFeatures: const [FontFeature('case', 1)],
-      color: colors.text.accent,
+    final valueStyle = appSerifDisplayStyle(color: colors.text.accent).copyWith(
       decoration: struckThrough ? TextDecoration.lineThrough : null,
       decorationColor: struckThrough ? colors.text.accent : null,
     );
@@ -148,12 +153,19 @@ class ReviewInfoRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: valueStyle,
-                ),
+                if (valueFit != null)
+                  FittedBox(
+                    fit: valueFit!,
+                    alignment: Alignment.centerLeft,
+                    child: Text(value, maxLines: 1, style: valueStyle),
+                  )
+                else
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: valueStyle,
+                  ),
                 const SizedBox(height: AppSpacing.xxs),
                 SizedBox(height: AppSpacing.md, child: _bottomRow(colors)),
               ],
@@ -190,6 +202,7 @@ class ReviewInfoRow extends StatelessWidget {
           const Spacer(),
         if (trailingActionLabel != null)
           AppButton(
+            key: trailingActionKey,
             onPressed: onTrailingAction,
             variant: AppButtonVariant.ghost,
             size: AppButtonSize.small,

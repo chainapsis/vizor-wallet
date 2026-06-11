@@ -9,7 +9,6 @@ import '../models/swap_address_formatting.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_models.dart';
 import 'swap_asset_icon.dart';
-import 'swap_serif_display.dart';
 
 class SwapComposerPanel extends StatefulWidget {
   const SwapComposerPanel({
@@ -498,7 +497,7 @@ class _SwapAmountInput extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final valueStyle = swapSerifDisplayStyle(color: colors.text.accent);
+    final valueStyle = appSerifDisplayStyle(color: colors.text.accent);
     return Row(
       children: [
         if (prefixText != null) ...[

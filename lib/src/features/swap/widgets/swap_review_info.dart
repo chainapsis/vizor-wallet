@@ -4,7 +4,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../models/swap_models.dart';
 import 'swap_asset_icon.dart';
-import 'swap_serif_display.dart';
 
 /// One side of the [SwapReviewInfo] summary.
 class SwapReviewInfoSideData {
@@ -134,7 +133,7 @@ class _SwapReviewInfoSide extends StatelessWidget {
                 child: Text(
                   data.amountText,
                   maxLines: 1,
-                  style: swapSerifDisplayStyle(color: colors.text.accent),
+                  style: appSerifDisplayStyle(color: colors.text.accent),
                 ),
               ),
               SizedBox(

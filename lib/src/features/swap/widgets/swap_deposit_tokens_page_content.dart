@@ -11,7 +11,6 @@ import '../../../core/widgets/app_tooltip.dart';
 import '../domain/swap_contract.dart';
 import '../models/swap_address_formatting.dart';
 import '../models/swap_deposit_qr_payload.dart';
-import 'swap_serif_display.dart';
 
 class SwapDepositTokensPageContent extends StatelessWidget {
   const SwapDepositTokensPageContent({
@@ -135,7 +134,7 @@ class _SwapDepositPageShell extends StatelessWidget {
             'Deposit tokens',
             key: const ValueKey('swap_deposit_tokens_title'),
             textAlign: TextAlign.center,
-            style: swapSerifDisplayStyle(color: colors.text.accent),
+            style: appSerifDisplayStyle(color: colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.base),
           KeyedSubtree(
@@ -345,7 +344,7 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
-                  style: swapSerifDisplayStyle(color: colors.text.accent),
+                  style: appSerifDisplayStyle(color: colors.text.accent),
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(

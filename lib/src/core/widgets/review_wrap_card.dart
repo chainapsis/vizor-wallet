@@ -29,7 +29,7 @@ class ReviewWrapCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: surfaceColor ?? colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: _surfaceShadow(colors),
+        boxShadow: appSurfaceShadow(colors),
       ),
       padding: const EdgeInsets.symmetric(
         vertical: AppSpacing.md,
@@ -63,23 +63,4 @@ class ReviewWrapDivider extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Figma "Shadow Surface" — four subtle layers that read as a soft ambient
-/// shadow in light mode and resolve to fully transparent in dark mode.
-List<BoxShadow> _surfaceShadow(AppColors colors) {
-  return [
-    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
-    BoxShadow(
-      color: colors.shadows.subtle,
-      offset: const Offset(0, 2),
-      blurRadius: 4,
-    ),
-    BoxShadow(
-      color: colors.shadows.subtle,
-      offset: const Offset(0, 1),
-      blurRadius: 2,
-    ),
-    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
-  ];
 }

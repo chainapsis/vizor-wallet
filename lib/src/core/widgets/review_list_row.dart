@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../theme/app_theme.dart';
+import 'app_copy_feedback.dart';
 import 'app_icon.dart';
 import 'app_tooltip.dart';
 
@@ -31,6 +32,7 @@ class ReviewListRow extends StatelessWidget {
     this.trailingIconName,
     this.trailingIconColor,
     this.trailingIconTooltip,
+    this.copyText,
     this.onPressed,
     super.key,
   });
@@ -61,6 +63,11 @@ class ReviewListRow extends StatelessWidget {
   /// set, the icon also tints to the accent color while hovered.
   final String? trailingIconTooltip;
 
+  /// When set (and [onPressed] is null), tapping the value cluster copies
+  /// this text with a 'Copied' toast; a copy glyph trails the value unless
+  /// [trailingIconName] overrides it.
+  final String? copyText;
+
   /// Tap handler for the value cluster (expand memo, open explorer, show
   /// fee help). The pill stays inert when null.
   final VoidCallback? onPressed;
@@ -72,6 +79,17 @@ class ReviewListRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final resolvedValueColor = valueColor ?? colors.text.accent;
+    final resolvedTrailingIconName =
+        trailingIconName ?? (copyText != null ? AppIcons.copy : null);
+    final resolvedOnPressed =
+        onPressed ??
+        (copyText != null
+            ? () => copyTextWithToast(
+                context,
+                text: copyText!,
+                toastMessage: 'Copied',
+              )
+            : null);
 
     Widget pill = Container(
       // pl 8 / pr 4 / py 4 with the full radius per the Figma `Item Right`.
@@ -104,20 +122,20 @@ class ReviewListRow extends StatelessWidget {
               ),
             ),
           ),
-          if (trailingIconName != null) ...[
+          if (resolvedTrailingIconName != null) ...[
             const SizedBox(width: AppSpacing.xxs),
             if (trailingIconTooltip != null)
               AppTooltip(
                 message: trailingIconTooltip,
                 child: _HoverTintIcon(
-                  iconName: trailingIconName!,
+                  iconName: resolvedTrailingIconName,
                   color: trailingIconColor ?? resolvedValueColor,
                   hoverColor: colors.text.accent,
                 ),
               )
             else
               AppIcon(
-                trailingIconName!,
+                resolvedTrailingIconName,
                 size: AppIconSize.medium,
                 color: trailingIconColor ?? resolvedValueColor,
               ),
@@ -126,12 +144,12 @@ class ReviewListRow extends StatelessWidget {
       ),
     );
 
-    if (onPressed != null) {
+    if (resolvedOnPressed != null) {
       pill = MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: onPressed,
+          onTap: resolvedOnPressed,
           child: pill,
         ),
       );

@@ -15,7 +15,6 @@ import '../src/features/swap/models/swap_fiat_amount.dart';
 import '../src/features/swap/models/swap_models.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import '../src/features/swap/widgets/swap_address_edit_modal.dart';
-import '../src/features/swap/widgets/swap_serif_display.dart';
 import '../src/features/swap/widgets/swap_asset_selector_modal.dart';
 import '../src/features/swap/widgets/swap_composer_panel.dart';
 import '../src/features/swap/widgets/swap_deposit_tokens_page_content.dart';
@@ -1204,7 +1203,7 @@ class _SwapPreviewPageTitle extends StatelessWidget {
     return Text(
       'Swap',
       textAlign: TextAlign.center,
-      style: swapSerifDisplayStyle(color: colors.text.accent),
+      style: appSerifDisplayStyle(color: colors.text.accent),
     );
   }
 }

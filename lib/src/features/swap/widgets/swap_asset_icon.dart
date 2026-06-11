@@ -80,12 +80,11 @@ class _RoundAssetImage extends StatelessWidget {
       child: Image.asset(
         assetPath,
         fit: BoxFit.cover,
-        errorBuilder:
-            (context, _, _) => _AssetImageFallback(
-              label: fallbackText,
-              selected: selected,
-              small: small,
-            ),
+        errorBuilder: (context, _, _) => _AssetImageFallback(
+          label: fallbackText,
+          selected: selected,
+          small: small,
+        ),
       ),
     );
   }
@@ -109,10 +108,9 @@ class _AssetImageFallback extends StatelessWidget {
     return Container(
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color:
-            selected
-                ? colors.background.brandCrimsonAlpha
-                : colors.background.raised,
+        color: selected
+            ? colors.background.brandCrimsonAlpha
+            : colors.background.raised,
         border: Border.all(color: colors.border.subtle),
         borderRadius: BorderRadius.circular(AppRadii.full),
       ),
