@@ -66,7 +66,7 @@ Future<AccountCreationResult> addAccount({
 
 /// Discover higher ZIP32 software accounts with transparent history that are
 /// not already present in the wallet DB for this mnemonic.
-Future<List<SoftwareWalletDiscoveredAccount>>
+Future<SoftwareWalletImportDiscoveryResult>
 discoverSoftwareWalletImportAccounts({
   required String mnemonic,
   BigInt? birthdayHeight,
@@ -308,6 +308,28 @@ class SoftwareWalletImportAccount {
           zip32AccountIndex == other.zip32AccountIndex &&
           name == other.name &&
           isSeedAnchor == other.isSeedAnchor;
+}
+
+/// Software account discovery result for an import attempt.
+class SoftwareWalletImportDiscoveryResult {
+  final bool primaryAccountAlreadyExists;
+  final List<SoftwareWalletDiscoveredAccount> accounts;
+
+  const SoftwareWalletImportDiscoveryResult({
+    required this.primaryAccountAlreadyExists,
+    required this.accounts,
+  });
+
+  @override
+  int get hashCode => primaryAccountAlreadyExists.hashCode ^ accounts.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SoftwareWalletImportDiscoveryResult &&
+          runtimeType == other.runtimeType &&
+          primaryAccountAlreadyExists == other.primaryAccountAlreadyExists &&
+          accounts == other.accounts;
 }
 
 /// Result of software mnemonic import with ZIP32 account discovery.

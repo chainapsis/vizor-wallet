@@ -265,7 +265,7 @@ abstract class RustLibApi extends BaseApi {
     required String sendFlowId,
   });
 
-  Future<List<SoftwareWalletDiscoveredAccount>>
+  Future<SoftwareWalletImportDiscoveryResult>
   crateApiWalletDiscoverSoftwareWalletImportAccounts({
     required String mnemonic,
     BigInt? birthdayHeight,
@@ -1968,7 +1968,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<List<SoftwareWalletDiscoveredAccount>>
+  Future<SoftwareWalletImportDiscoveryResult>
   crateApiWalletDiscoverSoftwareWalletImportAccounts({
     required String mnemonic,
     BigInt? birthdayHeight,
@@ -1995,7 +1995,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_list_software_wallet_discovered_account,
+          decodeSuccessData: sse_decode_software_wallet_import_discovery_result,
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiWalletDiscoverSoftwareWalletImportAccountsConstMeta,
@@ -6639,6 +6639,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SoftwareWalletImportDiscoveryResult
+  dco_decode_software_wallet_import_discovery_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return SoftwareWalletImportDiscoveryResult(
+      primaryAccountAlreadyExists: dco_decode_bool(arr[0]),
+      accounts: dco_decode_list_software_wallet_discovered_account(arr[1]),
+    );
+  }
+
+  @protected
   SoftwareWalletImportWithDiscoveryResult
   dco_decode_software_wallet_import_with_discovery_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -8607,6 +8620,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SoftwareWalletImportDiscoveryResult
+  sse_decode_software_wallet_import_discovery_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_primaryAccountAlreadyExists = sse_decode_bool(deserializer);
+    var var_accounts = sse_decode_list_software_wallet_discovered_account(
+      deserializer,
+    );
+    return SoftwareWalletImportDiscoveryResult(
+      primaryAccountAlreadyExists: var_primaryAccountAlreadyExists,
+      accounts: var_accounts,
+    );
+  }
+
+  @protected
   SoftwareWalletImportWithDiscoveryResult
   sse_decode_software_wallet_import_with_discovery_result(
     SseDeserializer deserializer,
@@ -10380,6 +10409,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.zip32AccountIndex, serializer);
     sse_encode_String(self.name, serializer);
     sse_encode_bool(self.isSeedAnchor, serializer);
+  }
+
+  @protected
+  void sse_encode_software_wallet_import_discovery_result(
+    SoftwareWalletImportDiscoveryResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.primaryAccountAlreadyExists, serializer);
+    sse_encode_list_software_wallet_discovered_account(
+      self.accounts,
+      serializer,
+    );
   }
 
   @protected

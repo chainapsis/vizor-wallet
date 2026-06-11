@@ -99,6 +99,30 @@ void main() {
 
     expect(selected, [2]);
   });
+
+  testWidgets('account discovery modal blocks empty selection when required', (
+    tester,
+  ) async {
+    List<int>? selected;
+
+    await tester.pumpWidget(
+      _modalHarness(
+        allowEmptySelection: false,
+        onConfirm: (value) => selected = value,
+      ),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('import_account_discovery_row_1')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('import_account_discovery_row_2')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('import_account_discovery_confirm_button')),
+    );
+
+    expect(selected, isNull);
+  });
 }
 
 Future<void> _setDesktopSurface(WidgetTester tester) async {
@@ -132,7 +156,10 @@ Widget _birthdayHarness({
   );
 }
 
-Widget _modalHarness({required ValueChanged<List<int>> onConfirm}) {
+Widget _modalHarness({
+  bool allowEmptySelection = true,
+  required ValueChanged<List<int>> onConfirm,
+}) {
   return MaterialApp(
     home: MediaQuery(
       data: const MediaQueryData(textScaler: TextScaler.linear(1)),
@@ -155,6 +182,7 @@ Widget _modalHarness({required ValueChanged<List<int>> onConfirm}) {
                         't1UhrwzXxQBmduARnkbYqkKFSUMN6VAx9QS',
                   ),
                 ],
+                allowEmptySelection: allowEmptySelection,
                 onConfirm: onConfirm,
                 onCancel: () {},
               ),

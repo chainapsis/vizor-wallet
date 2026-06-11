@@ -9,12 +9,14 @@ import '../../../rust/api/wallet.dart' as rust_wallet;
 class ImportAccountDiscoveryModal extends StatefulWidget {
   const ImportAccountDiscoveryModal({
     required this.accounts,
+    required this.allowEmptySelection,
     required this.onConfirm,
     required this.onCancel,
     super.key,
   });
 
   final List<rust_wallet.SoftwareWalletDiscoveredAccount> accounts;
+  final bool allowEmptySelection;
   final ValueChanged<List<int>> onConfirm;
   final VoidCallback onCancel;
 
@@ -63,6 +65,9 @@ class _ImportAccountDiscoveryModalState
   }
 
   void _confirm() {
+    if (_selectedAccountIndices.isEmpty && !widget.allowEmptySelection) {
+      return;
+    }
     final selected = [
       for (final account in widget.accounts)
         if (_selectedAccountIndices.contains(account.zip32AccountIndex))
@@ -75,7 +80,7 @@ class _ImportAccountDiscoveryModalState
   Widget build(BuildContext context) {
     final colors = context.colors;
     final selectedCount = _selectedAccountIndices.length;
-    final primaryLabel = selectedCount == 0 ? 'Continue' : 'Import';
+    final canConfirm = selectedCount > 0 || widget.allowEmptySelection;
 
     return AppPaneModalOverlay(
       onDismiss: widget.onCancel,
@@ -176,11 +181,11 @@ class _ImportAccountDiscoveryModalState
                     key: const ValueKey(
                       'import_account_discovery_confirm_button',
                     ),
-                    onPressed: _confirm,
+                    onPressed: canConfirm ? _confirm : null,
                     variant: AppButtonVariant.primary,
                     minWidth: 120,
                     trailing: const AppIcon(AppIcons.chevronForward),
-                    child: Text(primaryLabel),
+                    child: const Text('Import'),
                   ),
                 ),
               ],

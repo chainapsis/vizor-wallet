@@ -39,6 +39,12 @@ pub struct SoftwareWalletDiscoveredAccount {
     pub first_transparent_address: String,
 }
 
+/// Software account discovery result for an import attempt.
+pub struct SoftwareWalletImportDiscoveryResult {
+    pub primary_account_already_exists: bool,
+    pub accounts: Vec<SoftwareWalletDiscoveredAccount>,
+}
+
 /// A software account created by mnemonic import.
 pub struct SoftwareWalletImportAccount {
     pub account_uuid: String,
@@ -202,7 +208,7 @@ pub fn discover_software_wallet_import_accounts(
     db_path: String,
     lightwalletd_url: String,
     is_first_wallet_account: bool,
-) -> Result<Vec<SoftwareWalletDiscoveredAccount>, String> {
+) -> Result<SoftwareWalletImportDiscoveryResult, String> {
     catch(|| {
         let network = if is_first_wallet_account {
             keys::parse_network(&network)?
@@ -217,6 +223,9 @@ pub fn discover_software_wallet_import_accounts(
                 &db_path, network, &seed,
             )?)
         };
+        let primary_account_already_exists = existing_seed_accounts
+            .as_ref()
+            .is_some_and(|state| state.contains(0));
 
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         let discovered_accounts = rt.block_on(discover_used_software_accounts(
@@ -226,14 +235,19 @@ pub fn discover_software_wallet_import_accounts(
             &lightwalletd_url,
         ));
 
-        Ok(discovered_accounts
+        let accounts = discovered_accounts
             .into_iter()
             .filter(|account| {
                 !existing_seed_accounts
                     .as_ref()
                     .is_some_and(|state| state.contains(account.zip32_account_index))
             })
-            .collect())
+            .collect();
+
+        Ok(SoftwareWalletImportDiscoveryResult {
+            primary_account_already_exists,
+            accounts,
+        })
     })
 }
 

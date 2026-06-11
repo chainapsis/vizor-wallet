@@ -293,7 +293,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
   }
 
-  Future<List<rust_wallet.SoftwareWalletDiscoveredAccount>>
+  Future<rust_wallet.SoftwareWalletImportDiscoveryResult>
   discoverAdditionalSoftwareAccounts({
     required String mnemonic,
     int? birthdayHeight,

@@ -65,6 +65,7 @@ class _ImportWalletBirthdayScreenState
   List<rust_wallet.SoftwareWalletDiscoveredAccount>?
   _accountDiscoveryCandidates;
   Completer<List<int>?>? _accountDiscoveryCompleter;
+  bool _accountDiscoveryAllowsEmptySelection = true;
   String? _metadataError;
   String? _submitError;
   DateTime? _calendarInitialDate;
@@ -235,6 +236,7 @@ class _ImportWalletBirthdayScreenState
     setState(() {
       _accountDiscoveryCandidates = null;
       _accountDiscoveryCompleter = null;
+      _accountDiscoveryAllowsEmptySelection = true;
     });
     completer?.complete(accountIndices);
   }
@@ -244,6 +246,7 @@ class _ImportWalletBirthdayScreenState
     setState(() {
       _accountDiscoveryCandidates = null;
       _accountDiscoveryCompleter = null;
+      _accountDiscoveryAllowsEmptySelection = true;
       _submitPhase = _ImportWalletSubmitPhase.idle;
     });
     completer?.complete(null);
@@ -298,19 +301,14 @@ class _ImportWalletBirthdayScreenState
     });
 
     try {
-      final selectedAdditionalAccountIndices =
-          await _resolveAdditionalAccountIndices(
-            mnemonic: mnemonic,
-            birthdayHeight: birthdayHeight,
-          );
-      if (selectedAdditionalAccountIndices == null) return;
-      if (!mounted) return;
-      setState(() {
-        _submitPhase = _ImportWalletSubmitPhase.importing;
-      });
-
       final security = ref.read(appSecurityProvider);
       if (!security.isPasswordConfigured) {
+        final selectedAdditionalAccountIndices =
+            await _resolveAdditionalAccountIndices(
+              mnemonic: mnemonic,
+              birthdayHeight: birthdayHeight,
+            );
+        if (selectedAdditionalAccountIndices == null) return;
         if (!mounted) return;
         context.go(
           '/import/set-password',
@@ -325,13 +323,26 @@ class _ImportWalletBirthdayScreenState
 
       final accountNotifier = ref.read(accountProvider.notifier);
       final router = GoRouter.of(context);
-      await runWithSyncPausedForAccountMutation(
+      final imported = await runWithSyncPausedForAccountMutation(
         ref,
-        () => accountNotifier.importAccount(
-          mnemonic: mnemonic,
-          birthdayHeight: birthdayHeight,
-          additionalAccountIndices: selectedAdditionalAccountIndices,
-        ),
+        () async {
+          final selectedAdditionalAccountIndices =
+              await _resolveAdditionalAccountIndices(
+                mnemonic: mnemonic,
+                birthdayHeight: birthdayHeight,
+              );
+          if (selectedAdditionalAccountIndices == null) return false;
+          if (!mounted) return false;
+          setState(() {
+            _submitPhase = _ImportWalletSubmitPhase.importing;
+          });
+          await accountNotifier.importAccount(
+            mnemonic: mnemonic,
+            birthdayHeight: birthdayHeight,
+            additionalAccountIndices: selectedAdditionalAccountIndices,
+          );
+          return true;
+        },
         onStoppingSync: () {
           if (!mounted) return;
           setState(() {
@@ -345,6 +356,7 @@ class _ImportWalletBirthdayScreenState
           });
         },
       );
+      if (!imported || !mounted) return;
       router.go('/home');
     } catch (e, st) {
       log('ImportWalletBirthdayScreen._submit: ERROR: $e\n$st');
@@ -365,19 +377,22 @@ class _ImportWalletBirthdayScreenState
       _submitPhase = _ImportWalletSubmitPhase.discoveringAccounts;
     });
 
-    final candidates = await ref
+    final discovery = await ref
         .read(accountProvider.notifier)
         .discoverAdditionalSoftwareAccounts(
           mnemonic: mnemonic,
           birthdayHeight: birthdayHeight,
         );
     if (!mounted) return null;
+    final candidates = discovery.accounts;
     if (candidates.isEmpty) return const [];
 
     final completer = Completer<List<int>?>();
     setState(() {
       _accountDiscoveryCandidates = candidates;
       _accountDiscoveryCompleter = completer;
+      _accountDiscoveryAllowsEmptySelection =
+          !discovery.primaryAccountAlreadyExists;
       _submitPhase = _ImportWalletSubmitPhase.idle;
     });
     return completer.future;
@@ -454,6 +469,7 @@ class _ImportWalletBirthdayScreenState
       overlay: _accountDiscoveryCandidates != null
           ? ImportAccountDiscoveryModal(
               accounts: _accountDiscoveryCandidates!,
+              allowEmptySelection: _accountDiscoveryAllowsEmptySelection,
               onConfirm: _confirmAccountDiscovery,
               onCancel: _dismissAccountDiscovery,
             )
