@@ -1428,7 +1428,11 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                         ],
                         Row(
                           // The Figma balance is one text run (amount 45px,
-                          // ticker 32px) sharing a baseline.
+                          // ticker 32px) sharing a baseline. The Regular cut
+                          // stands in for the spec'd Medium: white-on-dark
+                          // rasterization runs ~8% heavier than Figma's
+                          // renderer, so Medium reads bolder here than the
+                          // design intends.
                           crossAxisAlignment: CrossAxisAlignment.baseline,
                           textBaseline: TextBaseline.alphabetic,
                           children: [
@@ -1439,6 +1443,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                               ),
                               style: AppTypography.displayMedium.copyWith(
                                 color: colors.text.homeCard,
+                                fontWeight: FontWeight.w400,
                               ),
                             ),
                             const SizedBox(width: AppSpacing.xs),
@@ -1449,6 +1454,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                               ),
                               style: AppTypography.headlineLarge.copyWith(
                                 color: colors.text.homeCard,
+                                fontWeight: FontWeight.w400,
                               ),
                             ),
                           ],

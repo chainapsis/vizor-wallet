@@ -220,7 +220,7 @@ class AppSidebarItem extends StatelessWidget {
     this.leading,
     this.active = false,
     this.onTap,
-    this.leadingGap = AppSpacing.md,
+    this.leadingGap = AppSpacing.sm,
     this.inactiveOpacity = 1,
     this.iconAnimated = true,
     super.key,
@@ -254,7 +254,7 @@ class AppSidebarItem extends StatelessWidget {
       duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
       height: 40,
-      padding: const EdgeInsets.only(left: 14, right: AppSpacing.xs),
+      padding: const EdgeInsets.only(left: AppSpacing.sm, right: AppSpacing.xs),
       decoration: BoxDecoration(
         color: active ? colors.navPanel.activeBg : null,
         borderRadius: BorderRadius.circular(AppRadii.small),

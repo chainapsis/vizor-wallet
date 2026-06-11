@@ -374,7 +374,6 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       iconName: isImporting ? AppIcons.loader : AppIcons.home,
                       iconAnimated: !isImporting,
                       active: _homeShouldBeActive,
-                      inactiveOpacity: 0.5,
                       onTap: isImporting || _isHomeRoute
                           ? null
                           : () => _navigateTo('/home'),
@@ -386,7 +385,6 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         label: 'Swap',
                         iconName: AppIcons.swapArrows,
                         active: _matches('/swap'),
-                        inactiveOpacity: 0.5,
                         onTap: isImporting || _matches('/swap')
                             ? null
                             : () => _navigateTo('/swap'),
@@ -398,10 +396,11 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       label: 'Activity',
                       iconName: AppIcons.history,
                       active: _matches('/activity'),
-                      inactiveOpacity: 0.5,
-                      onTap: isImporting || _matches('/activity')
+                      // Stays tappable on detail subroutes (tx/swap status)
+                      // as a way back to the main activity feed.
+                      onTap: isImporting || _matchedLocation == '/activity'
                           ? null
-                          : () => _navigateTo('/activity'),
+                          : () => context.go('/activity'),
                     ),
                     const Spacer(),
                     AppSidebarItem(
@@ -460,7 +459,7 @@ class _SidebarAccountHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final row = SizedBox(
-      height: 48,
+      height: 44,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xxs),
         child: Row(
@@ -469,7 +468,7 @@ class _SidebarAccountHeader extends StatelessWidget {
               profilePictureId: profilePictureId,
               showsKeystone: showsKeystone,
             ),
-            const SizedBox(width: AppSpacing.s),
+            const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -500,6 +499,7 @@ class _SidebarAccountHeader extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.secondary,
+                            fontWeight: FontWeight.w400,
                           ),
                         ),
                       ),
@@ -606,7 +606,7 @@ class _SidebarHideBalanceButton extends StatelessWidget {
           onTap: enabled ? onTap : null,
           child: SizedBox(
             width: 16,
-            height: 18,
+            height: 16,
             child: Center(
               child: AppIcon(
                 privacyModeEnabled ? AppIcons.eyeClosed : AppIcons.eye,
@@ -647,7 +647,7 @@ class _SidebarCopyAddressButton extends StatelessWidget {
           onTap: onTap,
           child: SizedBox(
             width: 16,
-            height: 18,
+            height: 16,
             child: Center(
               child: AppIcon(AppIcons.copy, size: 16, color: iconColor),
             ),
@@ -713,15 +713,23 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
             decoration: BoxDecoration(
               color: colors.surface.nav,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: colors.border.subtle,
-                strokeAlign: BorderSide.strokeAlignOutside,
-              ),
-              boxShadow: [
+              // Figma's dropdown shadow stack (no stroke): 0/14/28 @ 8%,
+              // 0/-6/12 @ 3%, 0/2/8 @ 6%.
+              boxShadow: const [
                 BoxShadow(
-                  color: colors.shadows.regular,
-                  blurRadius: 16,
-                  offset: const Offset(0, 8),
+                  color: Color(0x14000000),
+                  blurRadius: 28,
+                  offset: Offset(0, 14),
+                ),
+                BoxShadow(
+                  color: Color(0x08000000),
+                  blurRadius: 12,
+                  offset: Offset(0, -6),
+                ),
+                BoxShadow(
+                  color: Color(0x0F000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
                 ),
               ],
             ),
@@ -732,7 +740,7 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                   padding: const EdgeInsets.all(AppSpacing.xxs),
                   child: Text(
                     'My accounts',
-                    style: AppTypography.labelMedium.copyWith(
+                    style: AppTypography.labelLarge.copyWith(
                       color: colors.text.muted,
                       fontWeight: FontWeight.w400,
                     ),
@@ -741,7 +749,7 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                 const SizedBox(height: AppSpacing.xs),
                 SizedBox(
                   key: const ValueKey('sidebar_accounts_list'),
-                  height: 161,
+                  height: 153,
                   child: RawScrollbar(
                     key: const ValueKey('sidebar_accounts_scrollbar'),
                     controller: _scrollController,
@@ -750,7 +758,7 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                     thickness: 6,
                     mainAxisMargin: 6,
                     crossAxisMargin: 6,
-                    thumbColor: colors.background.neutralStrongOpacity,
+                    thumbColor: colors.surface.scrollbarThumb,
                     child: Padding(
                       key: const ValueKey('sidebar_accounts_list_gutter'),
                       padding: const EdgeInsets.only(right: 18),
@@ -805,7 +813,7 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                           ),
                           child: Text(
                             'Manage',
-                            style: AppTypography.labelMedium.copyWith(
+                            style: AppTypography.labelLarge.copyWith(
                               color: colors.button.secondary.label,
                             ),
                           ),
@@ -902,7 +910,7 @@ class _SidebarAccountPopoverRow extends StatelessWidget {
                   account.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelMedium.copyWith(
+                  style: AppTypography.labelLarge.copyWith(
                     color: colors.text.accent,
                   ),
                 ),
@@ -947,7 +955,7 @@ class _SidebarSyncStatus extends StatelessWidget {
   final SyncState sync;
 
   static const _width = 176.0;
-  static const _height = 34.0;
+  static const _height = 32.0;
   static const _indicatorWidth = 5.0;
   static const _indicatorHeight = 32.0;
   static const _indicatorLeft = -AppSpacing.sm;
@@ -1004,7 +1012,10 @@ class _SidebarSyncStatus extends StatelessWidget {
                   key: const ValueKey('sidebar_sync_text'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelLarge.copyWith(color: textColor),
+                  style: AppTypography.labelLarge.copyWith(
+                    color: textColor,
+                    fontWeight: FontWeight.w400,
+                  ),
                 ),
               ),
             ),

@@ -58,8 +58,8 @@ final _previousTransactionCountForAddressProvider = FutureProvider.autoDispose
 /// presentation as the Keystone signing modal). The variant tracks the live
 /// address book AND the user's own accounts: a saved contact or an own
 /// account renders the known-recipient header, anything else the
-/// unknown-address header. Verification is display-only — the
-/// add-to-contacts flow is intentionally not wired (feature deferred).
+/// unknown-address header. Verification is display-only; the design
+/// dropped the add-to-contacts flow from this modal.
 class SendVerifyAddressOverlay extends ConsumerWidget {
   const SendVerifyAddressOverlay({
     required this.accountUuid,

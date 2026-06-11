@@ -160,14 +160,16 @@ void main() {
     expect(light.navPanel, const Color(0x4DFFFFFF));
     expect(light.font, const Color(0xD91A1A1A));
     expect(light.thinBorder, const Color(0x8CFFFFFF));
-    expect(light.innerBorder, const Color(0x3B1A1A1A));
+    // Inner ring is the Figma inner-shadow white highlight in both modes,
+    // superseding the color-theme export value.
+    expect(light.innerBorder, const Color(0x26FFFFFF));
 
     expect(dark.window, const Color(0xFF0F0F0F));
     expect(dark.windowTransparent, const Color(0x000F0F0F));
     expect(dark.navPanel, const Color(0x4D1A1A1A));
     expect(dark.font, const Color(0xCCFFFFFF));
     expect(dark.thinBorder, const Color(0x3B1A1A1A));
-    expect(dark.innerBorder, const Color(0x3B1A1A1A));
+    expect(dark.innerBorder, const Color(0x26FFFFFF));
   });
 
   test('plum primitive tokens match 2 Color Theme.zip', () {

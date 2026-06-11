@@ -135,9 +135,10 @@ void main() {
       tester,
       const ValueKey('sidebar_accounts_popover'),
     );
-    final popoverBorder = popoverDecoration.border as Border;
-    expect(popoverBorder.top.color, AppColors.light.border.subtle);
-    expect(popoverBorder.top.width, 1);
+    // The Figma dropdown has no stroke; its outline comes from the
+    // three-layer shadow stack.
+    expect(popoverDecoration.border, isNull);
+    expect(popoverDecoration.boxShadow, hasLength(3));
     final scrollbar = tester.widget<RawScrollbar>(
       find.byKey(const ValueKey('sidebar_accounts_scrollbar')),
     );
