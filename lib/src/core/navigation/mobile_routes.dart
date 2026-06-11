@@ -6,6 +6,7 @@ import '../../features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
+import '../../features/send/screens/mobile/mobile_send_scan_screen.dart';
 import '../../features/send/screens/mobile/mobile_send_screen.dart';
 import '../../features/settings/screens/mobile/mobile_change_passcode_screen.dart';
 import '../../features/settings/screens/mobile/mobile_settings_screen.dart';
@@ -50,6 +51,13 @@ List<RouteBase> buildMobileRoutes({
       path: '/send',
       pageBuilder: (context, state) =>
           CupertinoPage(key: state.pageKey, child: const MobileSendScreen()),
+    ),
+    GoRoute(
+      path: '/send/scan',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileSendScanScreen(),
+      ),
     ),
     GoRoute(
       path: '/receive',

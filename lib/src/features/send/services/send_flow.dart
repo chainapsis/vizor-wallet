@@ -82,8 +82,9 @@ Future<SendReviewArgs> proposeSendTransfer({
   required String addressType,
   required BigInt amountZatoshi,
   String? memo,
+  Future<String> Function() loadDbPath = getWalletDbPath,
 }) async {
-  final dbPath = await getWalletDbPath();
+  final dbPath = await loadDbPath();
   final endpoint = ref.read(rpcEndpointProvider);
   final proposal = await rust_sync.proposeSend(
     dbPath: dbPath,
