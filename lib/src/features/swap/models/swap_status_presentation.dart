@@ -54,6 +54,7 @@ class SwapStatusDetailRowData {
     this.copyText,
     this.help = false,
     this.helpTooltip,
+    this.linkUri,
     this.accountProfilePictureId,
     this.addressBookLabel,
     this.addressNetwork,
@@ -65,6 +66,10 @@ class SwapStatusDetailRowData {
   final String? copyText;
   final bool help;
   final String? helpTooltip;
+
+  /// External link opened when the row's trailing arrow is tapped (e.g. the
+  /// completed swap's deposit tx row linking to the NEAR Intents explorer).
+  final Uri? linkUri;
   final String? accountProfilePictureId;
 
   /// When this row is an address that matches a saved address-book contact,

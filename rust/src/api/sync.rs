@@ -979,6 +979,8 @@ pub struct TransactionDetail {
     pub txid_hex: String,
     pub tx_kind: String,
     pub primary_address: Option<String>,
+    pub source_address: Option<String>,
+    pub source_pool: Option<String>,
     pub memo: Option<String>,
     pub outputs: Vec<TransactionDetailOutput>,
 }
@@ -1014,6 +1016,23 @@ pub fn get_transaction_history(
                 created_time: t.created_time,
             })
             .collect())
+    })
+}
+
+pub fn get_previous_transaction_count_for_address(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    address: String,
+) -> Result<u32, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::get_previous_transaction_count_for_address(
+            &db_path,
+            network,
+            &account_uuid,
+            &address,
+        )
     })
 }
 
@@ -1078,6 +1097,8 @@ pub fn get_transaction_detail(
             txid_hex: detail.txid_hex,
             tx_kind: detail.tx_kind,
             primary_address: detail.primary_address,
+            source_address: detail.source_address,
+            source_pool: detail.source_pool,
             memo: detail.memo,
             outputs: detail
                 .outputs

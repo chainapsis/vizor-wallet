@@ -337,6 +337,9 @@ fn should_fill_missing_transparent_fee(db_path: &str, tx: &Transaction) -> Resul
     conn.busy_timeout(SYNC_DB_BUSY_TIMEOUT)
         .map_err(|e| SyncError::db(format!("configure fee lookup busy timeout: {e}")))?;
 
+    // Backfill transaction-level transparent fees for every wallet-relevant
+    // transaction, including receives. Received receipts label this separately
+    // as a network fee because the sender paid it.
     let fillable_rows: i64 = conn
         .query_row(
             "SELECT COUNT(*)
@@ -347,7 +350,6 @@ fn should_fill_missing_transparent_fee(db_path: &str, tx: &Transaction) -> Resul
                  SELECT 1
                  FROM v_transactions vt
                  WHERE vt.txid = t.txid
-                 AND COALESCE(vt.account_balance_delta, 0) < 0
              )",
             rusqlite::params![tx.txid().as_ref()],
             |row| row.get(0),
@@ -438,6 +440,13 @@ mod tests {
         tx: &Transaction,
         account_balance_delta: i64,
     ) -> tempfile::NamedTempFile {
+        transparent_fee_test_db_with_optional_wallet_row(tx, Some(account_balance_delta))
+    }
+
+    fn transparent_fee_test_db_with_optional_wallet_row(
+        tx: &Transaction,
+        account_balance_delta: Option<i64>,
+    ) -> tempfile::NamedTempFile {
         let file = tempfile::NamedTempFile::new().unwrap();
         let conn = rusqlite::Connection::open(file.path()).unwrap();
         conn.execute_batch(
@@ -456,12 +465,14 @@ mod tests {
             rusqlite::params![tx.txid().as_ref()],
         )
         .unwrap();
-        conn.execute(
-            "INSERT INTO v_transactions (txid, account_balance_delta)
-             VALUES (?1, ?2)",
-            rusqlite::params![tx.txid().as_ref(), account_balance_delta],
-        )
-        .unwrap();
+        if let Some(account_balance_delta) = account_balance_delta {
+            conn.execute(
+                "INSERT INTO v_transactions (txid, account_balance_delta)
+                 VALUES (?1, ?2)",
+                rusqlite::params![tx.txid().as_ref(), account_balance_delta],
+            )
+            .unwrap();
+        }
         file
     }
 
@@ -516,11 +527,19 @@ mod tests {
     }
 
     #[test]
-    fn transparent_fee_backfill_requires_wallet_spend_evidence() {
+    fn transparent_fee_backfill_requires_wallet_relevance() {
+        let tx = transparent_fee_test_tx();
+        let db = transparent_fee_test_db_with_optional_wallet_row(&tx, None);
+
+        assert!(!should_fill_missing_transparent_fee(db.path().to_str().unwrap(), &tx).unwrap());
+    }
+
+    #[test]
+    fn transparent_fee_backfill_allows_positive_wallet_delta() {
         let tx = transparent_fee_test_tx();
         let db = transparent_fee_test_db(&tx, 1_000_000);
 
-        assert!(!should_fill_missing_transparent_fee(db.path().to_str().unwrap(), &tx).unwrap());
+        assert!(should_fill_missing_transparent_fee(db.path().to_str().unwrap(), &tx).unwrap());
     }
 
     #[test]

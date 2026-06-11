@@ -7,10 +7,10 @@ import '../theme/app_theme.dart';
 /// tokens — not onto Figma's variant naming (which calls primary "Accent").
 enum AppButtonVariant { primary, secondary, ghost, destructive }
 
-/// Vertical density. Large uses 20px icons while Medium/Small use 16px;
-/// label family/weight stays consistent, with Small using the reduced label
-/// token from the Figma component.
-enum AppButtonSize { large, medium, small }
+/// Vertical density. Large uses 20px icons while MediumLarge/Medium/Small
+/// use 16px; label family/weight stays consistent, with Small using the
+/// reduced label token from the Figma component.
+enum AppButtonSize { large, mediumLarge, medium, small }
 
 class _Sizing {
   const _Sizing({
@@ -42,6 +42,20 @@ const _largeSizing = _Sizing(
   ),
   gap: AppSpacing.xxs,
   iconSize: 20,
+  labelStyle: AppTypography.labelMedium,
+);
+
+// Medium-large button — the 36px modal CTA from the Figma modal button set
+// (e.g. "Add to contacts" in the verify-address modal). Uses Desktop
+// `Label M` with 12px side padding.
+const _mediumLargeSizing = _Sizing(
+  height: 36,
+  padding: EdgeInsets.symmetric(
+    horizontal: AppSpacing.s,
+    vertical: AppSpacing.xxs,
+  ),
+  gap: AppSpacing.xxs,
+  iconSize: AppIconSize.medium,
   labelStyle: AppTypography.labelMedium,
 );
 
@@ -252,6 +266,7 @@ class _AppButtonState extends State<AppButton> {
     final palette = _paletteFor(widget.variant, colors);
     final sizing = switch (widget.size) {
       AppButtonSize.large => _largeSizing,
+      AppButtonSize.mediumLarge => _mediumLargeSizing,
       AppButtonSize.medium => _mediumSizing,
       AppButtonSize.small => _smallSizing,
     };

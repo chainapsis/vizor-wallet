@@ -1,14 +1,19 @@
-import 'dart:math' as math;
-
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_modal_card.dart';
 
-const kAccountModalButtonHeight = 36.0;
-const kAccountModalButtonMinWidth = 96.0;
-const _kAccountModalActionLabelMaxWidth = 156.0;
+const kAccountModalButtonHeight = kAppModalButtonHeight;
+const kAccountModalButtonMinWidth = kAppModalButtonMinWidth;
 
+const accountModalShadow = appModalShadow;
+
+/// Accounts/settings-facing alias for the shared [AppModalCard].
+///
+/// Kept so existing callers and tests (which assert on the
+/// `account_modal_*_button` keys) stay stable; new features should use
+/// [AppModalCard] / [AppModalActions] from `core/widgets` directly.
 class AccountModalCard extends StatelessWidget {
   const AccountModalCard({
     required this.child,
@@ -21,31 +26,9 @@ class AccountModalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      width: 312,
-      clipBehavior: Clip.antiAlias,
-      padding: EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.md,
-        AppSpacing.sm,
-        bottomPadding,
-      ),
-      decoration: BoxDecoration(
-        color: colors.background.base,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: accountModalShadow,
-      ),
-      child: child,
-    );
+    return AppModalCard(bottomPadding: bottomPadding, child: child);
   }
 }
-
-const accountModalShadow = [
-  BoxShadow(color: Color(0x0F000000), offset: Offset(0, 2), blurRadius: 8),
-  BoxShadow(color: Color(0x08000000), offset: Offset(0, -6), blurRadius: 12),
-  BoxShadow(color: Color(0x14000000), offset: Offset(0, 14), blurRadius: 28),
-];
 
 class AccountModalActions extends StatelessWidget {
   const AccountModalActions({
@@ -69,72 +52,16 @@ class AccountModalActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget buildButton({
-      required String label,
-      required VoidCallback? onPressed,
-      required AppButtonVariant variant,
-      required Key key,
-      Widget? leading,
-    }) {
-      return Expanded(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final buttonWidth = constraints.hasBoundedWidth
-                ? math.max(actionMinWidth, constraints.maxWidth)
-                : actionMinWidth;
-            final leadingWidth = leading == null ? 0.0 : 20.0;
-            final labelMaxWidth = math.max(
-              0.0,
-              math.min(
-                _kAccountModalActionLabelMaxWidth,
-                buttonWidth -
-                    AppSpacing.xs * 2 -
-                    AppSpacing.xxs * 2 -
-                    leadingWidth -
-                    AppSpacing.xxs,
-              ),
-            );
-
-            return AppButton(
-              key: key,
-              onPressed: onPressed,
-              variant: variant,
-              size: AppButtonSize.medium,
-              height: kAccountModalButtonHeight,
-              minWidth: buttonWidth,
-              leading: leading,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: labelMaxWidth),
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          },
-        ),
-      );
-    }
-
-    return Row(
-      children: [
-        buildButton(
-          key: const ValueKey('account_modal_cancel_button'),
-          label: cancelLabel,
-          onPressed: onCancel,
-          variant: AppButtonVariant.ghost,
-        ),
-        const SizedBox(width: AppSpacing.s),
-        buildButton(
-          key: const ValueKey('account_modal_action_button'),
-          label: actionLabel,
-          onPressed: onAction,
-          variant: actionVariant,
-          leading: actionLeading,
-        ),
-      ],
+    return AppModalActions(
+      onCancel: onCancel,
+      cancelLabel: cancelLabel,
+      actionLabel: actionLabel,
+      onAction: onAction,
+      actionVariant: actionVariant,
+      actionMinWidth: actionMinWidth,
+      actionLeading: actionLeading,
+      cancelKey: const ValueKey('account_modal_cancel_button'),
+      actionKey: const ValueKey('account_modal_action_button'),
     );
   }
 }

@@ -665,22 +665,8 @@ class _AppTextFieldState extends State<AppTextField> {
   }
 }
 
-List<BoxShadow> _appTextFieldSurfaceShadow(AppColors colors) {
-  return [
-    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
-    BoxShadow(
-      color: colors.shadows.subtle,
-      offset: const Offset(0, 2),
-      blurRadius: 4,
-    ),
-    BoxShadow(
-      color: colors.shadows.subtle,
-      offset: const Offset(0, 1),
-      blurRadius: 2,
-    ),
-    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
-  ];
-}
+List<BoxShadow> _appTextFieldSurfaceShadow(AppColors colors) =>
+    appSurfaceShadow(colors);
 
 class _AppTextFieldMessage extends StatelessWidget {
   const _AppTextFieldMessage({

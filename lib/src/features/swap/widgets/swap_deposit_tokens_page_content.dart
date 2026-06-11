@@ -126,7 +126,7 @@ class _SwapDepositPageShell extends StatelessWidget {
     final colors = context.colors;
     return SizedBox(
       key: const ValueKey('swap_deposit_tokens_panel'),
-      width: 400,
+      width: 396,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -134,11 +134,9 @@ class _SwapDepositPageShell extends StatelessWidget {
             'Deposit tokens',
             key: const ValueKey('swap_deposit_tokens_title'),
             textAlign: TextAlign.center,
-            style: AppTypography.displaySmall.copyWith(
-              color: colors.text.accent,
-            ),
+            style: appSerifDisplayStyle(color: colors.text.accent),
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.lg),
           KeyedSubtree(
             key: const ValueKey('swap_activity_deposit_qr_panel'),
             child: _DepositQrCard(
@@ -150,7 +148,7 @@ class _SwapDepositPageShell extends StatelessWidget {
               now: now,
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.lg),
           _DepositDetailsList(
             amountText: amountText,
             depositAddress: depositAddress,
@@ -172,8 +170,9 @@ class _DepositConfirmActionArea extends StatelessWidget {
   });
 
   static const _buttonHeight = 44.0;
-  static const _buttonWidth = 256.0;
-  static const _buttonTopGap = AppSpacing.xl + AppSpacing.sm;
+  static const _buttonWidth = 196.0;
+  // Figma: 48px between the details list and the confirm button.
+  static const _buttonTopGap = AppSpacing.lg;
   static const _height = _buttonTopGap + _buttonHeight;
 
   final bool checking;
@@ -209,7 +208,9 @@ class _DepositConfirmActionArea extends StatelessWidget {
             variant: AppButtonVariant.primary,
             size: AppButtonSize.large,
             minWidth: _buttonWidth,
-            trailing: checking ? null : const AppIcon(AppIcons.arrowForwardIos),
+            trailing: checking
+                ? null
+                : const AppIcon(AppIcons.chevronForward, size: 20),
             child: _DepositConfirmButtonLabel(
               checking: checking,
               buttonLabel: buttonLabel,
@@ -298,22 +299,22 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     return SizedBox(
       key: const ValueKey('swap_deposit_timeout_panel'),
-      width: 274,
-      height: 388,
+      width: 340,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Image.asset(
             isDark ? _darkIllustration : _lightIllustration,
             key: const ValueKey('swap_deposit_timeout_illustration'),
-            width: 210,
-            height: 160,
+            width: 340,
+            height: 220,
             fit: BoxFit.contain,
           ),
           const SizedBox(height: AppSpacing.base),
           SizedBox(
-            width: 274,
+            width: 300,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -344,9 +345,7 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
-                  style: AppTypography.displaySmall.copyWith(
-                    color: colors.text.accent,
-                  ),
+                  style: appSerifDisplayStyle(color: colors.text.accent),
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
@@ -362,18 +361,14 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.base),
-          SizedBox(
-            width: 256,
-            height: 44,
-            child: AppButton(
-              key: const ValueKey('swap_deposit_restart_button'),
-              onPressed: onRestart,
-              variant: AppButtonVariant.secondary,
-              size: AppButtonSize.large,
-              minWidth: 256,
-              leading: const AppIcon(AppIcons.renew),
-              child: const Text('Restart swap'),
-            ),
+          AppButton(
+            key: const ValueKey('swap_deposit_restart_button'),
+            onPressed: onRestart,
+            variant: AppButtonVariant.secondary,
+            size: AppButtonSize.large,
+            height: 36,
+            leading: const AppIcon(AppIcons.renew, size: 16),
+            child: const Text('Restart swap'),
           ),
         ],
       ),
@@ -401,53 +396,57 @@ class _DepositQrCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
+    // Dark navy card in both themes: `ground` is the deep surface in dark mode,
+    // `inverse` (#2E3232) is the dark surface in light mode. Text reads light
+    // on it via `accent` (dark mode) / `inverse` (light mode), matching the
+    // receive-screen QR card pattern.
+    final cardColor = isDark
+        ? colors.background.ground
+        : colors.background.inverse;
+    final onCardColor = isDark ? colors.text.accent : colors.text.inverse;
     return Container(
       key: const ValueKey('swap_deposit_qr_card'),
-      width: 400,
+      width: 396,
       height: 210,
       padding: const EdgeInsets.all(AppSpacing.xs),
       decoration: BoxDecoration(
-        color: colors.background.homeCard,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
+        color: cardColor,
+        borderRadius: BorderRadius.circular(AppRadii.large),
       ),
-      child: Stack(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _DepositQrCode(data: qrData, asset: asset),
-              const SizedBox(width: AppSpacing.sm),
-              SizedBox(
-                width: 174,
-                height: 194,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  child: Align(
-                    alignment: Alignment.bottomLeft,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          amountText,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.headlineSmall.copyWith(
-                            color: colors.text.homeCard,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.xxs),
-                        _DepositExpiryLine(
-                          expiresInLabel: expiresInLabel,
-                          expiresAt: expiresAt,
-                          now: now,
-                        ),
-                      ],
+          _DepositQrCode(data: qrData, asset: asset),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: SizedBox(
+              height: 194,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      amountText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.headlineSmall.copyWith(
+                        color: onCardColor,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    _DepositExpiryLine(
+                      expiresInLabel: expiresInLabel,
+                      expiresAt: expiresAt,
+                      now: now,
+                      onCardColor: onCardColor,
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         ],
       ),
@@ -460,11 +459,13 @@ class _DepositExpiryLine extends StatefulWidget {
     required this.expiresInLabel,
     required this.expiresAt,
     required this.now,
+    required this.onCardColor,
   });
 
   final String expiresInLabel;
   final DateTime? expiresAt;
   final DateTime Function()? now;
+  final Color onCardColor;
 
   @override
   State<_DepositExpiryLine> createState() => _DepositExpiryLineState();
@@ -552,23 +553,34 @@ class _DepositExpiryLineState extends State<_DepositExpiryLine> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return RichText(
+    final onCardColor = widget.onCardColor;
+    return Row(
       key: const ValueKey('swap_deposit_expiry_label'),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      text: TextSpan(
-        style: AppTypography.labelLarge.copyWith(color: colors.text.homeCard),
-        children: [
-          TextSpan(
-            text: 'Deposit within ',
-            style: TextStyle(
-              color: colors.text.homeCard.withValues(alpha: 0.72),
-            ),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            'Deposit within',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.labelLarge.copyWith(color: onCardColor),
           ),
-          TextSpan(text: _expiresInLabel),
-        ],
-      ),
+        ),
+        // Figma 'Time Wrap' carries only its 4px/2px inset — no fill or
+        // border; the time reads as plain text after the label.
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xxs,
+            vertical: 2,
+          ),
+          child: Text(
+            _expiresInLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.labelLarge.copyWith(color: onCardColor),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -589,7 +601,7 @@ class _DepositQrCode extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.s),
       decoration: BoxDecoration(
         color: colors.surface.qrCode,
-        borderRadius: BorderRadius.circular(AppRadii.small),
+        borderRadius: BorderRadius.circular(AppRadii.medium),
       ),
       child: Stack(
         alignment: Alignment.center,
@@ -780,7 +792,7 @@ class _DepositDetailRow extends StatelessWidget {
                       child: AppIcon(
                         AppIcons.copy,
                         size: AppIconSize.medium,
-                        color: colors.icon.regular.withValues(alpha: 0.72),
+                        color: colors.icon.muted,
                       ),
                     ),
                   ),
