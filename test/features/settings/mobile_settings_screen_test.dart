@@ -101,14 +101,23 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('System (Auto)'), findsOneWidget);
-    expect(find.text('Light Mode'), findsOneWidget);
-    expect(find.text('Dark Mode'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_theme_option_light')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_theme_option_dark')),
+      findsOneWidget,
+    );
 
-    await tester.tap(find.text('Light Mode'));
+    // Selection commits through Update, not on tap.
+    await tester.tap(find.byKey(const ValueKey('mobile_theme_option_light')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('mobile_theme_update')));
     await tester.pumpAndSettle();
 
     // Sheet closed and the row value reflects the new mode.
-    expect(find.text('Light Mode'), findsNothing);
+    expect(find.text('System (Auto)'), findsNothing);
     expect(find.text('Light'), findsOneWidget);
   });
 

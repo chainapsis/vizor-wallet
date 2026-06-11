@@ -8,6 +8,7 @@ import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_toast.dart';
@@ -66,14 +67,32 @@ class MobileSettingsScreen extends ConsumerWidget {
                       onTap: () => _openChangePasscode(context),
                     ),
                     MobileListRow(
-                      leading: _RowIcon(AppIcons.users),
+                      leading: _RowIcon(AppIcons.user),
                       label: 'Profile Picture',
-                      value: profileLabel,
-                      trailing: AppProfilePicture(
-                        profilePictureId:
-                            account?.profilePictureId ??
-                            kDefaultProfilePictureId,
-                        size: AppProfilePictureSize.medium,
+                      // Avatar → name → chevron, per the Figma row.
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AppProfilePicture(
+                            profilePictureId:
+                                account?.profilePictureId ??
+                                kDefaultProfilePictureId,
+                            size: AppProfilePictureSize.medium,
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          Text(
+                            profileLabel,
+                            style: AppTypography.bodyMedium.copyWith(
+                              color: context.colors.text.disabled,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          AppIcon(
+                            AppIcons.chevronForward,
+                            size: AppIconSize.medium,
+                            color: context.colors.icon.disabled,
+                          ),
+                        ],
                       ),
                       enabled: false,
                     ),
@@ -104,6 +123,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                       enabled: false,
                     ),
                     MobileListRow(
+                      key: const ValueKey('mobile_settings_theme_row'),
                       leading: _RowIcon(AppIcons.theme),
                       label: 'Theme',
                       value: _themeLabel(themeMode),
@@ -146,17 +166,14 @@ class MobileSettingsScreen extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     ThemeMode current,
-  ) {
-    return showAppMobileSheet<void>(
+  ) async {
+    final selected = await showAppMobileSheet<ThemeMode>(
       context: context,
-      builder: (sheetContext) => _ThemeSheet(
-        current: current,
-        onSelect: (mode) async {
-          Navigator.of(sheetContext).pop();
-          await ref.read(themeModeProvider.notifier).set(mode);
-        },
-      ),
+      builder: (sheetContext) => _ThemeSheet(current: current),
     );
+    if (selected != null && selected != current) {
+      await ref.read(themeModeProvider.notifier).set(selected);
+    }
   }
 }
 
@@ -198,26 +215,36 @@ class _RowIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppIcon(iconName, size: 20, color: context.colors.icon.accent);
+    // Muted per the Figma settings rows — the leading glyphs are
+    // decorative, not max-contrast.
+    return AppIcon(iconName, size: 20, color: context.colors.icon.muted);
   }
 }
 
-/// Theme picker sheet — Figma `Theme Modal` (4494:92272). Selecting an
-/// option applies it immediately.
-class _ThemeSheet extends StatelessWidget {
-  const _ThemeSheet({required this.current, required this.onSelect});
+/// Theme picker sheet — Figma `Theme Modal` (4494:92272): white option
+/// cards with leading mode icons and radio selection, committed via the
+/// Update action. Pops the chosen [ThemeMode] (null = cancelled).
+class _ThemeSheet extends StatefulWidget {
+  const _ThemeSheet({required this.current});
 
   final ThemeMode current;
-  final ValueChanged<ThemeMode> onSelect;
+
+  @override
+  State<_ThemeSheet> createState() => _ThemeSheetState();
+}
+
+class _ThemeSheetState extends State<_ThemeSheet> {
+  late ThemeMode _selected = widget.current;
+
+  static const _options = [
+    (ThemeMode.system, AppIcons.monitor, 'System (Auto)'),
+    (ThemeMode.light, AppIcons.day, 'Light'),
+    (ThemeMode.dark, AppIcons.night, 'Dark'),
+  ];
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    const options = [
-      (ThemeMode.system, 'System (Auto)'),
-      (ThemeMode.light, 'Light Mode'),
-      (ThemeMode.dark, 'Dark Mode'),
-    ];
 
     return SafeArea(
       top: false,
@@ -225,28 +252,163 @@ class _ThemeSheet extends StatelessWidget {
         padding: const EdgeInsets.all(AppSpacing.sm),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Theme',
-              style: AppTypography.headlineSmall.copyWith(
-                color: colors.text.accent,
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Theme',
+                    style: AppTypography.headlineSmall.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
+                ),
+                Semantics(
+                  label: 'Close',
+                  button: true,
+                  excludeSemantics: true,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: colors.background.raised,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: AppIcon(
+                          AppIcons.cross,
+                          size: AppIconSize.medium,
+                          color: colors.icon.accent,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            for (final (mode, iconName, label) in _options) ...[
+              _ThemeOptionCard(
+                key: ValueKey('mobile_theme_option_${mode.name}'),
+                iconName: iconName,
+                label: label,
+                selected: mode == _selected,
+                onTap: () => setState(() => _selected = mode),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+            ],
+            const SizedBox(height: AppSpacing.xs),
+            AppButton(
+              key: const ValueKey('mobile_theme_update'),
+              expand: true,
+              onPressed: () => Navigator.of(context).pop(_selected),
+              child: const Text('Update'),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Semantics(
+              button: true,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).pop(),
+                child: SizedBox(
+                  height: 44,
+                  child: Center(
+                    child: Text(
+                      'Cancel',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.primary,
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: AppSpacing.s),
-            for (final (mode, label) in options)
-              MobileListRow(
-                label: label,
-                trailing: mode == current
-                    ? AppIcon(
-                        AppIcons.check,
-                        size: AppIconSize.medium,
-                        color: colors.icon.accent,
-                      )
-                    : const SizedBox(width: AppIconSize.medium),
-                onTap: () => onSelect(mode),
-              ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeOptionCard extends StatelessWidget {
+  const _ThemeOptionCard({
+    required this.iconName,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  final String iconName;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: colors.background.ground,
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+            border: Border.all(
+              color: selected ? colors.border.strong : colors.border.subtle,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              AppIcon(iconName, size: 20, color: colors.icon.accent),
+              const SizedBox(width: AppSpacing.s),
+              Expanded(
+                child: Text(
+                  label,
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
+              if (selected)
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: colors.background.inverse,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: AppIcon(
+                      AppIcons.check,
+                      size: 14,
+                      color: colors.text.inverse,
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: colors.background.raised,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

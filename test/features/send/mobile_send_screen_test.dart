@@ -180,12 +180,8 @@ void main() {
 
     expect(find.text('Select Recipient'), findsOneWidget);
     expect(find.text('Scan a QR Code'), findsOneWidget);
-    var button = tester.widget<GestureDetector>(
-      find.ancestor(
-        of: find.text('Continue'),
-        matching: find.byType(GestureDetector),
-      ).first,
-    );
+    // The empty state carries no Continue button, per the Figma frame.
+    expect(find.byKey(const ValueKey('mobile_send_continue')), findsNothing);
 
     await _enterAddress(tester, _invalidAddress);
     expect(find.text('Invalid address'), findsOneWidget);
@@ -195,7 +191,6 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
     await tester.pumpAndSettle();
     expect(find.text('Enter amount'), findsOneWidget);
-    expect(button, isNotNull);
   });
 
   testWidgets('tapping a contact fills its address', (tester) async {

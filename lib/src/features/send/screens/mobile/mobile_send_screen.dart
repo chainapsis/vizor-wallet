@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/material.dart'
-    show CircularProgressIndicator, Scaffold;
+import 'package:flutter/material.dart' show CircularProgressIndicator, Scaffold;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,7 +29,7 @@ import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../services/send_flow.dart';
-import '../../widgets/mobile/send_amount_numpad.dart';
+import '../../../../core/widgets/mobile/app_numeric_keypad.dart';
 
 enum _SendStep { recipient, amount, review }
 
@@ -43,11 +42,19 @@ enum _SendPhase { compose, sending, succeeded, pendingBroadcast, failed }
 /// lifetime stays trivially scoped: a proposal exists only between
 /// Confirm & Send and the broadcast outcome.
 class MobileSendScreen extends ConsumerStatefulWidget {
-  const MobileSendScreen({this.loadWalletDbPath = getWalletDbPath, super.key});
+  const MobileSendScreen({
+    this.loadWalletDbPath = getWalletDbPath,
+    this.initialRecipient,
+    super.key,
+  });
 
   /// Test seam: widget tests cannot complete the real file IO behind
   /// [getWalletDbPath] inside the fake-async zone.
   final Future<String> Function() loadWalletDbPath;
+
+  /// Pre-fills the recipient step (e.g. the accounts row menu's
+  /// "Send ZEC" action passes that account's shielded address).
+  final String? initialRecipient;
 
   @override
   ConsumerState<MobileSendScreen> createState() => _MobileSendScreenState();
@@ -82,6 +89,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String? _txid;
   String? _statusMessage;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialRecipient;
+    if (initial != null && initial.trim().isNotEmpty) {
+      _addressController.text = initial.trim();
+      unawaited(_validateAddress());
+    }
+  }
 
   @override
   void dispose() {
@@ -290,13 +307,55 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   Future<void> _editMemo() async {
-    final next = await showAppMobileSheet<String>(
+    final next = await showAppMobileFloatingCard<String>(
       context: context,
       builder: (_) => _MemoSheet(initial: _memo),
     );
     if (next == null || !mounted) return;
     setState(() => _memo = next);
     unawaited(_estimateReviewFee());
+  }
+
+  Future<void> _showFeeInfo() {
+    return showAppMobileSheet<void>(
+      context: context,
+      builder: (sheetContext) {
+        final colors = sheetContext.colors;
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.base),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Tx fee',
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'The network fee is set by the Zcash protocol (ZIP 317) '
+                  'based on the transaction size. Vizor adds no extra fee.',
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.primary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                AppButton(
+                  variant: AppButtonVariant.secondary,
+                  expand: true,
+                  onPressed: () => Navigator.of(sheetContext).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<bool> _confirmSaplingParamsDownload() async {
@@ -645,22 +704,26 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             ],
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
-            0,
-            AppSpacing.sm,
-            AppSpacing.s,
-          ),
-          child: SizedBox(
-            width: double.infinity,
-            child: AppButton(
-              key: const ValueKey('mobile_send_continue'),
-              onPressed: _hasValidAddress ? _continueToAmount : null,
-              child: const Text('Continue'),
+        // The Figma empty state carries no action button — Continue
+        // appears once something is typed or pasted.
+        if (_addressController.text.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.sm,
+              0,
+              AppSpacing.sm,
+              AppSpacing.s,
+            ),
+            child: SizedBox(
+              width: double.infinity,
+              child: AppButton(
+                key: const ValueKey('mobile_send_continue'),
+                expand: true,
+                onPressed: _hasValidAddress ? _continueToAmount : null,
+                child: const Text('Continue'),
+              ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -688,15 +751,29 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                     ),
                   ),
                 ),
-              Text(
-                _amountText.isEmpty ? ' ' : _amountText,
-                key: const ValueKey('mobile_send_amount_display'),
-                textAlign: TextAlign.center,
-                style: AppTypography.displayLarge.copyWith(
-                  color: showError
-                      ? colors.text.destructive
-                      : colors.text.accent,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: Text(
+                      _amountText.isEmpty ? '' : _amountText,
+                      key: const ValueKey('mobile_send_amount_display'),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      style: AppTypography.displayLarge.copyWith(
+                        color: showError
+                            ? colors.text.destructive
+                            : colors.text.accent,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                  _BlinkingCaret(
+                    height: AppTypography.displayLarge.fontSize ?? 40,
+                    color: colors.text.accent,
+                  ),
+                ],
               ),
               const SizedBox(height: AppSpacing.xs),
               Text(
@@ -756,6 +833,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 width: double.infinity,
                 child: AppButton(
                   key: const ValueKey('mobile_send_review_button'),
+                  expand: true,
                   onPressed: _amountReady ? _continueToReview : null,
                   child: Text(
                     _amountReady
@@ -765,7 +843,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 ),
               ),
               const SizedBox(height: AppSpacing.xs),
-              SendAmountNumpad(
+              AppNumericKeypad(
                 onDigit: _appendDigit,
                 onDecimalPoint: _appendDecimalPoint,
                 onBackspace: _amountBackspace,
@@ -780,8 +858,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildReviewStep(BuildContext context) {
     final colors = context.colors;
+    // Uppercase ticker per the mobile review frame ("123.12 ZEC").
     final amountText =
-        ZecAmount.tryParse(_amountText)?.receipt.toString() ??
+        ZecAmount.tryParse(_amountText)?.activityDetail.toString() ??
         '$_amountText ZEC';
     final feeText = _feeZatoshi == null
         ? '—'
@@ -805,15 +884,17 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   Container(
                     width: 40,
                     height: 40,
-                    decoration: BoxDecoration(
-                      color: colors.background.ground,
+                    decoration: const BoxDecoration(
+                      // Zcash brand yellow — fixed brand color like the
+                      // crimson shield, not a theme token.
+                      color: Color(0xFFF4B728),
                       shape: BoxShape.circle,
                     ),
-                    child: Center(
+                    child: const Center(
                       child: AppIcon(
                         AppIcons.zcashCurrency,
                         size: 22,
-                        color: colors.icon.accent,
+                        color: Color(0xFFFFFFFF),
                       ),
                     ),
                   ),
@@ -867,9 +948,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                         ),
                         Text(
                           _contactLabel ?? _truncateAddress(address),
-                          style: AppTypography.headlineMedium.copyWith(
-                            color: colors.text.accent,
-                          ),
+                          // No saved contact: the compact address is the
+                          // headline; the smaller style keeps it on one
+                          // line instead of re-ellipsizing the already
+                          // truncated form.
+                          style:
+                              (_contactLabel == null
+                                      ? AppTypography.headlineSmall
+                                      : AppTypography.headlineMedium)
+                                  .copyWith(color: colors.text.accent),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: AppSpacing.xxs),
@@ -947,8 +1035,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                             height: 44,
                             child: _memo.trim().isEmpty
                                 ? Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.center,
+                                    mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       AppIcon(
                                         AppIcons.edit,
@@ -987,6 +1074,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                                               ),
                                         ),
                                       ),
+                                      const SizedBox(width: AppSpacing.xs),
+                                      AppIcon(
+                                        AppIcons.doubleArrowVertical,
+                                        size: 16,
+                                        color: colors.icon.muted,
+                                      ),
                                     ],
                                   ),
                           ),
@@ -1012,6 +1105,21 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                               color: colors.text.accent,
                             ),
                           ),
+                          const SizedBox(width: AppSpacing.xs),
+                          Semantics(
+                            button: true,
+                            label: 'About the transaction fee',
+                            excludeSemantics: true,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => unawaited(_showFeeInfo()),
+                              child: AppIcon(
+                                AppIcons.help,
+                                size: 16,
+                                color: colors.icon.muted,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -1033,6 +1141,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             children: [
               AppButton(
                 key: const ValueKey('mobile_send_confirm'),
+                expand: true,
                 onPressed: () => unawaited(_confirmAndSend()),
                 leading: const AppIcon(AppIcons.plane, size: 20),
                 child: const Text('Confirm & Send'),
@@ -1197,6 +1306,22 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 }
 
+/// Text-cursor bar after the amount — the Figma amount step shows a
+/// caret even though entry comes from the in-app keypad. Static (no
+/// blink): a repeating animation would keep `pumpAndSettle` from ever
+/// settling in widget tests.
+class _BlinkingCaret extends StatelessWidget {
+  const _BlinkingCaret({required this.height, required this.color});
+
+  final double height;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(width: 2.5, height: height, color: color);
+  }
+}
+
 /// Memo entry sheet — Figma `Review Add Memo` (4484:62917). Pops the
 /// new memo text; popping an empty string clears it.
 class _MemoSheet extends StatefulWidget {
@@ -1228,137 +1353,137 @@ class _MemoSheetState extends State<_MemoSheet> {
     final colors = context.colors;
     final overLimit = _remaining < 0;
 
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: AppSpacing.sm,
-          right: AppSpacing.sm,
-          top: AppSpacing.md,
-          bottom: AppSpacing.sm + MediaQuery.viewInsetsOf(context).bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Add Memo',
-                    style: AppTypography.headlineSmall.copyWith(
-                      color: colors.text.accent,
-                    ),
+    // Hosted in the floating card (pinned top), so the keyboard slides
+    // in below the card and no inset compensation is needed.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.sm,
+        AppSpacing.sm,
+        AppSpacing.sm,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Add Memo',
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.text.accent,
                   ),
                 ),
-                Semantics(
-                  button: true,
-                  label: 'Close',
-                  excludeSemantics: true,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Navigator.of(context).pop(),
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: colors.background.raised,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: AppIcon(
-                          AppIcons.cross,
-                          size: AppIconSize.medium,
-                          color: colors.icon.accent,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.s),
-            Row(
-              children: [
-                Text(
-                  'Message',
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  '$_remaining/$_memoByteLimit',
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: overLimit
-                        ? colors.text.destructive
-                        : colors.text.secondary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            AppTextField(
-              key: const ValueKey('mobile_send_memo_field'),
-              label: 'Message',
-              // The sheet renders its own label/counter row.
-              showLabel: false,
-              controller: _controller,
-              hintText: 'Only the recipient can read this',
-              maxLines: 5,
-              autofocus: true,
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppButton(
-              key: const ValueKey('mobile_send_memo_save'),
-              onPressed: overLimit
-                  ? null
-                  : () => Navigator.of(context).pop(_controller.text.trim()),
-              child: const Text('Add Memo'),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            if (widget.initial.trim().isNotEmpty)
+              ),
               Semantics(
                 button: true,
-                child: GestureDetector(
-                  key: const ValueKey('mobile_send_memo_clear'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => Navigator.of(context).pop(''),
-                  child: SizedBox(
-                    height: 44,
-                    child: Center(
-                      child: Text(
-                        'Clear memo',
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.destructive,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              )
-            else
-              Semantics(
-                button: true,
+                label: 'Close',
+                excludeSemantics: true,
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () => Navigator.of(context).pop(),
-                  child: SizedBox(
-                    height: 44,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: colors.background.raised,
+                      shape: BoxShape.circle,
+                    ),
                     child: Center(
-                      child: Text(
-                        'Cancel',
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.primary,
-                        ),
+                      child: AppIcon(
+                        AppIcons.cross,
+                        size: AppIconSize.medium,
+                        color: colors.icon.accent,
                       ),
                     ),
                   ),
                 ),
               ),
-          ],
-        ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.s),
+          Row(
+            children: [
+              Text(
+                'Message',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '$_remaining/$_memoByteLimit',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: overLimit
+                      ? colors.text.destructive
+                      : colors.text.secondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          AppTextField(
+            key: const ValueKey('mobile_send_memo_field'),
+            label: 'Message',
+            // The sheet renders its own label/counter row.
+            showLabel: false,
+            controller: _controller,
+            hintText: 'Only the recipient can read this',
+            maxLines: 5,
+            autofocus: true,
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('mobile_send_memo_save'),
+            expand: true,
+            onPressed: overLimit
+                ? null
+                : () => Navigator.of(context).pop(_controller.text.trim()),
+            child: const Text('Add Memo'),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          if (widget.initial.trim().isNotEmpty)
+            Semantics(
+              button: true,
+              child: GestureDetector(
+                key: const ValueKey('mobile_send_memo_clear'),
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).pop(''),
+                child: SizedBox(
+                  height: 44,
+                  child: Center(
+                    child: Text(
+                      'Clear memo',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.destructive,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else
+            Semantics(
+              button: true,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).pop(),
+                child: SizedBox(
+                  height: 44,
+                  child: Center(
+                    child: Text(
+                      'Cancel',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.primary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
