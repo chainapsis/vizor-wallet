@@ -137,6 +137,7 @@ class KeystoneOnboardingShell extends StatelessWidget {
 
     return AppDesktopShell(
       sidebarWidth: 256,
+      background: _KeystoneOnboardingWindowBackground(activeStep: activeStep),
       sidebar: SlideTransition(
         position: Tween<Offset>(
           begin: const Offset(-1, 0),
@@ -148,6 +149,37 @@ class KeystoneOnboardingShell extends StatelessWidget {
         ),
       ),
       pane: FadeTransition(opacity: entrance, child: child),
+    );
+  }
+}
+
+class _KeystoneOnboardingWindowBackground extends StatelessWidget {
+  const _KeystoneOnboardingWindowBackground({required this.activeStep});
+
+  final KeystoneOnboardingStep activeStep;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
+    final asset = switch (activeStep) {
+      KeystoneOnboardingStep.setPassword =>
+        isDark
+            ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
+            : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
+      _ => null,
+    };
+
+    if (asset == null) {
+      return const SizedBox.shrink();
+    }
+
+    return DecoratedBox(
+      decoration: BoxDecoration(color: context.colors.background.window),
+      child: Image.asset(
+        asset,
+        fit: BoxFit.cover,
+        alignment: Alignment.topCenter,
+      ),
     );
   }
 }
@@ -202,13 +234,15 @@ class _Sidebar extends StatelessWidget {
             active: step == activeStep,
           ),
       ],
-      illustration: const _SidebarIllustration(),
+      illustration: _SidebarIllustration(activeStep: activeStep),
     );
   }
 }
 
 class _SidebarIllustration extends StatelessWidget {
-  const _SidebarIllustration();
+  const _SidebarIllustration({required this.activeStep});
+
+  final KeystoneOnboardingStep activeStep;
 
   static const _frameWidth = 256.0;
   static const _frameHeight = 405.0;
@@ -220,7 +254,13 @@ class _SidebarIllustration extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
-    final asset = isDark ? _darkAsset : _lightAsset;
+    final asset = switch (activeStep) {
+      KeystoneOnboardingStep.setPassword =>
+        isDark
+            ? 'assets/illustrations/onboarding_set_password_sidebar_dark.png'
+            : 'assets/illustrations/onboarding_set_password_sidebar_light.png',
+      _ => isDark ? _darkAsset : _lightAsset,
+    };
     return IgnorePointer(
       child: Align(
         alignment: Alignment.bottomCenter,
