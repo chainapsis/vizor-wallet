@@ -314,9 +314,8 @@ class _MobileImportBirthdayScreenState
       progress: 0.8,
       onBack: _submitting ? null : () => Navigator.of(context).maybePop(),
       title: 'Around when did you create your wallet?',
-      subtitle:
-          'An estimate is enough — sync starts from there instead of '
-          'scanning the whole chain.',
+      // Two 25 px lines like the Figma subtitle block.
+      subtitle: 'An estimate is enough — sync starts\nfrom there.',
       bottomAreaPadding: EdgeInsets.zero,
       bottomArea: AppNumericKeypad(
         onDigit: _onDigit,
@@ -355,15 +354,16 @@ class _MobileImportBirthdayScreenState
           Row(
             children: [
               Expanded(
+                // 61-high 2 px-bordered field per the Figma entry row.
                 child: Container(
-                  height: 52,
+                  height: 61,
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.s,
                   ),
                   decoration: BoxDecoration(
                     border: Border.all(
                       color: colors.border.strong,
-                      width: 1.5,
+                      width: 2,
                     ),
                     borderRadius: BorderRadius.circular(AppRadii.medium),
                   ),
@@ -413,9 +413,10 @@ class _MobileImportBirthdayScreenState
               AppButton(
                 key: const ValueKey('mobile_import_birthday_continue'),
                 onPressed: !_canContinue || _busy ? null : _continue,
-                height: 52,
-                minWidth: 52,
-                child: const AppIcon(AppIcons.chevronForward, size: 20),
+                // 78×60 chevron pill per the Figma entry row.
+                height: 60,
+                minWidth: 78,
+                child: const AppIcon(AppIcons.chevronForward, size: 24),
               ),
             ],
           ),

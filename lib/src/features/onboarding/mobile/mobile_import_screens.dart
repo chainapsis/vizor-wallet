@@ -116,9 +116,8 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       progress: 0.2,
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Import Your Wallet',
-      subtitle:
-          'Paste your Secret Passphrase or enter it manually word by '
-          'word.',
+      // Line break matches the Figma subtitle wrap.
+      subtitle: 'Paste your Secret Passphrase or\nenter it manually word by word.',
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -239,7 +238,9 @@ class ImportSlotsCard extends StatelessWidget {
       child: Column(
         children: [
           for (var row = 0; row < rows; row++) ...[
-            if (row > 0) const SizedBox(height: AppSpacing.sm),
+            // 8 px between rows puts the underlines on the 37 px pitch
+            // of the Figma slot grid.
+            if (row > 0) const SizedBox(height: AppSpacing.xs),
             Row(
               children: [
                 for (var col = 0; col < 3; col++) ...[

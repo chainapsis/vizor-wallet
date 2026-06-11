@@ -148,30 +148,11 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Enter your Secret Passphrase',
       subtitle: 'Word $position/$kMnemonicMaxWords',
-      bottomArea: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_error != null) ...[
-            Text(
-              _error!,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.destructive,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          AppButton(
-            key: const ValueKey('mobile_import_manual_review'),
-            expand: true,
-            onPressed: _primaryEnabled ? _primaryAction : null,
-            trailing: const AppIcon(AppIcons.chevronForward),
-            child: Text(_primaryIsReview ? 'Continue to review' : 'Next word'),
-          ),
-          if (_suggestions.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.xs),
-            SizedBox(
+      // Only the BIP39 suggestions stay pinned above the keyboard; per
+      // the Figma frame the CTA flows directly under the word field.
+      bottomArea: _suggestions.isEmpty
+          ? null
+          : SizedBox(
               height: 40,
               child: ListView(
                 scrollDirection: Axis.horizontal,
@@ -187,10 +168,8 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
                 ],
               ),
             ),
-          ],
-        ],
-      ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _WordField(
             index: position,
@@ -198,8 +177,27 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
             focusNode: _focusNode,
             onSubmitted: _onSubmitted,
           ),
-          if (_accepted.isNotEmpty) ...[
+          if (_error != null) ...[
             const SizedBox(height: AppSpacing.sm),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.destructive,
+              ),
+            ),
+          ],
+          // 46 px from the field to the CTA in the Figma frame.
+          const SizedBox(height: 46),
+          AppButton(
+            key: const ValueKey('mobile_import_manual_review'),
+            expand: true,
+            onPressed: _primaryEnabled ? _primaryAction : null,
+            trailing: const AppIcon(AppIcons.chevronForward),
+            child: Text(_primaryIsReview ? 'Continue to review' : 'Next word'),
+          ),
+          if (_accepted.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.md),
             Text(
               _accepted.join(' · '),
               textAlign: TextAlign.center,
@@ -250,10 +248,9 @@ class _WordField extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
+      // Figma `Input` (4562:106067): 24 px padding around a 40 px serif
+      // line makes the 88 px field.
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
@@ -271,11 +268,10 @@ class _WordField extends StatelessWidget {
               controller: controller,
               focusNode: focusNode,
               autofocus: true,
-              // Large serif per the Figma word field ("Agent |").
+              // Full Headline XL serif per the Figma word field
+              // ("Agent |", 40 px line).
               style: AppTypography.displayLarge.copyWith(
                 color: colors.text.accent,
-                fontSize: 34,
-                height: 1.2,
               ),
               cursorColor: colors.text.accent,
               backgroundCursorColor: colors.background.overlay,
