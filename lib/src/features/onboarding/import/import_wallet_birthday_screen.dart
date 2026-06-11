@@ -424,8 +424,6 @@ class _ImportWalletBirthdayScreenState
                             child: Text(
                               'Around when did you create your wallet?',
                               style: AppTypography.displayLarge.copyWith(
-                                fontFamily: 'Young Serif',
-                                fontWeight: FontWeight.w400,
                                 color: context.colors.text.accent,
                               ),
                               textAlign: TextAlign.center,

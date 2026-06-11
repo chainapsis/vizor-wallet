@@ -501,8 +501,6 @@ class _ImportSecretTitle extends StatelessWidget {
           child: Text(
             'Welcome, adventurer',
             style: AppTypography.displayLarge.copyWith(
-              fontFamily: 'Young Serif',
-              fontWeight: FontWeight.w400,
               color: textColor,
             ),
             maxLines: 1,

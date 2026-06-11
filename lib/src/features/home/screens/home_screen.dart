@@ -1427,7 +1427,10 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                           const SizedBox(height: AppSpacing.xs),
                         ],
                         Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                          // The Figma balance is one text run (amount 45px,
+                          // ticker 32px) sharing a baseline.
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
                           children: [
                             Text(
                               widget.hasBalance ? visibleBalance : '0',
@@ -1439,16 +1442,13 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                               ),
                             ),
                             const SizedBox(width: AppSpacing.xs),
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: Text(
-                                kZcashDefaultCurrencyTicker,
-                                key: const ValueKey(
-                                  'home_desktop_balance_currency_text',
-                                ),
-                                style: AppTypography.headlineMedium.copyWith(
-                                  color: colors.text.homeCard,
-                                ),
+                            Text(
+                              kZcashDefaultCurrencyTicker,
+                              key: const ValueKey(
+                                'home_desktop_balance_currency_text',
+                              ),
+                              style: AppTypography.headlineLarge.copyWith(
+                                color: colors.text.homeCard,
                               ),
                             ),
                           ],

@@ -48,20 +48,25 @@ void main() {
     expect(AppWindowSizing.paneRadius, 20);
   });
 
-  test('desktop font tokens match 3 Fonts.zip', () {
-    expect(AppTypography.displayMedium.fontFamily, 'Libre Caslon Text');
-    expect(AppTypography.displayMedium.fontWeight, FontWeight.w400);
+  test('desktop font tokens match the design system', () {
+    const liningFigures = [FontFeature.enable('case')];
+
+    expect(AppTypography.displayMedium.fontFamily, 'Young Serif');
+    expect(AppTypography.displayMedium.fontWeight, FontWeight.w500);
+    expect(AppTypography.displayMedium.fontFeatures, liningFigures);
     expect(AppTypography.displayMedium.fontSize, 45);
     expect(AppTypography.displayMedium.height, 48 / 45);
     expect(AppTypography.displayMedium.letterSpacing, -1.35);
 
-    expect(AppTypography.headlineLarge.fontFamily, 'Libre Caslon Text');
-    expect(AppTypography.headlineLarge.fontWeight, FontWeight.w400);
+    expect(AppTypography.headlineLarge.fontFamily, 'Young Serif');
+    expect(AppTypography.headlineLarge.fontWeight, FontWeight.w500);
+    expect(AppTypography.headlineLarge.fontFeatures, liningFigures);
     expect(AppTypography.headlineLarge.fontSize, 32);
     expect(AppTypography.headlineLarge.height, 33 / 32);
 
-    expect(AppTypography.headlineMedium.fontFamily, 'Libre Caslon Text');
-    expect(AppTypography.headlineMedium.fontWeight, FontWeight.w400);
+    expect(AppTypography.headlineMedium.fontFamily, 'Young Serif');
+    expect(AppTypography.headlineMedium.fontWeight, FontWeight.w500);
+    expect(AppTypography.headlineMedium.fontFeatures, liningFigures);
     expect(AppTypography.headlineMedium.fontSize, 28);
     expect(AppTypography.headlineMedium.height, 30 / 28);
     expect(AppTypography.headlineMedium.letterSpacing, -0.28);

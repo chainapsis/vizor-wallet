@@ -6,11 +6,10 @@ import 'app_typography.dart';
 /// 'case' feature, which swaps Young Serif's default old-style figures for
 /// uniform lining digits. Shared by the review-info amounts, the swap
 /// composer amounts, and serif page titles.
+///
+/// [AppTypography.displaySmall] carries the full serif spec since the
+/// Young Serif token migration; this helper remains as the colored
+/// convenience wrapper its call sites were written against.
 TextStyle appSerifDisplayStyle({required Color color}) {
-  return AppTypography.displaySmall.copyWith(
-    fontFamily: 'Young Serif',
-    fontWeight: FontWeight.w500,
-    fontFeatures: const [FontFeature.enable('case')],
-    color: color,
-  );
+  return AppTypography.displaySmall.copyWith(color: color);
 }

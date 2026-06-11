@@ -6,6 +6,13 @@ import 'package:flutter/widgets.dart';
 /// names are kept stable for existing call sites, so the old `display*`
 /// constants are aliases onto the current headline scale.
 ///
+/// Serif styles use Young Serif Medium with the OpenType 'case' feature
+/// enabled: Young Serif defaults to old-style figures whose descenders sit
+/// below the baseline, and 'case' swaps them for uniform lining digits.
+/// (The original `Desktop.tokens.json` export predated the design system's
+/// serif migration and still said Libre Caslon; the live Figma file uses
+/// Young Serif exclusively.)
+///
 /// Naming maps Figma → Dart by full word and camelCase where possible:
 /// `Headline L` → `headlineLarge`, `Body L` → `bodyLarge`,
 /// `Label S` → `labelSmall`, `Code M` → `codeMedium`. The one outlier is
@@ -33,10 +40,11 @@ abstract final class AppTypography {
   /// Legacy display alias for Headline XL — largest onboarding/welcome
   /// headline.
   ///
-  /// Libre Caslon Text Regular, 45 / 48 px, letter-spacing −1.35.
+  /// Young Serif Medium, 45 / 48 px, letter-spacing −1.35.
   static const displayLarge = TextStyle(
-    fontFamily: 'Libre Caslon Text',
-    fontWeight: FontWeight.w400,
+    fontFamily: 'Young Serif',
+    fontWeight: FontWeight.w500,
+    fontFeatures: [FontFeature.enable('case')],
     fontSize: 45,
     height: 48 / 45,
     letterSpacing: -1.35,
@@ -44,10 +52,11 @@ abstract final class AppTypography {
 
   /// Legacy display alias for Headline XL — hero headlines.
   ///
-  /// Libre Caslon Text Regular, 45 / 48 px, letter-spacing −1.35.
+  /// Young Serif Medium, 45 / 48 px, letter-spacing −1.35.
   static const displayMedium = TextStyle(
-    fontFamily: 'Libre Caslon Text',
-    fontWeight: FontWeight.w400,
+    fontFamily: 'Young Serif',
+    fontWeight: FontWeight.w500,
+    fontFeatures: [FontFeature.enable('case')],
     fontSize: 45,
     height: 48 / 45,
     letterSpacing: -1.35,
@@ -56,10 +65,11 @@ abstract final class AppTypography {
   /// Legacy display alias for Headline L — step-level headlines inside
   /// onboarding flows.
   ///
-  /// Libre Caslon Text Regular, 32 / 33 px, letter-spacing 0.
+  /// Young Serif Medium, 32 / 33 px, letter-spacing 0.
   static const displaySmall = TextStyle(
-    fontFamily: 'Libre Caslon Text',
-    fontWeight: FontWeight.w400,
+    fontFamily: 'Young Serif',
+    fontWeight: FontWeight.w500,
+    fontFeatures: [FontFeature.enable('case')],
     fontSize: 32,
     height: 33 / 32,
     letterSpacing: 0,
@@ -67,10 +77,11 @@ abstract final class AppTypography {
 
   /// Headline Large — section headings inside content panes.
   ///
-  /// Libre Caslon Text Regular, 32 / 33 px, letter-spacing 0.
+  /// Young Serif Medium, 32 / 33 px, letter-spacing 0.
   static const headlineLarge = TextStyle(
-    fontFamily: 'Libre Caslon Text',
-    fontWeight: FontWeight.w400,
+    fontFamily: 'Young Serif',
+    fontWeight: FontWeight.w500,
+    fontFeatures: [FontFeature.enable('case')],
     fontSize: 32,
     height: 33 / 32,
     letterSpacing: 0,
@@ -78,10 +89,11 @@ abstract final class AppTypography {
 
   /// Headline Medium — sub-section headings.
   ///
-  /// Libre Caslon Text Regular, 28 / 30 px, letter-spacing −0.28.
+  /// Young Serif Medium, 28 / 30 px, letter-spacing −0.28.
   static const headlineMedium = TextStyle(
-    fontFamily: 'Libre Caslon Text',
-    fontWeight: FontWeight.w400,
+    fontFamily: 'Young Serif',
+    fontWeight: FontWeight.w500,
+    fontFeatures: [FontFeature.enable('case')],
     fontSize: 28,
     height: 30 / 28,
     letterSpacing: -0.28,

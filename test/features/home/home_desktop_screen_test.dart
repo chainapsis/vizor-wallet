@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
@@ -21,6 +22,30 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
+  // Render with the real app fonts instead of the square-glyph test font.
+  // The test font is much wider than Geist/Young Serif, which overflows the
+  // balance row in ways the running app does not.
+  setUpAll(() async {
+    final fonts = <String, List<String>>{
+      'Geist': [
+        'assets/fonts/Geist-Regular.ttf',
+        'assets/fonts/Geist-Medium.ttf',
+        'assets/fonts/Geist-SemiBold.ttf',
+        'assets/fonts/Geist-Bold.ttf',
+      ],
+      'Young Serif': [
+        'assets/fonts/YoungSerif-Regular.ttf',
+        'assets/fonts/YoungSerif-Medium.ttf',
+      ],
+    };
+    for (final entry in fonts.entries) {
+      final loader = FontLoader(entry.key);
+      for (final asset in entry.value) {
+        loader.addFont(rootBundle.load(asset));
+      }
+      await loader.load();
+    }
+  });
   testWidgets(
     'home privacy mode masks desktop balance without duplicate ticker',
     (tester) async {
