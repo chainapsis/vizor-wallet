@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/address_book/screens/address_book_screen.dart';
@@ -72,6 +73,55 @@ void main() {
     expect(find.text('Alice'), findsOneWidget);
     expect(find.text('u1alice'), findsOneWidget);
     expect(find.text('No contacts yet'), findsNothing);
+  });
+
+  testWidgets('empty-state add button is a compact users-icon pill', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final repo = _FakeAddressBookRepository();
+
+    await tester.pumpWidget(_addressBookHarness(repo));
+    await tester.pumpAndSettle();
+
+    final addButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('address_book_add_contact_button')),
+    );
+    // Updated design: compact secondary pill, h 36 / min-w 96, no shadow.
+    expect(addButton.variant, AppButtonVariant.secondary);
+    expect(addButton.size, AppButtonSize.medium);
+    expect(addButton.height, 36);
+    expect(addButton.minWidth, 96);
+    // The no-contacts empty state leads with the users icon (not the default
+    // plus-circle the floating button uses).
+    final leading = addButton.leading;
+    expect(leading, isA<AppIcon>());
+    expect((leading! as AppIcon).name, AppIcons.users);
+  });
+
+  testWidgets('floating add button is flat and leads with the add icon', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final repo = _FakeAddressBookRepository([
+      _contact(id: 'mike', label: 'Mike', address: 'u1mike'),
+    ]);
+
+    await tester.pumpWidget(_addressBookHarness(repo));
+    await tester.pumpAndSettle();
+
+    final addButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('address_book_add_contact_button')),
+    );
+    expect(addButton.variant, AppButtonVariant.secondary);
+    expect(addButton.size, AppButtonSize.medium);
+    expect(addButton.height, 36);
+    // The floating slot now renders the flat button directly — no min-width
+    // stretch and the default plus-circle icon.
+    expect(addButton.minWidth, 96);
+    final leading = addButton.leading;
+    expect(leading, isA<AppIcon>());
+    expect((leading! as AppIcon).name, AppIcons.addNew);
   });
 
   testWidgets('warns about a malformed address but still allows saving', (
@@ -259,10 +309,13 @@ void main() {
     await tester.pumpWidget(_addressBookHarness(repo));
     await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.byKey(const ValueKey('address_book_search_field')),
-      'nothing',
-    );
+    // Updated design: the contacts search field is the compact 256-wide
+    // variant, narrower than the 352-wide group cards.
+    final searchField = find.byKey(const ValueKey('address_book_search_field'));
+    expect(searchField, findsOneWidget);
+    expect(tester.getSize(searchField).width, 256);
+
+    await tester.enterText(searchField, 'nothing');
     await tester.pumpAndSettle();
 
     expect(find.text('No contacts were found'), findsOneWidget);
@@ -332,6 +385,84 @@ void main() {
 
     expect(find.text('No networks found'), findsOneWidget);
     expect(find.text('Zcash'), findsNothing);
+    // With no matching rows the list collapses to the empty result, so the
+    // scrollbar surface is gone entirely.
+    expect(
+      find.byKey(const ValueKey('address_book_network_scrollbar')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('network selector shows a visible scrollbar when overflowing', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final repo = _FakeAddressBookRepository();
+
+    await tester.pumpWidget(_addressBookHarness(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('address_book_add_contact_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('address_book_network_selector_button')),
+    );
+    await tester.pumpAndSettle();
+
+    // The full (unfiltered) network list overflows the modal's fixed list
+    // viewport, so the redesign keeps its scrollbar thumb visible to signal
+    // there is more content below the clean cut.
+    final scrollbarFinder = find.byKey(
+      const ValueKey('address_book_network_scrollbar'),
+    );
+    expect(scrollbarFinder, findsOneWidget);
+    expect(
+      tester.widget<RawScrollbar>(scrollbarFinder).thumbVisibility,
+      isTrue,
+      reason: 'overflowing network list must show its scrollbar thumb',
+    );
+
+    // Narrow the list to a single match: it no longer overflows, so the
+    // always-on thumb is suppressed (no full-length dummy thumb).
+    await tester.enterText(
+      find.byKey(const ValueKey('address_book_network_search_field')),
+      'zcash',
+    );
+    await tester.pumpAndSettle();
+
+    expect(scrollbarFinder, findsOneWidget);
+    expect(
+      tester.widget<RawScrollbar>(scrollbarFinder).thumbVisibility,
+      isFalse,
+      reason: 'a short network list should not force a persistent thumb',
+    );
+  });
+
+  testWidgets('network selector cancel hugs its label width', (tester) async {
+    await _setDesktopViewport(tester);
+    final repo = _FakeAddressBookRepository();
+
+    await tester.pumpWidget(_addressBookHarness(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('address_book_add_contact_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('address_book_network_selector_button')),
+    );
+    await tester.pumpAndSettle();
+
+    // The redesigned modal trades the full-width cancel for a compact ghost
+    // button hugging its label (min width 196, not the old 280 stretch).
+    final cancelButton = tester.widget<AppButton>(
+      find.ancestor(of: find.text('Cancel'), matching: find.byType(AppButton)),
+    );
+    expect(cancelButton.variant, AppButtonVariant.ghost);
+    expect(cancelButton.minWidth, 196);
   });
 
   testWidgets('opens address scanner as an in-pane modal', (tester) async {
