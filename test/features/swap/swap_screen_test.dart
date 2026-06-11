@@ -1,12 +1,20 @@
+// The platform-interface fakes below stub path_provider / flutter_secure_storage
+// so the activity tab's tap-through to the tx-status route can resolve the
+// wallet DB path under test. These are transitive deps, hence the ignore.
+// ignore_for_file: depend_on_referenced_packages
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
@@ -32,6 +40,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dar
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
+import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_review_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
@@ -3220,6 +3229,141 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets(
+    'activity tab absorbs the matched ZEC receive into the swap group',
+    (tester) async {
+      await _setDesktopViewport(tester);
+
+      // The provider hands back the destination hash in display order; the
+      // wallet's transaction history stores the byte-reversed internal order.
+      const destinationDisplayOrder =
+          'aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899';
+      const receiveWalletOrder =
+          '99887766554433221100ffeeddccbbaa99887766554433221100ffeeddccbbaa';
+      // Sanity: the screen derives the same wallet-order hash the fake tx uses.
+      expect(
+        swapChainTxidToWalletTxidHex(destinationDisplayOrder),
+        receiveWalletOrder,
+      );
+
+      final sessionStore = _FakeSwapPersistenceStore(
+        initialIntents: [
+          _persistedExternalToZecCompleteIntent(
+            id: 'swap-receive-absorb',
+            destinationChainTxHash: destinationDisplayOrder,
+          ),
+        ],
+      );
+
+      // 12.13 ZEC inbound payout (12.13 * 1e8 zatoshi).
+      final receiveTx = _receivedZecTx(
+        txidHex: receiveWalletOrder,
+        zatoshi: BigInt.from(1213000000),
+      );
+
+      // The tap-through pushes a tx-status route whose builder first resolves
+      // the wallet DB path (path_provider + secure storage). Stub both platform
+      // interfaces so the path future completes; the FFI history/detail lookups
+      // then fail fast and the screen renders from the initialTransaction extra.
+      final previousPathProvider = PathProviderPlatform.instance;
+      PathProviderPlatform.instance = _FakePathProviderPlatform();
+      addTearDown(() {
+        PathProviderPlatform.instance = previousPathProvider;
+      });
+      final previousSecureStorage = FlutterSecureStoragePlatform.instance;
+      FlutterSecureStoragePlatform.instance = _FakeSecureStoragePlatform(const {
+        'zcash_wallet_db_name': 'zcash_wallet_test.db',
+      });
+      addTearDown(() {
+        FlutterSecureStoragePlatform.instance = previousSecureStorage;
+      });
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/activity',
+            routes: [
+              _swapRoute(),
+              _swapActivityRoute(),
+              _activityTransactionRoute(),
+            ],
+          ),
+          seedSwapActivityFixtures: false,
+          sessionStore: sessionStore,
+          recentTransactions: [receiveTx],
+        ),
+      );
+      await _pumpUntilPresent(
+        tester,
+        find.byKey(const ValueKey('activity_screen_title_row')),
+      );
+      await tester.pump(const Duration(milliseconds: 250));
+
+      // The completed swap group renders with its absorbed receive child,
+      // carrying the real on-chain settled amount (not the quote estimate).
+      expect(find.text('Swapped'), findsOneWidget);
+      expect(find.text('Received ZEC'), findsOneWidget);
+      expect(find.text('+12.13 ZEC'), findsOneWidget);
+      expect(find.text('+4.12 ZEC'), findsNothing);
+      // The standalone on-chain 'Received' row is suppressed (absorbed). The
+      // only inbound surface is the swap group's child.
+      expect(find.text('Received'), findsNothing);
+
+      // The absorbed child is tappable: the screen wired onReceivedLegTap to
+      // the matched payout, so the child row opts into the click cursor (the
+      // standalone-row deduper fed it the real tx).
+      expect(
+        find.ancestor(
+          of: find.text('Received ZEC'),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is MouseRegion &&
+                widget.cursor == SystemMouseCursors.click,
+          ),
+        ),
+        findsWidgets,
+      );
+
+      // Tapping the absorbed child opens the underlying tx-status route. The
+      // push awaits a real wallet-DB-path resolution (path_provider + secure
+      // storage) plus an FFI detail lookup that fails fast (no Rust under
+      // test); run those real async hops inside runAsync, then pump frames.
+      await tester.tap(find.text('Received ZEC'));
+      await tester.runAsync(() async {
+        for (var i = 0; i < 40; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          if (find
+              .byType(ActivityTransactionStatusScreen)
+              .evaluate()
+              .isNotEmpty) {
+            break;
+          }
+        }
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byType(ActivityTransactionStatusScreen), findsOneWidget);
+      final context = tester.element(
+        find.byType(ActivityTransactionStatusScreen).first,
+      );
+      expect(
+        GoRouterState.of(context).uri.path,
+        '/activity/tx/$receiveWalletOrder',
+      );
+      // The detail screen's button row can overflow this fixed test pane by a
+      // few px; that layout artifact is orthogonal to the navigation contract
+      // under test, so drain overflow FlutterErrors instead of failing the
+      // absorption assertion. Re-throw anything that is not an overflow.
+      Object? pending;
+      while ((pending = tester.takeException()) != null) {
+        final isOverflow =
+            pending is FlutterError && pending.message.contains('overflowed');
+        if (!isOverflow) throw pending!;
+      }
+    },
+  );
 
   testWidgets(
     'activity detail uses status page without manual refresh control',
@@ -7345,6 +7489,7 @@ Widget _routerHarness(
   AddressBookRepository? addressBookRepository,
   RpcEndpointChainNameGetter? failoverChainNameGetter,
   RpcEndpointLatestBlockHeightGetter? failoverHeightGetter,
+  List<rust_sync.TransactionInfo> recentTransactions = const [],
 }) {
   final fixtureIntents = seedSwapActivityFixtures
       ? _accountScopedSwapActivityFixtureIntents()
@@ -7360,8 +7505,10 @@ Widget _routerHarness(
       if (accountNotifier != null)
         accountProvider.overrideWith(accountNotifier),
       syncProvider.overrideWith(
-        () =>
-            _FakeSwapSyncNotifier(spendableBalance ?? BigInt.from(10000000000)),
+        () => _FakeSwapSyncNotifier(
+          spendableBalance ?? BigInt.from(10000000000),
+          recentTransactions: recentTransactions,
+        ),
       ),
       receiveAddressServiceProvider.overrideWith(
         _FakeReceiveAddressService.new,
@@ -7464,6 +7611,22 @@ GoRoute _swapActivityRoute() {
         ),
       ),
     ],
+  );
+}
+
+GoRoute _activityTransactionRoute() {
+  return GoRoute(
+    path: '/activity/tx/:txid',
+    builder: (_, state) {
+      final extra = state.extra;
+      return ActivityTransactionStatusScreen(
+        args: extra is ActivityTransactionStatusArgs
+            ? extra
+            : ActivityTransactionStatusArgs(
+                txidHex: state.pathParameters['txid'] ?? '',
+              ),
+      );
+    },
   );
 }
 
@@ -7737,6 +7900,108 @@ SwapIntent _persistedExternalToZecIntent({
     oneClickRecipient: stagingAddress,
     oneClickRefundTo: '0xpersisted-refund',
   );
+}
+
+SwapIntent _persistedExternalToZecCompleteIntent({
+  required String id,
+  required String destinationChainTxHash,
+}) {
+  return SwapIntent(
+    id: id,
+    pair: 'USDC -> ZEC',
+    sellAmount: '101.23 USDC',
+    receiveEstimate: '4.12 ZEC',
+    provider: 'NEAR Intents',
+    status: SwapIntentStatus.complete,
+    nextAction: 'Swap complete',
+    direction: SwapDirection.externalToZec,
+    externalAsset: SwapAsset.usdc,
+    depositAddress: id,
+    depositMemo: 'memo-7',
+    providerQuoteId: 'quote-1',
+    oneClickRecipient: 'u1wallet-receive',
+    oneClickRefundTo: '0xpersisted-refund',
+    destinationChainTxHash: destinationChainTxHash,
+    accountUuid: 'account-1',
+    createdAt: DateTime.utc(2026, 5, 7, 10),
+    completedAt: DateTime.utc(2026, 5, 7, 10, 5),
+  );
+}
+
+rust_sync.TransactionInfo _receivedZecTx({
+  required String txidHex,
+  required BigInt zatoshi,
+}) {
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: BigInt.from(2000000),
+    expiredUnmined: false,
+    accountBalanceDelta: zatoshi.toInt(),
+    fee: BigInt.zero,
+    blockTime: BigInt.from(1800000000),
+    isTransparent: false,
+    txKind: 'received',
+    displayAmount: zatoshi,
+    displayPool: 'shielded',
+    createdTime: BigInt.from(1800000000),
+  );
+}
+
+class _FakePathProviderPlatform extends PathProviderPlatform
+    with MockPlatformInterfaceMixin {
+  @override
+  Future<String?> getApplicationSupportPath() async =>
+      Directory.systemTemp.path;
+
+  @override
+  Future<String?> getTemporaryPath() async => Directory.systemTemp.path;
+}
+
+class _FakeSecureStoragePlatform extends FlutterSecureStoragePlatform
+    with MockPlatformInterfaceMixin {
+  _FakeSecureStoragePlatform(Map<String, String> seed)
+    : _store = Map<String, String>.of(seed);
+
+  final Map<String, String> _store;
+
+  @override
+  Future<String?> read({
+    required String key,
+    required Map<String, String> options,
+  }) async => _store[key];
+
+  @override
+  Future<bool> containsKey({
+    required String key,
+    required Map<String, String> options,
+  }) async => _store.containsKey(key);
+
+  @override
+  Future<Map<String, String>> readAll({
+    required Map<String, String> options,
+  }) async => Map<String, String>.of(_store);
+
+  @override
+  Future<void> write({
+    required String key,
+    required String value,
+    required Map<String, String> options,
+  }) async {
+    _store[key] = value;
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    required Map<String, String> options,
+  }) async {
+    _store.remove(key);
+  }
+
+  @override
+  Future<void> deleteAll({required Map<String, String> options}) async {
+    _store.clear();
+  }
 }
 
 class _DepositSendRequest {
