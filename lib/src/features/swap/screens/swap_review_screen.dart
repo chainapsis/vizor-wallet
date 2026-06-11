@@ -140,7 +140,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
       swapState.reviewAccountUuid,
     );
     final startBlockedReason =
-        _reviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
+        swapReviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
             ? "You don't have enough ZEC for this swap. Try a smaller amount."
             : null;
 
@@ -193,14 +193,14 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                                     startError: swapState.statusError,
                                     startBlockedReason: startBlockedReason,
                                     payFiatTextOverride:
-                                        _reviewFiatTextForAsset(
+                                        swapReviewFiatTextForAsset(
                                           swapState,
                                           quote: quote,
                                           asset: quote.sellAsset,
                                           amount: quote.sellAmount,
                                         ),
                                     receiveFiatTextOverride:
-                                        _reviewFiatTextForAsset(
+                                        swapReviewFiatTextForAsset(
                                           swapState,
                                           quote: quote,
                                           asset: quote.receiveAsset,
@@ -241,7 +241,8 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
   }
 }
 
-String? _reviewFiatTextForAsset(
+/// Shared with the mobile review screen.
+String? swapReviewFiatTextForAsset(
   SwapState state, {
   required SwapQuote quote,
   required SwapAsset asset,
@@ -270,7 +271,8 @@ double? _reviewQuoteUsdValueForAsset(
   return null;
 }
 
-bool _reviewQuoteExceedsAvailableZec(SwapQuote quote, BigInt availableZatoshi) {
+/// Shared with the mobile review screen.
+bool swapReviewQuoteExceedsAvailableZec(SwapQuote quote, BigInt availableZatoshi) {
   if (!quote.direction.sendsZec) return false;
   final amountText = quote.sellAmountText.split(' ').first.trim();
   final amount = parseZecAmount(amountText);

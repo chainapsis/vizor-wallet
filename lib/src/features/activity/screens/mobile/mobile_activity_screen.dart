@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -14,6 +15,7 @@ import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../activity_feed_sections.dart';
 import '../../activity_row_mapper.dart';
+import '../../../swap/models/swap_activity_navigation.dart';
 import '../../swap_activity_row_items_provider.dart';
 import '../../swap_activity_row_mapper.dart';
 import '../../widgets/activity_feed.dart';
@@ -162,7 +164,14 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
             context: context,
             item: item,
             privacyModeEnabled: privacyModeEnabled,
-            onTap: null,
+            // Swap intents need their detail surface reachable — deposit
+            // signing and claiming happen there.
+            onTap: () => context.push(
+              swapActivityDetailUri(
+                intentId: item.intentId,
+                returnTarget: SwapActivityReturnTarget.activity,
+              ).toString(),
+            ),
           ),
         ),
     ];

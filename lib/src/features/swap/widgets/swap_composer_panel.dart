@@ -13,6 +13,7 @@ import 'swap_asset_icon.dart';
 class SwapComposerPanel extends StatefulWidget {
   const SwapComposerPanel({
     required this.state,
+    this.width = 400,
     required this.onAmountChanged,
     required this.onAmountFiatChanged,
     required this.onReceiveAmountChanged,
@@ -31,6 +32,10 @@ class SwapComposerPanel extends StatefulWidget {
   });
 
   final SwapState state;
+
+  /// Panel width — 400 on the desktop pane; the mobile screen passes
+  /// its content width.
+  final double width;
   final ValueChanged<String> onAmountChanged;
   final ValueChanged<String> onAmountFiatChanged;
   final ValueChanged<String> onReceiveAmountChanged;
@@ -271,7 +276,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
 
     return Center(
       child: SizedBox(
-        width: 400,
+        width: widget.width,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,

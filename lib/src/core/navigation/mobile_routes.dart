@@ -7,7 +7,10 @@ import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
 import '../../features/address_book/screens/mobile/mobile_address_book_screen.dart';
+import '../../features/activity/screens/mobile/mobile_swap_activity_detail_screen.dart';
 import '../../features/send/screens/mobile/mobile_keystone_sign_screen.dart';
+import '../../features/swap/models/swap_activity_navigation.dart';
+import '../../features/swap/screens/mobile/mobile_swap_review_screen.dart';
 import '../../features/send/services/send_flow.dart' show SendReviewArgs;
 import '../../features/send/screens/mobile/mobile_send_scan_screen.dart';
 import '../../features/send/screens/mobile/mobile_send_screen.dart';
@@ -118,6 +121,31 @@ List<RouteBase> buildMobileRoutes({
         key: state.pageKey,
         child: const MobileSendScanScreen(),
       ),
+    ),
+    GoRoute(
+      path: '/swap/review',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileSwapReviewScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/activity/swap/:swapId',
+      pageBuilder: (context, state) {
+        final swapId = state.pathParameters['swapId'] ?? '';
+        return CupertinoPage(
+          key: state.pageKey,
+          child: MobileSwapActivityDetailScreen(
+            swapIntentId: swapId,
+            returnTarget: SwapActivityReturnTarget.fromQueryValue(
+              state.uri.queryParameters[swapActivityReturnQueryKey],
+            ),
+            autoSignZecDeposit:
+                state.uri.queryParameters[swapActivitySignQueryKey] ==
+                swapActivitySignZecDepositValue,
+          ),
+        );
+      },
     ),
     GoRoute(
       path: '/send/keystone-sign',
