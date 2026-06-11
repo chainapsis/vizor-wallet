@@ -34,14 +34,14 @@ const double _kContactsContentWidth = 352;
 /// narrower than the group cards).
 const double _kContactsSearchFieldWidth = 256;
 
-/// Fallback floating add-contact button extent used before the button has
-/// been measured: compact button height (36) + its `AppSpacing.md` bottom
-/// offset.
-const double _kFloatingAddContactFallbackReserve = 60;
+/// Minimum height of the floating add-contact overlay (Figma: the bottom
+/// gradient band is min 96 tall with 16px vertical padding around the 36px
+/// button), and the matching minimum scroll reserve. Mirrors the settings
+/// endpoint floating-bar contract.
+const double _kFloatingAddContactMinOverlayHeight = 96;
 
 /// Breathing room between the last group card and the top of the floating
-/// add-contact button, added on top of the measured button extent so the
-/// button's shadow never bleeds onto the card (matches the settings endpoint
+/// overlay once it grows past its minimum (matches the settings endpoint
 /// floating-bar gap).
 const double _kFloatingAddContactGap = 12;
 
@@ -70,10 +70,10 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
 
   final _floatingButtonKey = GlobalKey();
 
-  /// Latest measured height of the floating add-contact button (including its
-  /// internal bottom breathing room). Drives the scroll scaffold's reserved
-  /// bottom padding so the last group card scrolls clear of the button.
-  double _floatingButtonReserve = _kFloatingAddContactFallbackReserve;
+  /// Latest measured height of the floating add-contact overlay (gradient
+  /// band + button). Drives the scroll scaffold's reserved bottom padding so
+  /// the last group card scrolls clear of the overlay.
+  double _floatingButtonReserve = _kFloatingAddContactMinOverlayHeight;
 
   void _measureFloatingButton() {
     final box =
@@ -290,9 +290,15 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
               toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
               padding: EdgeInsets.only(
                 top: AppSpacing.md,
-                bottom: showBottomAction
-                    ? _floatingButtonReserve + _kFloatingAddContactGap
-                    : 0,
+                // The minimum reserve matches the overlay's minimum height;
+                // once the overlay grows past it the gap is added on top so
+                // the last card never slides under the button.
+                bottom: !showBottomAction
+                    ? 0
+                    : (_floatingButtonReserve <=
+                              _kFloatingAddContactMinOverlayHeight
+                          ? _kFloatingAddContactMinOverlayHeight
+                          : _floatingButtonReserve + _kFloatingAddContactGap),
               ),
               child: paneState == null
                   ? const Padding(
@@ -316,13 +322,40 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                child: Center(
-                  child: Padding(
-                    key: _floatingButtonKey,
-                    padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                    // Flat per the updated design — no shadow wrapper.
-                    child: _AddressBookAddButton(onPressed: _openAddContact),
-                  ),
+                child: Stack(
+                  children: [
+                    // Bottom fade so list content scrolling beneath the
+                    // floating button dissolves into the window background
+                    // (Figma: window-transparent -> window gradient band).
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                context.colors.macosUtility.windowTransparent,
+                                context.colors.macosUtility.window,
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      key: _floatingButtonKey,
+                      constraints: const BoxConstraints(
+                        minHeight: _kFloatingAddContactMinOverlayHeight,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppSpacing.sm,
+                      ),
+                      alignment: Alignment.bottomCenter,
+                      // Flat per the updated design — no shadow wrapper.
+                      child: _AddressBookAddButton(onPressed: _openAddContact),
+                    ),
+                  ],
                 ),
               ),
             if (_modal != null)
@@ -568,9 +601,11 @@ class _AddressBookSearchFieldState extends State<_AddressBookSearchField> {
       focusNode: _focusNode,
       hintText: 'Search for label or network',
       leading: const AppIcon(AppIcons.search),
-      leadingSlotWidth: 40,
-      trailingSlotWidth: 40,
-      inputHorizontalPadding: AppSpacing.xs,
+      // Figma: 32px icon slot + 12px text inset, and no idle trailing slot —
+      // the clear button claims its slot only when shown, so the full
+      // placeholder fits the 256px field without ellipsizing.
+      leadingSlotWidth: 32,
+      inputHorizontalPadding: AppSpacing.s,
       showClearButton: true,
       clearButtonRequiresText: false,
       onChanged: widget.onChanged,

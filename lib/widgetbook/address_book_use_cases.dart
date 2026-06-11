@@ -249,8 +249,7 @@ class _AddressBookFrame extends StatelessWidget {
                       padding: EdgeInsets.only(
                         top: AppSpacing.md,
                         bottom: _showBottomAction
-                            ? _kFloatingAddContactFallbackReserve +
-                                  _kFloatingAddContactGap
+                            ? _kFloatingAddContactMinOverlayHeight
                             : 0,
                       ),
                       child: _AddressBookPane(contentState: contentState),
@@ -260,14 +259,40 @@ class _AddressBookFrame extends StatelessWidget {
                         left: 0,
                         right: 0,
                         bottom: 0,
-                        child: Center(
-                          child: Padding(
-                            padding: const EdgeInsets.only(
-                              bottom: AppSpacing.md,
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        context
+                                            .colors
+                                            .macosUtility
+                                            .windowTransparent,
+                                        context.colors.macosUtility.window,
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
-                            // Flat per the updated design — no shadow wrapper.
-                            child: _AddressBookAddButton(onPressed: () {}),
-                          ),
+                            Container(
+                              constraints: const BoxConstraints(
+                                minHeight: _kFloatingAddContactMinOverlayHeight,
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: AppSpacing.sm,
+                              ),
+                              alignment: Alignment.bottomCenter,
+                              // Flat per the updated design — no shadow
+                              // wrapper.
+                              child: _AddressBookAddButton(onPressed: () {}),
+                            ),
+                          ],
                         ),
                       ),
                     if (modalState != null)
@@ -286,14 +311,10 @@ class _AddressBookFrame extends StatelessWidget {
   }
 }
 
-/// Floating add-contact button extent: 36px compact button + 24px
-/// `AppSpacing.md` bottom offset. Mirrors the real screen's
-/// `_kFloatingAddContactFallbackReserve`.
-const double _kFloatingAddContactFallbackReserve = 60;
-
-/// Card↔button breathing room added on top of the button extent. Mirrors the
-/// real screen's `_kFloatingAddContactGap`.
-const double _kFloatingAddContactGap = 12;
+/// Minimum height of the floating add-contact overlay (gradient band + 36px
+/// button with 16px vertical padding). Mirrors the real screen's
+/// `_kFloatingAddContactMinOverlayHeight`.
+const double _kFloatingAddContactMinOverlayHeight = 96;
 
 class _AddressBookPane extends StatelessWidget {
   const _AddressBookPane({required this.contentState});
@@ -582,9 +603,10 @@ class _AddressBookSearchField extends StatelessWidget {
       hintText: 'Search for label or network',
       autofocus: autofocus,
       leading: const AppIcon(AppIcons.search),
-      leadingSlotWidth: 40,
-      trailingSlotWidth: 40,
-      inputHorizontalPadding: AppSpacing.xs,
+      // Mirrors the real screen: 32px icon slot, 12px text inset, no idle
+      // trailing slot so the placeholder fits without ellipsizing.
+      leadingSlotWidth: 32,
+      inputHorizontalPadding: AppSpacing.s,
       showClearButton: value != null,
       clearButtonRequiresText: false,
     );
