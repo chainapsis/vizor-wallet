@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../core/privacy/privacy_mask.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
+import '../../rust/api/sync.dart' as rust_sync;
 import '../swap/models/swap_models.dart';
 import 'activity_row_mapper.dart';
 import 'models/activity_row_data.dart';
@@ -272,6 +273,68 @@ bool _swapActivityReturnsFunds(SwapActivityRowItem item) {
 bool swapActivityRowAbsorbsDepositLeg(SwapActivityRowItem item) {
   return item.status != SwapIntentStatus.expired &&
       !_swapActivityReturnsFunds(item);
+}
+
+/// Swap intents matched against the on-chain transaction list: which
+/// standalone tx rows duplicate a swap row, and the matched ZEC payout per
+/// intent. Home and the Activity screen share this so both feeds suppress
+/// the same rows; Home only consumes the suppression set (its compact rows
+/// render no children).
+class SwapActivityLegAbsorption {
+  const SwapActivityLegAbsorption({
+    required this.absorbedTxidHexes,
+    required this.receiveTxByIntent,
+  });
+
+  static const empty = SwapActivityLegAbsorption(
+    absorbedTxidHexes: <String>{},
+    receiveTxByIntent: <String, rust_sync.TransactionInfo>{},
+  );
+
+  /// Wallet-order txid hexes whose standalone rows are duplicates of a swap
+  /// row (the matched payout, or our own ZEC deposit broadcast).
+  final Set<String> absorbedTxidHexes;
+
+  /// Matched ZEC payout per intent id, feeding the tappable 'Received ZEC'
+  /// sub row on the Activity screen.
+  final Map<String, rust_sync.TransactionInfo> receiveTxByIntent;
+
+  bool absorbs(rust_sync.TransactionInfo tx) =>
+      absorbedTxidHexes.contains(tx.txidHex.toLowerCase());
+}
+
+SwapActivityLegAbsorption matchSwapActivityLegAbsorption({
+  required List<SwapActivityRowItem> swapItems,
+  required List<rust_sync.TransactionInfo> transactions,
+}) {
+  if (swapItems.isEmpty || transactions.isEmpty) {
+    return SwapActivityLegAbsorption.empty;
+  }
+  final receiveTxByIntent = <String, rust_sync.TransactionInfo>{};
+  final absorbedTxidHexes = <String>{};
+  for (final item in swapItems) {
+    final receiveHex = item.receiveWalletTxidHex;
+    // Only suppress the deposit leg while the swap row carries the signed
+    // outgoing amount; refunded/timed-out rows render unsigned, so their
+    // standalone Sent row stays visible.
+    final depositHex = swapActivityRowAbsorbsDepositLeg(item)
+        ? item.depositWalletTxidHex
+        : null;
+    if (receiveHex == null && depositHex == null) continue;
+    for (final tx in transactions) {
+      final txHex = tx.txidHex.toLowerCase();
+      if (receiveHex != null && txHex == receiveHex) {
+        receiveTxByIntent[item.intentId] = tx;
+        absorbedTxidHexes.add(txHex);
+      } else if (depositHex != null && txHex == depositHex) {
+        absorbedTxidHexes.add(txHex);
+      }
+    }
+  }
+  return SwapActivityLegAbsorption(
+    absorbedTxidHexes: absorbedTxidHexes,
+    receiveTxByIntent: receiveTxByIntent,
+  );
 }
 
 String _swapActivityTitle(SwapIntentStatus status) {

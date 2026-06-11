@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
   testWidgets('maps swap records to shared activity feed rows', (tester) async {
@@ -627,5 +628,116 @@ void main() {
       swapActivityRowAbsorbsDepositLeg(itemWith(SwapIntentStatus.expired)),
       isFalse,
     );
+  });
+
+  test('leg absorption matches payouts and gated deposits', () {
+    const receiveDisplayOrder =
+        'aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899';
+    const depositDisplayOrder =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    final receiveWalletOrder = swapChainTxidToWalletTxidHex(
+      receiveDisplayOrder,
+    )!;
+    final depositWalletOrder = swapChainTxidToWalletTxidHex(
+      depositDisplayOrder,
+    )!;
+
+    SwapActivityRowItem itemWith({
+      required String id,
+      required SwapIntentStatus status,
+      String? destinationChainTxHash,
+      String? depositTxHash,
+    }) {
+      return SwapActivityRowItem(
+        intentId: id,
+        providerLabel: 'NEAR Intents',
+        sellAmountText: '1.5000 ZEC',
+        receiveEstimateText: '105.25 USDC',
+        status: status,
+        direction: destinationChainTxHash != null
+            ? SwapDirection.externalToZec
+            : SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        activityTimestamp: null,
+        receiveWalletTxidHex: swapChainTxidToWalletTxidHex(
+          destinationChainTxHash,
+        ),
+        depositWalletTxidHex: swapChainTxidToWalletTxidHex(depositTxHash),
+      );
+    }
+
+    rust_sync.TransactionInfo tx(String txidHex) {
+      return rust_sync.TransactionInfo(
+        txidHex: txidHex,
+        minedHeight: BigInt.from(2000000),
+        expiredUnmined: false,
+        accountBalanceDelta: 0,
+        fee: BigInt.zero,
+        blockTime: BigInt.from(1800000000),
+        isTransparent: false,
+        txKind: 'sent',
+        displayAmount: BigInt.from(150000000),
+        displayPool: 'shielded',
+        createdTime: BigInt.from(1800000000),
+      );
+    }
+
+    final receiveTx = tx(receiveWalletOrder);
+    final depositTx = tx(depositWalletOrder);
+
+    // Matched payout absorbs the standalone row and feeds the sub row.
+    final completed = matchSwapActivityLegAbsorption(
+      swapItems: [
+        itemWith(
+          id: 'swap-complete',
+          status: SwapIntentStatus.complete,
+          destinationChainTxHash: receiveDisplayOrder,
+        ),
+      ],
+      transactions: [receiveTx],
+    );
+    expect(completed.absorbs(receiveTx), isTrue);
+    expect(completed.receiveTxByIntent['swap-complete'], receiveTx);
+
+    // The deposit leg follows the signed-amount gate: in-flight absorbs,
+    // refunded keeps the standalone Sent row visible.
+    final inFlight = matchSwapActivityLegAbsorption(
+      swapItems: [
+        itemWith(
+          id: 'swap-processing',
+          status: SwapIntentStatus.processing,
+          depositTxHash: depositDisplayOrder,
+        ),
+      ],
+      transactions: [depositTx],
+    );
+    expect(inFlight.absorbs(depositTx), isTrue);
+    expect(inFlight.receiveTxByIntent, isEmpty);
+
+    final refunded = matchSwapActivityLegAbsorption(
+      swapItems: [
+        itemWith(
+          id: 'swap-refunded',
+          status: SwapIntentStatus.refunded,
+          depositTxHash: depositDisplayOrder,
+        ),
+      ],
+      transactions: [depositTx],
+    );
+    expect(refunded.absorbs(depositTx), isFalse);
+
+    // Unmatched hashes absorb nothing.
+    final unmatched = matchSwapActivityLegAbsorption(
+      swapItems: [
+        itemWith(
+          id: 'swap-unmatched',
+          status: SwapIntentStatus.complete,
+          destinationChainTxHash: receiveDisplayOrder,
+        ),
+      ],
+      transactions: [depositTx],
+    );
+    expect(unmatched.absorbs(depositTx), isFalse);
+    expect(unmatched.receiveTxByIntent, isEmpty);
   });
 }

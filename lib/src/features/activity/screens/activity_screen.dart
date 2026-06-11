@@ -272,34 +272,18 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     // Absorb swap-leg transactions into their swap rows: the matched ZEC
     // payout feeds the tappable 'Received ZEC' sub row, and our own ZEC
     // deposit broadcast is suppressed as a duplicate of the swap row itself.
-    final swapReceiveTxByIntent = <String, rust_sync.TransactionInfo>{};
-    final absorbedTxidHexes = <String>{};
-    if (canRenderTransactions) {
-      for (final item in swapItems) {
-        final receiveHex = item.receiveWalletTxidHex;
-        // Only suppress the deposit leg while the swap row carries the
-        // signed outgoing amount; refunded/timed-out rows render unsigned,
-        // so their standalone Sent row stays visible.
-        final depositHex = swapActivityRowAbsorbsDepositLeg(item)
-            ? item.depositWalletTxidHex
-            : null;
-        if (receiveHex == null && depositHex == null) continue;
-        for (final tx in transactions) {
-          final txHex = tx.txidHex.toLowerCase();
-          if (receiveHex != null && txHex == receiveHex) {
-            swapReceiveTxByIntent[item.intentId] = tx;
-            absorbedTxidHexes.add(txHex);
-          } else if (depositHex != null && txHex == depositHex) {
-            absorbedTxidHexes.add(txHex);
-          }
-        }
-      }
-    }
+    final absorption = canRenderTransactions
+        ? matchSwapActivityLegAbsorption(
+            swapItems: swapItems,
+            transactions: transactions,
+          )
+        : SwapActivityLegAbsorption.empty;
+    final swapReceiveTxByIntent = absorption.receiveTxByIntent;
 
     final entries = <_ActivityEntry>[
       if (canRenderTransactions)
         for (final tx in transactions)
-          if (!absorbedTxidHexes.contains(tx.txidHex.toLowerCase()))
+          if (!absorption.absorbs(tx))
             _ActivityEntry(
               timestamp: _transactionActivityTimestamp(tx),
               row: buildTransactionActivityRow(
