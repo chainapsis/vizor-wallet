@@ -12,10 +12,10 @@ import 'package:flutter/material.dart'
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app_bootstrap.dart';
 import '../../../core/config/app_version_config.dart';
+import '../about_content.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
@@ -29,47 +29,6 @@ const _backLinkContentGap = AppSpacing.s;
 const _legalUpdatedLabel = 'Last Update:  ';
 const _paragraphWidth = 352.0;
 const _maxSidebarPaneContentWidth = 752.0;
-const _vizorGithubUrl = 'https://github.com/chainapsis/vizor-wallet/';
-const _vizorWebsiteUrl = 'https://vizor.cash';
-
-const _aboutParagraphs = [
-  _UtilityParagraphData(
-    heading: 'Built by the Keplr team',
-    body:
-        'We built Keplr, the wallet used by millions across Cosmos, Ethereum, '
-        'and Bitcoin. Vizor is our take on what a Zcash wallet should feel '
-        'like.',
-  ),
-  _UtilityParagraphData(
-    heading: 'Designed for shielded Zcash',
-    body:
-        'Vizor is built around shielded transactions, where the sender, '
-        'recipient, and amount stay private. Transparent Zcash works too, but '
-        'private is the default here.',
-  ),
-  _UtilityParagraphData(
-    heading: 'Open source, verifiable, and self-custodial',
-    body:
-        "Vizor is Apache licensed. Your keys stay on your device. We don't "
-        "see your balances or your transactions.",
-  ),
-];
-
-const _legalPlaceholderParagraph = _UtilityParagraphData(
-  heading: 'From the team that brought you Keplr Wallet.',
-  body:
-      'Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the '
-      'sender, recipient, and amount.',
-);
-
-const _legalParagraphs = [
-  _legalPlaceholderParagraph,
-  _legalPlaceholderParagraph,
-  _legalPlaceholderParagraph,
-  _legalPlaceholderParagraph,
-  _legalPlaceholderParagraph,
-  _legalPlaceholderParagraph,
-];
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -93,7 +52,7 @@ class TermsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return const _LegalScreen(
       title: 'Terms of Use',
-      paragraphs: _legalParagraphs,
+      paragraphs: kLegalParagraphs,
     );
   }
 }
@@ -105,7 +64,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return const _LegalScreen(
       title: 'Privacy Policy',
-      paragraphs: _legalParagraphs,
+      paragraphs: kLegalParagraphs,
     );
   }
 }
@@ -125,7 +84,7 @@ class _AboutContent extends StatelessWidget {
         SizedBox(height: AppSpacing.md),
         AppDecorativeDivider(width: 256),
         SizedBox(height: AppSpacing.md),
-        _UtilityParagraphList(paragraphs: _aboutParagraphs),
+        _UtilityParagraphList(paragraphs: kAboutParagraphs),
         _AboutLinkRow(),
         SizedBox(height: AppSpacing.md),
         VizorWordmark(width: 74, height: 27.925),
@@ -138,7 +97,7 @@ class _LegalScreen extends StatelessWidget {
   const _LegalScreen({required this.title, required this.paragraphs});
 
   final String title;
-  final List<_UtilityParagraphData> paragraphs;
+  final List<AboutParagraph> paragraphs;
 
   @override
   Widget build(BuildContext context) {
@@ -237,7 +196,7 @@ class _LegalScrollView extends StatefulWidget {
   const _LegalScrollView({required this.title, required this.paragraphs});
 
   final String title;
-  final List<_UtilityParagraphData> paragraphs;
+  final List<AboutParagraph> paragraphs;
 
   @override
   State<_LegalScrollView> createState() => _LegalScrollViewState();
@@ -394,7 +353,7 @@ class _UtilityPageTitle extends StatelessWidget {
 class _UtilityParagraphList extends StatelessWidget {
   const _UtilityParagraphList({required this.paragraphs});
 
-  final List<_UtilityParagraphData> paragraphs;
+  final List<AboutParagraph> paragraphs;
 
   @override
   Widget build(BuildContext context) {
@@ -420,7 +379,7 @@ class _UtilityParagraphList extends StatelessWidget {
 class _UtilityParagraph extends StatelessWidget {
   const _UtilityParagraph({required this.paragraph});
 
-  final _UtilityParagraphData paragraph;
+  final AboutParagraph paragraph;
 
   @override
   Widget build(BuildContext context) {
@@ -458,12 +417,12 @@ class _AboutLinkRow extends StatelessWidget {
           _AboutTextLink(
             label: 'GitHub',
             semanticsLabel: 'Open Vizor GitHub',
-            url: _vizorGithubUrl,
+            url: kVizorGithubUrl,
           ),
           _AboutTextLink(
             label: 'Website',
             semanticsLabel: 'Open Vizor website',
-            url: _vizorWebsiteUrl,
+            url: kVizorWebsiteUrl,
           ),
         ],
       ),
@@ -503,7 +462,7 @@ class _AboutTextLinkState extends State<_AboutTextLink> {
         onExit: (_) => setState(() => _hovered = false),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => unawaited(_launchAboutUrl(widget.url)),
+          onTap: () => unawaited(launchAboutUrl(widget.url)),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Text(
@@ -521,19 +480,4 @@ class _AboutTextLinkState extends State<_AboutTextLink> {
       ),
     );
   }
-}
-
-Future<void> _launchAboutUrl(String url) async {
-  try {
-    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-  } on Exception {
-    // External links are best-effort from this utility page.
-  }
-}
-
-class _UtilityParagraphData {
-  const _UtilityParagraphData({required this.heading, required this.body});
-
-  final String heading;
-  final String body;
 }

@@ -28,6 +28,7 @@ import 'src/features/accounts/screens/accounts_screen.dart';
 import 'src/features/address_book/screens/address_book_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
 import 'src/features/about/screens/about_screen.dart';
+import 'src/features/about/screens/mobile/mobile_about_screens.dart';
 import 'src/features/onboarding/create/address_types_screen.dart';
 import 'src/features/onboarding/create/intro_zcash_screen.dart';
 import 'src/features/onboarding/create/onboarding_split_view.dart';
@@ -335,8 +336,18 @@ List<RouteBase> appAuthRoutes(
     path: '/lost-password',
     builder: (_, _) => const LostPasswordScreen(),
   ),
-  GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
-  GoRoute(path: '/privacy', builder: (_, _) => const PrivacyPolicyScreen()),
+  GoRoute(
+    path: '/terms',
+    builder: (_, _) => kAppFormFactor == AppFormFactor.mobile
+        ? const MobileLegalScreen(title: 'Terms of Use')
+        : const TermsScreen(),
+  ),
+  GoRoute(
+    path: '/privacy',
+    builder: (_, _) => kAppFormFactor == AppFormFactor.mobile
+        ? const MobileLegalScreen(title: 'Privacy Policy')
+        : const PrivacyPolicyScreen(),
+  ),
 ];
 
 /// Desktop onboarding tree: welcome, the create/import/keystone
