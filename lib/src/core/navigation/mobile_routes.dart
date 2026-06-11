@@ -8,7 +8,10 @@ import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
 import '../../features/send/screens/mobile/mobile_send_scan_screen.dart';
 import '../../features/send/screens/mobile/mobile_send_screen.dart';
+import '../../features/about/screens/mobile/mobile_about_screens.dart';
 import '../../features/settings/screens/mobile/mobile_change_passcode_screen.dart';
+import '../../features/settings/screens/mobile/mobile_endpoint_screen.dart';
+import '../../features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import '../../features/settings/screens/mobile/mobile_settings_screen.dart';
 import '../../features/swap/screens/mobile/mobile_swap_screen.dart';
 import '../layout/mobile/app_mobile_shell.dart';
@@ -80,6 +83,28 @@ List<RouteBase> buildMobileRoutes({
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: const MobileChangePasscodeScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/settings/seed-phrase',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileSeedPhraseScreen(),
+      ),
+    ),
+    // Same path as the desktop endpoint route (back resolver labels it).
+    GoRoute(
+      path: '/settings/endpoint',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileEndpointScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/about',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileAboutScreen(),
       ),
     ),
   ];
