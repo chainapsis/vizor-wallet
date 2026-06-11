@@ -1,47 +1,37 @@
 import 'package:flutter/widgets.dart';
 
-import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_tooltip.dart';
-import '../../address_book/models/address_book_contact.dart';
-import '../../address_book/models/address_book_label_lookup.dart';
-import '../../address_book/widgets/address_book_network_icon.dart';
 import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
 import '../models/swap_address_formatting.dart';
 import '../models/swap_detail_tooltips.dart';
 import '../models/swap_fiat_value_formatting.dart';
 import 'swap_amount_text.dart';
-import 'swap_asset_icon.dart';
-import 'swap_summary_amount_text.dart';
+import 'swap_review_info.dart';
 
-const _swapReviewDetailIconSize = 14.0;
+/// Content width inside the 420 content area (Figma ' Review' frame).
+const double _swapReviewContentWidth = 396;
 
 class SwapReviewPageContent extends StatelessWidget {
   const SwapReviewPageContent({
     required this.quote,
     required this.addressPlan,
-    this.addressBookContacts = const [],
-    required this.accountLabel,
     required this.expired,
     required this.amountWarning,
     required this.startError,
     this.startBlockedReason,
-    this.accountProfilePictureId = kDefaultProfilePictureId,
     this.slippageToleranceTextOverride,
     this.payFiatTextOverride,
     this.receiveFiatTextOverride,
+    this.onCopy,
     super.key,
   });
 
   final SwapQuote quote;
   final SwapAddressPlan addressPlan;
-  final Iterable<AddressBookContact> addressBookContacts;
-  final String? accountLabel;
-  final String accountProfilePictureId;
   final bool expired;
   final String? amountWarning;
   final String? startError;
@@ -50,12 +40,17 @@ class SwapReviewPageContent extends StatelessWidget {
   final String? payFiatTextOverride;
   final String? receiveFiatTextOverride;
 
+  /// Copies the full counterparty address to the clipboard (and surfaces a
+  /// toast). Wired by the screen so the review summary's Copy affordance
+  /// reuses the same mechanic as the rest of the swap flow.
+  final ValueChanged<String>? onCopy;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
       key: const ValueKey('swap_review_panel'),
-      width: 400,
+      width: _swapReviewContentWidth,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -63,48 +58,91 @@ class SwapReviewPageContent extends StatelessWidget {
             'Review swap',
             key: const ValueKey('swap_review_title'),
             textAlign: TextAlign.center,
-            style: AppTypography.displaySmall.copyWith(
+            style: AppTypography.bodyLarge.copyWith(
+              fontWeight: FontWeight.w600,
               color: colors.text.accent,
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
-          _ReviewTradeSummaryCard(
-            quote: quote,
-            payFiatTextOverride: payFiatTextOverride,
-            receiveFiatTextOverride: receiveFiatTextOverride,
+          const SizedBox(height: AppSpacing.base),
+          SwapReviewInfo(
+            pay: _paySideData(),
+            receive: _receiveSideData(),
+            onCopy: onCopy,
           ),
-          const SizedBox(height: AppSpacing.md),
-          _ReviewDetailsList(
+          const SizedBox(height: AppSpacing.base),
+          _SwapReviewDetailCard(
             quote: quote,
-            addressPlan: addressPlan,
-            addressBookContacts: addressBookContacts,
-            accountLabel: accountLabel,
-            accountProfilePictureId: accountProfilePictureId,
             slippageToleranceTextOverride: slippageToleranceTextOverride,
           ),
           if (amountWarning != null) ...[
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.sm),
             _ReviewNotice(
               key: const ValueKey('swap_review_amount_warning'),
               message: amountWarning!,
             ),
           ],
           if (expired) ...[
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.sm),
             const _ReviewNotice(
               message: 'Quote expired. Review again for an updated rate.',
             ),
           ],
           if (startError != null) ...[
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.sm),
             _ReviewNotice(message: startError!),
           ],
           if (startBlockedReason != null) ...[
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.sm),
             _ReviewNotice(message: startBlockedReason!),
           ],
         ],
       ),
+    );
+  }
+
+  SwapReviewInfoSideData _paySideData() {
+    final sendsZec = quote.direction.sendsZec;
+    // ZEC side shows the fiat value; the external pay side (external→ZEC)
+    // shows the refund address.
+    if (sendsZec) {
+      return SwapReviewInfoSideData(
+        asset: quote.sellAsset,
+        label: "You're paying",
+        amountText: quote.sellAmountText,
+        detailText: payFiatTextOverride ?? _payFiatText(quote),
+      );
+    }
+    final refundAddress = addressPlan.oneClickRefundTo.trim();
+    return SwapReviewInfoSideData(
+      asset: quote.sellAsset,
+      label: "You're paying",
+      amountText: quote.sellAmountText,
+      detailText: 'Refund to: ${compactSwapAddress(refundAddress)}',
+      detailCopyText: refundAddress,
+    );
+  }
+
+  SwapReviewInfoSideData _receiveSideData() {
+    final sendsZec = quote.direction.sendsZec;
+    // ZEC side shows the fiat value; the external receive side (ZEC→external)
+    // shows the recipient address with its chain label.
+    if (!sendsZec) {
+      return SwapReviewInfoSideData(
+        asset: quote.receiveAsset,
+        label: "You're receiving",
+        amountText: quote.receiveEstimateText,
+        detailText: receiveFiatTextOverride ?? _receiveFiatText(quote),
+      );
+    }
+    final recipientAddress = addressPlan.userExternalAddress.trim();
+    return SwapReviewInfoSideData(
+      asset: quote.receiveAsset,
+      label: "You're receiving",
+      amountText: quote.receiveEstimateText,
+      detailText:
+          'To: ${compactSwapAddress(recipientAddress)} '
+          'on ${quote.receiveAsset.chainLabel}',
+      detailCopyText: recipientAddress,
     );
   }
 }
@@ -185,43 +223,38 @@ class SwapReviewPageActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final startingLabel = sendsZec ? 'Sending' : 'Locking quote';
-    final primaryLabel =
-        expired
-            ? 'Review again'
-            : startBlockedReason != null
-            ? 'Not enough ZEC'
-            : starting
-            ? startingLabel
-            : 'Confirm swap';
+    final primaryLabel = expired
+        ? 'Review again'
+        : startBlockedReason != null
+        ? 'Not enough ZEC'
+        : starting
+        ? startingLabel
+        : 'Confirm swap';
     final showPrimaryArrow =
         !expired && !starting && startBlockedReason == null;
     return SizedBox(
       key: const ValueKey('swap_review_actions'),
-      width: 256,
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           AppButton(
-            key:
-                expired
-                    ? const ValueKey('swap_review_again_button')
-                    : const ValueKey('swap_start_button'),
-            onPressed:
-                startBlockedReason != null
-                    ? null
-                    : expired
-                    ? onReviewAgain
-                    : starting
-                    ? null
-                    : onStartIntent,
+            key: expired
+                ? const ValueKey('swap_review_again_button')
+                : const ValueKey('swap_start_button'),
+            onPressed: startBlockedReason != null
+                ? null
+                : expired
+                ? onReviewAgain
+                : starting
+                ? null
+                : onStartIntent,
             variant: AppButtonVariant.primary,
             size: AppButtonSize.large,
-            minWidth: 256,
-            trailing:
-                showPrimaryArrow
-                    ? const AppIcon(AppIcons.arrowForwardIos)
-                    : null,
+            minWidth: 196,
+            leading: showPrimaryArrow
+                ? const AppIcon(AppIcons.swapArrows)
+                : null,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 184),
               child: Text(
@@ -237,7 +270,7 @@ class SwapReviewPageActions extends StatelessWidget {
             onPressed: onCancelReview,
             variant: AppButtonVariant.ghost,
             size: AppButtonSize.large,
-            minWidth: 256,
+            minWidth: 196,
             child: const Text('Cancel'),
           ),
         ],
@@ -246,395 +279,52 @@ class SwapReviewPageActions extends StatelessWidget {
   }
 }
 
-class _ReviewTradeSummaryCard extends StatelessWidget {
-  const _ReviewTradeSummaryCard({
+/// Figma 'Review Wrap': the slippage / minimum / fee summary card.
+class _SwapReviewDetailCard extends StatelessWidget {
+  const _SwapReviewDetailCard({
     required this.quote,
-    this.payFiatTextOverride,
-    this.receiveFiatTextOverride,
-  });
-
-  final SwapQuote quote;
-  final String? payFiatTextOverride;
-  final String? receiveFiatTextOverride;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final sellNeedsCompact = isLongSwapSummaryAmountText(quote.sellAmountText);
-    final receiveNeedsCompact = isLongSwapSummaryAmountText(
-      quote.receiveEstimateText,
-    );
-    final bothSidesNeedCompact = sellNeedsCompact && receiveNeedsCompact;
-    final sellAmountText = compactSwapSummaryAmountText(
-      quote.sellAmountText,
-      forceCompactThousands: sellNeedsCompact,
-      maxCharacters: swapReviewSummaryMaxChars,
-    );
-    final receiveAmountText = compactSwapSummaryAmountText(
-      quote.receiveEstimateText,
-      forceCompactThousands: receiveNeedsCompact,
-      maxCharacters: swapReviewSummaryMaxChars,
-    );
-    final receiveNeedsWideSide =
-        receiveAmountText.length > sellAmountText.length;
-    final leftWidth =
-        bothSidesNeedCompact
-            ? 184.0
-            : receiveNeedsWideSide
-            ? 160.0
-            : 205.0;
-    final arrowLeft =
-        bothSidesNeedCompact
-            ? 184.0
-            : receiveNeedsWideSide
-            ? 161.5
-            : 206.5;
-    final rightLeft =
-        bothSidesNeedCompact
-            ? 216.0
-            : receiveNeedsWideSide
-            ? 195.0
-            : 240.0;
-    final rightWidth =
-        bothSidesNeedCompact
-            ? 184.0
-            : receiveNeedsWideSide
-            ? 205.0
-            : 160.0;
-    return Container(
-      key: const ValueKey('swap_review_trade_summary'),
-      width: 400,
-      height: 120,
-      decoration: BoxDecoration(
-        color: colors.background.homeCard,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: leftWidth,
-            child: _ReviewTradeSide(
-              label: 'Pay',
-              fiatText: payFiatTextOverride ?? _payFiatText(quote),
-              amountText: sellAmountText,
-              asset: quote.sellAsset,
-            ),
-          ),
-          Positioned(
-            left: arrowLeft,
-            top: 0,
-            bottom: 0,
-            width: 32,
-            child: Center(
-              child: AppIcon(
-                AppIcons.arrowForwardIos,
-                size: 20,
-                color: colors.text.homeCard,
-              ),
-            ),
-          ),
-          Positioned(
-            left: rightLeft,
-            top: 0,
-            bottom: 0,
-            width: rightWidth,
-            child: _ReviewTradeSide(
-              label: 'Receive',
-              fiatText: receiveFiatTextOverride ?? _receiveFiatText(quote),
-              amountText: receiveAmountText,
-              asset: quote.receiveAsset,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReviewTradeSide extends StatelessWidget {
-  const _ReviewTradeSide({
-    required this.label,
-    required this.fiatText,
-    required this.amountText,
-    required this.asset,
-  });
-
-  final String label;
-  final String fiatText;
-  final String amountText;
-  final SwapAsset asset;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: colors.text.homeCard,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Flexible(
-                  child: Text(
-                    fiatText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: colors.text.homeCard.withValues(alpha: 0.58),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.s),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SwapAssetIcon(
-                  asset: asset,
-                  size: 32,
-                  showChainBadge: !asset.isNativeZec,
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SwapSummaryAmountText(
-                        amountText: amountText,
-                        asset: asset,
-                        keyPrefix:
-                            'swap_review_${label.toLowerCase()}_summary_amount',
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.homeCard,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        asset.chainLabel,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelMedium.copyWith(
-                          color: colors.text.homeCard.withValues(alpha: 0.58),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ReviewDetailsList extends StatelessWidget {
-  const _ReviewDetailsList({
-    required this.quote,
-    required this.addressPlan,
-    required this.addressBookContacts,
-    required this.accountLabel,
-    required this.accountProfilePictureId,
     required this.slippageToleranceTextOverride,
   });
 
   final SwapQuote quote;
-  final SwapAddressPlan addressPlan;
-  final Iterable<AddressBookContact> addressBookContacts;
-  final String? accountLabel;
-  final String accountProfilePictureId;
   final String? slippageToleranceTextOverride;
 
   @override
   Widget build(BuildContext context) {
-    final sendsZec = quote.direction.sendsZec;
-    final externalAddress = _refundOrRecipientValue(addressPlan);
-    final addressNetwork = AddressBookNetwork.tryFromChainTicker(
-      addressPlan.externalAsset.chainTicker,
-    );
-    final addressBookLabel = addressNetwork == null
-        ? null
-        : addressBookLabelFor(
-            contacts: addressBookContacts,
-            network: addressNetwork,
-            address: externalAddress,
-          );
-    final accountRow = _ReviewDetailRow(
-      label: sendsZec ? 'From' : 'To',
-      value: accountLabel ?? 'Current account',
-      leadingValue: _AccountAvatar(profilePictureId: accountProfilePictureId),
-    );
-    final addressRow = addressBookLabel == null || addressNetwork == null
-        ? _ReviewDetailRow(
-            label: sendsZec ? 'To' : 'From',
-            value: compactSwapAddress(externalAddress),
-          )
-        : _ReviewMatchedAddressRow(
-            label: sendsZec ? 'To' : 'From',
-            addressBookLabel: addressBookLabel,
-            network: addressNetwork,
-            value: compactSwapAddress(
-              externalAddress,
-              prefixLength: 7,
-              suffixLength: 5,
-              separator: '…',
-            ),
-          );
-    return SizedBox(
-      key: const ValueKey('swap_review_details'),
-      width: 400,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (sendsZec) accountRow else addressRow,
-            if (sendsZec) addressRow else accountRow,
-            const SizedBox(height: AppSpacing.sm),
-            _ReviewDetailRow(
-              label: 'Slippage tolerance',
-              value:
-                  slippageToleranceTextOverride ??
-                  _slippageToleranceText(quote),
-            ),
-            _ReviewDetailRow(
-              label: 'Guaranteed minimum',
-              value: compactSwapAmountText(quote.minimumReceiveText),
-              trailingIcon: AppIcons.help,
-              tooltipMessage: swapMinimumReceiveTooltip(
-                quote.receiveAsset.symbol,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            _ReviewDetailRow(
-              label: 'Swap fee',
-              value: quote.feeLabel,
-              trailingIcon: AppIcons.help,
-              tooltipMessage: swapFeeTooltip,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ReviewMatchedAddressRow extends StatelessWidget {
-  const _ReviewMatchedAddressRow({
-    required this.label,
-    required this.addressBookLabel,
-    required this.network,
-    required this.value,
-  });
-
-  final String label;
-  final String addressBookLabel;
-  final AddressBookNetwork network;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
     final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+    return Container(
+      key: const ValueKey('swap_review_details'),
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: appSurfaceShadow(colors),
+      ),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(
-            height: 32,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.secondary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.s),
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            addressBookLabel,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.end,
-                            style: AppTypography.bodyMediumStrong.copyWith(
-                              color: colors.text.accent,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.xxs),
-                        AppIcon(
-                          AppIcons.user,
-                          size: 14,
-                          color: colors.icon.brandCrimson,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          _SwapReviewDetailRow(
+            label: 'Slippage tolerance',
+            value:
+                slippageToleranceTextOverride ?? _slippageToleranceText(quote),
           ),
-          SizedBox(
-            height: 18,
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerRight,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AddressBookNetworkIcon(network: network, size: 14),
-                    const SizedBox(width: AppSpacing.xxs),
-                    Text(
-                      network.label,
-                      maxLines: 1,
-                      style: AppTypography.labelSmall.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Text(
-                      value,
-                      maxLines: 1,
-                      style: AppTypography.codeSmall.copyWith(
-                        color: colors.text.muted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          _SwapReviewDetailRow(
+            label: 'Guaranteed minimum',
+            value: compactSwapAmountText(quote.minimumReceiveText),
+            helpTooltip: swapMinimumReceiveTooltip(quote.receiveAsset.symbol),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Container(height: 1, color: colors.border.regular),
+          const SizedBox(height: AppSpacing.sm),
+          _SwapReviewDetailRow(
+            label: 'Swap fee',
+            value: quote.feeLabel,
+            helpTooltip: swapFeeTooltip,
           ),
         ],
       ),
@@ -642,20 +332,16 @@ class _ReviewMatchedAddressRow extends StatelessWidget {
   }
 }
 
-class _ReviewDetailRow extends StatelessWidget {
-  const _ReviewDetailRow({
+class _SwapReviewDetailRow extends StatelessWidget {
+  const _SwapReviewDetailRow({
     required this.label,
     required this.value,
-    this.leadingValue,
-    this.trailingIcon,
-    this.tooltipMessage,
+    this.helpTooltip,
   });
 
   final String label;
   final String value;
-  final Widget? leadingValue;
-  final String? trailingIcon;
-  final String? tooltipMessage;
+  final String? helpTooltip;
 
   @override
   Widget build(BuildContext context) {
@@ -675,36 +361,26 @@ class _ReviewDetailRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.s),
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (leadingValue != null) ...[
-                    leadingValue!,
-                    const SizedBox(width: AppSpacing.xs),
-                  ],
-                  Flexible(
-                    child: Text(
-                      value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.end,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
+          Flexible(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.accent,
                     ),
                   ),
-                  if (trailingIcon != null) ...[
-                    const SizedBox(width: AppSpacing.xxs),
-                    _ReviewHelpIcon(
-                      icon: trailingIcon!,
-                      tooltipMessage: tooltipMessage,
-                    ),
-                  ],
+                ),
+                if (helpTooltip != null) ...[
+                  const SizedBox(width: AppSpacing.xxs),
+                  _ReviewHelpIcon(tooltipMessage: helpTooltip),
                 ],
-              ),
+              ],
             ),
           ),
         ],
@@ -714,9 +390,8 @@ class _ReviewDetailRow extends StatelessWidget {
 }
 
 class _ReviewHelpIcon extends StatelessWidget {
-  const _ReviewHelpIcon({required this.icon, required this.tooltipMessage});
+  const _ReviewHelpIcon({required this.tooltipMessage});
 
-  final String icon;
   final String? tooltipMessage;
 
   @override
@@ -724,11 +399,7 @@ class _ReviewHelpIcon extends StatelessWidget {
     final colors = context.colors;
     final child = MouseRegion(
       cursor: SystemMouseCursors.help,
-      child: AppIcon(
-        icon,
-        size: _swapReviewDetailIconSize,
-        color: colors.icon.regular.withValues(alpha: 0.72),
-      ),
+      child: AppIcon(AppIcons.help, size: 16, color: colors.icon.muted),
     );
     final message = tooltipMessage;
     if (message == null ||
@@ -737,20 +408,6 @@ class _ReviewHelpIcon extends StatelessWidget {
       return child;
     }
     return AppTooltip(message: message, child: child);
-  }
-}
-
-class _AccountAvatar extends StatelessWidget {
-  const _AccountAvatar({required this.profilePictureId});
-
-  final String profilePictureId;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppProfilePicture(
-      profilePictureId: profilePictureId,
-      size: AppProfilePictureSize.medium,
-    );
   }
 }
 
@@ -783,12 +440,6 @@ class _ReviewNotice extends StatelessWidget {
       ],
     );
   }
-}
-
-String _refundOrRecipientValue(SwapAddressPlan addressPlan) {
-  return addressPlan.direction.sendsZec
-      ? addressPlan.userExternalAddress
-      : addressPlan.oneClickRefundTo;
 }
 
 String _payFiatText(SwapQuote quote) {

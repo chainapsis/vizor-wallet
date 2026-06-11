@@ -5,11 +5,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
+import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../address_book/providers/address_book_provider.dart';
-import '../domain/near_intents_explorer.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_activity_status_mapper.dart';
 import '../models/swap_keystone_broadcast_result.dart';
@@ -163,16 +163,6 @@ class _SwapActivityDetailSurfaceState
     context.go('/swap');
   }
 
-  void _openNearIntentsExplorerLink(SwapIntent intent) {
-    unawaited(
-      launchNearIntentsExplorer(
-        nearIntentHash: intent.nearIntentHash,
-        depositTxHash: intent.depositTxHash,
-        depositAddress: intent.depositAddress ?? intent.id,
-      ),
-    );
-  }
-
   void _signZecDeposit(SwapIntent intent) {
     setState(() {
       _keystoneSigningRequest = _SwapKeystoneSigningRequest(
@@ -264,7 +254,6 @@ class _SwapActivityDetailSurfaceState
             onSubmitDepositTransaction: _submitDepositTransaction,
             onReviewFreshQuote: _reviewFreshQuote,
             onSignZecDeposit: _signZecDeposit,
-            onCopyExplorerLink: _openNearIntentsExplorerLink,
             intentIsHardware: _isHardwareIntent(activityDetailIntent),
           );
 
@@ -378,7 +367,6 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
     required this.onSubmitDepositTransaction,
     required this.onReviewFreshQuote,
     required this.onSignZecDeposit,
-    required this.onCopyExplorerLink,
     required this.intentIsHardware,
     super.key,
   });
@@ -393,7 +381,6 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
   final VoidCallback onSubmitDepositTransaction;
   final VoidCallback onReviewFreshQuote;
   final ValueChanged<SwapIntent> onSignZecDeposit;
-  final ValueChanged<SwapIntent> onCopyExplorerLink;
   final bool intentIsHardware;
 
   @override
@@ -409,7 +396,6 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
       onSubmitDepositTransaction: onSubmitDepositTransaction,
       onReviewFreshQuote: onReviewFreshQuote,
       onSignZecDeposit: onSignZecDeposit,
-      onCopyExplorerLink: onCopyExplorerLink,
       intentIsHardware: intentIsHardware,
     );
     final isDepositPage = swapActivityShowsDepositPage(
@@ -451,7 +437,6 @@ class _SwapActivityFlowContent extends StatelessWidget {
     required this.onSubmitDepositTransaction,
     required this.onReviewFreshQuote,
     required this.onSignZecDeposit,
-    required this.onCopyExplorerLink,
     required this.intentIsHardware,
   });
 
@@ -465,7 +450,6 @@ class _SwapActivityFlowContent extends StatelessWidget {
   final VoidCallback onSubmitDepositTransaction;
   final VoidCallback onReviewFreshQuote;
   final ValueChanged<SwapIntent> onSignZecDeposit;
-  final ValueChanged<SwapIntent> onCopyExplorerLink;
   final bool intentIsHardware;
 
   @override
@@ -507,10 +491,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
           memo: depositInstruction.memo,
           onDepositZec: () => onSignZecDeposit(intent),
         ),
-      _ => _SwapStatusForIntent(
-        intent: intent,
-        onOpenExplorer: () => onCopyExplorerLink(intent),
-      ),
+      _ => _SwapStatusForIntent(intent: intent),
     };
 
     return Column(
@@ -531,13 +512,9 @@ class _SwapActivityFlowContent extends StatelessWidget {
 }
 
 class _SwapStatusForIntent extends ConsumerStatefulWidget {
-  const _SwapStatusForIntent({
-    required this.intent,
-    required this.onOpenExplorer,
-  });
+  const _SwapStatusForIntent({required this.intent});
 
   final SwapIntent intent;
-  final VoidCallback onOpenExplorer;
 
   @override
   ConsumerState<_SwapStatusForIntent> createState() =>
@@ -546,14 +523,12 @@ class _SwapStatusForIntent extends ConsumerStatefulWidget {
 
 class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
   SwapStatusTab _activeTab = SwapStatusTab.progress;
-  bool _detailsExpanded = false;
 
   @override
   void didUpdateWidget(covariant _SwapStatusForIntent oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.intent.id != widget.intent.id) {
       _activeTab = SwapStatusTab.progress;
-      _detailsExpanded = false;
     }
   }
 
@@ -582,28 +557,26 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       title: presentation.title,
       payAsset: presentation.payAsset,
       receiveAsset: presentation.receiveAsset,
-      payFiatText: presentation.payFiatText,
-      receiveFiatText: presentation.receiveFiatText,
       payAmountText: presentation.payAmountText,
       receiveAmountText: presentation.receiveAmountText,
+      payDetailText: presentation.payDetailText,
+      payDetailCopyText: presentation.payDetailCopyText,
+      receiveDetailText: presentation.receiveDetailText,
+      receiveDetailCopyText: presentation.receiveDetailCopyText,
+      statusLabel: presentation.statusLabel,
       badgeKind: presentation.badgeKind,
       progressIndex: presentation.progressIndex,
       activeTab: _activeTab,
       steps: presentation.steps,
       details: presentation.details,
-      detailsExpanded: _detailsExpanded,
       showTabs: presentation.showTabs,
       onTabChanged: (tab) {
         setState(() {
           _activeTab = tab;
         });
       },
-      onToggleDetails: () {
-        setState(() {
-          _detailsExpanded = !_detailsExpanded;
-        });
-      },
-      onOpenExplorer: widget.onOpenExplorer,
+      onCopy: (text) =>
+          copyTextWithToast(context, text: text, toastMessage: 'Copied'),
     );
   }
 }

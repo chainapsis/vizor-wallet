@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,12 +9,11 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
-import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
-import '../../address_book/providers/address_book_provider.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_fiat_value_formatting.dart';
@@ -30,6 +30,7 @@ class SwapReviewScreen extends ConsumerStatefulWidget {
 }
 
 class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
+  final _toastOverlayContextKey = GlobalKey();
   var _hadReviewState = false;
   var _startingIntent = false;
 
@@ -42,25 +43,14 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     });
   }
 
-  String? _accountLabelFor(AccountState? accountState, String? accountUuid) {
-    if (accountUuid == null || accountUuid.trim().isEmpty) return null;
-    for (final account in accountState?.accounts ?? const <AccountInfo>[]) {
-      if (account.uuid == accountUuid) return account.name;
+  void _copyAddress(String value) {
+    final address = value.trim();
+    if (address.isEmpty) return;
+    unawaited(Clipboard.setData(ClipboardData(text: address)));
+    final toastContext = _toastOverlayContextKey.currentContext;
+    if (toastContext != null && toastContext.mounted) {
+      showAppToast(toastContext, 'Address copied');
     }
-    return null;
-  }
-
-  String _accountProfilePictureIdFor(
-    AccountState? accountState,
-    String? accountUuid,
-  ) {
-    if (accountUuid == null || accountUuid.trim().isEmpty) {
-      return kDefaultProfilePictureId;
-    }
-    for (final account in accountState?.accounts ?? const <AccountInfo>[]) {
-      if (account.uuid == accountUuid) return account.profilePictureId;
-    }
-    return kDefaultProfilePictureId;
   }
 
   void _returnToSwap() {
@@ -111,8 +101,6 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     final swapState = ref.watch(swapStateProvider);
     final quote = swapState.reviewQuote;
     final addressPlan = swapState.reviewAddressPlan;
-    final addressBookContacts =
-        ref.watch(addressBookProvider).value?.contacts ?? const [];
     if (!swapState.reviewVisible || quote == null || addressPlan == null) {
       if (!_hadReviewState || !_startingIntent) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -130,14 +118,6 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
           accountState?.activeAccountUuid,
         ),
       ),
-    );
-    final accountLabel = _accountLabelFor(
-      accountState,
-      swapState.reviewAccountUuid,
-    );
-    final accountProfilePictureId = _accountProfilePictureIdFor(
-      accountState,
-      swapState.reviewAccountUuid,
     );
     final startBlockedReason =
         _reviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
@@ -183,10 +163,6 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                                     SwapReviewPageContent(
                                       quote: quote,
                                       addressPlan: addressPlan,
-                                      addressBookContacts: addressBookContacts,
-                                      accountLabel: accountLabel,
-                                      accountProfilePictureId:
-                                          accountProfilePictureId,
                                       expired: swapState.quoteExpired,
                                       amountWarning: swapState
                                           .reviewAmountDifferenceWarning,
@@ -206,8 +182,9 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                                             asset: quote.receiveAsset,
                                             amount: quote.receiveAmount,
                                           ),
+                                      onCopy: _copyAddress,
                                     ),
-                                    const SizedBox(height: AppSpacing.sm),
+                                    const SizedBox(height: AppSpacing.base),
                                     SwapReviewPageActions(
                                       expired: swapState.quoteExpired,
                                       starting: swapState.startSubmitting,
@@ -229,6 +206,16 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                             bottom: AppSpacing.md,
                             child: SwapNearIntentsAttribution(),
                           ),
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: AppToastHost(
+                              key: const ValueKey('swap_review_toast_host'),
+                              child: SizedBox.expand(
+                                key: _toastOverlayContextKey,
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
                     );
                   },

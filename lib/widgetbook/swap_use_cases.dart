@@ -15,6 +15,7 @@ import '../src/features/swap/models/swap_fiat_amount.dart';
 import '../src/features/swap/models/swap_models.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import '../src/features/swap/widgets/swap_address_edit_modal.dart';
+import '../src/features/swap/widgets/swap_serif_display.dart';
 import '../src/features/swap/widgets/swap_asset_selector_modal.dart';
 import '../src/features/swap/widgets/swap_composer_panel.dart';
 import '../src/features/swap/widgets/swap_deposit_tokens_page_content.dart';
@@ -189,7 +190,6 @@ Widget buildSwapReviewDefaultUseCase(BuildContext context) {
     child: _SwapReviewPreview(
       quote: _figmaReviewDefaultQuote,
       addressPlan: _figmaExternalToZecAddressPlan,
-      accountLabel: 'John',
       slippageToleranceText: '0.25 USDC (0.5%)',
     ),
   );
@@ -201,7 +201,6 @@ Widget buildSwapReviewZecToExternalUseCase(BuildContext context) {
     child: _SwapReviewPreview(
       quote: _figmaReviewZecToExternalQuote,
       addressPlan: _figmaZecToExternalAddressPlan,
-      accountLabel: 'John',
       slippageToleranceText: '0.001 ZEC (0.5%)',
     ),
   );
@@ -213,7 +212,6 @@ Widget buildSwapReviewLargeLeftAmountUseCase(BuildContext context) {
     child: _SwapReviewPreview(
       quote: _figmaReviewLargeQuote,
       addressPlan: _figmaExternalShitToZecAddressPlan,
-      accountLabel: 'John',
       slippageToleranceText: r'0.25 $SHIT (0.5%)',
       payFiatText: r'$999.123M',
       receiveFiatText: r'$110.24',
@@ -227,7 +225,6 @@ Widget buildSwapReviewLargeRightAmountUseCase(BuildContext context) {
     child: _SwapReviewPreview(
       quote: _figmaReviewLargeRightQuote,
       addressPlan: _figmaZecToShitAddressPlan,
-      accountLabel: 'John',
       slippageToleranceText: '0.001 ZEC (0.5%)',
       payFiatText: r'$110.24',
       receiveFiatText: r'$999.123M',
@@ -241,7 +238,6 @@ Widget buildSwapReviewLargeAmountsUseCase(BuildContext context) {
     child: _SwapReviewPreview(
       quote: _figmaReviewLargeBothQuote,
       addressPlan: _figmaExternalShitToZecAddressPlan,
-      accountLabel: 'John',
       slippageToleranceText: r'0.25 $SHIT (0.5%)',
       payFiatText: r'$999.123M',
       receiveFiatText: r'$999.123M',
@@ -418,16 +414,16 @@ Widget buildSwapStatusCapturedFiatUseCase(BuildContext context) {
 }
 
 Widget buildSwapStatusDetailsCollapsedUseCase(BuildContext context) {
-  return _SwapStatusPageFrame(
+  return const _SwapStatusPageFrame(
     backLabel: 'Activity',
-    child: _SwapStatusDetailsTogglePreview(initiallyExpanded: false),
+    child: _SwapStatusDetailsPreview(),
   );
 }
 
 Widget buildSwapStatusDetailsExpandedUseCase(BuildContext context) {
-  return _SwapStatusPageFrame(
+  return const _SwapStatusPageFrame(
     backLabel: 'Activity',
-    child: _SwapStatusDetailsTogglePreview(initiallyExpanded: true),
+    child: _SwapStatusDetailsPreview(),
   );
 }
 
@@ -450,6 +446,7 @@ Widget buildSwapStatusFailedUseCase(BuildContext context) {
     child: _SwapStatusPreview(
       title: 'Swap failed',
       badgeKind: SwapStatusBadgeKind.failed,
+      statusLabel: 'Failed',
       showTabs: false,
       steps: const [],
       details: _designFailedDetails,
@@ -1019,7 +1016,6 @@ class _SwapReviewPreview extends StatelessWidget {
   const _SwapReviewPreview({
     required this.quote,
     required this.addressPlan,
-    required this.accountLabel,
     this.slippageToleranceText,
     this.payFiatText,
     this.receiveFiatText,
@@ -1027,7 +1023,6 @@ class _SwapReviewPreview extends StatelessWidget {
 
   final SwapQuote quote;
   final SwapAddressPlan addressPlan;
-  final String accountLabel;
   final String? slippageToleranceText;
   final String? payFiatText;
   final String? receiveFiatText;
@@ -1040,15 +1035,15 @@ class _SwapReviewPreview extends StatelessWidget {
         SwapReviewPageContent(
           quote: quote,
           addressPlan: addressPlan,
-          accountLabel: accountLabel,
           expired: false,
           amountWarning: null,
           startError: null,
           slippageToleranceTextOverride: slippageToleranceText,
           payFiatTextOverride: payFiatText,
           receiveFiatTextOverride: receiveFiatText,
+          onCopy: (_) {},
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AppSpacing.base),
         SwapReviewPageActions(
           expired: false,
           starting: false,
@@ -1070,15 +1065,14 @@ class _SwapStatusPreview extends StatefulWidget {
     required this.details,
     this.activeTab = SwapStatusTab.progress,
     this.progressIndex = 0,
-    this.detailsExpanded = false,
     this.showTabs = true,
+    this.statusLabel = 'Completed',
     this.payAsset = SwapAsset.usdc,
     this.receiveAsset = SwapAsset.zec,
     this.payFiatText = '\$110.24',
     this.receiveFiatText = '\$110.24',
     this.payAmountText = '999,999.99 USDC',
     this.receiveAmountText = '0.251 ZEC',
-    this.onToggleDetails,
   });
 
   final String title;
@@ -1087,15 +1081,14 @@ class _SwapStatusPreview extends StatefulWidget {
   final List<SwapStatusDetailRowData> details;
   final SwapStatusTab activeTab;
   final int progressIndex;
-  final bool detailsExpanded;
   final bool showTabs;
+  final String statusLabel;
   final SwapAsset payAsset;
   final SwapAsset receiveAsset;
   final String payFiatText;
   final String receiveFiatText;
   final String payAmountText;
   final String receiveAmountText;
-  final VoidCallback? onToggleDetails;
 
   @override
   State<_SwapStatusPreview> createState() => _SwapStatusPreviewState();
@@ -1103,16 +1096,12 @@ class _SwapStatusPreview extends StatefulWidget {
 
 class _SwapStatusPreviewState extends State<_SwapStatusPreview> {
   late var _activeTab = widget.activeTab;
-  late var _detailsExpanded = widget.detailsExpanded;
 
   @override
   void didUpdateWidget(covariant _SwapStatusPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.activeTab != widget.activeTab) {
       _activeTab = widget.activeTab;
-    }
-    if (oldWidget.detailsExpanded != widget.detailsExpanded) {
-      _detailsExpanded = widget.detailsExpanded;
     }
   }
 
@@ -1122,16 +1111,16 @@ class _SwapStatusPreviewState extends State<_SwapStatusPreview> {
       title: widget.title,
       payAsset: widget.payAsset,
       receiveAsset: widget.receiveAsset,
-      payFiatText: widget.payFiatText,
-      receiveFiatText: widget.receiveFiatText,
       payAmountText: widget.payAmountText,
       receiveAmountText: widget.receiveAmountText,
+      payDetailText: widget.payFiatText,
+      receiveDetailText: widget.receiveFiatText,
+      statusLabel: widget.statusLabel,
       badgeKind: widget.badgeKind,
       progressIndex: widget.progressIndex,
       activeTab: _activeTab,
       steps: widget.steps,
       details: widget.details,
-      detailsExpanded: _detailsExpanded,
       showTabs: widget.showTabs,
       onTabChanged: widget.showTabs
           ? (tab) {
@@ -1140,31 +1129,13 @@ class _SwapStatusPreviewState extends State<_SwapStatusPreview> {
               });
             }
           : null,
-      onToggleDetails:
-          widget.onToggleDetails ??
-          () {
-            setState(() {
-              _detailsExpanded = !_detailsExpanded;
-            });
-          },
-      onOpenExplorer: () {},
+      onCopy: (_) {},
     );
   }
 }
 
-class _SwapStatusDetailsTogglePreview extends StatefulWidget {
-  const _SwapStatusDetailsTogglePreview({required this.initiallyExpanded});
-
-  final bool initiallyExpanded;
-
-  @override
-  State<_SwapStatusDetailsTogglePreview> createState() =>
-      _SwapStatusDetailsTogglePreviewState();
-}
-
-class _SwapStatusDetailsTogglePreviewState
-    extends State<_SwapStatusDetailsTogglePreview> {
-  late var _expanded = widget.initiallyExpanded;
+class _SwapStatusDetailsPreview extends StatelessWidget {
+  const _SwapStatusDetailsPreview();
 
   @override
   Widget build(BuildContext context) {
@@ -1172,14 +1143,8 @@ class _SwapStatusDetailsTogglePreviewState
       title: 'Swapping ...',
       badgeKind: SwapStatusBadgeKind.liveQuote,
       activeTab: SwapStatusTab.details,
-      detailsExpanded: _expanded,
       steps: _designProgressSteps,
       details: _designTransactionDetails,
-      onToggleDetails: () {
-        setState(() {
-          _expanded = !_expanded;
-        });
-      },
     );
   }
 }
@@ -1239,12 +1204,7 @@ class _SwapPreviewPageTitle extends StatelessWidget {
     return Text(
       'Swap',
       textAlign: TextAlign.center,
-      style: AppTypography.displaySmall.copyWith(
-        fontFamily: 'Young Serif',
-        fontWeight: FontWeight.w500,
-        fontFeatures: const [FontFeature.enable('case')],
-        color: colors.text.accent,
-      ),
+      style: swapSerifDisplayStyle(color: colors.text.accent),
     );
   }
 }

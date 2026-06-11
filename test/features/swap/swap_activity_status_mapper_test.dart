@@ -18,6 +18,7 @@ void main() {
         depositAddress: 't1deposit-address',
         oneClickRecipient: '0xrecipient-address',
         oneClickRefundTo: 'u1refund-address',
+        createdAt: DateTime.utc(2026, 5, 20, 13, 20),
       ),
       accountDetail: const SwapActivityAccountDetail(
         name: 'Shielded account',
@@ -39,11 +40,18 @@ void main() {
       'Swap',
       'Deliver USDC',
     ]);
-    expect(_detailValue(presentation.details, 'Account'), 'Shielded account');
+    // The redesigned summary carries the counterparty address line instead
+    // of a details Account row.
+    expect(presentation.receiveDetailText, contains('To: '));
+    expect(presentation.receiveDetailText, contains('on Ethereum'));
+    expect(presentation.receiveDetailCopyText, '0xrecipient-address');
+    expect(presentation.payDetailCopyText, isNull);
+    expect(presentation.details.any((row) => row.label == 'Account'), isFalse);
     expect(
       _detailValue(presentation.details, 'USDC recipient'),
       contains('0x'),
     );
+    expect(_detailRow(presentation.details, 'Timestamp').value, isNotEmpty);
     expect(
       _detailValue(presentation.details, 'Deposit ZEC to'),
       contains('t1'),
@@ -128,6 +136,7 @@ void main() {
         externalAsset: SwapAsset.usdc,
         depositAddress: 't1deposit-address',
         oneClickRecipient: recipientAddress,
+        completedAt: DateTime.utc(2026, 5, 25, 13, 30),
       ),
       addressBookContacts: [
         _contact(
@@ -138,15 +147,40 @@ void main() {
       ],
     );
 
-    final recipient = _detailRow(presentation.details, 'USDC recipient');
-    expect(recipient.value, contains('0x'));
-    expect(recipient.copyText, recipientAddress);
-    expect(recipient.addressBookLabel, 'Treasury');
-    expect(recipient.addressNetwork, AddressBookNetwork.ethereum);
+    // Terminal details follow the completed layout: the recipient lives in
+    // the summary's address line, and the deposit tx row links out to the
+    // NEAR Intents explorer.
+    expect(presentation.receiveDetailText, contains('To: '));
+    expect(presentation.receiveDetailCopyText, recipientAddress);
+    expect(presentation.statusLabel, isNotEmpty);
     expect(
-      _detailValue(presentation.details, 'ZEC deposit to'),
-      contains('t1'),
+      presentation.details.any((row) => row.label == 'USDC recipient'),
+      isFalse,
     );
+    expect(_detailRow(presentation.details, 'Timestamp').value, isNotEmpty);
+    final fees = _detailRow(presentation.details, 'Total fees');
+    expect(fees.helpTooltip, swapTotalFeesTooltip);
+    expect(presentation.details.last.label, 'Total fees');
+  });
+
+  test('terminal deposit tx row links to the NEAR Intents explorer', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.complete,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        pair: 'USDC -> ZEC',
+        depositAddress: '0xdeposit-address',
+        originChainTxHash: '0xdeadbeefdeadbeefdeadbeef',
+      ),
+    );
+
+    final txRow = _detailRow(presentation.details, 'USDC deposit tx');
+    expect(txRow.copyText, '0xdeadbeefdeadbeefdeadbeef');
+    expect(txRow.linkUri, isNotNull);
+    expect(txRow.linkUri!.host, 'explorer.near-intents.org');
+    expect(txRow.linkUri!.pathSegments, ['transactions', '0xdeposit-address']);
   });
 
   test(
@@ -502,6 +536,7 @@ SwapIntent _intent({
   String? depositAddress,
   String? depositMemo,
   String? depositTxHash,
+  String? originChainTxHash,
   String? totalFeesText,
   String? realisedSlippageText,
   String? oneClickRecipient,
@@ -511,6 +546,7 @@ SwapIntent _intent({
   SwapProviderRefundInfo? providerRefundInfo,
   SwapFiatValueBasis? fiatValueBasis,
   DateTime? depositDeadline,
+  DateTime? createdAt,
   DateTime? completedAt,
 }) {
   return SwapIntent(
@@ -526,6 +562,7 @@ SwapIntent _intent({
     depositAddress: depositAddress,
     depositMemo: depositMemo,
     depositTxHash: depositTxHash,
+    originChainTxHash: originChainTxHash,
     totalFeesText: totalFeesText,
     realisedSlippageText: realisedSlippageText,
     minimumReceiveText: receiveEstimate,
@@ -535,6 +572,7 @@ SwapIntent _intent({
     providerRefundInfo: providerRefundInfo,
     fiatValueBasis: fiatValueBasis,
     depositDeadline: depositDeadline,
+    createdAt: createdAt,
     completedAt: completedAt,
   );
 }
