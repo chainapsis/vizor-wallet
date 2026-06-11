@@ -1007,9 +1007,12 @@ class _AccountRowAvatar extends StatelessWidget {
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: colors.background.inverse,
+                  // The ring sits OUTSIDE the 16px badge like the Figma
+                  // stroke, leaving the full box to the 14px logo.
                   border: Border.all(
                     color: _accountsSurfaceColor(context),
                     width: 2,
+                    strokeAlign: BorderSide.strokeAlignOutside,
                   ),
                   borderRadius: BorderRadius.circular(AppSpacing.xxs),
                 ),

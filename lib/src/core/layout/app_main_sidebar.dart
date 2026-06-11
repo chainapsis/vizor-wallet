@@ -564,7 +564,13 @@ class _SidebarAccountAvatar extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: colors.background.inverse,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: colors.background.ground, width: 2),
+                  // The ring sits OUTSIDE the 16px badge like the Figma
+                  // stroke, leaving the full box to the 14px logo.
+                  border: Border.all(
+                    color: colors.background.ground,
+                    width: 2,
+                    strokeAlign: BorderSide.strokeAlignOutside,
+                  ),
                 ),
                 child: Center(
                   child: AppIcon(
