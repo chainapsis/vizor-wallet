@@ -22,9 +22,11 @@
 use std::collections::{HashMap, HashSet};
 
 use rusqlite::OptionalExtension;
+use transparent::address::TransparentAddress;
 use zcash_client_backend::data_api::{wallet::ConfirmationsPolicy, WalletRead, WalletWrite};
+use zcash_primitives::transaction::Transaction;
 use zcash_protocol::{
-    consensus::BlockHeight,
+    consensus::{BlockHeight, BranchId},
     memo::{Memo, MemoBytes},
 };
 
@@ -269,6 +271,8 @@ pub(crate) struct TransactionDetail {
     pub txid_hex: String,
     pub tx_kind: String,
     pub primary_address: Option<String>,
+    pub source_address: Option<String>,
+    pub source_pool: Option<String>,
     pub memo: Option<String>,
     pub outputs: Vec<TransactionDetailOutput>,
 }
@@ -445,6 +449,54 @@ pub fn get_transaction_history(
     Ok(visible.into_iter().map(|tx| tx.info).collect())
 }
 
+pub fn get_previous_transaction_count_for_address(
+    db_path: &str,
+    _network: WalletNetwork,
+    account_uuid: &str,
+    address: &str,
+) -> Result<u32, String> {
+    let uuid = uuid::Uuid::parse_str(account_uuid).map_err(|e| format!("Invalid UUID: {e}"))?;
+    let uuid_bytes = uuid.as_bytes().to_vec();
+    let address = address.trim();
+    if address.is_empty() {
+        return Ok(0);
+    }
+
+    let conn = open_readonly_conn(db_path)?;
+    let count = conn
+        .query_row(
+            r#"
+        SELECT COUNT(*)
+        FROM (
+            SELECT DISTINCT tx.txid
+            FROM sent_notes sn
+            JOIN transactions tx ON tx.id_tx = sn.transaction_id
+            JOIN accounts from_acc ON from_acc.id = sn.from_account_id
+            JOIN v_transactions vt ON vt.txid = tx.txid
+            WHERE from_acc.uuid = ?1
+              AND vt.account_uuid = ?1
+              AND sn.to_address = ?2
+              AND COALESCE(sn.value, 0) > 0
+
+            UNION
+
+            SELECT DISTINCT txo.txid
+            FROM v_tx_outputs txo
+            JOIN v_transactions vt ON vt.txid = txo.txid
+            WHERE txo.from_account_uuid = ?1
+              AND vt.account_uuid = ?1
+              AND txo.to_address = ?2
+              AND COALESCE(txo.value, 0) > 0
+        ) matched
+        "#,
+            rusqlite::params![uuid_bytes.as_slice(), address],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| format!("Previous transaction count query error: {e}"))?;
+
+    Ok(u32::try_from(count).unwrap_or(u32::MAX))
+}
+
 pub(crate) fn get_oldest_mined_transaction_anchor(
     db_path: &str,
     account_uuid: &str,
@@ -511,7 +563,7 @@ fn get_account_birthday_height(db_path: &str, account_uuid: &str) -> Result<Opti
 
 pub fn get_transaction_detail(
     db_path: &str,
-    _network: WalletNetwork,
+    network: WalletNetwork,
     account_uuid: &str,
     txid_hex: &str,
     tx_kind: &str,
@@ -551,6 +603,15 @@ pub fn get_transaction_detail(
     } else {
         None
     };
+    let source = if matches!(tx_kind, "received" | "receiving") && !visible_outputs.is_empty() {
+        let raw_tx = read_raw_transaction_for_tx(&read_tx, &uuid_bytes, &txid)?;
+        Some(received_source_from_raw_transaction(
+            network,
+            raw_tx.as_deref(),
+        ))
+    } else {
+        None
+    };
     let outputs = visible_outputs
         .into_iter()
         .map(|output| TransactionDetailOutput {
@@ -564,9 +625,121 @@ pub fn get_transaction_detail(
         txid_hex: hex::encode(&base.txid),
         tx_kind: tx_kind.to_string(),
         primary_address,
+        source_address: source.as_ref().and_then(|s| s.address.clone()),
+        source_pool: source.map(|s| s.pool.to_string()),
         memo,
         outputs,
     })
+}
+
+struct TransactionSource {
+    address: Option<String>,
+    pool: &'static str,
+}
+
+fn received_source_from_raw_transaction(
+    network: WalletNetwork,
+    raw_tx: Option<&[u8]>,
+) -> TransactionSource {
+    let Some(raw_tx) = raw_tx else {
+        return TransactionSource {
+            address: None,
+            pool: "unknown",
+        };
+    };
+
+    let Ok(tx) = Transaction::read(raw_tx, BranchId::Sapling) else {
+        return TransactionSource {
+            address: None,
+            pool: "unknown",
+        };
+    };
+
+    let Some(bundle) = tx.transparent_bundle() else {
+        return TransactionSource {
+            address: None,
+            pool: "shielded",
+        };
+    };
+
+    if bundle.vin.is_empty() {
+        return TransactionSource {
+            address: None,
+            pool: "shielded",
+        };
+    }
+
+    TransactionSource {
+        address: bundle.vin.iter().find_map(|input| {
+            transparent_source_address_from_script_sig(network, input.script_sig().0 .0.as_slice())
+        }),
+        pool: "transparent",
+    }
+}
+
+fn transparent_source_address_from_script_sig(
+    network: WalletNetwork,
+    script_sig: &[u8],
+) -> Option<String> {
+    let pubkey = parse_standard_p2pkh_pubkey_from_script_sig(script_sig)?;
+    let address = TransparentAddress::PublicKeyHash(transparent::util::hash160::hash(pubkey));
+    Some(zcash_keys::encoding::encode_transparent_address_p(
+        &network, &address,
+    ))
+}
+
+fn parse_standard_p2pkh_pubkey_from_script_sig(script_sig: &[u8]) -> Option<&[u8]> {
+    let pushes = parse_script_pushes(script_sig)?;
+    pushes
+        .into_iter()
+        .rev()
+        .find(|push| push.len() == 33 && matches!(push.first(), Some(0x02 | 0x03)))
+}
+
+fn parse_script_pushes(script: &[u8]) -> Option<Vec<&[u8]>> {
+    let mut pushes = Vec::new();
+    let mut index = 0;
+    while index < script.len() {
+        let opcode = script[index];
+        index += 1;
+
+        let len = match opcode {
+            0x01..=0x4b => opcode as usize,
+            0x4c => {
+                let len = *script.get(index)? as usize;
+                index += 1;
+                len
+            }
+            0x4d => {
+                let bytes = script.get(index..index + 2)?;
+                index += 2;
+                u16::from_le_bytes([bytes[0], bytes[1]]) as usize
+            }
+            _ => return None,
+        };
+
+        let data = script.get(index..index + len)?;
+        pushes.push(data);
+        index += len;
+    }
+
+    Some(pushes)
+}
+
+fn read_raw_transaction_for_tx(
+    conn: &rusqlite::Connection,
+    account_uuid: &[u8],
+    txid: &[u8],
+) -> Result<Option<Vec<u8>>, String> {
+    conn.query_row(
+        "SELECT raw FROM v_transactions \
+         WHERE account_uuid = ?1 AND txid = ?2 AND raw IS NOT NULL \
+         LIMIT 1",
+        rusqlite::params![account_uuid, txid],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|e| format!("Query error: {e}"))
 }
 
 fn read_history_base_by_txid(
@@ -1323,6 +1496,21 @@ mod tests {
         vec![0xDE, 0xAD, 0xBE, 0xEF]
     }
 
+    fn transparent_source_raw_tx() -> Vec<u8> {
+        hex::decode(
+            "0400008085202f8901aee37187e843da597683c26c01457f5fd3b1a038996ef74dc8d60d483aaf395a000000006b483045022100874c70db77ea9e93f75cc83a9e141e17c8eb97588e29fe4e307631fdde4f162a02203493df62d648cd86a1189eaf9bcafc652bc14c5df02519d9e45e25b32aaffb5b012102106a2dcaaac2ae3b24358a03f4264e05db420c5b090399bc23885fa02fef7716ffffffff02764e1900000000001976a914fb451987556f7a19b726966ee6cff917e0bb3bfb88ac560ca400000000001976a9141634f5ff0b8f6603a17570436d6c12a91f4b1fed88ac00000000000000000000000000000000000000",
+        )
+        .unwrap()
+    }
+
+    fn transparent_source_test_address() -> String {
+        let pubkey =
+            hex::decode("02106a2dcaaac2ae3b24358a03f4264e05db420c5b090399bc23885fa02fef7716")
+                .unwrap();
+        let address = TransparentAddress::PublicKeyHash(transparent::util::hash160::hash(&pubkey));
+        zcash_keys::encoding::encode_transparent_address_p(&WalletNetwork::Test, &address)
+    }
+
     fn test_account_uuid() -> uuid::Uuid {
         uuid::Uuid::from_u128(0x7e2b16db08384ddba8026fd48b9e0d02)
     }
@@ -1350,6 +1538,7 @@ mod tests {
              CREATE TABLE v_transactions (
                  account_uuid BLOB NOT NULL,
                  txid BLOB NOT NULL,
+                 raw BLOB,
                  mined_height INTEGER,
                  expired_unmined INTEGER NOT NULL,
                  account_balance_delta INTEGER NOT NULL,
@@ -1415,10 +1604,10 @@ mod tests {
         .unwrap();
         conn.execute(
             "INSERT INTO v_transactions (
-                 account_uuid, txid, mined_height, expired_unmined,
+                 account_uuid, txid, raw, mined_height, expired_unmined,
                  account_balance_delta, fee_paid, block_time, total_spent,
                  total_received, is_shielding, expiry_height, tx_index
-             ) VALUES (?1, ?2, ?3, 0, ?4, 0, 0, ?5, ?6, ?7, ?8, ?9)",
+             ) VALUES (?1, ?2, NULL, ?3, 0, ?4, 0, 0, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![
                 account.as_bytes().as_slice(),
                 txid,
@@ -1430,6 +1619,15 @@ mod tests {
                 expiry_height,
                 tx_index,
             ],
+        )
+        .unwrap();
+    }
+
+    fn set_history_tx_raw(db: &NamedTempFile, account: uuid::Uuid, txid: &[u8], raw: &[u8]) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute(
+            "UPDATE v_transactions SET raw = ?1 WHERE account_uuid = ?2 AND txid = ?3",
+            rusqlite::params![raw, account.as_bytes().as_slice(), txid],
         )
         .unwrap();
     }
@@ -1615,6 +1813,173 @@ mod tests {
             )
             .unwrap();
         assert_eq!(changed, 1);
+    }
+
+    #[test]
+    fn previous_transaction_count_for_address_counts_distinct_sent_transactions() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let other_account = second_test_account_uuid();
+        let target = "u1contactaddress";
+        let other_target = "u1otheraddress";
+
+        let txid_a = fake_txid(0xC1);
+        insert_history_tx(
+            &db,
+            account,
+            &txid_a,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -5_000_000,
+            5_000_000,
+            0,
+            false,
+            Some("2026-04-28T14:03:00Z"),
+        );
+        let output_index = insert_output_with_address(
+            &db,
+            &txid_a,
+            3,
+            Some(account),
+            None,
+            5_000_000,
+            false,
+            Some(target),
+            None,
+        );
+        insert_sent_note(
+            &db,
+            &txid_a,
+            3,
+            output_index,
+            account,
+            None,
+            Some(target),
+            5_000_000,
+            None,
+        );
+
+        let txid_b = fake_txid(0xC2);
+        insert_history_tx(
+            &db,
+            account,
+            &txid_b,
+            Some(1_000_001),
+            2,
+            Some(1_000_101),
+            -7_000_000,
+            7_000_000,
+            0,
+            false,
+            Some("2026-04-28T14:04:00Z"),
+        );
+        let output_index = insert_output_with_address(
+            &db,
+            &txid_b,
+            3,
+            Some(account),
+            None,
+            7_000_000,
+            false,
+            Some(target),
+            None,
+        );
+        insert_sent_note(
+            &db,
+            &txid_b,
+            3,
+            output_index,
+            account,
+            None,
+            Some(target),
+            7_000_000,
+            None,
+        );
+
+        let txid_c = fake_txid(0xC3);
+        insert_history_tx(
+            &db,
+            account,
+            &txid_c,
+            Some(1_000_002),
+            3,
+            Some(1_000_102),
+            -9_000_000,
+            9_000_000,
+            0,
+            false,
+            Some("2026-04-28T14:05:00Z"),
+        );
+        let output_index = insert_output_with_address(
+            &db,
+            &txid_c,
+            3,
+            Some(account),
+            None,
+            9_000_000,
+            false,
+            Some(other_target),
+            None,
+        );
+        insert_sent_note(
+            &db,
+            &txid_c,
+            3,
+            output_index,
+            account,
+            None,
+            Some(other_target),
+            9_000_000,
+            None,
+        );
+
+        let txid_d = fake_txid(0xC4);
+        insert_history_tx(
+            &db,
+            other_account,
+            &txid_d,
+            Some(1_000_003),
+            4,
+            Some(1_000_103),
+            -11_000_000,
+            11_000_000,
+            0,
+            false,
+            Some("2026-04-28T14:06:00Z"),
+        );
+        let output_index = insert_output_with_address(
+            &db,
+            &txid_d,
+            3,
+            Some(other_account),
+            None,
+            11_000_000,
+            false,
+            Some(target),
+            None,
+        );
+        insert_sent_note(
+            &db,
+            &txid_d,
+            3,
+            output_index,
+            other_account,
+            None,
+            Some(target),
+            11_000_000,
+            None,
+        );
+
+        let got = get_previous_transaction_count_for_address(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &format!(" {target} "),
+        )
+        .unwrap();
+
+        assert_eq!(got, 2);
     }
 
     fn mark_expired_unmined(db: &NamedTempFile, txid: &[u8]) {
@@ -2709,9 +3074,64 @@ mod tests {
 
         assert_eq!(got.tx_kind, "received");
         assert_eq!(got.primary_address, None);
+        assert_eq!(got.source_address, None);
+        assert_eq!(got.source_pool.as_deref(), Some("unknown"));
         assert_eq!(got.memo.as_deref(), Some("incoming memo"));
         assert_eq!(got.outputs.len(), 1);
         assert_eq!(got.outputs[0].address.as_deref(), Some("u-my-receiver"));
+    }
+
+    #[test]
+    fn detail_received_row_recovers_transparent_source_from_raw_tx() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD7);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            2_000_000,
+            0,
+            2_000_000,
+            false,
+            Some("2026-04-28T17:01:00Z"),
+        );
+        let raw = transparent_source_raw_tx();
+        set_history_tx_raw(&db, account, &txid, &raw);
+        insert_output_with_address_and_memo(
+            &db,
+            &txid,
+            3,
+            None,
+            Some(account),
+            2_000_000,
+            false,
+            Some("u-my-receiver"),
+            Some(0),
+            Some(b"incoming memo"),
+        );
+
+        let got = get_transaction_detail(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "received",
+        )
+        .unwrap();
+
+        let expected_source = transparent_source_test_address();
+        assert_eq!(got.primary_address, None);
+        assert_eq!(
+            got.source_address.as_deref(),
+            Some(expected_source.as_str())
+        );
+        assert_eq!(got.source_pool.as_deref(), Some("transparent"));
+        assert_eq!(got.outputs.len(), 1);
     }
 
     #[test]
@@ -2757,6 +3177,8 @@ mod tests {
 
         assert_eq!(got.tx_kind, "receiving");
         assert_eq!(got.primary_address, None);
+        assert_eq!(got.source_address, None);
+        assert_eq!(got.source_pool.as_deref(), Some("unknown"));
         assert_eq!(got.memo.as_deref(), Some("pending incoming memo"));
         assert_eq!(got.outputs.len(), 1);
         assert_eq!(
