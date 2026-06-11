@@ -55,13 +55,6 @@ List<RouteBase> buildMobileRoutes({
                         // shared redirect guard and deep links treat
                         // them identically.
                         GoRoute(
-                          path: 'change-password',
-                          pageBuilder: (context, state) => CupertinoPage(
-                            key: state.pageKey,
-                            child: const MobileChangePasscodeScreen(),
-                          ),
-                        ),
-                        GoRoute(
                           path: 'seed-phrase',
                           pageBuilder: (context, state) => CupertinoPage(
                             key: state.pageKey,
@@ -91,6 +84,16 @@ List<RouteBase> buildMobileRoutes({
             ],
           ),
       ],
+    ),
+    // The Update Passcode frames drop the tab bar, so this stays a
+    // full-screen push (same path as the desktop change-password
+    // route for the shared redirect guard and deep links).
+    GoRoute(
+      path: '/settings/change-password',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileChangePasscodeScreen(),
+      ),
     ),
     GoRoute(
       path: '/send',
