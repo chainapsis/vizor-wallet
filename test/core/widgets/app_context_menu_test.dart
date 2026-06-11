@@ -87,7 +87,8 @@ void main() {
     await tester.pumpAndSettle();
 
     final decoration = _itemDecoration(tester);
-    expect(decoration.color, AppThemeData.dark.colors.state.hoverOpacity);
+    // The inverse-surface hover tint, visible on the dark menu surface.
+    expect(decoration.color, AppThemeData.dark.colors.border.inverseOpacity);
 
     await gesture.removePointer();
   });
