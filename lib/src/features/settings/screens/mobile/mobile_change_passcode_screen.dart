@@ -222,7 +222,8 @@ class _MobileChangePasscodeScreenState
             Text(
               title,
               textAlign: TextAlign.center,
-              style: AppTypography.displayLarge.copyWith(
+              // Headline M serif per the Update Passcode frames.
+              style: AppTypography.headlineMedium.copyWith(
                 color: colors.text.accent,
               ),
             ),

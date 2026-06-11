@@ -232,22 +232,20 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                   AppSpacing.sm,
                   AppSpacing.s,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    AppButton(
-                      key: const ValueKey('mobile_endpoint_update'),
-                      expand: true,
-                      onPressed: _canUpdate(current) ? _submit : null,
-                      child: Text(
-                        _isSubmitting
-                            ? 'Updating...'
-                            : _activeTab == _EndpointTab.list
-                            ? 'Update endpoint'
-                            : 'Customise endpoint',
-                      ),
+                // Intrinsic centered pill, hovering above the tab bar
+                // like the Figma `Update Endpoint` button.
+                child: Center(
+                  child: AppButton(
+                    key: const ValueKey('mobile_endpoint_update'),
+                    onPressed: _canUpdate(current) ? _submit : null,
+                    child: Text(
+                      _isSubmitting
+                          ? 'Updating...'
+                          : _activeTab == _EndpointTab.list
+                          ? 'Update endpoint'
+                          : 'Customise endpoint',
                     ),
-                  ],
+                  ),
                 ),
               ),
             ],
@@ -319,12 +317,21 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
       ),
       children: [
         // Dark hero card with the host:port field — Figma `Custom
-        // endpoint` card.
+        // endpoint` card (4083:457541): 200 high with the faded
+        // castle-library line art along the bottom edge.
         Container(
+          constraints: const BoxConstraints(minHeight: 200),
           padding: const EdgeInsets.all(AppSpacing.sm),
           decoration: BoxDecoration(
             color: colors.background.homeCard,
             borderRadius: BorderRadius.circular(AppRadii.large),
+            image: const DecorationImage(
+              image: AssetImage(
+                'assets/illustrations/endpoint_custom_bg.png',
+              ),
+              fit: BoxFit.cover,
+              alignment: Alignment.bottomCenter,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

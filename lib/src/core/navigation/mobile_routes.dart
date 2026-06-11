@@ -45,7 +45,49 @@ List<RouteBase> buildMobileRoutes({
                 path: tab.path,
                 pageBuilder: (context, state) =>
                     NoTransitionPage(key: state.pageKey, child: tab.screen),
+                // Settings detail screens keep the floating tab bar
+                // visible in their Figma frames, so they push inside
+                // the branch navigator. Full-screen flows (send,
+                // receive, scan) stay outside the shell below.
+                routes: tab.path == '/settings'
+                    ? [
+                        // Same paths as the desktop routes so the
+                        // shared redirect guard and deep links treat
+                        // them identically.
+                        GoRoute(
+                          path: 'change-password',
+                          pageBuilder: (context, state) => CupertinoPage(
+                            key: state.pageKey,
+                            child: const MobileChangePasscodeScreen(),
+                          ),
+                        ),
+                        GoRoute(
+                          path: 'seed-phrase',
+                          pageBuilder: (context, state) => CupertinoPage(
+                            key: state.pageKey,
+                            child: const MobileSeedPhraseScreen(),
+                          ),
+                        ),
+                        GoRoute(
+                          path: 'endpoint',
+                          pageBuilder: (context, state) => CupertinoPage(
+                            key: state.pageKey,
+                            child: const MobileEndpointScreen(),
+                          ),
+                        ),
+                      ]
+                    : const <RouteBase>[],
               ),
+              // The Accounts screen lives in the home branch (its
+              // Figma frame keeps the tab bar) under its own path.
+              if (tab.path == '/home')
+                GoRoute(
+                  path: '/accounts',
+                  pageBuilder: (context, state) => CupertinoPage(
+                    key: state.pageKey,
+                    child: const MobileAccountsScreen(),
+                  ),
+                ),
             ],
           ),
       ],
@@ -68,37 +110,6 @@ List<RouteBase> buildMobileRoutes({
       path: '/receive',
       pageBuilder: (context, state) =>
           CupertinoPage(key: state.pageKey, child: const MobileReceiveScreen()),
-    ),
-    GoRoute(
-      path: '/accounts',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
-        child: const MobileAccountsScreen(),
-      ),
-    ),
-    // Same path as the desktop change-password route so the shared
-    // redirect guard and deep links treat them identically.
-    GoRoute(
-      path: '/settings/change-password',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
-        child: const MobileChangePasscodeScreen(),
-      ),
-    ),
-    GoRoute(
-      path: '/settings/seed-phrase',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
-        child: const MobileSeedPhraseScreen(),
-      ),
-    ),
-    // Same path as the desktop endpoint route (back resolver labels it).
-    GoRoute(
-      path: '/settings/endpoint',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
-        child: const MobileEndpointScreen(),
-      ),
     ),
     GoRoute(
       path: '/about',

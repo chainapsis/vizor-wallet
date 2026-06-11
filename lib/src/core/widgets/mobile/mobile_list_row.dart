@@ -4,8 +4,9 @@ import '../../theme/app_theme.dart';
 import '../app_icon.dart';
 
 /// Touch-sized list row used inside [MobileSurfaceCard]s — the Figma
-/// `Content Line` pattern (361×44): leading icon or avatar, label,
-/// optional trailing value, optional chevron or custom trailing widget.
+/// `Content Line` pattern (361 wide on a 52 px pitch): leading icon or
+/// avatar, label, optional trailing value, optional chevron or custom
+/// trailing widget.
 class MobileListRow extends StatelessWidget {
   const MobileListRow({
     required this.label,
@@ -19,7 +20,7 @@ class MobileListRow extends StatelessWidget {
     super.key,
   });
 
-  static const minHeight = 44.0;
+  static const minHeight = 52.0;
 
   final Widget? leading;
   final String label;
