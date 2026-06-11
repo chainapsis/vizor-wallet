@@ -114,10 +114,11 @@ class MobileSettingsScreen extends ConsumerWidget {
                           : () => _editAccount(context, ref, account),
                     ),
                     MobileListRow(
+                      key: const ValueKey('mobile_settings_address_book_row'),
                       leading: _RowIcon(AppIcons.users),
                       label: 'Address Book',
                       showChevron: true,
-                      enabled: false,
+                      onTap: () => context.push('/settings/address-book'),
                     ),
                   ],
                 ),

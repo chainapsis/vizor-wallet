@@ -122,18 +122,17 @@ void main() {
     expect(find.text('Light'), findsOneWidget);
   });
 
-  testWidgets('unshipped rows are disabled, shipped rows are not', (
-    tester,
-  ) async {
+  testWidgets('every settings row renders active', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pump();
 
-    // Address book has no mobile flow yet.
-    final addressBook = tester.widget<Text>(find.text('Address Book'));
-    expect(addressBook.style?.color, AppThemeData.dark.colors.text.disabled);
-
-    // The seed phrase flow shipped — its row renders active.
-    final seed = tester.widget<Text>(find.text('Secret Passphrase'));
-    expect(seed.style?.color, isNot(AppThemeData.dark.colors.text.disabled));
+    for (final label in ['Address Book', 'Secret Passphrase']) {
+      final row = tester.widget<Text>(find.text(label));
+      expect(
+        row.style?.color,
+        isNot(AppThemeData.dark.colors.text.disabled),
+        reason: '$label should be enabled',
+      );
+    }
   });
 }

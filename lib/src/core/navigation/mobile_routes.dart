@@ -6,6 +6,7 @@ import '../../features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
+import '../../features/address_book/screens/mobile/mobile_address_book_screen.dart';
 import '../../features/send/screens/mobile/mobile_keystone_sign_screen.dart';
 import '../../features/send/services/send_flow.dart' show SendReviewArgs;
 import '../../features/send/screens/mobile/mobile_send_scan_screen.dart';
@@ -61,6 +62,13 @@ List<RouteBase> buildMobileRoutes({
                           pageBuilder: (context, state) => CupertinoPage(
                             key: state.pageKey,
                             child: const MobileSeedPhraseScreen(),
+                          ),
+                        ),
+                        GoRoute(
+                          path: 'address-book',
+                          pageBuilder: (context, state) => CupertinoPage(
+                            key: state.pageKey,
+                            child: const MobileAddressBookScreen(),
                           ),
                         ),
                         GoRoute(
