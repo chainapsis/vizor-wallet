@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -14,10 +15,9 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 /// Intercepts the two security calls the screen makes so no secure
 /// storage is touched.
 class _FakeSecurityNotifier extends AppSecurityNotifier {
-  _FakeSecurityNotifier({this.confirmResult = true, this.changeResult = true});
+  _FakeSecurityNotifier({this.confirmResult = true});
 
   final bool confirmResult;
-  final bool changeResult;
   final confirmedWith = <String>[];
   ({String current, String next})? changedWith;
 
@@ -33,7 +33,7 @@ class _FakeSecurityNotifier extends AppSecurityNotifier {
     required String newPassword,
   }) async {
     changedWith = (current: currentPassword, next: newPassword);
-    return changeResult;
+    return true;
   }
 }
 
@@ -50,29 +50,37 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-/// Hosts the screen behind a push so pop-with-result is observable.
+/// Hosts the screen behind a go_router push (the screen pops via
+/// `context.pop`) so pop-with-result is observable.
 Widget _app(_FakeSecurityNotifier security, {required List<bool?> popResult}) {
-  return ProviderScope(
-    overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
-      appSecurityProvider.overrideWith(() => security),
-    ],
-    child: MaterialApp(
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
-      home: Builder(
-        builder: (context) => GestureDetector(
+  final router = GoRouter(
+    initialLocation: '/host',
+    routes: [
+      GoRoute(
+        path: '/host',
+        builder: (context, state) => GestureDetector(
           onTap: () async {
             popResult.add(
-              await Navigator.of(context).push<bool>(
-                MaterialPageRoute(
-                  builder: (_) => const MobileChangePasscodeScreen(),
-                ),
-              ),
+              await context.push<bool>('/settings/change-password'),
             );
           },
           child: const Text('open'),
         ),
       ),
+      GoRoute(
+        path: '/settings/change-password',
+        builder: (context, state) => const MobileChangePasscodeScreen(),
+      ),
+    ],
+  );
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appSecurityProvider.overrideWith(() => security),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),
   );
 }

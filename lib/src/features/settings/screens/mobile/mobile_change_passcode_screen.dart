@@ -9,6 +9,7 @@ import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/storage/app_secure_store.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/app_security_provider.dart';
+import '../../../../providers/router_refresh_provider.dart';
 import '../../../onboarding/mobile/forgot_passcode_sheet.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
@@ -121,23 +122,31 @@ class _MobileChangePasscodeScreenState
   Future<void> _submit() async {
     setState(() => _submitting = true);
     try {
-      final didChange = await ref
-          .read(appSecurityProvider.notifier)
-          .changePassword(
-            currentPassword: _currentPasscode!,
-            newPassword: _newPasscode!,
-          );
-      if (!mounted) return;
-      if (!didChange) {
-        // The verified passcode stopped matching the stored verifier —
-        // restart from scratch rather than trusting stale state.
-        setState(() {
-          _submitting = false;
-          _restartFlow('Incorrect Passcode');
-        });
-        return;
-      }
-      Navigator.of(context).pop(true);
+      // Pause router refresh across the rotation + pop, like the other
+      // password mutations: the security-state change notifying the
+      // router mid-pop can resurrect this just-popped page.
+      await ref.read(routerRefreshProvider).pauseWhile(() async {
+        final didChange = await ref
+            .read(appSecurityProvider.notifier)
+            .changePassword(
+              currentPassword: _currentPasscode!,
+              newPassword: _newPasscode!,
+            );
+        if (!mounted) return;
+        if (!didChange) {
+          // The verified passcode stopped matching the stored verifier
+          // — restart from scratch rather than trusting stale state.
+          setState(() {
+            _submitting = false;
+            _restartFlow('Incorrect Passcode');
+          });
+          return;
+        }
+        // context.pop (not Navigator.pop) so go_router's configuration
+        // updates synchronously — a deferred router refresh landing in
+        // the gap restores the stale config and resurrects this page.
+        context.pop(true);
+      });
     } on PasswordRotationRecoveryFailedException {
       if (!mounted) return;
       setState(() {
@@ -207,7 +216,7 @@ class _MobileChangePasscodeScreenState
           children: [
             MobileTopNav.back(
               title: '',
-              onBack: _submitting ? null : () => Navigator.of(context).pop(),
+              onBack: _submitting ? null : () => context.pop(),
             ),
             const SizedBox(height: AppSpacing.md),
             Text(
