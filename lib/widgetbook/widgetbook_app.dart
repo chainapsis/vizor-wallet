@@ -545,6 +545,10 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Default',
                       builder: buildActivityPageUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Swap receive absorb',
+                      builder: buildSwapReceiveAbsorbUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(
