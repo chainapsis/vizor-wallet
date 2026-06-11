@@ -28,7 +28,8 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
       progress: mobileCreateProgress(1),
       onBack: () => Navigator.of(context).maybePop(),
       title: 'The Shielded World',
-      subtitle: 'Zcash (ZEC) built around financial privacy & self-custody.',
+      // Line break matches the Figma subtitle wrap.
+      subtitle: 'Zcash (ZEC) built around financial\nprivacy & self-custody.',
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -58,7 +59,9 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
                 'hide the sender, recipient, and amount — verified by '
                 'cryptography, not trust.',
           ),
-          const SizedBox(height: AppSpacing.md),
+          // 32 to the paragraph block (plus its own 24 inset) per the
+          // intro frame's vertical rhythm.
+          const SizedBox(height: AppSpacing.base + AppSpacing.md),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
             child: Text(
@@ -87,9 +90,9 @@ class MobileAddressTypesScreen extends StatelessWidget {
       progress: mobileCreateProgress(2),
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Zcash Address Types',
+      // Line break matches the Figma subtitle wrap.
       subtitle:
-          'Zcash has two addresses types. One for Privacy, one for '
-          'Transparency.',
+          'Zcash has two addresses types.\nOne for Privacy, one for Transparency.',
       bottomArea: AppButton(
         key: const ValueKey('mobile_address_types_continue'),
         expand: true,
@@ -267,9 +270,12 @@ class _SurfaceInfoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    // Figma `Main` card (4394:81701): 20 px side / 44 px vertical
+    // padding, 16 between a section title and its body, and 36 on each
+    // side of the divider.
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 44),
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
@@ -280,21 +286,21 @@ class _SurfaceInfoCard extends StatelessWidget {
           for (var i = 0; i < sections.length; i++) ...[
             if (i > 0)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                padding: const EdgeInsets.symmetric(vertical: 36),
                 child: Container(height: 1, color: colors.border.subtle),
               ),
             Row(
               children: [
                 AppIcon(
                   sections[i].iconName,
-                  size: 22,
+                  size: 24,
                   color: sections[i].iconColor,
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Text(
                     sections[i].title,
-                    style: AppTypography.headlineSmall.copyWith(
+                    style: AppTypography.bodyLarge.copyWith(
                       color: colors.text.accent,
                     ),
                   ),
@@ -302,7 +308,7 @@ class _SurfaceInfoCard extends StatelessWidget {
                 if (sections[i].trailing != null) sections[i].trailing!,
               ],
             ),
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.sm),
             Text.rich(
               sections[i].bodySpan(
                 AppTypography.bodyMedium.copyWith(color: colors.text.primary),
@@ -339,11 +345,9 @@ class _AddressChip extends StatelessWidget {
         ? colors.background.brandCrimsonStrong
         : colors.background.homeCard;
     final textColor = emphasized ? colors.text.homeCard : colors.text.primary;
+    // Figma `Card Top` chip: 37 px pill, Code M address, 8 px inset.
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xxs,
-        vertical: AppSpacing.xxs,
-      ),
+      padding: const EdgeInsets.all(AppSpacing.xs),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(AppRadii.xSmall),
@@ -352,10 +356,10 @@ class _AddressChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             decoration: BoxDecoration(
               color: badgeBg,
-              borderRadius: BorderRadius.circular(AppRadii.xSmall),
+              borderRadius: BorderRadius.circular(AppRadii.xSmall - 2),
             ),
             child: Text(
               prefix,
@@ -367,7 +371,7 @@ class _AddressChip extends StatelessWidget {
           const SizedBox(width: AppSpacing.xxs),
           Text(
             sample,
-            style: AppTypography.codeSmall.copyWith(color: textColor),
+            style: AppTypography.codeMedium.copyWith(color: textColor),
           ),
         ],
       ),

@@ -27,12 +27,13 @@ class MobileWelcomeScreen extends StatelessWidget {
         children: [
           Expanded(child: _WelcomeHero(showBackButton: showBackButton)),
           Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.md,
-              AppSpacing.md,
-              AppSpacing.md,
-              AppSpacing.s,
-            ),
+            // Figma `Welcome Buttons Wrap` (4600:50544): the entry
+            // buttons are inset 28 from the screen edge, with 32 px
+            // between the import button, divider, Keystone button, and
+            // the legal footer.
+            // 40 below the footer (74 to the screen edge minus the home
+            // indicator inset) reproduces the frame's bottom rhythm.
+            padding: const EdgeInsets.fromLTRB(28, AppSpacing.sm, 28, 40),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -71,9 +72,10 @@ class MobileWelcomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.base),
                 // Constrained so the legal text wraps onto two centered
-                // lines as in the Figma frame.
+                // lines as in the Figma frame ("…you agree to / our
+                // Terms and Privacy", node 4600:50548 is 193 wide).
                 const Center(
-                  child: SizedBox(width: 240, child: _LegalFooter()),
+                  child: SizedBox(width: 190, child: _LegalFooter()),
                 ),
               ],
             ),
@@ -116,16 +118,19 @@ class _WelcomeHero extends StatelessWidget {
               ),
             ),
           ),
+          // Figma 4600:50544: logo 96×36 at y=242, tagline at y=297,
+          // tagline baseline block ends 70 px above the hero's bottom
+          // edge.
           Positioned(
             left: 0,
             right: 0,
-            bottom: AppSpacing.lg,
+            bottom: 70,
             child: Column(
               children: [
-                VizorWordmark(width: 90, height: 34, color: colors.text.homeCard),
-                const SizedBox(height: AppSpacing.xs),
+                VizorWordmark(width: 96, height: 36, color: colors.text.homeCard),
+                const SizedBox(height: 19),
                 Text(
-                  'Private money.\nBy default',
+                  'Private Money.\nBy default',
                   textAlign: TextAlign.center,
                   style: AppTypography.displayLarge.copyWith(
                     color: colors.text.homeCard,

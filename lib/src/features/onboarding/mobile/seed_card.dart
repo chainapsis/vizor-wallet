@@ -15,10 +15,16 @@ class SeedCard extends StatelessWidget {
     this.onCopy,
     this.copied = false,
     this.showTitle = true,
+    this.rowGap = AppSpacing.s,
     super.key,
   });
 
   final List<String> words;
+
+  /// Vertical gap between word rows. The import review frame uses the
+  /// 37 px pitch (12 + the 25 px line); the create-flow passphrase
+  /// frame spreads the same grid to a 44 px pitch (19 + 25).
+  final double rowGap;
 
   /// Blurs the words until the user explicitly reveals them.
   final bool obscured;
@@ -34,7 +40,7 @@ class SeedCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final grid = _WordGrid(words: words);
+    final grid = _WordGrid(words: words, rowGap: rowGap);
 
     return Container(
       width: double.infinity,
@@ -101,9 +107,10 @@ class SeedCard extends StatelessWidget {
 }
 
 class _WordGrid extends StatelessWidget {
-  const _WordGrid({required this.words});
+  const _WordGrid({required this.words, required this.rowGap});
 
   final List<String> words;
+  final double rowGap;
 
   @override
   Widget build(BuildContext context) {
@@ -112,7 +119,7 @@ class _WordGrid extends StatelessWidget {
     return Column(
       children: [
         for (var row = 0; row < rows; row++) ...[
-          if (row > 0) const SizedBox(height: AppSpacing.sm),
+          if (row > 0) SizedBox(height: rowGap),
           Row(
             children: [
               for (var col = 0; col < 3; col++)

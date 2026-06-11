@@ -189,6 +189,8 @@ class _MobileSecretPassphraseScreenState
               words: words,
               onCopy: _copy,
               copied: _copied,
+              // The passphrase frame spreads the grid to a 44 px pitch.
+              rowGap: 19,
             )
           : const _RevealWarningCard(),
     );

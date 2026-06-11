@@ -33,10 +33,11 @@ class MobileBiometricsScreen extends StatelessWidget {
         height: 300,
         fit: BoxFit.contain,
       ),
-      title: 'Unlock your wallet with $method',
+      // Line breaks match the Figma title/subtitle wraps.
+      title: 'Unlock your wallet\nwith $method',
       subtitle:
-          'This is an easy and fast way to sign in. You can switch back '
-          'to passcode anytime.',
+          'This is an easy and fast way to sign in.\n'
+          'You can switch back to passcode anytime.',
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

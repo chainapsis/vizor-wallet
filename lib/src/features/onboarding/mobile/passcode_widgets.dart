@@ -89,10 +89,11 @@ class PasscodeNumpad extends StatelessWidget {
     Widget digitKey(int digit) => key(
       Text(
         '$digit',
-        // One-off 64px serif per the Figma numpad — noticeably larger
-        // than Display L, so not a shared typography token.
+        // One-off 48px serif: the Figma numpad digits render 34 px
+        // tall, between Display L and Headline XL, so not a shared
+        // typography token.
         style: AppTypography.displayLarge.copyWith(
-          fontSize: 64,
+          fontSize: 48,
           height: 1,
           color: enabled ? colors.text.accent : colors.text.disabled,
         ),

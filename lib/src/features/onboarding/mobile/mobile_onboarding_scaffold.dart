@@ -20,6 +20,7 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
     this.bottomArea,
     this.bottomAreaPadding,
     this.aboveTitle,
+    this.titleStyle,
     super.key,
   });
 
@@ -44,6 +45,10 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
   /// Optional hero content rendered above the title — the biometrics
   /// frame puts its illustration first.
   final Widget? aboveTitle;
+
+  /// Overrides the Headline XL title style — the passcode frames use
+  /// the smaller Headline M serif.
+  final TextStyle? titleStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -79,17 +84,24 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
                       Text(
                         title,
                         textAlign: TextAlign.center,
-                        style: AppTypography.displayLarge.copyWith(
-                          color: colors.text.accent,
-                        ),
+                        style: (titleStyle ?? AppTypography.displayLarge)
+                            .copyWith(color: colors.text.accent),
                       ),
                       if (subtitle != null) ...[
                         const SizedBox(height: AppSpacing.sm),
-                        Text(
-                          subtitle!,
-                          textAlign: TextAlign.center,
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.secondary,
+                        // Body M Medium on text/primary, wrapped to the
+                        // narrow centered measure of the step frames
+                        // (subtitle nodes are 259–277 wide in Figma).
+                        Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 320),
+                            child: Text(
+                              subtitle!,
+                              textAlign: TextAlign.center,
+                              style: AppTypography.bodyMediumStrong.copyWith(
+                                color: colors.text.primary,
+                              ),
+                            ),
                           ),
                         ),
                       ],

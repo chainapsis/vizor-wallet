@@ -49,7 +49,10 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
       ),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(AppSpacing.sm),
+        // Same surface-card rhythm as the onboarding info cards: 20 px
+        // sides, 44 px vertical, 16 below a heading, 36 around the
+        // divider.
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 44),
         decoration: BoxDecoration(
           color: colors.background.ground,
           borderRadius: BorderRadius.circular(AppRadii.large),
@@ -61,7 +64,7 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
               iconName: AppIcons.importWallet,
               title: '1. Check Keystone firmware',
             ),
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.sm),
             Text(
               'Check if your Keystone device has the latest version of the '
               'Cypherpunk firmware, update or install if needed.',
@@ -97,14 +100,14 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+              padding: const EdgeInsets.symmetric(vertical: 36),
               child: Container(height: 1, color: colors.border.subtle),
             ),
             _SectionHeading(
               iconName: AppIcons.qr,
               title: '2. Prepare to connect',
             ),
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.sm),
             for (final (i, step) in const [
               'Unlock your Keystone.',
               'Tap the ... menu, then go to Sync.',
@@ -154,12 +157,12 @@ class _SectionHeading extends StatelessWidget {
     final colors = context.colors;
     return Row(
       children: [
-        AppIcon(iconName, size: 20, color: colors.icon.accent),
+        AppIcon(iconName, size: 24, color: colors.icon.accent),
         const SizedBox(width: AppSpacing.xs),
         Expanded(
           child: Text(
             title,
-            style: AppTypography.headlineSmall.copyWith(
+            style: AppTypography.bodyLarge.copyWith(
               color: colors.text.accent,
             ),
           ),
