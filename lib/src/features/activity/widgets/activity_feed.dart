@@ -44,7 +44,7 @@ class ActivityFeed extends StatelessWidget {
           padding: EdgeInsets.symmetric(horizontal: AppSpacing.s),
           child: _ActivityFeedTitleRow(),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.base),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
           child: _ActivityFeedBody(
@@ -232,9 +232,9 @@ class _ActivityFeedCard extends StatelessWidget {
                   padding: const EdgeInsets.all(AppSpacing.xxs),
                   child: Text(
                     section.title,
-                    style: AppTypography.labelMedium.copyWith(
+                    style: AppTypography.labelLarge.copyWith(
                       color: colors.text.secondary,
-                      letterSpacing: 0,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -262,17 +262,12 @@ class _ActivityFeedCardShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: context.colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF000000).withValues(alpha: 0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: appSurfaceShadow(colors),
       ),
       child: child,
     );
@@ -387,12 +382,12 @@ class _ActivityFeedRowState extends State<ActivityFeedRow> {
       children: [
         Container(
           height: rowHeight,
-          padding: EdgeInsets.zero,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           decoration: BoxDecoration(
             color: isInteractive && _hovered
                 ? colors.state.hoverOpacity
                 : row.backgroundColor,
-            borderRadius: BorderRadius.circular(AppRadii.xSmall),
+            borderRadius: BorderRadius.circular(AppRadii.small),
           ),
           child: Row(
             children: [
@@ -402,12 +397,13 @@ class _ActivityFeedRowState extends State<ActivityFeedRow> {
                     widget.childRow
                         ? const _ActivityChildConnector()
                         : _ActivityRowIcon(row: row),
-                    const SizedBox(width: AppSpacing.s),
+                    const SizedBox(width: AppSpacing.xs),
                     Flexible(child: _ActivityRowTitle(row: row)),
                   ],
                 ),
               ),
-              const SizedBox(width: AppSpacing.xs),
+              // Content Line separates its left and right blocks by 10px.
+              const SizedBox(width: 10),
               _ActivityRowAmount(row: row, childRow: widget.childRow),
             ],
           ),
@@ -422,7 +418,7 @@ class _ActivityFeedRowState extends State<ActivityFeedRow> {
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   border: Border.all(color: colors.state.focusRing, width: 2),
-                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                  borderRadius: BorderRadius.circular(AppRadii.small + 1),
                 ),
               ),
             ),
@@ -476,10 +472,7 @@ class _ActivityRowTitle extends StatelessWidget {
           row.title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: AppTypography.labelLarge.copyWith(
-            color: colors.text.accent,
-            letterSpacing: 0,
-          ),
+          style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
         ),
         if (row.subtitle != null)
           _ActivityRowSubtitle(
@@ -506,7 +499,7 @@ class _ActivityRowSubtitle extends StatelessWidget {
         if (iconName != null) ...[
           AppIcon(
             iconName!,
-            size: 14,
+            size: 16,
             color: iconName == AppIcons.shieldKeyholeOutline
                 ? colors.icon.brandCrimson
                 : colors.icon.muted,
@@ -518,9 +511,9 @@ class _ActivityRowSubtitle extends StatelessWidget {
             text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelMedium.copyWith(
+            style: AppTypography.labelLarge.copyWith(
               color: colors.text.secondary,
-              letterSpacing: 0,
+              fontWeight: FontWeight.w400,
             ),
           ),
         ),
@@ -548,12 +541,14 @@ class _ActivityRowAmount extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           _ActivityAmountValue(row: row, color: amountColor),
-          if (supporting != null)
+          if (supporting != null) ...[
+            const SizedBox(height: AppSpacing.xxs),
             _ActivitySupportingAmountText(
               row: row,
               text: supporting,
               color: supportingColor,
             ),
+          ],
         ],
       ),
     );
@@ -594,7 +589,10 @@ class _ActivityAmountValue extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       textAlign: TextAlign.end,
-      style: AppTypography.labelLarge.copyWith(color: color, letterSpacing: 0),
+      style: AppTypography.labelLarge.copyWith(
+        color: color,
+        fontWeight: FontWeight.w600,
+      ),
     );
     final iconName = row.amountIconName;
     if (iconName == null) return text;

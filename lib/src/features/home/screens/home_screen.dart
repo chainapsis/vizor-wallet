@@ -1875,34 +1875,26 @@ class _HomeDesktopActivityCard extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
         color: isDark ? colors.surface.card : const Color(0xFFFFFFFF),
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF000000).withValues(alpha: 0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: appSurfaceShadow(colors),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           _HomeDesktopActivityHeader(
             onSeeAll: onSeeAll,
-            titleStyle: AppTypography.labelMedium.copyWith(
+            titleStyle: AppTypography.labelLarge.copyWith(
               color: colors.text.accent,
               fontWeight: FontWeight.w600,
             ),
-            seeAllStyle: AppTypography.labelMedium.copyWith(
-              color: colors.text.accent,
-              fontWeight: FontWeight.w400,
+            seeAllStyle: AppTypography.labelLarge.copyWith(
+              color: colors.button.ghost.label,
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
           for (var index = 0; index < rows.length; index++) ...[
             _HomeDesktopActivityRow(index: index, row: rows[index]),
-            if (index != rows.length - 1)
-              const SizedBox(height: AppSpacing.xxs),
+            if (index != rows.length - 1) const SizedBox(height: AppSpacing.s),
           ],
         ],
       ),
@@ -2068,7 +2060,7 @@ class _HomeDesktopActivityRowContent extends StatelessWidget {
                         row.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelMedium.copyWith(
+                        style: AppTypography.labelLarge.copyWith(
                           color: colors.text.accent,
                         ),
                       ),
@@ -2088,7 +2080,7 @@ class _HomeDesktopActivityRowContent extends StatelessWidget {
                               row.subtitle ?? row.statusText,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: AppTypography.labelMedium.copyWith(
+                              style: AppTypography.labelLarge.copyWith(
                                 color: colors.text.secondary,
                                 fontWeight: FontWeight.w400,
                               ),
@@ -2099,14 +2091,15 @@ class _HomeDesktopActivityRowContent extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: AppSpacing.xs),
+                // Content Line separates its left and right blocks by 10px.
+                const SizedBox(width: 10),
                 Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
                       row.amountText,
-                      style: AppTypography.labelMedium.copyWith(
+                      style: AppTypography.labelLarge.copyWith(
                         color: amountColor,
                         fontWeight: FontWeight.w600,
                       ),

@@ -204,7 +204,8 @@ void main() {
 
     final amount = tester.widget<Text>(find.text('1.00 $ticker'));
     expect(amount.style?.fontFamily, AppTypography.labelLarge.fontFamily);
-    expect(amount.style?.fontWeight, AppTypography.labelLarge.fontWeight);
+    // Content Line amounts render in the semibold emphasis weight.
+    expect(amount.style?.fontWeight, FontWeight.w600);
     expect(amount.style?.fontSize, AppTypography.labelLarge.fontSize);
     expect(amount.style?.height, AppTypography.labelLarge.height);
 
