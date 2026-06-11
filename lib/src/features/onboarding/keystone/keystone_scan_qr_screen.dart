@@ -67,49 +67,73 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     return KeystoneOnboardingTrailingPane(
       backTarget: OnboardingBackTarget.route(
         label: KeystoneOnboardingStep.howToConnect.label,
         routePath: KeystoneOnboardingStep.howToConnect.routePath,
       ),
-      child: Column(
-        children: [
-          Expanded(
-            child: Center(
+      bodyPadding: EdgeInsets.zero,
+      child: _ScanQrLayout(
+        decoding: _decoding,
+        error: _error,
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() {
+            if (progress > 0) _error = null;
+          });
+        },
+        onDecodeError: _handleDecodeError,
+        onComplete: _handleScanComplete,
+      ),
+    );
+  }
+}
+
+class _ScanQrLayout extends StatelessWidget {
+  const _ScanQrLayout({
+    required this.decoding,
+    required this.error,
+    required this.onProgress,
+    required this.onDecodeError,
+    required this.onComplete,
+  });
+
+  static const double _contentAreaWidth = 420;
+  static const double _contentPaddingX = 12;
+  static const double _contentPaddingY = 16;
+  static const double _sectionGap = 32;
+
+  final bool decoding;
+  final String? error;
+  final ValueChanged<int> onProgress;
+  final ValueChanged<Object> onDecodeError;
+  final ValueChanged<ScanResult> onComplete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: Center(
+            child: SizedBox(
+              width: _contentAreaWidth,
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: _contentPaddingX,
+                  vertical: _contentPaddingY,
+                ),
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      'Scan QR Code',
-                      style: AppTypography.displayMedium.copyWith(
-                        color: colors.text.accent,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      'Hold the QR code steady in front of your camera',
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: colors.text.accent,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: AppSpacing.base),
+                    const _TitleBlock(),
+                    const SizedBox(height: _sectionGap),
                     KeystoneQrScannerCard(
                       expectedUrType: 'zcash-accounts',
-                      decoding: _decoding,
-                      error: _error,
-                      onProgress: (progress) {
-                        if (!mounted) return;
-                        setState(() {
-                          if (progress > 0) _error = null;
-                        });
-                      },
-                      onDecodeError: _handleDecodeError,
-                      onComplete: _handleScanComplete,
+                      decoding: decoding,
+                      error: error,
+                      onProgress: onProgress,
+                      onDecodeError: onDecodeError,
+                      onComplete: onComplete,
                       decodingLabel: 'Reading accounts...',
                       unavailableMessage:
                           'Keystone import uses camera QR scanning only. Connect a camera and try again.',
@@ -119,8 +143,43 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TitleBlock extends StatelessWidget {
+  const _TitleBlock();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.center,
+          child: Text(
+            'Scan QR Code',
+            style: AppTypography.displayLarge.copyWith(
+              fontFamily: 'Young Serif',
+              fontWeight: FontWeight.w400,
+              color: colors.text.accent,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.visible,
+            softWrap: false,
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Prepare your Keystone wallet',
+          style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
+          textAlign: TextAlign.center,
+        ),
+      ],
     );
   }
 }
