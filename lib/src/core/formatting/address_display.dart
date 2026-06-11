@@ -1,10 +1,8 @@
 /// Canonical display formatting for Zcash addresses.
 ///
 /// Single source of truth for the send review/status screens, the received
-/// receipt, and the verify-address modal. The legacy per-screen chunkers
-/// (the 5-span RichText format in `send_review_screen.dart` and
-/// `compactTransactionReceiptSavedAddress` in `transaction_receipt_view.dart`)
-/// have been removed with the redesign; new surfaces must format through
+/// receipt, and the verify-address modal. The redesign removed the old
+/// per-screen address chunking rules; new surfaces must format through
 /// [truncatedAddress] / [addressVerifyGrid].
 library;
 
