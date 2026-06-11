@@ -264,6 +264,16 @@ bool _swapActivityReturnsFunds(SwapActivityRowItem item) {
   return item.status == SwapIntentStatus.refunded;
 }
 
+/// Whether the swap row itself represents the outgoing ZEC deposit, so the
+/// feed may suppress the duplicate standalone Sent row. Refunded and
+/// timed-out rows render their amount unsigned (no outgoing sign), so the
+/// standalone Sent transaction must stay visible there — otherwise the feed
+/// would show a refund credit with no matching debit.
+bool swapActivityRowAbsorbsDepositLeg(SwapActivityRowItem item) {
+  return item.status != SwapIntentStatus.expired &&
+      !_swapActivityReturnsFunds(item);
+}
+
 String _swapActivityTitle(SwapIntentStatus status) {
   return switch (status) {
     SwapIntentStatus.complete => 'Swapped',

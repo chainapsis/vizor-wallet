@@ -3365,6 +3365,103 @@ void main() {
     },
   );
 
+  testWidgets('refunded swap keeps the standalone Sent deposit row visible', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    const depositDisplayOrder =
+        'ccdd00112233445566778899aabbccddeeff00112233445566778899aabbeeff';
+    final depositWalletOrder = swapChainTxidToWalletTxidHex(
+      depositDisplayOrder,
+    )!;
+
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialIntents: [
+        _persistedIntent(
+          id: 'swap-refunded-deposit',
+          txHash: depositDisplayOrder,
+          status: SwapIntentStatus.refunded,
+        ),
+      ],
+    );
+    final sentTx = _sentZecTx(
+      txidHex: depositWalletOrder,
+      zatoshi: BigInt.from(150000000),
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/activity',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        sessionStore: sessionStore,
+        recentTransactions: [sentTx],
+      ),
+    );
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('activity_screen_title_row')),
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+
+    // The refunded swap row renders its amount unsigned (no outgoing
+    // sign), so the real ZEC deposit keeps its standalone Sent row —
+    // otherwise the feed would show the refund credit with no debit.
+    expect(find.text('Swap failed'), findsOneWidget);
+    expect(find.text('Sent'), findsOneWidget);
+  });
+
+  testWidgets('in-flight swap suppresses the duplicate Sent deposit row', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    const depositDisplayOrder =
+        'ccdd00112233445566778899aabbccddeeff00112233445566778899aabbeeff';
+    final depositWalletOrder = swapChainTxidToWalletTxidHex(
+      depositDisplayOrder,
+    )!;
+
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialIntents: [
+        _persistedIntent(
+          id: 'swap-processing-deposit',
+          txHash: depositDisplayOrder,
+          status: SwapIntentStatus.processing,
+        ),
+      ],
+    );
+    final sentTx = _sentZecTx(
+      txidHex: depositWalletOrder,
+      zatoshi: BigInt.from(150000000),
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/activity',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        sessionStore: sessionStore,
+        recentTransactions: [sentTx],
+      ),
+    );
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('activity_screen_title_row')),
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+
+    // The in-flight swap row carries the signed outgoing amount, so the
+    // standalone Sent broadcast row is absorbed as a duplicate.
+    expect(find.text('Swapping...'), findsOneWidget);
+    expect(find.text('Sent'), findsNothing);
+  });
+
   testWidgets(
     'activity detail uses status page without manual refresh control',
     (tester) async {
@@ -7961,6 +8058,25 @@ SwapIntent _persistedExternalToZecCompleteIntent({
     accountUuid: 'account-1',
     createdAt: DateTime.utc(2026, 5, 7, 10),
     completedAt: DateTime.utc(2026, 5, 7, 10, 5),
+  );
+}
+
+rust_sync.TransactionInfo _sentZecTx({
+  required String txidHex,
+  required BigInt zatoshi,
+}) {
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: BigInt.from(2000000),
+    expiredUnmined: false,
+    accountBalanceDelta: -zatoshi.toInt(),
+    fee: BigInt.from(15000),
+    blockTime: BigInt.from(1800000000),
+    isTransparent: false,
+    txKind: 'sent',
+    displayAmount: zatoshi,
+    displayPool: 'shielded',
+    createdTime: BigInt.from(1800000000),
   );
 }
 

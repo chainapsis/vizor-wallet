@@ -593,4 +593,39 @@ void main() {
     // item for status-screen rendering.
     expect(item.depositTxHash, depositDisplayOrder);
   });
+
+  test('deposit-leg absorption follows the signed-amount rendering', () {
+    SwapActivityRowItem itemWith(SwapIntentStatus status) {
+      return SwapActivityRowItem(
+        intentId: 'swap-absorb-${status.name}',
+        providerLabel: 'NEAR Intents',
+        sellAmountText: '1.5000 ZEC',
+        receiveEstimateText: '105.25 USDC',
+        status: status,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        activityTimestamp: null,
+      );
+    }
+
+    // Rows that carry the signed outgoing amount absorb the Sent row.
+    expect(
+      swapActivityRowAbsorbsDepositLeg(itemWith(SwapIntentStatus.processing)),
+      isTrue,
+    );
+    expect(
+      swapActivityRowAbsorbsDepositLeg(itemWith(SwapIntentStatus.complete)),
+      isTrue,
+    );
+    // Refunded and timed-out rows render the amount unsigned, so the
+    // standalone Sent transaction must stay visible in the feed.
+    expect(
+      swapActivityRowAbsorbsDepositLeg(itemWith(SwapIntentStatus.refunded)),
+      isFalse,
+    );
+    expect(
+      swapActivityRowAbsorbsDepositLeg(itemWith(SwapIntentStatus.expired)),
+      isFalse,
+    );
+  });
 }

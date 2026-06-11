@@ -277,7 +277,12 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     if (canRenderTransactions) {
       for (final item in swapItems) {
         final receiveHex = item.receiveWalletTxidHex;
-        final depositHex = item.depositWalletTxidHex;
+        // Only suppress the deposit leg while the swap row carries the
+        // signed outgoing amount; refunded/timed-out rows render unsigned,
+        // so their standalone Sent row stays visible.
+        final depositHex = swapActivityRowAbsorbsDepositLeg(item)
+            ? item.depositWalletTxidHex
+            : null;
         if (receiveHex == null && depositHex == null) continue;
         for (final tx in transactions) {
           final txHex = tx.txidHex.toLowerCase();
