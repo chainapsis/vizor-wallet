@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart'
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_provider_config.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
@@ -75,10 +76,7 @@ void main() {
     final fiatText = tester.widget<Text>(
       find.byKey(const ValueKey('home_desktop_balance_fiat_text')),
     );
-    expect(
-      fiatText.style?.color,
-      colors.text.homeCard.withValues(alpha: 0.80),
-    );
+    expect(fiatText.style?.color, colors.text.homeCard.withValues(alpha: 0.80));
 
     final shieldIcon = tester.widget<AppIcon>(
       find.byKey(const ValueKey('home_desktop_shielded_balance_icon')),
@@ -198,6 +196,72 @@ void main() {
     expect(find.byType(ActivityScreen), findsOneWidget);
   });
 
+  testWidgets('home recent activity suppresses the swap-leg Sent duplicate', (
+    tester,
+  ) async {
+    const depositDisplayOrder =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    final depositWalletOrder = swapChainTxidToWalletTxidHex(
+      depositDisplayOrder,
+    )!;
+
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        swapEnabled: true,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          recentTransactions: [_sentZecTx(txidHex: depositWalletOrder)],
+        ),
+        swapActivityStore: _FakeSwapActivityStore([
+          _swapActivityRecord(
+            id: 'swap-home-dedupe',
+            depositTxHash: depositDisplayOrder,
+          ),
+        ]),
+      ),
+    );
+    await _pumpUntilPresent(tester, find.text('Swapping...'));
+
+    // The in-flight swap row already carries the signed outgoing amount, so
+    // Home hides the standalone Sent broadcast row like the Activity screen.
+    expect(find.text('Sent'), findsNothing);
+  });
+
+  testWidgets('home recent activity keeps the Sent row for refunded swaps', (
+    tester,
+  ) async {
+    const depositDisplayOrder =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    final depositWalletOrder = swapChainTxidToWalletTxidHex(
+      depositDisplayOrder,
+    )!;
+
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        swapEnabled: true,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          recentTransactions: [_sentZecTx(txidHex: depositWalletOrder)],
+        ),
+        swapActivityStore: _FakeSwapActivityStore([
+          _swapActivityRecord(
+            id: 'swap-home-refunded',
+            status: SwapIntentStatus.refunded,
+            depositTxHash: depositDisplayOrder,
+          ),
+        ]),
+      ),
+    );
+    await _pumpUntilPresent(tester, find.text('Swap failed'));
+
+    // Refunded rows render unsigned, so the standalone Sent row stays.
+    expect(find.text('Sent'), findsOneWidget);
+  });
+
   testWidgets('home desktop shows transparent balance shield action', (
     tester,
   ) async {
@@ -315,22 +379,43 @@ void main() {
   });
 }
 
-SwapIntentRecord _swapActivityRecord({required String id}) {
+SwapIntentRecord _swapActivityRecord({
+  required String id,
+  SwapIntentStatus status = SwapIntentStatus.processing,
+  String? depositTxHash,
+}) {
   return SwapIntentRecord(
     id: id,
     providerLabel: 'NEAR Intents',
     pairText: 'ZEC -> USDC',
     sellAmountText: '1.0000 ZEC',
     receiveEstimateText: '70.170000 USDC',
-    status: SwapIntentStatus.processing,
-    nextAction: 'Swap is processing',
+    status: status,
+    nextAction: status.label,
     direction: SwapDirection.zecToExternal,
     externalAsset: SwapAsset.usdc,
     depositAddress: 't1home-deposit',
+    depositTxHash: depositTxHash,
     providerQuoteId: 'quote-$id',
     accountUuid: 'account-1',
     createdAt: DateTime.utc(2026, 5, 22, 10),
     updatedAt: DateTime.utc(2026, 5, 22, 10),
+  );
+}
+
+rust_sync.TransactionInfo _sentZecTx({required String txidHex}) {
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: BigInt.from(2000000),
+    expiredUnmined: false,
+    accountBalanceDelta: -100000000,
+    fee: BigInt.from(15000),
+    blockTime: BigInt.from(1800000000),
+    isTransparent: false,
+    txKind: 'sent',
+    displayAmount: BigInt.from(100000000),
+    displayPool: 'shielded',
+    createdTime: BigInt.from(1800000000),
   );
 }
 

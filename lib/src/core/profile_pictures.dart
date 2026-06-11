@@ -43,11 +43,29 @@ const _kProfilePictureSuffixes = [
   '15',
 ];
 
+const _kProfilePictureLabelsBySuffix = {
+  '01': 'Knight',
+  '02': 'Viking',
+  '03': 'Samurai',
+  '04': 'Monarch',
+  '05': 'Iron helm',
+  '06': 'Ronin',
+  '07': 'Skull knight',
+  '08': 'Seer',
+  '09': 'Berserker',
+  '10': 'Rogue',
+  '11': 'Mage',
+  '12': 'Masked cat',
+  '13': 'Warden',
+  '14': 'Bronze helm',
+  '15': 'Fish knight',
+};
+
 final kProfilePictureOptions = <ProfilePictureOption>[
   for (final suffix in _kProfilePictureSuffixes)
     ProfilePictureOption(
       id: 'pfp-$suffix',
-      label: 'Profile picture ${int.parse(suffix)}',
+      label: _kProfilePictureLabelsBySuffix[suffix]!,
       assetPath: '$_kProfilePictureAssetRoot/profile_picture_$suffix.png',
     ),
 ];

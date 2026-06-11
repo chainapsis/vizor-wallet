@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import '../src/core/layout/app_desktop_shell.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_back_link.dart';
+import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/features/activity/models/activity_row_data.dart';
 import '../src/features/activity/widgets/activity_feed.dart';
@@ -36,7 +37,7 @@ Widget buildActivityPageUseCase(BuildContext context) {
                     onTap: _noop,
                   ),
                   padding: EdgeInsets.only(
-                    left: AppSpacing.md,
+                    left: AppSpacing.sm,
                     top: AppSpacing.xs,
                     bottom: AppSpacing.xs,
                   ),
@@ -84,31 +85,26 @@ List<ActivityFeedSectionData> _activitySections(BuildContext context) {
     ActivityFeedSectionData(
       title: 'This week',
       rows: [
+        // Completed external->ZEC swap. The settled receive leg renders as the
+        // group's single result child (the in-flight 'Receiving ZEC...' child
+        // and the duplicate standalone 'Received ZEC' row are gone under the
+        // new results-only / receive-absorption policy).
         _activityRow(
           context,
-          title: 'Swapping...',
+          title: 'Swapped',
           iconName: AppIcons.swapArrows,
           subtitle: 'USDC on Optimism',
           amountText: '-26.60 USDC',
-          progress: 0.75,
           childRows: [
             _activityRow(
               context,
-              title: 'Receiving ZEC...',
+              title: 'Received ZEC',
+              iconName: AppIcons.swapArrows,
               amountText: '+12.13 ZEC',
               amountColor: context.colors.text.primary,
-              statusText: 'In progress',
+              statusText: '',
             ),
           ],
-        ),
-        _activityRow(
-          context,
-          title: 'Received ZEC',
-          iconName: AppIcons.arrowDownCircle,
-          subtitle: 'Shielded',
-          subtitleIconName: AppIcons.shieldKeyholeOutline,
-          amountText: '+31.10 ZEC',
-          amountColor: context.colors.text.positiveStrong,
         ),
         _activityRow(
           context,
@@ -161,6 +157,7 @@ ActivityRowData _activityRow(
   Color? amountColor,
   double? progress,
   List<ActivityRowData> childRows = const [],
+  VoidCallback? onTap,
 }) {
   final colors = context.colors;
   return ActivityRowData(
@@ -181,6 +178,7 @@ ActivityRowData _activityRow(
     statusColor: statusColor ?? colors.text.secondary,
     timestampText: 'Today, 13:11',
     childRows: childRows,
+    onTap: onTap,
   );
 }
 
@@ -271,6 +269,98 @@ class _ActivityUseCaseSidebar extends StatelessWidget {
             const SizedBox(height: AppSpacing.sm),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Demonstrates the receive-absorption transition: tapping 'Absorb receive'
+/// removes the standalone on-chain 'Received ZEC' row and grows the completed
+/// swap group's tappable receive child, letting the AnimatedSize / entrance
+/// animation play.
+Widget buildSwapReceiveAbsorbUseCase(BuildContext context) {
+  return const Center(
+    child: SizedBox(width: 420, child: _SwapReceiveAbsorbUseCase()),
+  );
+}
+
+class _SwapReceiveAbsorbUseCase extends StatefulWidget {
+  const _SwapReceiveAbsorbUseCase();
+
+  @override
+  State<_SwapReceiveAbsorbUseCase> createState() =>
+      _SwapReceiveAbsorbUseCaseState();
+}
+
+class _SwapReceiveAbsorbUseCaseState extends State<_SwapReceiveAbsorbUseCase> {
+  bool _absorbed = false;
+
+  void _toggle() {
+    setState(() => _absorbed = !_absorbed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final swapRow = _activityRow(
+      context,
+      title: 'Swapped',
+      iconName: AppIcons.swapArrows,
+      subtitle: 'USDC on Ethereum',
+      amountText: '-101.23 USDC',
+      childRows: _absorbed
+          ? [
+              _activityRow(
+                context,
+                title: 'Received ZEC',
+                iconName: AppIcons.swapArrows,
+                amountText: '+12.13 ZEC',
+                amountColor: colors.text.primary,
+                statusText: '',
+                onTap: () {},
+              ),
+            ]
+          : const [],
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s,
+        vertical: AppSpacing.lg,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppButton(
+            key: const ValueKey('swap_receive_absorb_toggle'),
+            onPressed: _toggle,
+            variant: AppButtonVariant.secondary,
+            child: Text(_absorbed ? 'Reset' : 'Absorb receive'),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          ActivityFeed(
+            rowKeyPrefix: 'swap_receive_absorb',
+            sections: [
+              ActivityFeedSectionData(
+                title: 'This week',
+                rows: [
+                  swapRow,
+                  if (!_absorbed)
+                    _activityRow(
+                      context,
+                      title: 'Received ZEC',
+                      iconName: AppIcons.arrowDownCircle,
+                      subtitle: 'Shielded',
+                      subtitleIconName: AppIcons.shieldKeyholeOutline,
+                      amountText: '+12.13 ZEC',
+                      amountColor: colors.text.positiveStrong,
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

@@ -108,16 +108,6 @@ flutter:
     - assets/swap/chains/
 
   fonts:
-    - family: Manrope
-      fonts:
-        - asset: assets/fonts/Manrope-Regular.ttf
-          weight: 400
-        - asset: assets/fonts/Manrope-SemiBold.ttf
-          weight: 600
-        - asset: assets/fonts/Manrope-Bold.ttf
-          weight: 700
-        - asset: assets/fonts/Manrope-ExtraBold.ttf
-          weight: 800
     - family: Inter
       fonts:
         - asset: assets/fonts/Inter-Regular.ttf
@@ -158,3 +148,5 @@ flutter:
         # override where Figma calls for Young Serif.
         - asset: assets/fonts/YoungSerif-Regular.ttf
           weight: 400
+        - asset: assets/fonts/YoungSerif-Medium.ttf
+          weight: 500

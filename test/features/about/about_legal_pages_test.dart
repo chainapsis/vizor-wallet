@@ -8,16 +8,14 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
+import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
-import 'package:zcash_wallet/src/core/widgets/app_decorative_divider.dart';
 import 'package:zcash_wallet/src/features/about/screens/about_screen.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
-
-const _utilityPageScrollbarKey = ValueKey('utility-page-scrollbar');
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -63,12 +61,10 @@ void main() {
     expect(find.text('About Vizor Wallet'), findsOneWidget);
     expect(find.text('Version: 0.0.0 Public Beta'), findsOneWidget);
     expect(find.text('Built by the Keplr team'), findsOneWidget);
-    expect(find.text('Designed for shielded Zcash'), findsOneWidget);
-    expect(
-      find.text('Open source, verifiable, and self-custodial'),
-      findsOneWidget,
-    );
-    expect(find.text('GitHub'), findsOneWidget);
+    // The Figma About frame uses this heading on both the second and third
+    // paragraphs; the body copy mirrors the design verbatim.
+    expect(find.text('Designed for shielded Zcash'), findsNWidgets(2));
+    expect(find.text('Github'), findsOneWidget);
     expect(find.text('Website'), findsOneWidget);
   });
 
@@ -125,7 +121,9 @@ void main() {
     expect(find.text('home route'), findsOneWidget);
   });
 
-  testWidgets('utility scrollbars fill the pane edge', (tester) async {
+  testWidgets('utility scrollbar track spans the full pane height', (
+    tester,
+  ) async {
     await _setDesktopViewport(tester);
 
     await tester.pumpWidget(
@@ -141,10 +139,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(
+      _utilityScaffoldBackground(tester),
+      AppThemeData.light.colors.macosUtility.window,
+    );
     _expectScrollbarFillsPaneEdge(tester, const Size(1280, 900));
     _expectUtilityContentCentered(
       tester,
-      const Size(1280, 900),
+      titleText: 'Terms of Usage',
       headingText: 'From the team that brought you Keplr Wallet.',
     );
 
@@ -164,12 +166,14 @@ void main() {
     _expectScrollbarFillsPaneEdge(tester, const Size(1280, 900));
     _expectUtilityContentCentered(
       tester,
-      const Size(1280, 900),
+      titleText: 'About Vizor Wallet',
       headingText: 'Built by the Keplr team',
     );
   });
 
-  testWidgets('legal back row scrolls with the page content', (tester) async {
+  testWidgets('legal toolbar stays fixed while page content scrolls', (
+    tester,
+  ) async {
     const viewport = Size(1280, 520);
     await _setViewport(tester, viewport);
 
@@ -188,15 +192,26 @@ void main() {
 
     _expectScrollbarFillsPaneEdge(tester, viewport);
 
-    final backTopBeforeScroll = tester.getTopLeft(find.text('Back')).dy;
+    final backTopBeforeScroll = tester.getTopLeft(find.text('Welcome')).dy;
+    final headingTopBeforeScroll = tester
+        .getTopLeft(
+          find.text('From the team that brought you Keplr Wallet.').first,
+        )
+        .dy;
     await tester.drag(
       find.byType(SingleChildScrollView),
       const Offset(0, -160),
     );
     await tester.pumpAndSettle();
-    final backTopAfterScroll = tester.getTopLeft(find.text('Back')).dy;
+    final backTopAfterScroll = tester.getTopLeft(find.text('Welcome')).dy;
+    final headingTopAfterScroll = tester
+        .getTopLeft(
+          find.text('From the team that brought you Keplr Wallet.').first,
+        )
+        .dy;
 
-    expect(backTopAfterScroll, lessThan(backTopBeforeScroll));
+    expect(backTopAfterScroll, moreOrLessEquals(backTopBeforeScroll));
+    expect(headingTopAfterScroll, lessThan(headingTopBeforeScroll));
   });
 
   testWidgets('legal back link reuses shared back link style', (tester) async {
@@ -215,12 +230,12 @@ void main() {
 
     final backLink = find.byType(AppBackLink);
     expect(
-      find.descendant(of: backLink, matching: find.text('Back')),
+      find.descendant(of: backLink, matching: find.text('Welcome')),
       findsOneWidget,
     );
 
     await tester.tap(
-      find.descendant(of: backLink, matching: find.text('Back')),
+      find.descendant(of: backLink, matching: find.text('Welcome')),
     );
     await tester.pumpAndSettle();
 
@@ -235,7 +250,7 @@ void main() {
     await tester.pumpWidget(_appHarness(_emptyBootstrap('/terms')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Terms of Use'), findsOneWidget);
+    expect(find.text('Terms of Usage'), findsOneWidget);
     expect(find.text('Private money. By default.'), findsNothing);
 
     await tester.pumpWidget(_appHarness(_emptyBootstrap('/privacy')));
@@ -291,27 +306,52 @@ Widget _routerHarness(GoRouter router, AppBootstrapState bootstrap) {
 }
 
 void _expectScrollbarFillsPaneEdge(WidgetTester tester, Size viewport) {
-  final scrollbarRect = tester.getRect(find.byKey(_utilityPageScrollbarKey));
+  // Design model: the overlay scrollbar spans the FULL Trailing Pane height —
+  // from the pane top (toolbar band included) to the pane bottom — pinned at
+  // the right pane edge.
+  final scrollbarRect = tester.getRect(
+    find.byKey(AppPaneScrollScaffold.scrollbarKey),
+  );
   expect(scrollbarRect.top, moreOrLessEquals(AppSpacing.xs));
   expect(scrollbarRect.right, moreOrLessEquals(viewport.width - AppSpacing.xs));
   expect(
     scrollbarRect.bottom,
     moreOrLessEquals(viewport.height - AppSpacing.xs),
   );
+
+  // Figma Scrollbar component spec: 6px capsule thumb centered in an 18px
+  // transparent track (6px insets), 12px end margins, solid theme thumb.
+  final scrollbar = tester.widget<RawScrollbar>(
+    find.byKey(AppPaneScrollScaffold.scrollbarKey),
+  );
+  expect(scrollbar.thickness, 6);
+  expect(scrollbar.crossAxisMargin, 6);
+  expect(scrollbar.mainAxisMargin, 12);
+  expect(scrollbar.radius, const Radius.circular(AppRadii.full));
+  expect(
+    scrollbar.thumbColor,
+    AppThemeData.light.colors.surface.scrollbarThumb,
+  );
 }
 
 void _expectUtilityContentCentered(
-  WidgetTester tester,
-  Size viewport, {
+  WidgetTester tester, {
+  required String titleText,
   required String headingText,
 }) {
-  final scrollbarRect = tester.getRect(find.byKey(_utilityPageScrollbarKey));
-  final dividerRect = tester.getRect(find.byType(AppDecorativeDivider).last);
-  expect(dividerRect.width, moreOrLessEquals(256));
-  expect(dividerRect.center.dx, moreOrLessEquals(scrollbarRect.center.dx));
+  final scrollbarRect = tester.getRect(
+    find.byKey(AppPaneScrollScaffold.scrollbarKey),
+  );
+  final titleRect = tester.getRect(find.text(titleText));
+  expect(titleRect.center.dx, moreOrLessEquals(scrollbarRect.center.dx));
 
   final headingRect = tester.getRect(find.text(headingText).first);
   expect(headingRect.left, greaterThan(scrollbarRect.left + 100));
+  expect(headingRect.right, lessThan(scrollbarRect.right - 100));
+}
+
+Color? _utilityScaffoldBackground(WidgetTester tester) {
+  return tester.widget<Scaffold>(find.byType(Scaffold).last).backgroundColor;
 }
 
 AppBootstrapState _emptyBootstrap(String initialLocation) {

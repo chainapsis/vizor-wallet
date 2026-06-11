@@ -406,6 +406,18 @@ Future<List<TransactionInfo>> getTransactionHistory({
   accountUuid: accountUuid,
 );
 
+Future<int> getPreviousTransactionCountForAddress({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String address,
+}) => RustLib.instance.api.crateApiSyncGetPreviousTransactionCountForAddress(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  address: address,
+);
+
 Future<BigInt> getExportBirthdayHeight({
   required String dbPath,
   required String network,
@@ -999,6 +1011,8 @@ class TransactionDetail {
   final String txidHex;
   final String txKind;
   final String? primaryAddress;
+  final String? sourceAddress;
+  final String? sourcePool;
   final String? memo;
   final List<TransactionDetailOutput> outputs;
 
@@ -1006,6 +1020,8 @@ class TransactionDetail {
     required this.txidHex,
     required this.txKind,
     this.primaryAddress,
+    this.sourceAddress,
+    this.sourcePool,
     this.memo,
     required this.outputs,
   });
@@ -1015,6 +1031,8 @@ class TransactionDetail {
       txidHex.hashCode ^
       txKind.hashCode ^
       primaryAddress.hashCode ^
+      sourceAddress.hashCode ^
+      sourcePool.hashCode ^
       memo.hashCode ^
       outputs.hashCode;
 
@@ -1026,6 +1044,8 @@ class TransactionDetail {
           txidHex == other.txidHex &&
           txKind == other.txKind &&
           primaryAddress == other.primaryAddress &&
+          sourceAddress == other.sourceAddress &&
+          sourcePool == other.sourcePool &&
           memo == other.memo &&
           outputs == other.outputs;
 }

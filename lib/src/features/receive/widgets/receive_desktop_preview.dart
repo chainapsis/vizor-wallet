@@ -354,7 +354,10 @@ class _ReceivePaneContent extends StatelessWidget {
     return Stack(
       children: [
         Positioned(
-          left: AppSpacing.md,
+          // AppBackLink now carries a 12px internal pill inset, so the pane
+          // container drops from md (24) to s (12) to keep the chevron at the
+          // design position (pane + 24) instead of shifting it to pane + 36.
+          left: AppSpacing.s,
           top: AppSpacing.xs,
           child: AppBackLink(
             key: const ValueKey('receive_preview_pane_back_button'),

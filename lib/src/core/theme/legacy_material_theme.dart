@@ -107,41 +107,36 @@ const _darkColorScheme = ColorScheme(
 // Text themes
 // ---------------------------------------------------------------------------
 
-const _headlineFamily = 'Manrope';
 const _bodyFamily = 'Inter';
 
 TextTheme _buildTextTheme(Color textColor) {
   return TextTheme(
-    // Hero balance (56px Manrope 800)
+    // Hero balance (56px, w800)
     displayLarge: TextStyle(
-      fontFamily: _headlineFamily,
       fontWeight: FontWeight.w800,
       fontSize: 56,
       height: 1.0,
       letterSpacing: -2,
       color: textColor,
     ),
-    // Large heading (28px Manrope 600) — e.g. "ZEC" unit
+    // Large heading (28px, w600) — e.g. "ZEC" unit
     displayMedium: TextStyle(
-      fontFamily: _headlineFamily,
       fontWeight: FontWeight.w600,
       fontSize: 28,
       height: 1.2,
       letterSpacing: -0.5,
       color: textColor,
     ),
-    // Section heading (20px Manrope 700)
+    // Section heading (20px, w700)
     titleLarge: TextStyle(
-      fontFamily: _headlineFamily,
       fontWeight: FontWeight.w700,
       fontSize: 20,
       height: 1.2,
       letterSpacing: -0.3,
       color: textColor,
     ),
-    // List item title (15px Manrope 700)
+    // List item title (15px, w700)
     titleMedium: TextStyle(
-      fontFamily: _headlineFamily,
       fontWeight: FontWeight.w700,
       fontSize: 15,
       height: 1.4,
@@ -179,9 +174,8 @@ TextTheme _buildTextTheme(Color textColor) {
       letterSpacing: 1.5,
       color: textColor,
     ),
-    // Button label (11px Manrope 700)
+    // Button label (11px, w700)
     labelMedium: TextStyle(
-      fontFamily: _headlineFamily,
       fontWeight: FontWeight.w700,
       fontSize: 11,
       letterSpacing: 2,
@@ -249,7 +243,6 @@ ThemeData _buildTheme(ColorScheme colorScheme) {
       elevation: 0,
       scrolledUnderElevation: 0,
       titleTextStyle: TextStyle(
-        fontFamily: _headlineFamily,
         fontWeight: FontWeight.w700,
         fontSize: 20,
         letterSpacing: -0.3,
@@ -261,11 +254,7 @@ ThemeData _buildTheme(ColorScheme colorScheme) {
         backgroundColor: colorScheme.primary,
         foregroundColor: colorScheme.onPrimary,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        textStyle: const TextStyle(
-          fontFamily: _headlineFamily,
-          fontWeight: FontWeight.w700,
-          fontSize: 14,
-        ),
+        textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
@@ -273,11 +262,7 @@ ThemeData _buildTheme(ColorScheme colorScheme) {
         foregroundColor: colorScheme.onSurface,
         side: BorderSide(color: colorScheme.outline),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        textStyle: const TextStyle(
-          fontFamily: _headlineFamily,
-          fontWeight: FontWeight.w700,
-          fontSize: 14,
-        ),
+        textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
       ),
     ),
   );

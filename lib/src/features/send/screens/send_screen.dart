@@ -819,7 +819,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const _SendPaneToolbar(),
+                const AppPaneToolbar(
+                  leading: AppRouteBackLink(
+                    key: ValueKey('send_pane_back_button'),
+                    minWidth: 60,
+                  ),
+                ),
                 Expanded(
                   child: widget.walletAsync.when(
                     loading: () =>
@@ -1182,33 +1187,6 @@ class _SendComposeLayout extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _SendPaneToolbar extends StatelessWidget {
-  const _SendPaneToolbar();
-
-  static const _height = 48.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      height: _height,
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: AppSpacing.md,
-          top: AppSpacing.xs,
-          bottom: AppSpacing.xs,
-        ),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: AppRouteBackLink(
-            key: ValueKey('send_pane_back_button'),
-            minWidth: 60,
-          ),
-        ),
-      ),
     );
   }
 }

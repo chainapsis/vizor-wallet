@@ -65,7 +65,7 @@ void main() {
     expect(
       tester.getTopLeft(backLabelFinder).dx,
       moreOrLessEquals(
-        paneTopLeft.dx + AppSpacing.md + AppSpacing.s + 16 + AppSpacing.xxs,
+        paneTopLeft.dx + AppSpacing.sm + 16 + AppSpacing.xxs,
         epsilon: 0.1,
       ),
     );
@@ -1090,14 +1090,19 @@ void main() {
       activeAccountUuid: 'account-1',
       activeAddress: 'u1accountsaddress',
     );
+    final events = <String>[];
     final accountNotifier = _FakeAccountNotifier(
       singleAccountState,
-      resetError: Exception('reset failed'),
+      resetError: const WalletResetException(
+        cause: 'reset failed',
+        dbDeleted: true,
+      ),
+      events: events,
     );
     await tester.pumpWidget(
       _accountsHarness(
         accountNotifier: () => accountNotifier,
-        syncNotifier: () => _FakeSyncNotifier(),
+        syncNotifier: () => _FakeSyncNotifier(events: events),
       ),
     );
     await tester.pump();
@@ -1111,6 +1116,7 @@ void main() {
     await _submitRemovePassword(tester, buttonLabel: 'Reset Vizor');
     await tester.pumpAndSettle();
 
+    expect(events, ['pause', 'resetWallet', 'clearCachedWalletDbPath']);
     expect(find.text("Couldn't reset Vizor."), findsOneWidget);
     expect(find.text("Couldn't remove account."), findsNothing);
     expect(find.text('welcome route'), findsNothing);

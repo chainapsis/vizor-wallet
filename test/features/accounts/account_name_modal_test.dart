@@ -155,7 +155,6 @@ class _AccountNameModalHarness extends StatelessWidget {
               accountName: 'Account 2',
               profilePictureId: 'pfp-01',
               onCancel: () {},
-              onChangeProfilePicture: () {},
               onUpdate: onUpdate ?? (_) async {},
             ),
           ),

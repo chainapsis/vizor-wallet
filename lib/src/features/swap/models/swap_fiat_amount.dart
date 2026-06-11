@@ -66,13 +66,12 @@ String? swapTokenAmountTextFromFiatText(
   return asset.formatAmountDown(fiatAmount / usdUnitPrice);
 }
 
-String swapTokenAmountDisplayText({
-  required SwapAsset asset,
-  required String tokenAmountText,
-}) {
+/// Token-equivalent meta line shown while the card is in fiat input mode.
+/// The design shows the bare amount with no symbol suffix.
+String swapTokenAmountDisplayText({required String tokenAmountText}) {
   final amount = tokenAmountText.trim();
-  if (amount.isEmpty) return '0 ${asset.symbol}';
-  return '$amount ${asset.symbol}';
+  if (amount.isEmpty) return '0';
+  return amount;
 }
 
 double? _usableUnitPrice(double? value) {

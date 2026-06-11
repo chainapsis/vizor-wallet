@@ -23,6 +23,7 @@ import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/features/voting/voting_routes.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
+import 'package:zcash_wallet/src/features/voting/widgets/voting_pane_scroll_area.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
@@ -2148,7 +2149,16 @@ void main() {
     expect(find.text(optionDescription), findsNothing);
     expect(find.text('0.13 ZEC'), findsOneWidget);
     expect(find.text('Burn'), findsOneWidget);
-    expect(find.text('0.00 ZEC'), findsOneWidget);
+    // Scope tally-row assertions to the results pane: the redesigned
+    // AppMainSidebar embedded by the screen now renders the active account
+    // balance, which is also "0.00 ZEC" for this zero-balance fixture.
+    expect(
+      find.descendant(
+        of: find.byType(VotingPaneScrollView),
+        matching: find.text('0.00 ZEC'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('results screen keeps empty tallies visible as zero rows', (
@@ -2182,7 +2192,16 @@ void main() {
     expect(find.text('First proposal'), findsOneWidget);
     expect(find.text('Yes'), findsOneWidget);
     expect(find.text('No'), findsOneWidget);
-    expect(find.text('0.00 ZEC'), findsNWidgets(2));
+    // Scope tally-row assertions to the results pane: the redesigned
+    // AppMainSidebar embedded by the screen now renders the active account
+    // balance, which is also "0.00 ZEC" for this zero-balance fixture.
+    expect(
+      find.descendant(
+        of: find.byType(VotingPaneScrollView),
+        matching: find.text('0.00 ZEC'),
+      ),
+      findsNWidgets(2),
+    );
     expect(find.text('Results pending...'), findsNothing);
     expect(find.textContaining("Couldn't load results"), findsNothing);
   });
@@ -2519,7 +2538,7 @@ void main() {
     final reviewTitle = tester.widget<Text>(find.text('Review your answers'));
     expect(reviewTitle.textAlign, TextAlign.center);
     expect(reviewTitle.style?.fontFamily, 'Libre Caslon Text');
-    expect(reviewTitle.style?.fontSize, 36);
+    expect(reviewTitle.style?.fontSize, 32);
     expect(reviewTitle.style?.letterSpacing, 0);
     expect(find.text(longRoundDescription), findsNothing);
     expect(find.text('View more'), findsNothing);

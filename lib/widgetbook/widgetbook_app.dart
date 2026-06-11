@@ -8,6 +8,7 @@ import 'package:widgetbook/widgetbook.dart';
 
 import '../src/core/theme/app_theme.dart';
 import 'address_book_use_cases.dart';
+import 'address_verify_use_cases.dart';
 import 'activity_use_cases.dart';
 import 'button_use_cases.dart';
 import 'chip_use_cases.dart';
@@ -15,7 +16,10 @@ import 'context_menu_use_cases.dart';
 import 'color_use_cases.dart';
 import 'icon_use_cases.dart';
 import 'receive_use_cases.dart';
+import 'received_receipt_use_cases.dart';
+import 'review_components_use_cases.dart';
 import 'screen_use_cases.dart';
+import 'send_review_status_use_cases.dart';
 import 'send_use_cases.dart';
 import 'swap_use_cases.dart';
 import 'text_field_use_cases.dart';
@@ -130,6 +134,62 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Many accounts',
                       builder: buildAccountsManyUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Settings',
+              children: [
+                WidgetbookComponent(
+                  name: 'Screen',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Main',
+                      builder: buildSettingsMainUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Endpoint',
+                      builder: buildSettingsEndpointUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Secret passphrase gate',
+                      builder: buildSettingsSecretPassphraseGateUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Change password gate',
+                      builder: buildSettingsChangePasswordGateUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Uninstall confirm',
+                      builder: buildSettingsUninstallConfirmUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Uninstall done',
+                      builder: buildSettingsUninstallDoneUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Utility',
+              children: [
+                WidgetbookComponent(
+                  name: 'About and legal',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'About',
+                      builder: buildAboutUtilityUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Terms',
+                      builder: buildTermsUtilityUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Privacy',
+                      builder: buildPrivacyUtilityUseCase,
                     ),
                   ],
                 ),
@@ -367,6 +427,53 @@ class WidgetbookApp extends StatelessWidget {
                     ),
                   ],
                 ),
+                WidgetbookComponent(
+                  name: 'Send review',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Address',
+                      builder: buildSendReviewAddressUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Contact',
+                      builder: buildSendReviewContactUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Send status',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'In progress',
+                      builder: buildSendStatusInProgressUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Completed',
+                      builder: buildSendStatusCompletedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Failed',
+                      builder: buildSendStatusFailedUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Verify address modal',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Unknown address',
+                      builder: buildVerifyAddressUnknownUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Unknown transparent address',
+                      builder: buildVerifyAddressUnknownTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Known contact',
+                      builder: buildVerifyAddressKnownContactUseCase,
+                    ),
+                  ],
+                ),
               ],
             ),
             WidgetbookFolder(
@@ -437,6 +544,40 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Default',
                       builder: buildActivityPageUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Swap receive absorb',
+                      builder: buildSwapReceiveAbsorbUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Received receipt',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Transparent to transparent',
+                      builder:
+                          buildReceivedReceiptTransparentToTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent to shielded',
+                      builder: buildReceivedReceiptTransparentToShieldedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Shielded to shielded',
+                      builder: buildReceivedReceiptShieldedToShieldedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Known sender',
+                      builder: buildReceivedReceiptKnownSenderUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Default',
+                      builder: buildReceivedReceiptUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'In progress',
+                      builder: buildReceivedReceiptInProgressUseCase,
                     ),
                   ],
                 ),
@@ -603,6 +744,31 @@ class WidgetbookApp extends StatelessWidget {
               name: 'Toast',
               useCases: [
                 WidgetbookUseCase(name: 'All', builder: buildToastUseCase),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'Review components',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Info rows',
+                  builder: buildReviewInfoRowGalleryUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Wrap card - Completed',
+                  builder: buildReviewWrapCardCompletedUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Wrap card - Failed (fixed dark)',
+                  builder: buildReviewWrapCardFailedUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'List rows',
+                  builder: buildReviewListRowGalleryUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Buttons stack',
+                  builder: buildReviewButtonsStackUseCase,
+                ),
               ],
             ),
             WidgetbookComponent(

@@ -55,6 +55,7 @@ import 'src/features/settings/screens/settings_screen.dart';
 import 'src/features/settings/screens/settings_change_password_screen.dart';
 import 'src/features/settings/screens/settings_endpoint_screen.dart';
 import 'src/features/settings/screens/settings_seed_phrase_screen.dart';
+import 'src/features/settings/screens/settings_uninstall_screen.dart';
 import 'src/features/swap/models/swap_activity_navigation.dart';
 import 'src/features/swap/screens/swap_review_screen.dart';
 import 'src/features/swap/screens/swap_screen.dart';
@@ -219,6 +220,9 @@ final _routerProvider = Provider<GoRouter>((ref) {
       final isPublicLegal =
           state.matchedLocation == '/terms' ||
           state.matchedLocation == '/privacy';
+      // The uninstall flow ends with hasWallet == false on purpose; keep the
+      // route alive so its "done" stage can show instead of onboarding.
+      final isUninstall = state.matchedLocation == '/settings/uninstall';
       final isUnlock = state.matchedLocation == '/unlock';
       final isLostPassword = state.matchedLocation == '/lost-password';
       final isUnlockFlow = isUnlock || isLostPassword;
@@ -236,7 +240,9 @@ final _routerProvider = Provider<GoRouter>((ref) {
         return requiresUnlock ? '/unlock' : '/home';
       }
       if (!hasWallet && isUnlockFlow) return '/welcome';
-      if (!hasWallet && !isOnboarding && !isPublicLegal) return '/welcome';
+      if (!hasWallet && !isOnboarding && !isPublicLegal && !isUninstall) {
+        return '/welcome';
+      }
       if (!hasWallet && state.matchedLocation == '/add-account') {
         return '/welcome';
       }
@@ -665,6 +671,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings/endpoint',
         builder: (_, _) => const SettingsEndpointScreen(),
+      ),
+      GoRoute(
+        path: '/settings/uninstall',
+        builder: (_, _) => const SettingsUninstallScreen(),
       ),
       GoRoute(
         path: '/voting',

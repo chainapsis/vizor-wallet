@@ -17,13 +17,14 @@ import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_main_sidebar.dart';
-import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../providers/zec_usd_price_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
@@ -38,9 +39,7 @@ import '../../activity/swap_activity_row_items_provider.dart';
 import '../../activity/swap_activity_row_mapper.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
-import '../../swap/models/swap_models.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
-import '../../swap/providers/swap_provider_config.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
@@ -51,28 +50,6 @@ const _homeDesktopActivationShortcuts = <ShortcutActivator, Intent>{
 };
 const shieldBalancePendingBroadcastMessage =
     'Shielding queued for retry. Check Activity.';
-
-final _homeZecUsdUnitPriceProvider = FutureProvider.autoDispose<double?>((
-  ref,
-) async {
-  if (!ref.watch(swapFeatureEnabledProvider)) return null;
-
-  final provider = ref.read(swapIntentProvider);
-  final pricingProvider = provider is SwapPricingProvider
-      ? provider as SwapPricingProvider
-      : null;
-  if (pricingProvider == null) return null;
-
-  try {
-    final snapshot = await pricingProvider.loadPricingSnapshot();
-    final price = snapshot.usdPrices[SwapAsset.zec];
-    if (price == null || !price.isFinite || price <= 0) return null;
-    return price;
-  } catch (e) {
-    log('HomeScreen: fiat price load failed: $e');
-    return null;
-  }
-});
 
 String? shieldBalanceBroadcastStatusMessage(
   rust_sync.ShieldTransparentResult result,
@@ -345,10 +322,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         sync.orchardBalance +
         sync.saplingPendingBalance +
         sync.orchardPendingBalance;
-    final zecUsdUnitPrice = ref
-        .watch(_homeZecUsdUnitPriceProvider)
-        .asData
-        ?.value;
+    final zecUsdUnitPrice = ref.watch(zecUsdUnitPriceProvider).asData?.value;
     final shieldedFiatBalanceText = _formatFiatBalance(
       shieldedBalance,
       zecUsdUnitPrice: zecUsdUnitPrice,
@@ -367,79 +341,63 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         : 'default';
     final backgroundTheme = isDark ? 'dark' : 'light';
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Positioned.fill(
-          child: _HomeFullPageBackground(
-            assetName:
-                'assets/illustrations/home_${backgroundVariant}_background_$backgroundTheme.png',
-          ),
-        ),
-        AppDesktopShell(
-          backgroundColor: Colors.transparent,
-          sidebar: const AppMainSidebar(),
-          pane: AppDesktopPane(
-            padding: EdgeInsets.zero,
-            backgroundColor: Colors.transparent,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                SizedBox.expand(
-                  child: walletAsync.when(
-                    loading: () =>
-                        const Center(child: CircularProgressIndicator()),
-                    error: (err, _) => Center(
-                      child: Text(
-                        'Something went wrong. Try again in a moment.\n\n'
-                        'Details: $err',
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: context.colors.text.warning,
-                        ),
-                      ),
-                    ),
-                    data: (_) => _HomePane(
-                      sync: sync,
-                      hasActivitySyncData: hasActivitySyncData,
-                      isActivityLoading: isActivityLoading,
-                      passwordRotationRecoveryFailed:
-                          bootstrap.passwordRotationRecoveryFailed,
-                      canBackgroundSync: _canBackgroundSync,
-                      privacyModeEnabled: privacyModeEnabled,
-                      shieldedBalanceText: _formatZec(shieldedBalance),
-                      shieldedFiatBalanceText: shieldedFiatBalanceText,
-                      transparentBalanceText: _formatZec(transparentBalance),
-                      hasTransparentBalance: transparentBalance > BigInt.zero,
-                      canShieldBalance: canShieldTransparentBalance,
-                      isShieldingBalance: _isShieldingBalance,
-                      shieldBalanceError: _shieldBalanceError,
-                      shieldBalanceErrorDetail: _shieldBalanceErrorDetail,
-                      onTogglePrivacyMode: () =>
-                          ref.read(privacyModeProvider.notifier).toggle(),
-                      onShieldBalancePressed: () =>
-                          unawaited(_shieldTransparentBalance()),
-                      onDismissShieldBalanceError: _dismissShieldBalanceError,
-                      onSyncInBackground: () => ref
-                          .read(syncProvider.notifier)
-                          .enableBackgroundSync(),
-                      onStopBackgroundSync: () => ref
-                          .read(syncProvider.notifier)
-                          .disableBackgroundSync(),
-                      onRetrySync: () =>
-                          ref.read(syncProvider.notifier).startSync(),
-                    ),
+    return AppDesktopBackdropShell(
+      background: _HomeFullPageBackground(
+        assetName:
+            'assets/illustrations/home_${backgroundVariant}_background_$backgroundTheme.png',
+      ),
+      sidebar: const AppMainSidebar(),
+      pane: Stack(
+        fit: StackFit.expand,
+        children: [
+          SizedBox.expand(
+            child: walletAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (err, _) => Center(
+                child: Text(
+                  'Something went wrong. Try again in a moment.\n\n'
+                  'Details: $err',
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: context.colors.text.warning,
                   ),
                 ),
-                if (_showKeystoneShieldSigning)
-                  KeystoneShieldSigningOverlay(
-                    onCancel: _closeKeystoneShieldSigning,
-                    onComplete: _closeKeystoneShieldSigning,
-                  ),
-              ],
+              ),
+              data: (_) => _HomePane(
+                sync: sync,
+                hasActivitySyncData: hasActivitySyncData,
+                isActivityLoading: isActivityLoading,
+                passwordRotationRecoveryFailed:
+                    bootstrap.passwordRotationRecoveryFailed,
+                canBackgroundSync: _canBackgroundSync,
+                privacyModeEnabled: privacyModeEnabled,
+                shieldedBalanceText: _formatZec(shieldedBalance),
+                shieldedFiatBalanceText: shieldedFiatBalanceText,
+                transparentBalanceText: _formatZec(transparentBalance),
+                hasTransparentBalance: transparentBalance > BigInt.zero,
+                canShieldBalance: canShieldTransparentBalance,
+                isShieldingBalance: _isShieldingBalance,
+                shieldBalanceError: _shieldBalanceError,
+                shieldBalanceErrorDetail: _shieldBalanceErrorDetail,
+                onTogglePrivacyMode: () =>
+                    ref.read(privacyModeProvider.notifier).toggle(),
+                onShieldBalancePressed: () =>
+                    unawaited(_shieldTransparentBalance()),
+                onDismissShieldBalanceError: _dismissShieldBalanceError,
+                onSyncInBackground: () =>
+                    ref.read(syncProvider.notifier).enableBackgroundSync(),
+                onStopBackgroundSync: () =>
+                    ref.read(syncProvider.notifier).disableBackgroundSync(),
+                onRetrySync: () => ref.read(syncProvider.notifier).startSync(),
+              ),
             ),
           ),
-        ),
-      ],
+          if (_showKeystoneShieldSigning)
+            KeystoneShieldSigningOverlay(
+              onCancel: _closeKeystoneShieldSigning,
+              onComplete: _closeKeystoneShieldSigning,
+            ),
+        ],
+      ),
     );
   }
 }
@@ -649,18 +607,28 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         ? const <SwapActivityRowItem>[]
         : ref.watch(swapActivityRowItemsProvider(accountUuid)).value ??
               const <SwapActivityRowItem>[];
+    // Suppress standalone tx rows that a swap row already represents, with
+    // the same matching the Activity screen uses. Home's compact rows render
+    // no children, so only the suppression set is consumed here.
+    final absorption = !widget.hasActivitySyncData
+        ? SwapActivityLegAbsorption.empty
+        : matchSwapActivityLegAbsorption(
+            swapItems: swapItems,
+            transactions: widget.sync.recentTransactions,
+          );
     final entries = <_HomeActivityEntry>[
       if (widget.hasActivitySyncData)
         for (final tx in widget.sync.recentTransactions)
-          _HomeActivityEntry(
-            timestamp: _transactionActivityTimestamp(tx),
-            row: buildTransactionActivityRow(
-              context: context,
-              transaction: tx,
-              privacyModeEnabled: widget.privacyModeEnabled,
-              onTap: () => _openTransactionStatus(tx),
+          if (!absorption.absorbs(tx))
+            _HomeActivityEntry(
+              timestamp: _transactionActivityTimestamp(tx),
+              row: buildTransactionActivityRow(
+                context: context,
+                transaction: tx,
+                privacyModeEnabled: widget.privacyModeEnabled,
+                onTap: () => _openTransactionStatus(tx),
+              ),
             ),
-          ),
       for (final item in swapItems)
         _HomeActivityEntry(
           timestamp: item.activityTimestamp,

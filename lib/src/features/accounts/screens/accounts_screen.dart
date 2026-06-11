@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
@@ -180,15 +181,16 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     AccountRemoveProgressCallback? onProgress,
   ) async {
     if (_blockDestructiveWalletChangeIfVotingSubmissionInProgress()) return;
-    final syncNotifier = ref.read(syncProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
 
     onProgress?.call(AccountRemoveProgress.stoppingSync);
-    await runWithSyncPausedForAccountMutation(ref, () async {
-      onProgress?.call(AccountRemoveProgress.removingAccount);
-      await accountNotifier.resetWallet();
-      syncNotifier.clearCachedWalletDbPath();
-    }, resumeAfterMutation: false);
+    await runWithSyncPausedForWalletReset(
+      ref,
+      accountNotifier.resetWallet,
+      onResetting: () {
+        onProgress?.call(AccountRemoveProgress.removingAccount);
+      },
+    );
     if (!mounted) return;
     _closeModal();
     context.go('/welcome');
@@ -225,27 +227,29 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         backgroundColor: Colors.transparent,
         child: Stack(
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const _AccountsPaneToolbar(),
-                Expanded(
-                  child: AppPaneScrollableFill(
-                    child: _AccountsPane(
-                      activeAccount: activeAccount,
-                      otherAccounts: otherAccounts,
-                      onSelectAccount: _handleAccountSelected,
-                      onCopyAddress: _copyAddress,
-                      onSendZec: _sendZec,
-                      onEditAccountName: _showAccountNameModal,
-                      onChangeProfilePicture: _showProfilePictureModal,
-                      onRemoveAccount: _showRemoveAccountModal,
-                      initialOpenMenuAccountUuid:
-                          widget.initialOpenMenuAccountUuid,
-                    ),
-                  ),
+            AppPaneScrollScaffold(
+              toolbar: const AppPaneToolbar(
+                key: ValueKey('accounts_pane_toolbar'),
+                leading: AppRouteBackLink(
+                  key: ValueKey('accounts_pane_back_button'),
+                  minWidth: 60,
                 ),
-              ],
+              ),
+              // IntrinsicHeight keeps the pane's Spacer working: the column
+              // needs a bounded height even when content exceeds the viewport.
+              child: IntrinsicHeight(
+                child: _AccountsPane(
+                  activeAccount: activeAccount,
+                  otherAccounts: otherAccounts,
+                  onSelectAccount: _handleAccountSelected,
+                  onCopyAddress: _copyAddress,
+                  onSendZec: _sendZec,
+                  onEditAccountName: _showAccountNameModal,
+                  onChangeProfilePicture: _showProfilePictureModal,
+                  onRemoveAccount: _showRemoveAccountModal,
+                  initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
+                ),
+              ),
             ),
             if (modalAccount != null && _activeModal != null)
               AppPaneModalOverlay(
@@ -256,8 +260,6 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                     accountName: modalAccount.name,
                     profilePictureId: modalAccount.profilePictureId,
                     onCancel: _closeModal,
-                    onChangeProfilePicture: () =>
-                        _showProfilePictureModal(modalAccount),
                     onUpdate: (name) =>
                         _updateAccountName(modalAccount.uuid, name),
                   ),
@@ -434,34 +436,6 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       if (account.uuid == uuid) return account;
     }
     return null;
-  }
-}
-
-class _AccountsPaneToolbar extends StatelessWidget {
-  const _AccountsPaneToolbar();
-
-  static const _height = 48.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      key: ValueKey('accounts_pane_toolbar'),
-      height: _height,
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: AppSpacing.md,
-          top: AppSpacing.xs,
-          bottom: AppSpacing.xs,
-        ),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: AppRouteBackLink(
-            key: ValueKey('accounts_pane_back_button'),
-            minWidth: 60,
-          ),
-        ),
-      ),
-    );
   }
 }
 

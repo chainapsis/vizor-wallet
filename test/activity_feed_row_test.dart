@@ -244,6 +244,105 @@ void main() {
     expect(nextTop, greaterThan(childTop));
   });
 
+  testWidgets('child rows are tappable only when they carry an onTap', (
+    tester,
+  ) async {
+    var tappableActivations = 0;
+
+    await _pumpActivityFeed(
+      tester,
+      rows: [
+        _row(
+          title: 'Swapped',
+          childRows: [
+            _row(
+              title: 'Received ZEC',
+              onTap: () {
+                tappableActivations += 1;
+              },
+            ),
+            _row(title: 'Deposited USDC'),
+          ],
+        ),
+      ],
+    );
+
+    // The shared child slot animates in via AnimatedSize, and the connector
+    // line renders for the grouped children.
+    expect(find.byType(AnimatedSize), findsWidgets);
+    expect(
+      find.byKey(const ValueKey('activity_feed_child_connector')),
+      findsWidgets,
+    );
+
+    // The tappable child opts into the click cursor; the inert one does not.
+    expect(
+      find.ancestor(
+        of: find.text('Received ZEC'),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is MouseRegion &&
+              widget.cursor == SystemMouseCursors.click,
+        ),
+      ),
+      findsWidgets,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('Deposited USDC'),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is MouseRegion &&
+              widget.cursor == SystemMouseCursors.click,
+        ),
+      ),
+      findsNothing,
+    );
+
+    await tester.tap(find.text('Received ZEC'));
+    await tester.pump();
+    expect(tappableActivations, 1);
+
+    // Tapping the inert child must do nothing (no callback to fire).
+    await tester.tap(find.text('Deposited USDC'));
+    await tester.pump();
+    expect(tappableActivations, 1);
+  });
+
+  testWidgets('tappable child rows are keyboard activatable', (tester) async {
+    var childActivations = 0;
+
+    await _pumpActivityFeed(
+      tester,
+      rows: [
+        _row(
+          title: 'Swapped',
+          childRows: [
+            _row(
+              title: 'Received ZEC',
+              onTap: () {
+                childActivations += 1;
+              },
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+
+    expect(_primaryFocusContainsText('Received ZEC'), isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(childActivations, 1);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    expect(childActivations, 2);
+  });
+
   testWidgets('swap progress avatar keeps the row icon in the center', (
     tester,
   ) async {

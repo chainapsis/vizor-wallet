@@ -335,7 +335,12 @@ class _ReceivePane extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _ReceivePaneToolbar(),
+        const AppPaneToolbar(
+          leading: AppRouteBackLink(
+            key: ValueKey('receive_pane_back_button'),
+            minWidth: 60,
+          ),
+        ),
         Expanded(
           child: _ReceiveContentLayout(
             selectedType: selectedType,
@@ -350,33 +355,6 @@ class _ReceivePane extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _ReceivePaneToolbar extends StatelessWidget {
-  const _ReceivePaneToolbar();
-
-  static const _height = 48.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      height: _height,
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: AppSpacing.md,
-          top: AppSpacing.xs,
-          bottom: AppSpacing.xs,
-        ),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: AppRouteBackLink(
-            key: ValueKey('receive_pane_back_button'),
-            minWidth: 60,
-          ),
-        ),
-      ),
     );
   }
 }

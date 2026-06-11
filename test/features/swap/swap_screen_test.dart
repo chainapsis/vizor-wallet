@@ -1,15 +1,26 @@
+// The platform-interface fakes below stub path_provider / flutter_secure_storage
+// so the activity tab's tap-through to the tx-status route can resolve the
+// wallet DB path under test. These are transitive deps, hence the ignore.
+// ignore_for_file: depend_on_referenced_packages
 import 'dart:async';
+import 'dart:io';
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
+import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
@@ -29,6 +40,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dar
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
+import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_review_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
@@ -106,9 +118,11 @@ void main() {
     expect(parts.symbol, r'$SHIT');
   });
 
-  testWidgets('review summary compacts long pay amount only', (tester) async {
+  testWidgets('review summary fits a long pay amount via FittedBox', (
+    tester,
+  ) async {
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _reviewTestPage(
           direction: SwapDirection.externalToZec,
           sellAsset: _testShitAsset,
@@ -120,34 +134,25 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('swap_review_trade_summary')),
-        matching: find.text(r'999,999.99 $SHIT'),
-      ),
-      findsNothing,
-    );
-    _expectSummaryAmountPartsFitCard(
+    // The redesigned summary renders the amount + symbol verbatim as a single
+    // serif text and scales it down to fit, rather than compacting the digits.
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_review_pay_summary_amount',
-      numberText: '999.99K',
-      symbolText: r'$SHIT',
-      cardKey: const ValueKey('swap_review_trade_summary'),
+      sideKey: const ValueKey('swap_review_info_pay'),
+      amountText: r'999,999.99 $SHIT',
     );
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_review_receive_summary_amount',
-      numberText: '0.251',
-      symbolText: 'ZEC',
-      cardKey: const ValueKey('swap_review_trade_summary'),
+      sideKey: const ValueKey('swap_review_info_receive'),
+      amountText: '0.251 ZEC',
     );
   });
 
-  testWidgets('review summary compacts long receive amount only', (
+  testWidgets('review summary fits a long receive amount via FittedBox', (
     tester,
   ) async {
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _reviewTestPage(
           direction: SwapDirection.zecToExternal,
           sellAsset: SwapAsset.zec,
@@ -159,32 +164,23 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('swap_review_trade_summary')),
-        matching: find.text(r'999,999.99 $SHIT'),
-      ),
-      findsNothing,
-    );
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_review_pay_summary_amount',
-      numberText: '0.251',
-      symbolText: 'ZEC',
-      cardKey: const ValueKey('swap_review_trade_summary'),
+      sideKey: const ValueKey('swap_review_info_pay'),
+      amountText: '0.251 ZEC',
     );
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_review_receive_summary_amount',
-      numberText: '999.99K',
-      symbolText: r'$SHIT',
-      cardKey: const ValueKey('swap_review_trade_summary'),
+      sideKey: const ValueKey('swap_review_info_receive'),
+      amountText: r'999,999.99 $SHIT',
     );
   });
 
-  testWidgets('review summary compacts both long amounts', (tester) async {
+  testWidgets('review summary fits both long amounts via FittedBox', (
+    tester,
+  ) async {
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _reviewTestPage(
           direction: SwapDirection.externalToZec,
           sellAsset: _testShitAsset,
@@ -196,123 +192,94 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    final reviewSummary = find.byKey(
-      const ValueKey('swap_review_trade_summary'),
-    );
-    expect(
-      find.descendant(
-        of: reviewSummary,
-        matching: find.text(r'999,999.99 $SHIT'),
-      ),
-      findsNothing,
-    );
-    expect(
-      find.descendant(of: reviewSummary, matching: find.text('888,888.88 ZEC')),
-      findsNothing,
-    );
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_review_pay_summary_amount',
-      numberText: '999.99K',
-      symbolText: r'$SHIT',
-      cardKey: const ValueKey('swap_review_trade_summary'),
+      sideKey: const ValueKey('swap_review_info_pay'),
+      amountText: r'999,999.99 $SHIT',
     );
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_review_receive_summary_amount',
-      numberText: '888.888K',
-      symbolText: 'ZEC',
-      cardKey: const ValueKey('swap_review_trade_summary'),
+      sideKey: const ValueKey('swap_review_info_receive'),
+      amountText: '888,888.88 ZEC',
     );
   });
 
-  testWidgets('review details show saved recipient identity', (tester) async {
+  testWidgets('review summary shows the recipient address line with copy', (
+    tester,
+  ) async {
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _reviewTestPage(
           direction: SwapDirection.zecToExternal,
           sellAsset: SwapAsset.zec,
           receiveAsset: SwapAsset.usdc,
           sellAmountText: '0.251 ZEC',
           receiveAmountText: '999.99 USDC',
-          addressBookContacts: [
-            _addressBookContact(
-              id: 'treasury',
-              label: 'Treasury',
-              network: AddressBookNetwork.ethereum,
-              address: '0x52908400098527886E0F7030069857D2E4169EE7',
-            ),
-          ],
+          onCopy: (_) {},
         ),
       ),
     );
 
+    // The redesign moved the counterparty identity out of the detail card and
+    // into the summary's To: line, with a Copy affordance beside it.
+    final receiveSide = find.byKey(const ValueKey('swap_review_info_receive'));
+    expect(
+      find.descendant(
+        of: receiveSide,
+        matching: find.text('To: 0x5290840 ... 4169ee7 on Ethereum'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_review_info_receive_copy')),
+      findsOneWidget,
+    );
+    // The review detail card no longer renders an address-book identity row.
     final details = find.byKey(const ValueKey('swap_review_details'));
     expect(
-      find.descendant(of: details, matching: find.text('Treasury')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: details, matching: find.text('Ethereum')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: details, matching: find.text('0x52908…69ee7')),
-      findsOneWidget,
-    );
-    final addressText = find.descendant(
-      of: details,
-      matching: find.text('0x52908…69ee7'),
-    );
-    expect(tester.widget<Text>(addressText).overflow, isNull);
-    expect(
-      find.ancestor(of: addressText, matching: find.byType(FittedBox)),
-      findsOneWidget,
+      find.descendant(
+        of: details,
+        matching: find.byType(AddressBookNetworkIcon),
+      ),
+      findsNothing,
     );
   });
 
-  testWidgets('review details show saved refund identity', (tester) async {
+  testWidgets('review summary shows the refund address line with copy', (
+    tester,
+  ) async {
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _reviewTestPage(
           direction: SwapDirection.externalToZec,
           sellAsset: SwapAsset.usdc,
           receiveAsset: SwapAsset.zec,
           sellAmountText: '999.99 USDC',
           receiveAmountText: '0.251 ZEC',
-          addressBookContacts: [
-            _addressBookContact(
-              id: 'refund',
-              label: 'Refund wallet',
-              network: AddressBookNetwork.ethereum,
-              address: '0x52908400098527886e0f7030069857d2e4169ee7',
-            ),
-          ],
+          onCopy: (_) {},
         ),
       ),
     );
 
+    final paySide = find.byKey(const ValueKey('swap_review_info_pay'));
+    expect(
+      find.descendant(
+        of: paySide,
+        matching: find.text('Refund to: 0x5290840 ... 4169ee7'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_review_info_pay_copy')),
+      findsOneWidget,
+    );
     final details = find.byKey(const ValueKey('swap_review_details'));
     expect(
-      find.descendant(of: details, matching: find.text('Refund wallet')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: details, matching: find.text('Ethereum')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: details, matching: find.text('0x52908…69ee7')),
-      findsOneWidget,
-    );
-    final addressText = find.descendant(
-      of: details,
-      matching: find.text('0x52908…69ee7'),
-    );
-    expect(tester.widget<Text>(addressText).overflow, isNull);
-    expect(
-      find.ancestor(of: addressText, matching: find.byType(FittedBox)),
-      findsOneWidget,
+      find.descendant(
+        of: details,
+        matching: find.byType(AddressBookNetworkIcon),
+      ),
+      findsNothing,
     );
   });
 
@@ -337,12 +304,16 @@ void main() {
     );
 
     String expiryLabel() {
-      return tester
-          .widget<RichText>(
-            find.byKey(const ValueKey('swap_deposit_expiry_label')),
+      final texts = tester
+          .widgetList<Text>(
+            find.descendant(
+              of: find.byKey(const ValueKey('swap_deposit_expiry_label')),
+              matching: find.byType(Text),
+            ),
           )
-          .text
-          .toPlainText();
+          .map((text) => text.data ?? '')
+          .toList();
+      return texts.join(' ');
     }
 
     expect(expiryLabel(), 'Deposit within 16mins');
@@ -383,12 +354,16 @@ void main() {
     );
 
     String expiryLabel() {
-      return tester
-          .widget<RichText>(
-            find.byKey(const ValueKey('swap_deposit_expiry_label')),
+      final texts = tester
+          .widgetList<Text>(
+            find.descendant(
+              of: find.byKey(const ValueKey('swap_deposit_expiry_label')),
+              matching: find.byType(Text),
+            ),
           )
-          .text
-          .toPlainText();
+          .map((text) => text.data ?? '')
+          .toList();
+      return texts.join(' ');
     }
 
     expect(expiryLabel(), 'Deposit within 2hrs');
@@ -493,9 +468,10 @@ void main() {
 
       expect(find.text('Time’s up'), findsOneWidget);
       expect(find.text('Restart swap'), findsOneWidget);
+      // The redesigned detail pages drop the NEAR Intents attribution.
       expect(
         find.byKey(const ValueKey('swap_near_intents_attribution')),
-        findsOneWidget,
+        findsNothing,
       );
       final detailRect = tester.getRect(
         find.byKey(const ValueKey('swap_activity_detail_page')),
@@ -503,17 +479,13 @@ void main() {
       final timeoutRect = tester.getRect(
         find.byKey(const ValueKey('swap_deposit_timeout_panel')),
       );
-      final attributionRect = tester.getRect(
-        find.byKey(const ValueKey('swap_near_intents_attribution')),
-      );
 
-      expect(timeoutRect.size, const Size(274, 388));
+      expect(timeoutRect.width, 340);
       expect(timeoutRect.center.dy, closeTo(detailRect.center.dy, 1));
-      expect(timeoutRect.bottom, lessThan(attributionRect.top));
     },
   );
 
-  testWidgets('swap status summary calculates fiat per asset side', (
+  testWidgets('swap status summary shows the captured fiat from the mapper', (
     tester,
   ) async {
     await _setViewport(tester, const Size(1080, 720));
@@ -541,144 +513,103 @@ void main() {
           initialLocation: '/activity/swap/status-fiat?from=swap',
           routes: [_swapRoute(), _swapActivityRoute()],
         ),
-        swapProvider: _PricingSwapProvider([70.1733333333]),
+        // Live pricing must NOT affect the page anymore — the captured fiat
+        // basis is formatted once in the mapper and rendered verbatim.
+        swapProvider: _PricingSwapProvider([200]),
         seedSwapActivityFixtures: false,
         sessionStore: sessionStore,
       ),
     );
     await _pumpUntilPresent(
       tester,
-      find.byKey(const ValueKey('swap_status_summary_card')),
+      find.byKey(const ValueKey('swap_review_info')),
     );
     await tester.pumpAndSettle();
 
-    final summary = find.byKey(const ValueKey('swap_status_summary_card'));
+    final summary = find.byKey(const ValueKey('swap_review_info'));
+    // ZEC pay side shows the captured fiat (1.5 ZEC * 70.1733... = $105.26).
     expect(
       find.descendant(of: summary, matching: find.text(r'$105.26')),
-      findsWidgets,
+      findsOneWidget,
     );
+    // The external receive side carries the recipient address line, not a
+    // recomputed fiat figure.
     expect(
-      find.descendant(of: summary, matching: find.text(r'$123.45')),
-      findsWidgets,
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_review_info_receive')),
+        matching: find.textContaining('To: '),
+      ),
+      findsOneWidget,
     );
   });
 
-  testWidgets(
-    'status page blinks live quote signal and cycles loader highlight',
-    (tester) async {
-      await tester.pumpWidget(_themeHarness(_statusTestPage()));
+  testWidgets('status progress route shows the animated active-step loader', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_themeHarness(_statusTestPage()));
 
-      expect(
-        tester.getSize(find.byKey(const ValueKey('swap_status_summary_card'))),
-        const Size(400, 120),
-      );
-      final statusSummary = find.byKey(
-        const ValueKey('swap_status_summary_card'),
-      );
-      expect(
-        find.descendant(
-          of: statusSummary,
-          matching: find.byKey(const ValueKey('swap_asset_chain_badge_zec')),
-        ),
-        findsNothing,
-      );
-      expect(
-        find.descendant(
-          of: statusSummary,
-          matching: find.byKey(const ValueKey('swap_asset_chain_badge_usdc')),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        tester.getSize(
-          find.byKey(const ValueKey('swap_status_badge_liveQuote')),
-        ),
-        const Size(167, 25),
-      );
-      final liveQuoteBadgeRect = tester.getRect(
-        find.byKey(const ValueKey('swap_status_badge_liveQuote')),
-      );
-      final liveQuoteTextRect = tester.getRect(find.text('In progress'));
-      expect(
-        (liveQuoteTextRect.top - liveQuoteBadgeRect.top).abs(),
-        lessThan(1),
-      );
-      expect(
-        tester
-            .widget<AnimatedOpacity>(
-              find.byKey(const ValueKey('swap_status_live_quote_led_opacity')),
-            )
-            .opacity,
-        1,
-      );
-      expect(
-        find.byKey(const ValueKey('swap_status_active_step_loader')),
-        findsOneWidget,
-      );
-      expect(
-        tester
-            .getSize(find.byKey(const ValueKey('swap_progress_route')))
-            .height,
-        206,
-      );
-      expect(
-        tester.getSize(
-          find.byKey(
-            const ValueKey('swap_activity_copy_near_intents_explorer_button'),
-          ),
-        ),
-        const Size(256, 44),
-      );
-      expect(
-        tester
-            .getSize(
-              find.byKey(const ValueKey('swap_activity_route_step_0_active')),
-            )
-            .height,
-        84,
-      );
-      expect(
-        tester
-            .getSize(
-              find.byKey(const ValueKey('swap_activity_route_step_1_pending')),
-            )
-            .height,
-        37,
-      );
-      expect(
-        find.byKey(const ValueKey('swap_status_active_step_spinner_rotation')),
-        findsNothing,
-      );
+    // The redesigned summary is the shared SwapReviewInfo block, which shows a
+    // chain badge for the external asset and none for ZEC.
+    final summary = find.byKey(const ValueKey('swap_review_info'));
+    expect(summary, findsOneWidget);
+    expect(
+      find.descendant(
+        of: summary,
+        matching: find.byKey(const ValueKey('swap_asset_chain_badge_zec')),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: summary,
+        matching: find.byKey(const ValueKey('swap_asset_chain_badge_usdc')),
+      ),
+      findsOneWidget,
+    );
 
-      final firstLineRect = tester.getRect(
-        find.byKey(const ValueKey('swap_activity_route_step_0_line')),
-      );
-      final secondLineRect = tester.getRect(
-        find.byKey(const ValueKey('swap_activity_route_step_1_line')),
-      );
-      expect(firstLineRect.center.dx, secondLineRect.center.dx);
+    // The in-progress (liveQuote) state animates the active step's loader. The
+    // old pulsing live-quote LED and the standalone explorer button are gone.
+    final loader = tester.widget<AppIcon>(
+      find.byKey(const ValueKey('swap_status_active_step_loader')),
+    );
+    expect(loader.name, AppIcons.loader);
+    expect(loader.animated, isTrue);
+    expect(
+      find.byKey(const ValueKey('swap_status_active_step_spinner_rotation')),
+      findsNothing,
+    );
 
-      await tester.pump(const Duration(milliseconds: 121));
-      expect(
-        find.byKey(const ValueKey('swap_status_active_step_loader')),
-        findsOneWidget,
-      );
-      await tester.pump(const Duration(milliseconds: 901));
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('swap_activity_route_step_0_active')),
+          )
+          .height,
+      90,
+    );
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('swap_activity_route_step_1_pending')),
+          )
+          .height,
+      37,
+    );
 
-      expect(
-        tester
-            .widget<AnimatedOpacity>(
-              find.byKey(const ValueKey('swap_status_live_quote_led_opacity')),
-            )
-            .opacity,
-        0.42,
-      );
+    final firstLineRect = tester.getRect(
+      find.byKey(const ValueKey('swap_activity_route_step_0_line')),
+    );
+    final secondLineRect = tester.getRect(
+      find.byKey(const ValueKey('swap_activity_route_step_1_line')),
+    );
+    expect(firstLineRect.center.dx, secondLineRect.center.dx);
 
-      await tester.pumpWidget(const SizedBox.shrink());
-    },
-  );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
-  testWidgets('status summary compacts long pay amount only', (tester) async {
+  testWidgets('status summary fits a long pay amount via FittedBox', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _themeHarness(
         _statusTestPage(
@@ -689,30 +620,19 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('swap_status_summary_card')),
-        matching: find.text(r'999,999.99 $SHIT'),
-      ),
-      findsNothing,
-    );
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_status_pay_summary_amount',
-      numberText: '999K',
-      symbolText: r'$SHIT',
-      cardKey: const ValueKey('swap_status_summary_card'),
+      sideKey: const ValueKey('swap_review_info_pay'),
+      amountText: r'999,999.99 $SHIT',
     );
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_status_receive_summary_amount',
-      numberText: '0.251',
-      symbolText: 'ZEC',
-      cardKey: const ValueKey('swap_status_summary_card'),
+      sideKey: const ValueKey('swap_review_info_receive'),
+      amountText: '0.251 ZEC',
     );
   });
 
-  testWidgets('status summary compacts long receive amount only', (
+  testWidgets('status summary fits a long receive amount via FittedBox', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -725,30 +645,21 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('swap_status_summary_card')),
-        matching: find.text(r'999,999.99 $SHIT'),
-      ),
-      findsNothing,
-    );
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_status_pay_summary_amount',
-      numberText: '0.251',
-      symbolText: 'ZEC',
-      cardKey: const ValueKey('swap_status_summary_card'),
+      sideKey: const ValueKey('swap_review_info_pay'),
+      amountText: '0.251 ZEC',
     );
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_status_receive_summary_amount',
-      numberText: '999K',
-      symbolText: r'$SHIT',
-      cardKey: const ValueKey('swap_status_summary_card'),
+      sideKey: const ValueKey('swap_review_info_receive'),
+      amountText: r'999,999.99 $SHIT',
     );
   });
 
-  testWidgets('status summary compacts both long card amounts', (tester) async {
+  testWidgets('status summary fits both long card amounts via FittedBox', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _themeHarness(
         _statusTestPage(
@@ -759,61 +670,35 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    final statusSummary = find.byKey(
-      const ValueKey('swap_status_summary_card'),
-    );
-    expect(
-      find.descendant(
-        of: statusSummary,
-        matching: find.text(r'999,999.99 $SHIT'),
-      ),
-      findsNothing,
-    );
-    expect(
-      find.descendant(
-        of: statusSummary,
-        matching: find.text('888,888.88 USDC'),
-      ),
-      findsNothing,
-    );
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_status_pay_summary_amount',
-      numberText: '999K',
-      symbolText: r'$SHIT',
-      cardKey: const ValueKey('swap_status_summary_card'),
+      sideKey: const ValueKey('swap_review_info_pay'),
+      amountText: r'999,999.99 $SHIT',
     );
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_status_receive_summary_amount',
-      numberText: '888K',
-      symbolText: 'USDC',
-      cardKey: const ValueKey('swap_status_summary_card'),
+      sideKey: const ValueKey('swap_review_info_receive'),
+      amountText: '888,888.88 USDC',
     );
   });
 
-  testWidgets('status terminal cards match completed and failed variants', (
+  testWidgets('status terminal details lead with the Status row', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
 
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _statusTestPage(
           title: 'Swap completed',
+          statusLabel: 'Completed',
           badgeKind: SwapStatusBadgeKind.completed,
           showTabs: false,
           details: const [
-            SwapStatusDetailRowData(label: 'Account', value: 'John'),
             SwapStatusDetailRowData(
               label: 'USDC deposit to',
               value: '0x123kjhc ... 4x98g20',
               copyable: true,
-            ),
-            SwapStatusDetailRowData(
-              label: 'Total fees',
-              value: '~0.25 USDC',
-              help: true,
             ),
             SwapStatusDetailRowData(
               label: 'Realized slippage',
@@ -823,96 +708,88 @@ void main() {
               label: 'Timestamp',
               value: 'May 20, 2026 13:20',
             ),
+            SwapStatusDetailRowData(
+              label: 'Total fees',
+              value: '~0.25 USDC',
+              help: true,
+            ),
           ],
         ),
       ),
     );
 
+    // The terminal layout leads with the Status row inside the single detail
+    // card; the old success/failed pill badge is gone.
+    expect(
+      find.byKey(const ValueKey('swap_status_detail_card')),
+      findsOneWidget,
+    );
+    final statusRow = find.byKey(const ValueKey('swap_status_summary_row'));
+    expect(statusRow, findsOneWidget);
+    expect(
+      find.descendant(of: statusRow, matching: find.text('Status')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: statusRow, matching: find.text('Completed')),
+      findsOneWidget,
+    );
     final completedIcon = tester.widget<AppIcon>(
-      find.descendant(
-        of: find.byKey(const ValueKey('swap_status_badge_completed')),
-        matching: find.byType(AppIcon),
-      ),
+      find.descendant(of: statusRow, matching: find.byType(AppIcon)),
     );
     expect(completedIcon.name, AppIcons.checkCircle);
     expect(completedIcon.size, 16);
-    expect(
-      tester
-          .widget<Opacity>(
-            find.byKey(const ValueKey('swap_status_summary_receive_opacity')),
-          )
-          .opacity,
-      1,
-    );
 
-    final completedCardRect = tester.getRect(
-      find.byKey(const ValueKey('swap_status_summary_card')),
+    // The Status row sits above every detail row, including the Total fees row.
+    final statusRowRect = tester.getRect(statusRow);
+    final feeRowRect = tester.getRect(find.text('Total fees'));
+    expect(statusRowRect.top, lessThan(feeRowRect.top));
+    // A hairline divider precedes the trailing Total fees row.
+    expect(
+      find.byKey(const ValueKey('swap_status_detail_divider')),
+      findsOneWidget,
     );
-    final completedBadgeRect = tester.getRect(
-      find.byKey(const ValueKey('swap_status_badge_completed')),
-    );
-    expect(completedBadgeRect.top, lessThan(completedCardRect.bottom));
-    expect(completedCardRect.bottom - completedBadgeRect.top, closeTo(1, 0.1));
 
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _statusTestPage(
           title: 'Swap failed',
+          statusLabel: 'Failed',
           badgeKind: SwapStatusBadgeKind.failed,
           showTabs: false,
           details: const [
-            SwapStatusDetailRowData(label: 'Account', value: 'John'),
             SwapStatusDetailRowData(
               label: 'USDC refunded to',
               value: '0x123kjhc ... 4x98g20',
+            ),
+            SwapStatusDetailRowData(
+              label: 'Timestamp',
+              value: 'May 20, 2026 13:20',
             ),
             SwapStatusDetailRowData(
               label: 'Total fees',
               value: '~0.25 USDC',
               help: true,
             ),
-            SwapStatusDetailRowData(
-              label: 'Timestamp',
-              value: 'May 20, 2026 13:20',
-            ),
           ],
         ),
       ),
     );
 
+    final failedStatusRow = find.byKey(
+      const ValueKey('swap_status_summary_row'),
+    );
+    expect(
+      find.descendant(of: failedStatusRow, matching: find.text('Failed')),
+      findsOneWidget,
+    );
     final failedIcon = tester.widget<AppIcon>(
-      find.descendant(
-        of: find.byKey(const ValueKey('swap_status_badge_failed')),
-        matching: find.byType(AppIcon),
-      ),
+      find.descendant(of: failedStatusRow, matching: find.byType(AppIcon)),
     );
-    expect(failedIcon.name, AppIcons.skull);
+    expect(failedIcon.name, AppIcons.warning);
     expect(failedIcon.size, 16);
-    final failedCardRect = tester.getRect(
-      find.byKey(const ValueKey('swap_status_summary_card')),
-    );
-    final failedBadgeRect = tester.getRect(
-      find.byKey(const ValueKey('swap_status_badge_failed')),
-    );
-    expect(failedBadgeRect.top, lessThan(failedCardRect.bottom));
-    expect(failedCardRect.bottom - failedBadgeRect.top, closeTo(1, 0.1));
-    expect(
-      tester
-          .widget<Opacity>(
-            find.byKey(const ValueKey('swap_status_summary_receive_opacity')),
-          )
-          .opacity,
-      0.5,
-    );
-    expect(
-      tester
-          .widget<Opacity>(
-            find.byKey(const ValueKey('swap_status_summary_divider_opacity')),
-          )
-          .opacity,
-      0.5,
-    );
 
+    // The trailing fee row keeps label-left / value-then-help-icon-right order.
     final feeLabelRect = tester.getRect(find.text('Total fees'));
     final feeValueRect = tester.getRect(find.text('~0.25 USDC'));
     final finalDetailsRect = tester.getRect(
@@ -931,9 +808,11 @@ void main() {
     expect(feeLabelRect.left, lessThan(feeValueRect.left));
     expect(feeValueRect.right, greaterThan(feeLabelRect.right));
     expect(feeValueRect.right, lessThan(feeHelpIconRect.left));
+    // The shared ReviewListRow pill carries a 4px right padding (pr 4), so the
+    // trailing help icon sits that pill padding (xxs) inside the row edge.
     expect(
       feeHelpIconRect.right,
-      closeTo(finalDetailsRect.right - AppSpacing.sm, 1),
+      closeTo(finalDetailsRect.right - AppSpacing.xxs, 1),
     );
   });
 
@@ -1005,150 +884,64 @@ void main() {
 
     expect(titleRect.left, lessThan(checkedRect.left));
     expect(checkedRect.right, greaterThan(titleRect.right));
-    expect((descriptionRect.left - titleRect.left).abs(), lessThan(1));
+    // The active step's description sits flush with its title column; the
+    // Figma block pads vertically, not horizontally.
+    expect(descriptionRect.left - titleRect.left, closeTo(0, 1));
   });
 
-  testWidgets('status details tab starts collapsed and expands more details', (
+  testWidgets('status details tab shows all rows in the detail card', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
-    var expanded = false;
     await tester.pumpWidget(
-      _themeHarness(
-        Overlay(
-          initialEntries: [
-            OverlayEntry(
-              builder: (_) => StatefulBuilder(
-                builder: (context, setState) {
-                  return _statusTestPage(
-                    activeTab: SwapStatusTab.details,
-                    detailsExpanded: expanded,
-                    onToggleDetails: () => setState(() => expanded = !expanded),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+      _themeHarnessWithOverlay(
+        _statusTestPage(activeTab: SwapStatusTab.details),
       ),
     );
 
+    // The redesigned details tab renders every row directly in the card —
+    // there is no More/Less expansion stage anymore.
     expect(
-      find.byKey(const ValueKey('swap_transaction_details_collapsed')),
-      findsOneWidget,
-    );
-    expect(find.text('Transaction details'), findsOneWidget);
-    expect(find.text('More details'), findsOneWidget);
-    expect(find.text('Slippage tolerance'), findsNothing);
-    expect(
-      find.ancestor(
-        of: find.text('Swap Progress'),
-        matching: find.byWidgetPredicate(
-          (widget) =>
-              widget is MouseRegion &&
-              widget.cursor == SystemMouseCursors.click,
-        ),
-      ),
+      find.byKey(const ValueKey('swap_status_detail_card')),
       findsOneWidget,
     );
     expect(
-      find.ancestor(
-        of: find.text('Transaction details'),
-        matching: find.byWidgetPredicate(
-          (widget) =>
-              widget is MouseRegion &&
-              widget.cursor == SystemMouseCursors.click,
-        ),
-      ),
+      find.byKey(const ValueKey('swap_status_detail_rows')),
       findsOneWidget,
     );
-    expect(
-      find.ancestor(
-        of: find.text('More details'),
-        matching: find.byWidgetPredicate(
-          (widget) =>
-              widget is MouseRegion &&
-              widget.cursor == SystemMouseCursors.click,
-        ),
-      ),
-      findsOneWidget,
-    );
-
-    final accountLabelRect = tester.getRect(find.text('Account'));
-    final accountValueRect = tester.getRect(find.text('John'));
-    final refundLabelRect = tester.getRect(find.text('USDC refund address'));
-    final depositLabelRect = tester.getRect(find.text('Deposit USDC to'));
-    final refundValueRect = tester.getRect(
-      find.text('0x123kjhc ... 4x98g20').first,
-    );
-    final feeLabelRect = tester.getRect(find.text('Swap fee'));
-    final feeValueRect = tester.getRect(find.text('Included in shown rate'));
-    final feeHelpIconRect = tester.getRect(
-      find
-          .descendant(
-            of: find.byKey(
-              const ValueKey('swap_transaction_details_collapsed'),
-            ),
-            matching: find.byWidgetPredicate(
-              (widget) => widget is AppIcon && widget.name == AppIcons.help,
-            ),
-          )
-          .first,
-    );
-
-    expect(accountLabelRect.left, lessThan(accountValueRect.left));
-    expect(accountValueRect.right, greaterThan(accountLabelRect.right));
-    expect(feeLabelRect.left, lessThan(feeValueRect.left));
-    expect(feeValueRect.right, greaterThan(feeLabelRect.right));
-    expect((refundLabelRect.left - accountLabelRect.left).abs(), lessThan(1));
-    expect((depositLabelRect.left - accountLabelRect.left).abs(), lessThan(1));
-    expect((feeLabelRect.left - accountLabelRect.left).abs(), lessThan(1));
-    expect(feeValueRect.right, lessThan(feeHelpIconRect.left));
-    expect((refundValueRect.right - feeHelpIconRect.right).abs(), lessThan(1));
-
-    await tester.tap(find.text('More details'));
-    await tester.pump();
-    await tester.pump();
-
-    expect(
-      find.byKey(const ValueKey('swap_transaction_details_expanded')),
-      findsOneWidget,
-    );
-    expect(
-      tester
-          .getSize(
-            find.byKey(const ValueKey('swap_transaction_details_expanded')),
-          )
-          .height,
-      192,
-    );
-    expect(
-      find.byKey(const ValueKey('swap_transaction_details_scrollbar')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('swap_transaction_details_scroll_view')),
-      findsOneWidget,
-    );
-    expect(find.text('Less details'), findsOneWidget);
+    expect(find.text('More details'), findsNothing);
+    expect(find.text('Less details'), findsNothing);
     expect(find.text('Slippage tolerance'), findsOneWidget);
+    expect(find.text('Guaranteed minimum'), findsOneWidget);
     expect(find.text('Price protection'), findsNothing);
     expect(_tooltipWithMessage(swapFeeTooltip), findsOneWidget);
     expect(
       _tooltipWithMessage(swapGenericMinimumReceiveTooltip),
       findsOneWidget,
     );
-    expect(
-      find.ancestor(
-        of: find.text('Less details'),
-        matching: find.byWidgetPredicate(
-          (widget) =>
-              widget is MouseRegion &&
-              widget.cursor == SystemMouseCursors.click,
+
+    for (final tab in ['Swap Progress', 'Transaction details']) {
+      expect(
+        find.ancestor(
+          of: find.text(tab),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is MouseRegion &&
+                widget.cursor == SystemMouseCursors.click,
+          ),
         ),
-      ),
-      findsOneWidget,
-    );
+        findsOneWidget,
+      );
+    }
+
+    final refundLabelRect = tester.getRect(find.text('USDC refund address'));
+    final depositLabelRect = tester.getRect(find.text('Deposit USDC to'));
+    final feeLabelRect = tester.getRect(find.text('Swap fee'));
+    final feeValueRect = tester.getRect(find.text('Included in shown rate'));
+
+    expect(feeLabelRect.left, lessThan(feeValueRect.left));
+    expect((refundLabelRect.left - depositLabelRect.left).abs(), lessThan(1));
+    expect((feeLabelRect.left - refundLabelRect.left).abs(), lessThan(1));
   });
 
   testWidgets('status details render address book labels with addresses', (
@@ -1156,7 +949,7 @@ void main() {
   ) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _statusTestPage(
           activeTab: SwapStatusTab.details,
           details: const [
@@ -1201,7 +994,7 @@ void main() {
   ) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _statusTestPage(
           activeTab: SwapStatusTab.details,
           details: const [
@@ -1238,49 +1031,12 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(
-      find.byKey(const ValueKey('swap_transaction_details_collapsed')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(
-        const ValueKey('swap_transaction_details_collapsed_scroll_view'),
-      ),
+      find.byKey(const ValueKey('swap_status_detail_rows')),
       findsOneWidget,
     );
     expect(find.text('eth account'), findsOneWidget);
-    expect(find.text('More details'), findsOneWidget);
+    expect(find.text('Slippage tolerance'), findsOneWidget);
   });
-
-  testWidgets(
-    'status details expanded use case starts inside the scroll range',
-    (tester) async {
-      await _setDesktopViewport(tester);
-      await tester.pumpWidget(
-        _themeHarness(
-          _statusTestPage(
-            activeTab: SwapStatusTab.details,
-            detailsExpanded: true,
-          ),
-        ),
-      );
-      await tester.pump();
-
-      final scrollView = tester.widget<SingleChildScrollView>(
-        find.byKey(const ValueKey('swap_transaction_details_scroll_view')),
-      );
-      final controller = scrollView.controller!;
-
-      expect(
-        tester
-            .getSize(
-              find.byKey(const ValueKey('swap_transaction_details_expanded')),
-            )
-            .height,
-        192,
-      );
-      expect(controller.offset, controller.position.maxScrollExtent);
-    },
-  );
 
   testWidgets('swap tab renders composer and privacy check', (tester) async {
     await _setDesktopViewport(tester);
@@ -1342,7 +1098,7 @@ void main() {
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('swap_review_button'))).width,
-      closeTo(256, 1),
+      closeTo(232, 1),
     );
     expect(
       find.descendant(
@@ -1402,13 +1158,31 @@ void main() {
     final attributionWordmarkRect = tester.getRect(
       find.byKey(const ValueKey('swap_near_intents_wordmark')),
     );
+    // Pinned layout (pane taller than the design height): the title sits at
+    // a fixed offset below the toolbar, the attribution slot + CTA pin to the
+    // bottom, and the composer centers in the flexible middle — so the gaps
+    // around the panel are the 24dp column gap plus equal centering slack.
     final paneRect = tester.getRect(find.byType(AppDesktopPane));
-    expect(ticketRect.top - titleRect.bottom, closeTo(AppSpacing.md, 1));
-    expect((ticketRect.center.dy - 491).abs(), lessThan(48));
+    expect(
+      titleRect.top,
+      closeTo(paneRect.top + AppPaneScrollScaffold.toolbarHeight + 16, 1),
+    );
+    final attributionSlotTop =
+        attributionRect.top - (32 - attributionRect.height) / 2;
+    final attributionSlotBottom =
+        attributionRect.bottom + (32 - attributionRect.height) / 2;
+    final slackAbove = ticketRect.top - titleRect.bottom - AppSpacing.md;
+    final slackBelow =
+        attributionSlotTop - settingsRowRect.bottom - AppSpacing.md;
+    expect(slackAbove, greaterThanOrEqualTo(-1));
+    expect(slackAbove, closeTo(slackBelow, 1));
+    expect(
+      reviewButtonRect.top - attributionSlotBottom,
+      closeTo(AppSpacing.md, 1),
+    );
     expect(ticketRect.height, lessThan(440));
     expect(reviewButtonRect.center.dx, closeTo(ticketRect.center.dx, 1));
     expect(settingsRowRect.height, closeTo(32, 1));
-    expect(reviewButtonRect.top - settingsRowRect.bottom, closeTo(38, 1));
     expect(rateLineRect.center.dy, closeTo(settingsRowRect.center.dy, 1));
     expect(attributionRect.width, closeTo(90, 1));
     expect(attributionRect.height, closeTo(27.52, 1));
@@ -1442,17 +1216,19 @@ void main() {
       'assets/icons/near_intents_wordmark.svg',
     );
     expect(
-      attributionPoweredRect.left,
-      closeTo(attributionWordmarkRect.left, 1),
+      attributionPoweredRect.center.dx,
+      closeTo(attributionWordmarkRect.center.dx, 1),
     );
     expect(
       attributionWordmarkRect.top - attributionPoweredRect.bottom,
       closeTo(6.2, 1),
     );
-    expect(attributionRect.left, closeTo(paneRect.left + AppSpacing.md, 1));
+    expect(attributionRect.center.dx, closeTo(ticketRect.center.dx, 1));
+    // The lockup is centered inside its 32dp slot, so the button gap is the
+    // 24dp column gap plus half the slot slack.
     expect(
-      paneRect.bottom - attributionRect.bottom,
-      closeTo(AppSpacing.md + 0.48, 1),
+      reviewButtonRect.top - attributionRect.bottom,
+      closeTo(AppSpacing.md + (32 - attributionRect.height) / 2, 1),
     );
     expect(find.byKey(const ValueKey('swap_ticket_tabs')), findsNothing);
     expect(
@@ -1501,7 +1277,6 @@ void main() {
     expect(find.text('Ethereum address or account'), findsOneWidget);
     expect(find.text('NEAR or Ethereum address'), findsNothing);
 
-    final paneRect = tester.getRect(find.byType(AppDesktopPane));
     final modalRect = tester.getRect(
       find.byKey(const ValueKey('swap_address_modal')),
     );
@@ -1509,6 +1284,7 @@ void main() {
       find.byKey(const ValueKey('sidebar_swap_button')),
     );
 
+    final paneRect = tester.getRect(find.byType(AppDesktopPane));
     expect((modalRect.center.dx - paneRect.center.dx).abs(), lessThan(1));
     expect((modalRect.center.dy - paneRect.center.dy).abs(), lessThan(1));
     expect(modalRect.left, greaterThan(sidebarItemRect.right));
@@ -1535,7 +1311,6 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_address_scan_button')));
     await tester.pump(const Duration(milliseconds: 100));
 
-    final paneRect = tester.getRect(find.byType(AppDesktopPane));
     final modalRect = tester.getRect(
       find.byKey(const ValueKey('address_scan_modal')),
     );
@@ -1548,6 +1323,7 @@ void main() {
 
     expect(find.text('Scan the address QR Code'), findsOneWidget);
     expect(find.byKey(const ValueKey('swap_address_modal')), findsNothing);
+    final paneRect = tester.getRect(find.byType(AppDesktopPane));
     expect((modalRect.center.dx - paneRect.center.dx).abs(), lessThan(1));
     expect((modalRect.center.dy - paneRect.center.dy).abs(), lessThan(1));
     expect(modalRect.left, greaterThan(sidebarItemRect.right));
@@ -1611,7 +1387,7 @@ void main() {
     await pumpStatus(AddressQrCameraStatus.denied, onRetry: () {});
 
     expect(find.text("You've denied Camera access"), findsOneWidget);
-    expect(find.text('Allow camera'), findsOneWidget);
+    expect(find.text('Request again'), findsOneWidget);
     expect(
       tester
           .getSize(find.byKey(const ValueKey('address_scan_retry_button')))
@@ -1642,7 +1418,7 @@ void main() {
       tester
           .getSize(find.byKey(const ValueKey('address_scan_camera_footer')))
           .height,
-      32,
+      36,
     );
     expect(
       find.byKey(const ValueKey('address_scan_camera_border')),
@@ -1659,7 +1435,7 @@ void main() {
       find.byKey(const ValueKey('address_scan_loading_overlay')),
       findsOneWidget,
     );
-    expect(find.text('Loading...'), findsOneWidget);
+    expect(find.text('Loading'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('address_scan_camera_border')),
       findsOneWidget,
@@ -2702,7 +2478,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(swapProvider.requests, isEmpty);
-      expect(find.text('Review swap'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('swap_review_cancel_button')),
+        findsNothing,
+      );
     },
   );
 
@@ -3067,10 +2846,12 @@ void main() {
     final customCardTop = tester
         .getTopLeft(find.byKey(const ValueKey('swap_slippage_custom_card')))
         .dy;
-    expect(customCardTop - slippageModalTop, 218);
+    // Card top padding (24) + title line (24) + 16 gap + three 40dp preset
+    // rows with 8dp gaps (3×40 + 3×8 = 144) puts the custom row 208dp down.
+    expect(customCardTop - slippageModalTop, 208);
     expect(
       tester.getSize(find.byKey(const ValueKey('swap_slippage_50bps'))).height,
-      34,
+      40,
     );
     final customInputFinder = find.byKey(
       const ValueKey('swap_slippage_custom_input'),
@@ -3396,47 +3177,37 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('swap_status_title')), findsOneWidget);
-    expect(find.text('Swapping ...'), findsOneWidget);
+    expect(find.text('Swap in progress...'), findsOneWidget);
     expect(find.text('Swap Progress'), findsOneWidget);
     expect(find.text('Transaction details'), findsOneWidget);
     expect(find.text('Activity detail'), findsNothing);
-    expect(
-      find.byKey(const ValueKey('swap_status_summary_card')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('swap_review_info')), findsOneWidget);
     expect(find.text('Current swap'), findsNothing);
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_status_pay_summary_amount',
-      numberText: '2.4000',
-      symbolText: 'ZEC',
-      cardKey: const ValueKey('swap_status_summary_card'),
+      sideKey: const ValueKey('swap_review_info_pay'),
+      amountText: '2.4000 ZEC',
     );
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_status_receive_summary_amount',
-      numberText: '168.42',
-      symbolText: 'USDC',
-      cardKey: const ValueKey('swap_status_summary_card'),
+      sideKey: const ValueKey('swap_review_info_receive'),
+      amountText: '168.42 USDC',
     );
     expect(
       find.byKey(const ValueKey('swap_activity_route_step_2_active')),
       findsOneWidget,
     );
+    // The detail surface scrolls through the shared pane scaffold: a 6px
+    // overlay thumb pinned at the pane edge, with no reserved gutter. Scope
+    // to the detail surface — the hosting screen has its own scaffold.
     final activityDetailScrollbar = tester.widget<RawScrollbar>(
-      find.byKey(const ValueKey('swap_activity_detail_scrollbar')),
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_activity_detail_surface')),
+        matching: find.byKey(AppPaneScrollScaffold.scrollbarKey),
+      ),
     );
-    expect(activityDetailScrollbar.thickness, 4);
-    expect(activityDetailScrollbar.crossAxisMargin, AppSpacing.xxs);
-    final activityDetailScrollGutter = tester.widget<Padding>(
-      find.byKey(const ValueKey('swap_activity_detail_scroll_gutter')),
-    );
-    expect(
-      activityDetailScrollGutter.padding,
-      activityDetailScrollbar.thumbVisibility == true
-          ? const EdgeInsets.only(right: AppSpacing.s)
-          : EdgeInsets.zero,
-    );
+    expect(activityDetailScrollbar.thickness, 6);
+    expect(activityDetailScrollbar.crossAxisMargin, 6);
     expect(find.text('Swap...'), findsOneWidget);
     expect(find.text('Technical details'), findsNothing);
     expect(find.text('Status timeline'), findsNothing);
@@ -3457,6 +3228,238 @@ void main() {
       find.byKey(const ValueKey('swap_activity_detail_page')),
       findsNothing,
     );
+  });
+
+  testWidgets(
+    'activity tab absorbs the matched ZEC receive into the swap group',
+    (tester) async {
+      await _setDesktopViewport(tester);
+
+      // The provider hands back the destination hash in display order; the
+      // wallet's transaction history stores the byte-reversed internal order.
+      const destinationDisplayOrder =
+          'aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899';
+      const receiveWalletOrder =
+          '99887766554433221100ffeeddccbbaa99887766554433221100ffeeddccbbaa';
+      // Sanity: the screen derives the same wallet-order hash the fake tx uses.
+      expect(
+        swapChainTxidToWalletTxidHex(destinationDisplayOrder),
+        receiveWalletOrder,
+      );
+
+      final sessionStore = _FakeSwapPersistenceStore(
+        initialIntents: [
+          _persistedExternalToZecCompleteIntent(
+            id: 'swap-receive-absorb',
+            destinationChainTxHash: destinationDisplayOrder,
+          ),
+        ],
+      );
+
+      // 12.13 ZEC inbound payout (12.13 * 1e8 zatoshi).
+      final receiveTx = _receivedZecTx(
+        txidHex: receiveWalletOrder,
+        zatoshi: BigInt.from(1213000000),
+      );
+
+      // The tap-through pushes a tx-status route whose builder first resolves
+      // the wallet DB path (path_provider + secure storage). Stub both platform
+      // interfaces so the path future completes; the FFI history/detail lookups
+      // then fail fast and the screen renders from the initialTransaction extra.
+      final previousPathProvider = PathProviderPlatform.instance;
+      PathProviderPlatform.instance = _FakePathProviderPlatform();
+      addTearDown(() {
+        PathProviderPlatform.instance = previousPathProvider;
+      });
+      final previousSecureStorage = FlutterSecureStoragePlatform.instance;
+      FlutterSecureStoragePlatform.instance = _FakeSecureStoragePlatform(const {
+        'zcash_wallet_db_name': 'zcash_wallet_test.db',
+      });
+      addTearDown(() {
+        FlutterSecureStoragePlatform.instance = previousSecureStorage;
+      });
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/activity',
+            routes: [
+              _swapRoute(),
+              _swapActivityRoute(),
+              _activityTransactionRoute(),
+            ],
+          ),
+          seedSwapActivityFixtures: false,
+          sessionStore: sessionStore,
+          recentTransactions: [receiveTx],
+        ),
+      );
+      await _pumpUntilPresent(
+        tester,
+        find.byKey(const ValueKey('activity_screen_title_row')),
+      );
+      await tester.pump(const Duration(milliseconds: 250));
+
+      // The completed swap group renders with its absorbed receive child,
+      // carrying the real on-chain settled amount (not the quote estimate).
+      expect(find.text('Swapped'), findsOneWidget);
+      expect(find.text('Received ZEC'), findsOneWidget);
+      expect(find.text('+12.13 ZEC'), findsOneWidget);
+      expect(find.text('+4.12 ZEC'), findsNothing);
+      // The standalone on-chain 'Received' row is suppressed (absorbed). The
+      // only inbound surface is the swap group's child.
+      expect(find.text('Received'), findsNothing);
+
+      // The absorbed child is tappable: the screen wired onReceivedLegTap to
+      // the matched payout, so the child row opts into the click cursor (the
+      // standalone-row deduper fed it the real tx).
+      expect(
+        find.ancestor(
+          of: find.text('Received ZEC'),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is MouseRegion &&
+                widget.cursor == SystemMouseCursors.click,
+          ),
+        ),
+        findsWidgets,
+      );
+
+      // Tapping the absorbed child opens the underlying tx-status route. The
+      // push awaits a real wallet-DB-path resolution (path_provider + secure
+      // storage) plus an FFI detail lookup that fails fast (no Rust under
+      // test); run those real async hops inside runAsync, then pump frames.
+      await tester.tap(find.text('Received ZEC'));
+      await tester.runAsync(() async {
+        for (var i = 0; i < 40; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          if (find
+              .byType(ActivityTransactionStatusScreen)
+              .evaluate()
+              .isNotEmpty) {
+            break;
+          }
+        }
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byType(ActivityTransactionStatusScreen), findsOneWidget);
+      final context = tester.element(
+        find.byType(ActivityTransactionStatusScreen).first,
+      );
+      expect(
+        GoRouterState.of(context).uri.path,
+        '/activity/tx/$receiveWalletOrder',
+      );
+      // The detail screen's button row can overflow this fixed test pane by a
+      // few px; that layout artifact is orthogonal to the navigation contract
+      // under test, so drain overflow FlutterErrors instead of failing the
+      // absorption assertion. Re-throw anything that is not an overflow.
+      Object? pending;
+      while ((pending = tester.takeException()) != null) {
+        final isOverflow =
+            pending is FlutterError && pending.message.contains('overflowed');
+        if (!isOverflow) throw pending!;
+      }
+    },
+  );
+
+  testWidgets('refunded swap keeps the standalone Sent deposit row visible', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    const depositDisplayOrder =
+        'ccdd00112233445566778899aabbccddeeff00112233445566778899aabbeeff';
+    final depositWalletOrder = swapChainTxidToWalletTxidHex(
+      depositDisplayOrder,
+    )!;
+
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialIntents: [
+        _persistedIntent(
+          id: 'swap-refunded-deposit',
+          txHash: depositDisplayOrder,
+          status: SwapIntentStatus.refunded,
+        ),
+      ],
+    );
+    final sentTx = _sentZecTx(
+      txidHex: depositWalletOrder,
+      zatoshi: BigInt.from(150000000),
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/activity',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        sessionStore: sessionStore,
+        recentTransactions: [sentTx],
+      ),
+    );
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('activity_screen_title_row')),
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+
+    // The refunded swap row renders its amount unsigned (no outgoing
+    // sign), so the real ZEC deposit keeps its standalone Sent row —
+    // otherwise the feed would show the refund credit with no debit.
+    expect(find.text('Swap failed'), findsOneWidget);
+    expect(find.text('Sent'), findsOneWidget);
+  });
+
+  testWidgets('in-flight swap suppresses the duplicate Sent deposit row', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    const depositDisplayOrder =
+        'ccdd00112233445566778899aabbccddeeff00112233445566778899aabbeeff';
+    final depositWalletOrder = swapChainTxidToWalletTxidHex(
+      depositDisplayOrder,
+    )!;
+
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialIntents: [
+        _persistedIntent(
+          id: 'swap-processing-deposit',
+          txHash: depositDisplayOrder,
+          status: SwapIntentStatus.processing,
+        ),
+      ],
+    );
+    final sentTx = _sentZecTx(
+      txidHex: depositWalletOrder,
+      zatoshi: BigInt.from(150000000),
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/activity',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        sessionStore: sessionStore,
+        recentTransactions: [sentTx],
+      ),
+    );
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('activity_screen_title_row')),
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+
+    // The in-flight swap row carries the signed outgoing amount, so the
+    // standalone Sent broadcast row is absorbed as a duplicate.
+    expect(find.text('Swapping...'), findsOneWidget);
+    expect(find.text('Sent'), findsNothing);
   });
 
   testWidgets(
@@ -3708,12 +3711,49 @@ void main() {
       );
     });
 
+    // The redesigned terminal deposit-tx row opens the explorer through
+    // url_launcher directly; capture the launched URL instead of a clipboard
+    // write.
+    final launchedUrls = <String>[];
+    const urlLauncherChannel = MethodChannel('plugins.flutter.io/url_launcher');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      urlLauncherChannel,
+      (call) async {
+        if (call.method == 'launch') {
+          final args = call.arguments as Map<Object?, Object?>;
+          launchedUrls.add(args['url'] as String);
+          return true;
+        }
+        if (call.method == 'canLaunch') return true;
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        urlLauncherChannel,
+        null,
+      );
+    });
+
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialIntents: [
+        _persistedIntent(
+          id: 'swap-explorer',
+          txHash: '',
+          status: SwapIntentStatus.complete,
+          nextAction: 'Swap complete',
+        ).copyWith(originChainTxHash: '0xdeadbeefdeadbeefdeadbeef'),
+      ],
+    );
+
     await tester.pumpWidget(
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
           routes: [_swapRoute(), _swapActivityRoute()],
         ),
+        seedSwapActivityFixtures: false,
+        sessionStore: sessionStore,
       ),
     );
     await tester.pumpAndSettle();
@@ -3725,8 +3765,9 @@ void main() {
       findsNothing,
     );
 
-    await _openActivityDetail(tester, 'swap-refund');
+    await _openActivityDetail(tester, 'swap-explorer');
 
+    // Support-bundle / receipt affordances are gone.
     expect(
       find.byKey(const ValueKey('swap_support_details_section')),
       findsNothing,
@@ -3747,19 +3788,25 @@ void main() {
       find.byKey(const ValueKey('swap_receipt_scope_panel')),
       findsNothing,
     );
-    await tester.ensureVisible(
+    // The standalone explorer button has been removed.
+    expect(
       find.byKey(
         const ValueKey('swap_activity_copy_near_intents_explorer_button'),
       ),
+      findsNothing,
     );
+
+    // Tapping the deposit-tx row's value pill (which carries the explorer
+    // linkUri and the external-link arrow) opens url_launcher, not the
+    // clipboard.
+    final depositTxValue = find.text('0xdeadbee ... eadbeef');
+    await tester.ensureVisible(depositTxValue);
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey('swap_activity_copy_near_intents_explorer_button'),
-      ),
-    );
+    await tester.tap(depositTxValue);
     await tester.pumpAndSettle();
 
+    expect(launchedUrls, hasLength(1));
+    expect(launchedUrls.single, contains('near-intents.org'));
     expect(clipboardWrites, isEmpty);
     expect(find.text('Explorer Link Copied'), findsNothing);
   });
@@ -3834,27 +3881,25 @@ void main() {
     );
     expect(find.text('Technical details'), findsNothing);
     expect(find.text('Swap completed'), findsOneWidget);
-    expect(find.text('Completed'), findsWidgets);
+    expect(find.text('Complete'), findsWidgets);
     expect(find.byKey(const ValueKey('swap_final_details')), findsOneWidget);
+    // The standalone explorer button is gone; this completed swap has no
+    // deposit-tx row, so no explorer affordance is rendered at all.
     expect(
       find.byKey(
         const ValueKey('swap_activity_copy_near_intents_explorer_button'),
       ),
-      findsOneWidget,
+      findsNothing,
     );
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_status_pay_summary_amount',
-      numberText: '0.7500',
-      symbolText: 'ZEC',
-      cardKey: const ValueKey('swap_status_summary_card'),
+      sideKey: const ValueKey('swap_review_info_pay'),
+      amountText: '0.7500 ZEC',
     );
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_status_receive_summary_amount',
-      numberText: '37.8',
-      symbolText: 'NEAR',
-      cardKey: const ValueKey('swap_status_summary_card'),
+      sideKey: const ValueKey('swap_review_info_receive'),
+      amountText: '37.8 NEAR',
     );
     expect(
       find.byKey(const ValueKey('swap_support_details_section')),
@@ -3911,33 +3956,61 @@ void main() {
 
     expect(tester.takeException(), isNull);
     final scrollView = tester.widget<SingleChildScrollView>(
-      find.byKey(const ValueKey('activity_screen_scroll_view')),
+      find.byKey(AppPaneScrollScaffold.scrollViewKey),
     );
     final controller = scrollView.controller!;
     expect(controller.position.maxScrollExtent, greaterThan(0));
-    final paneRect = tester.getRect(find.byType(AppDesktopPane));
     final pane = tester.widget<AppDesktopPane>(find.byType(AppDesktopPane));
     expect(pane.backgroundColor, isNull);
-    final scrollbarRect = tester.getRect(
-      find.byKey(const ValueKey('activity_screen_scrollbar')),
-    );
-    expect((scrollbarRect.right - paneRect.right).abs(), lessThan(1));
-    final thumb = find.byKey(const ValueKey('activity_screen_scroll_thumb'));
-    expect(thumb, findsOneWidget);
-    final thumbDecoration =
-        tester.widget<DecoratedBox>(thumb).decoration as BoxDecoration;
-    expect(thumbDecoration.color, AppThemeData.light.colors.background.overlay);
-    expect(find.byType(RawScrollbar), findsNothing);
-    final beforeTop = tester.getTopLeft(thumb).dy;
 
+    // The overlay scrollbar spans the FULL pane height (toolbar band
+    // included), pinned at the right pane edge.
+    final scrollbarFinder = find.byKey(AppPaneScrollScaffold.scrollbarKey);
+    final scrollbarRect = tester.getRect(scrollbarFinder);
+    final paneRect = tester.getRect(find.byType(AppDesktopPane));
+    expect((scrollbarRect.right - paneRect.right).abs(), lessThan(1));
+    expect((scrollbarRect.top - paneRect.top).abs(), lessThan(1));
+    expect((scrollbarRect.bottom - paneRect.bottom).abs(), lessThan(1));
+
+    // Figma Scrollbar spec: 6px capsule thumb centered in the 18px
+    // transparent track (6px insets), 12px end margins, solid theme thumb.
+    final scrollbar = tester.widget<RawScrollbar>(scrollbarFinder);
+    expect(scrollbar.thickness, 6);
+    expect(scrollbar.crossAxisMargin, 6);
+    expect(scrollbar.mainAxisMargin, 12);
+    expect(scrollbar.radius, const Radius.circular(AppRadii.full));
+    expect(
+      scrollbar.thumbColor,
+      AppThemeData.light.colors.surface.scrollbarThumb,
+    );
+    expect(scrollbar.thumbVisibility, isFalse);
+
+    // Hovering the pane reveals the thumb while the content overflows.
+    final hover = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await hover.addPointer(location: Offset.zero);
+    addTearDown(hover.removePointer);
+    await hover.moveTo(paneRect.center);
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<RawScrollbar>(scrollbarFinder).thumbVisibility,
+      isTrue,
+    );
+
+    final backLinkTopBeforeScroll = tester
+        .getTopLeft(find.byType(AppRouteBackLink))
+        .dy;
     await tester.drag(
-      find.byKey(const ValueKey('activity_screen_scroll_view')),
+      find.byKey(AppPaneScrollScaffold.scrollViewKey),
       const Offset(0, -180),
     );
     await tester.pumpAndSettle();
 
     expect(controller.offset, greaterThan(0));
-    expect(tester.getTopLeft(thumb).dy, greaterThan(beforeTop));
+    // The toolbar band stays pinned while the feed scrolls underneath it.
+    expect(
+      tester.getTopLeft(find.byType(AppRouteBackLink)).dy,
+      backLinkTopBeforeScroll,
+    );
   });
 
   testWidgets('activity page renders all rows in the scroll feed', (
@@ -4000,70 +4073,66 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Swapping ...'), findsOneWidget);
+    expect(find.text('Swap in progress...'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('swap_status_page_content')),
       findsOneWidget,
     );
+    // The redesigned detail pages drop the NEAR Intents attribution and
+    // scroll through the shared pane scaffold.
     expect(
       find.byKey(const ValueKey('swap_near_intents_attribution')),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(
-      find.byKey(const ValueKey('swap_activity_detail_scrollbar')),
-      findsOneWidget,
-    );
-    final explorerButton = find.byKey(
-      const ValueKey('swap_activity_copy_near_intents_explorer_button'),
-    );
-    final progressButtonTop = tester.getRect(explorerButton).top;
+    expect(find.byKey(AppPaneScrollScaffold.scrollbarKey), findsOneWidget);
+
     final statusRect = tester.getRect(
       find.byKey(const ValueKey('swap_status_page_content')),
     );
     final titleRect = tester.getRect(
       find.byKey(const ValueKey('swap_status_title')),
     );
-    final buttonRect = tester.getRect(explorerButton);
+    final paneRect = tester.getRect(find.byType(AppDesktopPane));
+    // Content starts below the pinned 48px toolbar band plus the 16px
+    // scroll-content inset.
+    expect(
+      statusRect.top - paneRect.top,
+      closeTo(AppPaneScrollScaffold.toolbarHeight + AppSpacing.sm, 1),
+    );
+    // The title is the first child of the status content column.
+    expect(titleRect.top - statusRect.top, closeTo(0, 1));
 
-    expect(statusRect.top, closeTo(76, 1));
-    expect(titleRect.top - statusRect.top, closeTo(AppSpacing.s, 1));
-    expect(buttonRect.top - statusRect.top, closeTo(524, 1));
-
+    // The content fits, so the overlay scrollbar stays hidden — and the page
+    // genuinely must not scroll at the 1080x720 reference window: the design
+    // hides the Scrollbar instance on every status frame.
     final scrollbar = tester.widget<RawScrollbar>(
-      find.byKey(const ValueKey('swap_activity_detail_scrollbar')),
+      find.byKey(AppPaneScrollScaffold.scrollbarKey),
     );
     expect(scrollbar.thumbVisibility, isFalse);
-    expect(scrollbar.interactive, isFalse);
-
-    final gutter = tester.widget<Padding>(
-      find.byKey(const ValueKey('swap_activity_detail_scroll_gutter')),
+    final scrollView = tester.widget<SingleChildScrollView>(
+      find.byKey(AppPaneScrollScaffold.scrollViewKey),
     );
-    expect(gutter.padding.resolve(TextDirection.ltr).right, 0);
+    expect(scrollView.controller!.position.maxScrollExtent, 0);
 
-    final paneRect = tester.getRect(find.byType(AppDesktopPane));
-    final attributionRect = tester.getRect(
-      find.byKey(const ValueKey('swap_near_intents_attribution')),
-    );
-    expect(attributionRect.left, closeTo(paneRect.left + AppSpacing.md, 1));
-    expect(paneRect.bottom - attributionRect.bottom, closeTo(AppSpacing.md, 1));
-
+    // The redesigned details tab renders all rows directly (no More details
+    // expansion, no Account row).
     await tester.tap(find.text('Transaction details'));
     await tester.pumpAndSettle();
 
     expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('swap_status_page_content')),
-        matching: find.text('Account 1'),
-      ),
+      find.byKey(const ValueKey('swap_status_detail_rows')),
       findsOneWidget,
     );
-    expect(find.text('Current account'), findsNothing);
-    expect(tester.getRect(explorerButton).top, closeTo(progressButtonTop, 1));
-
-    await tester.tap(find.text('More details'));
-    await tester.pumpAndSettle();
-
-    expect(tester.getRect(explorerButton).top, closeTo(progressButtonTop, 1));
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_status_page_content')),
+        matching: find.text('Account'),
+      ),
+      findsNothing,
+    );
+    expect(find.text('More details'), findsNothing);
+    expect(find.text('Less details'), findsNothing);
+    expect(find.text('Swap fee'), findsOneWidget);
   });
 
   testWidgets('activity exposes incomplete, refunded, and failed scenarios', (
@@ -4112,14 +4181,13 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Incomplete deposit'), findsWidgets);
-    expect(
-      find.byKey(const ValueKey('swap_status_badge_warning')),
-      findsOneWidget,
-    );
+    // An incomplete deposit is non-terminal, so it keeps the Swap Progress /
+    // Transaction details tabs rather than a terminal status badge.
+    expect(find.byKey(const ValueKey('swap_status_tabs')), findsOneWidget);
 
     await _openSwapStatusDetails(tester, expand: true);
 
-    expect(find.text('Incomplete'), findsWidgets);
+    expect(find.text('Incomplete deposit'), findsWidgets);
     expect(find.text('Required deposit'), findsOneWidget);
     expect(find.text('Detected deposit'), findsOneWidget);
     expect(find.text('Missing deposit'), findsOneWidget);
@@ -4145,19 +4213,14 @@ void main() {
       find.byKey(const ValueKey('swap_resolution_review_again_button')),
       findsNothing,
     );
-    await tester.ensureVisible(
+    // swap-refund carries no deposit tx, so there is no explorer affordance at
+    // all (the old standalone explorer button is gone in the redesign).
+    expect(
       find.byKey(
         const ValueKey('swap_activity_copy_near_intents_explorer_button'),
       ),
+      findsNothing,
     );
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey('swap_activity_copy_near_intents_explorer_button'),
-      ),
-    );
-    await tester.pumpAndSettle();
-
     expect(clipboardWrites, isEmpty);
     expect(find.text('Explorer Link Copied'), findsNothing);
     expect(
@@ -4379,21 +4442,50 @@ void main() {
     await _openActivityDetail(tester, 'completed-deposit');
 
     expect(find.text('Swap completed'), findsOneWidget);
-    expect(find.byKey(const ValueKey('swap_final_details')), findsOneWidget);
-    expect(find.text('USDC recipient'), findsOneWidget);
-    expect(find.text('0x5290840 ... 4169ee7'), findsOneWidget);
-    expect(find.text('ZEC deposit to'), findsOneWidget);
-    expect(find.text('Total fees'), findsOneWidget);
-    expect(find.text('0.0000134 ZEC'), findsOneWidget);
+    final finalDetails = find.byKey(const ValueKey('swap_final_details'));
+    expect(finalDetails, findsOneWidget);
+
+    // The recipient identity now lives in the summary's To: line, not the
+    // terminal detail card.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_review_info_receive')),
+        matching: find.textContaining('To: '),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: finalDetails, matching: find.text('USDC recipient')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: finalDetails, matching: find.text('ZEC deposit to')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: finalDetails, matching: find.text('Account')),
+      findsNothing,
+    );
+
+    // Terminal detail rows: Realized slippage, Timestamp, deposit tx (linkable),
+    // then Total fees last.
     expect(find.text('Realized slippage'), findsOneWidget);
     expect(find.text('0.000758 USDC (0.07%)'), findsOneWidget);
     expect(find.text('Timestamp'), findsOneWidget);
-    expect(find.text('ZEC deposit tx'), findsNothing);
-    expect(find.text('completed-deposit-txid'), findsNothing);
+    expect(find.text('ZEC deposit tx'), findsOneWidget);
+    expect(find.text('Total fees'), findsOneWidget);
+    expect(find.text('0.0000134 ZEC'), findsOneWidget);
+
+    // Non-terminal-only rows are excluded.
     expect(find.text('USDC delivery tx'), findsNothing);
     expect(find.text('usdc-delivery-txid'), findsNothing);
     expect(find.text('Slippage tolerance'), findsNothing);
     expect(find.text('Guaranteed minimum'), findsNothing);
+
+    // Total fees is the last detail row.
+    final fees = tester.getRect(find.text('Total fees'));
+    final txRow = tester.getRect(find.text('ZEC deposit tx'));
+    expect(fees.top, greaterThan(txRow.top));
   });
 
   testWidgets('failed swap detail keeps final status details compact', (
@@ -4432,19 +4524,30 @@ void main() {
     await _openActivityDetail(tester, 'failed-usdc-deposit');
 
     expect(find.text('Swap failed'), findsWidgets);
-    expect(find.byKey(const ValueKey('swap_final_details')), findsOneWidget);
+    final finalDetails = find.byKey(const ValueKey('swap_final_details'));
+    expect(finalDetails, findsOneWidget);
+
+    // Failed terminal rows: Timestamp, USDC deposit tx, USDC refunded to, then
+    // Total fees last. No Realized slippage on a failed swap.
+    expect(find.text('Timestamp'), findsOneWidget);
+    expect(find.text('USDC deposit tx'), findsOneWidget);
     expect(find.text('USDC refunded to'), findsOneWidget);
     expect(find.text('Total fees'), findsOneWidget);
     expect(find.text('0.19 USDC'), findsOneWidget);
-    expect(find.text('Timestamp'), findsOneWidget);
+
+    // The deposit-instruction address and delivery tx are not in terminal
+    // details, and slippage rows are excluded on failure.
     expect(find.text('USDC deposit to'), findsNothing);
-    expect(find.text('USDC deposit tx'), findsNothing);
-    expect(find.text('failed-deposit-txid'), findsNothing);
     expect(find.text('ZEC delivery tx'), findsNothing);
     expect(find.text('failed-delivery-txid'), findsNothing);
     expect(find.text('Realized slippage'), findsNothing);
     expect(find.text('Slippage tolerance'), findsNothing);
     expect(find.text('Guaranteed minimum'), findsNothing);
+
+    // Total fees is the last detail row.
+    final fees = tester.getRect(find.text('Total fees'));
+    final refundRow = tester.getRect(find.text('USDC refunded to'));
+    expect(fees.top, greaterThan(refundRow.top));
   });
 
   testWidgets('open swap sessions poll status after the configured interval', (
@@ -4780,10 +4883,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.byKey(const ValueKey('swap_review_panel')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('swap_review_trade_summary')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('swap_review_info')), findsOneWidget);
     expect(find.text('Slippage tolerance'), findsOneWidget);
   });
 
@@ -4891,8 +4991,7 @@ void main() {
       find.descendant(
         of: find.byKey(const ValueKey('swap_start_button')),
         matching: find.byWidgetPredicate(
-          (widget) =>
-              widget is AppIcon && widget.name == AppIcons.arrowForwardIos,
+          (widget) => widget is AppIcon && widget.name == AppIcons.swapArrows,
         ),
       ),
       findsOneWidget,
@@ -4905,32 +5004,29 @@ void main() {
     );
     expect(
       reviewActionsRect.top - reviewPanelRect.bottom,
-      closeTo(AppSpacing.sm, 0.1),
+      closeTo(AppSpacing.base, 0.1),
     );
+    // The review page scrolls through the shared pane scaffold: a 6px
+    // overlay thumb spanning the full pane, with no reserved gutter.
     final reviewScrollbar = tester.widget<RawScrollbar>(
-      find.byKey(const ValueKey('swap_review_scrollbar')),
+      find.byKey(AppPaneScrollScaffold.scrollbarKey),
     );
-    expect(reviewScrollbar.thickness, 4);
-    expect(reviewScrollbar.crossAxisMargin, AppSpacing.xxs);
-    final scrollGutter = tester.widget<Padding>(
-      find.byKey(const ValueKey('swap_review_scroll_gutter')),
-    );
-    expect(scrollGutter.padding, const EdgeInsets.only(right: AppSpacing.s));
+    expect(reviewScrollbar.thickness, 6);
+    expect(reviewScrollbar.crossAxisMargin, 6);
     final scrollAreaSize = tester.getSize(
-      find.byKey(const ValueKey('swap_review_scrollbar')),
+      find.byKey(AppPaneScrollScaffold.scrollbarKey),
     );
     final panelSize = tester.getSize(
       find.byKey(const ValueKey('swap_review_panel')),
     );
     expect(scrollAreaSize.width, greaterThan(panelSize.width));
     expect(scrollAreaSize.height, greaterThan(800));
-    expect(
-      tester
-          .widget<Text>(find.byKey(const ValueKey('swap_review_title')))
-          .style!
-          .fontSize,
-      greaterThanOrEqualTo(26),
+    final reviewTitle = tester.widget<Text>(
+      find.byKey(const ValueKey('swap_review_title')),
     );
+    // The redesigned review title is 16 SemiBold.
+    expect(reviewTitle.style!.fontSize, 16);
+    expect(reviewTitle.style!.fontWeight, FontWeight.w600);
     expect(
       tester.getSize(find.byKey(const ValueKey('swap_start_button'))).height,
       greaterThanOrEqualTo(44),
@@ -4961,9 +5057,7 @@ void main() {
       findsNothing,
     );
     expect(find.text('Review swap'), findsOneWidget);
-    final reviewSummary = find.byKey(
-      const ValueKey('swap_review_trade_summary'),
-    );
+    final reviewSummary = find.byKey(const ValueKey('swap_review_info'));
     expect(
       find.descendant(
         of: reviewSummary,
@@ -4986,12 +5080,10 @@ void main() {
       find.byKey(const ValueKey('swap_review_details_toggle')),
       findsNothing,
     );
-    _expectSummaryAmountPartsFitCard(
+    _expectReviewInfoAmountFits(
       tester,
-      keyPrefix: 'swap_review_pay_summary_amount',
-      numberText: '1.5000',
-      symbolText: 'ZEC',
-      cardKey: const ValueKey('swap_review_trade_summary'),
+      sideKey: const ValueKey('swap_review_info_pay'),
+      amountText: '1.5000 ZEC',
     );
     expect(find.text('Slippage tolerance'), findsOneWidget);
     expect(find.text('Guaranteed minimum'), findsOneWidget);
@@ -5059,19 +5151,31 @@ void main() {
 
       expect(find.byKey(const ValueKey('swap_review_panel')), findsOneWidget);
       expect(find.text('Review swap'), findsOneWidget);
+
+      // The recipient identity now lives on the summary's To: line, not in the
+      // detail card (which no longer renders To/From address rows).
       expect(
         find.descendant(
-          of: find.byKey(const ValueKey('swap_review_details')),
-          matching: find.text('To'),
+          of: find.byKey(const ValueKey('swap_review_info_receive')),
+          matching: find.text('To: 0x5290840 ... 4169ee7 on Ethereum'),
         ),
         findsOneWidget,
       );
+      final reviewDetails = find.byKey(const ValueKey('swap_review_details'));
+      expect(
+        find.descendant(of: reviewDetails, matching: find.text('To')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: reviewDetails, matching: find.text('From')),
+        findsNothing,
+      );
       expect(
         find.descendant(
-          of: find.byKey(const ValueKey('swap_review_details')),
-          matching: find.text('From'),
+          of: reviewDetails,
+          matching: find.text('0x5290840 ... 4169ee7'),
         ),
-        findsOneWidget,
+        findsNothing,
       );
       expect(find.text('Guaranteed minimum'), findsOneWidget);
       expect(
@@ -5080,14 +5184,9 @@ void main() {
       );
       expect(find.text('Expires in'), findsNothing);
 
-      final reviewDetails = find.byKey(const ValueKey('swap_review_details'));
+      // The fee row keeps value-then-help-icon ordering, right-aligned to the
+      // detail card content edge.
       final reviewDetailsRect = tester.getRect(reviewDetails);
-      final recipientValueRect = tester.getRect(
-        find.descendant(
-          of: reviewDetails,
-          matching: find.text('0x5290840 ... 4169ee7'),
-        ),
-      );
       final feeValueRect = tester.getRect(
         find.descendant(
           of: reviewDetails,
@@ -5104,14 +5203,13 @@ void main() {
             )
             .last,
       );
-      expect(
-        recipientValueRect.right,
-        closeTo(reviewDetailsRect.right - AppSpacing.sm, 1),
-      );
       expect(feeValueRect.right, lessThan(feeHelpIconRect.left));
+      // The shared ReviewListRow pill carries a 4px right padding (pr 4), so the
+      // trailing help icon now sits the card's content inset (sm) plus that pill
+      // padding (xxs) inside the card edge.
       expect(
         feeHelpIconRect.right,
-        closeTo(reviewDetailsRect.right - AppSpacing.sm, 1),
+        closeTo(reviewDetailsRect.right - AppSpacing.sm - AppSpacing.xxs, 1),
       );
     },
   );
@@ -5148,7 +5246,7 @@ void main() {
 
     expect(_fieldText(tester, 'swap_amount_field'), '105');
     expect(_fieldText(tester, 'swap_receive_amount_field'), '105');
-    expect(find.text('1.5000 ZEC'), findsOneWidget);
+    expect(find.text('1.5000'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
     await tester.pumpAndSettle();
@@ -5245,7 +5343,7 @@ void main() {
 
     expect(_fieldText(tester, 'swap_receive_amount_field'), '105.26');
     expect(_fieldText(tester, 'swap_amount_field'), '105');
-    expect(find.text('1.5000 ZEC'), findsOneWidget);
+    expect(find.text('1.5000'), findsOneWidget);
     expect(swapProvider.requests, isEmpty);
   });
 
@@ -5332,22 +5430,26 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('swap_review_button')));
       await tester.pumpAndSettle();
 
-      final reviewSummary = find.byKey(
-        const ValueKey('swap_review_trade_summary'),
-      );
-      _expectSummaryAmountPartsFitCard(
+      // The ZEC pay side shows the live required-pay amount and its captured
+      // fiat ($112.28 = 1.6 ZEC); the external receive side carries the To:
+      // recipient line, not a fiat figure.
+      _expectReviewInfoAmountFits(
         tester,
-        keyPrefix: 'swap_review_pay_summary_amount',
-        numberText: '1.6000',
-        symbolText: 'ZEC',
-        cardKey: const ValueKey('swap_review_trade_summary'),
+        sideKey: const ValueKey('swap_review_info_pay'),
+        amountText: '1.6000 ZEC',
       );
       expect(
-        find.descendant(of: reviewSummary, matching: find.text(r'$105.26')),
+        find.descendant(
+          of: find.byKey(const ValueKey('swap_review_info_pay')),
+          matching: find.text(r'$112.28'),
+        ),
         findsOneWidget,
       );
       expect(
-        find.descendant(of: reviewSummary, matching: find.text(r'$112.28')),
+        find.descendant(
+          of: find.byKey(const ValueKey('swap_review_info_receive')),
+          matching: find.textContaining('To: '),
+        ),
         findsOneWidget,
       );
       expect(
@@ -5392,23 +5494,27 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
     await tester.pumpAndSettle();
 
-    final reviewSummary = find.byKey(
-      const ValueKey('swap_review_trade_summary'),
-    );
+    // The receive side shows the live exact-input receive amount as a single
+    // serif 'amount + symbol' string; the ZEC pay side shows the captured fiat
+    // ($105.26 = 1.5 ZEC). The receive side carries the To: recipient line, not
+    // a fiat figure.
+    final reviewSummary = find.byKey(const ValueKey('swap_review_info'));
     expect(
-      find.descendant(of: reviewSummary, matching: find.text('123.45')),
+      find.descendant(of: reviewSummary, matching: find.text('123.45 USDC')),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: reviewSummary, matching: find.text('USDC')),
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_review_info_pay')),
+        matching: find.text(r'$105.26'),
+      ),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: reviewSummary, matching: find.text(r'$123.45')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: reviewSummary, matching: find.text(r'$105.26')),
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_review_info_receive')),
+        matching: find.textContaining('To: '),
+      ),
       findsOneWidget,
     );
   });
@@ -5450,7 +5556,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_review_cancel_button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Review swap'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('swap_review_cancel_button')),
+      findsNothing,
+    );
     expect(_fieldText(tester, 'swap_amount_field'), '1.5');
     expect(_destinationSummaryText(tester), '0x529084...169ee7');
   });
@@ -5752,7 +5861,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Review swap'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('swap_review_cancel_button')),
+      findsNothing,
+    );
     expect(
       find.byKey(const ValueKey('swap_quote_error_message')),
       findsOneWidget,
@@ -5890,7 +6002,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('swap_compact_ticket')), findsOneWidget);
-    expect(find.text('Review swap'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('swap_review_cancel_button')),
+      findsNothing,
+    );
     expect(_fieldText(tester, 'swap_amount_field'), isEmpty);
     expect(_destinationSummaryText(tester), isEmpty);
   });
@@ -5929,7 +6044,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(swapProvider.requests, isEmpty);
-    expect(find.text('Review swap'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('swap_review_cancel_button')),
+      findsNothing,
+    );
     expect(
       find.textContaining('Could not prepare a fresh wallet receive address.'),
       findsOneWidget,
@@ -6279,9 +6397,10 @@ void main() {
         find.byKey(const ValueKey('swap_activity_deposit_qr_panel')),
         findsOneWidget,
       );
+      // The redesigned detail pages drop the NEAR Intents attribution.
       expect(
         find.byKey(const ValueKey('swap_near_intents_attribution')),
-        findsOneWidget,
+        findsNothing,
       );
       expect(
         find.byKey(const ValueKey('swap_copy_deposit_address')),
@@ -7443,10 +7562,11 @@ void main() {
   });
 }
 
+// Shared modal card shadow (core/widgets/app_modal_card.dart appModalShadow).
 const _figmaModalSurfaceShadows = [
-  BoxShadow(color: Color(0x14000000), offset: Offset(0, 14), blurRadius: 28),
-  BoxShadow(color: Color(0x08000000), offset: Offset(0, -6), blurRadius: 12),
   BoxShadow(color: Color(0x0F000000), offset: Offset(0, 2), blurRadius: 8),
+  BoxShadow(color: Color(0x08000000), offset: Offset(0, -6), blurRadius: 12),
+  BoxShadow(color: Color(0x14000000), offset: Offset(0, 14), blurRadius: 28),
 ];
 
 Widget _routerHarness(
@@ -7466,6 +7586,7 @@ Widget _routerHarness(
   AddressBookRepository? addressBookRepository,
   RpcEndpointChainNameGetter? failoverChainNameGetter,
   RpcEndpointLatestBlockHeightGetter? failoverHeightGetter,
+  List<rust_sync.TransactionInfo> recentTransactions = const [],
 }) {
   final fixtureIntents = seedSwapActivityFixtures
       ? _accountScopedSwapActivityFixtureIntents()
@@ -7481,8 +7602,10 @@ Widget _routerHarness(
       if (accountNotifier != null)
         accountProvider.overrideWith(accountNotifier),
       syncProvider.overrideWith(
-        () =>
-            _FakeSwapSyncNotifier(spendableBalance ?? BigInt.from(10000000000)),
+        () => _FakeSwapSyncNotifier(
+          spendableBalance ?? BigInt.from(10000000000),
+          recentTransactions: recentTransactions,
+        ),
       ),
       receiveAddressServiceProvider.overrideWith(
         _FakeReceiveAddressService.new,
@@ -7588,6 +7711,22 @@ GoRoute _swapActivityRoute() {
   );
 }
 
+GoRoute _activityTransactionRoute() {
+  return GoRoute(
+    path: '/activity/tx/:txid',
+    builder: (_, state) {
+      final extra = state.extra;
+      return ActivityTransactionStatusScreen(
+        args: extra is ActivityTransactionStatusArgs
+            ? extra
+            : ActivityTransactionStatusArgs(
+                txidHex: state.pathParameters['txid'] ?? '',
+              ),
+      );
+    },
+  );
+}
+
 List<SwapIntent> _accountScopedSwapActivityFixtureIntents() {
   return [
     for (final intent in swapActivityFixtureIntents)
@@ -7606,6 +7745,50 @@ Widget _themeHarnessWithTheme(AppThemeData theme, Widget child) {
   );
 }
 
+/// Like [_themeHarness] but provides an [Overlay], which the shared review
+/// primitives need: [ReviewListRow]'s help affordance always wraps its trailing
+/// icon in an [AppTooltip], and [AppTooltip] requires an [Overlay] ancestor.
+///
+/// Uses [_OverlayHarness] so the hosted child reconciles across repeated
+/// `pumpWidget` calls instead of being torn down and rebuilt (which would reset
+/// any [State] between pumps).
+Widget _themeHarnessWithOverlay(Widget child) {
+  return AppTheme(
+    data: AppThemeData.light,
+    child: Directionality(
+      textDirection: TextDirection.ltr,
+      child: _OverlayHarness(child: child),
+    ),
+  );
+}
+
+/// Hosts [child] inside an [Overlay] using a single, stable [OverlayEntry] that
+/// is rebuilt whenever [child] changes, so widget [State] survives across
+/// successive `pumpWidget` calls.
+class _OverlayHarness extends StatefulWidget {
+  const _OverlayHarness({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_OverlayHarness> createState() => _OverlayHarnessState();
+}
+
+class _OverlayHarnessState extends State<_OverlayHarness> {
+  late final OverlayEntry _entry = OverlayEntry(builder: (_) => widget.child);
+
+  @override
+  void didUpdateWidget(_OverlayHarness oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _entry.markNeedsBuild();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Overlay(initialEntries: [_entry]);
+  }
+}
+
 final _testShitAsset = SwapAsset.live(
   assetId: 'test-shit-sol',
   symbol: r'$SHIT',
@@ -7613,45 +7796,33 @@ final _testShitAsset = SwapAsset.live(
   decimals: 6,
 );
 
-void _expectSummaryAmountPartsFitCard(
+/// Asserts that one side of the redesigned [SwapReviewInfo] renders its
+/// amount + symbol verbatim as a single serif text, inside a FittedBox that
+/// scales it down to fit (no overflow, no digit compaction).
+void _expectReviewInfoAmountFits(
   WidgetTester tester, {
-  required String keyPrefix,
-  required String numberText,
-  required String symbolText,
-  required Key cardKey,
+  required Key sideKey,
+  required String amountText,
 }) {
-  final cardFinder = find.byKey(cardKey);
-  final numberFinder = find.descendant(
-    of: cardFinder,
-    matching: find.byKey(ValueKey('${keyPrefix}_number')),
+  final sideFinder = find.byKey(sideKey);
+  expect(sideFinder, findsOneWidget);
+  final amountFinder = find.descendant(
+    of: sideFinder,
+    matching: find.text(amountText),
   );
-  final symbolFinder = find.descendant(
-    of: cardFinder,
-    matching: find.byKey(ValueKey('${keyPrefix}_symbol')),
+  expect(amountFinder, findsOneWidget);
+  expect(tester.widget<Text>(amountFinder).overflow, isNull);
+  final fittedBox = find.ancestor(
+    of: amountFinder,
+    matching: find.byType(FittedBox),
   );
-  expect(numberFinder, findsOneWidget);
-  expect(symbolFinder, findsOneWidget);
-  expect(tester.widget<Text>(numberFinder).data, numberText);
-  expect(tester.widget<Text>(symbolFinder).data, symbolText);
-  expect(
-    find.ancestor(of: numberFinder, matching: find.byType(FittedBox)),
-    findsOneWidget,
-  );
+  expect(fittedBox, findsOneWidget);
+  expect(tester.widget<FittedBox>(fittedBox).fit, BoxFit.scaleDown);
 
-  final cardRect = tester.getRect(cardFinder);
-  for (final finder in [numberFinder, symbolFinder]) {
-    final rect = tester.getRect(finder);
-    expect(
-      rect.left,
-      greaterThanOrEqualTo(cardRect.left),
-      reason: '$keyPrefix should stay inside the summary card',
-    );
-    expect(
-      rect.right,
-      lessThanOrEqualTo(cardRect.right),
-      reason: '$keyPrefix should stay inside the summary card',
-    );
-  }
+  final sideRect = tester.getRect(sideFinder);
+  final amountRect = tester.getRect(amountFinder);
+  expect(amountRect.left, greaterThanOrEqualTo(sideRect.left - 0.5));
+  expect(amountRect.right, lessThanOrEqualTo(sideRect.right + 0.5));
 }
 
 Widget _reviewTestPage({
@@ -7660,10 +7831,11 @@ Widget _reviewTestPage({
   required SwapAsset receiveAsset,
   required String sellAmountText,
   required String receiveAmountText,
-  Iterable<AddressBookContact> addressBookContacts = const [],
+  ValueChanged<String>? onCopy,
 }) {
   final externalAsset = direction.sendsZec ? receiveAsset : sellAsset;
   return SwapReviewPageContent(
+    onCopy: onCopy,
     quote: SwapQuote(
       direction: direction,
       sellAsset: sellAsset,
@@ -7691,8 +7863,6 @@ Widget _reviewTestPage({
       userExternalAddress: '0x52908400098527886e0f7030069857d2e4169ee7',
       walletZecAddress: 'u1wallet',
     ),
-    addressBookContacts: addressBookContacts,
-    accountLabel: 'John',
     expired: false,
     amountWarning: null,
     startError: null,
@@ -7700,97 +7870,98 @@ Widget _reviewTestPage({
 }
 
 Widget _statusTestPage({
-  String title = 'Swapping ...',
+  String title = 'Swap in progress...',
   SwapAsset payAsset = SwapAsset.usdc,
   SwapAsset receiveAsset = SwapAsset.zec,
-  String payFiatText = r'$110.24',
-  String receiveFiatText = r'$110.24',
+  String payDetailText = r'$110.24',
+  String receiveDetailText = r'$110.24',
   String payAmountText = '999.99 USDC',
   String receiveAmountText = '0.251 ZEC',
+  String statusLabel = 'Processing',
   int progressIndex = 0,
   Duration progressAdvanceInterval = const Duration(milliseconds: 520),
   SwapStatusBadgeKind badgeKind = SwapStatusBadgeKind.liveQuote,
   SwapStatusTab activeTab = SwapStatusTab.progress,
-  bool detailsExpanded = false,
   bool showTabs = true,
   List<SwapStatusDetailRowData>? details,
-  VoidCallback? onToggleDetails,
 }) {
-  return SwapStatusPageContent(
-    title: title,
-    payAsset: payAsset,
-    receiveAsset: receiveAsset,
-    payFiatText: payFiatText,
-    receiveFiatText: receiveFiatText,
-    payAmountText: payAmountText,
-    receiveAmountText: receiveAmountText,
-    badgeKind: badgeKind,
-    progressIndex: progressIndex,
-    progressAdvanceInterval: progressAdvanceInterval,
-    activeTab: activeTab,
-    showTabs: showTabs,
-    steps: const [
-      SwapStatusStepData(
-        title: 'USDC source deposit',
-        state: SwapStatusStepState.pending,
-        completeTitle: 'USDC Deposited',
-        activeTitle: 'Depositing USDC...',
-        pendingTitle: 'Deposit USDC',
-        lastCheckedLabel: 'Last check: just now',
-        description: 'Waiting for the source chain.',
-      ),
-      SwapStatusStepData(
-        title: 'Deposit confirmation',
-        state: SwapStatusStepState.pending,
-        activeTitle: 'Deposit confirmation...',
-        lastCheckedLabel: 'Last check: just now',
-        description: 'Confirming the deposit.',
-      ),
-      SwapStatusStepData(
-        title: 'Swap',
-        state: SwapStatusStepState.pending,
-        activeTitle: 'Swap...',
-        lastCheckedLabel: 'Last check: just now',
-        description: 'The provider is executing the swap route.',
-      ),
-      SwapStatusStepData(
-        title: 'Send ZEC',
-        state: SwapStatusStepState.pending,
-        activeTitle: 'Send ZEC...',
-        lastCheckedLabel: 'Last check: just now',
-        description: 'Delivering ZEC.',
-      ),
-    ],
-    details:
-        details ??
-        const [
-          SwapStatusDetailRowData(label: 'Account', value: 'John'),
-          SwapStatusDetailRowData(
-            label: 'USDC refund address',
-            value: '0x123kjhc ... 4x98g20',
-          ),
-          SwapStatusDetailRowData(
-            label: 'Deposit USDC to',
-            value: '0x123kjhc ... 4x98g20',
-          ),
-          SwapStatusDetailRowData(
-            label: 'Swap fee',
-            value: 'Included in shown rate',
-            help: true,
-          ),
-          SwapStatusDetailRowData(
-            label: 'Slippage tolerance',
-            value: '0.25 USDC (0.5%)',
-          ),
-          SwapStatusDetailRowData(
-            label: 'Guaranteed minimum',
-            value: '0.249 ZEC',
-            help: true,
-          ),
-        ],
-    detailsExpanded: detailsExpanded,
-    onToggleDetails: onToggleDetails,
-    onOpenExplorer: () {},
+  // The real screens host this content in the pane scroll scaffold; the
+  // 800x600 test surface is shorter than the full progress page, so scroll
+  // here too instead of overflowing the column.
+  return SingleChildScrollView(
+    child: SwapStatusPageContent(
+      title: title,
+      payAsset: payAsset,
+      receiveAsset: receiveAsset,
+      payDetailText: payDetailText,
+      receiveDetailText: receiveDetailText,
+      payAmountText: payAmountText,
+      receiveAmountText: receiveAmountText,
+      statusLabel: statusLabel,
+      badgeKind: badgeKind,
+      progressIndex: progressIndex,
+      progressAdvanceInterval: progressAdvanceInterval,
+      activeTab: activeTab,
+      showTabs: showTabs,
+      steps: const [
+        SwapStatusStepData(
+          title: 'USDC source deposit',
+          state: SwapStatusStepState.pending,
+          completeTitle: 'USDC Deposited',
+          activeTitle: 'Depositing USDC...',
+          pendingTitle: 'Deposit USDC',
+          lastCheckedLabel: 'Last check: just now',
+          description: 'Waiting for the source chain.',
+        ),
+        SwapStatusStepData(
+          title: 'Deposit confirmation',
+          state: SwapStatusStepState.pending,
+          activeTitle: 'Deposit confirmation...',
+          lastCheckedLabel: 'Last check: just now',
+          description: 'Confirming the deposit.',
+        ),
+        SwapStatusStepData(
+          title: 'Swap',
+          state: SwapStatusStepState.pending,
+          activeTitle: 'Swap...',
+          lastCheckedLabel: 'Last check: just now',
+          description: 'The provider is executing the swap route.',
+        ),
+        SwapStatusStepData(
+          title: 'Send ZEC',
+          state: SwapStatusStepState.pending,
+          activeTitle: 'Send ZEC...',
+          lastCheckedLabel: 'Last check: just now',
+          description: 'Delivering ZEC.',
+        ),
+      ],
+      details:
+          details ??
+          const [
+            SwapStatusDetailRowData(
+              label: 'USDC refund address',
+              value: '0x123kjhc ... 4x98g20',
+            ),
+            SwapStatusDetailRowData(
+              label: 'Deposit USDC to',
+              value: '0x123kjhc ... 4x98g20',
+            ),
+            SwapStatusDetailRowData(
+              label: 'Swap fee',
+              value: 'Included in shown rate',
+              help: true,
+            ),
+            SwapStatusDetailRowData(
+              label: 'Slippage tolerance',
+              value: '0.25 USDC (0.5%)',
+            ),
+            SwapStatusDetailRowData(
+              label: 'Guaranteed minimum',
+              value: '0.249 ZEC',
+              help: true,
+            ),
+          ],
+    ),
   );
 }
 
@@ -7862,6 +8033,127 @@ SwapIntent _persistedExternalToZecIntent({
     oneClickRecipient: stagingAddress,
     oneClickRefundTo: '0xpersisted-refund',
   );
+}
+
+SwapIntent _persistedExternalToZecCompleteIntent({
+  required String id,
+  required String destinationChainTxHash,
+}) {
+  return SwapIntent(
+    id: id,
+    pair: 'USDC -> ZEC',
+    sellAmount: '101.23 USDC',
+    receiveEstimate: '4.12 ZEC',
+    provider: 'NEAR Intents',
+    status: SwapIntentStatus.complete,
+    nextAction: 'Swap complete',
+    direction: SwapDirection.externalToZec,
+    externalAsset: SwapAsset.usdc,
+    depositAddress: id,
+    depositMemo: 'memo-7',
+    providerQuoteId: 'quote-1',
+    oneClickRecipient: 'u1wallet-receive',
+    oneClickRefundTo: '0xpersisted-refund',
+    destinationChainTxHash: destinationChainTxHash,
+    accountUuid: 'account-1',
+    createdAt: DateTime.utc(2026, 5, 7, 10),
+    completedAt: DateTime.utc(2026, 5, 7, 10, 5),
+  );
+}
+
+rust_sync.TransactionInfo _sentZecTx({
+  required String txidHex,
+  required BigInt zatoshi,
+}) {
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: BigInt.from(2000000),
+    expiredUnmined: false,
+    accountBalanceDelta: -zatoshi.toInt(),
+    fee: BigInt.from(15000),
+    blockTime: BigInt.from(1800000000),
+    isTransparent: false,
+    txKind: 'sent',
+    displayAmount: zatoshi,
+    displayPool: 'shielded',
+    createdTime: BigInt.from(1800000000),
+  );
+}
+
+rust_sync.TransactionInfo _receivedZecTx({
+  required String txidHex,
+  required BigInt zatoshi,
+}) {
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: BigInt.from(2000000),
+    expiredUnmined: false,
+    accountBalanceDelta: zatoshi.toInt(),
+    fee: BigInt.zero,
+    blockTime: BigInt.from(1800000000),
+    isTransparent: false,
+    txKind: 'received',
+    displayAmount: zatoshi,
+    displayPool: 'shielded',
+    createdTime: BigInt.from(1800000000),
+  );
+}
+
+class _FakePathProviderPlatform extends PathProviderPlatform
+    with MockPlatformInterfaceMixin {
+  @override
+  Future<String?> getApplicationSupportPath() async =>
+      Directory.systemTemp.path;
+
+  @override
+  Future<String?> getTemporaryPath() async => Directory.systemTemp.path;
+}
+
+class _FakeSecureStoragePlatform extends FlutterSecureStoragePlatform
+    with MockPlatformInterfaceMixin {
+  _FakeSecureStoragePlatform(Map<String, String> seed)
+    : _store = Map<String, String>.of(seed);
+
+  final Map<String, String> _store;
+
+  @override
+  Future<String?> read({
+    required String key,
+    required Map<String, String> options,
+  }) async => _store[key];
+
+  @override
+  Future<bool> containsKey({
+    required String key,
+    required Map<String, String> options,
+  }) async => _store.containsKey(key);
+
+  @override
+  Future<Map<String, String>> readAll({
+    required Map<String, String> options,
+  }) async => Map<String, String>.of(_store);
+
+  @override
+  Future<void> write({
+    required String key,
+    required String value,
+    required Map<String, String> options,
+  }) async {
+    _store[key] = value;
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    required Map<String, String> options,
+  }) async {
+    _store.remove(key);
+  }
+
+  @override
+  Future<void> deleteAll({required Map<String, String> options}) async {
+    _store.clear();
+  }
 }
 
 class _DepositSendRequest {

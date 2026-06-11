@@ -99,52 +99,43 @@ class _VotingProposalDetailScreenState
             // Accepted helper shares may still be tracked after submission, but
             // that background work should not keep this screen resumable.
             if (hasBlockingRecovery && hasConfirmedVotingEligibility) {
-              return Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: _PendingVoteContent(
-                  roundTitle: round.title.isEmpty
-                      ? 'Token holder voting'
-                      : round.title,
-                  snapshotHeight: round.snapshotHeight,
-                  description: _roundDescription(round.rawJson),
-                  forumUri: forumUri,
-                  roundId: roundId,
-                  accountUuid: accountUuid,
-                ),
+              return _PendingVoteContent(
+                roundTitle: round.title.isEmpty
+                    ? 'Token holder voting'
+                    : round.title,
+                snapshotHeight: round.snapshotHeight,
+                description: _roundDescription(round.rawJson),
+                forumUri: forumUri,
+                roundId: roundId,
+                accountUuid: accountUuid,
               );
             }
             if (completedVote != null &&
                 (hasConfirmedVotingEligibility || isVotingEligibilityPending)) {
-              return Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: _VotedPollContent(
-                  roundTitle: round.title.isEmpty
-                      ? 'Token holder voting'
-                      : round.title,
-                  snapshotHeight: round.snapshotHeight,
-                  description: _roundDescription(round.rawJson),
-                  forumUri: forumUri,
-                  votingPowerZatoshi: state.eligibleWeightZatoshi,
-                  votingPowerPreparing: _votingPowerPreparationInFlight,
-                  votedAt: completedVote.votedAt,
-                  proposals: proposals,
-                  choicesByProposalId: completedVote.choicesByProposalId,
-                ),
+              return _VotedPollContent(
+                roundTitle: round.title.isEmpty
+                    ? 'Token holder voting'
+                    : round.title,
+                snapshotHeight: round.snapshotHeight,
+                description: _roundDescription(round.rawJson),
+                forumUri: forumUri,
+                votingPowerZatoshi: state.eligibleWeightZatoshi,
+                votingPowerPreparing: _votingPowerPreparationInFlight,
+                votedAt: completedVote.votedAt,
+                proposals: proposals,
+                choicesByProposalId: completedVote.choicesByProposalId,
               );
             }
             if (pendingVote != null && hasConfirmedVotingEligibility) {
-              return Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: _PendingVoteContent(
-                  roundTitle: round.title.isEmpty
-                      ? 'Token holder voting'
-                      : round.title,
-                  snapshotHeight: round.snapshotHeight,
-                  description: _roundDescription(round.rawJson),
-                  forumUri: forumUri,
-                  roundId: roundId,
-                  accountUuid: accountUuid,
-                ),
+              return _PendingVoteContent(
+                roundTitle: round.title.isEmpty
+                    ? 'Token holder voting'
+                    : round.title,
+                snapshotHeight: round.snapshotHeight,
+                description: _roundDescription(round.rawJson),
+                forumUri: forumUri,
+                roundId: roundId,
+                accountUuid: accountUuid,
               );
             }
             if (votingPollListStatus(round.status) !=
@@ -434,8 +425,10 @@ class _ActivePollContentState extends State<_ActivePollContent> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Padding(
+          // Design: back chevron sits 16px into the pane on every top toolbar
+          // (4px pane padding + AppBackLink's 12px internal inset).
           padding: EdgeInsets.fromLTRB(
-            AppSpacing.md,
+            AppSpacing.xxs,
             AppSpacing.md,
             AppSpacing.md,
             0,
@@ -855,8 +848,10 @@ class _VotedPollContent extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Padding(
+          // Design: back chevron sits 16px into the pane on every top toolbar
+          // (4px pane padding + AppBackLink's 12px internal inset).
           padding: EdgeInsets.fromLTRB(
-            AppSpacing.md,
+            AppSpacing.xxs,
             AppSpacing.md,
             AppSpacing.md,
             0,
@@ -943,86 +938,117 @@ class _PendingVoteContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Align(alignment: Alignment.centerLeft, child: AppRouteBackLink()),
-        const Spacer(),
-        Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: Container(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              decoration: BoxDecoration(
-                color: colors.background.base,
-                borderRadius: BorderRadius.circular(AppRadii.large),
-                border: Border.all(color: colors.border.subtle),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          roundTitle,
-                          style: AppTypography.headlineMedium.copyWith(
-                            color: colors.text.accent,
+        const Padding(
+          // Design: back chevron sits 16px into the pane on every top toolbar
+          // (4px pane padding + AppBackLink's 12px internal inset).
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.xxs,
+            AppSpacing.md,
+            AppSpacing.md,
+            0,
+          ),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: AppRouteBackLink(),
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              0,
+              AppSpacing.md,
+              AppSpacing.md,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Spacer(),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: Container(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      decoration: BoxDecoration(
+                        color: colors.background.base,
+                        borderRadius: BorderRadius.circular(AppRadii.large),
+                        border: Border.all(color: colors.border.subtle),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  roundTitle,
+                                  style: AppTypography.headlineMedium.copyWith(
+                                    color: colors.text.accent,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Text(
+                                '#${formatGroupedInteger(snapshotHeight)}',
+                                style: AppTypography.headlineSmall.copyWith(
+                                  color: colors.text.accent,
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
+                          if (description.isNotEmpty) ...[
+                            const SizedBox(height: AppSpacing.xs),
+                            VotingExpandableText(
+                              text: description,
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: colors.text.secondary,
+                              ),
+                            ),
+                          ],
+                          if (forumUri != null) ...[
+                            const SizedBox(height: AppSpacing.xs),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: VotingForumLinkButton(uri: forumUri!),
+                            ),
+                          ],
+                          const SizedBox(height: AppSpacing.md),
+                          Text(
+                            'Vote in progress',
+                            style: AppTypography.headlineSmall.copyWith(
+                              color: colors.text.accent,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xxs),
+                          Text(
+                            'You have an unfinished vote for this round. '
+                            'Resume to complete the submission.',
+                            style: AppTypography.bodyMedium.copyWith(
+                              color: colors.text.secondary,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          AppButton(
+                            onPressed: () => context.go(
+                              votingStatusRoute(
+                                roundId,
+                                accountUuid: accountUuid,
+                              ),
+                            ),
+                            variant: AppButtonVariant.primary,
+                            child: const Text('Continue voting'),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Text(
-                        '#${formatGroupedInteger(snapshotHeight)}',
-                        style: AppTypography.headlineSmall.copyWith(
-                          color: colors.text.accent,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (description.isNotEmpty) ...[
-                    const SizedBox(height: AppSpacing.xs),
-                    VotingExpandableText(
-                      text: description,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ],
-                  if (forumUri != null) ...[
-                    const SizedBox(height: AppSpacing.xs),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: VotingForumLinkButton(uri: forumUri!),
-                    ),
-                  ],
-                  const SizedBox(height: AppSpacing.md),
-                  Text(
-                    'Vote in progress',
-                    style: AppTypography.headlineSmall.copyWith(
-                      color: colors.text.accent,
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.xxs),
-                  Text(
-                    'You have an unfinished vote for this round. '
-                    'Resume to complete the submission.',
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.secondary,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  AppButton(
-                    onPressed: () => context.go(
-                      votingStatusRoute(roundId, accountUuid: accountUuid),
-                    ),
-                    variant: AppButtonVariant.primary,
-                    child: const Text('Continue voting'),
-                  ),
-                ],
-              ),
+                ),
+                const Spacer(),
+              ],
             ),
           ),
         ),
-        const Spacer(),
       ],
     );
   }

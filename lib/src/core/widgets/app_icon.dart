@@ -30,6 +30,7 @@ abstract final class AppIcons {
   static const calendar = 'calendar';
   static const camera = 'camera';
   static const cameraDenied = 'camera_denied';
+  static const cancel = 'cancel';
   static const check = 'check';
   static const checkCircle = 'check_circle';
   static const chevronBackward = 'chevron_backward';
@@ -49,6 +50,8 @@ abstract final class AppIcons {
   static const eyeClosed = 'eye_closed';
   static const expand = 'expand';
   static const filter = 'filter';
+  static const github = 'github';
+  static const globe = 'globe';
   static const help = 'help';
   static const history = 'history';
   static const home = 'home';
@@ -82,6 +85,7 @@ abstract final class AppIcons {
   static const trash = 'trash';
   static const user = 'user';
   static const users = 'users';
+  static const uturnUp = 'uturn_up';
   static const vizor = 'vizor';
   static const wallet = 'wallet';
   static const warning = 'warning';

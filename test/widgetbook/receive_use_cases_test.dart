@@ -27,8 +27,11 @@ void main() {
     );
     final backLabelStyle = tester.widget<Text>(backLabelFinder).style;
     expect(backLabelStyle?.fontSize, 14);
-    expect(backLabelStyle?.height, 18 / 14);
-    expect(backLabelStyle?.color, AppThemeData.light.colors.text.accent);
+    expect(backLabelStyle?.height, 16 / 14);
+    expect(
+      backLabelStyle?.color,
+      AppThemeData.light.colors.button.ghost.label,
+    );
     expect(
       tester.getTopLeft(backLabelFinder).dx,
       moreOrLessEquals(316, epsilon: 0.1),

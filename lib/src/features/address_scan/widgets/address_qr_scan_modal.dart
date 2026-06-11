@@ -9,6 +9,7 @@ import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_modal_card.dart' show appModalShadow;
 import '../../../services/camera_permission_settings.dart';
 import '../../../services/qr_scanner.dart';
 import '../domain/address_scan_payload.dart';
@@ -294,23 +295,34 @@ class AddressQrScanModalContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    // Inline AppModalCard shell: the QR modal needs a fixed 440 height and a
+    // size-asserted key, which the shared AppModalCard wrapper cannot expose,
+    // so the card decoration (base surface, large radius, appModalShadow) is
+    // applied directly here to stay in sync with the shared modal pattern.
     return Container(
       key: const ValueKey('address_scan_modal'),
       width: width,
       height: height,
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.sm,
+      ),
       decoration: BoxDecoration(
-        color: colors.background.ground,
+        color: colors.background.base,
         borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: appModalShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const _AddressQrScanTitle(),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.sm),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
               child: Column(
                 children: [
                   Expanded(
@@ -341,13 +353,13 @@ class AddressQrScanModalContent extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.sm),
           AppButton(
             key: const ValueKey('address_scan_cancel_button'),
             onPressed: onCancel,
             variant: AppButtonVariant.ghost,
             size: AppButtonSize.large,
-            minWidth: 280,
+            minWidth: 196,
             child: const Text('Cancel'),
           ),
         ],
@@ -364,25 +376,13 @@ class _AddressQrScanTitle extends StatelessWidget {
     final colors = context.colors;
     return Row(
       children: [
-        Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: colors.background.neutralSubtleOpacity,
-            borderRadius: BorderRadius.circular(AppRadii.full),
-          ),
-          child: Center(
-            child: AppIcon(AppIcons.qr, size: 16, color: colors.icon.regular),
-          ),
-        ),
-        const SizedBox(width: 8),
         Expanded(
           child: Text(
             'Scan the address QR Code',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyLarge.copyWith(
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
               color: colors.text.accent,
             ),
           ),
@@ -431,7 +431,7 @@ class _AddressQrCameraModal extends StatelessWidget {
             unavailableDescription: unavailableDescription,
           ),
           if (_showsCameraFooter) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.sm),
             SizedBox(
               key: const ValueKey('address_scan_camera_footer_slot'),
               height: AddressQrScanModalContent.cameraFooterHeight,
@@ -478,11 +478,7 @@ class _AddressQrCameraViewport extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             DecoratedBox(
-              decoration: BoxDecoration(
-                color: showsCameraSurface
-                    ? colors.background.base
-                    : colors.background.ground,
-              ),
+              decoration: BoxDecoration(color: colors.background.base),
             ),
             ?cameraView,
             if (status == AddressQrCameraStatus.requesting)
@@ -503,8 +499,8 @@ class _AddressQrCameraViewport extends StatelessWidget {
                   variant: AppButtonVariant.secondary,
                   size: AppButtonSize.medium,
                   minWidth: 96,
-                  leading: const AppIcon(AppIcons.renew),
-                  child: const Text('Allow camera'),
+                  leading: const AppIcon(AppIcons.renew, size: 16),
+                  child: const Text('Request again'),
                 ),
               ),
             if (status == AddressQrCameraStatus.unavailable)
@@ -522,7 +518,7 @@ class _AddressQrCameraViewport extends StatelessWidget {
                         variant: AppButtonVariant.secondary,
                         size: AppButtonSize.medium,
                         minWidth: 96,
-                        leading: const AppIcon(AppIcons.renew),
+                        leading: const AppIcon(AppIcons.renew, size: 16),
                         child: const Text('Try again'),
                       ),
               ),
@@ -536,7 +532,7 @@ class _AddressQrCameraViewport extends StatelessWidget {
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(AppRadii.large),
                       border: Border.all(
-                        color: colors.border.subtleOpacity,
+                        color: colors.border.inverseOpacity,
                         width: 3,
                       ),
                     ),
@@ -574,12 +570,14 @@ class _AddressQrCameraMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    // Figma 'Modal Camera Utility': the message sits directly on the modal
+    // card surface — no filled box behind the permission/error states.
     return ColoredBox(
       key: const ValueKey('address_scan_camera_message'),
-      color: colors.background.ground,
+      color: colors.background.base,
       child: Center(
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(AppSpacing.s),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -598,7 +596,7 @@ class _AddressQrCameraMessage extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.md),
               Text(
                 title,
                 textAlign: TextAlign.center,
@@ -608,12 +606,15 @@ class _AddressQrCameraMessage extends StatelessWidget {
                   color: colors.text.accent,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: AppSpacing.xxs),
               _AddressQrCameraDescription(
                 description: description,
                 color: colors.text.secondary,
               ),
-              if (action != null) ...[const SizedBox(height: 24), action!],
+              if (action != null) ...[
+                const SizedBox(height: AppSpacing.md),
+                action!,
+              ],
             ],
           ),
         ),
@@ -666,27 +667,34 @@ class _AddressQrCameraDescription extends StatelessWidget {
 class _AddressQrLoadingOverlay extends StatelessWidget {
   const _AddressQrLoadingOverlay();
 
+  // Figma 'Camera Loading': a theme-invariant black 30% tint with white
+  // foreground — the overlay sits on live camera video, not on a themed
+  // surface, so it does not follow the light/dark tokens.
+  static const _scrimColor = Color(0x4D000000);
+  static const _foregroundColor = Color(0xFFFFFFFF);
+
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     return ClipRect(
       key: const ValueKey('address_scan_loading_overlay'),
       child: BackdropFilter(
         filter: ui.ImageFilter.blur(sigmaX: 37, sigmaY: 37),
         child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: colors.background.inverse.withValues(alpha: 0.3),
-          ),
+          decoration: const BoxDecoration(color: _scrimColor),
           child: Center(
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                AppIcon(AppIcons.loader, size: 20, color: colors.icon.inverse),
-                const SizedBox(width: 4),
+                const AppIcon(
+                  AppIcons.loader,
+                  size: 20,
+                  color: _foregroundColor,
+                ),
+                const SizedBox(width: AppSpacing.xxs),
                 Text(
-                  'Loading...',
+                  'Loading',
                   style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.inverse,
+                    color: _foregroundColor,
                   ),
                 ),
               ],
@@ -723,7 +731,7 @@ class _AddressQrCameraFooter extends StatelessWidget {
           onTap: enabled ? onTap : null,
           child: Container(
             key: const ValueKey('address_scan_camera_footer'),
-            height: 32,
+            height: 36,
             constraints: const BoxConstraints(minWidth: 96, maxWidth: 248),
             padding: const EdgeInsets.symmetric(horizontal: 8),
             alignment: Alignment.center,

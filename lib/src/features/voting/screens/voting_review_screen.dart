@@ -182,8 +182,11 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Padding(
+                  // Design: back chevron sits 16px into the pane on every
+                  // top toolbar (4px pane padding + AppBackLink's 12px
+                  // internal inset).
                   padding: EdgeInsets.fromLTRB(
-                    AppSpacing.md,
+                    AppSpacing.xxs,
                     AppSpacing.md,
                     AppSpacing.md,
                     0,
