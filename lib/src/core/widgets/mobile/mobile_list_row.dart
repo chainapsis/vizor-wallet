@@ -57,16 +57,19 @@ class MobileListRow extends StatelessWidget {
             leading!,
             const SizedBox(width: AppSpacing.s),
           ],
-          Expanded(
-            child: Text(
+          // With a value, the value column owns the flexible space and
+          // right-aligns against the chevron (an Expanded label next to
+          // a loose Flexible value strands the value's unused allocation
+          // at the row end, pulling short values off the right edge).
+          // Rows with a value keep static labels; the label only gets
+          // the truncating Expanded when it is the sole text.
+          if (value != null) ...[
+            Text(
               label,
-              overflow: TextOverflow.ellipsis,
               style: AppTypography.bodyMedium.copyWith(color: labelColor),
             ),
-          ),
-          if (value != null) ...[
             const SizedBox(width: AppSpacing.xs),
-            Flexible(
+            Expanded(
               child: Text(
                 value!,
                 overflow: TextOverflow.ellipsis,
@@ -74,7 +77,14 @@ class MobileListRow extends StatelessWidget {
                 style: AppTypography.bodyMedium.copyWith(color: valueColor),
               ),
             ),
-          ],
+          ] else
+            Expanded(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.bodyMedium.copyWith(color: labelColor),
+              ),
+            ),
           if (trailing != null) ...[
             const SizedBox(width: AppSpacing.xs),
             trailing!,

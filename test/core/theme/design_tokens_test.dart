@@ -161,6 +161,13 @@ void main() {
     expect(AppTypographyMobile.displayLarge.height, 40 / 40);
     expect(AppTypographyMobile.displayLarge.letterSpacing, -1.35);
 
+    // Young Serif defaults to old-style figures; the frames render all
+    // serif numbers (balance, send amount, numpad) with lining figures.
+    const lining = [FontFeature.liningFigures()];
+    expect(AppTypographyMobile.displayLarge.fontFeatures, lining);
+    expect(AppTypographyMobile.headlineLarge.fontFeatures, lining);
+    expect(AppTypographyMobile.headlineMedium.fontFeatures, lining);
+
     // Headline L / M keep desktop metrics but swap to Young Serif.
     expect(AppTypographyMobile.headlineLarge.fontFamily, 'Young Serif');
     expect(

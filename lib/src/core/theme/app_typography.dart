@@ -60,6 +60,12 @@ const _headlineM = TextStyle(
   letterSpacing: -0.28,
 );
 
+/// Young Serif's default numerals are old-style figures (6/8 ascend,
+/// 3/4/5/7/9 descend below the baseline); the mobile frames render every
+/// serif number — balance, send amount, numpad — with uniform lining
+/// figures, so the Young Serif tokens pin the font's `lnum` feature.
+const _youngSerifFigures = [FontFeature.liningFigures()];
+
 /// Figma `Headline L`, Mobile mode — Young Serif, 32 / 33 px.
 ///
 /// The mobile `Fonts/Display/Headline *` styles resolve to the Young
@@ -71,6 +77,7 @@ const _headlineLMobile = TextStyle(
   fontSize: 32,
   height: 33 / 32,
   letterSpacing: 0,
+  fontFeatures: _youngSerifFigures,
 );
 
 /// Figma `Headline M`, Mobile mode — Young Serif, 28 / 30 px, −0.28.
@@ -80,6 +87,7 @@ const _headlineMMobile = TextStyle(
   fontSize: 28,
   height: 30 / 28,
   letterSpacing: -0.28,
+  fontFeatures: _youngSerifFigures,
 );
 
 /// Figma `Code M` — Geist Mono Medium, 14 / 21 px.
@@ -206,6 +214,7 @@ abstract final class AppTypographyMobile {
     fontSize: 40,
     height: 40 / 40,
     letterSpacing: -1.35,
+    fontFeatures: _youngSerifFigures,
   );
 
   static const displayMedium = displayLarge;
