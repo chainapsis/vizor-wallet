@@ -506,14 +506,19 @@ class _AddressBookPane extends StatelessWidget {
           height: centerStates ? viewportHeight : null,
           child: Column(
             children: [
-              Text(
-                'Contacts',
-                textAlign: TextAlign.center,
-                style: AppTypography.headlineLarge.copyWith(
-                  color: colors.text.accent,
+              // The no-contacts state drops the page title entirely — its
+              // serif "No contacts yet" headline takes that role (Figma
+              // 4098:554201 shows only the back link above the empty block).
+              if (state.hasContacts) ...[
+                Text(
+                  'Contacts',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.headlineLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.md),
+              ],
               if (!state.hasContacts)
                 centeredState(
                   _AddressBookNoContacts(onAddContact: onAddContact),

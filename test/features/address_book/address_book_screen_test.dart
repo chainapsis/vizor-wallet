@@ -50,6 +50,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('No contacts yet'), findsOneWidget);
+    // The no-contacts state drops the page title; the serif empty headline
+    // takes that role.
+    expect(find.text('Contacts'), findsNothing);
 
     await tester.tap(
       find.byKey(const ValueKey('address_book_add_contact_button')),
@@ -73,6 +76,7 @@ void main() {
     expect(find.text('Alice'), findsOneWidget);
     expect(find.text('u1alice'), findsOneWidget);
     expect(find.text('No contacts yet'), findsNothing);
+    expect(find.text('Contacts'), findsOneWidget);
   });
 
   testWidgets('empty-state add button is a compact users-icon pill', (
