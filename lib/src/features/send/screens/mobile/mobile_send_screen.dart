@@ -231,6 +231,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       setState(() => _amountError = 'Not enough ZEC');
       return;
     }
+    // Block Continue until the fee estimate confirms the total fits —
+    // otherwise a quick Continue tap right after typing rides on the
+    // previous amount's validation result.
+    setState(() => _amountError = '');
 
     try {
       final dbPath = await widget.loadWalletDbPath();

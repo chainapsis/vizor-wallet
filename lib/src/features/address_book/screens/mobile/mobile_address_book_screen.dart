@@ -97,6 +97,7 @@ class MobileAddressBookScreen extends ConsumerWidget {
       body: AppToastHost(
         child: SafeArea(
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               MobileTopNav.back(
                 title: 'Address book',
@@ -342,12 +343,16 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
       widget.contact?.network ?? AddressBookNetwork.zcash;
   late String _profilePictureId =
       widget.contact?.profilePictureId ?? kDefaultProfilePictureId;
+  final _labelFocus = FocusNode();
+  final _addressFocus = FocusNode();
   String? _error;
 
   @override
   void dispose() {
     _labelController.dispose();
     _addressController.dispose();
+    _labelFocus.dispose();
+    _addressFocus.dispose();
     super.dispose();
   }
 

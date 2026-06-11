@@ -380,6 +380,51 @@ void main() {
       await shot('30e_endpoint_custom');
       await tapBack(tester);
 
+      // ── Settings: address book (empty → add → list) ────────────────
+      await tapWidget(
+        tester,
+        const ValueKey('mobile_settings_address_book_row'),
+      );
+      await pumpUntil(
+        tester,
+        () => tester.any(
+          find.byKey(const ValueKey('mobile_address_book_add_empty')),
+        ),
+        description: 'address book empty state',
+      );
+      await shot('30f_address_book_empty');
+      await tapAppButton(
+        tester,
+        const ValueKey('mobile_address_book_add_empty'),
+      );
+      await pumpUntil(
+        tester,
+        () => tester.any(
+          find.byKey(const ValueKey('mobile_address_book_save')),
+        ),
+        description: 'add contact sheet',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_address_book_label')),
+        'Tea house',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_address_book_address')),
+        // Regtest transparent prefix passes the format validator.
+        'tmEEzy3GZ8bQyaQXAbtnoVHBjDPSDfWPSkE',
+      );
+      await settle(tester, const Duration(milliseconds: 300));
+      await shot('30g_address_book_add');
+      await tapAppButton(tester, const ValueKey('mobile_address_book_save'));
+      await pumpUntil(
+        tester,
+        () => tester.any(find.text('Tea house')),
+        description: 'contact saved',
+      );
+      await settle(tester, const Duration(milliseconds: 300));
+      await shot('30h_address_book_list');
+      await tapBack(tester);
+
       // ── Add-account create onboarding (static screens) ────────────
       await openHomeTab(tester);
       await openAddAccountFlow(tester);

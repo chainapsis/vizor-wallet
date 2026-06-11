@@ -47,6 +47,10 @@ class _RustApiFake implements RustLibApi {
     required BigInt amountZatoshi,
     String? memo,
   }) async {
+    // Real fee estimation crosses the FFI boundary and takes real time;
+    // the timer keeps an in-flight validation window open so tests can
+    // assert Continue stays blocked until the estimate lands.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
     return BigInt.from(10000);
   }
 
@@ -239,6 +243,31 @@ void main() {
     await tester.pumpAndSettle();
     await _tapDigits(tester, '1.5');
     expect(find.text('Not enough ZEC'), findsNothing);
+    expect(find.text('Finish & Review'), findsOneWidget);
+  });
+
+  testWidgets('continue stays blocked while the fee check is pending', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    // Settle a valid amount first, then change it and tap Continue on
+    // the very next frame — while the fee re-validation is still in
+    // flight. The previous amount's "valid" result must not let the
+    // tap through.
+    await _tapDigits(tester, '1');
+    await tester.tap(find.bySemanticsLabel('Decimal point'));
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('Digit 5'));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pump();
+    expect(find.text('Review Send'), findsNothing);
+
+    // Once the re-validation settles, 1.5 ZEC is spendable again.
+    await tester.pumpAndSettle();
     expect(find.text('Finish & Review'), findsOneWidget);
   });
 
