@@ -58,9 +58,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('send_prefill_notice')), findsOneWidget);
-    expect(find.text('Imported request'), findsOneWidget);
-    expect(find.text('ZIP-321 / Invoice #42 / Thank you'), findsOneWidget);
+    // The imported-request banner was removed; the prefill applies silently.
+    expect(find.byKey(const ValueKey('send_prefill_notice')), findsNothing);
+    expect(find.text('Imported request'), findsNothing);
     expect(_fieldText(tester, 'send_address_field'), _shieldedAddress);
     expect(_fieldText(tester, 'send_amount_field'), '1.25');
     expect(find.text('Donation note'), findsOneWidget);
@@ -152,6 +152,47 @@ void main() {
     );
     expect(_fieldText(tester, 'send_address_field'), _shieldedAddress);
     expect(find.text('Alice'), findsOneWidget);
+  });
+
+  testWidgets('detects the contact name for prefilled and cleared addresses', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        addressBookRepository: _FakeAddressBookRepository([
+          _contact(
+            id: 'alice',
+            label: 'Alice',
+            network: AddressBookNetwork.zcash,
+            address: _shieldedAddress,
+          ),
+        ]),
+        prefill: const SendPrefillArgs(
+          id: 'address-book-alice',
+          source: 'address-book',
+          address: _shieldedAddress,
+          label: 'Alice',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The Send ZEC prefill path resolves the contact label on the contacts
+    // button without going through the picker.
+    expect(_fieldText(tester, 'send_address_field'), _shieldedAddress);
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('Contacts'), findsNothing);
+
+    // Clearing the address falls back to the plain picker affordance.
+    await tester.enterText(
+      find.byKey(const ValueKey('send_address_field')),
+      '',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Alice'), findsNothing);
+    expect(find.text('Contacts'), findsOneWidget);
   });
 
   testWidgets('contact picker shares scrollbar controller for long lists', (

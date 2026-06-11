@@ -28,6 +28,8 @@ import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/models/address_book_label_lookup.dart';
+import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../models/send_prefill_args.dart';
 import 'send_review_screen.dart';
@@ -168,7 +170,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool _isSending = false;
   bool _messageExpanded = false;
   bool _contactPickerOpen = false;
-  String? _selectedContactName;
   String? _error;
   String _addressType = '';
   String?
@@ -256,16 +257,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   void _selectContact(AddressBookContact contact) {
     final address = contact.address.trim();
-    final label = contact.label.trim();
     _addressController.value = TextEditingValue(
       text: address,
       selection: TextSelection.collapsed(offset: address.length),
     );
-    setState(() {
-      _contactPickerOpen = false;
-      _selectedContactName = label.isEmpty ? null : label;
-    });
-    _handleAddressChanged(clearSelectedContact: false);
+    setState(() => _contactPickerOpen = false);
+    _handleAddressChanged();
   }
 
   @override
@@ -322,13 +319,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     }
   }
 
-  void _handleAddressChanged({bool clearSelectedContact = true}) {
+  void _handleAddressChanged() {
     _addressSeq++;
     _maxDebounceTimer?.cancel();
     setState(() {
-      if (clearSelectedContact) {
-        _selectedContactName = null;
-      }
       _addressType = '';
       _error = null;
       if (_isMaxMode) {
@@ -787,6 +781,17 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _ => null,
     };
     final addressHasText = _addressController.text.trim().isNotEmpty;
+    // The contacts button doubles as the detected-contact display: any path
+    // that puts a known Zcash address in the field (picker, Send ZEC prefill,
+    // paste, typing) resolves to the contact's label automatically.
+    final addressBookContacts =
+        ref.watch(addressBookProvider).value?.contacts ??
+        const <AddressBookContact>[];
+    final contactLabel = addressBookLabelFor(
+      contacts: addressBookContacts,
+      network: AddressBookNetwork.zcash,
+      address: _addressController.text,
+    );
     final addressLeadingIcon = switch (_addressType) {
       'unified' || 'sapling' => AppIcons.shieldKeyhole,
       'transparent' => AppIcons.transparentBalance,
@@ -860,15 +865,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (widget.prefill != null) ...[
-                            _SendPrefillNotice(prefill: widget.prefill!),
-                            const SizedBox(height: AppSpacing.xs),
-                          ],
                           AppTextField(
                             key: const ValueKey('send_address_field'),
                             label: 'Send to',
                             rightSlot: _SendContactsLabelButton(
-                              label: _selectedContactName ?? 'Contacts',
+                              label: contactLabel ?? 'Contacts',
                               onTap: _openContactPicker,
                             ),
                             tone: addressTone,
@@ -891,7 +892,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                               _maxDebounceTimer?.cancel();
                               setState(() {
                                 _addressType = '';
-                                _selectedContactName = null;
                                 _error = null;
                                 if (_isMaxMode) {
                                   _validateSeq++;
@@ -1062,65 +1062,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         ),
       ),
     );
-  }
-}
-
-class _SendPrefillNotice extends StatelessWidget {
-  const _SendPrefillNotice({required this.prefill});
-
-  final SendPrefillArgs prefill;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      key: const ValueKey('send_prefill_notice'),
-      padding: const EdgeInsets.all(AppSpacing.xs),
-      decoration: BoxDecoration(
-        color: colors.background.raised,
-        border: Border.all(color: colors.border.subtle),
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AppIcon(AppIcons.importWallet, size: 18, color: colors.icon.muted),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Imported request',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  _prefillDetail,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodyExtraSmall.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String get _prefillDetail {
-    final pieces = [
-      prefill.source,
-      if (prefill.label != null && prefill.label!.isNotEmpty) prefill.label!,
-      if (prefill.message != null && prefill.message!.isNotEmpty)
-        prefill.message!,
-    ];
-    return pieces.join(' / ');
   }
 }
 
