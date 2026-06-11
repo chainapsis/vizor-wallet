@@ -1202,15 +1202,19 @@ class _ContactFormModalState extends State<_ContactFormModal> {
     final showAddressError =
         widget.draft.address.trim().isEmpty &&
         _addressController.text.trim().isNotEmpty;
-    // Soft warning: surface a chain format mismatch without blocking save.
-    final addressFormatWarning = addressFormatIssue(
+    // Soft check: surface a chain format finding without blocking save.
+    // Error severity (cannot be valid) renders destructive; warning severity
+    // (valid but unusual, e.g. a bare NEAR top-level name) renders neutral.
+    final addressFormatFinding = addressFormatCheck(
       widget.draft.network,
       widget.draft.address,
     );
     final addressMessage = showAddressError
         ? addressError
-        : addressFormatWarning;
-    final addressHasIssue = showAddressError || addressFormatWarning != null;
+        : addressFormatFinding?.message;
+    final addressHasError =
+        showAddressError ||
+        addressFormatFinding?.severity == AddressFormatSeverity.error;
 
     return AppModalCard(
       child: Column(
@@ -1268,7 +1272,7 @@ class _ContactFormModalState extends State<_ContactFormModal> {
               trailingSlotWidth: 40,
               inputHorizontalPadding: AppSpacing.s,
               messageText: addressMessage,
-              tone: addressHasIssue
+              tone: addressHasError
                   ? AppTextFieldTone.destructive
                   : AppTextFieldTone.neutral,
               onChanged: _emitAddress,

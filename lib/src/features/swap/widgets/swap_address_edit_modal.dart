@@ -115,14 +115,23 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
 
   bool get _canSubmit => _formatError == null && _nicknameError == null;
 
-  String? get _formatError {
+  AddressFormatFinding? get _formatFinding {
     final trimmed = _controller.text.trim();
     if (trimmed.isEmpty) return null;
     final network = AddressBookNetwork.tryFromChainTicker(
       widget.state.externalAsset.chainTicker,
     );
     if (network == null) return null;
-    return addressFormatIssue(network, trimmed);
+    return addressFormatCheck(network, trimmed);
+  }
+
+  // Only error-severity findings block submission; warning-severity findings
+  // (e.g. a bare NEAR top-level name) are surfaced but submittable.
+  String? get _formatError {
+    final finding = _formatFinding;
+    return finding?.severity == AddressFormatSeverity.error
+        ? finding!.message
+        : null;
   }
 
   // Only constrains submission when the user opted to remember the address; the
@@ -150,7 +159,7 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
     final rememberLabel = sendsZec
         ? 'Remember this address for recipients'
         : 'Remember this address for refunds';
-    final formatError = _formatError;
+    final formatFinding = _formatFinding;
     // Suppress the "Add a label" error on the pristine empty field — the hint
     // already says what to do, and the disabled button signals it can't submit
     // yet. Surface the error only once the user typed something invalid.
@@ -202,21 +211,32 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                   onOpenContacts: widget.onOpenContacts,
                 ),
                 const SizedBox(height: AppSpacing.xxs),
-                // The design reserves a 16dp error line under the field even
+                // The design reserves a 16dp message line under the field even
                 // while it is empty, so the field→description gap stays put
-                // when a format error appears.
+                // when a format error (destructive) or advisory warning
+                // (secondary) appears.
                 SizedBox(
                   height: 16,
-                  child: formatError == null
+                  child: formatFinding == null
                       ? null
                       : Text(
-                          formatError,
-                          key: const ValueKey('swap_destination_format_error'),
+                          formatFinding.message,
+                          key:
+                              formatFinding.severity ==
+                                  AddressFormatSeverity.error
+                              ? const ValueKey('swap_destination_format_error')
+                              : const ValueKey(
+                                  'swap_destination_format_warning',
+                                ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelLarge.copyWith(
                             fontWeight: FontWeight.w400,
-                            color: colors.text.destructive,
+                            color:
+                                formatFinding.severity ==
+                                    AddressFormatSeverity.error
+                                ? colors.text.destructive
+                                : colors.text.secondary,
                           ),
                         ),
                 ),

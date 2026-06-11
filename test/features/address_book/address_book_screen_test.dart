@@ -131,6 +131,81 @@ void main() {
     expect(repo.contacts.single.address, '0xnope');
   });
 
+  testWidgets('warns about a bare NEAR top-level name but allows saving', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final repo = _FakeAddressBookRepository();
+
+    await tester.pumpWidget(_addressBookHarness(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('address_book_add_contact_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('address_book_contact_label_field')),
+      'Ali',
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('address_book_network_selector_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('address_book_network_search_field')),
+      'near',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('NEAR'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('address_book_contact_address_field')),
+      'alice',
+    );
+    await tester.pump();
+
+    // Warning severity: surfaced, but rendered as advisory and saveable.
+    expect(
+      find.text(
+        'NEAR accounts usually end in .near — double-check this address',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('address_book_contact_submit_button')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    // A dotted account clears the warning.
+    await tester.enterText(
+      find.byKey(const ValueKey('address_book_contact_address_field')),
+      'alice.near',
+    );
+    await tester.pump();
+    expect(
+      find.text(
+        'NEAR accounts usually end in .near — double-check this address',
+      ),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('address_book_contact_submit_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(repo.contacts, hasLength(1));
+    expect(repo.contacts.single.address, 'alice.near');
+  });
+
   testWidgets('edit contact label x clears the draft label', (tester) async {
     await _setDesktopViewport(tester);
     final repo = _FakeAddressBookRepository([

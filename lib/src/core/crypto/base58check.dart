@@ -9,8 +9,7 @@ library;
 
 import 'package:crypto/crypto.dart';
 
-const _alphabet =
-    '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const _alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 
 List<int>? _base58Decode(String input) {
   if (input.isEmpty) return null;
@@ -40,6 +39,12 @@ List<int>? _base58Decode(String input) {
   }
   return bytes;
 }
+
+/// Decodes [input] as plain Base58 (no checksum). Returns the raw bytes, or
+/// `null` when the input is empty or contains non-alphabet characters. Used
+/// for formats that are bare Base58 without a Base58Check checksum, such as
+/// Solana addresses (Ed25519 public keys, exactly 32 bytes).
+List<int>? base58Decode(String input) => _base58Decode(input);
 
 /// Decodes [input] and verifies its 4-byte double-SHA256 checksum.
 /// Returns the payload (everything before the checksum) or `null` if invalid.
