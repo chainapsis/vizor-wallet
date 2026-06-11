@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vizor 모바일 — 피그마 외 추가 디자인 요소 정리 (디자인 요청)</title>
+<style>
+  :root {
+    --ink: #141818;
+    --body: #4d5252;
+    --muted: #8a8f8f;
+    --surface: #ffffff;
+    --bg: #f4f4f2;
+    --line: #e4e4e1;
+    --accent: #ab40bf;
+    --chip: #efe7f1;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
+      "Noto Sans KR", sans-serif;
+    background: var(--bg);
+    color: var(--body);
+    line-height: 1.65;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 48px 24px 96px; }
+  header h1 {
+    font-size: 30px; color: var(--ink); margin: 0 0 8px;
+    font-family: Georgia, "Times New Roman", serif; font-weight: 500;
+  }
+  header p.lead { margin: 0 0 4px; max-width: 760px; }
+  header .meta { color: var(--muted); font-size: 13px; }
+  nav.toc {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 16px; padding: 20px 24px; margin: 28px 0 40px;
+  }
+  nav.toc strong { color: var(--ink); display: block; margin-bottom: 8px; }
+  nav.toc ol { margin: 0; padding-left: 20px; }
+  nav.toc a { color: var(--body); text-decoration: none; }
+  nav.toc a:hover { color: var(--ink); text-decoration: underline; }
+  section.item {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 20px; padding: 32px; margin-bottom: 32px;
+  }
+  section.item h2 {
+    font-size: 21px; color: var(--ink); margin: 0 0 4px; font-weight: 600;
+  }
+  .badges { margin: 0 0 16px; }
+  .badge {
+    display: inline-block; font-size: 12px; padding: 3px 10px;
+    border-radius: 999px; background: var(--chip); color: var(--accent);
+    margin-right: 6px;
+  }
+  .badge.gray { background: #ececea; color: var(--body); }
+  dl { margin: 0 0 16px; }
+  dt { color: var(--ink); font-weight: 600; font-size: 14px; margin-top: 14px; }
+  dd { margin: 4px 0 0; }
+  ul.req { margin: 6px 0 0; padding-left: 20px; }
+  ul.req li { margin-bottom: 4px; }
+  .shots { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 24px; }
+  figure { margin: 0; width: 230px; }
+  figure img {
+    width: 100%; border-radius: 18px; border: 1px solid var(--line);
+    display: block; background: #000;
+  }
+  figcaption { font-size: 12px; color: var(--muted); margin-top: 8px; text-align: center; }
+  code {
+    background: #ececea; border-radius: 4px; padding: 1px 6px;
+    font-size: 13px; color: var(--ink);
+  }
+  footer { color: var(--muted); font-size: 13px; margin-top: 48px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>모바일 구현 중 추가된 디자인 요소 정리</h1>
+  <p class="lead">피그마 Mobile App WIP에 프레임이 없거나 모호해서 구현하며 채워 넣은 디자인
+  요소들입니다. 각 항목에 채워 넣은 이유, 잡은 디자인 방향, 그리고 디자이너에게 요청하고 싶은
+  것을 정리했습니다. 스크린샷은 모두 실제 앱(iPhone 16 Pro 시뮬레이터, regtest)을 캡처한
+  것입니다.</p>
+  <p class="meta">브랜치 mobile-ui-vibe-coding-polishing · 2026-06-12</p>
+</header>
+
+<nav class="toc">
+  <strong>목차</strong>
+  <ol>
+    <li><a href="#address-book">모바일 주소록 화면 (설정 → Address Book)</a></li>
+    <li><a href="#keystone-sign">Keystone 모바일 서명 플로우 (하드웨어 전송)</a></li>
+    <li><a href="#swap">모바일 스왑 — 리뷰 / 인텐트 상세 화면, 컴포저 입력 방식</a></li>
+    <li><a href="#progress">온보딩 진행바의 단계별 채움 규칙</a></li>
+    <li><a href="#keystone-badge">Keystone 계정 배지의 적용 표면 확장</a></li>
+    <li><a href="#send-validating">송금 금액 검증 대기 상태</a></li>
+  </ol>
+</nav>
+
+<section class="item" id="address-book">
+  <h2>1. 모바일 주소록 화면</h2>
+  <div class="badges"><span class="badge">신규 화면</span><span class="badge gray">피그마: 설정 row만 존재</span></div>
+  <dl>
+    <dt>왜 추가했나</dt>
+    <dd>피그마 Settings 프레임에 "Address Book" row(셰브론 포함)는 있지만 화면 자체의
+    프레임이 없습니다. 데스크톱에는 멀티 네트워크 주소록이 이미 구현돼 있고, 모바일 송금
+    플로우의 연락처 선택이 같은 데이터를 쓰고 있어 모바일에도 관리 화면이 필요했습니다.</dd>
+    <dt>채운 디자인 방향</dt>
+    <dd>데스크톱 주소록의 동작(네트워크 선택, 라벨/주소 입력, 주소 형식 검증, EVM 체인 호환
+    규칙)을 그대로 따르되, UI는 모바일 설정 화면의 관용구로 옮겼습니다 — 서피스 카드 리스트,
+    하단 고정 "Add contact" CTA, 추가/편집/삭제는 모두 바텀시트. 행 구성은 아바타 + 라벨 +
+    네트워크 아이콘 + 축약 주소 + 휴지통 아이콘입니다. 빈 상태 카피는 "No contacts yet /
+    Save addresses you send to often."으로 새로 썼습니다.</dd>
+    <dt>디자이너에게 요청</dt>
+    <dd><ul class="req">
+      <li>주소록 리스트 / 빈 상태 / 추가·편집 시트 / 삭제 확인 시트의 정식 프레임</li>
+      <li>네트워크 픽커 시트(20개 이상 네트워크 스크롤 리스트)의 디자인</li>
+      <li>빈 상태 일러스트 여부와 카피 검토</li>
+    </ul></dd>
+  </dl>
+  <div class="shots">
+    <figure><img src="images/30f_address_book_empty.png" alt="주소록 빈 상태"><figcaption>빈 상태</figcaption></figure>
+    <figure><img src="images/30g_address_book_add.png" alt="연락처 추가 시트"><figcaption>추가 시트 (네트워크/이름/주소)</figcaption></figure>
+    <figure><img src="images/S0_address_book_list.png" alt="연락처 리스트"><figcaption>연락처 리스트 + 고정 CTA</figcaption></figure>
+  </div>
+</section>
+
+<section class="item" id="keystone-sign">
+  <h2>2. Keystone 모바일 서명 플로우 (하드웨어 전송)</h2>
+  <div class="badges"><span class="badge">신규 플로우</span><span class="badge gray">피그마: Keystone Scan Windget / Scan Error (상태 합성 목업)</span></div>
+  <dl>
+    <dt>왜 추가했나</dt>
+    <dd>하드웨어(Keystone) 계정의 모바일 전송은 지금까지 미지원 시트로 막혀 있었습니다.
+    피그마의 <code>Keystone Scan Windget</code> 프레임은 "QR 표시"와 "카메라 스캔"이 한 장에
+    겹쳐 그려진 목업이라, 실제 플로우의 단계 구분(폰이 QR을 보여주는 단계 ↔ 기기의 서명
+    QR을 읽는 단계)이 정의돼 있지 않았습니다.</dd>
+    <dt>채운 디자인 방향</dt>
+    <dd>물리적인 순서(기기가 폰 화면을 스캔 → 폰이 기기 화면을 스캔)에 따라 2단계로
+    풀었습니다. <b>1단계</b>: 검은 풀스크린 위에 "Confirm transaction" 타이틀 + 안내문 +
+    흰 라운드 카드의 애니메이션 QR(PCZT를 UR 조각으로 순환 표시), 하단 Cancel / "Next step".
+    <b>2단계</b>: 송금 주소 스캐너와 같은 풀블리드 카메라 + 코너 브래킷 뷰파인더 + 멀티파트
+    수신 진행률(%) + "Show QR" 복귀 버튼. 프레임에 있던 요소(토치, ✕, 캡션, Cancel/Next step)는
+    모두 유지했습니다.</dd>
+    <dt>디자이너에게 요청</dt>
+    <dd><ul class="req">
+      <li>두 단계 각각의 확정 프레임 (1단계 QR 카드 크기/타이포, 2단계 스캔 진행률 표현)</li>
+      <li>스캔 에러 상태 ("Unexpected UR type", 흔들림 등)와 디코딩 중 상태의 디자인</li>
+      <li>서명 준비(증명 생성) 대기 상태 — 현재는 QR 카드 자리에 로더만 표시</li>
+    </ul></dd>
+  </dl>
+  <div class="shots">
+    <figure><img src="images/S2_keystone_sign_qr.png" alt="Keystone 서명 QR 표시 단계"><figcaption>1단계 — PCZT 애니메이션 QR 표시</figcaption></figure>
+  </div>
+</section>
+
+<section class="item" id="swap">
+  <h2>3. 모바일 스왑 — 리뷰 / 인텐트 상세 화면, 컴포저 입력 방식</h2>
+  <div class="badges"><span class="badge">신규 화면 2종</span><span class="badge gray">피그마: 컴포저 프레임만 존재 (Swap / Swap v1)</span></div>
+  <dl>
+    <dt>왜 추가했나</dt>
+    <dd>스왑은 컴포저에서 끝나지 않습니다 — 견적 리뷰(/swap/review), 그리고 인텐트 시작 후
+    예치 서명·상태 추적이 일어나는 인텐트 상세(/activity/swap/:id)가 있어야 플로우가
+    완결됩니다. 피그마에는 컴포저 프레임 두 장만 있습니다.</dd>
+    <dt>채운 디자인 방향</dt>
+    <dd>리뷰와 인텐트 상세는 데스크톱과 동일한 공유 서피스(400pt 폭)를 모바일 내비게이션
+    안에 그대로 호스팅했습니다(402pt 폰에는 원래 크기로 들어가고, 더 좁은 기기는 비율
+    축소). 컴포저도 데스크톱의 티켓 레이아웃(시스템 키보드 입력)을 재사용했는데, 피그마
+    모바일 프레임은 전용 세리프 숫자 키패드를 보여주고 있어 입력 방식이 다릅니다.</dd>
+    <dt>디자이너에게 요청</dt>
+    <dd><ul class="req">
+      <li>모바일 전용 리뷰 프레임과 인텐트 상세(상태/예치/클레임) 프레임</li>
+      <li>컴포저 입력 방식 결정 — 피그마의 세리프 키패드 vs 현재의 시스템 키보드.
+        키패드로 간다면 금액/피아트 토글, Max 버튼 위치 포함 프레임 요청</li>
+      <li>자산 선택·슬리피지·수신 주소 모달의 모바일 폭(현재 312pt 데스크톱 모달 재사용) 검토</li>
+    </ul></dd>
+  </dl>
+  <div class="shots">
+    <figure><img src="images/S1_swap_composer.png" alt="모바일 스왑 컴포저"><figcaption>현재 구현 — 공유 컴포저 + 모바일 탭</figcaption></figure>
+  </div>
+</section>
+
+<section class="item" id="progress">
+  <h2>4. 온보딩 진행바의 단계별 채움 규칙</h2>
+  <div class="badges"><span class="badge">동작 규칙</span><span class="badge gray">피그마: 모든 프레임 31% 고정</span></div>
+  <dl>
+    <dt>왜 추가했나</dt>
+    <dd>피그마의 Steps 내비게이션 컴포넌트는 모든 프레임에서 채움이 31%로 고정돼 있습니다
+    (정적 인스턴스). 실제 앱에서는 단계가 진행되는 느낌이 필요해 규칙을 정해 구현했습니다.</dd>
+    <dt>채운 디자인 방향</dt>
+    <dd>생성 플로우(5단계)는 <code>단계 / (단계수 + 1)</code> — 첫 단계도 비어 보이지 않고
+    마지막 단계도 가득 차 보이지 않게. Keystone 온보딩은 0.2 → 0.4 → 0.6으로 진행합니다.
+    아래 두 캡처에서 1단계(인트로)와 4단계(패스프레이즈)의 채움 차이를 볼 수 있습니다.</dd>
+    <dt>디자이너에게 요청</dt>
+    <dd><ul class="req">
+      <li>단계별 채움 규칙의 공식 확정 (또는 다른 진행 표현 — 세그먼트형 등 — 으로 교체 여부)</li>
+    </ul></dd>
+  </dl>
+  <div class="shots">
+    <figure><img src="images/32_intro.png" alt="인트로 — 1/6 채움"><figcaption>생성 1단계 (1/6 채움)</figcaption></figure>
+    <figure><img src="images/35_passphrase_hidden.png" alt="패스프레이즈 — 4/6 채움"><figcaption>생성 4단계 (4/6 채움)</figcaption></figure>
+    <figure><img src="images/31b_keystone_intro.png" alt="Keystone 인트로 — 0.2 채움"><figcaption>Keystone 1단계 (0.2 채움)</figcaption></figure>
+  </div>
+</section>
+
+<section class="item" id="keystone-badge">
+  <h2>5. Keystone 계정 배지의 적용 표면 확장</h2>
+  <div class="badges"><span class="badge">컴포넌트 적용 확장</span><span class="badge gray">피그마: Accounts 행에만 존재</span></div>
+  <dl>
+    <dt>왜 추가했나</dt>
+    <dd>피그마에는 <code>User Keystone Badge</code>(20px)가 Accounts 화면의 계정 행에만
+    배치돼 있습니다. 하지만 사용자가 "지금 보고 있는 계정이 하드웨어 계정인지"를 알아야
+    하는 표면은 더 많습니다.</dd>
+    <dt>채운 디자인 방향</dt>
+    <dd>데스크톱의 배지 패턴(아바타 우하단, 다크 라운드 사각 + 표면색 2px 링)을 공용
+    컴포넌트로 만들어 네 곳에 적용했습니다 — ① 계정 관리 화면 행 ② 계정 삭제 확인 시트
+    ③ 계정 전환 시트(행 + 중앙 아바타) ④ 홈 좌상단 계정 칩. 링 색은 배지가 올라가는
+    표면색(카드/시트는 흰색, 홈 배경은 윈도 색)을 따릅니다.</dd>
+    <dt>디자이너에게 요청</dt>
+    <dd><ul class="req">
+      <li>표면·아바타 크기별 배지 스펙 확정 (홈 칩 40px 아바타, 시트 56px 아바타 등)</li>
+      <li>다크 모드에서의 배지/링 색 정의</li>
+    </ul></dd>
+  </dl>
+</section>
+
+<section class="item" id="send-validating">
+  <h2>6. 송금 금액 검증 대기 상태</h2>
+  <div class="badges"><span class="badge">상태 추가</span><span class="badge gray">피그마: 에러 상태만 존재 (Send Amount Error)</span></div>
+  <dl>
+    <dt>왜 추가했나</dt>
+    <dd>금액 입력 시 수수료 추정이 비동기로 돌아오는데, 그 사이에 Continue를 누르면 검증되지
+    않은 금액이 리뷰로 넘어가는 문제가 있었습니다. 추정이 끝날 때까지 Continue를 비활성화하는
+    "검증 중" 상태를 추가했는데, 피그마에는 이 상태의 디자인이 없습니다(에러 상태인
+    "Not enough ZEC"만 존재).</dd>
+    <dt>채운 디자인 방향</dt>
+    <dd>현재는 별도 시각 표현 없이 버튼만 비활성 상태로 둡니다. 수수료 추정은 보통 수백 ms
+    안에 끝나서 깜빡임을 피하려는 의도지만, 네트워크가 느릴 때는 "왜 버튼이 안 눌리지?"가
+    될 수 있습니다.</dd>
+    <dt>디자이너에게 요청</dt>
+    <dd><ul class="req">
+      <li>검증 중 상태의 표현 (버튼 내 스피너, 금액 아래 보조 문구 등) 필요 여부 결정</li>
+    </ul></dd>
+  </dl>
+  <div class="shots">
+    <figure><img src="images/22_send_amount_ready.png" alt="금액 입력 화면"><figcaption>금액 입력 화면 (참고)</figcaption></figure>
+  </div>
+</section>
+
+<footer>
+  이 문서와 스크린샷은 자동 캡처 투어(iPhone 16 Pro 시뮬레이터)에서 생성됐습니다.
+  구현 상세는 각 화면의 소스 주석(Figma 노드 ID 표기)을 참고해 주세요.
+</footer>
+
+</div>
+</body>
+</html>
