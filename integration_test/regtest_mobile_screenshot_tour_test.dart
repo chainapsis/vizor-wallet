@@ -56,6 +56,25 @@ void main() {
       // ── Import flow (funded wallet) ────────────────────────────────
       await tapAppButton(tester, const ValueKey('mobile_welcome_import'));
       await shot('02_import_entry');
+      await tapWidget(
+        tester,
+        const ValueKey('mobile_import_enter_manually'),
+      );
+      await pumpUntil(
+        tester,
+        () => tester.any(find.text('Next word')),
+        description: 'manual entry screen',
+      );
+      await shot('02m_import_manual');
+      await tester.enterText(find.byType(EditableText).first, 'winter');
+      await settle(tester, const Duration(milliseconds: 400));
+      await shot('02n_import_manual_typed');
+      await tapBack(tester);
+      await pumpUntil(
+        tester,
+        () => tester.any(find.byKey(const ValueKey('mobile_import_paste'))),
+        description: 'back on import entry',
+      );
       await Clipboard.setData(const ClipboardData(text: _mnemonic));
       await tapAppButton(tester, const ValueKey('mobile_import_paste'));
       await pumpUntil(
@@ -129,6 +148,7 @@ void main() {
       await shot('08_biometrics');
       await tapWidget(tester, const ValueKey('mobile_biometrics_not_now'));
       await waitForHome(tester);
+      await shot('08b_home_syncing');
 
       // ── Home (funded, synced) ──────────────────────────────────────
       await waitForShieldedBalance(tester, '1.25 $mobileE2eTicker');
@@ -263,13 +283,29 @@ void main() {
       await tapAppButton(tester, const ValueKey('mobile_send_memo_save'));
       await settle(tester, const Duration(milliseconds: 400));
       await shot('25_send_review_with_memo');
-      // Leave without sending.
-      await tapUntilVisible(
+      // Inline full-address toggle on the recipient row.
+      await tapWidget(tester, const ValueKey('mobile_send_full_address'));
+      await settle(tester, const Duration(milliseconds: 400));
+      await shot('25b_send_full_address');
+      await tapWidget(tester, const ValueKey('mobile_send_full_address'));
+      await settle(tester, const Duration(milliseconds: 400));
+      // Actually send so the in-flight and success states are captured.
+      await tapAppButton(
         tester,
-        trigger: find.text('Cancel'),
-        outcome: find.byKey(const ValueKey('mobile_home_shielded_balance')),
-        description: 'wizard cancelled back to home',
+        const ValueKey('mobile_send_confirm'),
+        timeout: const Duration(minutes: 1),
       );
+      await shot('25c_send_sending');
+      await pumpUntil(
+        tester,
+        () => tester
+            .any(find.byKey(const ValueKey('mobile_send_status_succeeded'))),
+        description: 'send status to succeed',
+        timeout: const Duration(minutes: 4),
+      );
+      await shot('25d_send_success');
+      await tapAppButton(tester, const ValueKey('mobile_send_done'));
+      await waitForHome(tester);
 
       // ── Activity tab ───────────────────────────────────────────────
       await openActivityTab(tester);
@@ -307,10 +343,63 @@ void main() {
       await shot('30_change_passcode_new');
       await tapBack(tester);
 
+      // ── Settings: secret passphrase (gate + reveal) ────────────────
+      await tapWidget(tester, const ValueKey('mobile_settings_seed_row'));
+      await pumpUntil(
+        tester,
+        () => tester.any(find.text('Enter your passcode')),
+        description: 'seed confirm access gate',
+      );
+      await shot('30b_seed_confirm_access');
+      await enterPasscode(tester, mobileE2ePasscode);
+      await pumpUntil(
+        tester,
+        () => tester.any(find.text('Birthday block height')),
+        description: 'seed reveal',
+        timeout: const Duration(minutes: 1),
+      );
+      await shot('30c_seed_reveal');
+      await tapBack(tester);
+
+      // ── Settings: endpoint (list + custom) ─────────────────────────
+      await tapWidget(tester, const ValueKey('mobile_settings_endpoint_row'));
+      await pumpUntil(
+        tester,
+        () => tester.any(
+          find.byKey(const ValueKey('mobile_endpoint_tab_custom')),
+        ),
+        description: 'endpoint screen',
+      );
+      // The regtest endpoint is custom, so the screen opens on the
+      // custom tab — switch to the preset list for its shot first.
+      await tapWidget(tester, const ValueKey('mobile_endpoint_tab_list'));
+      await settle(tester, const Duration(milliseconds: 400));
+      await shot('30d_endpoint_list');
+      await tapWidget(tester, const ValueKey('mobile_endpoint_tab_custom'));
+      await settle(tester, const Duration(milliseconds: 400));
+      await shot('30e_endpoint_custom');
+      await tapBack(tester);
+
       // ── Add-account create onboarding (static screens) ────────────
       await openHomeTab(tester);
       await openAddAccountFlow(tester);
       await shot('31_welcome_add_account');
+      await tapAppButton(tester, const ValueKey('mobile_welcome_keystone'));
+      await pumpUntil(
+        tester,
+        () => tester.any(
+          find.byKey(const ValueKey('mobile_keystone_intro_continue')),
+        ),
+        description: 'keystone intro',
+      );
+      await shot('31b_keystone_intro');
+      await tapBack(tester);
+      await pumpUntil(
+        tester,
+        () =>
+            tester.any(find.byKey(const ValueKey('mobile_welcome_create'))),
+        description: 'back on add-account welcome',
+      );
       await tapAppButton(tester, const ValueKey('mobile_welcome_create'));
       await pumpUntil(
         tester,
@@ -360,7 +449,7 @@ void main() {
 
       logE2e('tour complete');
     },
-    timeout: const Timeout(Duration(minutes: 15)),
+    timeout: const Timeout(Duration(minutes: 20)),
   );
 }
 
