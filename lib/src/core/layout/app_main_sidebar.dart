@@ -800,21 +800,24 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                     ),
                   ),
                 ),
+                const SizedBox(height: AppSpacing.xs),
                 const _SidebarAccountsActionsDivider(),
                 const SizedBox(height: AppSpacing.xs),
                 SizedBox(
                   height: 36,
                   child: Row(
                     children: [
-                      _SidebarPopoverClickTarget(
+                      _SidebarPopoverHoverTarget(
                         onTap: widget.onManageAccounts,
-                        child: Container(
+                        builder: (context, hovered) => Container(
                           key: const ValueKey('sidebar_accounts_manage'),
                           width: 153,
                           height: 36,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: colors.button.secondary.bg,
+                            color: hovered
+                                ? colors.button.secondary.bgHover
+                                : colors.button.secondary.bg,
                             borderRadius: BorderRadius.circular(AppRadii.full),
                           ),
                           child: Text(
@@ -826,14 +829,16 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                         ),
                       ),
                       const SizedBox(width: AppSpacing.xxs),
-                      _SidebarPopoverClickTarget(
+                      _SidebarPopoverHoverTarget(
                         onTap: widget.onAddAccount,
-                        child: Container(
+                        builder: (context, hovered) => Container(
                           key: const ValueKey('sidebar_accounts_add'),
                           width: 48,
                           height: 32,
                           decoration: BoxDecoration(
-                            color: colors.button.primary.bg,
+                            color: hovered
+                                ? colors.button.primary.bgHover
+                                : colors.button.primary.bg,
                             borderRadius: BorderRadius.circular(AppRadii.full),
                             border: Border.all(
                               color: colors.border.subtleOpacity,
@@ -949,6 +954,48 @@ class _SidebarPopoverClickTarget extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onTap: onTap,
           child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// Click target that also tracks hover, for the popover's pill buttons.
+class _SidebarPopoverHoverTarget extends StatefulWidget {
+  const _SidebarPopoverHoverTarget({
+    required this.onTap,
+    required this.builder,
+  });
+
+  final VoidCallback onTap;
+  final Widget Function(BuildContext context, bool hovered) builder;
+
+  @override
+  State<_SidebarPopoverHoverTarget> createState() =>
+      _SidebarPopoverHoverTargetState();
+}
+
+class _SidebarPopoverHoverTargetState
+    extends State<_SidebarPopoverHoverTarget> {
+  bool _hovered = false;
+
+  void _setHovered(bool value) {
+    if (_hovered == value) return;
+    setState(() => _hovered = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => _setHovered(true),
+        onExit: (_) => _setHovered(false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: widget.builder(context, _hovered),
         ),
       ),
     );
