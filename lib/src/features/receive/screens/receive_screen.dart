@@ -1251,7 +1251,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
               iconName: AppIcons.renew,
               height: 63,
               text:
-                  'A new Zcash Shielded address is generated only when you click the Renew button.',
+                  'A new Zcash shielded address is generated only when you click the renew button.',
             ),
             _InfoItemData(
               iconName: AppIcons.wallet,
