@@ -19,6 +19,7 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_layout.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
@@ -1077,66 +1078,69 @@ class _HomeDesktopPane extends StatelessWidget {
       builder: (context, constraints) {
         final contentTop = _contentTop(constraints.maxHeight);
         if (!isImporting) {
-          return CustomScrollView(
-            key: const ValueKey('home_desktop_scroll_view'),
-            clipBehavior: Clip.none,
-            slivers: [
-              SliverPadding(
-                padding: EdgeInsets.only(top: contentTop),
-                sliver: _HomeDesktopCenteredSliver(
-                  contentKey: const ValueKey('home_desktop_content'),
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.s,
-                    AppSpacing.sm,
-                    AppSpacing.s,
-                    0,
-                  ),
-                  child: _HomeDesktopBalanceCard(
-                    hasBalance: hasBalance,
-                    shieldedBalanceText: shieldedBalanceText,
-                    shieldedFiatBalanceText: shieldedFiatBalanceText,
-                    transparentBalanceText: transparentBalanceText,
-                    hasTransparentBalance: hasTransparentBalance,
-                    canShieldBalance: canShieldBalance,
-                    isShieldingBalance: isShieldingBalance,
-                    privacyModeEnabled: privacyModeEnabled,
-                    onTogglePrivacyMode: onTogglePrivacyMode,
-                    onShieldBalancePressed: onShieldBalancePressed,
-                    onSend: onSend,
-                    onReceive: onReceive,
+          return AppPaneScrollbar(
+            builder: (context, controller) => CustomScrollView(
+              key: const ValueKey('home_desktop_scroll_view'),
+              controller: controller,
+              clipBehavior: Clip.none,
+              slivers: [
+                SliverPadding(
+                  padding: EdgeInsets.only(top: contentTop),
+                  sliver: _HomeDesktopCenteredSliver(
+                    contentKey: const ValueKey('home_desktop_content'),
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.s,
+                      AppSpacing.sm,
+                      AppSpacing.s,
+                      0,
+                    ),
+                    child: _HomeDesktopBalanceCard(
+                      hasBalance: hasBalance,
+                      shieldedBalanceText: shieldedBalanceText,
+                      shieldedFiatBalanceText: shieldedFiatBalanceText,
+                      transparentBalanceText: transparentBalanceText,
+                      hasTransparentBalance: hasTransparentBalance,
+                      canShieldBalance: canShieldBalance,
+                      isShieldingBalance: isShieldingBalance,
+                      privacyModeEnabled: privacyModeEnabled,
+                      onTogglePrivacyMode: onTogglePrivacyMode,
+                      onShieldBalancePressed: onShieldBalancePressed,
+                      onSend: onSend,
+                      onReceive: onReceive,
+                    ),
                   ),
                 ),
-              ),
-              if (notice != null) ...[
-                const SliverToBoxAdapter(
-                  child: SizedBox(height: AppSpacing.xs),
-                ),
-                _HomeDesktopCenteredSliver(
-                  child: _HomeNoticeCard(data: notice!),
+                if (notice != null) ...[
+                  const SliverToBoxAdapter(
+                    child: SizedBox(height: AppSpacing.xs),
+                  ),
+                  _HomeDesktopCenteredSliver(
+                    child: _HomeNoticeCard(data: notice!),
+                  ),
+                ],
+                SliverPadding(
+                  padding: EdgeInsets.only(
+                    top: hasTransparentBalance ? AppSpacing.s : AppSpacing.md,
+                  ),
+                  sliver: activityRows.isEmpty
+                      ? _HomeDesktopEmptyActivitySliver(
+                          isLoading: isActivityLoading,
+                        )
+                      : _HomeDesktopCenteredSliver(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.s,
+                            0,
+                            AppSpacing.s,
+                            AppSpacing.sm,
+                          ),
+                          child: _HomeDesktopActivityCard(
+                            rows: activityRows.take(5).toList(),
+                            onSeeAll: onActivity,
+                          ),
+                        ),
                 ),
               ],
-              SliverPadding(
-                padding: EdgeInsets.only(
-                  top: hasTransparentBalance ? AppSpacing.s : AppSpacing.md,
-                ),
-                sliver: activityRows.isEmpty
-                    ? _HomeDesktopEmptyActivitySliver(
-                        isLoading: isActivityLoading,
-                      )
-                    : _HomeDesktopCenteredSliver(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.s,
-                          0,
-                          AppSpacing.s,
-                          AppSpacing.sm,
-                        ),
-                        child: _HomeDesktopActivityCard(
-                          rows: activityRows.take(5).toList(),
-                          onSeeAll: onActivity,
-                        ),
-                      ),
-              ),
-            ],
+            ),
           );
         }
 
