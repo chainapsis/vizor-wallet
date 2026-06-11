@@ -148,59 +148,6 @@ class SwapReviewPageContent extends StatelessWidget {
   }
 }
 
-class SwapReviewPageScrollArea extends StatefulWidget {
-  const SwapReviewPageScrollArea({required this.child, super.key});
-
-  final Widget child;
-
-  @override
-  State<SwapReviewPageScrollArea> createState() =>
-      _SwapReviewPageScrollAreaState();
-}
-
-class _SwapReviewPageScrollAreaState extends State<SwapReviewPageScrollArea> {
-  late final ScrollController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = ScrollController();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return ScrollConfiguration(
-      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-      child: RawScrollbar(
-        key: const ValueKey('swap_review_scrollbar'),
-        controller: _controller,
-        thumbVisibility: true,
-        thickness: 4,
-        radius: const Radius.circular(AppRadii.full),
-        thumbColor: colors.border.regular.withValues(alpha: 0.72),
-        mainAxisMargin: AppSpacing.xxs,
-        crossAxisMargin: AppSpacing.xxs,
-        child: SingleChildScrollView(
-          key: const ValueKey('swap_review_scroll_view'),
-          controller: _controller,
-          child: Padding(
-            key: const ValueKey('swap_review_scroll_gutter'),
-            padding: const EdgeInsets.only(right: AppSpacing.s),
-            child: widget.child,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class SwapReviewPageActions extends StatelessWidget {
   const SwapReviewPageActions({
     required this.expired,

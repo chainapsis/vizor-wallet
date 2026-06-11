@@ -3,6 +3,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
@@ -17,7 +19,6 @@ import '../models/swap_models.dart';
 import '../providers/swap_state_provider.dart';
 import 'swap_deposit_tokens_page_content.dart';
 import 'swap_keystone_signing_overlay.dart';
-import 'swap_near_intents_attribution.dart';
 import 'swap_status_page_content.dart';
 
 class SwapActivityDetailSurface extends ConsumerStatefulWidget {
@@ -302,47 +303,23 @@ class _SwapActivityDetailPaneContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final returnTarget = this.returnTarget;
-    return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (returnTarget != null) ...[
-            Padding(
-              padding: const EdgeInsets.only(left: AppSpacing.xxs),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: AppBackLink(
-                  label: returnTarget.label,
-                  minWidth: 60,
-                  onTap: () => context.go(returnTarget.path),
-                ),
+    return AppPaneScrollScaffold(
+      toolbar: AppPaneToolbar(
+        // The surface is also embedded without a navigation origin (no back
+        // affordance); the toolbar band stays for the shared scroll layout.
+        leading: returnTarget == null
+            ? const SizedBox.shrink()
+            : AppBackLink(
+                label: returnTarget.label,
+                minWidth: 60,
+                onTap: () => context.go(returnTarget.path),
               ),
-            ),
-            const SizedBox(height: AppSpacing.s),
-          ],
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return Stack(
-                    children: [
-                      Positioned.fill(child: child),
-                      if (constraints.maxHeight >= 520)
-                        const Positioned(
-                          left: 0,
-                          bottom: AppSpacing.md,
-                          child: SwapNearIntentsAttribution(),
-                        ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-        ],
       ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      child: child,
     );
   }
 }
@@ -403,23 +380,11 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
       intentIsHardware: intentIsHardware,
     );
 
-    return Container(
+    return KeyedSubtree(
       key: const ValueKey('swap_activity_detail_page'),
-      padding: EdgeInsets.zero,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return _ActivityDetailScrollArea(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: Align(
-                alignment: isDepositPage
-                    ? Alignment.center
-                    : Alignment.topCenter,
-                child: flowContent,
-              ),
-            ),
-          );
-        },
+      child: Align(
+        alignment: isDepositPage ? Alignment.center : Alignment.topCenter,
+        child: flowContent,
       ),
     );
   }
@@ -621,79 +586,6 @@ class _SwapActivityMissingPanel extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ActivityDetailScrollArea extends StatefulWidget {
-  const _ActivityDetailScrollArea({required this.child});
-
-  final Widget child;
-
-  @override
-  State<_ActivityDetailScrollArea> createState() =>
-      _ActivityDetailScrollAreaState();
-}
-
-class _ActivityDetailScrollAreaState extends State<_ActivityDetailScrollArea> {
-  late final ScrollController _controller;
-  bool _hasScrollableExtent = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = ScrollController();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  bool _handleScrollMetrics(ScrollMetricsNotification notification) {
-    final hasScrollableExtent = notification.metrics.maxScrollExtent > 0.5;
-    if (hasScrollableExtent != _hasScrollableExtent) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        setState(() {
-          _hasScrollableExtent = hasScrollableExtent;
-        });
-      });
-    }
-    return false;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return ScrollConfiguration(
-      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-      child: NotificationListener<ScrollMetricsNotification>(
-        onNotification: _handleScrollMetrics,
-        child: RawScrollbar(
-          key: const ValueKey('swap_activity_detail_scrollbar'),
-          controller: _controller,
-          thumbVisibility: _hasScrollableExtent,
-          interactive: _hasScrollableExtent,
-          thickness: 4,
-          radius: const Radius.circular(AppRadii.full),
-          thumbColor: colors.border.regular.withValues(alpha: 0.72),
-          mainAxisMargin: AppSpacing.xxs,
-          crossAxisMargin: AppSpacing.xxs,
-          child: SingleChildScrollView(
-            key: const ValueKey('swap_activity_detail_scroll_view'),
-            controller: _controller,
-            child: Padding(
-              key: const ValueKey('swap_activity_detail_scroll_gutter'),
-              padding: EdgeInsets.only(
-                right: _hasScrollableExtent ? AppSpacing.s : 0,
-              ),
-              child: widget.child,
-            ),
-          ),
-        ),
       ),
     );
   }

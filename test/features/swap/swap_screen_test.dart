@@ -468,9 +468,10 @@ void main() {
 
       expect(find.text('Time’s up'), findsOneWidget);
       expect(find.text('Restart swap'), findsOneWidget);
+      // The redesigned detail pages drop the NEAR Intents attribution.
       expect(
         find.byKey(const ValueKey('swap_near_intents_attribution')),
-        findsOneWidget,
+        findsNothing,
       );
       final detailRect = tester.getRect(
         find.byKey(const ValueKey('swap_activity_detail_page')),
@@ -478,13 +479,9 @@ void main() {
       final timeoutRect = tester.getRect(
         find.byKey(const ValueKey('swap_deposit_timeout_panel')),
       );
-      final attributionRect = tester.getRect(
-        find.byKey(const ValueKey('swap_near_intents_attribution')),
-      );
 
       expect(timeoutRect.width, 340);
       expect(timeoutRect.center.dy, closeTo(detailRect.center.dy, 1));
-      expect(timeoutRect.bottom, lessThan(attributionRect.top));
     },
   );
 
@@ -3200,20 +3197,17 @@ void main() {
       find.byKey(const ValueKey('swap_activity_route_step_2_active')),
       findsOneWidget,
     );
+    // The detail surface scrolls through the shared pane scaffold: a 6px
+    // overlay thumb pinned at the pane edge, with no reserved gutter. Scope
+    // to the detail surface — the hosting screen has its own scaffold.
     final activityDetailScrollbar = tester.widget<RawScrollbar>(
-      find.byKey(const ValueKey('swap_activity_detail_scrollbar')),
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_activity_detail_surface')),
+        matching: find.byKey(AppPaneScrollScaffold.scrollbarKey),
+      ),
     );
-    expect(activityDetailScrollbar.thickness, 4);
-    expect(activityDetailScrollbar.crossAxisMargin, AppSpacing.xxs);
-    final activityDetailScrollGutter = tester.widget<Padding>(
-      find.byKey(const ValueKey('swap_activity_detail_scroll_gutter')),
-    );
-    expect(
-      activityDetailScrollGutter.padding,
-      activityDetailScrollbar.thumbVisibility == true
-          ? const EdgeInsets.only(right: AppSpacing.s)
-          : EdgeInsets.zero,
-    );
+    expect(activityDetailScrollbar.thickness, 6);
+    expect(activityDetailScrollbar.crossAxisMargin, 6);
     expect(find.text('Swap...'), findsOneWidget);
     expect(find.text('Technical details'), findsNothing);
     expect(find.text('Status timeline'), findsNothing);
@@ -3987,14 +3981,13 @@ void main() {
       find.byKey(const ValueKey('swap_status_page_content')),
       findsOneWidget,
     );
+    // The redesigned detail pages drop the NEAR Intents attribution and
+    // scroll through the shared pane scaffold.
     expect(
       find.byKey(const ValueKey('swap_near_intents_attribution')),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(
-      find.byKey(const ValueKey('swap_activity_detail_scrollbar')),
-      findsOneWidget,
-    );
+    expect(find.byKey(AppPaneScrollScaffold.scrollbarKey), findsOneWidget);
 
     final statusRect = tester.getRect(
       find.byKey(const ValueKey('swap_status_page_content')),
@@ -4002,29 +3995,27 @@ void main() {
     final titleRect = tester.getRect(
       find.byKey(const ValueKey('swap_status_title')),
     );
-    expect(statusRect.top, closeTo(76, 1));
+    final paneRect = tester.getRect(find.byType(AppDesktopPane));
+    // Content starts below the pinned 48px toolbar band plus the 16px
+    // scroll-content inset.
+    expect(
+      statusRect.top - paneRect.top,
+      closeTo(AppPaneScrollScaffold.toolbarHeight + AppSpacing.sm, 1),
+    );
     // The title is the first child of the status content column.
     expect(titleRect.top - statusRect.top, closeTo(0, 1));
 
-    // The content fits, so the overlay scrollbar stays hidden and inert and
-    // the scroll gutter does not reserve thumb space.
+    // The content fits, so the overlay scrollbar stays hidden — and the page
+    // genuinely must not scroll at the 1080x720 reference window: the design
+    // hides the Scrollbar instance on every status frame.
     final scrollbar = tester.widget<RawScrollbar>(
-      find.byKey(const ValueKey('swap_activity_detail_scrollbar')),
+      find.byKey(AppPaneScrollScaffold.scrollbarKey),
     );
     expect(scrollbar.thumbVisibility, isFalse);
-    expect(scrollbar.interactive, isFalse);
-
-    final gutter = tester.widget<Padding>(
-      find.byKey(const ValueKey('swap_activity_detail_scroll_gutter')),
+    final scrollView = tester.widget<SingleChildScrollView>(
+      find.byKey(AppPaneScrollScaffold.scrollViewKey),
     );
-    expect(gutter.padding.resolve(TextDirection.ltr).right, 0);
-
-    final attributionRect = tester.getRect(
-      find.byKey(const ValueKey('swap_near_intents_attribution')),
-    );
-    final paneRect = tester.getRect(find.byType(AppDesktopPane));
-    expect(attributionRect.left, closeTo(paneRect.left + AppSpacing.md, 1));
-    expect(paneRect.bottom - attributionRect.bottom, closeTo(AppSpacing.md, 1));
+    expect(scrollView.controller!.position.maxScrollExtent, 0);
 
     // The redesigned details tab renders all rows directly (no More details
     // expansion, no Account row).
@@ -4918,17 +4909,15 @@ void main() {
       reviewActionsRect.top - reviewPanelRect.bottom,
       closeTo(AppSpacing.base, 0.1),
     );
+    // The review page scrolls through the shared pane scaffold: a 6px
+    // overlay thumb spanning the full pane, with no reserved gutter.
     final reviewScrollbar = tester.widget<RawScrollbar>(
-      find.byKey(const ValueKey('swap_review_scrollbar')),
+      find.byKey(AppPaneScrollScaffold.scrollbarKey),
     );
-    expect(reviewScrollbar.thickness, 4);
-    expect(reviewScrollbar.crossAxisMargin, AppSpacing.xxs);
-    final scrollGutter = tester.widget<Padding>(
-      find.byKey(const ValueKey('swap_review_scroll_gutter')),
-    );
-    expect(scrollGutter.padding, const EdgeInsets.only(right: AppSpacing.s));
+    expect(reviewScrollbar.thickness, 6);
+    expect(reviewScrollbar.crossAxisMargin, 6);
     final scrollAreaSize = tester.getSize(
-      find.byKey(const ValueKey('swap_review_scrollbar')),
+      find.byKey(AppPaneScrollScaffold.scrollbarKey),
     );
     final panelSize = tester.getSize(
       find.byKey(const ValueKey('swap_review_panel')),
@@ -6311,9 +6300,10 @@ void main() {
         find.byKey(const ValueKey('swap_activity_deposit_qr_panel')),
         findsOneWidget,
       );
+      // The redesigned detail pages drop the NEAR Intents attribution.
       expect(
         find.byKey(const ValueKey('swap_near_intents_attribution')),
-        findsOneWidget,
+        findsNothing,
       );
       expect(
         find.byKey(const ValueKey('swap_copy_deposit_address')),
@@ -7798,9 +7788,9 @@ Widget _statusTestPage({
   bool showTabs = true,
   List<SwapStatusDetailRowData>? details,
 }) {
-  // The real screens host this content in a scroll view; the 800x600 test
-  // surface is shorter than the full progress page, so scroll here too
-  // instead of overflowing the column.
+  // The real screens host this content in the pane scroll scaffold; the
+  // 800x600 test surface is shorter than the full progress page, so scroll
+  // here too instead of overflowing the column.
   return SingleChildScrollView(
     child: SwapStatusPageContent(
       title: title,

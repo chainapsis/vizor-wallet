@@ -9,6 +9,7 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
@@ -19,7 +20,6 @@ import '../models/swap_fiat_amount.dart';
 import '../models/swap_fiat_value_formatting.dart';
 import '../models/swap_models.dart';
 import '../providers/swap_state_provider.dart';
-import '../widgets/swap_near_intents_attribution.dart';
 import '../widgets/swap_review_page_content.dart';
 
 class SwapReviewScreen extends ConsumerStatefulWidget {
@@ -127,98 +127,67 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.only(top: AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        padding: EdgeInsets.zero,
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(left: AppSpacing.xxs),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: AppBackLink(
+            AppPaneScrollScaffold(
+              toolbar: AppPaneToolbar(
+                leading: AppBackLink(
                   label: 'Swap',
                   minWidth: 60,
                   onTap: _returnToSwap,
                 ),
               ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.sm,
+              ),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SwapReviewPageContent(
+                      quote: quote,
+                      addressPlan: addressPlan,
+                      expired: swapState.quoteExpired,
+                      amountWarning: swapState.reviewAmountDifferenceWarning,
+                      startError: swapState.statusError,
+                      startBlockedReason: startBlockedReason,
+                      payFiatTextOverride: _reviewFiatTextForAsset(
+                        swapState,
+                        quote: quote,
+                        asset: quote.sellAsset,
+                        amount: quote.sellAmount,
+                      ),
+                      receiveFiatTextOverride: _reviewFiatTextForAsset(
+                        swapState,
+                        quote: quote,
+                        asset: quote.receiveAsset,
+                        amount: quote.receiveAmount,
+                      ),
+                      onCopy: _copyAddress,
+                    ),
+                    const SizedBox(height: AppSpacing.base),
+                    SwapReviewPageActions(
+                      expired: swapState.quoteExpired,
+                      starting: swapState.startSubmitting,
+                      startBlockedReason: startBlockedReason,
+                      sendsZec: quote.direction.sendsZec,
+                      onReviewAgain: _reviewAgain,
+                      onCancelReview: _returnToSwap,
+                      onStartIntent: _startIntent,
+                    ),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: AppSpacing.s),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    return Stack(
-                      children: [
-                        Positioned.fill(
-                          child: SwapReviewPageScrollArea(
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                minHeight: constraints.maxHeight,
-                              ),
-                              child: Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    SwapReviewPageContent(
-                                      quote: quote,
-                                      addressPlan: addressPlan,
-                                      expired: swapState.quoteExpired,
-                                      amountWarning: swapState
-                                          .reviewAmountDifferenceWarning,
-                                      startError: swapState.statusError,
-                                      startBlockedReason: startBlockedReason,
-                                      payFiatTextOverride:
-                                          _reviewFiatTextForAsset(
-                                            swapState,
-                                            quote: quote,
-                                            asset: quote.sellAsset,
-                                            amount: quote.sellAmount,
-                                          ),
-                                      receiveFiatTextOverride:
-                                          _reviewFiatTextForAsset(
-                                            swapState,
-                                            quote: quote,
-                                            asset: quote.receiveAsset,
-                                            amount: quote.receiveAmount,
-                                          ),
-                                      onCopy: _copyAddress,
-                                    ),
-                                    const SizedBox(height: AppSpacing.base),
-                                    SwapReviewPageActions(
-                                      expired: swapState.quoteExpired,
-                                      starting: swapState.startSubmitting,
-                                      startBlockedReason: startBlockedReason,
-                                      sendsZec: quote.direction.sendsZec,
-                                      onReviewAgain: _reviewAgain,
-                                      onCancelReview: _returnToSwap,
-                                      onStartIntent: _startIntent,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        if (constraints.maxHeight >= 520)
-                          const Positioned(
-                            left: 0,
-                            bottom: AppSpacing.md,
-                            child: SwapNearIntentsAttribution(),
-                          ),
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: AppToastHost(
-                              key: const ValueKey('swap_review_toast_host'),
-                              child: SizedBox.expand(
-                                key: _toastOverlayContextKey,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AppToastHost(
+                  key: const ValueKey('swap_review_toast_host'),
+                  child: SizedBox.expand(key: _toastOverlayContextKey),
                 ),
               ),
             ),

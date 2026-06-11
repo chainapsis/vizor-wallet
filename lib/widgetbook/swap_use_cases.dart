@@ -935,54 +935,20 @@ class _SwapFlowPageFrame extends StatelessWidget {
             child: AppDesktopShell(
               sidebar: const _PreviewSwapSidebar(),
               pane: AppDesktopPane(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.md,
-                  AppSpacing.md,
-                  AppSpacing.md,
-                  0,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: AppBackLink(
-                        label: backLabel,
-                        minWidth: 60,
-                        onTap: () {},
-                      ),
+                padding: EdgeInsets.zero,
+                child: AppPaneScrollScaffold(
+                  toolbar: AppPaneToolbar(
+                    leading: AppBackLink(
+                      label: backLabel,
+                      minWidth: 60,
+                      onTap: () {},
                     ),
-                    const SizedBox(height: AppSpacing.s),
-                    Expanded(
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          return Stack(
-                            children: [
-                              Positioned.fill(
-                                child: SingleChildScrollView(
-                                  child: ConstrainedBox(
-                                    constraints: BoxConstraints(
-                                      minHeight: constraints.maxHeight,
-                                    ),
-                                    child: Align(
-                                      alignment: childAlignment,
-                                      child: child,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              if (constraints.maxHeight >= 520)
-                                const Positioned(
-                                  left: 0,
-                                  bottom: AppSpacing.md,
-                                  child: SwapNearIntentsAttribution(),
-                                ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                  ],
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.sm,
+                  ),
+                  child: Align(alignment: childAlignment, child: child),
                 ),
               ),
             ),
