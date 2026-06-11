@@ -211,12 +211,36 @@ void main() {
     );
   });
 
-  testWidgets('share surfaces the not-available-yet sheet', (tester) async {
+  testWidgets('share hands the address to the platform share sheet', (
+    tester,
+  ) async {
+    // share_plus rides a method channel; capture the invocation instead
+    // of opening a real share sheet.
+    final shareCalls = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/share'),
+      (call) async {
+        shareCalls.add(call);
+        return 'dev.fluttercommunity.plus/share/success';
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('dev.fluttercommunity.plus/share'),
+        null,
+      ),
+    );
+
     await _pumpReceive(tester, _FakeReceiveAddressService());
 
     await tester.tap(find.text('Share shielded address'));
     await _settle(tester);
 
-    expect(find.text('Not available yet'), findsOneWidget);
+    expect(find.text('Not available yet'), findsNothing);
+    expect(shareCalls, hasLength(1));
+    expect(
+      (shareCalls.single.arguments as Map<Object?, Object?>)['text'],
+      _shielded,
+    );
   });
 }

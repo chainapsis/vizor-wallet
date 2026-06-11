@@ -20,7 +20,6 @@ import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
-import '../../../../core/widgets/mobile/unsupported_sheet.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
@@ -363,7 +362,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final confirmed = await showAppMobileSheet<bool>(
       context: context,
       isDismissible: false,
-      builder: (_) => const _SaplingParamsSheet(),
+      builder: (_) => const MobileSaplingParamsSheet(),
     );
     return confirmed == true;
   }
@@ -372,11 +371,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (_phase != _SendPhase.compose) return;
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
-    if (ref.read(accountProvider.notifier).isHardwareAccount(accountUuid)) {
-      // Keystone signing has no mobile flow yet.
-      await showUnsupportedSheet(context);
-      return;
-    }
+    final isHardware = ref
+        .read(accountProvider.notifier)
+        .isHardwareAccount(accountUuid);
     final amountZatoshi = parseZecAmount(_amountText.trim());
     if (amountZatoshi == null || amountZatoshi <= BigInt.zero) return;
 
@@ -418,9 +415,34 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     setState(() => _feeZatoshi = args.feeZatoshi);
 
+    KeystoneBroadcastArgs? keystone;
+    if (isHardware) {
+      // Hand the PCZT to the device for the spend-auth signature; the
+      // signing screen owns the QR display/scan round trip.
+      keystone = await context.push<KeystoneBroadcastArgs>(
+        '/send/keystone-sign',
+        extra: args,
+      );
+      if (keystone == null) {
+        // Cancelled (or failed before signing). The signing screen may
+        // already have consumed the proposal — discard is idempotent.
+        unawaited(
+          discardSendProposal(
+            proposalId: args.proposalId,
+            sendFlowId: _sendFlowId,
+            logContext: 'MobileSend(keystone cancelled)',
+          ),
+        );
+        if (mounted) setState(() => _phase = _SendPhase.compose);
+        return;
+      }
+      if (!mounted) return;
+    }
+
     final outcome = await runSendBroadcast(
       ref: ref,
       args: args,
+      keystone: keystone,
       confirmSaplingParamsDownload: _confirmSaplingParamsDownload,
       shouldAbort: () async => !mounted,
     );
@@ -1496,8 +1518,10 @@ class _MemoSheetState extends State<_MemoSheet> {
 
 /// Mobile counterpart of the desktop Sapling params prompt — same copy,
 /// presented as a sheet. Pops true to download.
-class _SaplingParamsSheet extends StatelessWidget {
-  const _SaplingParamsSheet();
+/// Shared with the Keystone signing screen, which needs the same
+/// proving-parameters consent before preparing a Sapling-bound PCZT.
+class MobileSaplingParamsSheet extends StatelessWidget {
+  const MobileSaplingParamsSheet({super.key});
 
   @override
   Widget build(BuildContext context) {

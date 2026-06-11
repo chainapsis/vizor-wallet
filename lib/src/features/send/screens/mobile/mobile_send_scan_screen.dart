@@ -136,7 +136,7 @@ class _MobileSendScanScreenState extends State<MobileSendScanScreen> {
             child: SizedBox(
               width: viewfinderSize,
               height: viewfinderSize,
-              child: const _ViewfinderCorners(),
+              child: const MobileScanViewfinderCorners(),
             ),
           ),
           SafeArea(
@@ -217,8 +217,9 @@ class _MobileSendScanScreenState extends State<MobileSendScanScreen> {
   }
 }
 
-class _ViewfinderCorners extends StatelessWidget {
-  const _ViewfinderCorners();
+/// Shared with the Keystone signing scanner.
+class MobileScanViewfinderCorners extends StatelessWidget {
+  const MobileScanViewfinderCorners({super.key});
 
   @override
   Widget build(BuildContext context) {
