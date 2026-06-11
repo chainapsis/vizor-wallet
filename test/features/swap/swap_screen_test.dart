@@ -1424,13 +1424,13 @@ void main() {
       find.byKey(const ValueKey('address_scan_camera_border')),
       findsOneWidget,
     );
-    // Updated design: the cancel hugs its label instead of stretching to the
-    // old 196px ghost width.
+    // The cancel is text-only visually but keeps the spec'd 196px-minimum
+    // ghost hit area (it stretches with the modal content column).
     final cancelSize = tester.getSize(
       find.byKey(const ValueKey('address_scan_cancel_button')),
     );
     expect(cancelSize.height, 44);
-    expect(cancelSize.width, lessThan(196));
+    expect(cancelSize.width, greaterThanOrEqualTo(196));
 
     await pumpStatus(
       AddressQrCameraStatus.loading,

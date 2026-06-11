@@ -354,14 +354,13 @@ class AddressQrScanModalContent extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          Center(
-            child: AppButton(
-              key: const ValueKey('address_scan_cancel_button'),
-              onPressed: onCancel,
-              variant: AppButtonVariant.ghost,
-              size: AppButtonSize.large,
-              child: const Text('Cancel'),
-            ),
+          AppButton(
+            key: const ValueKey('address_scan_cancel_button'),
+            onPressed: onCancel,
+            variant: AppButtonVariant.ghost,
+            size: AppButtonSize.large,
+            minWidth: 196,
+            child: const Text('Cancel'),
           ),
         ],
       ),
