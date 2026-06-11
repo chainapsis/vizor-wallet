@@ -1,72 +1,87 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_tooltip.dart';
+import '../../../core/widgets/review_list_row.dart';
+import '../../../core/widgets/review_wrap_card.dart';
 import '../../address_book/widgets/address_book_network_icon.dart';
-import '../domain/swap_contract.dart';
 import '../models/swap_detail_tooltips.dart';
+import '../models/swap_models.dart';
 import '../models/swap_status_presentation.dart';
-import 'swap_amount_text.dart';
-import 'swap_asset_icon.dart';
-import 'swap_summary_amount_text.dart';
+import 'swap_review_info.dart';
 
 export '../models/swap_status_presentation.dart';
 
 const swapStatusDefaultProgressAdvanceInterval = Duration(milliseconds: 520);
-const _swapStatusSummaryMaxAmountChars = 10;
-const _swapStatusProgressHeight = 580.0;
-const _swapStatusSummaryCardHeight = 120.0;
-const _swapStatusBadgeOverlap = 1.0;
-const _swapStatusDetailIconSize = 14.0;
+const _swapStatusDetailIconSize = 16.0;
 
+/// In-progress / details / completed surface for a swap intent.
+///
+/// Layout (all states):
+/// title → [SwapReviewInfo] → then, for non-terminal intents, the centered
+/// Simple Tabs over the progress route or the detail card; for terminal
+/// intents a single detail card that leads with the Status row.
 class SwapStatusPageContent extends StatefulWidget {
   const SwapStatusPageContent({
     required this.title,
     required this.payAsset,
     required this.receiveAsset,
-    required this.payFiatText,
-    required this.receiveFiatText,
     required this.payAmountText,
     required this.receiveAmountText,
+    required this.payDetailText,
+    required this.receiveDetailText,
+    required this.statusLabel,
     required this.badgeKind,
+    this.payDetailCopyText,
+    this.receiveDetailCopyText,
     this.progressIndex = 0,
     this.progressAdvanceInterval = swapStatusDefaultProgressAdvanceInterval,
     this.activeTab = SwapStatusTab.progress,
     this.steps = const [],
     this.details = const [],
-    this.detailsExpanded = false,
     this.showTabs = true,
     this.onTabChanged,
-    this.onToggleDetails,
-    this.onOpenExplorer,
+    this.onCopy,
     super.key,
   });
 
   final String title;
   final SwapAsset payAsset;
   final SwapAsset receiveAsset;
-  final String payFiatText;
-  final String receiveFiatText;
   final String payAmountText;
   final String receiveAmountText;
+
+  /// Bottom line of the pay summary row: fiat value, or the refund address
+  /// line for external→ZEC swaps.
+  final String payDetailText;
+
+  /// Bottom line of the receive summary row: fiat value, or the recipient
+  /// address line for ZEC→external swaps.
+  final String receiveDetailText;
+
+  /// Full address copied by the pay/receive row's copy affordance, when the
+  /// line shows an address rather than a fiat value.
+  final String? payDetailCopyText;
+  final String? receiveDetailCopyText;
+
+  /// User-facing status label shown in the terminal Status row.
+  final String statusLabel;
   final SwapStatusBadgeKind badgeKind;
   final int progressIndex;
   final Duration progressAdvanceInterval;
   final SwapStatusTab activeTab;
   final List<SwapStatusStepData> steps;
   final List<SwapStatusDetailRowData> details;
-  final bool detailsExpanded;
   final bool showTabs;
   final ValueChanged<SwapStatusTab>? onTabChanged;
-  final VoidCallback? onToggleDetails;
-  final VoidCallback? onOpenExplorer;
+
+  /// Copy callback for the [SwapReviewInfo] address lines (clipboard + toast).
+  final ValueChanged<String>? onCopy;
 
   @override
   State<SwapStatusPageContent> createState() => _SwapStatusPageContentState();
@@ -187,485 +202,94 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final tabContent = widget.activeTab == SwapStatusTab.progress
-        ? _SwapProgressRoute(steps: _displayedSteps())
-        : _SwapTransactionDetails(
-            rows: widget.details,
-            expanded: widget.detailsExpanded,
-            onToggleExpanded: widget.onToggleDetails,
-          );
     return SizedBox(
       key: const ValueKey('swap_status_page_content'),
       width: 400,
-      height: _swapStatusProgressHeight,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(top: AppSpacing.s),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    widget.title,
-                    key: const ValueKey('swap_status_title'),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.displaySmall.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _StatusSummaryCard(
-                    payAsset: widget.payAsset,
-                    receiveAsset: widget.receiveAsset,
-                    payFiatText: widget.payFiatText,
-                    receiveFiatText: widget.receiveFiatText,
-                    payAmountText: widget.payAmountText,
-                    receiveAmountText: widget.receiveAmountText,
-                    badgeKind: widget.badgeKind,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  if (widget.showTabs) ...[
-                    _StatusTabs(
-                      activeTab: widget.activeTab,
-                      onChanged: widget.onTabChanged,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    if (widget.activeTab == SwapStatusTab.details)
-                      Flexible(fit: FlexFit.loose, child: tabContent)
-                    else
-                      tabContent,
-                  ] else
-                    Flexible(
-                      fit: FlexFit.loose,
-                      child: _SwapFinalDetails(rows: widget.details),
-                    ),
-                ],
+          Text(
+            widget.title,
+            key: const ValueKey('swap_status_title'),
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyLarge.copyWith(
+              fontWeight: FontWeight.w600,
+              color: colors.text.accent,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.base),
+          SwapReviewInfo(
+            pay: SwapReviewInfoSideData(
+              asset: widget.payAsset,
+              label: "You're paying",
+              amountText: widget.payAmountText,
+              detailText: widget.payDetailText,
+              detailCopyText: widget.payDetailCopyText,
+            ),
+            receive: SwapReviewInfoSideData(
+              asset: widget.receiveAsset,
+              label: "You're receiving",
+              amountText: widget.receiveAmountText,
+              detailText: widget.receiveDetailText,
+              detailCopyText: widget.receiveDetailCopyText,
+            ),
+            onCopy: widget.onCopy,
+          ),
+          const SizedBox(height: AppSpacing.base),
+          if (widget.showTabs) ...[
+            // The Figma `Swap Tabs` frame nominally adds a 12px inset above
+            // the tabs, but the design frame overflows its own 720px window
+            // by more than that — reproducing the inset makes the progress
+            // tab scroll at the reference window height. The page must fit
+            // without a scrollbar (all status frames hide the Scrollbar
+            // instance), so the inset is intentionally dropped.
+            _StatusTabs(
+              activeTab: widget.activeTab,
+              onChanged: widget.onTabChanged,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            if (widget.activeTab == SwapStatusTab.progress)
+              _SwapDetailCard(
+                child: _SwapProgressRoute(steps: _displayedSteps()),
+              )
+            else
+              _SwapDetailCard(child: _SwapDetailRows(rows: widget.details)),
+          ] else
+            _SwapDetailCard(
+              child: _SwapTerminalDetails(
+                statusLabel: widget.statusLabel,
+                badgeKind: widget.badgeKind,
+                rows: widget.details,
               ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Align(
-            alignment: Alignment.center,
-            child: _NearIntentsLink(onPressed: widget.onOpenExplorer),
-          ),
-          const SizedBox(height: AppSpacing.s),
         ],
       ),
     );
   }
 }
 
-class _StatusSummaryCard extends StatelessWidget {
-  const _StatusSummaryCard({
-    required this.payAsset,
-    required this.receiveAsset,
-    required this.payFiatText,
-    required this.receiveFiatText,
-    required this.payAmountText,
-    required this.receiveAmountText,
-    required this.badgeKind,
-  });
+/// Figma 'Review Wrap': the raised, rounded detail card that wraps the
+/// progress route and the detail rows. Built on the core [ReviewWrapCard].
+class _SwapDetailCard extends StatelessWidget {
+  const _SwapDetailCard({required this.child});
 
-  final SwapAsset payAsset;
-  final SwapAsset receiveAsset;
-  final String payFiatText;
-  final String receiveFiatText;
-  final String payAmountText;
-  final String receiveAmountText;
-  final SwapStatusBadgeKind badgeKind;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final failed = badgeKind == SwapStatusBadgeKind.failed;
-    final payNeedsCompact = isLongSwapSummaryAmountText(payAmountText);
-    final receiveNeedsCompact = isLongSwapSummaryAmountText(receiveAmountText);
-    final bothSidesNeedCompact = payNeedsCompact && receiveNeedsCompact;
-    final compactPayAmountText = compactSwapSummaryAmountText(
-      payAmountText,
-      forceCompactThousands: payNeedsCompact,
-      maxCharacters: _swapStatusSummaryMaxAmountChars,
-    );
-    final compactReceiveAmountText = compactSwapSummaryAmountText(
-      receiveAmountText,
-      forceCompactThousands: receiveNeedsCompact,
-      maxCharacters: _swapStatusSummaryMaxAmountChars,
-    );
-    final receiveNeedsWideSide =
-        compactReceiveAmountText.length > compactPayAmountText.length;
-    final leftWidth = bothSidesNeedCompact
-        ? 184.0
-        : receiveNeedsWideSide
-        ? 160.0
-        : 205.0;
-    final arrowLeft = bothSidesNeedCompact
-        ? 184.0
-        : receiveNeedsWideSide
-        ? 161.5
-        : 206.5;
-    final rightLeft = bothSidesNeedCompact
-        ? 216.0
-        : receiveNeedsWideSide
-        ? 195.0
-        : 240.0;
-    final rightWidth = bothSidesNeedCompact
-        ? 184.0
-        : receiveNeedsWideSide
-        ? 205.0
-        : 160.0;
-    return SizedBox(
-      width: 400,
-      height: 145,
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.topCenter,
-        children: [
-          Container(
-            key: const ValueKey('swap_status_summary_card'),
-            width: 400,
-            height: _swapStatusSummaryCardHeight,
-            decoration: BoxDecoration(
-              color: colors.background.homeCard,
-              borderRadius: BorderRadius.circular(AppRadii.medium),
-            ),
-            child: Stack(
-              children: [
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: leftWidth,
-                  child: _SummarySide(
-                    label: 'Pay',
-                    fiatText: payFiatText,
-                    amountText: compactPayAmountText,
-                    asset: payAsset,
-                  ),
-                ),
-                Positioned(
-                  left: arrowLeft,
-                  top: 0,
-                  bottom: 0,
-                  width: 32,
-                  child: Opacity(
-                    key: const ValueKey('swap_status_summary_divider_opacity'),
-                    opacity: failed ? 0.5 : 1,
-                    child: Center(
-                      child: AppIcon(
-                        AppIcons.arrowForwardIos,
-                        size: 20,
-                        color: colors.text.homeCard,
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: rightLeft,
-                  top: 0,
-                  bottom: 0,
-                  width: rightWidth,
-                  child: Opacity(
-                    key: const ValueKey('swap_status_summary_receive_opacity'),
-                    opacity: failed ? 0.5 : 1,
-                    child: _SummarySide(
-                      label: 'Receive',
-                      fiatText: receiveFiatText,
-                      amountText: compactReceiveAmountText,
-                      asset: receiveAsset,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Positioned(
-            top: _swapStatusSummaryCardHeight - _swapStatusBadgeOverlap,
-            child: _StatusBadge(kind: badgeKind),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SummarySide extends StatelessWidget {
-  const _SummarySide({
-    required this.label,
-    required this.fiatText,
-    required this.amountText,
-    required this.asset,
-  });
-
-  final String label;
-  final String fiatText;
-  final String amountText;
-  final SwapAsset asset;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final baseColor = colors.text.homeCard;
-    final mutedColor = colors.text.homeCard.withValues(alpha: 0.58);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelMedium.copyWith(color: baseColor),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Flexible(
-                  child: Text(
-                    fiatText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: mutedColor,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.s),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SwapAssetIcon(
-                  asset: asset,
-                  size: 32,
-                  showChainBadge: !asset.isNativeZec,
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SwapSummaryAmountText(
-                        amountText: amountText,
-                        asset: asset,
-                        keyPrefix:
-                            'swap_status_${label.toLowerCase()}_summary_amount',
-                        style: AppTypography.labelLarge.copyWith(
-                          color: baseColor,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        asset.chainLabel,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelMedium.copyWith(
-                          color: mutedColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.kind});
-
-  final SwapStatusBadgeKind kind;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final label = switch (kind) {
-      SwapStatusBadgeKind.liveQuote => 'In progress',
-      SwapStatusBadgeKind.completed => 'Completed',
-      SwapStatusBadgeKind.warning => 'Incomplete',
-      SwapStatusBadgeKind.failed => 'Failed',
-    };
-    final icon = switch (kind) {
-      SwapStatusBadgeKind.liveQuote => null,
-      SwapStatusBadgeKind.completed => AppIcons.checkCircle,
-      SwapStatusBadgeKind.warning => AppIcons.warning,
-      SwapStatusBadgeKind.failed => AppIcons.skull,
-    };
-    final signalColor = switch (kind) {
-      SwapStatusBadgeKind.liveQuote => colors.sync.lightSuccess,
-      SwapStatusBadgeKind.completed => colors.sync.lightSuccess,
-      SwapStatusBadgeKind.warning => colors.icon.warning,
-      SwapStatusBadgeKind.failed => colors.text.destructive,
-    };
-
-    return SizedBox(
-      key: ValueKey('swap_status_badge_${kind.name}'),
-      width: 167,
-      height: 25,
-      child: CustomPaint(
-        painter: _StatusBadgeNotchPainter(colors.background.homeCard),
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: SizedBox(
-            height: 16,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.topCenter,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (icon == null)
-                    _LiveQuoteLed(color: signalColor)
-                  else
-                    AppIcon(icon, size: 16, color: signalColor),
-                  const SizedBox(width: AppSpacing.xxs),
-                  Text(
-                    label,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: colors.text.homeCard,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusBadgeNotchPainter extends CustomPainter {
-  const _StatusBadgeNotchPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    final path = Path()
-      ..moveTo(0, 0)
-      ..cubicTo(18, 0, 22, 0, 29, 13)
-      ..cubicTo(33, 21, 41, size.height, 53, size.height)
-      ..lineTo(size.width - 53, size.height)
-      ..cubicTo(
-        size.width - 41,
-        size.height,
-        size.width - 33,
-        21,
-        size.width - 29,
-        13,
-      )
-      ..cubicTo(size.width - 22, 0, size.width - 18, 0, size.width, 0)
-      ..close();
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(_StatusBadgeNotchPainter oldDelegate) {
-    return oldDelegate.color != color;
-  }
-}
-
-class _LiveQuoteLed extends StatefulWidget {
-  const _LiveQuoteLed({required this.color});
-
-  final Color color;
-
-  @override
-  State<_LiveQuoteLed> createState() => _LiveQuoteLedState();
-}
-
-class _LiveQuoteLedState extends State<_LiveQuoteLed> {
-  Timer? _timer;
-  var _lit = true;
-
-  @override
-  void initState() {
-    super.initState();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _syncTimer();
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  void _syncTimer() {
-    final reduceMotion =
-        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-    if (reduceMotion) {
-      _timer?.cancel();
-      _timer = null;
-      return;
-    }
-    _timer ??= Timer.periodic(const Duration(milliseconds: 900), (_) {
-      if (!mounted) return;
-      setState(() => _lit = !_lit);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final reduceMotion =
-        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-    final dot = Container(
-      key: const ValueKey('swap_status_live_quote_led'),
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(
-        color: widget.color,
-        borderRadius: BorderRadius.circular(AppRadii.full),
-        boxShadow: [
-          BoxShadow(color: widget.color.withValues(alpha: 0.42), blurRadius: 6),
-        ],
-      ),
-    );
-    if (reduceMotion) {
-      return Opacity(
-        key: const ValueKey('swap_status_live_quote_led_opacity'),
-        opacity: 1,
-        child: dot,
-      );
-    }
-    return AnimatedOpacity(
-      key: const ValueKey('swap_status_live_quote_led_opacity'),
-      opacity: _lit ? 1 : 0.42,
-      duration: const Duration(milliseconds: 620),
-      curve: Curves.easeInOutCubic,
-      child: dot,
+    return ReviewWrapCard(
+      key: const ValueKey('swap_status_detail_card'),
+      children: [child],
     );
   }
 }
 
 class _StatusTabs extends StatelessWidget {
   const _StatusTabs({required this.activeTab, required this.onChanged});
-
-  static const _progressTabMinWidth = 94.0;
-  static const _detailsTabMinWidth = 123.0;
 
   final SwapStatusTab activeTab;
   final ValueChanged<SwapStatusTab>? onChanged;
@@ -680,14 +304,12 @@ class _StatusTabs extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             _StatusTabLabel(
-              minWidth: _progressTabMinWidth,
               label: 'Swap Progress',
               active: activeTab == SwapStatusTab.progress,
               onTap: () => onChanged?.call(SwapStatusTab.progress),
             ),
-            const SizedBox(width: AppSpacing.sm),
+            const SizedBox(width: AppSpacing.xs),
             _StatusTabLabel(
-              minWidth: _detailsTabMinWidth,
               label: 'Transaction details',
               active: activeTab == SwapStatusTab.details,
               onTap: () => onChanged?.call(SwapStatusTab.details),
@@ -701,13 +323,11 @@ class _StatusTabs extends StatelessWidget {
 
 class _StatusTabLabel extends StatelessWidget {
   const _StatusTabLabel({
-    required this.minWidth,
     required this.label,
     required this.active,
     required this.onTap,
   });
 
-  final double minWidth;
   final String label;
   final bool active;
   final VoidCallback? onTap;
@@ -715,6 +335,11 @@ class _StatusTabLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final style = active
+        ? AppTypography.bodyMediumStrong.copyWith(color: colors.text.accent)
+        : AppTypography.bodyMedium.copyWith(
+            color: colors.text.accent.withValues(alpha: 0.5),
+          );
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
@@ -725,16 +350,13 @@ class _StatusTabLabel extends StatelessWidget {
         ),
         behavior: HitTestBehavior.opaque,
         onTap: active ? null : onTap,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minWidth: minWidth),
-          child: Text(
-            label,
-            maxLines: 1,
-            softWrap: false,
-            style: AppTypography.bodyMediumStrong.copyWith(
-              color: active ? colors.text.accent : colors.text.secondary,
-            ),
+        child: Padding(
+          // Figma `tab`: 4px horizontal / 2px vertical inset (25px row).
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xxs,
+            vertical: 2,
           ),
+          child: Text(label, maxLines: 1, softWrap: false, style: style),
         ),
       ),
     );
@@ -750,7 +372,8 @@ class _SwapProgressRoute extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       key: const ValueKey('swap_progress_route'),
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      // Figma `_Swap Route`: 12px vertical inset inside the card, full width.
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -782,10 +405,13 @@ class _ProgressStep extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final complete = step.state == SwapStatusStepState.complete;
     final active = step.state == SwapStatusStepState.active;
     final isLast = index == count - 1;
-    final height = active ? 84.0 : (isLast ? 24.0 : 37.0);
+    // Fixed per-step heights reproduce the Figma connector lengths: the active
+    // step reserves room for its 2-line description (24 title + 8 gap + 58
+    // padded description), pending/complete steps a single title row, and the
+    // last step has no trailing connector.
+    final height = active ? 90.0 : (isLast ? 24.0 : 37.0);
     final title = step.titleForState(step.state);
     return SizedBox(
       key: ValueKey('swap_activity_route_step_${index}_${step.state.name}'),
@@ -808,6 +434,8 @@ class _ProgressStep extends StatelessWidget {
                 if (!isLast)
                   Positioned(
                     key: ValueKey('swap_activity_route_step_${index}_line'),
+                    // The icon is 24 high; the connector starts 8px below it
+                    // and runs to the bottom of the step.
                     top: 32,
                     bottom: 0,
                     left: 10.5,
@@ -837,10 +465,14 @@ class _ProgressStep extends StatelessWidget {
                           title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
+                          // Figma keeps every step title on the accent color
+                          // (light #141818 / dark #FFFFFF); only the weight
+                          // distinguishes the active step.
                           style: AppTypography.labelLarge.copyWith(
-                            color: active || complete
-                                ? colors.text.accent
-                                : colors.text.secondary,
+                            fontWeight: active
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                            color: colors.text.accent,
                           ),
                         ),
                       ),
@@ -858,13 +490,17 @@ class _ProgressStep extends StatelessWidget {
                 ),
                 if (active && step.description != null) ...[
                   const SizedBox(height: AppSpacing.xs),
-                  SizedBox(
-                    width: 256,
+                  // Figma pads the description block vertically (8px above
+                  // and below the 2-line text), flush with the title column.
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.xs,
+                    ),
                     child: Text(
                       step.description!,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelLarge.copyWith(
+                      style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.secondary,
                       ),
                     ),
@@ -909,346 +545,193 @@ class _ProgressStepIcon extends StatelessWidget {
               color: colors.icon.inverse,
               animated: animateLoader,
             )
+          : complete
+          ? AppIcon(AppIcons.check, size: 16, color: colors.icon.inverse)
           : AppIcon(
-              _inactiveProgressIcon(step),
+              _pendingProgressIcon(step),
               size: 16,
-              color: complete ? colors.icon.inverse : colors.icon.muted,
+              color: colors.icon.muted,
             ),
     );
   }
 }
 
-String _inactiveProgressIcon(SwapStatusStepData step) {
+String _pendingProgressIcon(SwapStatusStepData step) {
   final title = step.title.toLowerCase();
   if (title.contains('swap')) return AppIcons.swapArrows;
   if (title.contains('send')) return AppIcons.arrowDownCircle;
   return AppIcons.check;
 }
 
-class _SwapTransactionDetails extends StatefulWidget {
-  const _SwapTransactionDetails({
-    required this.rows,
-    required this.expanded,
-    required this.onToggleExpanded,
-  });
+/// Detail-rows column for the non-terminal Transaction details tab. The fee
+/// row (the last row) is separated from the rows above by a hairline divider.
+class _SwapDetailRows extends StatelessWidget {
+  const _SwapDetailRows({required this.rows});
 
   final List<SwapStatusDetailRowData> rows;
-  final bool expanded;
-  final VoidCallback? onToggleExpanded;
 
   @override
-  State<_SwapTransactionDetails> createState() =>
-      _SwapTransactionDetailsState();
+  Widget build(BuildContext context) {
+    return Column(
+      key: const ValueKey('swap_status_detail_rows'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: _detailRowsWithFeeDivider(rows),
+    );
+  }
 }
 
-class _SwapTransactionDetailsState extends State<_SwapTransactionDetails> {
-  final _scrollController = ScrollController();
+/// Terminal (completed / failed) detail card: a leading Status row, the
+/// presentation detail rows, and the fee row separated by a hairline divider.
+class _SwapTerminalDetails extends StatelessWidget {
+  const _SwapTerminalDetails({
+    required this.statusLabel,
+    required this.badgeKind,
+    required this.rows,
+  });
+
+  final String statusLabel;
+  final SwapStatusBadgeKind badgeKind;
+  final List<SwapStatusDetailRowData> rows;
 
   @override
-  void initState() {
-    super.initState();
-    if (widget.expanded) {
-      _scrollToExpandedContentAfterLayout();
-    }
+  Widget build(BuildContext context) {
+    return Column(
+      key: const ValueKey('swap_final_details'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _StatusRow(label: statusLabel, badgeKind: badgeKind),
+        // Figma keeps the Status row in its own `List` group, separated from
+        // the metadata rows by the card's 16px group gap.
+        const SizedBox(height: AppSpacing.sm),
+        ..._detailRowsWithFeeDivider(rows),
+      ],
+    );
   }
+}
 
-  @override
-  void didUpdateWidget(covariant _SwapTransactionDetails oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!oldWidget.expanded && widget.expanded) {
-      _scrollToExpandedContentAfterLayout();
-    }
-  }
+/// Renders [rows] as detail rows, inserting the shared hairline divider before
+/// the final fee row when the last row is one — the in-progress and terminal
+/// detail lists end with `Swap fee` / `Total fees`, but the incomplete-deposit
+/// list ends with a deposit-tx row and gets no divider.
+List<Widget> _detailRowsWithFeeDivider(List<SwapStatusDetailRowData> rows) {
+  if (rows.isEmpty) return const [];
+  final lastIndex = rows.length - 1;
+  final dividerBeforeLast = rows.length > 1 && _isFeeRow(rows[lastIndex].label);
+  return [
+    for (var index = 0; index < rows.length; index++) ...[
+      if (index == lastIndex && dividerBeforeLast) const _DetailDivider(),
+      _DetailRow(row: rows[index]),
+    ],
+  ];
+}
 
-  void _scrollToExpandedContentAfterLayout() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (!_scrollController.hasClients) return;
-      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-    });
-  }
+bool _isFeeRow(String label) {
+  return label == 'Swap fee' ||
+      label == 'Total fees' ||
+      label == 'Tx fee' ||
+      label == 'Refund fee';
+}
 
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
+class _DetailDivider extends StatelessWidget {
+  const _DetailDivider();
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final anchorIndex = _transactionDetailsAnchorIndex(widget.rows);
-    final anchorRow = anchorIndex == -1 ? null : widget.rows[anchorIndex];
-    final leadingRows = anchorIndex == -1
-        ? widget.rows
-        : widget.rows.take(anchorIndex).toList();
-    final extraRows = anchorIndex == -1
-        ? const <SwapStatusDetailRowData>[]
-        : widget.rows.skip(anchorIndex + 1).toList();
-    final content = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: widget.expanded
-          ? [
-              for (final row in leadingRows) _InsetDetailRow(row: row),
-              if (leadingRows.isNotEmpty) const SizedBox(height: AppSpacing.sm),
-              if (anchorRow != null) _InsetDetailRow(row: anchorRow),
-              const SizedBox(height: AppSpacing.sm),
-              _InsetDetailRow(
-                row: const SwapStatusDetailRowData(
-                  label: 'Less details',
-                  value: '',
-                ),
-                chevronUp: true,
-                onTap: widget.onToggleExpanded,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              for (final row in extraRows) _InsetDetailRow(row: row),
-            ]
-          : [
-              for (final row in leadingRows) _InsetDetailRow(row: row),
-              if (anchorRow != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                _InsetDetailRow(row: anchorRow),
-              ],
-              if (extraRows.isNotEmpty) ...[
-                const SizedBox(height: AppSpacing.sm),
-                _InsetDetailRow(
-                  row: const SwapStatusDetailRowData(
-                    label: 'More details',
-                    value: '',
-                  ),
-                  onTap: widget.onToggleExpanded,
-                ),
-              ],
-            ],
+    return Padding(
+      key: const ValueKey('swap_status_detail_divider'),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      child: SizedBox(
+        height: 1,
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: colors.border.regular),
+        ),
+      ),
     );
+  }
+}
 
-    if (!widget.expanded) {
-      return _StatusDetailsScrollView(
-        key: const ValueKey('swap_transaction_details_collapsed_scroll_view'),
-        child: KeyedSubtree(
-          key: const ValueKey('swap_transaction_details_collapsed'),
-          child: content,
+class _StatusRow extends StatelessWidget {
+  const _StatusRow({required this.label, required this.badgeKind});
+
+  final String label;
+  final SwapStatusBadgeKind badgeKind;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final failed = badgeKind == SwapStatusBadgeKind.failed;
+    final signalColor = failed
+        ? colors.text.destructive
+        : colors.text.positiveStrong;
+    return ReviewListRow(
+      key: const ValueKey('swap_status_summary_row'),
+      label: 'Status',
+      value: label,
+      valueColor: signalColor,
+      leadingIconName: failed ? AppIcons.warning : AppIcons.checkCircle,
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({required this.row});
+
+  final SwapStatusDetailRowData row;
+
+  @override
+  Widget build(BuildContext context) {
+    // The matched address-book identity cell keeps its bespoke two-line layout.
+    if (row.addressBookLabel != null) {
+      final cell = _matchedAddressCell(context);
+      if (!row.copyable) return cell;
+      return MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => copyTextWithToast(
+            context,
+            text: row.copyText ?? row.value,
+            toastMessage: 'Copied',
+          ),
+          child: cell,
         ),
       );
     }
 
-    return SizedBox(
-      key: const ValueKey('swap_transaction_details_expanded'),
-      height: 192,
-      child: RawScrollbar(
-        key: const ValueKey('swap_transaction_details_scrollbar'),
-        controller: _scrollController,
-        thumbVisibility: true,
-        thickness: 6,
-        radius: const Radius.circular(AppRadii.full),
-        mainAxisMargin: 3,
-        crossAxisMargin: 3,
-        thumbColor: colors.background.overlay,
-        child: SingleChildScrollView(
-          key: const ValueKey('swap_transaction_details_scroll_view'),
-          controller: _scrollController,
-          child: content,
-        ),
-      ),
-    );
-  }
-}
-
-int _transactionDetailsAnchorIndex(List<SwapStatusDetailRowData> rows) {
-  final swapFeeIndex = rows.indexWhere((row) => row.label == 'Swap fee');
-  if (swapFeeIndex != -1) return swapFeeIndex;
-
-  final depositAddressIndex = rows.indexWhere((row) {
-    return row.label.startsWith('Deposit ') && row.label.endsWith(' to');
-  });
-  if (depositAddressIndex != -1) return depositAddressIndex;
-
-  return rows.indexWhere((row) => row.label == 'Required deposit');
-}
-
-class _InsetDetailRow extends StatelessWidget {
-  const _InsetDetailRow({
-    required this.row,
-    this.chevronUp = false,
-    this.onTap,
-  });
-
-  final SwapStatusDetailRowData row;
-  final bool chevronUp;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-      child: _DetailRow(row: row, chevronUp: chevronUp, onTap: onTap),
-    );
-  }
-}
-
-class _SwapFinalDetails extends StatelessWidget {
-  const _SwapFinalDetails({required this.rows});
-
-  final List<SwapStatusDetailRowData> rows;
-
-  @override
-  Widget build(BuildContext context) {
-    return _StatusDetailsScrollView(
-      key: const ValueKey('swap_final_details_scroll_view'),
-      child: Column(
-        key: const ValueKey('swap_final_details'),
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var index = 0; index < rows.length; index++) ...[
-            _InsetDetailRow(row: rows[index]),
-            if (_finalDetailSectionGapAfter(rows, index))
-              const SizedBox(height: AppSpacing.sm),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusDetailsScrollView extends StatelessWidget {
-  const _StatusDetailsScrollView({required this.child, super.key});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(primary: false, child: child);
-  }
-}
-
-bool _finalDetailSectionGapAfter(
-  List<SwapStatusDetailRowData> rows,
-  int index,
-) {
-  if (index >= rows.length - 1) return false;
-  final label = rows[index].label.toLowerCase();
-  return label.contains('deposit to') ||
-      label.contains('refunded to') ||
-      label == 'total fees';
-}
-
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({required this.row, this.chevronUp = false, this.onTap});
-
-  final SwapStatusDetailRowData row;
-  final bool chevronUp;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
     final colors = context.colors;
-    final showAccountAvatar = row.label == 'Account' && row.value.isNotEmpty;
-    final enabled = onTap != null || row.copyable;
-    return MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap:
-            onTap ??
-            (row.copyable
-                ? () {
-                    copyTextWithToast(
-                      context,
-                      text: row.copyText ?? row.value,
-                      toastMessage: 'Copied',
-                    );
-                  }
-                : null),
-        child: row.addressBookLabel != null
-            ? _matchedAddressCell(context)
-            : SizedBox(
-                height: 32,
-                child: row.value.isEmpty
-                    ? Center(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              row.label,
-                              style: AppTypography.labelLarge.copyWith(
-                                color: colors.text.secondary,
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.xxs),
-                            AppIcon(
-                              chevronUp ? AppIcons.collapsed : AppIcons.expand,
-                              size: 16,
-                              color: colors.icon.regular.withValues(
-                                alpha: 0.72,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              row.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTypography.labelLarge.copyWith(
-                                color: colors.text.secondary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.s),
-                          Expanded(
-                            child: Align(
-                              alignment: Alignment.centerRight,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (showAccountAvatar) ...[
-                                    AppProfilePicture(
-                                      profilePictureId:
-                                          row.accountProfilePictureId ??
-                                          kDefaultProfilePictureId,
-                                      size: AppProfilePictureSize.medium,
-                                    ),
-                                    const SizedBox(width: AppSpacing.xs),
-                                  ],
-                                  Flexible(
-                                    child: Text(
-                                      row.value,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.end,
-                                      style: AppTypography.labelLarge.copyWith(
-                                        color: colors.text.accent,
-                                      ),
-                                    ),
-                                  ),
-                                  if (row.copyable || row.help) ...[
-                                    const SizedBox(width: AppSpacing.xxs),
-                                    _StatusDetailActionIcon(
-                                      icon: row.copyable
-                                          ? AppIcons.copy
-                                          : AppIcons.help,
-                                      tooltipMessage: row.help
-                                          ? row.helpTooltip ??
-                                                _swapStatusHelpTooltip(
-                                                  row.label,
-                                                )
-                                          : null,
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-      ),
+    final linkUri = row.linkUri;
+    // A row may be both copyable and linkable (e.g. the terminal deposit-tx
+    // row). The Figma shows the external-link arrow there, so the link
+    // affordance wins for both the icon and the tap target — no copy glyph.
+    if (linkUri != null) {
+      return ReviewListRow(
+        label: row.label,
+        value: row.value,
+        trailingIconName: AppIcons.arrowTopRight,
+        trailingIconColor: colors.icon.muted,
+        onPressed: () =>
+            unawaited(launchUrl(linkUri, mode: LaunchMode.externalApplication)),
+      );
+    }
+
+    if (row.help) {
+      return ReviewListRow(
+        label: row.label,
+        value: row.value,
+        trailingIconName: AppIcons.help,
+        trailingIconColor: colors.icon.muted,
+        trailingIconTooltip:
+            row.helpTooltip ?? _swapStatusHelpTooltip(row.label),
+      );
+    }
+
+    return ReviewListRow(
+      label: row.label,
+      value: row.value,
+      copyText: row.copyable ? (row.copyText ?? row.value) : null,
     );
   }
 
@@ -1375,7 +858,7 @@ class _StatusDetailActionIcon extends StatelessWidget {
       child: AppIcon(
         icon,
         size: _swapStatusDetailIconSize,
-        color: colors.icon.regular.withValues(alpha: 0.72),
+        color: colors.icon.muted,
       ),
     );
     final message = tooltipMessage;
@@ -1395,35 +878,4 @@ String _swapStatusHelpTooltip(String label) {
     'Total fees' => swapTotalFeesTooltip,
     _ => swapStatusDetailTooltip,
   };
-}
-
-class _NearIntentsLink extends StatelessWidget {
-  const _NearIntentsLink({required this.onPressed});
-
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      key: const ValueKey('swap_activity_copy_near_intents_explorer_button'),
-      width: 256,
-      height: 44,
-      child: AppButton(
-        onPressed: onPressed ?? () {},
-        variant: AppButtonVariant.ghost,
-        size: AppButtonSize.large,
-        minWidth: 256,
-        trailing: AppIcon(AppIcons.arrowTopRight, color: colors.icon.regular),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 184),
-          child: const Text(
-            'View on Near Intents',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ),
-    );
-  }
 }

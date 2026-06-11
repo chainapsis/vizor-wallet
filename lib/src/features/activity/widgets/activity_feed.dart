@@ -286,15 +286,39 @@ class ActivityFeedRowGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (row.childRows.isEmpty) {
-      return ActivityFeedRow(row: row);
-    }
-
+    // The child slot is always present so a sub row appearing later (e.g. an
+    // absorbed swap payout) eases in instead of popping.
     return Column(
       children: [
         ActivityFeedRow(row: row),
-        for (final childRow in row.childRows)
-          ActivityFeedRow(row: childRow, compact: true, childRow: true),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: Column(
+            children: [
+              for (final childRow in row.childRows)
+                TweenAnimationBuilder<double>(
+                  key: ValueKey('activity_child_${childRow.title}'),
+                  tween: Tween(begin: 0, end: 1),
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, t, child) => Opacity(
+                    opacity: t,
+                    child: Transform.translate(
+                      offset: Offset(0, (1 - t) * -6),
+                      child: child,
+                    ),
+                  ),
+                  child: ActivityFeedRow(
+                    row: childRow,
+                    compact: true,
+                    childRow: true,
+                  ),
+                ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -355,7 +379,7 @@ class _ActivityFeedRowState extends State<ActivityFeedRow> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final row = widget.row;
-    final isInteractive = row.onTap != null && !widget.childRow;
+    final isInteractive = row.onTap != null;
     final rowHeight = widget.compact ? 40.0 : 44.0;
     final showSelectedBorder = row.selected && !widget.childRow;
     final content = Stack(

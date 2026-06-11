@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/models/address_format_validator.dart';
@@ -157,125 +158,76 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
         ? null
         : _nicknameError;
 
-    return Container(
+    return AppModalCard(
       key: const ValueKey('swap_address_modal'),
-      width: 312,
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              SwapModalIconBadge(
-                iconName: AppIcons.wallet,
-                iconColor: colors.icon.regular,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodyLarge.copyWith(
-                    fontWeight: FontWeight.w500,
-                    color: colors.text.accent,
-                  ),
-                ),
-              ),
-            ],
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.bodyLarge.copyWith(
+              fontWeight: FontWeight.w600,
+              color: colors.text.accent,
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.sm),
+          // The body sits inside a 4dp horizontal / 8dp vertical inset so the
+          // field group lines up with the Figma body frame width.
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xxs,
+              vertical: AppSpacing.xs,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
                   fieldLabel,
-                  style: AppTypography.labelMedium.copyWith(
+                  style: AppTypography.labelLarge.copyWith(
+                    fontWeight: FontWeight.w400,
                     color: colors.text.secondary,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Container(
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: colors.background.base,
-                    border: Border.all(color: colors.border.subtle, width: 1.5),
-                    borderRadius: BorderRadius.circular(AppRadii.small),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: TextField(
-                            key: const ValueKey('swap_destination_field'),
-                            controller: _controller,
-                            focusNode: _focusNode,
-                            textInputAction: TextInputAction.done,
-                            onSubmitted: (_) => _submit(),
-                            onChanged: (_) => setState(() {}),
-                            style: AppTypography.labelLarge.copyWith(
-                              color: colors.text.accent,
-                            ),
-                            cursorColor: colors.text.accent,
-                            decoration: InputDecoration.collapsed(
-                              hintText: hint,
-                              hintStyle: AppTypography.labelLarge.copyWith(
-                                color: colors.text.muted,
-                              ),
-                            ),
+                const SizedBox(height: AppSpacing.xxs),
+                _AddressInputField(
+                  controller: _controller,
+                  focusNode: _focusNode,
+                  hint: hint,
+                  onSubmitted: (_) => _submit(),
+                  onChanged: (_) => setState(() {}),
+                  onScan: widget.onScan,
+                  onOpenContacts: widget.onOpenContacts,
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                // The design reserves a 16dp error line under the field even
+                // while it is empty, so the field→description gap stays put
+                // when a format error appears.
+                SizedBox(
+                  height: 16,
+                  child: formatError == null
+                      ? null
+                      : Text(
+                          formatError,
+                          key: const ValueKey('swap_destination_format_error'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.labelLarge.copyWith(
+                            fontWeight: FontWeight.w400,
+                            color: colors.text.destructive,
                           ),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SwapInlineIconButton(
-                              key: const ValueKey('swap_address_scan_button'),
-                              iconName: AppIcons.qr,
-                              onTap: widget.onScan,
-                            ),
-                            const SizedBox(width: 4),
-                            SwapInlineIconButton(
-                              key: const ValueKey(
-                                'swap_address_contacts_button',
-                              ),
-                              iconName: AppIcons.users,
-                              onTap: widget.onOpenContacts,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
-                if (formatError != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    formatError,
-                    key: const ValueKey('swap_destination_format_error'),
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.destructive,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.xxs),
                 Text(
                   description,
                   style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.accent,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.sm),
                 _AddressRememberToggle(
                   selected: _rememberAddress,
                   label: rememberLabel,
@@ -285,11 +237,12 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                   const SizedBox(height: 20),
                   Text(
                     'Address label',
-                    style: AppTypography.labelMedium.copyWith(
+                    style: AppTypography.labelLarge.copyWith(
+                      fontWeight: FontWeight.w400,
                       color: colors.text.secondary,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.xs),
                   Row(
                     children: [
                       _AddressAvatarButton(
@@ -297,7 +250,7 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                         onTap: () =>
                             setState(() => _pickingAvatar = !_pickingAvatar),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: AppSpacing.s),
                       Expanded(
                         child: _NicknameInputBox(
                           controller: _nicknameController,
@@ -309,17 +262,18 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                     ],
                   ),
                   if (nicknameError != null) ...[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppSpacing.xs),
                     Text(
                       nicknameError,
                       key: const ValueKey('swap_address_nickname_error'),
-                      style: AppTypography.bodyMedium.copyWith(
+                      style: AppTypography.labelLarge.copyWith(
+                        fontWeight: FontWeight.w400,
                         color: colors.text.destructive,
                       ),
                     ),
                   ],
                   if (_pickingAvatar) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AppSpacing.s),
                     _AvatarPickerStrip(
                       selectedId: _selectedProfilePictureId,
                       onSelected: _selectAvatar,
@@ -329,13 +283,97 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
               ],
             ),
           ),
-          SwapModalButtons(
-            primaryKey: const ValueKey('swap_address_update_button'),
+          const SizedBox(height: AppSpacing.sm),
+          AppModalActions(
+            actionKey: const ValueKey('swap_address_update_button'),
             cancelKey: const ValueKey('swap_address_cancel_button'),
-            primaryLabel: 'Save',
-            onPrimary: _submit,
+            actionLabel: 'Update',
+            onAction: _canSubmit ? _submit : null,
             onCancel: widget.onCancel,
-            primaryEnabled: _canSubmit,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The 46dp refund/recipient address field: a [colors.background.ground]
+/// rounded box holding the text input on the left and the QR-scan + contacts
+/// trailing icon buttons on the right.
+class _AddressInputField extends StatelessWidget {
+  const _AddressInputField({
+    required this.controller,
+    required this.focusNode,
+    required this.hint,
+    required this.onSubmitted,
+    required this.onChanged,
+    required this.onScan,
+    required this.onOpenContacts,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String hint;
+  final ValueChanged<String> onSubmitted;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onScan;
+  final VoidCallback onOpenContacts;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      height: 46,
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.small),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+              child: TextField(
+                key: const ValueKey('swap_destination_field'),
+                controller: controller,
+                focusNode: focusNode,
+                textInputAction: TextInputAction.done,
+                onSubmitted: onSubmitted,
+                onChanged: onChanged,
+                // Inputs/Field master: typed value Label M Medium, placeholder
+                // Label M Regular (Geist 14/16, -0.06).
+                style: AppTypography.labelLarge.copyWith(
+                  color: colors.text.accent,
+                ),
+                cursorColor: colors.text.accent,
+                decoration: InputDecoration.collapsed(
+                  hintText: hint,
+                  hintStyle: AppTypography.labelLarge.copyWith(
+                    fontWeight: FontWeight.w400,
+                    color: colors.text.muted,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SwapInlineIconButton(
+                  key: const ValueKey('swap_address_scan_button'),
+                  iconName: AppIcons.qr,
+                  onTap: onScan,
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                SwapInlineIconButton(
+                  key: const ValueKey('swap_address_contacts_button'),
+                  iconName: AppIcons.users,
+                  onTap: onOpenContacts,
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -425,12 +463,11 @@ class _NicknameInputBox extends StatelessWidget {
     return Container(
       height: 46,
       decoration: BoxDecoration(
-        color: colors.background.base,
-        border: Border.all(color: colors.border.subtle, width: 1.5),
+        color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.small),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
         child: TextField(
           key: const ValueKey('swap_address_nickname_field'),
           controller: controller,
@@ -438,11 +475,12 @@ class _NicknameInputBox extends StatelessWidget {
           textInputAction: TextInputAction.done,
           onChanged: onChanged,
           onSubmitted: onSubmitted,
-          style: AppTypography.labelMedium.copyWith(color: colors.text.accent),
+          style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
           cursorColor: colors.text.accent,
           decoration: InputDecoration.collapsed(
             hintText: 'Add a label (1-20 characters)',
-            hintStyle: AppTypography.labelMedium.copyWith(
+            hintStyle: AppTypography.labelLarge.copyWith(
+              fontWeight: FontWeight.w400,
               color: colors.text.muted,
             ),
           ),
@@ -509,7 +547,10 @@ class _AddressAvatarButton extends StatelessWidget {
 }
 
 class _AvatarPickerStrip extends StatelessWidget {
-  const _AvatarPickerStrip({required this.selectedId, required this.onSelected});
+  const _AvatarPickerStrip({
+    required this.selectedId,
+    required this.onSelected,
+  });
 
   final String selectedId;
   final ValueChanged<String> onSelected;

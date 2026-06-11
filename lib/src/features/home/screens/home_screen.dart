@@ -607,18 +607,28 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         ? const <SwapActivityRowItem>[]
         : ref.watch(swapActivityRowItemsProvider(accountUuid)).value ??
               const <SwapActivityRowItem>[];
+    // Suppress standalone tx rows that a swap row already represents, with
+    // the same matching the Activity screen uses. Home's compact rows render
+    // no children, so only the suppression set is consumed here.
+    final absorption = !widget.hasActivitySyncData
+        ? SwapActivityLegAbsorption.empty
+        : matchSwapActivityLegAbsorption(
+            swapItems: swapItems,
+            transactions: widget.sync.recentTransactions,
+          );
     final entries = <_HomeActivityEntry>[
       if (widget.hasActivitySyncData)
         for (final tx in widget.sync.recentTransactions)
-          _HomeActivityEntry(
-            timestamp: _transactionActivityTimestamp(tx),
-            row: buildTransactionActivityRow(
-              context: context,
-              transaction: tx,
-              privacyModeEnabled: widget.privacyModeEnabled,
-              onTap: () => _openTransactionStatus(tx),
+          if (!absorption.absorbs(tx))
+            _HomeActivityEntry(
+              timestamp: _transactionActivityTimestamp(tx),
+              row: buildTransactionActivityRow(
+                context: context,
+                transaction: tx,
+                privacyModeEnabled: widget.privacyModeEnabled,
+                onTap: () => _openTransactionStatus(tx),
+              ),
             ),
-          ),
       for (final item in swapItems)
         _HomeActivityEntry(
           timestamp: item.activityTimestamp,

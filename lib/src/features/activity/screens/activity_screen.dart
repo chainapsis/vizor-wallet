@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/swap_feature_config.dart';
+import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -125,6 +126,13 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
 
   void _openTransactionStatus(rust_sync.TransactionInfo transaction) {
     unawaited(_pushTransactionStatus(transaction));
+  }
+
+  String? _absorbedReceiveAmountText(rust_sync.TransactionInfo? transaction) {
+    if (transaction == null) return null;
+    final amount = transaction.displayAmount;
+    if (amount == BigInt.zero) return null;
+    return ZecAmount.fromZatoshi(amount).signedActivity.toString();
   }
 
   void _openSwapStatus(String intentId) {
@@ -261,18 +269,30 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         ? const <SwapActivityRowItem>[]
         : ref.watch(swapActivityRowItemsProvider(accountUuid)).value ??
               const <SwapActivityRowItem>[];
+    // Absorb swap-leg transactions into their swap rows: the matched ZEC
+    // payout feeds the tappable 'Received ZEC' sub row, and our own ZEC
+    // deposit broadcast is suppressed as a duplicate of the swap row itself.
+    final absorption = canRenderTransactions
+        ? matchSwapActivityLegAbsorption(
+            swapItems: swapItems,
+            transactions: transactions,
+          )
+        : SwapActivityLegAbsorption.empty;
+    final swapReceiveTxByIntent = absorption.receiveTxByIntent;
+
     final entries = <_ActivityEntry>[
       if (canRenderTransactions)
         for (final tx in transactions)
-          _ActivityEntry(
-            timestamp: _transactionActivityTimestamp(tx),
-            row: buildTransactionActivityRow(
-              context: context,
-              transaction: tx,
-              privacyModeEnabled: privacyModeEnabled,
-              onTap: () => _openTransactionStatus(tx),
+          if (!absorption.absorbs(tx))
+            _ActivityEntry(
+              timestamp: _transactionActivityTimestamp(tx),
+              row: buildTransactionActivityRow(
+                context: context,
+                transaction: tx,
+                privacyModeEnabled: privacyModeEnabled,
+                onTap: () => _openTransactionStatus(tx),
+              ),
             ),
-          ),
       for (final item in swapItems)
         _ActivityEntry(
           timestamp: item.activityTimestamp,
@@ -281,6 +301,13 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
             item: item,
             privacyModeEnabled: privacyModeEnabled,
             onTap: () => _openSwapStatus(item.intentId),
+            receivedAmountText: _absorbedReceiveAmountText(
+              swapReceiveTxByIntent[item.intentId],
+            ),
+            onReceivedLegTap: switch (swapReceiveTxByIntent[item.intentId]) {
+              null => null,
+              final tx => () => _openTransactionStatus(tx),
+            },
           ),
         ),
     ]..sort(_compareActivityEntries);
