@@ -33,6 +33,12 @@ pub struct SoftwareWalletImportWithDiscoveryResult {
     pub did_import_primary_account: bool,
 }
 
+/// A higher ZIP32 software account that can be imported by user choice.
+pub struct SoftwareWalletDiscoveredAccount {
+    pub zip32_account_index: u32,
+    pub first_transparent_address: String,
+}
+
 /// A software account created by mnemonic import.
 pub struct SoftwareWalletImportAccount {
     pub account_uuid: String,
@@ -187,18 +193,61 @@ pub fn add_account(
     })
 }
 
-/// Import a software mnemonic and discover additional ZIP32 accounts with
-/// transparent history. `account'=0` must be imported successfully; discovery
-/// for higher account indices is best-effort.
+/// Discover higher ZIP32 software accounts with transparent history that are
+/// not already present in the wallet DB for this mnemonic.
+pub fn discover_software_wallet_import_accounts(
+    mnemonic: String,
+    birthday_height: Option<u64>,
+    network: String,
+    db_path: String,
+    lightwalletd_url: String,
+    is_first_wallet_account: bool,
+) -> Result<Vec<SoftwareWalletDiscoveredAccount>, String> {
+    catch(|| {
+        let network = if is_first_wallet_account {
+            keys::parse_network(&network)?
+        } else {
+            parse_network_and_migrate(&db_path, &network)?
+        };
+        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let existing_seed_accounts = if is_first_wallet_account {
+            None
+        } else {
+            Some(keys::existing_software_seed_account_state(
+                &db_path, network, &seed,
+            )?)
+        };
+
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let discovered_accounts = rt.block_on(discover_used_software_accounts(
+            network,
+            &seed,
+            birthday_height,
+            &lightwalletd_url,
+        ));
+
+        Ok(discovered_accounts
+            .into_iter()
+            .filter(|account| {
+                !existing_seed_accounts
+                    .as_ref()
+                    .is_some_and(|state| state.contains(account.zip32_account_index))
+            })
+            .collect())
+    })
+}
+
+/// Import a software mnemonic. `account'=0` must be imported successfully;
+/// higher account indices are imported only when selected by the caller.
 pub fn import_software_wallet_with_account_discovery(
     mnemonic: String,
     birthday_height: Option<u64>,
     network: String,
     db_path: String,
     first_account_name: Option<String>,
-    lightwalletd_url: String,
     is_first_wallet_account: bool,
     next_account_number: u32,
+    additional_account_indices: Vec<u32>,
 ) -> Result<SoftwareWalletImportWithDiscoveryResult, String> {
     catch(|| {
         let network = if is_first_wallet_account {
@@ -211,14 +260,10 @@ pub fn import_software_wallet_with_account_discovery(
         let first_name = first_account_name
             .filter(|name| !name.trim().is_empty())
             .unwrap_or_else(|| format!("Account {first_account_number}"));
-
-        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
-        let discovered_indices = rt.block_on(discover_used_software_account_indices(
-            network,
-            &seed,
-            birthday_height,
-            &lightwalletd_url,
-        ));
+        let mut additional_account_indices = additional_account_indices;
+        additional_account_indices.retain(|index| *index != 0);
+        additional_account_indices.sort_unstable();
+        additional_account_indices.dedup();
 
         import_discovered_software_wallet_accounts(
             network,
@@ -228,7 +273,7 @@ pub fn import_software_wallet_with_account_discovery(
             first_name,
             is_first_wallet_account,
             first_account_number,
-            discovered_indices,
+            additional_account_indices,
         )
     })
 }
@@ -369,12 +414,12 @@ fn import_discovered_software_wallet_accounts(
     })
 }
 
-async fn discover_used_software_account_indices(
+async fn discover_used_software_accounts(
     network: WalletNetwork,
     seed: &secrecy::SecretVec<u8>,
     birthday_height: Option<u64>,
     lightwalletd_url: &str,
-) -> Vec<u32> {
+) -> Vec<SoftwareWalletDiscoveredAccount> {
     let start_height = discovery_start_height(network, birthday_height);
     let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
         Ok(client) => client,
@@ -401,7 +446,7 @@ async fn discover_used_software_account_indices(
     for &(start, end) in SOFTWARE_ACCOUNT_DISCOVERY_BATCHES {
         let mut found_in_batch = false;
         for account_index in start..=end.min(SOFTWARE_ACCOUNT_DISCOVERY_MAX_INDEX) {
-            if software_account_first_taddr_has_history(
+            if let Some(account) = discover_software_account_at_index(
                 &mut client,
                 network,
                 seed,
@@ -411,7 +456,7 @@ async fn discover_used_software_account_indices(
             )
             .await
             {
-                discovered.push(account_index);
+                discovered.push(account);
                 found_in_batch = true;
             }
         }
@@ -423,14 +468,14 @@ async fn discover_used_software_account_indices(
     discovered
 }
 
-async fn software_account_first_taddr_has_history(
+async fn discover_software_account_at_index(
     client: &mut CompactTxStreamerClient<Channel>,
     network: WalletNetwork,
     seed: &secrecy::SecretVec<u8>,
     account_index: u32,
     start_height: u64,
     tip_height: u64,
-) -> bool {
+) -> Option<SoftwareWalletDiscoveredAccount> {
     let address = match keys::software_account_first_external_transparent_address(
         network,
         seed,
@@ -441,7 +486,7 @@ async fn software_account_first_taddr_has_history(
             log::warn!(
                     "software account discovery: could not derive account {account_index} transparent address: {e}"
                 );
-            return false;
+            return None;
         }
     };
 
@@ -458,7 +503,7 @@ async fn software_account_first_taddr_has_history(
             log::warn!(
                 "software account discovery: failed to query account {account_index} address {address} from {start_height} to {tip_height}: {e}"
             );
-            return false;
+            return None;
         }
     };
 
@@ -472,14 +517,17 @@ async fn software_account_first_taddr_has_history(
             log::info!(
                 "software account discovery: account {account_index} has transparent history"
             );
-            true
+            Some(SoftwareWalletDiscoveredAccount {
+                zip32_account_index: account_index,
+                first_transparent_address: address,
+            })
         }
-        Ok(None) => false,
+        Ok(None) => None,
         Err(e) => {
             log::warn!(
                 "software account discovery: failed while reading account {account_index} address {address} from {start_height} to {tip_height}: {e}"
             );
-            false
+            None
         }
     }
 }

@@ -211,6 +211,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     required String mnemonic,
     int? birthdayHeight,
     String? name,
+    List<int> additionalAccountIndices = const [],
   }) async {
     try {
       final dbPath = await _getDbPath();
@@ -236,9 +237,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         network: network,
         dbPath: dbPath,
         firstAccountName: accountName,
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         isFirstWalletAccount: isFirstWalletAccount,
         nextAccountNumber: accounts.length + 1,
+        additionalAccountIndices: additionalAccountIndices,
       );
       if (result.accounts.isEmpty) {
         throw StateError('Software wallet import did not return an account.');
@@ -288,6 +289,36 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       );
     } catch (e, st) {
       log('importAccount: ERROR: $e\n$st');
+      rethrow;
+    }
+  }
+
+  Future<List<rust_wallet.SoftwareWalletDiscoveredAccount>>
+  discoverAdditionalSoftwareAccounts({
+    required String mnemonic,
+    int? birthdayHeight,
+  }) async {
+    try {
+      final dbPath = await _getDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
+      final accounts = state.value?.accounts ?? const <AccountInfo>[];
+      final isFirstWalletAccount = accounts.isEmpty;
+      final network = isFirstWalletAccount
+          ? endpoint.networkName
+          : await _getNetwork();
+
+      return rust_wallet.discoverSoftwareWalletImportAccounts(
+        mnemonic: mnemonic,
+        birthdayHeight: birthdayHeight != null
+            ? BigInt.from(birthdayHeight)
+            : null,
+        network: network,
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        isFirstWalletAccount: isFirstWalletAccount,
+      );
+    } catch (e, st) {
+      log('discoverAdditionalSoftwareAccounts: ERROR: $e\n$st');
       rethrow;
     }
   }

@@ -296,6 +296,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<SoftwareWalletDiscoveredAccount>
+  dco_decode_list_software_wallet_discovered_account(dynamic raw);
+
+  @protected
   List<SoftwareWalletImportAccount>
   dco_decode_list_software_wallet_import_account(dynamic raw);
 
@@ -428,6 +432,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SignedVoteCommitmentsView dco_decode_signed_vote_commitments_view(
+    dynamic raw,
+  );
+
+  @protected
+  SoftwareWalletDiscoveredAccount dco_decode_software_wallet_discovered_account(
     dynamic raw,
   );
 
@@ -853,6 +862,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<SoftwareWalletDiscoveredAccount>
+  sse_decode_list_software_wallet_discovered_account(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<SoftwareWalletImportAccount>
   sse_decode_list_software_wallet_import_account(SseDeserializer deserializer);
 
@@ -1017,6 +1032,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SignedVoteCommitmentsView sse_decode_signed_vote_commitments_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SoftwareWalletDiscoveredAccount sse_decode_software_wallet_discovered_account(
     SseDeserializer deserializer,
   );
 
@@ -1540,6 +1560,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_software_wallet_discovered_account(
+    List<SoftwareWalletDiscoveredAccount> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_software_wallet_import_account(
     List<SoftwareWalletImportAccount> self,
     SseSerializer serializer,
@@ -1740,6 +1766,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_signed_vote_commitments_view(
     SignedVoteCommitmentsView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_software_wallet_discovered_account(
+    SoftwareWalletDiscoveredAccount self,
     SseSerializer serializer,
   );
 

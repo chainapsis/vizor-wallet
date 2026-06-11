@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `discover_used_software_account_indices`, `discovery_start_height`, `parse_network_and_migrate`, `software_account_first_taddr_has_history`
+// These functions are ignored because they are not marked as `pub`: `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `parse_network_and_migrate`
 
 /// Get the latest block height from lightwalletd.
 Future<BigInt> getLatestBlockHeight({required String lightwalletdUrl}) =>
@@ -64,9 +64,27 @@ Future<AccountCreationResult> addAccount({
   birthdayHeight: birthdayHeight,
 );
 
-/// Import a software mnemonic and discover additional ZIP32 accounts with
-/// transparent history. `account'=0` must be imported successfully; discovery
-/// for higher account indices is best-effort.
+/// Discover higher ZIP32 software accounts with transparent history that are
+/// not already present in the wallet DB for this mnemonic.
+Future<List<SoftwareWalletDiscoveredAccount>>
+discoverSoftwareWalletImportAccounts({
+  required String mnemonic,
+  BigInt? birthdayHeight,
+  required String network,
+  required String dbPath,
+  required String lightwalletdUrl,
+  required bool isFirstWalletAccount,
+}) => RustLib.instance.api.crateApiWalletDiscoverSoftwareWalletImportAccounts(
+  mnemonic: mnemonic,
+  birthdayHeight: birthdayHeight,
+  network: network,
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  isFirstWalletAccount: isFirstWalletAccount,
+);
+
+/// Import a software mnemonic. `account'=0` must be imported successfully;
+/// higher account indices are imported only when selected by the caller.
 Future<SoftwareWalletImportWithDiscoveryResult>
 importSoftwareWalletWithAccountDiscovery({
   required String mnemonic,
@@ -74,9 +92,9 @@ importSoftwareWalletWithAccountDiscovery({
   required String network,
   required String dbPath,
   String? firstAccountName,
-  required String lightwalletdUrl,
   required bool isFirstWalletAccount,
   required int nextAccountNumber,
+  required List<int> additionalAccountIndices,
 }) =>
     RustLib.instance.api.crateApiWalletImportSoftwareWalletWithAccountDiscovery(
       mnemonic: mnemonic,
@@ -84,9 +102,9 @@ importSoftwareWalletWithAccountDiscovery({
       network: network,
       dbPath: dbPath,
       firstAccountName: firstAccountName,
-      lightwalletdUrl: lightwalletdUrl,
       isFirstWalletAccount: isFirstWalletAccount,
       nextAccountNumber: nextAccountNumber,
+      additionalAccountIndices: additionalAccountIndices,
     );
 
 /// Import a hardware wallet account using a UFVK (no mnemonic/seed needed).
@@ -231,6 +249,29 @@ class AccountInfo {
           unifiedAddress == other.unifiedAddress &&
           isSeedAnchor == other.isSeedAnchor &&
           isHardware == other.isHardware;
+}
+
+/// A higher ZIP32 software account that can be imported by user choice.
+class SoftwareWalletDiscoveredAccount {
+  final int zip32AccountIndex;
+  final String firstTransparentAddress;
+
+  const SoftwareWalletDiscoveredAccount({
+    required this.zip32AccountIndex,
+    required this.firstTransparentAddress,
+  });
+
+  @override
+  int get hashCode =>
+      zip32AccountIndex.hashCode ^ firstTransparentAddress.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SoftwareWalletDiscoveredAccount &&
+          runtimeType == other.runtimeType &&
+          zip32AccountIndex == other.zip32AccountIndex &&
+          firstTransparentAddress == other.firstTransparentAddress;
 }
 
 /// A software account created by mnemonic import.

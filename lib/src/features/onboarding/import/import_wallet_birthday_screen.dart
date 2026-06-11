@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' as material;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -13,8 +15,10 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
+import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
+import 'import_account_discovery_modal.dart';
 import 'import_birthday_estimator.dart';
 import 'import_birthday_calendar_overlay.dart';
 import 'import_birthday_unknown_height_modal.dart';
@@ -22,7 +26,12 @@ import 'import_split_view.dart';
 
 enum ImportBirthdayTab { date, blockHeight }
 
-enum _ImportWalletSubmitPhase { idle, stoppingSync, importing }
+enum _ImportWalletSubmitPhase {
+  idle,
+  discoveringAccounts,
+  stoppingSync,
+  importing,
+}
 
 class ImportWalletBirthdayScreen extends ConsumerStatefulWidget {
   const ImportWalletBirthdayScreen({required this.args, super.key});
@@ -53,6 +62,9 @@ class _ImportWalletBirthdayScreenState
   bool _isCalendarOpen = false;
   bool _isUnknownBirthdayConfirmOpen = false;
   _ImportWalletSubmitPhase _submitPhase = _ImportWalletSubmitPhase.idle;
+  List<rust_wallet.SoftwareWalletDiscoveredAccount>?
+  _accountDiscoveryCandidates;
+  Completer<List<int>?>? _accountDiscoveryCompleter;
   String? _metadataError;
   String? _submitError;
   DateTime? _calendarInitialDate;
@@ -218,6 +230,25 @@ class _ImportWalletBirthdayScreenState
     });
   }
 
+  void _confirmAccountDiscovery(List<int> accountIndices) {
+    final completer = _accountDiscoveryCompleter;
+    setState(() {
+      _accountDiscoveryCandidates = null;
+      _accountDiscoveryCompleter = null;
+    });
+    completer?.complete(accountIndices);
+  }
+
+  void _dismissAccountDiscovery() {
+    final completer = _accountDiscoveryCompleter;
+    setState(() {
+      _accountDiscoveryCandidates = null;
+      _accountDiscoveryCompleter = null;
+      _submitPhase = _ImportWalletSubmitPhase.idle;
+    });
+    completer?.complete(null);
+  }
+
   Future<void> _confirmUnknownBirthday() async {
     if (_isSubmitting) return;
     setState(() {
@@ -267,6 +298,17 @@ class _ImportWalletBirthdayScreenState
     });
 
     try {
+      final selectedAdditionalAccountIndices =
+          await _resolveAdditionalAccountIndices(
+            mnemonic: mnemonic,
+            birthdayHeight: birthdayHeight,
+          );
+      if (selectedAdditionalAccountIndices == null) return;
+      if (!mounted) return;
+      setState(() {
+        _submitPhase = _ImportWalletSubmitPhase.importing;
+      });
+
       final security = ref.read(appSecurityProvider);
       if (!security.isPasswordConfigured) {
         if (!mounted) return;
@@ -275,6 +317,7 @@ class _ImportWalletBirthdayScreenState
           extra: SetPasswordScreenArgs.importWallet(
             mnemonic: mnemonic,
             birthdayHeight: birthdayHeight,
+            selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
           ),
         );
         return;
@@ -287,6 +330,7 @@ class _ImportWalletBirthdayScreenState
         () => accountNotifier.importAccount(
           mnemonic: mnemonic,
           birthdayHeight: birthdayHeight,
+          additionalAccountIndices: selectedAdditionalAccountIndices,
         ),
         onStoppingSync: () {
           if (!mounted) return;
@@ -311,6 +355,32 @@ class _ImportWalletBirthdayScreenState
       });
       return;
     }
+  }
+
+  Future<List<int>?> _resolveAdditionalAccountIndices({
+    required String mnemonic,
+    required int birthdayHeight,
+  }) async {
+    setState(() {
+      _submitPhase = _ImportWalletSubmitPhase.discoveringAccounts;
+    });
+
+    final candidates = await ref
+        .read(accountProvider.notifier)
+        .discoverAdditionalSoftwareAccounts(
+          mnemonic: mnemonic,
+          birthdayHeight: birthdayHeight,
+        );
+    if (!mounted) return null;
+    if (candidates.isEmpty) return const [];
+
+    final completer = Completer<List<int>?>();
+    setState(() {
+      _accountDiscoveryCandidates = candidates;
+      _accountDiscoveryCompleter = completer;
+      _submitPhase = _ImportWalletSubmitPhase.idle;
+    });
+    return completer.future;
   }
 
   int? _resolvedBirthdayHeight() {
@@ -371,6 +441,7 @@ class _ImportWalletBirthdayScreenState
     final calendarFirstDate = _calendarFirstDate;
     final calendarLastDate = _calendarLastDate;
     final buttonLabel = switch (_submitPhase) {
+      _ImportWalletSubmitPhase.discoveringAccounts => 'Checking accounts...',
       _ImportWalletSubmitPhase.stoppingSync => 'Stop syncing...',
       _ImportWalletSubmitPhase.importing => 'Importing...',
       _ImportWalletSubmitPhase.idle =>
@@ -380,7 +451,13 @@ class _ImportWalletBirthdayScreenState
     };
 
     return ImportOnboardingTrailingPane(
-      overlay: _isUnknownBirthdayConfirmOpen
+      overlay: _accountDiscoveryCandidates != null
+          ? ImportAccountDiscoveryModal(
+              accounts: _accountDiscoveryCandidates!,
+              onConfirm: _confirmAccountDiscovery,
+              onCancel: _dismissAccountDiscovery,
+            )
+          : _isUnknownBirthdayConfirmOpen
           ? ImportBirthdayUnknownHeightModal(
               onConfirm: _confirmUnknownBirthday,
               onCancel: _dismissUnknownBirthdayConfirmation,
