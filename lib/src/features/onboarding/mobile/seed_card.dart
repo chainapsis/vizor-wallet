@@ -14,6 +14,7 @@ class SeedCard extends StatelessWidget {
     this.obscured = false,
     this.onCopy,
     this.copied = false,
+    this.showTitle = true,
     super.key,
   });
 
@@ -25,6 +26,10 @@ class SeedCard extends StatelessWidget {
   /// Shows the Copy action in the card header when non-null.
   final VoidCallback? onCopy;
   final bool copied;
+
+  /// The import review frame shows the bare word grid without the
+  /// "Secret Passphrase" header row.
+  final bool showTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -41,45 +46,47 @@ class SeedCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Secret Passphrase',
-                  style: AppTypography.headlineSmall.copyWith(
-                    color: colors.text.homeCard,
-                  ),
-                ),
-              ),
-              if (onCopy != null)
-                Semantics(
-                  button: true,
-                  label: 'Copy secret passphrase',
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onCopy,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          copied ? 'Copied' : 'Copy',
-                          style: AppTypography.labelMedium.copyWith(
-                            color: colors.text.homeCard,
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.xxs),
-                        AppIcon(
-                          AppIcons.copy,
-                          size: AppIconSize.medium,
-                          color: colors.text.homeCard,
-                        ),
-                      ],
+          if (showTitle || onCopy != null) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    showTitle ? 'Secret Passphrase' : '',
+                    style: AppTypography.headlineSmall.copyWith(
+                      color: colors.text.homeCard,
                     ),
                   ),
                 ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
+                if (onCopy != null)
+                  Semantics(
+                    button: true,
+                    label: 'Copy secret passphrase',
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onCopy,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            copied ? 'Copied' : 'Copy',
+                            style: AppTypography.labelMedium.copyWith(
+                              color: colors.text.homeCard,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xxs),
+                          AppIcon(
+                            AppIcons.copy,
+                            size: AppIconSize.medium,
+                            color: colors.text.homeCard,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
           if (obscured)
             ImageFiltered(
               imageFilter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),

@@ -91,13 +91,23 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       _words = words;
       _error = error;
     });
-    if (error == null && mounted) {
-      context.push(
-        '/import/review',
-        extra: MobileImportReviewArgs(words: words),
-      );
-    }
   }
+
+  void _clear() {
+    setState(() {
+      _words = const [];
+      _error = null;
+    });
+  }
+
+  void _confirm() {
+    context.push(
+      '/import/review',
+      extra: MobileImportReviewArgs(words: _words),
+    );
+  }
+
+  bool get _filled => _words.isNotEmpty && _error == null;
 
   @override
   Widget build(BuildContext context) {
@@ -123,53 +133,78 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
             ),
             const SizedBox(height: AppSpacing.xs),
           ],
-          AppButton(
-            key: const ValueKey('mobile_import_paste'),
-            onPressed: _paste,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.copy,
-                  size: 20,
-                  color: DefaultTextStyle.of(context).style.color,
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                const Text('Paste secret phrase'),
-              ],
+          if (_filled) ...[
+            // Pasted state — Figma fills the slots in place and swaps
+            // the actions for confirm / clear.
+            AppButton(
+              key: const ValueKey('mobile_import_confirm'),
+              expand: true,
+              onPressed: _confirm,
+              trailing: const AppIcon(AppIcons.chevronForward),
+              child: const Text('Confirm & import'),
             ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Semantics(
-            button: true,
-            child: GestureDetector(
-              key: const ValueKey('mobile_import_enter_manually'),
-              behavior: HitTestBehavior.opaque,
-              onTap: () => context.push('/import/manual'),
-              child: SizedBox(
-                height: 44,
-                child: Center(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AppIcon(
-                        AppIcons.edit,
-                        size: AppIconSize.medium,
+            const SizedBox(height: AppSpacing.xs),
+            Semantics(
+              button: true,
+              child: GestureDetector(
+                key: const ValueKey('mobile_import_clear'),
+                behavior: HitTestBehavior.opaque,
+                onTap: _clear,
+                child: SizedBox(
+                  height: 44,
+                  child: Center(
+                    child: Text(
+                      'Clear secret phrase',
+                      style: AppTypography.labelLarge.copyWith(
                         color: colors.text.primary,
                       ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Text(
-                        'Enter manually',
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.primary,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
+          ] else ...[
+            AppButton(
+              key: const ValueKey('mobile_import_paste'),
+              expand: true,
+              onPressed: _paste,
+              // No explicit icon color: AppButton's IconTheme tints it
+              // with the label color (white on the primary fill).
+              leading: const AppIcon(AppIcons.copy),
+              child: const Text('Paste secret phrase'),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Semantics(
+              button: true,
+              child: GestureDetector(
+                key: const ValueKey('mobile_import_enter_manually'),
+                behavior: HitTestBehavior.opaque,
+                onTap: () => context.push('/import/manual'),
+                child: SizedBox(
+                  height: 44,
+                  child: Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AppIcon(
+                          AppIcons.edit,
+                          size: AppIconSize.medium,
+                          color: colors.text.primary,
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                        Text(
+                          'Enter manually',
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
       child: ImportSlotsCard(words: _words),

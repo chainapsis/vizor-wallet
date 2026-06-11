@@ -1,14 +1,17 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_import_screens.dart';
 import 'mobile_onboarding_scaffold.dart';
 import 'seed_card.dart';
 
-/// Import review — Figma `Review Secret Passphrase` (4562:105084): the
-/// filled SeedCard for a last look before picking the wallet birthday.
+/// Import review — Figma `Review Secret Phrase` (4562:105084): the
+/// filled word grid for a last look before picking the wallet birthday,
+/// with an edit escape back to the entry screen.
 class MobileImportReviewScreen extends StatelessWidget {
   const MobileImportReviewScreen({required this.args, super.key});
 
@@ -19,17 +22,45 @@ class MobileImportReviewScreen extends StatelessWidget {
     return MobileOnboardingStepScaffold(
       progress: 0.6,
       onBack: () => Navigator.of(context).maybePop(),
-      title: 'Review Secret Passphrase',
+      title: 'Review Secret Phrase',
       subtitle: 'Review before the import.',
-      bottomArea: AppButton(
-        key: const ValueKey('mobile_import_review_continue'),
-        onPressed: () => context.push(
-          '/import/birthday',
-          extra: ImportBirthdayArgs(mnemonic: args.mnemonic),
-        ),
-        child: const Text('Continue'),
+      bottomArea: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppButton(
+            key: const ValueKey('mobile_import_review_continue'),
+            expand: true,
+            onPressed: () => context.push(
+              '/import/birthday',
+              extra: ImportBirthdayArgs(mnemonic: args.mnemonic),
+            ),
+            trailing: const AppIcon(AppIcons.chevronForward),
+            child: const Text('Continue'),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Semantics(
+            button: true,
+            child: GestureDetector(
+              key: const ValueKey('mobile_import_review_edit'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).maybePop(),
+              child: SizedBox(
+                height: 44,
+                child: Center(
+                  child: Text(
+                    'Edit secret phrase',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: context.colors.text.primary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
-      child: SeedCard(words: args.words),
+      child: SeedCard(words: args.words, showTitle: false),
     );
   }
 }

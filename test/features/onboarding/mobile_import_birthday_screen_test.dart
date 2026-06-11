@@ -40,6 +40,13 @@ Widget _app() {
   );
 }
 
+Future<void> _tapKey(WidgetTester tester, String name) async {
+  await tester.tap(
+    find.byKey(ValueKey('mobile_import_birthday_key_$name')),
+  );
+  await tester.pump();
+}
+
 void main() {
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -60,24 +67,65 @@ void main() {
 
     expect(continueButton().onPressed, isNull);
 
-    // Below the Sapling activation floor → still disabled.
-    await tester.enterText(
-      find.byKey(const ValueKey('mobile_import_birthday_height')),
-      '1',
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_birthday_mode_height')),
     );
     await tester.pump();
+
+    // Below the Sapling activation floor → still disabled.
+    await _tapKey(tester, '1');
     expect(continueButton().onPressed, isNull);
 
     // A plausible mainnet height enables the action.
-    await tester.enterText(
-      find.byKey(const ValueKey('mobile_import_birthday_height')),
-      '2500000',
-    );
+    for (final digit in '2500000'.split('')) {
+      await _tapKey(tester, digit);
+    }
     await tester.pump();
     expect(continueButton().onPressed, isNotNull);
+
+    // Backspacing it away disables again.
+    for (var i = 0; i < 8; i++) {
+      await _tapKey(tester, 'backspace');
+    }
+    expect(continueButton().onPressed, isNull);
   });
 
-  testWidgets('pick a date opens the shared calendar panel in a sheet', (
+  testWidgets('continue stays disabled until a full valid date is typed', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    AppButton continueButton() => tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_import_birthday_continue')),
+    );
+
+    // Date mode is the default; partial input keeps it disabled.
+    for (final digit in '0615'.split('')) {
+      await _tapKey(tester, digit);
+    }
+    expect(continueButton().onPressed, isNull);
+
+    // 06/15/2023 — a valid post-Sapling date.
+    for (final digit in '2023'.split('')) {
+      await _tapKey(tester, digit);
+    }
+    await tester.pump();
+    expect(continueButton().onPressed, isNotNull);
+
+    // An impossible date (13/45/2023) stays disabled.
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_birthday_clear')),
+    );
+    await tester.pump();
+    for (final digit in '13452023'.split('')) {
+      await _tapKey(tester, digit);
+    }
+    await tester.pump();
+    expect(continueButton().onPressed, isNull);
+  });
+
+  testWidgets('calendar icon opens the shared calendar panel in a sheet', (
     tester,
   ) async {
     await tester.pumpWidget(_app());
