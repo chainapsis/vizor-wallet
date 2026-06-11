@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
@@ -40,13 +41,17 @@ class AppToast extends StatelessWidget {
               color: colors.icon.inverse,
             ),
             const SizedBox(width: AppSpacing.xxs),
-            Text(
-              message,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.inverse,
+            // Flexible so long messages wrap inside the pill instead of
+            // overflowing the row off-screen.
+            Flexible(
+              child: Text(
+                message,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: AppTypography.labelLarge.copyWith(
+                  color: colors.text.inverse,
+                ),
               ),
             ),
           ],
@@ -100,6 +105,14 @@ class _AppToastHostState extends State<AppToastHost> {
   @override
   Widget build(BuildContext context) {
     final message = _message;
+    // Hosts mounted outside a SafeArea (the mobile screens) must keep
+    // the toast clear of the status bar / notch; inside a SafeArea the
+    // ambient padding is already consumed and this resolves to the
+    // original 32px offset, so desktop is unchanged.
+    final topInset = math.max(
+      AppSpacing.base,
+      MediaQuery.paddingOf(context).top + AppSpacing.xs,
+    );
     return _AppToastScope(
       state: this,
       child: Stack(
@@ -108,11 +121,18 @@ class _AppToastHostState extends State<AppToastHost> {
           widget.child,
           if (message != null)
             Positioned(
-              top: AppSpacing.base,
+              top: topInset,
               left: 0,
               right: 0,
               child: IgnorePointer(
-                child: Center(child: AppToast(message: message)),
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm,
+                    ),
+                    child: AppToast(message: message),
+                  ),
+                ),
               ),
             ),
         ],
