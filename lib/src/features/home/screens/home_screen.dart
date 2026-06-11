@@ -24,6 +24,7 @@ import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../providers/zec_usd_price_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
@@ -38,9 +39,7 @@ import '../../activity/swap_activity_row_items_provider.dart';
 import '../../activity/swap_activity_row_mapper.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
-import '../../swap/models/swap_models.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
-import '../../swap/providers/swap_provider_config.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
@@ -51,28 +50,6 @@ const _homeDesktopActivationShortcuts = <ShortcutActivator, Intent>{
 };
 const shieldBalancePendingBroadcastMessage =
     'Shielding queued for retry. Check Activity.';
-
-final _homeZecUsdUnitPriceProvider = FutureProvider.autoDispose<double?>((
-  ref,
-) async {
-  if (!ref.watch(swapFeatureEnabledProvider)) return null;
-
-  final provider = ref.read(swapIntentProvider);
-  final pricingProvider = provider is SwapPricingProvider
-      ? provider as SwapPricingProvider
-      : null;
-  if (pricingProvider == null) return null;
-
-  try {
-    final snapshot = await pricingProvider.loadPricingSnapshot();
-    final price = snapshot.usdPrices[SwapAsset.zec];
-    if (price == null || !price.isFinite || price <= 0) return null;
-    return price;
-  } catch (e) {
-    log('HomeScreen: fiat price load failed: $e');
-    return null;
-  }
-});
 
 String? shieldBalanceBroadcastStatusMessage(
   rust_sync.ShieldTransparentResult result,
@@ -345,10 +322,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         sync.orchardBalance +
         sync.saplingPendingBalance +
         sync.orchardPendingBalance;
-    final zecUsdUnitPrice = ref
-        .watch(_homeZecUsdUnitPriceProvider)
-        .asData
-        ?.value;
+    final zecUsdUnitPrice = ref.watch(zecUsdUnitPriceProvider).asData?.value;
     final shieldedFiatBalanceText = _formatFiatBalance(
       shieldedBalance,
       zecUsdUnitPrice: zecUsdUnitPrice,

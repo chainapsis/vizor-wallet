@@ -1,34 +1,32 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
-import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
-import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/zec_usd_price_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
-import '../../address_book/models/address_book_label_lookup.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../services/sapling_params.dart';
 import '../widgets/sapling_params_prompt.dart';
-import '../widgets/transaction_receipt_view.dart';
+import '../widgets/send_recipient_resolver.dart';
+import '../widgets/send_review_content_view.dart';
+import '../widgets/send_verify_address_overlay.dart';
 
 class SendReviewArgs {
   const SendReviewArgs({
@@ -78,16 +76,12 @@ class SendReviewScreen extends ConsumerStatefulWidget {
 }
 
 class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
-  static const _addressPrefixHighlightLength = 7;
-  static const _addressLeadingPlainLength = 13;
-  static const _addressTrailingPlainLength = 15;
-  static const _addressSuffixHighlightLength = 8;
-
   bool _discardScheduled = false;
   bool _handoffToKeystone = false;
   bool _keystoneProposalConsumed = false;
   bool _showSaplingParamsPrompt = false;
   bool _messageExpanded = false;
+  bool _showVerifyAddress = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   KeystoneSigningModalPhase? _keystonePhase;
   String? _keystoneError;
@@ -137,83 +131,12 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     );
   }
 
-  String _formatReceiptAmount(BigInt zatoshi) {
-    return ZecAmount.fromZatoshi(zatoshi).receipt.toString();
+  String _formatAmount(BigInt zatoshi) {
+    return ZecAmount.fromZatoshi(zatoshi).activityDetail.toString();
   }
 
   String _formatFee(BigInt zatoshi) {
     return ZecAmount.fromZatoshi(zatoshi).fee.toString();
-  }
-
-  List<TextSpan> _addressSpans(BuildContext context) {
-    final colors = context.colors;
-    final address = widget.args.address.trim();
-    final accentStyle = AppTypography.labelLarge.copyWith(
-      color: colors.text.accent,
-    );
-    final highlightStyle = AppTypography.labelLarge.copyWith(
-      color: widget.args.isShielded
-          ? colors.text.brandCrimson
-          : colors.text.accent,
-    );
-
-    // Keep this as the sum of the four visible chunks used below so the
-    // middle-ellipsis slices cannot overlap.
-    final minShortenedLength =
-        _addressPrefixHighlightLength +
-        _addressLeadingPlainLength +
-        _addressTrailingPlainLength +
-        _addressSuffixHighlightLength;
-    if (address.length <= minShortenedLength) {
-      if (address.length < _addressPrefixHighlightLength) {
-        return [TextSpan(text: address, style: accentStyle)];
-      }
-      final suffixLength =
-          address.length >
-              _addressPrefixHighlightLength + _addressSuffixHighlightLength
-          ? _addressSuffixHighlightLength
-          : 0;
-      return [
-        TextSpan(
-          text: address.substring(0, _addressPrefixHighlightLength),
-          style: highlightStyle,
-        ),
-        TextSpan(
-          text: address.substring(
-            _addressPrefixHighlightLength,
-            address.length - suffixLength,
-          ),
-          style: accentStyle,
-        ),
-        if (suffixLength > 0)
-          TextSpan(
-            text: address.substring(address.length - suffixLength),
-            style: highlightStyle,
-          ),
-      ];
-    }
-
-    final prefixEnd = _addressPrefixHighlightLength;
-    final leadingEnd = prefixEnd + _addressLeadingPlainLength;
-    final trailingStart =
-        address.length -
-        _addressSuffixHighlightLength -
-        _addressTrailingPlainLength;
-    final suffixStart = address.length - _addressSuffixHighlightLength;
-    assert(leadingEnd <= trailingStart);
-    return [
-      TextSpan(text: address.substring(0, prefixEnd), style: highlightStyle),
-      TextSpan(
-        text: address.substring(prefixEnd, leadingEnd),
-        style: accentStyle,
-      ),
-      TextSpan(text: '...\n', style: accentStyle),
-      TextSpan(
-        text: address.substring(trailingStart, suffixStart),
-        style: accentStyle,
-      ),
-      TextSpan(text: address.substring(suffixStart), style: highlightStyle),
-    ];
   }
 
   void _toggleMessageExpanded() {
@@ -232,6 +155,12 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     }
 
     await context.push('/send/status', extra: widget.args);
+  }
+
+  void _handleCancel() {
+    _scheduleDiscard();
+    if (!mounted) return;
+    context.go('/send');
   }
 
   void _showKeystoneSigningModal() {
@@ -392,25 +321,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     );
   }
 
-  Future<void> _copyRecipientAddress() async {
-    await Clipboard.setData(ClipboardData(text: widget.args.address.trim()));
-    if (!mounted) return;
-    showAppToast(context, 'Address copied');
-  }
-
-  String? _recipientAddressBookLabel(
-    Iterable<AddressBookContact> addressBookContacts,
-  ) {
-    return addressBookLabelFor(
-      contacts: addressBookContacts,
-      network: AddressBookNetwork.zcash,
-      address: widget.args.address,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     final isHardware = ref
         .read(accountProvider.notifier)
         .isHardwareAccount(widget.args.proposalAccountUuid);
@@ -418,7 +330,17 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ??
         const <AddressBookContact>[];
-    final addressBookLabel = _recipientAddressBookLabel(addressBookContacts);
+    final ownAccounts =
+        ref.watch(ownAccountAddressesProvider).value ??
+        const <String, AccountInfo>{};
+    final recipient = sendReviewRecipientFor(
+      contacts: addressBookContacts,
+      address: widget.args.address,
+      ownAccounts: ownAccounts,
+    );
+    final zecUsdUnitPrice = ref.watch(zecUsdUnitPriceProvider).asData?.value;
+    final memo = widget.args.memo;
+    final hasMemo = memo != null && memo.trim().isNotEmpty;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -427,61 +349,43 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xxs,
-                AppSpacing.md,
-                AppSpacing.md,
-                AppSpacing.md,
+            AppPaneScrollScaffold(
+              toolbar: AppPaneToolbar(
+                onBeforeNavigate: _scheduleDiscard,
+                backLinkMinWidth: 60,
               ),
-              child: Column(
-                children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: AppRouteBackLink(onBeforeNavigate: _scheduleDiscard),
-                  ),
-                  Expanded(
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _SendReviewReceiptCard(
-                            args: widget.args,
-                            amountText: _formatReceiptAmount(
-                              widget.args.amountZatoshi,
-                            ),
-                            feeText: _formatFee(widget.args.feeZatoshi),
-                            addressSpans: _addressSpans(context),
-                            addressBookLabel: addressBookLabel,
-                            messageExpanded: _messageExpanded,
-                            onToggleMessageExpanded: _toggleMessageExpanded,
-                            onCopyAddress: () =>
-                                unawaited(_copyRecipientAddress()),
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          SizedBox(
-                            width: 256,
-                            child: AppButton(
-                              key: const ValueKey('send_confirm_button'),
-                              onPressed: _handleSend,
-                              variant: AppButtonVariant.primary,
-                              minWidth: 256,
-                              leading: AppIcon(
-                                isHardware ? AppIcons.qr : AppIcons.plane,
-                                color: colors.button.primary.label,
-                              ),
-                              child: Text(
-                                isHardware ? 'Confirm with Keystone' : 'Send',
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              child: SendReviewContentView(
+                amountText: _formatAmount(widget.args.amountZatoshi),
+                fiatText: fiatTextForZatoshi(
+                  widget.args.amountZatoshi,
+                  zecUsdUnitPrice: zecUsdUnitPrice,
+                ),
+                recipient: recipient,
+                feeText: _formatFee(widget.args.feeZatoshi),
+                isShieldedRecipient: widget.args.isShielded,
+                memoText: hasMemo ? memo : null,
+                memoExpanded: _messageExpanded,
+                confirmLabel: isHardware
+                    ? 'Confirm with Keystone'
+                    : 'Confirm & send',
+                confirmLeadingIconName: isHardware
+                    ? AppIcons.qr
+                    : AppIcons.plane,
+                onConfirm: () => unawaited(_handleSend()),
+                onCancel: _handleCancel,
+                onShowFullAddress: () =>
+                    setState(() => _showVerifyAddress = true),
+                onExpandMemo: _toggleMessageExpanded,
               ),
             ),
+            if (_showVerifyAddress && keystonePhase == null)
+              SendVerifyAddressOverlay(
+                accountUuid: widget.args.proposalAccountUuid,
+                address: widget.args.address.trim(),
+                isShieldedAddress: widget.args.isShielded,
+                onClose: () => setState(() => _showVerifyAddress = false),
+              ),
             if (keystonePhase != null)
               AppPaneModalOverlay(
                 onDismiss: () => unawaited(_cancelKeystoneSigning()),
@@ -515,439 +419,6 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
               ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _SendReviewReceiptCard extends StatelessWidget {
-  const _SendReviewReceiptCard({
-    required this.args,
-    required this.amountText,
-    required this.feeText,
-    required this.addressSpans,
-    required this.addressBookLabel,
-    required this.messageExpanded,
-    required this.onToggleMessageExpanded,
-    required this.onCopyAddress,
-  });
-
-  final SendReviewArgs args;
-  final String amountText;
-  final String feeText;
-  final List<TextSpan> addressSpans;
-  final String? addressBookLabel;
-  final bool messageExpanded;
-  final VoidCallback onToggleMessageExpanded;
-  final VoidCallback onCopyAddress;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final isDark = context.appTheme == AppThemeData.dark;
-    final receiptMaskAsset = isDark
-        ? 'assets/illustrations/send_review_receipt_mask_dark.png'
-        : 'assets/illustrations/send_review_receipt_mask.png';
-    final hasMemo = args.memo != null && args.memo!.trim().isNotEmpty;
-    final messageTextHeight = messageExpanded ? 156.0 : 62.0;
-    final messageBlockHeight = 24.0 + messageTextHeight;
-    final dividerTop = hasMemo ? 214.0 + messageBlockHeight + 16.0 : 214.0;
-    final feeTop = dividerTop + 32.0;
-    final receiptHeight = hasMemo && messageExpanded ? feeTop + 56.0 : 404.0;
-    final savedRecipientLabel = addressBookLabel?.trim();
-    final hasSavedRecipient =
-        savedRecipientLabel != null && savedRecipientLabel.isNotEmpty;
-
-    return SizedBox(
-      width: 352,
-      height: receiptHeight,
-      child: Stack(
-        clipBehavior: Clip.hardEdge,
-        children: [
-          Positioned(
-            left: 0,
-            top: 0,
-            width: 352,
-            height: receiptHeight + 80.0,
-            child: Image.asset(receiptMaskAsset, fit: BoxFit.fill),
-          ),
-          Positioned(
-            top: 23,
-            right: 18,
-            child: _SendReviewStatusBadge(isShielded: args.isShielded),
-          ),
-          Positioned(
-            left: AppSpacing.sm,
-            top: 35,
-            width: 320,
-            height: 87,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Sending',
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                SizedBox(
-                  width: double.infinity,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      amountText,
-                      maxLines: 1,
-                      softWrap: false,
-                      style: AppTypography.displayLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Positioned(
-            left: AppSpacing.sm,
-            top: 138,
-            width: 320,
-            height: hasSavedRecipient ? 68 : 60,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _SendReviewFieldTitle(
-                  label: 'To',
-                  rightLabel: hasSavedRecipient
-                      ? null
-                      : _SendReviewCopyAction(onTap: onCopyAddress),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                if (hasSavedRecipient)
-                  _SendReviewSavedRecipientValue(
-                    address: args.address,
-                    label: savedRecipientLabel,
-                    onCopy: onCopyAddress,
-                  )
-                else
-                  RichText(
-                    maxLines: 2,
-                    overflow: TextOverflow.clip,
-                    softWrap: false,
-                    text: TextSpan(children: addressSpans),
-                  ),
-              ],
-            ),
-          ),
-          if (hasMemo)
-            Positioned(
-              left: AppSpacing.sm,
-              top: 214,
-              width: 320,
-              height: messageBlockHeight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _SendReviewFieldTitle(
-                    label: 'Message',
-                    rightLabel: _SendReviewMessageToggle(
-                      expanded: messageExpanded,
-                      onTap: onToggleMessageExpanded,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  SizedBox(
-                    height: messageTextHeight,
-                    child: messageExpanded
-                        ? SingleChildScrollView(
-                            child: Text(
-                              args.memo!,
-                              maxLines: null,
-                              overflow: TextOverflow.visible,
-                              style: AppTypography.bodyMediumStrong.copyWith(
-                                color: colors.text.accent,
-                              ),
-                            ),
-                          )
-                        : Text(
-                            args.memo!,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.bodyMediumStrong.copyWith(
-                              color: colors.text.accent,
-                            ),
-                          ),
-                  ),
-                ],
-              ),
-            ),
-          Positioned(
-            left: AppSpacing.sm,
-            top: dividerTop,
-            width: 320,
-            height: 16,
-            child: const AppDecorativeDivider(width: 320),
-          ),
-          Positioned(
-            left: AppSpacing.sm,
-            top: feeTop,
-            width: 320,
-            height: 21,
-            child: Text(
-              'Tx Fee: $feeText',
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SendReviewSavedRecipientValue extends StatelessWidget {
-  const _SendReviewSavedRecipientValue({
-    required this.address,
-    required this.label,
-    required this.onCopy,
-  });
-
-  final String address;
-  final String label;
-  final VoidCallback onCopy;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final compactAddress = compactTransactionReceiptSavedAddress(address);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppIcon(AppIcons.user, size: 14, color: colors.icon.brandCrimson),
-            const SizedBox(width: AppSpacing.xxs),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xxs),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                compactAddress,
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.muted,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              _SendReviewInlineCopyAction(onTap: onCopy),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SendReviewStatusBadge extends StatelessWidget {
-  const _SendReviewStatusBadge({required this.isShielded});
-
-  final bool isShielded;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          isShielded ? 'Shielded' : 'Transparent',
-          style: AppTypography.labelLarge.copyWith(
-            color: isShielded ? colors.text.success : colors.text.muted,
-          ),
-        ),
-        const SizedBox(width: AppSpacing.xxs),
-        if (isShielded)
-          _SendShieldedBadgeIcon()
-        else
-          AppIcon(
-            AppIcons.transparentBalance,
-            size: 20,
-            color: colors.icon.muted,
-          ),
-      ],
-    );
-  }
-}
-
-class _SendReviewFieldTitle extends StatelessWidget {
-  const _SendReviewFieldTitle({required this.label, this.rightLabel});
-
-  final String label;
-  final Widget? rightLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            label,
-            style: AppTypography.labelMedium.copyWith(
-              color: colors.text.secondary,
-            ),
-          ),
-        ),
-        if (rightLabel != null) ...[rightLabel!],
-      ],
-    );
-  }
-}
-
-class _SendReviewCopyAction extends StatelessWidget {
-  const _SendReviewCopyAction({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Copy',
-              style: AppTypography.labelMedium.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.xxs),
-            AppIcon(
-              AppIcons.copy,
-              size: AppIconSize.medium,
-              color: colors.icon.muted,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SendReviewInlineCopyAction extends StatelessWidget {
-  const _SendReviewInlineCopyAction({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: AppIcon(
-          AppIcons.copy,
-          size: 16,
-          color: context.colors.icon.muted,
-        ),
-      ),
-    );
-  }
-}
-
-class _SendReviewMessageToggle extends StatelessWidget {
-  const _SendReviewMessageToggle({required this.expanded, required this.onTap});
-
-  final bool expanded;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              expanded ? 'Collapse' : 'Expand',
-              style: AppTypography.labelMedium.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.xxs),
-            AppIcon(
-              expanded ? AppIcons.collapsed : AppIcons.expand,
-              size: 16,
-              color: colors.icon.muted,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SendShieldedBadgeIcon extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final isDark = context.appTheme == AppThemeData.dark;
-    final patternAsset = isDark
-        ? 'assets/illustrations/send_review_receipt_pattern_dark.png'
-        : 'assets/illustrations/send_review_receipt_pattern.png';
-    return SizedBox(
-      width: 20,
-      height: 20,
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.center,
-        children: [
-          IgnorePointer(
-            child: OverflowBox(
-              minWidth: 500.755,
-              maxWidth: 500.755,
-              minHeight: 562.605,
-              maxHeight: 562.605,
-              child: Image.asset(
-                patternAsset,
-                width: 500.755,
-                height: 562.605,
-                fit: BoxFit.fill,
-              ),
-            ),
-          ),
-          AppIcon(AppIcons.shieldKeyhole, size: 20, color: colors.icon.success),
-        ],
       ),
     );
   }

@@ -8,8 +8,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/zcash_explorer.dart';
+import '../../../core/formatting/date_format.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
@@ -17,17 +19,19 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/zec_usd_price_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
-import '../../address_book/models/address_book_label_lookup.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../keystone/widgets/keystone_transaction_progress_panel.dart';
 import '../services/sapling_params.dart';
 import '../widgets/sapling_params_prompt.dart';
-import '../widgets/transaction_receipt_view.dart';
+import '../widgets/send_recipient_resolver.dart';
+import '../widgets/send_status_content_view.dart';
+import '../widgets/send_verify_address_overlay.dart';
 import 'send_review_screen.dart';
 
 enum _SendStatusPhase { sending, pendingBroadcast, succeeded, failed }
@@ -52,6 +56,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   late final DateTime _startedAt = DateTime.now();
   DateTime? _completedAt;
   bool _showSaplingParamsPrompt = false;
+  bool _messageExpanded = false;
+  bool _showVerifyAddress = false;
   Completer<bool>? _saplingParamsPromptCompleter;
 
   @override
@@ -166,33 +172,12 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
   }
 
-  String _formatReceiptAmount(BigInt zatoshi) {
-    return ZecAmount.fromZatoshi(zatoshi).receipt.toString();
+  String _formatAmount(BigInt zatoshi) {
+    return ZecAmount.fromZatoshi(zatoshi).activityDetail.toString();
   }
 
   String _formatFee(BigInt zatoshi) {
     return ZecAmount.fromZatoshi(zatoshi).fee.toString();
-  }
-
-  String _formatDate(DateTime value) {
-    const months = <String>[
-      '',
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
-    final hh = value.hour.toString().padLeft(2, '0');
-    final mm = value.minute.toString().padLeft(2, '0');
-    return '${months[value.month]} ${value.day}, ${value.year} $hh:$mm';
   }
 
   Future<bool> _showSaplingParamsDialog() {
@@ -246,12 +231,6 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     );
     if (launched || !mounted) return;
     await _copyTransactionHash();
-  }
-
-  Future<void> _copyRecipientAddress() async {
-    await Clipboard.setData(ClipboardData(text: widget.args.address.trim()));
-    if (!mounted) return;
-    showAppToast(context, 'Address copied');
   }
 
   Future<bool> _abortIfUnmounted() async {
@@ -470,18 +449,11 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xxs,
-          AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.md,
-        ),
+        padding: EdgeInsets.zero,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: AppRouteBackLink(),
-            ),
+            const AppPaneToolbar(leading: AppRouteBackLink(minWidth: 60)),
             Expanded(
               child: Center(
                 child: Column(
@@ -506,66 +478,37 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     );
   }
 
-  TransactionReceiptBlockData _primaryBlockFor(
-    BuildContext context, {
-    required bool useFailedReceiptLayout,
-    required String? addressBookLabel,
-  }) {
-    final trimmedAddress = widget.args.address.trim();
-    final trimmedLabel = addressBookLabel?.trim();
-    if (trimmedLabel != null && trimmedLabel.isNotEmpty) {
-      return TransactionReceiptBlockData(
-        title: 'To',
-        child: TransactionReceiptSavedRecipientAddress(
-          address: trimmedAddress,
-          label: trimmedLabel,
-          onCopy: () => unawaited(_copyRecipientAddress()),
-        ),
-      );
-    }
-
-    return TransactionReceiptBlockData(
-      title: 'To',
-      child: TransactionReceiptAddressText(
-        address: trimmedAddress,
-        highlightEdges: widget.args.isShielded,
-        compact: !useFailedReceiptLayout && widget.args.isShielded,
-        highlightColor: useFailedReceiptLayout
-            ? null
-            : context.colors.text.brandCrimson,
-      ),
-      onCopy: useFailedReceiptLayout
-          ? () => unawaited(_copyRecipientAddress())
-          : null,
-    );
-  }
-
-  String? _recipientAddressBookLabel(
-    Iterable<AddressBookContact> addressBookContacts,
-  ) {
-    return addressBookLabelFor(
-      contacts: addressBookContacts,
-      network: AddressBookNetwork.zcash,
-      address: widget.args.address,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final receiptPhase = switch (_phase) {
-      _SendStatusPhase.sending => TransactionReceiptPhase.sending,
-      _SendStatusPhase.pendingBroadcast => TransactionReceiptPhase.pending,
-      _SendStatusPhase.succeeded => TransactionReceiptPhase.succeeded,
-      _SendStatusPhase.failed => TransactionReceiptPhase.failed,
+    // The legacy receipt's pending phase rendered the loader + "In progress"
+    // status with the explorer link; pendingBroadcast keeps that mapping
+    // (in-progress visuals + Tx ID row + the broadcast guidance notice).
+    final statusPhase = switch (_phase) {
+      _SendStatusPhase.sending ||
+      _SendStatusPhase.pendingBroadcast => SendStatusPhase.inProgress,
+      _SendStatusPhase.succeeded => SendStatusPhase.completed,
+      _SendStatusPhase.failed => SendStatusPhase.failed,
     };
-    final useFailedReceiptLayout = _phase == _SendStatusPhase.failed;
-    final statusMessage = _statusMessage;
     final isKeystoneSubmitting =
         widget.keystone != null && _phase == _SendStatusPhase.sending;
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ??
         const <AddressBookContact>[];
-    final addressBookLabel = _recipientAddressBookLabel(addressBookContacts);
+    final ownAccounts =
+        ref.watch(ownAccountAddressesProvider).value ??
+        const <String, AccountInfo>{};
+    final recipient = sendReviewRecipientFor(
+      contacts: addressBookContacts,
+      address: widget.args.address,
+      ownAccounts: ownAccounts,
+    );
+    final zecUsdUnitPrice = ref.watch(zecUsdUnitPriceProvider).asData?.value;
+    final memo = widget.args.memo;
+    final hasMemo = memo != null && memo.trim().isNotEmpty;
+    final canOpenExplorer =
+        (_phase == _SendStatusPhase.succeeded ||
+            _phase == _SendStatusPhase.pendingBroadcast) &&
+        _txid != null;
 
     return PopScope<void>(
       canPop: false,
@@ -581,94 +524,51 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
               pane: AppDesktopPane(
                 padding: EdgeInsets.zero,
                 child: Stack(
+                  fit: StackFit.expand,
                   children: [
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: TransactionReceiptIllustration(
-                          failed: useFailedReceiptLayout,
+                    AppPaneScrollScaffold(
+                      toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                      ),
+                      child: SendStatusContentView(
+                        key: ValueKey('send_status_${statusPhase.name}'),
+                        phase: statusPhase,
+                        amountText: _formatAmount(widget.args.amountZatoshi),
+                        fiatText: fiatTextForZatoshi(
+                          widget.args.amountZatoshi,
+                          zecUsdUnitPrice: zecUsdUnitPrice,
                         ),
+                        recipient: recipient,
+                        timestampText: formatDayMonthTime(
+                          _completedAt ?? _startedAt,
+                        ),
+                        txIdText: _txid,
+                        feeText: _formatFee(widget.args.feeZatoshi),
+                        isShieldedRecipient: widget.args.isShielded,
+                        memoText: hasMemo ? memo : null,
+                        memoExpanded: _messageExpanded,
+                        noticeText: _phase == _SendStatusPhase.failed
+                            ? (_error ?? 'Send failed')
+                            : _statusMessage,
+                        onShowFullAddress: () =>
+                            setState(() => _showVerifyAddress = true),
+                        onExpandMemo: () => setState(
+                          () => _messageExpanded = !_messageExpanded,
+                        ),
+                        onOpenExplorer: canOpenExplorer
+                            ? _openTransactionExplorer
+                            : null,
                       ),
                     ),
-                    Positioned.fill(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.xxs,
-                          AppSpacing.md,
-                          0,
-                          AppSpacing.md,
-                        ),
-                        child: Column(
-                          children: [
-                            const Align(
-                              alignment: Alignment.centerLeft,
-                              child: AppRouteBackLink(),
-                            ),
-                            Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.only(
-                                  left: AppSpacing.sm + AppSpacing.xxs,
-                                  right: 255,
-                                ),
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: TransactionReceiptView(
-                                    key: ValueKey(
-                                      'send_status_${receiptPhase.name}',
-                                    ),
-                                    phase: receiptPhase,
-                                    amountText: _formatReceiptAmount(
-                                      widget.args.amountZatoshi,
-                                    ),
-                                    primaryBlock: _primaryBlockFor(
-                                      context,
-                                      useFailedReceiptLayout:
-                                          useFailedReceiptLayout,
-                                      addressBookLabel: addressBookLabel,
-                                    ),
-                                    feeText: _formatFee(widget.args.feeZatoshi),
-                                    extraBlocks: [
-                                      if (statusMessage != null)
-                                        TransactionReceiptBlockData(
-                                          title: 'Status',
-                                          child: Text(
-                                            statusMessage,
-                                            style: AppTypography.bodyMedium
-                                                .copyWith(
-                                                  color: context
-                                                      .colors
-                                                      .text
-                                                      .accent,
-                                                ),
-                                          ),
-                                        ),
-                                    ],
-                                    dateText: _formatDate(
-                                      _completedAt ?? _startedAt,
-                                    ),
-                                    error: _error,
-                                    failureFallbackText: 'Send failed',
-                                    useFailedReceiptLayout:
-                                        useFailedReceiptLayout,
-                                    onTransactionHashPressed:
-                                        (_phase == _SendStatusPhase.succeeded ||
-                                                _phase ==
-                                                    _SendStatusPhase
-                                                        .pendingBroadcast) &&
-                                            _txid != null
-                                        ? _openTransactionExplorer
-                                        : null,
-                                    onBackToWallet:
-                                        _phase == _SendStatusPhase.failed
-                                        ? _goHome
-                                        : null,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                    if (_showVerifyAddress)
+                      SendVerifyAddressOverlay(
+                        accountUuid: widget.args.proposalAccountUuid,
+                        address: widget.args.address.trim(),
+                        isShieldedAddress: widget.args.isShielded,
+                        onClose: () =>
+                            setState(() => _showVerifyAddress = false),
                       ),
-                    ),
                     if (_showSaplingParamsPrompt)
                       Positioned.fill(
                         child: SaplingParamsPrompt(
