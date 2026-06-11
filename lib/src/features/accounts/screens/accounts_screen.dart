@@ -26,7 +26,7 @@ import '../../../providers/voting/voting_submission_guard_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../../send/models/send_prefill_args.dart';
 import '../../swap/providers/swap_activity_store.dart';
-import '../widgets/account_name_modal.dart';
+import '../widgets/account_edit_modal.dart';
 import '../widgets/account_profile_picture_modal.dart';
 import '../widgets/account_remove_modal.dart';
 
@@ -43,7 +43,7 @@ const _accountsContentVerticalPadding = AppSpacing.sm;
 const _accountsTitleSurfaceGap = AppSpacing.base;
 const _accountsListAddButtonMinGap = AppSpacing.md;
 
-enum AccountsScreenInitialModal { accountName, profilePicture, removeAccount }
+enum AccountsScreenInitialModal { editAccount, profilePicture, removeAccount }
 
 class AccountsScreen extends ConsumerStatefulWidget {
   const AccountsScreen({
@@ -61,11 +61,11 @@ class AccountsScreen extends ConsumerStatefulWidget {
   ConsumerState<AccountsScreen> createState() => _AccountsScreenState();
 }
 
-enum _AccountModalType { accountName, profilePicture, removeAccount }
+enum _AccountModalType { editAccount, profilePicture, removeAccount }
 
 _AccountModalType? _modalTypeFromInitial(AccountsScreenInitialModal? modal) {
   return switch (modal) {
-    AccountsScreenInitialModal.accountName => _AccountModalType.accountName,
+    AccountsScreenInitialModal.editAccount => _AccountModalType.editAccount,
     AccountsScreenInitialModal.profilePicture =>
       _AccountModalType.profilePicture,
     AccountsScreenInitialModal.removeAccount => _AccountModalType.removeAccount,
@@ -79,6 +79,13 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   final Set<String> _copyingAddressUuids = {};
   final Set<String> _sendingZecAddressUuids = {};
 
+  // Edit-account drafts: the picker round-trip unmounts the edit modal, so
+  // the in-progress name and picked picture live here until Update commits
+  // them (or Cancel discards them).
+  String? _editDraftName;
+  String? _editDraftProfilePictureId;
+  bool _pfpPickerFromEdit = false;
+
   @override
   void initState() {
     super.initState();
@@ -86,12 +93,11 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     _activeModal = _modalTypeFromInitial(widget.initialModal);
   }
 
-  void _showAccountNameModal(AccountInfo account) {
-    _showModal(_AccountModalType.accountName, account);
-  }
-
-  void _showProfilePictureModal(AccountInfo account) {
-    _showModal(_AccountModalType.profilePicture, account);
+  void _showEditAccountModal(AccountInfo account) {
+    _editDraftName = account.name;
+    _editDraftProfilePictureId = account.profilePictureId;
+    _pfpPickerFromEdit = false;
+    _showModal(_AccountModalType.editAccount, account);
   }
 
   void _showRemoveAccountModal(AccountInfo account) {
@@ -110,11 +116,38 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     setState(() {
       _modalAccountUuid = null;
       _activeModal = null;
+      _editDraftName = null;
+      _editDraftProfilePictureId = null;
+      _pfpPickerFromEdit = false;
     });
   }
 
-  Future<void> _updateAccountName(String uuid, String name) async {
-    await ref.read(accountProvider.notifier).renameAccount(uuid, name);
+  void _openEditProfilePicturePicker() {
+    setState(() {
+      _pfpPickerFromEdit = true;
+      _activeModal = _AccountModalType.profilePicture;
+    });
+  }
+
+  void _returnToEditAccountModal({String? pickedProfilePictureId}) {
+    setState(() {
+      if (pickedProfilePictureId != null) {
+        _editDraftProfilePictureId = pickedProfilePictureId;
+      }
+      _pfpPickerFromEdit = false;
+      _activeModal = _AccountModalType.editAccount;
+    });
+  }
+
+  Future<void> _commitEditAccount(AccountInfo account, String name) async {
+    final notifier = ref.read(accountProvider.notifier);
+    if (name.trim() != account.name.trim()) {
+      await notifier.renameAccount(account.uuid, name);
+    }
+    final draftPicture = _editDraftProfilePictureId;
+    if (draftPicture != null && draftPicture != account.profilePictureId) {
+      await notifier.updateProfilePicture(account.uuid, draftPicture);
+    }
     if (!mounted) return;
     _closeModal();
   }
@@ -244,8 +277,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                   onSelectAccount: _handleAccountSelected,
                   onCopyAddress: _copyAddress,
                   onSendZec: _sendZec,
-                  onEditAccountName: _showAccountNameModal,
-                  onChangeProfilePicture: _showProfilePictureModal,
+                  onEditAccount: _showEditAccountModal,
                   onRemoveAccount: _showRemoveAccountModal,
                   initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
                 ),
@@ -256,21 +288,42 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                 borderRadius: const BorderRadius.all(Radius.circular(20)),
                 onDismiss: _closeModal,
                 child: switch (_activeModal!) {
-                  _AccountModalType.accountName => AccountNameModal(
+                  _AccountModalType.editAccount => AccountEditModal(
                     accountName: modalAccount.name,
-                    profilePictureId: modalAccount.profilePictureId,
+                    initialName: _editDraftName ?? modalAccount.name,
+                    profilePictureId:
+                        _editDraftProfilePictureId ??
+                        modalAccount.profilePictureId,
+                    profilePictureChanged:
+                        (_editDraftProfilePictureId ??
+                            modalAccount.profilePictureId) !=
+                        modalAccount.profilePictureId,
+                    onEditProfilePicture: _openEditProfilePicturePicker,
+                    onNameChanged: (name) => _editDraftName = name,
                     onCancel: _closeModal,
-                    onUpdate: (name) =>
-                        _updateAccountName(modalAccount.uuid, name),
+                    onUpdate: (name) => _commitEditAccount(modalAccount, name),
                   ),
                   _AccountModalType.profilePicture =>
                     AccountProfilePictureModal(
-                      currentProfilePictureId: modalAccount.profilePictureId,
-                      onCancel: _closeModal,
-                      onUpdate: (profilePictureId) => _updateProfilePicture(
-                        modalAccount.uuid,
-                        profilePictureId,
-                      ),
+                      currentProfilePictureId: _pfpPickerFromEdit
+                          ? (_editDraftProfilePictureId ??
+                                modalAccount.profilePictureId)
+                          : modalAccount.profilePictureId,
+                      onCancel: _pfpPickerFromEdit
+                          ? () => _returnToEditAccountModal()
+                          : _closeModal,
+                      onUpdate: (profilePictureId) async {
+                        if (_pfpPickerFromEdit) {
+                          _returnToEditAccountModal(
+                            pickedProfilePictureId: profilePictureId,
+                          );
+                          return;
+                        }
+                        await _updateProfilePicture(
+                          modalAccount.uuid,
+                          profilePictureId,
+                        );
+                      },
                     ),
                   _AccountModalType.removeAccount => AccountRemoveModal(
                     accountName: modalAccount.name,
@@ -446,8 +499,7 @@ class _AccountsPane extends StatelessWidget {
     required this.onSelectAccount,
     required this.onCopyAddress,
     required this.onSendZec,
-    required this.onEditAccountName,
-    required this.onChangeProfilePicture,
+    required this.onEditAccount,
     required this.onRemoveAccount,
     required this.initialOpenMenuAccountUuid,
   });
@@ -457,8 +509,7 @@ class _AccountsPane extends StatelessWidget {
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onCopyAddress;
   final ValueChanged<AccountInfo> onSendZec;
-  final ValueChanged<AccountInfo> onEditAccountName;
-  final ValueChanged<AccountInfo> onChangeProfilePicture;
+  final ValueChanged<AccountInfo> onEditAccount;
   final ValueChanged<AccountInfo> onRemoveAccount;
   final String? initialOpenMenuAccountUuid;
 
@@ -489,8 +540,7 @@ class _AccountsPane extends StatelessWidget {
                 onSelectAccount: onSelectAccount,
                 onCopyAddress: onCopyAddress,
                 onSendZec: onSendZec,
-                onEditAccountName: onEditAccountName,
-                onChangeProfilePicture: onChangeProfilePicture,
+                onEditAccount: onEditAccount,
                 onRemoveAccount: onRemoveAccount,
                 initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
               ),
@@ -627,8 +677,7 @@ class _AccountsList extends StatelessWidget {
     required this.onSelectAccount,
     required this.onCopyAddress,
     required this.onSendZec,
-    required this.onEditAccountName,
-    required this.onChangeProfilePicture,
+    required this.onEditAccount,
     required this.onRemoveAccount,
     required this.initialOpenMenuAccountUuid,
   });
@@ -640,8 +689,7 @@ class _AccountsList extends StatelessWidget {
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onCopyAddress;
   final ValueChanged<AccountInfo> onSendZec;
-  final ValueChanged<AccountInfo> onEditAccountName;
-  final ValueChanged<AccountInfo> onChangeProfilePicture;
+  final ValueChanged<AccountInfo> onEditAccount;
   final ValueChanged<AccountInfo> onRemoveAccount;
   final String? initialOpenMenuAccountUuid;
 
@@ -676,8 +724,7 @@ class _AccountsList extends StatelessWidget {
                       showSendZec: false,
                       onCopyAddress: onCopyAddress,
                       onSendZec: onSendZec,
-                      onEditName: onEditAccountName,
-                      onChangeProfilePicture: onChangeProfilePicture,
+                      onEditAccount: onEditAccount,
                       onRemove: onRemoveAccount,
                       showRemove: _AccountsList._canRemoveAccount(
                         activeAccount!,
@@ -708,8 +755,7 @@ class _AccountsList extends StatelessWidget {
                       onSelectAccount: onSelectAccount,
                       onCopyAddress: onCopyAddress,
                       onSendZec: onSendZec,
-                      onEditAccountName: onEditAccountName,
-                      onChangeProfilePicture: onChangeProfilePicture,
+                      onEditAccount: onEditAccount,
                       onRemoveAccount: onRemoveAccount,
                       initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
                     ),
@@ -782,8 +828,7 @@ class _OtherAccountsRows extends StatelessWidget {
     required this.onSelectAccount,
     required this.onCopyAddress,
     required this.onSendZec,
-    required this.onEditAccountName,
-    required this.onChangeProfilePicture,
+    required this.onEditAccount,
     required this.onRemoveAccount,
     required this.initialOpenMenuAccountUuid,
   });
@@ -794,8 +839,7 @@ class _OtherAccountsRows extends StatelessWidget {
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onCopyAddress;
   final ValueChanged<AccountInfo> onSendZec;
-  final ValueChanged<AccountInfo> onEditAccountName;
-  final ValueChanged<AccountInfo> onChangeProfilePicture;
+  final ValueChanged<AccountInfo> onEditAccount;
   final ValueChanged<AccountInfo> onRemoveAccount;
   final String? initialOpenMenuAccountUuid;
 
@@ -824,8 +868,7 @@ class _OtherAccountsRows extends StatelessWidget {
           showSendZec: true,
           onCopyAddress: onCopyAddress,
           onSendZec: onSendZec,
-          onEditName: onEditAccountName,
-          onChangeProfilePicture: onChangeProfilePicture,
+          onEditAccount: onEditAccount,
           onRemove: onRemoveAccount,
           showRemove: _AccountsList._canRemoveAccount(
             account,
@@ -872,8 +915,7 @@ class _AccountRow extends StatefulWidget {
     required this.showSendZec,
     required this.onCopyAddress,
     required this.onSendZec,
-    required this.onEditName,
-    required this.onChangeProfilePicture,
+    required this.onEditAccount,
     required this.onRemove,
     required this.showRemove,
     required this.initiallyOpenMenu,
@@ -885,8 +927,7 @@ class _AccountRow extends StatefulWidget {
   final bool showSendZec;
   final ValueChanged<AccountInfo> onCopyAddress;
   final ValueChanged<AccountInfo> onSendZec;
-  final ValueChanged<AccountInfo> onEditName;
-  final ValueChanged<AccountInfo> onChangeProfilePicture;
+  final ValueChanged<AccountInfo> onEditAccount;
   final ValueChanged<AccountInfo> onRemove;
   final bool showRemove;
   final bool initiallyOpenMenu;
@@ -949,9 +990,7 @@ class _AccountRowState extends State<_AccountRow> {
               showSendZec: widget.showSendZec,
               onCopyAddress: () => widget.onCopyAddress(widget.account),
               onSendZec: () => widget.onSendZec(widget.account),
-              onEditName: () => widget.onEditName(widget.account),
-              onChangeProfilePicture: () =>
-                  widget.onChangeProfilePicture(widget.account),
+              onEditAccount: () => widget.onEditAccount(widget.account),
               onRemove: () => widget.onRemove(widget.account),
               showRemove: widget.showRemove,
               initiallyOpen: widget.initiallyOpenMenu,
@@ -1040,8 +1079,7 @@ class _AccountRowMenuButton extends StatefulWidget {
     required this.showSendZec,
     required this.onCopyAddress,
     required this.onSendZec,
-    required this.onEditName,
-    required this.onChangeProfilePicture,
+    required this.onEditAccount,
     required this.onRemove,
     required this.showRemove,
     required this.initiallyOpen,
@@ -1051,8 +1089,7 @@ class _AccountRowMenuButton extends StatefulWidget {
   final bool showSendZec;
   final VoidCallback onCopyAddress;
   final VoidCallback onSendZec;
-  final VoidCallback onEditName;
-  final VoidCallback onChangeProfilePicture;
+  final VoidCallback onEditAccount;
   final VoidCallback onRemove;
   final bool showRemove;
   final bool initiallyOpen;
@@ -1118,8 +1155,7 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
                   showSendZec: widget.showSendZec,
                   onCopyAddress: _handleCopyAddress,
                   onSendZec: _handleSendZec,
-                  onEditName: _handleEditName,
-                  onChangeProfilePicture: _handleChangeProfilePicture,
+                  onEditAccount: _handleEditAccount,
                   onRemove: _handleRemove,
                   showRemove: widget.showRemove,
                   onDismiss: () => _hideMenu(),
@@ -1142,14 +1178,9 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
     if (rebuild && mounted) setState(() {});
   }
 
-  void _handleEditName() {
+  void _handleEditAccount() {
     _hideMenu();
-    widget.onEditName();
-  }
-
-  void _handleChangeProfilePicture() {
-    _hideMenu();
-    widget.onChangeProfilePicture();
+    widget.onEditAccount();
   }
 
   void _handleCopyAddress() {
@@ -1223,8 +1254,7 @@ class _AccountContextMenu extends StatelessWidget {
     required this.showSendZec,
     required this.onCopyAddress,
     required this.onSendZec,
-    required this.onEditName,
-    required this.onChangeProfilePicture,
+    required this.onEditAccount,
     required this.onRemove,
     required this.showRemove,
     required this.onDismiss,
@@ -1235,28 +1265,25 @@ class _AccountContextMenu extends StatelessWidget {
   final bool showSendZec;
   final VoidCallback onCopyAddress;
   final VoidCallback onSendZec;
-  final VoidCallback onEditName;
-  final VoidCallback onChangeProfilePicture;
+  final VoidCallback onEditAccount;
   final VoidCallback onRemove;
   final bool showRemove;
   final VoidCallback onDismiss;
 
   @override
   Widget build(BuildContext context) {
+    // Figma: the current account's menu is Edit account / Copy address;
+    // other accounts get Copy address / Send ZEC / Edit account. Remove
+    // stays gated by the account-invariant rules rather than the mock,
+    // since it is the only path to remove (or reset via) an account.
     return AppContextMenu(
       width: _width,
       children: [
         if (!showSendZec) ...[
           AppContextMenuItem(
             iconName: AppIcons.edit,
-            label: 'Edit name',
-            onTap: onEditName,
-          ),
-          const SizedBox(height: AppSpacing.xxs),
-          AppContextMenuItem(
-            iconName: AppIcons.user,
-            label: 'Change picture',
-            onTap: onChangeProfilePicture,
+            label: 'Edit account',
+            onTap: onEditAccount,
           ),
           const SizedBox(height: AppSpacing.xxs),
           AppContextMenuItem(
@@ -1279,14 +1306,8 @@ class _AccountContextMenu extends StatelessWidget {
           const SizedBox(height: AppSpacing.xxs),
           AppContextMenuItem(
             iconName: AppIcons.edit,
-            label: 'Edit name',
-            onTap: onEditName,
-          ),
-          const SizedBox(height: AppSpacing.xxs),
-          AppContextMenuItem(
-            iconName: AppIcons.user,
-            label: 'Change picture',
-            onTap: onChangeProfilePicture,
+            label: 'Edit account',
+            onTap: onEditAccount,
           ),
         ],
         if (showRemove) ...[

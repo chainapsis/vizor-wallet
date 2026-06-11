@@ -272,14 +272,12 @@ void main() {
 
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Send ZEC'), findsOneWidget);
-    expect(find.text('Edit name'), findsOneWidget);
-    expect(find.text('Change picture'), findsOneWidget);
+    expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
     _expectVerticalTextOrder(tester, const [
       'Copy address',
       'Send ZEC',
-      'Edit name',
-      'Change picture',
+      'Edit account',
       'Remove account',
     ]);
     expect(
@@ -301,8 +299,7 @@ void main() {
 
     expect(find.text('Copy address'), findsNothing);
     expect(find.text('Send ZEC'), findsNothing);
-    expect(find.text('Edit name'), findsNothing);
-    expect(find.text('Change picture'), findsNothing);
+    expect(find.text('Edit account'), findsNothing);
     expect(find.text('Remove account'), findsNothing);
   });
 
@@ -324,14 +321,9 @@ void main() {
 
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Send ZEC'), findsNothing);
-    expect(find.text('Edit name'), findsOneWidget);
-    expect(find.text('Change picture'), findsOneWidget);
+    expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsNothing);
-    _expectVerticalTextOrder(tester, const [
-      'Edit name',
-      'Change picture',
-      'Copy address',
-    ]);
+    _expectVerticalTextOrder(tester, const ['Edit account', 'Copy address']);
   });
 
   testWidgets('current imported account can be removed', (tester) async {
@@ -366,14 +358,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Edit name'), findsOneWidget);
-    expect(find.text('Change picture'), findsOneWidget);
+    expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
     expect(find.text('Send ZEC'), findsNothing);
     _expectVerticalTextOrder(tester, const [
-      'Edit name',
-      'Change picture',
+      'Edit account',
       'Copy address',
       'Remove account',
     ]);
@@ -663,7 +653,7 @@ void main() {
       find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Edit name'));
+    await tester.tap(find.text('Edit account'));
     await tester.pumpAndSettle();
 
     expect(find.text('Account name'), findsWidgets);
@@ -709,7 +699,12 @@ void main() {
       find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Change picture'));
+    await tester.tap(find.text('Edit account'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('account_edit_profile_picture_button')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Select profile picture'), findsOneWidget);
@@ -722,9 +717,18 @@ void main() {
     await tester.tap(find.text('Update'));
     await tester.pumpAndSettle();
 
+    // The picker hands the pick back to the edit modal; nothing is
+    // committed until the edit modal's own Update.
+    expect(find.text('Select profile picture'), findsNothing);
+    expect(find.text('Account name'), findsWidgets);
+    expect(accountNotifier.updatedProfilePictureUuid, isNull);
+
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
     expect(accountNotifier.updatedProfilePictureUuid, 'account-2');
     expect(accountNotifier.updatedProfilePictureId, 'pfp-02');
-    expect(find.text('Select profile picture'), findsNothing);
+    expect(find.byType(AppPaneModalOverlay), findsNothing);
   });
 
   testWidgets('remove account menu action removes the selected account', (
