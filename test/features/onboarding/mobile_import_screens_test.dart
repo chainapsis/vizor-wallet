@@ -47,23 +47,25 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
-  testWidgets('method choice routes to manual and clipboard paths', (
+  testWidgets('the entry offers paste and the manual wizard link', (
     tester,
   ) async {
     await tester.pumpWidget(_app('/import'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Import manually'), findsOneWidget);
-    expect(find.text('Import from Clipboard'), findsOneWidget);
+    expect(find.text('Import Your Wallet'), findsOneWidget);
+    expect(find.byType(MobileImportScreen), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('mobile_import_clipboard')));
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_enter_manually')),
+    );
     await tester.pumpAndSettle();
-    expect(find.byType(MobileImportClipboardScreen), findsOneWidget);
+    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
   });
 
   testWidgets('word-count validation rejects a short paste', (tester) async {
     _mockClipboard(tester, 'one two three');
-    await tester.pumpWidget(_app('/import/clipboard'));
+    await tester.pumpWidget(_app('/import'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
@@ -74,14 +76,16 @@ void main() {
     expect(find.text('one'), findsOneWidget);
   });
 
-  testWidgets('an empty clipboard reports a friendly error', (tester) async {
+  testWidgets('an empty clipboard surfaces a toast', (tester) async {
     _mockClipboard(tester, '   ');
-    await tester.pumpWidget(_app('/import/clipboard'));
+    await tester.pumpWidget(_app('/import'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
-    expect(find.text('Your clipboard has no passphrase.'), findsOneWidget);
+    expect(find.text('Clipboard is empty'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text('Clipboard is empty'), findsNothing);
   });
 }

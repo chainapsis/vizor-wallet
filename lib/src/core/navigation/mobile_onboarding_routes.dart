@@ -83,23 +83,14 @@ List<RouteBase> mobileOnboardingRoutes() => [
   ),
   GoRoute(
     path: '/import',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
-      child: const MobileImportMethodScreen(),
-    ),
+    pageBuilder: (context, state) =>
+        CupertinoPage(key: state.pageKey, child: const MobileImportScreen()),
   ),
   GoRoute(
     path: '/import/manual',
     pageBuilder: (context, state) => CupertinoPage(
       key: state.pageKey,
       child: const MobileImportManualScreen(),
-    ),
-  ),
-  GoRoute(
-    path: '/import/clipboard',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
-      child: const MobileImportClipboardScreen(),
     ),
   ),
   GoRoute(

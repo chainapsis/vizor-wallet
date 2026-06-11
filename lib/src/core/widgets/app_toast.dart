@@ -74,6 +74,7 @@ class _AppToastHostState extends State<AppToastHost> {
   static final List<_AppToastHostState> _activeStates = [];
 
   String? _message;
+  String _iconName = AppIcons.checkCircle;
   Timer? _timer;
 
   @override
@@ -82,10 +83,15 @@ class _AppToastHostState extends State<AppToastHost> {
     _activeStates.add(this);
   }
 
-  void show(String message, {Duration duration = AppToast.defaultDuration}) {
+  void show(
+    String message, {
+    Duration duration = AppToast.defaultDuration,
+    String iconName = AppIcons.checkCircle,
+  }) {
     _timer?.cancel();
     setState(() {
       _message = message;
+      _iconName = iconName;
     });
     _timer = Timer(duration, () {
       if (!mounted) return;
@@ -130,7 +136,7 @@ class _AppToastHostState extends State<AppToastHost> {
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.sm,
                     ),
-                    child: AppToast(message: message),
+                    child: AppToast(message: message, iconName: _iconName),
                   ),
                 ),
               ),
@@ -145,6 +151,7 @@ void showAppToast(
   BuildContext context,
   String message, {
   Duration duration = AppToast.defaultDuration,
+  String iconName = AppIcons.checkCircle,
 }) {
   final element = context
       .getElementForInheritedWidgetOfExactType<_AppToastScope>();
@@ -158,7 +165,7 @@ void showAppToast(
     state != null,
     'showAppToast called without an AppToastHost ancestor.',
   );
-  state?.show(message, duration: duration);
+  state?.show(message, duration: duration, iconName: iconName);
 }
 
 class _AppToastScope extends InheritedWidget {

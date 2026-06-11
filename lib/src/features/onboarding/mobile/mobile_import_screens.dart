@@ -6,6 +6,7 @@ import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import 'mobile_onboarding_scaffold.dart';
 
@@ -41,130 +42,18 @@ String? validateImportedMnemonic(List<String> words) {
   return null;
 }
 
-/// Import entry — method choice between manual word-by-word entry and
-/// clipboard paste (Figma 4575:106622).
-class MobileImportMethodScreen extends StatelessWidget {
-  const MobileImportMethodScreen({super.key});
+/// Import entry — Figma `Import — Secret Passprhase Paste` /
+/// `Clipboard Errors` (4575:108577 / 4575:108752): the empty numbered
+/// slots with a paste action, clipboard problems surfaced as toasts,
+/// and an Enter Manually link into the word-by-word wizard.
+class MobileImportScreen extends StatefulWidget {
+  const MobileImportScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MobileOnboardingStepScaffold(
-      progress: 0.2,
-      onBack: () => Navigator.of(context).maybePop(),
-      title: 'Import Your Wallet',
-      subtitle: 'Restore a wallet from its Secret Passphrase.',
-      child: Column(
-        children: [
-          _MethodCard(
-            key: const ValueKey('mobile_import_manual'),
-            dark: true,
-            title: 'Import manually',
-            body:
-                'Import Secret Passphrase by entering words one by one, '
-                'from 1 to 24.',
-            onTap: () => context.push('/import/manual'),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          _MethodCard(
-            key: const ValueKey('mobile_import_clipboard'),
-            dark: false,
-            title: 'Import from Clipboard',
-            body: 'Paste your Secret Passphrase.',
-            onTap: () => context.push('/import/clipboard'),
-          ),
-        ],
-      ),
-    );
-  }
+  State<MobileImportScreen> createState() => _MobileImportScreenState();
 }
 
-class _MethodCard extends StatelessWidget {
-  const _MethodCard({
-    required this.dark,
-    required this.title,
-    required this.body,
-    required this.onTap,
-    super.key,
-  });
-
-  final bool dark;
-  final String title;
-  final String body;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final bg = dark ? colors.background.homeCard : colors.background.raised;
-    final titleColor = dark ? colors.text.homeCard : colors.text.accent;
-    final bodyColor = dark
-        ? colors.text.homeCard.withValues(alpha: 0.8)
-        : colors.text.secondary;
-
-    return Semantics(
-      button: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          width: double.infinity,
-          height: 200,
-          padding: const EdgeInsets.all(AppSpacing.sm),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(AppRadii.xLarge),
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                top: AppSpacing.xxs,
-                right: AppSpacing.xxs,
-                child: AppIcon(AppIcons.scroll, size: 28, color: titleColor),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: AppTypography.headlineMedium.copyWith(
-                        color: titleColor,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      body,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: bodyColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Clipboard import — empty numbered slots and a paste action (Figma
-/// 4575:107016). A valid pasted phrase fills the card and continues to
-/// review.
-class MobileImportClipboardScreen extends StatefulWidget {
-  const MobileImportClipboardScreen({super.key});
-
-  @override
-  State<MobileImportClipboardScreen> createState() =>
-      _MobileImportClipboardScreenState();
-}
-
-class _MobileImportClipboardScreenState
-    extends State<MobileImportClipboardScreen> {
+class _MobileImportScreenState extends State<MobileImportScreen> {
   List<String> _words = const [];
   String? _error;
 
@@ -173,7 +62,15 @@ class _MobileImportClipboardScreenState
     try {
       text = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
     } catch (e) {
-      log('MobileImportClipboard: ERROR reading clipboard: $e');
+      log('MobileImport: ERROR reading clipboard: $e');
+      if (mounted) {
+        showAppToast(
+          context,
+          "Can't read clipboard data",
+          iconName: AppIcons.cross,
+        );
+      }
+      return;
     }
     final words = (text ?? '')
         .split(RegExp(r'\s+'))
@@ -181,10 +78,12 @@ class _MobileImportClipboardScreenState
         .map((w) => w.toLowerCase())
         .toList();
     if (words.isEmpty) {
+      if (!mounted) return;
       setState(() {
         _words = const [];
-        _error = 'Your clipboard has no passphrase.';
+        _error = null;
       });
+      showAppToast(context, 'Clipboard is empty', iconName: AppIcons.cross);
       return;
     }
     final error = validateImportedMnemonic(words);
@@ -204,10 +103,12 @@ class _MobileImportClipboardScreenState
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileOnboardingStepScaffold(
-      progress: 0.4,
+      progress: 0.2,
       onBack: () => Navigator.of(context).maybePop(),
-      title: 'Import Your Secret Passphrase',
-      subtitle: 'Import from clipboard.',
+      title: 'Import Your Wallet',
+      subtitle:
+          'Paste your Secret Passphrase or enter it manually word by '
+          'word.',
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -236,6 +137,37 @@ class _MobileImportClipboardScreenState
                 const SizedBox(width: AppSpacing.xs),
                 const Text('Paste secret phrase'),
               ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Semantics(
+            button: true,
+            child: GestureDetector(
+              key: const ValueKey('mobile_import_enter_manually'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => context.push('/import/manual'),
+              child: SizedBox(
+                height: 44,
+                child: Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AppIcon(
+                        AppIcons.edit,
+                        size: AppIconSize.medium,
+                        color: colors.text.primary,
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Text(
+                        'Enter manually',
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ],

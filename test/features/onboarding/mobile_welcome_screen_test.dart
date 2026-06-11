@@ -66,7 +66,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('mobile_welcome_import')));
     await tester.pumpAndSettle();
-    expect(find.byType(MobileImportMethodScreen), findsOneWidget);
+    expect(find.byType(MobileImportScreen), findsOneWidget);
   });
 
   testWidgets('keystone shows the unsupported sheet', (tester) async {
