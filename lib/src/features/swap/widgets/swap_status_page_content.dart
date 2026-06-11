@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_tooltip.dart';
+import '../../../core/widgets/review_list_row.dart';
+import '../../../core/widgets/review_wrap_card.dart';
 import '../../address_book/widgets/address_book_network_icon.dart';
 import '../models/swap_detail_tooltips.dart';
 import '../models/swap_models.dart';
@@ -267,7 +267,7 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
 }
 
 /// Figma 'Review Wrap': the raised, rounded detail card that wraps the
-/// progress route and the detail rows.
+/// progress route and the detail rows. Built on the core [ReviewWrapCard].
 class _SwapDetailCard extends StatelessWidget {
   const _SwapDetailCard({required this.child});
 
@@ -275,21 +275,9 @@ class _SwapDetailCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
+    return ReviewWrapCard(
       key: const ValueKey('swap_status_detail_card'),
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: appSurfaceShadow(colors),
-      ),
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.md,
-        AppSpacing.sm,
-        AppSpacing.md,
-      ),
-      child: child,
+      children: [child],
     );
   }
 }
@@ -661,49 +649,12 @@ class _StatusRow extends StatelessWidget {
     final signalColor = failed
         ? colors.text.destructive
         : colors.text.positiveStrong;
-    final iconColor = failed ? colors.icon.destructive : colors.icon.success;
-    return SizedBox(
+    return ReviewListRow(
       key: const ValueKey('swap_status_summary_row'),
-      height: 32,
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              'Status',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.s),
-          Flexible(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  failed ? AppIcons.warning : AppIcons.checkCircle,
-                  size: _swapStatusDetailIconSize,
-                  color: iconColor,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.end,
-                    style: AppTypography.labelLarge.copyWith(
-                      color: signalColor,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      label: 'Status',
+      value: label,
+      valueColor: signalColor,
+      leadingIconName: failed ? AppIcons.warning : AppIcons.checkCircle,
     );
   }
 }
@@ -715,95 +666,55 @@ class _DetailRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The matched address-book identity cell keeps its bespoke two-line layout.
+    if (row.addressBookLabel != null) {
+      final cell = _matchedAddressCell(context);
+      if (!row.copyable) return cell;
+      return MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => copyTextWithToast(
+            context,
+            text: row.copyText ?? row.value,
+            toastMessage: 'Copied',
+          ),
+          child: cell,
+        ),
+      );
+    }
+
     final colors = context.colors;
-    final showAccountAvatar = row.label == 'Account' && row.value.isNotEmpty;
     final linkUri = row.linkUri;
     // A row may be both copyable and linkable (e.g. the terminal deposit-tx
     // row). The Figma shows the external-link arrow there, so the link
-    // affordance wins for both the icon and the tap target.
-    final enabled = linkUri != null || row.copyable;
-    return MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: linkUri != null
-            ? () => unawaited(
-                launchUrl(linkUri, mode: LaunchMode.externalApplication),
-              )
-            : row.copyable
-            ? () => copyTextWithToast(
-                context,
-                text: row.copyText ?? row.value,
-                toastMessage: 'Copied',
-              )
-            : null,
-        child: row.addressBookLabel != null
-            ? _matchedAddressCell(context)
-            : SizedBox(
-                height: 32,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        row.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.secondary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.s),
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (showAccountAvatar) ...[
-                              AppProfilePicture(
-                                profilePictureId:
-                                    row.accountProfilePictureId ??
-                                    kDefaultProfilePictureId,
-                                size: AppProfilePictureSize.medium,
-                              ),
-                              const SizedBox(width: AppSpacing.xs),
-                            ],
-                            Flexible(
-                              child: Text(
-                                row.value,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.end,
-                                style: AppTypography.labelLarge.copyWith(
-                                  color: colors.text.accent,
-                                ),
-                              ),
-                            ),
-                            if (row.copyable ||
-                                row.help ||
-                                linkUri != null) ...[
-                              const SizedBox(width: AppSpacing.xxs),
-                              _StatusDetailActionIcon(
-                                icon: linkUri != null
-                                    ? AppIcons.arrowTopRight
-                                    : row.copyable
-                                    ? AppIcons.copy
-                                    : AppIcons.help,
-                                tooltipMessage: row.help
-                                    ? row.helpTooltip ??
-                                          _swapStatusHelpTooltip(row.label)
-                                    : null,
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-      ),
+    // affordance wins for both the icon and the tap target — no copy glyph.
+    if (linkUri != null) {
+      return ReviewListRow(
+        label: row.label,
+        value: row.value,
+        trailingIconName: AppIcons.arrowTopRight,
+        trailingIconColor: colors.icon.muted,
+        onPressed: () =>
+            unawaited(launchUrl(linkUri, mode: LaunchMode.externalApplication)),
+      );
+    }
+
+    if (row.help) {
+      return ReviewListRow(
+        label: row.label,
+        value: row.value,
+        trailingIconName: AppIcons.help,
+        trailingIconColor: colors.icon.muted,
+        trailingIconTooltip:
+            row.helpTooltip ?? _swapStatusHelpTooltip(row.label),
+      );
+    }
+
+    return ReviewListRow(
+      label: row.label,
+      value: row.value,
+      copyText: row.copyable ? (row.copyText ?? row.value) : null,
     );
   }
 

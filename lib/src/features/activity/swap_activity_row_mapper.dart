@@ -111,7 +111,7 @@ ActivityRowData buildSwapActivityRow({
       includeSign: !(returnsFunds || timedOut),
       privacyModeEnabled: privacyModeEnabled,
     ),
-    amountIconName: returnsFunds ? AppIcons.arrowBack : null,
+    amountIconName: returnsFunds ? AppIcons.uturnUp : null,
     amountIconColor: returnsFunds ? colors.icon.regular : null,
     amountColor: colors.text.primary,
     amountSubtitle: timedOut ? 'Timeout' : null,
@@ -121,7 +121,7 @@ ActivityRowData buildSwapActivityRow({
     statusIconName: failed
         ? AppIcons.skull
         : item.status == SwapIntentStatus.refunded
-        ? AppIcons.arrowBack
+        ? AppIcons.uturnUp
         : incompleteDeposit
         ? AppIcons.warning
         : complete

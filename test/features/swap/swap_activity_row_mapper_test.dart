@@ -515,9 +515,9 @@ void main() {
 
     expect(row!.title, 'Swap failed');
     expect(row!.subtitle, 'USDC Refunded');
-    expect(row!.amountIconName, AppIcons.arrowBack);
+    expect(row!.amountIconName, AppIcons.uturnUp);
     expect(row!.statusText, 'Refunded');
-    expect(row!.statusIconName, AppIcons.arrowBack);
+    expect(row!.statusIconName, AppIcons.uturnUp);
     expect(row!.leadingProgressValue, isNull);
     expect(row!.childRows, isEmpty);
   });

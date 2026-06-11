@@ -122,7 +122,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _reviewTestPage(
           direction: SwapDirection.externalToZec,
           sellAsset: _testShitAsset,
@@ -152,7 +152,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _reviewTestPage(
           direction: SwapDirection.zecToExternal,
           sellAsset: SwapAsset.zec,
@@ -180,7 +180,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _reviewTestPage(
           direction: SwapDirection.externalToZec,
           sellAsset: _testShitAsset,
@@ -208,7 +208,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _reviewTestPage(
           direction: SwapDirection.zecToExternal,
           sellAsset: SwapAsset.zec,
@@ -249,7 +249,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _reviewTestPage(
           direction: SwapDirection.externalToZec,
           sellAsset: SwapAsset.usdc,
@@ -691,7 +691,7 @@ void main() {
     await _setDesktopViewport(tester);
 
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _statusTestPage(
           title: 'Swap completed',
           statusLabel: 'Completed',
@@ -754,7 +754,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _statusTestPage(
           title: 'Swap failed',
           statusLabel: 'Failed',
@@ -811,7 +811,12 @@ void main() {
     expect(feeLabelRect.left, lessThan(feeValueRect.left));
     expect(feeValueRect.right, greaterThan(feeLabelRect.right));
     expect(feeValueRect.right, lessThan(feeHelpIconRect.left));
-    expect(feeHelpIconRect.right, closeTo(finalDetailsRect.right, 1));
+    // The shared ReviewListRow pill carries a 4px right padding (pr 4), so the
+    // trailing help icon sits that pill padding (xxs) inside the row edge.
+    expect(
+      feeHelpIconRect.right,
+      closeTo(finalDetailsRect.right - AppSpacing.xxs, 1),
+    );
   });
 
   testWidgets('status progress advances skipped steps one at a time', (
@@ -946,7 +951,7 @@ void main() {
   ) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _statusTestPage(
           activeTab: SwapStatusTab.details,
           details: const [
@@ -991,7 +996,7 @@ void main() {
   ) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         _statusTestPage(
           activeTab: SwapStatusTab.details,
           details: const [
@@ -3699,12 +3704,13 @@ void main() {
       findsNothing,
     );
 
-    // Tapping the deposit-tx row (which carries the explorer linkUri and the
-    // external-link arrow) opens url_launcher, not the clipboard.
-    final depositTxRow = find.text('ZEC deposit tx');
-    await tester.ensureVisible(depositTxRow);
+    // Tapping the deposit-tx row's value pill (which carries the explorer
+    // linkUri and the external-link arrow) opens url_launcher, not the
+    // clipboard.
+    final depositTxValue = find.text('0xdeadbee ... eadbeef');
+    await tester.ensureVisible(depositTxValue);
     await tester.pumpAndSettle();
-    await tester.tap(depositTxRow);
+    await tester.tap(depositTxValue);
     await tester.pumpAndSettle();
 
     expect(launchedUrls, hasLength(1));
@@ -5111,9 +5117,12 @@ void main() {
             .last,
       );
       expect(feeValueRect.right, lessThan(feeHelpIconRect.left));
+      // The shared ReviewListRow pill carries a 4px right padding (pr 4), so the
+      // trailing help icon now sits the card's content inset (sm) plus that pill
+      // padding (xxs) inside the card edge.
       expect(
         feeHelpIconRect.right,
-        closeTo(reviewDetailsRect.right - AppSpacing.sm, 1),
+        closeTo(reviewDetailsRect.right - AppSpacing.sm - AppSpacing.xxs, 1),
       );
     },
   );
@@ -7648,17 +7657,48 @@ Widget _themeHarnessWithTheme(AppThemeData theme, Widget child) {
   );
 }
 
-/// Like [_themeHarness] but provides an [Overlay], so widgets that opt into
-/// tooltips only when an overlay is available (e.g. the status detail help
-/// icons) render their [AppTooltip]/[Tooltip].
+/// Like [_themeHarness] but provides an [Overlay], which the shared review
+/// primitives need: [ReviewListRow]'s help affordance always wraps its trailing
+/// icon in an [AppTooltip], and [AppTooltip] requires an [Overlay] ancestor.
+///
+/// Uses [_OverlayHarness] so the hosted child reconciles across repeated
+/// `pumpWidget` calls instead of being torn down and rebuilt (which would reset
+/// any [State] between pumps).
 Widget _themeHarnessWithOverlay(Widget child) {
   return AppTheme(
     data: AppThemeData.light,
     child: Directionality(
       textDirection: TextDirection.ltr,
-      child: Overlay(initialEntries: [OverlayEntry(builder: (_) => child)]),
+      child: _OverlayHarness(child: child),
     ),
   );
+}
+
+/// Hosts [child] inside an [Overlay] using a single, stable [OverlayEntry] that
+/// is rebuilt whenever [child] changes, so widget [State] survives across
+/// successive `pumpWidget` calls.
+class _OverlayHarness extends StatefulWidget {
+  const _OverlayHarness({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_OverlayHarness> createState() => _OverlayHarnessState();
+}
+
+class _OverlayHarnessState extends State<_OverlayHarness> {
+  late final OverlayEntry _entry = OverlayEntry(builder: (_) => widget.child);
+
+  @override
+  void didUpdateWidget(_OverlayHarness oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _entry.markNeedsBuild();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Overlay(initialEntries: [_entry]);
+  }
 }
 
 final _testShitAsset = SwapAsset.live(

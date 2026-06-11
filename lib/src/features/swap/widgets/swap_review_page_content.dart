@@ -3,7 +3,8 @@ import 'package:flutter/widgets.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/app_tooltip.dart';
+import '../../../core/widgets/review_list_row.dart';
+import '../../../core/widgets/review_wrap_card.dart';
 import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
 import '../models/swap_address_formatting.dart';
@@ -279,7 +280,8 @@ class SwapReviewPageActions extends StatelessWidget {
   }
 }
 
-/// Figma 'Review Wrap': the slippage / minimum / fee summary card.
+/// Figma 'Review Wrap': the slippage / minimum / fee summary card, built on
+/// the core [ReviewWrapCard] + [ReviewListRow] primitives.
 class _SwapReviewDetailCard extends StatelessWidget {
   const _SwapReviewDetailCard({
     required this.quote,
@@ -292,122 +294,32 @@ class _SwapReviewDetailCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Container(
+    return ReviewWrapCard(
       key: const ValueKey('swap_review_details'),
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: appSurfaceShadow(colors),
-      ),
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.md,
-        AppSpacing.sm,
-        AppSpacing.md,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _SwapReviewDetailRow(
-            label: 'Slippage tolerance',
-            value:
-                slippageToleranceTextOverride ?? _slippageToleranceText(quote),
+      children: [
+        ReviewListRow(
+          label: 'Slippage tolerance',
+          value: slippageToleranceTextOverride ?? _slippageToleranceText(quote),
+        ),
+        ReviewListRow(
+          label: 'Guaranteed minimum',
+          value: compactSwapAmountText(quote.minimumReceiveText),
+          trailingIconName: AppIcons.help,
+          trailingIconColor: colors.icon.muted,
+          trailingIconTooltip: swapMinimumReceiveTooltip(
+            quote.receiveAsset.symbol,
           ),
-          _SwapReviewDetailRow(
-            label: 'Guaranteed minimum',
-            value: compactSwapAmountText(quote.minimumReceiveText),
-            helpTooltip: swapMinimumReceiveTooltip(quote.receiveAsset.symbol),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Container(height: 1, color: colors.border.regular),
-          const SizedBox(height: AppSpacing.sm),
-          _SwapReviewDetailRow(
-            label: 'Swap fee',
-            value: quote.feeLabel,
-            helpTooltip: swapFeeTooltip,
-          ),
-        ],
-      ),
+        ),
+        const ReviewWrapDivider(),
+        ReviewListRow(
+          label: 'Swap fee',
+          value: quote.feeLabel,
+          trailingIconName: AppIcons.help,
+          trailingIconColor: colors.icon.muted,
+          trailingIconTooltip: swapFeeTooltip,
+        ),
+      ],
     );
-  }
-}
-
-class _SwapReviewDetailRow extends StatelessWidget {
-  const _SwapReviewDetailRow({
-    required this.label,
-    required this.value,
-    this.helpTooltip,
-  });
-
-  final String label;
-  final String value;
-  final String? helpTooltip;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      height: 32,
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.s),
-          Flexible(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    value,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.end,
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ),
-                if (helpTooltip != null) ...[
-                  const SizedBox(width: AppSpacing.xxs),
-                  _ReviewHelpIcon(tooltipMessage: helpTooltip),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReviewHelpIcon extends StatelessWidget {
-  const _ReviewHelpIcon({required this.tooltipMessage});
-
-  final String? tooltipMessage;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final child = MouseRegion(
-      cursor: SystemMouseCursors.help,
-      child: AppIcon(AppIcons.help, size: 16, color: colors.icon.muted),
-    );
-    final message = tooltipMessage;
-    if (message == null ||
-        message.isEmpty ||
-        Overlay.maybeOf(context) == null) {
-      return child;
-    }
-    return AppTooltip(message: message, child: child);
   }
 }
 
