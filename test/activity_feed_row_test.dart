@@ -95,11 +95,11 @@ void main() {
       onRows: (value) => rows = value,
     );
 
-    expect(rows[0].title, 'Receiving');
+    expect(rows[0].title, 'Receiving ...');
     expect(rows[0].amountText, '+1.2345 $ticker');
     expect(rows[0].statusText, 'In progress');
-    expect(rows[0].leadingIconName, AppIcons.arrowDownCircle);
-    expect(find.text('Receiving'), findsOneWidget);
+    expect(rows[0].leadingIconName, AppIcons.loader);
+    expect(find.text('Receiving ...'), findsOneWidget);
     expect(find.text('+1.2345 $ticker'), findsOneWidget);
   });
 

@@ -85,6 +85,18 @@ List<ActivityFeedSectionData> _activitySections(BuildContext context) {
     ActivityFeedSectionData(
       title: 'This week',
       rows: [
+        // Unconfirmed receive: loader glyph + progressive title, per the
+        // Content Line pending variant.
+        _activityRow(
+          context,
+          title: 'Receiving ...',
+          iconName: AppIcons.loader,
+          subtitle: 'Shielded',
+          subtitleIconName: AppIcons.shieldKeyholeOutline,
+          amountText: '+5.40 ZEC',
+          amountColor: context.colors.text.positiveStrong,
+          statusText: 'In progress',
+        ),
         // Completed external->ZEC swap. The settled receive leg renders as the
         // group's single result child (the in-flight 'Receiving ZEC...' child
         // and the duplicate standalone 'Received ZEC' row are gone under the
