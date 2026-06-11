@@ -15,6 +15,7 @@ class MobileListRow extends StatelessWidget {
     this.showChevron = false,
     this.onTap,
     this.enabled = true,
+    this.labelColor,
     super.key,
   });
 
@@ -22,6 +23,9 @@ class MobileListRow extends StatelessWidget {
 
   final Widget? leading;
   final String label;
+
+  /// Overrides the default label color (e.g. destructive menu rows).
+  final Color? labelColor;
 
   /// Right-aligned secondary value (e.g. current setting).
   final String? value;
@@ -39,7 +43,9 @@ class MobileListRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final labelColor = enabled ? colors.text.accent : colors.text.disabled;
+    final labelColor =
+        this.labelColor ??
+        (enabled ? colors.text.accent : colors.text.disabled);
     final valueColor = enabled ? colors.text.secondary : colors.text.disabled;
 
     final row = ConstrainedBox(

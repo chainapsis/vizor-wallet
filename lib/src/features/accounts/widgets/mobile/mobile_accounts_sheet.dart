@@ -179,9 +179,10 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
                 Expanded(
                   child: AppButton(
                     variant: AppButtonVariant.secondary,
-                    // TODO(mobile-accounts): enable once the mobile
-                    // manage-accounts screen ships.
-                    onPressed: null,
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      context.push('/accounts');
+                    },
                     child: const Text('Manage accounts'),
                   ),
                 ),

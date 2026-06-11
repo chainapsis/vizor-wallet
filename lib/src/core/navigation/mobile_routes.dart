@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart' show CupertinoPage;
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
@@ -53,6 +54,13 @@ List<RouteBase> buildMobileRoutes({
       path: '/receive',
       pageBuilder: (context, state) =>
           CupertinoPage(key: state.pageKey, child: const MobileReceiveScreen()),
+    ),
+    GoRoute(
+      path: '/accounts',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileAccountsScreen(),
+      ),
     ),
   ];
 }
