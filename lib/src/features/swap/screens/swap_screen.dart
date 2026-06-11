@@ -27,6 +27,7 @@ import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../widgets/swap_address_edit_modal.dart';
 import '../widgets/swap_asset_selector_modal.dart';
 import '../widgets/swap_composer_panel.dart';
+import '../widgets/swap_serif_display.dart';
 import '../widgets/swap_near_intents_attribution.dart';
 import '../widgets/swap_slippage_modal.dart';
 
@@ -447,13 +448,7 @@ class _SwapPageTitle extends StatelessWidget {
       'Swap',
       key: const ValueKey('swap_page_title'),
       textAlign: TextAlign.center,
-      // Figma: YoungSerif-Medium 32/33 with the 'case' OpenType feature.
-      style: AppTypography.displaySmall.copyWith(
-        fontFamily: 'Young Serif',
-        fontWeight: FontWeight.w500,
-        fontFeatures: const [FontFeature.enable('case')],
-        color: colors.text.accent,
-      ),
+      style: swapSerifDisplayStyle(color: colors.text.accent),
     );
   }
 }

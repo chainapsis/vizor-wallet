@@ -9,6 +9,7 @@ import '../models/swap_address_formatting.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_models.dart';
 import 'swap_asset_icon.dart';
+import 'swap_serif_display.dart';
 
 class SwapComposerPanel extends StatefulWidget {
   const SwapComposerPanel({
@@ -497,15 +498,7 @@ class _SwapAmountInput extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    // Figma Swap Field: YoungSerif-Medium 32/33 with the OpenType 'case'
-    // feature on, which swaps Young Serif's default old-style figures for
-    // uniform lining digits.
-    final valueStyle = AppTypography.displaySmall.copyWith(
-      fontFamily: 'Young Serif',
-      color: colors.text.accent,
-      fontWeight: FontWeight.w500,
-      fontFeatures: const [FontFeature.enable('case')],
-    );
+    final valueStyle = swapSerifDisplayStyle(color: colors.text.accent);
     return Row(
       children: [
         if (prefixText != null) ...[
