@@ -19,7 +19,12 @@ class SwapAssetIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final badgeSize = (size * 0.5).clamp(16.0, 24.0);
+    // Figma Asset Image: on a 32px asset the chain icon is a 20px circle at
+    // (16,16) — 5/8 of the asset, overhanging by 1/8 — ringed by a 2px
+    // OUTSIDE stroke in the backdrop surface color (no gray border, no
+    // inner padding).
+    final badgeSize = size * 0.625;
+    final overhang = size * 0.125;
     return SizedBox(
       width: size,
       height: size,
@@ -35,17 +40,19 @@ class SwapAssetIcon extends StatelessWidget {
           ),
           if (showChainBadge)
             Positioned(
-              right: -2,
-              bottom: -2,
+              right: -overhang,
+              bottom: -overhang,
               child: Container(
                 key: ValueKey('swap_asset_chain_badge_${asset.identityKey}'),
                 width: badgeSize,
                 height: badgeSize,
-                padding: const EdgeInsets.all(1),
                 decoration: BoxDecoration(
-                  color: context.colors.background.base,
-                  borderRadius: BorderRadius.circular(AppRadii.full),
-                  border: Border.all(color: context.colors.border.regular),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: context.colors.background.ground,
+                    width: 2,
+                    strokeAlign: BorderSide.strokeAlignOutside,
+                  ),
                 ),
                 child: _RoundAssetImage(
                   assetPath: asset.chainIconAsset,
