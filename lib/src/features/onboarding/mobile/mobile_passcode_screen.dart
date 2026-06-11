@@ -182,11 +182,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
       child: Column(
         children: [
           const SizedBox(height: AppSpacing.md),
-          PasscodeDots(
-            length: kMobilePasscodeLength,
-            filled: _entry.length,
-            error: _error != null,
-          ),
+          PasscodeDots(length: kMobilePasscodeLength, filled: _entry.length),
           if (_error != null) ...[
             const SizedBox(height: AppSpacing.sm),
             Text(
@@ -201,6 +197,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
           PasscodeNumpad(
             onDigit: _onDigit,
             onBackspace: _onBackspace,
+            canDelete: _entry.isNotEmpty,
             enabled: !isSubmitting,
           ),
         ],

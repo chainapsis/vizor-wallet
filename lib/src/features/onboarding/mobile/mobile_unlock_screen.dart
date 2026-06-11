@@ -115,11 +115,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            PasscodeDots(
-              length: kMobilePasscodeLength,
-              filled: _entry.length,
-              error: _error != null,
-            ),
+            PasscodeDots(length: kMobilePasscodeLength, filled: _entry.length),
             if (_error != null) ...[
               const SizedBox(height: AppSpacing.sm),
               Text(
@@ -134,6 +130,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
             PasscodeNumpad(
               onDigit: _onDigit,
               onBackspace: _onBackspace,
+              canDelete: _entry.isNotEmpty,
               enabled: !_submitting,
             ),
             const SizedBox(height: AppSpacing.s),

@@ -1,28 +1,24 @@
 import 'dart:math' as math;
 
+import 'package:flutter/material.dart' show Icons, Icon;
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
-/// Diamond progress dots for passcode entry — Figma `Passcode 1`
-/// (4394:82593): six rotated squares that fill as digits are typed.
+/// Diamond progress dots for passcode entry — Figma `Passcode 1/2`
+/// (4394:82593 / 4394:82878): six rotated squares that fill crimson as
+/// digits are typed; errors are conveyed by the plum message below, not
+/// by tinting the dots.
 class PasscodeDots extends StatelessWidget {
-  const PasscodeDots({
-    required this.length,
-    required this.filled,
-    this.error = false,
-    super.key,
-  });
+  const PasscodeDots({required this.length, required this.filled, super.key});
 
   final int length;
   final int filled;
-  final bool error;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final fillColor = error ? colors.text.destructive : colors.text.accent;
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -36,7 +32,7 @@ class PasscodeDots extends StatelessWidget {
                 height: 12,
                 decoration: BoxDecoration(
                   color: i < filled
-                      ? fillColor
+                      ? colors.icon.brandCrimson
                       : colors.background.overlay.withValues(alpha: 0.35),
                   borderRadius: BorderRadius.circular(2),
                 ),
@@ -48,26 +44,38 @@ class PasscodeDots extends StatelessWidget {
   }
 }
 
-/// Serif numpad — Figma `Passcode 1` (4394:82593). The design shows no
-/// delete key; one is added bottom-right so a mistyped digit is
-/// recoverable (WIP-design gap filled deliberately).
+/// Serif numpad — Figma `Passcode 1/2` and `Sign In Passcode`
+/// (4596:50000). The bottom row carries an optional help action on the
+/// left and a delete key on the right that only appears once at least
+/// one digit is entered.
 class PasscodeNumpad extends StatelessWidget {
   const PasscodeNumpad({
     required this.onDigit,
     required this.onBackspace,
+    this.canDelete = false,
+    this.onHelp,
     this.enabled = true,
     super.key,
   });
 
   final ValueChanged<int> onDigit;
   final VoidCallback onBackspace;
+
+  /// Whether any digits are entered; the delete key hides otherwise.
+  final bool canDelete;
+
+  /// Shows the (?) action bottom-left when provided (sign-in screens).
+  final VoidCallback? onHelp;
+
   final bool enabled;
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
+
     Widget key(Widget child, {VoidCallback? onTap, String? label}) => Expanded(
       child: Semantics(
-        button: true,
+        button: onTap != null,
         label: label,
         excludeSemantics: true,
         child: GestureDetector(
@@ -78,19 +86,52 @@ class PasscodeNumpad extends StatelessWidget {
       ),
     );
 
-    Widget digitKey(int digit) {
-      final colors = context.colors;
-      return key(
-        Text(
-          '$digit',
-          style: AppTypography.displayLarge.copyWith(
-            color: enabled ? colors.text.accent : colors.text.disabled,
-          ),
+    Widget digitKey(int digit) => key(
+      Text(
+        '$digit',
+        style: AppTypography.displayLarge.copyWith(
+          color: enabled ? colors.text.accent : colors.text.disabled,
         ),
-        onTap: () => onDigit(digit),
-        label: 'Digit $digit',
-      );
-    }
+      ),
+      onTap: () => onDigit(digit),
+      label: 'Digit $digit',
+    );
+
+    final helpKey = onHelp == null
+        ? key(const SizedBox.shrink())
+        : key(
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: colors.border.regular, width: 1.5),
+              ),
+              child: Center(
+                child: AppIcon(
+                  AppIcons.help,
+                  size: AppIconSize.medium,
+                  color: colors.icon.accent,
+                ),
+              ),
+            ),
+            onTap: onHelp,
+            label: 'Passcode help',
+          );
+
+    final deleteKey = canDelete
+        ? key(
+            // TODO(mobile-passcode): swap for the design-system delete
+            // glyph once it is exported to assets/icons.
+            Icon(
+              Icons.backspace_outlined,
+              size: 26,
+              color: enabled ? colors.icon.accent : colors.icon.disabled,
+            ),
+            onTap: onBackspace,
+            label: 'Delete digit',
+          )
+        : key(const SizedBox.shrink());
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -98,23 +139,7 @@ class PasscodeNumpad extends StatelessWidget {
         Row(children: [digitKey(1), digitKey(2), digitKey(3)]),
         Row(children: [digitKey(4), digitKey(5), digitKey(6)]),
         Row(children: [digitKey(7), digitKey(8), digitKey(9)]),
-        Row(
-          children: [
-            key(const SizedBox.shrink()),
-            digitKey(0),
-            key(
-              AppIcon(
-                AppIcons.chevronBackward,
-                size: 28,
-                color: enabled
-                    ? context.colors.icon.accent
-                    : context.colors.icon.disabled,
-              ),
-              onTap: onBackspace,
-              label: 'Delete digit',
-            ),
-          ],
-        ),
+        Row(children: [helpKey, digitKey(0), deleteKey]),
       ],
     );
   }
