@@ -337,6 +337,9 @@ fn should_fill_missing_transparent_fee(db_path: &str, tx: &Transaction) -> Resul
     conn.busy_timeout(SYNC_DB_BUSY_TIMEOUT)
         .map_err(|e| SyncError::db(format!("configure fee lookup busy timeout: {e}")))?;
 
+    // Backfill transaction-level transparent fees for every wallet-relevant
+    // transaction, including receives. Received receipts label this separately
+    // as a network fee because the sender paid it.
     let fillable_rows: i64 = conn
         .query_row(
             "SELECT COUNT(*)

@@ -114,7 +114,7 @@ Widget buildReceivedReceiptKnownSenderUseCase(BuildContext context) {
 
 /// Unconfirmed inbound transaction as it actually renders in the app:
 /// loader status row per the send-in-progress spec, unknown sender, and no
-/// Tx fee row (the sender paid it).
+/// network fee row until the wallet knows the transaction-level fee.
 Widget buildReceivedReceiptInProgressUseCase(BuildContext context) {
   return _ReceivedReceiptFrame(
     child: ReceivedReceiptView(

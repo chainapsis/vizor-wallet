@@ -481,8 +481,8 @@ class _ActivityTransactionStatusScreenState
         isShieldedSource:
             fromPool == 'shielded' ||
             (hasFromAddress && _isShieldedZcashAddress(fromAddress)),
-        // Received transactions carry no fee data of their own (the sender
-        // paid it); the row hides when the wallet reports none.
+        // Received receipts still show the transaction-level network fee.
+        // The sender paid it, so the row is labeled separately from send fees.
         feeText: tx.fee > BigInt.zero
             ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
             : null,
@@ -731,9 +731,9 @@ class _ActivityTransactionStatusScreenState
   }
 }
 
-/// Centered 420px content column for the received receipt, mirroring the
-/// send flow's `SendReviewContentColumn` hosting (the receipt draws its own
-/// title, so this only handles width, scroll, and centering).
+/// Centered 420px content column for the received/shielding receipts.
+///
+/// Scrolling is owned by the containing pane scaffold.
 class _ReceiptContentColumn extends StatelessWidget {
   const _ReceiptContentColumn({required this.child});
 
@@ -741,35 +741,18 @@ class _ReceiptContentColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final height = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : null;
-        final minHeight = height == null
-            ? 0.0
-            : height < (AppSpacing.sm * 2)
-            ? 0.0
-            : height - (AppSpacing.sm * 2);
-
-        return Align(
-          alignment: Alignment.topCenter,
-          child: SizedBox(
-            width: AppWindowSizing.contentAreaMaxWidth,
-            height: height,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.s,
-                vertical: AppSpacing.sm,
-              ),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: minHeight),
-                child: child,
-              ),
-            ),
+    return Align(
+      alignment: Alignment.topCenter,
+      child: SizedBox(
+        width: AppWindowSizing.contentAreaMaxWidth,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s,
+            vertical: AppSpacing.sm,
           ),
-        );
-      },
+          child: child,
+        ),
+      ),
     );
   }
 }

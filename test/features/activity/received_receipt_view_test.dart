@@ -54,6 +54,7 @@ void main() {
     expect(find.text('Zcash is a privacy-focused ...'), findsOneWidget);
     expect(find.text('25 May, 13:30'), findsOneWidget);
     expect(find.text('0123123124512512'), findsOneWidget);
+    expect(find.text('Network fee'), findsOneWidget);
     expect(find.text('0.012 ZEC'), findsOneWidget);
 
     final statusText = tester.widget<Text>(find.text('Completed'));
@@ -246,7 +247,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Tx fee'), findsNothing);
+    expect(find.text('Network fee'), findsNothing);
     expect(find.byType(ReviewWrapDivider), findsNothing);
   });
 

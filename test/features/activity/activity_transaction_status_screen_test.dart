@@ -70,8 +70,8 @@ void main() {
     expect(find.text('t1Z9N3o ... DgHXyo'), findsOneWidget);
     expect(find.text('Thanks for lunch'), findsOneWidget);
     expect(find.text(_expectedTimestamp(_blockTime)), findsOneWidget);
-    // Zero fee on an inbound transaction hides the Tx fee row.
-    expect(find.text('Tx fee'), findsNothing);
+    // Zero fee on an inbound transaction hides the network fee row.
+    expect(find.text('Network fee'), findsNothing);
   });
 
   testWidgets('shows the fee row for a receive with a known fee', (
@@ -90,7 +90,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Tx fee'), findsOneWidget);
+    expect(find.text('Network fee'), findsOneWidget);
     expect(find.text('0.0001 ZEC'), findsOneWidget);
   });
 

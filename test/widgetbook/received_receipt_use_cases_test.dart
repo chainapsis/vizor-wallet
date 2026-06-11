@@ -23,7 +23,7 @@ void main() {
     expect(find.text('t1Z9N3o ... DgHXyo'), findsOneWidget);
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('Zcash is a privacy-focused ...'), findsOneWidget);
-    expect(find.text('Tx fee'), findsOneWidget);
+    expect(find.text('Network fee'), findsOneWidget);
   });
 
   testWidgets('transparent-to-shielded use case renders both pools', (
@@ -75,7 +75,7 @@ void main() {
     // No fee row on a live inbound transaction.
     expect(find.text('From'), findsOneWidget);
     expect(find.text('Unknown sender'), findsOneWidget);
-    expect(find.text('Tx fee'), findsNothing);
+    expect(find.text('Network fee'), findsNothing);
   });
 }
 
