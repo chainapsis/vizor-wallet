@@ -1099,6 +1099,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     };
 
     return Padding(
+      key: ValueKey('mobile_send_status_${_phase.name}'),
       padding: const EdgeInsets.all(AppSpacing.sm),
       child: Column(
         children: [

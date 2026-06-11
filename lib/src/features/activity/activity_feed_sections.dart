@@ -28,10 +28,18 @@ int compareActivityEntries(ActivityEntry a, ActivityEntry b) {
 
 /// The timestamp an on-chain transaction sorts by: block time when
 /// mined, creation time while pending, null when neither is known.
+/// An unmined, unexpired tx with no recorded time is treated as
+/// happening now — externally received mempool txs carry no block or
+/// creation time and must surface at the top, not sink to "Earlier".
 DateTime? transactionActivityTimestamp(rust_sync.TransactionInfo tx) {
   final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
-  if (seconds <= BigInt.zero) return null;
-  return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
+  if (seconds > BigInt.zero) {
+    return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
+  }
+  if (tx.minedHeight == BigInt.zero && !tx.expiredUnmined) {
+    return DateTime.now();
+  }
+  return null;
 }
 
 /// Sorts [entries] newest-first and groups consecutive entries that

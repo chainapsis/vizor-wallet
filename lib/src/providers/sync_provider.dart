@@ -1182,6 +1182,15 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         }
         log('Mempool: matched ${event.txidHex}, refreshing balance');
         _scheduleMempoolRefresh();
+        // The store commit can land in the account-scoped history view
+        // a beat after the event arrives; delayed follow-ups close that
+        // race (no-ops when the first refresh already saw it).
+        Timer(const Duration(seconds: 2), () {
+          if (!_requiresUnlock) _scheduleMempoolRefresh();
+        });
+        Timer(const Duration(seconds: 6), () {
+          if (!_requiresUnlock) _scheduleMempoolRefresh();
+        });
       },
       onDone: () {
         log('Mempool: stream ended');

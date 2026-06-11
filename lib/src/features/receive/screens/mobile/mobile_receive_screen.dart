@@ -225,6 +225,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                     const SizedBox(height: AppSpacing.s),
                     Center(
                       child: _CopyAddressTextButton(
+                        key: const ValueKey('mobile_receive_copy'),
                         label: 'Copy $poolLabel address',
                         enabled: _selectedAddress.isNotEmpty,
                         onTap: () => unawaited(_copyAddress()),
@@ -246,6 +247,7 @@ class _CopyAddressTextButton extends StatelessWidget {
     required this.label,
     required this.enabled,
     required this.onTap,
+    super.key,
   });
 
   final String label;

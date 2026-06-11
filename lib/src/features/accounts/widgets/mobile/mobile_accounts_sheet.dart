@@ -272,6 +272,7 @@ class _AddAccountButton extends StatelessWidget {
       label: 'Add account',
       button: true,
       child: GestureDetector(
+        key: const ValueKey('mobile_accounts_add'),
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(

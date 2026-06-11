@@ -105,6 +105,7 @@ class MobileTopNav extends StatelessWidget {
   Widget _buildAccount(BuildContext context) {
     final colors = context.colors;
     final account = GestureDetector(
+      key: const ValueKey('mobile_top_nav_account'),
       behavior: HitTestBehavior.opaque,
       onTap: onAccountTap,
       child: Row(

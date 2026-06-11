@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/formatting/sync_status_label.dart';
+import '../../../../core/config/network_config.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav_account.dart';
@@ -146,6 +147,7 @@ class _HomeContent extends ConsumerWidget {
             children: [
               Expanded(
                 child: AppButton(
+                  key: const ValueKey('mobile_home_send'),
                   onPressed: () => context.push('/send'),
                   leading: const _ButtonIcon(AppIcons.plane),
                   child: const Text('Send'),
@@ -154,6 +156,7 @@ class _HomeContent extends ConsumerWidget {
               const SizedBox(width: AppSpacing.xs),
               Expanded(
                 child: AppButton(
+                  key: const ValueKey('mobile_home_receive'),
                   variant: AppButtonVariant.secondary,
                   onPressed: () => context.push('/receive'),
                   leading: const _ButtonIcon(AppIcons.arrowDownCircle),
@@ -164,6 +167,9 @@ class _HomeContent extends ConsumerWidget {
           )
         else
           AppButton(
+            // Same key as the funded-state Receive button — only one of
+            // the two renders at a time.
+            key: const ValueKey('mobile_home_receive'),
             variant: AppButtonVariant.secondary,
             onPressed: () => context.push('/receive'),
             leading: const _ButtonIcon(AppIcons.addNew),
@@ -175,7 +181,11 @@ class _HomeContent extends ConsumerWidget {
         else ...[
           _RecentActivityHeader(onSeeAll: () => context.go('/activity')),
           const SizedBox(height: AppSpacing.s),
-          for (final row in recentRows) ActivityFeedRowGroup(row: row),
+          for (var i = 0; i < recentRows.length; i++)
+            KeyedSubtree(
+              key: ValueKey('mobile_home_activity_row_$i'),
+              child: ActivityFeedRowGroup(row: recentRows[i]),
+            ),
         ],
       ],
     );
@@ -263,6 +273,7 @@ class _BalanceCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text.rich(
+            key: const ValueKey('mobile_home_shielded_balance'),
             TextSpan(
               children: [
                 TextSpan(
@@ -270,7 +281,7 @@ class _BalanceCard extends StatelessWidget {
                   style: AppTypography.displayLarge.copyWith(color: cardText),
                 ),
                 TextSpan(
-                  text: 'ZEC',
+                  text: kZcashDefaultCurrencyTicker,
                   style: AppTypography.headlineLarge.copyWith(color: cardText),
                 ),
               ],
