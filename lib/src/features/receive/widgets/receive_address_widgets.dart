@@ -25,6 +25,7 @@ class ReceiveTabs extends StatelessWidget {
     required this.selectedType,
     required this.onChanged,
     this.width = 256,
+    this.alwaysDarkSelected = false,
     super.key,
   });
 
@@ -34,14 +35,19 @@ class ReceiveTabs extends StatelessWidget {
   /// 256 matches the desktop pane; mobile stretches wider.
   final double width;
 
+  /// Mobile Figma keeps the selected segment dark on both tabs; the
+  /// desktop pane lightens it on the transparent tab.
+  final bool alwaysDarkSelected;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final shieldedActive = selectedType == ReceiveAddressType.shielded;
-    final activeBg = shieldedActive
+    final darkSelected = alwaysDarkSelected || shieldedActive;
+    final activeBg = darkSelected
         ? colors.background.inverse
         : colors.background.ground;
-    final activeText = shieldedActive
+    final activeText = darkSelected
         ? colors.text.inverse
         : colors.text.accent;
 
@@ -469,12 +475,17 @@ class ReceiveAddressLine extends StatelessWidget {
     required this.type,
     required this.address,
     required this.onShowHelp,
+    this.secondaryTint = false,
     super.key,
   });
 
   final ReceiveAddressType type;
   final String address;
   final VoidCallback onShowHelp;
+
+  /// The mobile receive frame renders the address in the secondary
+  /// grey; the desktop pane keeps the dark accent.
+  final bool secondaryTint;
 
   @override
   Widget build(BuildContext context) {
@@ -490,7 +501,9 @@ class ReceiveAddressLine extends StatelessWidget {
               textAlign: TextAlign.center,
               text: TextSpan(
                 style: AppTypography.labelLarge.copyWith(
-                  color: context.colors.text.accent,
+                  color: secondaryTint
+                      ? context.colors.text.secondary
+                      : context.colors.text.accent,
                 ),
                 children: _addressSpans(context, address),
               ),
@@ -682,7 +695,7 @@ List<ReceiveAddressInfoItem> receiveAddressInfoItems(
       const ReceiveAddressInfoItem(
         iconName: AppIcons.shieldKeyhole,
         text:
-            'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.',
+            'Tx details — sender, receiver, and amount — are encrypted on-chain & hidden.',
       ),
       ReceiveAddressInfoItem(
         iconName: AppIcons.renew,
@@ -701,7 +714,7 @@ List<ReceiveAddressInfoItem> receiveAddressInfoItems(
     const ReceiveAddressInfoItem(
       iconName: AppIcons.unlock,
       text:
-          'All tx details - sender, receiver, and amount - are publicly visible on-chain.',
+          'All tx details — sender, receiver, and amount — are publicly visible on-chain.',
     ),
     const ReceiveAddressInfoItem(
       iconName: AppIcons.dragon,

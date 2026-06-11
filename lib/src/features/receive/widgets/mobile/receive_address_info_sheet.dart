@@ -32,9 +32,9 @@ class ReceiveAddressInfoSheet extends StatelessWidget {
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
-          AppSpacing.sm,
           AppSpacing.base,
-          AppSpacing.sm,
+          AppSpacing.base,
+          AppSpacing.base,
           AppSpacing.base,
         ),
         child: Column(
@@ -123,6 +123,7 @@ class ReceiveAddressInfoSheet extends StatelessWidget {
             AppButton(
               key: const ValueKey('receive_address_info_close'),
               variant: AppButtonVariant.secondary,
+              expand: true,
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Close'),
             ),

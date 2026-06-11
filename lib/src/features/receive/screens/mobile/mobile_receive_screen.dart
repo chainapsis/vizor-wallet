@@ -154,6 +154,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                     Center(
                       child: ReceiveTabs(
                         width: 330,
+                        alwaysDarkSelected: true,
                         selectedType: _selectedType,
                         onChanged: (type) =>
                             setState(() => _selectedType = type),
@@ -193,11 +194,11 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.sm),
+                    const SizedBox(height: AppSpacing.md),
                     Text(
                       accountName,
                       textAlign: TextAlign.center,
-                      style: AppTypography.bodyLarge.copyWith(
+                      style: AppTypography.headlineSmall.copyWith(
                         color: colors.text.accent,
                       ),
                     ),
@@ -205,21 +206,21 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                     ReceiveAddressLine(
                       type: _selectedType,
                       address: _selectedAddress,
+                      secondaryTint: true,
                       onShowHelp: () => unawaited(
                         showReceiveAddressInfoSheet(context, _selectedType),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.md),
+                    const SizedBox(height: AppSpacing.base),
                     AppButton(
+                      expand: true,
                       variant: _isShielded
                           ? AppButtonVariant.primary
                           : AppButtonVariant.secondary,
                       onPressed: _selectedAddress.isEmpty
                           ? null
                           : _shareAddress,
-                      // TODO(mobile-share): dedicated share glyph isn't
-                      // in the icon set yet.
-                      leading: const AppIcon(AppIcons.arrowUpward, size: 20),
+                      leading: const AppIcon(AppIcons.share, size: 20),
                       child: Text('Share $poolLabel address'),
                     ),
                     const SizedBox(height: AppSpacing.s),

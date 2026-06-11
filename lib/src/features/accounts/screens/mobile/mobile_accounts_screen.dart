@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show Scaffold;
+import 'package:flutter/material.dart' show Scaffold, showGeneralDialog;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,6 +19,7 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_list_row.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/receive_address_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/wallet_mutation_guard.dart';
 
@@ -46,49 +48,141 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     return seedAnchorCount > 1;
   }
 
-  Future<void> _showRowMenu(AccountInfo account) async {
+  /// Anchored dark popup at the row's ⋯ button — Figma `Accounts` row
+  /// menu: copy address / send ZEC / edit, with removal separated below
+  /// a divider when the eligibility rule allows it.
+  Future<void> _showRowMenu(
+    AccountInfo account,
+    BuildContext anchorContext,
+  ) async {
     final accounts = ref.read(accountProvider).value?.accounts ?? const [];
     final canRemove = _canRemove(account, accounts);
-    final action = await showAppMobileSheet<_AccountAction>(
+
+    final anchorBox = anchorContext.findRenderObject()! as RenderBox;
+    final anchorRect =
+        anchorBox.localToGlobal(Offset.zero) & anchorBox.size;
+    final screen = MediaQuery.sizeOf(context);
+
+    final action = await showGeneralDialog<_AccountAction>(
       context: context,
-      builder: (sheetContext) => SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.sm),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              MobileListRow(
-                key: const ValueKey('mobile_account_menu_edit'),
-                leading: AppIcon(
-                  AppIcons.edit,
-                  size: 20,
-                  color: sheetContext.colors.icon.accent,
+      useRootNavigator: true,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss menu',
+      barrierColor: const Color(0x00000000),
+      transitionDuration: const Duration(milliseconds: 120),
+      transitionBuilder: (_, animation, _, child) =>
+          Opacity(opacity: animation.value, child: child),
+      pageBuilder: (dialogContext, _, _) {
+        final colors = dialogContext.colors;
+        final menuTop = anchorRect.bottom + AppSpacing.xxs;
+
+        Widget item({
+          required Key key,
+          required String iconName,
+          required String label,
+          required _AccountAction action,
+          Color? color,
+        }) {
+          final tint = color ?? colors.text.homeCard;
+          return Semantics(
+            button: true,
+            label: label,
+            excludeSemantics: true,
+            child: GestureDetector(
+              key: key,
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(dialogContext).pop(action),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: AppSpacing.s,
                 ),
-                label: 'Edit account',
-                onTap: () =>
-                    Navigator.of(sheetContext).pop(_AccountAction.edit),
+                child: Row(
+                  children: [
+                    AppIcon(iconName, size: AppIconSize.medium, color: tint),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelMedium.copyWith(color: tint),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              if (canRemove)
-                MobileListRow(
-                  key: const ValueKey('mobile_account_menu_remove'),
-                  leading: AppIcon(
-                    AppIcons.trash,
-                    size: 20,
-                    color: sheetContext.colors.text.destructive,
-                  ),
-                  label: 'Remove account',
-                  labelColor: sheetContext.colors.text.destructive,
-                  onTap: () =>
-                      Navigator.of(sheetContext).pop(_AccountAction.remove),
+            ),
+          );
+        }
+
+        return Stack(
+          children: [
+            Positioned(
+              top: menuTop.clamp(0.0, screen.height - 240),
+              right: (screen.width - anchorRect.right).clamp(
+                AppSpacing.sm,
+                screen.width,
+              ),
+              child: Container(
+                width: 220,
+                decoration: BoxDecoration(
+                  color: colors.background.homeCard,
+                  borderRadius: BorderRadius.circular(AppRadii.large),
                 ),
-            ],
-          ),
-        ),
-      ),
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    item(
+                      key: const ValueKey('mobile_account_menu_copy'),
+                      iconName: AppIcons.copy,
+                      label: 'Copy address',
+                      action: _AccountAction.copy,
+                    ),
+                    item(
+                      key: const ValueKey('mobile_account_menu_send'),
+                      iconName: AppIcons.plane,
+                      label: 'Send ZEC',
+                      action: _AccountAction.send,
+                    ),
+                    item(
+                      key: const ValueKey('mobile_account_menu_edit'),
+                      iconName: AppIcons.edit,
+                      label: 'Edit account',
+                      action: _AccountAction.edit,
+                    ),
+                    if (canRemove) ...[
+                      Container(
+                        height: 1,
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm,
+                        ),
+                        color: colors.text.homeCard.withValues(alpha: 0.15),
+                      ),
+                      item(
+                        key: const ValueKey('mobile_account_menu_remove'),
+                        iconName: AppIcons.trash,
+                        label: 'Remove account',
+                        action: _AccountAction.remove,
+                        color: colors.text.destructive,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
     if (!mounted) return;
     switch (action) {
+      case _AccountAction.copy:
+        await _copyAddress(account);
+      case _AccountAction.send:
+        await _sendToAccount(account);
       case _AccountAction.edit:
         await _showEditSheet(account);
       case _AccountAction.remove:
@@ -96,6 +190,55 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       case null:
         break;
     }
+  }
+
+  Future<String?> _loadShieldedAddress(AccountInfo account) async {
+    final accountState = ref.read(accountProvider).value;
+    final currentShieldedAddress =
+        accountState?.activeAccountUuid == account.uuid
+        ? accountState?.activeAddress
+        : null;
+    try {
+      final address = await ref
+          .read(receiveAddressServiceProvider)
+          .loadShieldedAddress(
+            accountUuid: account.uuid,
+            currentShieldedAddress: currentShieldedAddress,
+          );
+      return address.trim().isEmpty ? null : address;
+    } catch (e) {
+      log('MobileAccounts: shielded address load failed: $e');
+      return null;
+    }
+  }
+
+  Future<void> _copyAddress(AccountInfo account) async {
+    final address = await _loadShieldedAddress(account);
+    if (!mounted) return;
+    if (address == null) {
+      showAppToast(
+        context,
+        "Address couldn't be copied",
+        iconName: AppIcons.cross,
+      );
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: address));
+    if (mounted) showAppToast(context, 'Shielded address copied');
+  }
+
+  Future<void> _sendToAccount(AccountInfo account) async {
+    final address = await _loadShieldedAddress(account);
+    if (!mounted) return;
+    if (address == null) {
+      showAppToast(
+        context,
+        "Couldn't load the account address",
+        iconName: AppIcons.cross,
+      );
+      return;
+    }
+    context.push('/send', extra: address);
   }
 
   Future<void> _showEditSheet(AccountInfo account) async {
@@ -224,22 +367,26 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         size: AppProfilePictureSize.large,
       ),
       label: account.name,
-      trailing: Semantics(
-        button: true,
-        label: 'Account options for ${account.name}',
-        excludeSemantics: true,
-        child: GestureDetector(
-          key: ValueKey('mobile_accounts_menu_${account.uuid}'),
-          behavior: HitTestBehavior.opaque,
-          onTap: enabled ? () => unawaited(_showRowMenu(account)) : null,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Center(
-              child: Text(
-                '⋯',
-                style: AppTypography.headlineSmall.copyWith(
-                  color: context.colors.text.secondary,
+      trailing: Builder(
+        builder: (anchorContext) => Semantics(
+          button: true,
+          label: 'Account options for ${account.name}',
+          excludeSemantics: true,
+          child: GestureDetector(
+            key: ValueKey('mobile_accounts_menu_${account.uuid}'),
+            behavior: HitTestBehavior.opaque,
+            onTap: enabled
+                ? () => unawaited(_showRowMenu(account, anchorContext))
+                : null,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Center(
+                child: Text(
+                  '⋯',
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: context.colors.text.secondary,
+                  ),
                 ),
               ),
             ),
@@ -250,7 +397,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
   }
 }
 
-enum _AccountAction { edit, remove }
+enum _AccountAction { copy, send, edit, remove }
 
 class _AccountEdits {
   const _AccountEdits({this.name, this.profilePictureId});
@@ -360,6 +507,10 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: _SheetClose(onTap: () => Navigator.of(context).pop()),
+            ),
             Center(
               child: Semantics(
                 button: true,
@@ -441,6 +592,7 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
             const SizedBox(height: AppSpacing.md),
             AppButton(
               key: const ValueKey('mobile_account_edit_save'),
+              expand: true,
               onPressed: _save,
               child: const Text('Save edits'),
             ),
@@ -543,6 +695,7 @@ class _ProfilePictureSheetState extends State<_ProfilePictureSheet> {
             const SizedBox(height: AppSpacing.md),
             AppButton(
               key: const ValueKey('mobile_account_pfp_update'),
+              expand: true,
               onPressed: () => Navigator.of(context).pop(_selected),
               child: const Text('Update picture'),
             ),
@@ -587,6 +740,7 @@ class _RemoveAccountSheet extends StatelessWidget {
                     ),
                   ),
                 ),
+                _SheetClose(onTap: () => Navigator.of(context).pop(false)),
               ],
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -601,23 +755,49 @@ class _RemoveAccountSheet extends StatelessWidget {
             AppButton(
               key: const ValueKey('mobile_account_remove_confirm'),
               variant: AppButtonVariant.destructive,
+              expand: true,
               onPressed: () => Navigator.of(context).pop(true),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppIcon(
-                    AppIcons.trash,
-                    size: 20,
-                    color: DefaultTextStyle.of(context).style.color,
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  const Text('Remove'),
-                ],
-              ),
+              leading: const AppIcon(AppIcons.trash),
+              child: const Text('Remove'),
             ),
             const SizedBox(height: AppSpacing.s),
             _SheetCancel(onTap: () => Navigator.of(context).pop(false)),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Circled X dismiss control in the sheet's top-right corner.
+class _SheetClose extends StatelessWidget {
+  const _SheetClose({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      label: 'Close',
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: colors.background.raised,
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: AppIcon(
+              AppIcons.cross,
+              size: AppIconSize.medium,
+              color: colors.icon.accent,
+            ),
+          ),
         ),
       ),
     );

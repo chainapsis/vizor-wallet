@@ -179,6 +179,7 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
                 Expanded(
                   child: AppButton(
                     variant: AppButtonVariant.secondary,
+                    expand: true,
                     onPressed: () {
                       Navigator.of(context).pop();
                       context.push('/accounts');

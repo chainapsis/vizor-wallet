@@ -96,19 +96,13 @@ String _transactionAmountText({
   return ZecAmount.fromZatoshi(signedAmount).signedActivity.toString();
 }
 
+/// Absolute `May 29, 13:40`-style stamp — the Figma activity rows use
+/// the absolute form even for today's transactions.
 String formatActivityTimestamp(DateTime? timestamp) {
   if (timestamp == null) return '--';
-  final now = DateTime.now();
   final local = timestamp.toLocal();
-  final today = DateTime(now.year, now.month, now.day);
-  final date = DateTime(local.year, local.month, local.day);
   final time =
       '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-
-  if (date == today) return 'Today, $time';
-  if (date == today.subtract(const Duration(days: 1))) {
-    return 'Yesterday, $time';
-  }
   return '${_monthName(local.month)} ${local.day}, $time';
 }
 

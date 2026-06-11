@@ -49,8 +49,10 @@ List<RouteBase> buildMobileRoutes({
     ),
     GoRoute(
       path: '/send',
-      pageBuilder: (context, state) =>
-          CupertinoPage(key: state.pageKey, child: const MobileSendScreen()),
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileSendScreen(initialRecipient: state.extra as String?),
+      ),
     ),
     GoRoute(
       path: '/send/scan',

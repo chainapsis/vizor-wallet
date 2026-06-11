@@ -148,6 +148,7 @@ class _HomeContent extends ConsumerWidget {
               Expanded(
                 child: AppButton(
                   key: const ValueKey('mobile_home_send'),
+                  expand: true,
                   onPressed: () => context.push('/send'),
                   leading: const _ButtonIcon(AppIcons.plane),
                   child: const Text('Send'),
@@ -157,6 +158,7 @@ class _HomeContent extends ConsumerWidget {
               Expanded(
                 child: AppButton(
                   key: const ValueKey('mobile_home_receive'),
+                  expand: true,
                   variant: AppButtonVariant.secondary,
                   onPressed: () => context.push('/receive'),
                   leading: const _ButtonIcon(AppIcons.arrowDownCircle),
@@ -170,6 +172,7 @@ class _HomeContent extends ConsumerWidget {
             // Same key as the funded-state Receive button — only one of
             // the two renders at a time.
             key: const ValueKey('mobile_home_receive'),
+            expand: true,
             variant: AppButtonVariant.secondary,
             onPressed: () => context.push('/receive'),
             leading: const _ButtonIcon(AppIcons.addNew),
