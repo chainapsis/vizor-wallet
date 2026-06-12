@@ -96,12 +96,13 @@ class AppModalActions extends StatelessWidget {
                 ? math.max(actionMinWidth, constraints.maxWidth)
                 : actionMinWidth;
             final leadingWidth = leading == null ? 0.0 : 20.0;
+            // mediumLarge button padding is AppSpacing.s per side.
             final labelMaxWidth = math.max(
               0.0,
               math.min(
                 _kAppModalActionLabelMaxWidth,
                 buttonWidth -
-                    AppSpacing.xs * 2 -
+                    AppSpacing.s * 2 -
                     AppSpacing.xxs * 2 -
                     leadingWidth -
                     AppSpacing.xxs,
@@ -112,7 +113,8 @@ class AppModalActions extends StatelessWidget {
               key: key,
               onPressed: onPressed,
               variant: variant,
-              size: AppButtonSize.medium,
+              // mediumLarge is the 36px Figma modal button set (Label M).
+              size: AppButtonSize.mediumLarge,
               height: kAppModalButtonHeight,
               minWidth: buttonWidth,
               leading: leading,

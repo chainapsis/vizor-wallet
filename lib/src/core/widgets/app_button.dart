@@ -56,7 +56,7 @@ const _mediumLargeSizing = _Sizing(
   ),
   gap: AppSpacing.xxs,
   iconSize: AppIconSize.medium,
-  labelStyle: AppTypography.labelMedium,
+  labelStyle: AppTypography.labelLarge,
 );
 
 // Medium button — standard inline action. Uses Desktop `Label M`.
