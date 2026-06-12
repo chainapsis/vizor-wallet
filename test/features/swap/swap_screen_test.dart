@@ -6997,7 +6997,12 @@ void main() {
 
     expect(hardwareSigningService.depositDrafts, ['t1live-deposit']);
 
-    await tester.tap(find.text('Reject'));
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_keystone_signing_overlay_surface')),
+        matching: find.text('Cancel'),
+      ),
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 

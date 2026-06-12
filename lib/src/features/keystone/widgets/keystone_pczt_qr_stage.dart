@@ -108,25 +108,24 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   @override
   Widget build(BuildContext context) {
     if (widget.urParts.isEmpty) return const SizedBox.shrink();
-    return DecoratedBox(
-      decoration: const BoxDecoration(color: Color(0xFFFFFFFF)),
-      child: Padding(
-        padding: const EdgeInsets.all(2),
-        child: QrImageView(
-          data: widget.urParts[_index],
-          size: 226,
-          backgroundColor: const Color(0xFFFFFFFF),
-          eyeStyle: const QrEyeStyle(
-            eyeShape: QrEyeShape.square,
-            color: Color(0xFF141818),
-          ),
-          dataModuleStyle: const QrDataModuleStyle(
-            dataModuleShape: QrDataModuleShape.square,
-            color: Color(0xFF141818),
-          ),
-          errorCorrectionLevel: QrErrorCorrectLevel.L,
-        ),
+    // Figma: the 230px QR sits directly on the panel background — no white
+    // card behind it — with bullseye (circle) finder eyes and dot modules.
+    return QrImageView(
+      data: widget.urParts[_index],
+      size: 230,
+      // QrImageView defaults to 10px internal padding, which shrinks the
+      // module ink to 210 — Figma's ink spans the full 230.
+      padding: EdgeInsets.zero,
+      backgroundColor: const Color(0x00000000),
+      eyeStyle: const QrEyeStyle(
+        eyeShape: QrEyeShape.circle,
+        color: Color(0xFF141818),
       ),
+      dataModuleStyle: const QrDataModuleStyle(
+        dataModuleShape: QrDataModuleShape.circle,
+        color: Color(0xFF141818),
+      ),
+      errorCorrectionLevel: QrErrorCorrectLevel.L,
     );
   }
 }
