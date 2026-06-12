@@ -25,6 +25,7 @@ import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/zec_usd_price_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -329,6 +330,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       zecUsdUnitPrice: zecUsdUnitPrice,
       privacyModeEnabled: privacyModeEnabled,
     );
+    final priceChange24hPct = ref.watch(zecPriceChange24hPctProvider);
     final transparentBalance =
         sync.transparentBalance + sync.transparentPendingBalance;
     final canShieldTransparentBalance = sync.canShieldTransparentBalance;
@@ -373,6 +375,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 privacyModeEnabled: privacyModeEnabled,
                 shieldedBalanceText: _formatZec(shieldedBalance),
                 shieldedFiatBalanceText: shieldedFiatBalanceText,
+                priceChange24hPct: priceChange24hPct,
                 transparentBalanceText: _formatZec(transparentBalance),
                 hasTransparentBalance: transparentBalance > BigInt.zero,
                 canShieldBalance: canShieldTransparentBalance,
@@ -413,6 +416,7 @@ class _HomePane extends ConsumerStatefulWidget {
     required this.privacyModeEnabled,
     required this.shieldedBalanceText,
     required this.shieldedFiatBalanceText,
+    required this.priceChange24hPct,
     required this.transparentBalanceText,
     required this.hasTransparentBalance,
     required this.canShieldBalance,
@@ -435,6 +439,7 @@ class _HomePane extends ConsumerStatefulWidget {
   final bool privacyModeEnabled;
   final String shieldedBalanceText;
   final String? shieldedFiatBalanceText;
+  final double? priceChange24hPct;
   final String transparentBalanceText;
   final bool hasTransparentBalance;
   final bool canShieldBalance;
@@ -536,6 +541,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       hasBalance: hasBalance,
       shieldedBalanceText: widget.shieldedBalanceText,
       shieldedFiatBalanceText: widget.shieldedFiatBalanceText,
+      priceChange24hPct: widget.priceChange24hPct,
       transparentBalanceText: widget.transparentBalanceText,
       hasTransparentBalance: widget.hasTransparentBalance,
       canShieldBalance: widget.canShieldBalance,
@@ -1028,6 +1034,7 @@ class _HomeDesktopPane extends StatelessWidget {
     required this.hasBalance,
     required this.shieldedBalanceText,
     required this.shieldedFiatBalanceText,
+    required this.priceChange24hPct,
     required this.transparentBalanceText,
     required this.hasTransparentBalance,
     required this.canShieldBalance,
@@ -1049,6 +1056,7 @@ class _HomeDesktopPane extends StatelessWidget {
   final bool hasBalance;
   final String shieldedBalanceText;
   final String? shieldedFiatBalanceText;
+  final double? priceChange24hPct;
   final String transparentBalanceText;
   final bool hasTransparentBalance;
   final bool canShieldBalance;
@@ -1098,6 +1106,7 @@ class _HomeDesktopPane extends StatelessWidget {
                       hasBalance: hasBalance,
                       shieldedBalanceText: shieldedBalanceText,
                       shieldedFiatBalanceText: shieldedFiatBalanceText,
+                      priceChange24hPct: priceChange24hPct,
                       transparentBalanceText: transparentBalanceText,
                       hasTransparentBalance: hasTransparentBalance,
                       canShieldBalance: canShieldBalance,
@@ -1292,6 +1301,7 @@ class _HomeDesktopBalanceCard extends StatefulWidget {
     required this.hasBalance,
     required this.shieldedBalanceText,
     required this.shieldedFiatBalanceText,
+    required this.priceChange24hPct,
     required this.transparentBalanceText,
     required this.hasTransparentBalance,
     required this.canShieldBalance,
@@ -1306,6 +1316,7 @@ class _HomeDesktopBalanceCard extends StatefulWidget {
   final bool hasBalance;
   final String shieldedBalanceText;
   final String? shieldedFiatBalanceText;
+  final double? priceChange24hPct;
   final String transparentBalanceText;
   final bool hasTransparentBalance;
   final bool canShieldBalance;
@@ -1350,6 +1361,18 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
     final shieldBalanceChevronColor = isShieldBalanceHoverActive
         ? colors.background.utilitySuccessStrong
         : shieldBalanceContentColor;
+    final roundedPriceChangePct = widget.priceChange24hPct == null
+        ? null
+        : roundZecPriceChange24hPct(widget.priceChange24hPct!);
+    // Color follows the rounded (displayed) value so a -0.004% never shows
+    // as a red "0.00%". Null hides the badge entirely.
+    final priceChangeColor = roundedPriceChangePct == null
+        ? null
+        : roundedPriceChangePct > 0
+        ? colors.text.positiveStrong
+        : roundedPriceChangePct < 0
+        ? colors.text.destructive
+        : colors.text.homeCard;
     final cardRadius = BorderRadius.circular(AppRadii.large);
     final shieldedCardRadius = widget.hasTransparentBalance
         ? const BorderRadius.vertical(
@@ -1416,17 +1439,39 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                         const Spacer(),
                         if (widget.hasBalance &&
                             widget.shieldedFiatBalanceText != null) ...[
-                          Text(
-                            widget.shieldedFiatBalanceText!,
-                            key: const ValueKey(
-                              'home_desktop_balance_fiat_text',
-                            ),
-                            style: AppTypography.labelMedium.copyWith(
-                              color: colors.text.homeCard.withValues(
-                                alpha: 0.80,
+                          Row(
+                            children: [
+                              Text(
+                                widget.shieldedFiatBalanceText!,
+                                key: const ValueKey(
+                                  'home_desktop_balance_fiat_text',
+                                ),
+                                // Label M per Figma (Home Card / Balance
+                                // Performance): Geist Regular 14/16.
+                                style: AppTypography.labelLarge.copyWith(
+                                  color: colors.text.homeCard,
+                                  fontWeight: FontWeight.w400,
+                                ),
                               ),
-                              fontWeight: FontWeight.w400,
-                            ),
+                              // Figma separates the change run with a 4px
+                              // gap plus a leading space character (~8px
+                              // effective at 14px Geist).
+                              if (priceChangeColor != null) ...[
+                                const SizedBox(width: AppSpacing.xs),
+                                Text(
+                                  formatZecPriceChange24hPct(
+                                    widget.priceChange24hPct!,
+                                  ),
+                                  key: const ValueKey(
+                                    'home_desktop_balance_price_change_text',
+                                  ),
+                                  style: AppTypography.labelLarge.copyWith(
+                                    color: priceChangeColor,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                           const SizedBox(height: AppSpacing.xs),
                         ],

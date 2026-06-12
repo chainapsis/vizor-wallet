@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_provider_config.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
@@ -100,12 +101,74 @@ void main() {
     final fiatText = tester.widget<Text>(
       find.byKey(const ValueKey('home_desktop_balance_fiat_text')),
     );
-    expect(fiatText.style?.color, colors.text.homeCard.withValues(alpha: 0.80));
+    expect(fiatText.style?.color, colors.text.homeCard);
+    expect(fiatText.style?.fontSize, 14);
 
     final shieldIcon = tester.widget<AppIcon>(
       find.byKey(const ValueKey('home_desktop_shielded_balance_icon')),
     );
     expect(shieldIcon.color, colors.text.homeCard);
+
+    expect(
+      find.byKey(const ValueKey('home_desktop_balance_price_change_text')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('home desktop shows a green positive 24h price change', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        priceChange24hPct: 1.253,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(14_312_000_000),
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('+ 1.25% (24h)'), findsOneWidget);
+    final changeText = tester.widget<Text>(
+      find.byKey(const ValueKey('home_desktop_balance_price_change_text')),
+    );
+    expect(
+      changeText.style?.color,
+      AppThemeData.light.colors.text.positiveStrong,
+    );
+  });
+
+  testWidgets('home desktop shows a destructive negative 24h price change', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        priceChange24hPct: -0.25852,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(14_312_000_000),
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('- 0.26% (24h)'), findsOneWidget);
+    final changeText = tester.widget<Text>(
+      find.byKey(const ValueKey('home_desktop_balance_price_change_text')),
+    );
+    expect(
+      changeText.style?.color,
+      AppThemeData.light.colors.text.destructive,
+    );
   });
 
   testWidgets('home desktop content tracks pane center on scaled screens', (
@@ -448,11 +511,15 @@ Widget _appHarness(
   bool? swapEnabled,
   bool privacyModeEnabled = false,
   bool passwordRotationRecoveryFailed = false,
+  double? priceChange24hPct,
   SyncState? syncState,
   SwapActivityStore? swapActivityStore,
 }) {
   return ProviderScope(
     overrides: [
+      zecPriceChange24hSourceProvider.overrideWithValue(
+        _FakePriceChangeSource(priceChange24hPct),
+      ),
       appBootstrapProvider.overrideWithValue(
         _bootstrap(
           initialLocation,
@@ -507,6 +574,15 @@ final _syncedSyncState = SyncState(
   accountUuid: 'account-1',
   hasAccountScopedData: true,
 );
+
+class _FakePriceChangeSource implements ZecPriceChange24hSource {
+  const _FakePriceChangeSource(this.pct);
+
+  final double? pct;
+
+  @override
+  Future<double?> fetchChangePct() async => pct;
+}
 
 class _FakeSwapActivityStore implements SwapActivityStore {
   const _FakeSwapActivityStore(this.records);
