@@ -1,4 +1,5 @@
 cargo:
+  # Required by the pinned Ironwood/NU7 Rust stack.
   debug:
     extra_flags:
       - --config

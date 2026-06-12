@@ -1,2 +1,3 @@
 [build]
+# Required by the pinned Ironwood/NU7 Rust stack.
 rustflags = ['--cfg', 'zcash_unstable="nu7"']
