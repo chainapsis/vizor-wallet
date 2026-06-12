@@ -356,9 +356,6 @@ class _TitleBlock extends StatelessWidget {
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.visible,
-            softWrap: false,
             textAlign: TextAlign.center,
           ),
         ),
@@ -407,7 +404,7 @@ class _BottomActions extends StatelessWidget {
             _CreateWalletSubmitPhase.stoppingSync => 'Stop syncing...',
             _CreateWalletSubmitPhase.creating => 'Creating wallet...',
             _CreateWalletSubmitPhase.idle =>
-              revealed ? 'Continue' : 'Reveal the Phrase',
+              revealed ? 'Continue' : 'Reveal the phrase',
           }),
         ),
         if (submitError != null) ...[
@@ -588,9 +585,9 @@ class _SeedGrid extends StatelessWidget {
             Expanded(
               child: Text(
                 'Secret Passphrase',
-                style: AppTypography.labelLarge.copyWith(
+                style: AppTypography.bodyLarge.copyWith(
                   color: textColor,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -649,13 +646,7 @@ class _SeedPhraseChip extends StatelessWidget {
                   word,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Geist',
-                    fontWeight: FontWeight.w400,
-                    fontSize: 14,
-                    height: 16 / 14,
-                    letterSpacing: -0.06,
-                  ).copyWith(color: textColor),
+                  style: AppTypography.labelLarge.copyWith(color: textColor),
                 ),
               ),
             ],

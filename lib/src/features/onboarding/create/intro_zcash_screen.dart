@@ -114,9 +114,6 @@ class _TitleBlock extends StatelessWidget {
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.visible,
-            softWrap: false,
             textAlign: TextAlign.center,
           ),
         ),

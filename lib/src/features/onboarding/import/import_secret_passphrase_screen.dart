@@ -16,7 +16,6 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_icon.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../shared/onboarding_flow_args.dart';
 import 'import_split_view.dart';
@@ -223,6 +222,8 @@ class _ImportSecretPassphraseScreenState
   String? get _errorText {
     if (_submitError != null) return _submitError;
     if (_showValidationError && !_isMnemonicValid) {
+      // Deliberately diverges from the Figma copy ('Some words are
+      // incorrect'): the word-count guidance is more actionable.
       return 'Enter a valid secret passphrase with 12, 15, 18, 21, or 24 words.';
     }
     return null;
@@ -436,7 +437,7 @@ class _ImportSecretPassphraseScreenState
                             bottom: 0,
                             child: Text(
                               _errorText!,
-                              style: AppTypography.bodyMedium.copyWith(
+                              style: AppTypography.labelLarge.copyWith(
                                 color: colors.text.destructive,
                               ),
                               maxLines: 2,
@@ -456,8 +457,9 @@ class _ImportSecretPassphraseScreenState
                         key: const ValueKey('import_secret_submit_button'),
                         onPressed: _canSubmit ? _submit : null,
                         minWidth: _buttonWidth,
-                        trailing: const AppIcon(AppIcons.chevronForward),
-                        child: Text(_isSubmitting ? 'Importing...' : 'Import'),
+                        child: Text(
+                          _isSubmitting ? 'Importing...' : 'Continue',
+                        ),
                       ),
                     ),
                   ),
@@ -500,9 +502,7 @@ class _ImportSecretTitle extends StatelessWidget {
           alignment: Alignment.center,
           child: Text(
             'Welcome, adventurer',
-            style: AppTypography.displayLarge.copyWith(
-              color: textColor,
-            ),
+            style: AppTypography.displayLarge.copyWith(color: textColor),
             maxLines: 1,
             overflow: TextOverflow.visible,
             softWrap: false,
@@ -514,7 +514,9 @@ class _ImportSecretTitle extends StatelessWidget {
           width: _ImportSecretPassphraseScreenState._subtitleWidth,
           child: Text(
             'Import your wallet by entering your secret passphrase.',
-            style: AppTypography.bodyMediumStrong.copyWith(color: textColor),
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.primary,
+            ),
             textAlign: TextAlign.center,
           ),
         ),

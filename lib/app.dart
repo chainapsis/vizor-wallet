@@ -557,8 +557,18 @@ final _routerProvider = Provider<GoRouter>((ref) {
         path: '/lost-password',
         builder: (_, _) => const LostPasswordScreen(),
       ),
-      GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
-      GoRoute(path: '/privacy', builder: (_, _) => const PrivacyPolicyScreen()),
+      GoRoute(
+        path: '/terms',
+        builder: (_, state) => TermsScreen(
+          forceFullPane: state.uri.queryParameters['from'] == 'onboarding',
+        ),
+      ),
+      GoRoute(
+        path: '/privacy',
+        builder: (_, state) => PrivacyPolicyScreen(
+          forceFullPane: state.uri.queryParameters['from'] == 'onboarding',
+        ),
+      ),
       GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
       GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
       GoRoute(

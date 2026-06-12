@@ -8,6 +8,10 @@ import 'app_tooltip.dart';
 
 enum AppTextFieldTone { neutral, destructive, success, brandCrimson }
 
+/// Figma Field `Type` variant: [primary] is the default white input
+/// surface; [secondary] is the filled gray shell used on the auth screens.
+enum AppTextFieldSurface { primary, secondary }
+
 const _appTextFieldInputIconSize = AppInputSizing.iconSize;
 
 class AppTextField extends StatefulWidget {
@@ -32,6 +36,7 @@ class AppTextField extends StatefulWidget {
     this.messageStyle,
     this.labelStyle,
     this.tone = AppTextFieldTone.neutral,
+    this.surface = AppTextFieldSurface.primary,
     this.showClearButton = false,
     this.clearButtonRequiresText = true,
     this.clearButtonSemanticLabel = 'Clear text',
@@ -81,6 +86,7 @@ class AppTextField extends StatefulWidget {
   final TextStyle? messageStyle;
   final TextStyle? labelStyle;
   final AppTextFieldTone tone;
+  final AppTextFieldSurface surface;
   final bool showClearButton;
   final bool clearButtonRequiresText;
   final String clearButtonSemanticLabel;
@@ -302,21 +308,37 @@ class _AppTextFieldState extends State<AppTextField> {
       forceStrutHeight: true,
     );
 
+    // Figma Field Type=Secondary: filled gray shell (auth screens); its
+    // component stroke is white at 0% paint opacity, so neither surface
+    // draws an idle border. Primary keeps the white input surface.
+    final baseShellColor = widget.surface == AppTextFieldSurface.secondary
+        ? colors.button.secondary.bg
+        : colors.surface.input;
     final shellColor = widget.tone == AppTextFieldTone.destructive
         ? Color.alphaBlend(
             colors.background.utilityDestructiveAlphaSubtle,
-            colors.surface.input,
+            baseShellColor,
           )
-        : colors.surface.input;
+        : baseShellColor;
+    // The filled secondary shell keeps its surface color on hover (no
+    // alpha ring — it reads as a pale halo on the gray fill); focus still
+    // draws the inverse ring on both surfaces.
+    final hoverBorderColor = widget.surface == AppTextFieldSurface.secondary
+        ? Colors.transparent
+        : colors.border.subtleOpacity;
     final borderColor = switch (widget.tone) {
       AppTextFieldTone.neutral when _isFocused => colors.background.inverse,
-      AppTextFieldTone.neutral when _hovered => colors.border.subtleOpacity,
+      AppTextFieldTone.neutral when _hovered => hoverBorderColor,
       AppTextFieldTone.neutral => Colors.transparent,
       AppTextFieldTone.destructive => colors.border.utilityDestructiveSubtle,
       AppTextFieldTone.success => colors.border.utilitySuccess,
       AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,
     };
-    final boxShadow = widget.tone == AppTextFieldTone.destructive
+    // The secondary shell is flat in the design (no effects on the Field
+    // frame); the surface shadow belongs to the white primary input only.
+    final boxShadow =
+        widget.tone == AppTextFieldTone.destructive ||
+            widget.surface == AppTextFieldSurface.secondary
         ? const <BoxShadow>[]
         : _appTextFieldSurfaceShadow(colors);
     final messageColor = switch (widget.tone) {

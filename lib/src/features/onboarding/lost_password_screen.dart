@@ -159,7 +159,7 @@ class _LostPasswordContent extends StatelessWidget {
   static const double cardWidth = 396;
   static const double cardHeight = 520;
   static const double _buttonGroupWidth = 256;
-  static const double _destructiveButtonWidth = 230;
+  static const double _destructiveButtonWidth = 232;
 
   @override
   Widget build(BuildContext context) {
@@ -178,8 +178,10 @@ class _LostPasswordContent extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
+        // Figma: this screen's badge sits on a 30% gray shield, unlike the
+        // crimson welcome/unlock badge.
         Image.asset(
-          'assets/illustrations/welcome_badge.png',
+          'assets/illustrations/lost_password_badge.png',
           width: 50,
           height: 50,
         ),
@@ -198,13 +200,14 @@ class _LostPasswordContent extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: AppSpacing.sm),
+            // Line breaks pinned to the design's rendered wrap (348px box).
             Text.rich(
               TextSpan(
                 style: bodyStyle,
                 children: [
                   const TextSpan(
                     text:
-                        "If you've lost your password, the only way to recover your account is to ",
+                        "If you've lost your password, the only way to recover\nyour account is to ",
                   ),
                   TextSpan(
                     text: 'completely reset Vizor app',
@@ -212,7 +215,7 @@ class _LostPasswordContent extends StatelessWidget {
                   ),
                   const TextSpan(
                     text:
-                        ', which means deleting all accounts and requiring you to ',
+                        ', which\nmeans deleting all accounts and requiring you to\n',
                   ),
                   TextSpan(text: 'import accounts again', style: strongStyle),
                   const TextSpan(text: '.'),

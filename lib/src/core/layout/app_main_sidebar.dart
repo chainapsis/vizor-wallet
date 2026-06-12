@@ -396,6 +396,18 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     ],
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(
+                      key: const ValueKey('sidebar_voting_button'),
+                      label: 'Vote',
+                      iconName: AppIcons.scroll,
+                      active: _matches('/voting'),
+                      // Stays tappable while active: _navigateTo requests a
+                      // poll-list refresh when re-tapped on /voting.
+                      onTap: isImporting
+                          ? null
+                          : () => _navigateTo('/voting'),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    AppSidebarItem(
                       key: const ValueKey('sidebar_activity_button'),
                       label: 'Activity',
                       iconName: AppIcons.history,

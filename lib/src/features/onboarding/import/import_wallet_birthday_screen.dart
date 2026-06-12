@@ -25,9 +25,17 @@ enum ImportBirthdayTab { date, blockHeight }
 enum _ImportWalletSubmitPhase { idle, stoppingSync, importing }
 
 class ImportWalletBirthdayScreen extends ConsumerStatefulWidget {
-  const ImportWalletBirthdayScreen({required this.args, super.key});
+  const ImportWalletBirthdayScreen({
+    required this.args,
+    this.todayOverride,
+    super.key,
+  });
 
   final ImportBirthdayArgs args;
+
+  /// Pins the calendar's "today" indicator in capture/widget tests; production
+  /// passes nothing and falls back to the wall clock.
+  final DateTime? todayOverride;
 
   @override
   ConsumerState<ImportWalletBirthdayScreen> createState() =>
@@ -37,7 +45,7 @@ class ImportWalletBirthdayScreen extends ConsumerStatefulWidget {
 class _ImportWalletBirthdayScreenState
     extends ConsumerState<ImportWalletBirthdayScreen> {
   static const _manualHeightErrorText =
-      "That doesn't look like a valid block height.";
+      "Doesn't seem like a legit block height";
   static const _titleWidth = 396.0;
   static const _subtitleWidth = 226.0;
   static const _widgetWidth = 304.0;
@@ -399,6 +407,7 @@ class _ImportWalletBirthdayScreenState
           ? ImportBirthdayCalendarOverlay(
               initialMonth: _calendarInitialDate ?? calendarLastDate,
               selectedDate: _selectedDate,
+              today: widget.todayOverride,
               firstDate: calendarFirstDate,
               lastDate: calendarLastDate,
               onDismiss: _dismissCalendar,
@@ -433,14 +442,16 @@ class _ImportWalletBirthdayScreenState
                           SizedBox(
                             width: _subtitleWidth,
                             child: Text(
-                              'It helps us import your wallet faster.',
+                              'Zcash (ZEC) built around financial privacy '
+                              '& self-custody.',
                               style: AppTypography.bodyMedium.copyWith(
                                 color: context.colors.text.primary,
                               ),
                               textAlign: TextAlign.center,
                             ),
                           ),
-                          const SizedBox(height: AppSpacing.lg),
+                          // Figma On Page Content gap (Spacing/base = 32).
+                          const SizedBox(height: AppSpacing.base),
                           SizedBox(
                             width: _widgetWidth,
                             child: Column(

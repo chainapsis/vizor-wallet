@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_modal_card.dart' show appModalShadow;
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 
 class ImportBirthdayCalendarOverlay extends StatefulWidget {
@@ -13,6 +14,7 @@ class ImportBirthdayCalendarOverlay extends StatefulWidget {
     required this.lastDate,
     required this.onDismiss,
     required this.onDateSelected,
+    this.today,
     super.key,
   });
 
@@ -20,6 +22,10 @@ class ImportBirthdayCalendarOverlay extends StatefulWidget {
   final DateTime? selectedDate;
   final DateTime firstDate;
   final DateTime lastDate;
+
+  /// The date the "today" chip marks; defaults to the wall clock. Injectable
+  /// so goldens stay deterministic.
+  final DateTime? today;
   final VoidCallback onDismiss;
   final ValueChanged<DateTime> onDateSelected;
 
@@ -39,6 +45,7 @@ class _ImportBirthdayCalendarOverlayState
 
   late DateTime _visibleMonth;
   late int _visibleYearPageStart;
+  late final DateTime _today = _dateOnly(widget.today ?? DateTime.now());
   _CalendarSelectionMode _selectionMode = _CalendarSelectionMode.day;
 
   @override
@@ -170,8 +177,8 @@ class _ImportBirthdayCalendarOverlayState
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: colors.surface.input,
-          borderRadius: BorderRadius.circular(AppRadii.medium),
-          boxShadow: _calendarPanelShadow(colors),
+          borderRadius: BorderRadius.circular(AppRadii.large),
+          boxShadow: _calendarPanelShadow(context),
         ),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.sm),
@@ -223,6 +230,7 @@ class _ImportBirthdayCalendarOverlayState
                     _DayGrid(
                       visibleMonth: _visibleMonth,
                       selectedDate: widget.selectedDate,
+                      today: _today,
                       firstDate: widget.firstDate,
                       lastDate: widget.lastDate,
                       cellSize: _cellSize,
@@ -576,6 +584,7 @@ class _DayGrid extends StatelessWidget {
   const _DayGrid({
     required this.visibleMonth,
     required this.selectedDate,
+    required this.today,
     required this.firstDate,
     required this.lastDate,
     required this.cellSize,
@@ -584,6 +593,7 @@ class _DayGrid extends StatelessWidget {
 
   final DateTime visibleMonth;
   final DateTime? selectedDate;
+  final DateTime today;
   final DateTime firstDate;
   final DateTime lastDate;
   final double cellSize;
@@ -613,6 +623,7 @@ class _DayGrid extends StatelessWidget {
               date: firstCellDate.add(Duration(days: index)),
               visibleMonth: visibleMonth,
               selectedDate: selectedDate,
+              today: today,
               firstDate: firstDate,
               lastDate: lastDate,
               size: cellSize,
@@ -629,6 +640,7 @@ class _DayCell extends StatelessWidget {
     required this.date,
     required this.visibleMonth,
     required this.selectedDate,
+    required this.today,
     required this.firstDate,
     required this.lastDate,
     required this.size,
@@ -638,6 +650,7 @@ class _DayCell extends StatelessWidget {
   final DateTime date;
   final DateTime visibleMonth;
   final DateTime? selectedDate;
+  final DateTime today;
   final DateTime firstDate;
   final DateTime lastDate;
   final double size;
@@ -675,6 +688,19 @@ class _DayCell extends StatelessWidget {
           child: SizedBox(width: size, height: size, child: child),
         ),
       );
+    } else if (currentMonth && _isSameDate(date, today)) {
+      // Figma today chip (June 16 in 4052:96540): light gray filled circle,
+      // measured ≈#ececec on the white panel → background.raised
+      // (#EBEBEB light / p150 dark); the day number keeps the accent color.
+      child = Center(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.background.raised,
+            shape: BoxShape.circle,
+          ),
+          child: SizedBox(width: size, height: size, child: child),
+        ),
+      );
     }
 
     return MouseRegion(
@@ -688,15 +714,16 @@ class _DayCell extends StatelessWidget {
   }
 }
 
-List<BoxShadow> _calendarPanelShadow(AppColors colors) {
-  return [
-    BoxShadow(
-      color: colors.shadows.regular,
-      offset: const Offset(0, 4),
-      blurRadius: 16,
-    ),
-    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
-  ];
+// Figma `Shadow Overlay` token — the shared [appModalShadow] drops. The
+// token's inner `inner(0,0) blur2 #FFFFFF26` highlight layer is not
+// expressible as a `BoxShadow` and is invisible on the white panel, so only
+// the drops are painted. Dark theme keeps the no-shadow behavior (the shadow
+// tokens are fully transparent in dark).
+List<BoxShadow> _calendarPanelShadow(BuildContext context) {
+  if (AppTheme.of(context) == AppThemeData.dark) {
+    return const <BoxShadow>[];
+  }
+  return appModalShadow;
 }
 
 DateTime _dateOnly(DateTime value) {

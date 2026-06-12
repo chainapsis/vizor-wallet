@@ -393,20 +393,20 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                   phase: keystonePhase,
                   urParts: _keystoneUrParts,
                   error: _keystoneError,
-                  title: 'Sign tx on your Keystone',
-                  subtitle: 'Scan the QR code to sign',
+                  title: 'Confirm with Keystone',
+                  subtitle: 'Scan with your Keystone',
                   instruction: _keystonePcztWithProofs == null
                       ? 'Scan now. Signature import unlocks after proofs are ready.'
-                      : 'After you scanned, click Get Signature.',
+                      : 'After you scanned, click Get signature.',
                   primaryLabel: _keystonePcztWithProofs == null
                       ? 'Preparing'
-                      : 'Get Signature',
+                      : 'Get signature',
                   onPrimary:
                       keystonePhase == KeystoneSigningModalPhase.ready &&
                           _keystonePcztWithProofs != null
                       ? () => unawaited(_getKeystoneSignature())
                       : null,
-                  secondaryLabel: 'Reject',
+                  secondaryLabel: 'Cancel',
                   onSecondary: () => unawaited(_cancelKeystoneSigning()),
                 ),
               ),

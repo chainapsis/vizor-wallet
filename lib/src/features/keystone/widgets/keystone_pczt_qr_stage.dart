@@ -108,25 +108,37 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   @override
   Widget build(BuildContext context) {
     if (widget.urParts.isEmpty) return const SizedBox.shrink();
-    return DecoratedBox(
-      decoration: const BoxDecoration(color: Color(0xFFFFFFFF)),
-      child: Padding(
-        padding: const EdgeInsets.all(2),
-        child: QrImageView(
-          data: widget.urParts[_index],
-          size: 226,
-          backgroundColor: const Color(0xFFFFFFFF),
-          eyeStyle: const QrEyeStyle(
-            eyeShape: QrEyeShape.square,
-            color: Color(0xFF141818),
-          ),
-          dataModuleStyle: const QrDataModuleStyle(
-            dataModuleShape: QrDataModuleShape.square,
-            color: Color(0xFF141818),
-          ),
-          errorCorrectionLevel: QrErrorCorrectLevel.L,
-        ),
+    // Figma (light, the only designed theme): the 230px QR ink sits directly
+    // on the #f7f7f7 panel — no card — with bullseye (circle) finder eyes and
+    // dot modules; the light panel doubles as the quiet zone. QrImageView
+    // defaults to 10px internal padding, so it is zeroed to keep the ink at
+    // the full size.
+    // Dark: the panel is near-black against the #141818 modules, so the QR
+    // gets the theme-invariant [surface.qrCode] backing (white, documented
+    // for scan contrast) with an 8px quiet zone inside the same 230px box.
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
+    final qr = QrImageView(
+      data: widget.urParts[_index],
+      size: isDark ? 214 : 230,
+      padding: EdgeInsets.zero,
+      backgroundColor: const Color(0x00000000),
+      eyeStyle: const QrEyeStyle(
+        eyeShape: QrEyeShape.circle,
+        color: Color(0xFF141818),
       ),
+      dataModuleStyle: const QrDataModuleStyle(
+        dataModuleShape: QrDataModuleShape.circle,
+        color: Color(0xFF141818),
+      ),
+      errorCorrectionLevel: QrErrorCorrectLevel.L,
+    );
+    if (!isDark) return qr;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: context.colors.surface.qrCode,
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+      ),
+      child: Padding(padding: const EdgeInsets.all(8), child: qr),
     );
   }
 }

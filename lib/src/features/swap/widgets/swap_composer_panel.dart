@@ -502,7 +502,7 @@ class _SwapAmountInput extends StatelessWidget {
       children: [
         if (prefixText != null) ...[
           // The fiat '$' prefix renders one step larger than the 32px amount
-          // (YoungSerif-Medium 36/44, letter-spacing -0.72) in the secondary
+          // (YoungSerif-Regular 36/44, letter-spacing -0.72) in the secondary
           // text color, while the digits stay accent.
           Text(
             prefixText!,

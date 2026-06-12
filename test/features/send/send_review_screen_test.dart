@@ -358,8 +358,16 @@ void main() {
     await _flushRealAsync(tester);
 
     expect(find.byType(KeystoneSigningModal), findsOneWidget);
-    expect(find.text('Sign tx on your Keystone'), findsOneWidget);
-    expect(find.text('Get Signature'), findsOneWidget);
+    // The review confirm button behind the scrim shares the same label, so
+    // scope the title assertion to the modal.
+    expect(
+      find.descendant(
+        of: find.byType(KeystoneSigningModal),
+        matching: find.text('Confirm with Keystone'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Get signature'), findsOneWidget);
     expect(find.text('status-route'), findsNothing);
     expect(rustApi.createPcztCalls, 1);
   });
@@ -381,7 +389,7 @@ void main() {
 
     await tester.tap(find.text('Confirm with Keystone'));
     await _flushRealAsync(tester);
-    await tester.tap(find.text('Get Signature'));
+    await tester.tap(find.text('Get signature'));
     await tester.pumpAndSettle();
 
     expect(find.text('keystone-scan-route'), findsOneWidget);
@@ -415,11 +423,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Reject before the PCZT preparation consumed the proposal (real-IO
-    // futures are still pending at this point).
+    // Cancel before the PCZT preparation consumed the proposal (real-IO
+    // futures are still pending at this point). The review screen behind the
+    // scrim has its own Cancel, so scope the tap to the modal.
     await tester.tap(find.text('Confirm with Keystone'));
     await tester.pump();
-    await tester.tap(find.text('Reject'));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(KeystoneSigningModal),
+        matching: find.text('Cancel'),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('send-route'), findsOneWidget);
@@ -444,7 +458,12 @@ void main() {
       await _flushRealAsync(tester);
       expect(rustApi.createPcztCalls, 1);
 
-      await tester.tap(find.text('Reject'));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(KeystoneSigningModal),
+          matching: find.text('Cancel'),
+        ),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('send-route'), findsOneWidget);

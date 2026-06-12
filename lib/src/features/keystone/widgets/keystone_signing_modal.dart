@@ -2,7 +2,8 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_modal_card.dart'
+    show AppModalActions, appModalShadow;
 import 'keystone_pczt_qr_stage.dart';
 
 enum KeystoneSigningModalPhase { preparing, ready, failed }
@@ -42,60 +43,45 @@ class KeystoneSigningModal extends StatelessWidget {
 
     return Container(
       width: 312,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.md,
+      // Figma: 24 top / 16 sides / 16 bottom (render-measured).
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.sm,
       ),
       decoration: BoxDecoration(
-        color: colors.background.ground,
+        color: colors.background.base,
         borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: appModalShadow,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: colors.background.neutralSubtleOpacity,
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: AppIcon(
-                    AppIcons.qr,
-                    size: AppIconSize.medium,
-                    color: colors.icon.regular,
+          SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodyLarge.copyWith(
+                    color: colors.text.accent,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.bodyLarge.copyWith(
-                        color: colors.text.accent,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ],
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: AppSpacing.md),
           Padding(
@@ -130,24 +116,27 @@ class KeystoneSigningModal extends StatelessWidget {
               ],
             ),
           ),
-          if (primaryLabel != null || secondaryLabel != null) ...[
+          if (primaryLabel != null && secondaryLabel != null) ...[
             const SizedBox(height: AppSpacing.md),
-            if (primaryLabel != null) ...[
-              AppButton(
-                onPressed: onPrimary,
-                minWidth: 280,
-                trailing: const AppIcon(AppIcons.chevronForward),
-                child: Text(primaryLabel),
-              ),
-              if (secondaryLabel != null) const SizedBox(height: AppSpacing.s),
-            ],
-            if (secondaryLabel != null)
-              AppButton(
-                onPressed: onSecondary,
-                variant: AppButtonVariant.ghost,
-                minWidth: 280,
-                child: Text(secondaryLabel),
-              ),
+            // Figma: the shared 36px modal button set — ghost cancel left,
+            // primary action right, equal widths.
+            AppModalActions(
+              onCancel: onSecondary,
+              cancelLabel: secondaryLabel,
+              actionLabel: primaryLabel,
+              onAction: onPrimary,
+            ),
+          ] else if (primaryLabel != null || secondaryLabel != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            AppButton(
+              onPressed: primaryLabel != null ? onPrimary : onSecondary,
+              variant: primaryLabel != null
+                  ? AppButtonVariant.primary
+                  : AppButtonVariant.ghost,
+              size: AppButtonSize.mediumLarge,
+              minWidth: 280,
+              child: Text(primaryLabel ?? secondaryLabel!),
+            ),
           ],
         ],
       ),

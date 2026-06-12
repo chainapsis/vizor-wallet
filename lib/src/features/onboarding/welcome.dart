@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show TapGestureRecognizer;
 import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -208,7 +209,7 @@ class _WelcomeHeroPane extends StatelessWidget {
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: const [Colors.transparent, Color(0xFF1E1E1E)],
+                    colors: const [Colors.transparent, Color(0xFF1D1D1D)],
                     stops: const [0.47237, 0.97439],
                   ),
                 ),
@@ -354,7 +355,9 @@ class _BackRow extends StatelessWidget {
   }
 }
 
-/// Badge + title + buttons from the Figma left welcome pane.
+/// Badge + title + buttons from the Figma left welcome pane, with the
+/// legal footer pinned to the pane bottom (Figma: text bottom 45px above
+/// the pane edge — 13px inside the 32px vertical padding).
 class _Content extends StatelessWidget {
   const _Content();
 
@@ -365,7 +368,75 @@ class _Content extends StatelessWidget {
         horizontal: AppSpacing.sm,
         vertical: AppSpacing.base,
       ),
-      child: Center(child: _MainWelcomeContent()),
+      child: Stack(
+        children: [
+          Center(child: _MainWelcomeContent()),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: EdgeInsets.only(bottom: 13),
+              child: _LegalFooter(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LegalFooter extends StatefulWidget {
+  const _LegalFooter();
+
+  @override
+  State<_LegalFooter> createState() => _LegalFooterState();
+}
+
+class _LegalFooterState extends State<_LegalFooter> {
+  // `from=onboarding` keeps the legal pages on the bare full pane (no
+  // sidebar) even when a wallet exists (the /add-account variant).
+  late final TapGestureRecognizer _termsRecognizer = TapGestureRecognizer()
+    ..onTap = () => context.push('/terms?from=onboarding');
+  late final TapGestureRecognizer _privacyRecognizer = TapGestureRecognizer()
+    ..onTap = () => context.push('/privacy?from=onboarding');
+
+  @override
+  void dispose() {
+    _termsRecognizer.dispose();
+    _privacyRecognizer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final style = AppTypography.bodySmall.copyWith(
+      color: context.colors.text.muted,
+    );
+    final linkStyle = style.copyWith(
+      decoration: TextDecoration.underline,
+      decorationColor: context.colors.text.muted,
+    );
+    return SizedBox(
+      width: 154,
+      child: Text.rich(
+        TextSpan(
+          style: style,
+          children: [
+            const TextSpan(text: 'By using Vizor you agree to our '),
+            TextSpan(
+              text: 'Terms',
+              style: linkStyle,
+              recognizer: _termsRecognizer,
+            ),
+            const TextSpan(text: ' and '),
+            TextSpan(
+              text: 'Privacy',
+              style: linkStyle,
+              recognizer: _privacyRecognizer,
+            ),
+          ],
+        ),
+        textAlign: TextAlign.center,
+      ),
     );
   }
 }
@@ -481,25 +552,22 @@ class _OrDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Opacity(
-      opacity: 0.4,
-      child: SizedBox(
-        width: _welcomeActionWidth,
-        height: 14,
-        child: Row(
-          children: [
-            Expanded(child: _OrDividerLine(color: colors.border.regular)),
-            const SizedBox(width: AppSpacing.s),
-            Text(
-              'OR',
-              style: AppTypography.labelSmall.copyWith(
-                color: colors.text.secondary,
-              ),
+    return SizedBox(
+      width: _welcomeActionWidth,
+      height: 14,
+      child: Row(
+        children: [
+          Expanded(child: _OrDividerLine(color: colors.border.regular)),
+          const SizedBox(width: AppSpacing.s),
+          Text(
+            'OR',
+            style: AppTypography.labelSmall.copyWith(
+              color: colors.text.secondary,
             ),
-            const SizedBox(width: AppSpacing.s),
-            Expanded(child: _OrDividerLine(color: colors.border.regular)),
-          ],
-        ),
+          ),
+          const SizedBox(width: AppSpacing.s),
+          Expanded(child: _OrDividerLine(color: colors.border.regular)),
+        ],
       ),
     );
   }
@@ -512,12 +580,15 @@ class _OrDividerLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(AppRadii.full),
+    return Center(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(AppRadii.small),
+        ),
+        // Current `_Divider` component: 1.5px hairline pill.
+        child: const SizedBox(height: 1.5, width: double.infinity),
       ),
-      child: const SizedBox(height: 1),
     );
   }
 }

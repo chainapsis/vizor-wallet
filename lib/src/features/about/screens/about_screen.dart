@@ -85,25 +85,35 @@ class AboutScreen extends StatelessWidget {
 }
 
 class TermsScreen extends StatelessWidget {
-  const TermsScreen({super.key});
+  const TermsScreen({super.key, this.forceFullPane = false});
+
+  /// Onboarding entries (the welcome legal footer) render the bare
+  /// full-width pane even when a wallet exists.
+  final bool forceFullPane;
 
   @override
   Widget build(BuildContext context) {
-    return const _LegalScreen(
+    return _LegalScreen(
       title: 'Terms of Usage',
       paragraphs: _legalParagraphs,
+      forceFullPane: forceFullPane,
     );
   }
 }
 
 class PrivacyPolicyScreen extends StatelessWidget {
-  const PrivacyPolicyScreen({super.key});
+  const PrivacyPolicyScreen({super.key, this.forceFullPane = false});
+
+  /// Onboarding entries (the welcome legal footer) render the bare
+  /// full-width pane even when a wallet exists.
+  final bool forceFullPane;
 
   @override
   Widget build(BuildContext context) {
-    return const _LegalScreen(
+    return _LegalScreen(
       title: 'Privacy Policy',
       paragraphs: _legalParagraphs,
+      forceFullPane: forceFullPane,
     );
   }
 }
@@ -134,32 +144,61 @@ class _AboutContent extends StatelessWidget {
 }
 
 class _LegalScreen extends ConsumerWidget {
-  const _LegalScreen({required this.title, required this.paragraphs});
+  const _LegalScreen({
+    required this.title,
+    required this.paragraphs,
+    this.forceFullPane = false,
+  });
 
   final String title;
   final List<_UtilityParagraphData> paragraphs;
+  final bool forceFullPane;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pane = _UtilityPane(
-      toolbar: const AppPaneToolbar(
-        // The 16px inset is the AppPaneToolbar default.
-        leading: _UtilityBackButton(),
-      ),
-      child: _LegalContent(title: title, paragraphs: paragraphs),
-    );
+    final content = _LegalContent(title: title, paragraphs: paragraphs);
 
     // In the design these pages live inside the regular desktop shell with
     // the glass nav sidebar. Pre-wallet they are public legal routes, so
     // there is no account/sidebar context to show — fall back to the bare
-    // full-width pane.
-    if (_hasWallet(ref)) {
+    // full-width pane. Onboarding entries force the bare pane too: the
+    // welcome screen has no sidebar, so terms/privacy opened from it
+    // shouldn't grow one.
+    if (!forceFullPane && _hasWallet(ref)) {
       return AppDesktopShell(
         sidebar: const AppMainSidebar(),
-        pane: AppDesktopPane(padding: EdgeInsets.zero, child: pane),
+        pane: AppDesktopPane(
+          padding: EdgeInsets.zero,
+          child: _UtilityPane(
+            toolbar: const AppPaneToolbar(
+              // The 16px inset is the AppPaneToolbar default.
+              leading: _UtilityBackButton(),
+            ),
+            child: content,
+          ),
+        ),
       );
     }
-    return _FullPaneShell(child: pane);
+
+    // Full-window pane: the toolbar-corner back link would crowd the macOS
+    // window controls, so the back row drops below them at the welcome
+    // screen's spot (window-absolute 24,40 → 16,32 inside the 8px-padded
+    // pane).
+    return _FullPaneShell(
+      child: Stack(
+        children: [
+          _UtilityPane(
+            toolbar: const AppPaneToolbar(leading: SizedBox.shrink()),
+            child: content,
+          ),
+          const Positioned(
+            left: AppSpacing.sm,
+            top: AppSpacing.base,
+            child: _UtilityBackButton(),
+          ),
+        ],
+      ),
+    );
   }
 }
 

@@ -15,6 +15,8 @@ enum ImportOnboardingStep {
 }
 
 extension ImportOnboardingStepX on ImportOnboardingStep {
+  // Sidebar step labels keep their original Title Case — see the
+  // sentence-case exception in AGENTS.md (UI Copy Conventions).
   String get label => switch (this) {
     ImportOnboardingStep.secretPassphrase => 'Secret Passphrase',
     ImportOnboardingStep.walletBirthdayHeight => 'Wallet Birthday Height',
@@ -93,10 +95,11 @@ class _ImportOnboardingWindowBackground extends StatelessWidget {
         isDark
             ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
             : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
+      // Figma uses the same castle line-art for both themes (alpha-only
+      // strokes composite against the window color), so one asset serves
+      // light and dark — same wiring as the create flow.
       ImportOnboardingStep.setPassword =>
-        isDark
-            ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
-            : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
+        'assets/illustrations/onboarding_set_password_background_light.png',
     };
 
     return DecoratedBox(
@@ -194,7 +197,11 @@ class _SidebarIllustration extends StatelessWidget {
         child: SizedBox(
           width: _frameWidth,
           height: _frameHeight,
-          child: Image.asset(asset, fit: BoxFit.cover),
+          child: Image.asset(
+            asset,
+            fit: BoxFit.cover,
+            alignment: Alignment.bottomCenter,
+          ),
         ),
       ),
     );

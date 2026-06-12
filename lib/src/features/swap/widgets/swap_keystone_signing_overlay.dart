@@ -287,7 +287,7 @@ class _SwapKeystoneSigningOverlayState
                 ? null
                 : _phase == _SwapKeystonePhase.failed
                 ? 'Back to activity'
-                : 'Reject',
+                : 'Cancel',
             onSecondary: _cancel,
           ),
         ),
