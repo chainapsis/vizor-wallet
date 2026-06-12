@@ -297,6 +297,52 @@
   </dl>
 </section>
 
+<section>
+  <h2>9. 스왑 리디자인 적용에서 피그마 외로 채운 요소</h2>
+  <div class="badges"><span class="badge">스왑 리뷰 플로우</span><span class="badge gray">피그마: ACTIVITY & STATUS · Swap 섹션 (4654:94192)</span></div>
+  <dl>
+    <dt>배경</dt>
+    <dd>모바일 스왑 리뷰 플로우(Review Quote 4731:85401 / Review Progress 4752:30028 /
+    Swap Completed 4752:82692 / Swap failed 4752:28424 / Verify Address 4731:96657)를
+    네이티브로 구현하면서, 피그마 프레임에 없지만 데스크톱 구현에 존재해 중요하다고
+    판단한 요소를 모바일 룩앤필로 채웠습니다.</dd>
+    <dt>채운 요소</dt>
+    <dd><ul class="req">
+      <li><b>리뷰 카드의 계정 행</b> — 어느 지갑 계정이 자금을 내는지(아바타+이름)는
+      데스크톱 리뷰가 보여주는 핵심 정보라 카드 첫 행으로 유지했습니다. 주소록 매칭 시
+      "Saved recipient" 행도 추가됩니다.</li>
+      <li><b>오류·엣지 상태</b> — 견적 만료 배너, 시작 실패 오류, 잔액 부족(버튼 비활성 +
+      사유), 견적 드리프트 경고를 카드 아래 플럼 노티스 라인으로 렌더합니다(피그마에는
+      정상 상태만 그려져 있음).</li>
+      <li><b>진행/완료 화면의 Transaction details 탭 내용</b> — 피그마는 탭 라벨만 있고
+      내용 프레임이 없어, 데스크톱과 동일한 행 데이터(입금 주소·수신 주소·수수료·해시 등)를
+      모바일 카드 스타일로 채웠습니다.</li>
+      <li><b>"View on Near Intents" 링크</b> — 완료/진행 화면 하단의 익스플로러 링크는
+      피그마 완료 프레임에 없지만(Tx ID 행의 ↗만 존재) 데스크톱 기능 패리티로 유지했습니다.</li>
+      <li><b>터미널 카드의 행 구성</b> — 피그마 완료 카드는 Slippage tolerance / Price
+      protection / Timestamp / Tx ID / Tx fee 행을 보여주지만, 실제 데이터 소스(인텐트
+      매퍼)는 Account / 수신 주소 / 입금 주소 / Total fees / Realized slippage / Timestamp를
+      제공합니다. 데이터가 있는 행을 모두 보여주는 쪽을 택했습니다. "Price protection"은
+      대응되는 별도 데이터가 없어 생략했습니다.</li>
+      <li><b>하드웨어(Keystone) ZEC 입금 화면</b> — 모바일 프레임이 없어 데스크톱 콘텐츠를
+      축소 렌더로 유지합니다.</li>
+    </ul></dd>
+    <dt>의도적 카피 차이</dt>
+    <dd>"Confirm & Swap"→"Confirm & swap", "Review Quote"→"Review quote",
+    "Restart Swap"→"Restart swap" 등은 프로젝트 sentence-case 규칙을 따랐습니다.
+    진행 화면 타이틀은 기존 매퍼의 "Swapping ..."을 유지했습니다(피그마
+    "Swap in progress...").</dd>
+    <dt>디자이너에게 요청</dt>
+    <dd><ul class="req">
+      <li>Transaction details 탭의 내용 프레임과 오류/만료/잔액부족 상태 프레임 추가</li>
+      <li>외부→ZEC 입금 QR 화면(4731:96923)의 모바일 전용 구현은 다음 단계로 남아
+      있습니다 — 카드 안 카피(I've deposited tokens 등) 확정 요청</li>
+      <li>컴포저 전면 리디자인(인라인 넘패드, 뒤로가기 헤더)은 탭 진입 모델과 충돌해
+      내비게이션 결정이 필요합니다: 스왑이 탭으로 남는지, 홈에서 푸시되는 화면이 되는지</li>
+    </ul></dd>
+  </dl>
+</section>
+
 <footer>
   이 문서와 스크린샷은 자동 캡처 투어(iPhone 16 Pro 시뮬레이터)에서 생성됐습니다.
   구현 상세는 각 화면의 소스 주석(Figma 노드 ID 표기)을 참고해 주세요.
