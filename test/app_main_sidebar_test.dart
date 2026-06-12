@@ -46,18 +46,22 @@ void main() {
     expect(find.byKey(const ValueKey('sidebar_home_button')), findsOneWidget);
     expect(find.byKey(const ValueKey('sidebar_swap_button')), findsOneWidget);
     expect(
+      find.byKey(const ValueKey('sidebar_voting_button')),
+      findsOneWidget,
+    );
+    expect(
       find.byKey(const ValueKey('sidebar_activity_button')),
       findsOneWidget,
     );
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Swap'), findsOneWidget);
+    expect(find.text('Vote'), findsOneWidget);
     expect(find.text('Activity'), findsOneWidget);
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Sign out'), findsOneWidget);
     expect(find.text('Wallet'), findsNothing);
     expect(find.text('Send'), findsNothing);
     expect(find.text('Receive'), findsNothing);
-    expect(find.text('Vote'), findsNothing);
     expect(find.text('Address book'), findsNothing);
     expect(find.text('About Vizor'), findsNothing);
   });
@@ -283,6 +287,7 @@ void main() {
     final positions = [
       tester.getTopLeft(find.text('Home')).dy,
       tester.getTopLeft(find.text('Swap')).dy,
+      tester.getTopLeft(find.text('Vote')).dy,
       tester.getTopLeft(find.text('Activity')).dy,
     ];
     final gaps = [
@@ -295,7 +300,7 @@ void main() {
     }
   });
 
-  testWidgets('sidebar disables only Swap and Activity while importing', (
+  testWidgets('sidebar disables Swap, Vote, and Activity while importing', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -315,6 +320,10 @@ void main() {
     await tester.tap(find.text('Swap'));
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.text('swap'), findsNothing);
+
+    await tester.tap(find.text('Vote'));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('voting'), findsNothing);
 
     await tester.tap(find.text('Activity'));
     await tester.pump(const Duration(milliseconds: 50));
