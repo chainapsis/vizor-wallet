@@ -6,7 +6,7 @@ import 'package:flutter/widgets.dart';
 /// names are kept stable for existing call sites, so the old `display*`
 /// constants are aliases onto the current headline scale.
 ///
-/// Serif styles use Young Serif Medium with the OpenType 'case' feature
+/// Serif styles use Young Serif Regular with the OpenType 'case' feature
 /// enabled: Young Serif defaults to old-style figures whose descenders sit
 /// below the baseline, and 'case' swaps them for uniform lining digits.
 /// (The original `Desktop.tokens.json` export predated the design system's
@@ -40,10 +40,10 @@ abstract final class AppTypography {
   /// Legacy display alias for Headline XL — largest onboarding/welcome
   /// headline.
   ///
-  /// Young Serif Medium, 45 / 48 px, letter-spacing −1.35.
+  /// Young Serif Regular, 45 / 48 px, letter-spacing −1.35.
   static const displayLarge = TextStyle(
     fontFamily: 'Young Serif',
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w400,
     fontFeatures: [FontFeature.enable('case')],
     fontSize: 45,
     height: 48 / 45,
@@ -52,10 +52,10 @@ abstract final class AppTypography {
 
   /// Legacy display alias for Headline XL — hero headlines.
   ///
-  /// Young Serif Medium, 45 / 48 px, letter-spacing −1.35.
+  /// Young Serif Regular, 45 / 48 px, letter-spacing −1.35.
   static const displayMedium = TextStyle(
     fontFamily: 'Young Serif',
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w400,
     fontFeatures: [FontFeature.enable('case')],
     fontSize: 45,
     height: 48 / 45,
@@ -65,10 +65,10 @@ abstract final class AppTypography {
   /// Legacy display alias for Headline L — step-level headlines inside
   /// onboarding flows.
   ///
-  /// Young Serif Medium, 32 / 33 px, letter-spacing 0.
+  /// Young Serif Regular, 32 / 33 px, letter-spacing 0.
   static const displaySmall = TextStyle(
     fontFamily: 'Young Serif',
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w400,
     fontFeatures: [FontFeature.enable('case')],
     fontSize: 32,
     height: 33 / 32,
@@ -77,10 +77,10 @@ abstract final class AppTypography {
 
   /// Headline Large — section headings inside content panes.
   ///
-  /// Young Serif Medium, 32 / 33 px, letter-spacing 0.
+  /// Young Serif Regular, 32 / 33 px, letter-spacing 0.
   static const headlineLarge = TextStyle(
     fontFamily: 'Young Serif',
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w400,
     fontFeatures: [FontFeature.enable('case')],
     fontSize: 32,
     height: 33 / 32,
@@ -89,10 +89,10 @@ abstract final class AppTypography {
 
   /// Headline Medium — sub-section headings.
   ///
-  /// Young Serif Medium, 28 / 30 px, letter-spacing −0.28.
+  /// Young Serif Regular, 28 / 30 px, letter-spacing −0.28.
   static const headlineMedium = TextStyle(
     fontFamily: 'Young Serif',
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w400,
     fontFeatures: [FontFeature.enable('case')],
     fontSize: 28,
     height: 30 / 28,

@@ -23,7 +23,6 @@ void main() {
       ],
       'Young Serif': [
         'assets/fonts/YoungSerif-Regular.ttf',
-        'assets/fonts/YoungSerif-Medium.ttf',
       ],
       'Inter': [
         'assets/fonts/Inter-Regular.ttf',

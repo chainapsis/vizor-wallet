@@ -35,7 +35,6 @@ void main() {
       ],
       'Young Serif': [
         'assets/fonts/YoungSerif-Regular.ttf',
-        'assets/fonts/YoungSerif-Medium.ttf',
       ],
     };
     for (final entry in fonts.entries) {

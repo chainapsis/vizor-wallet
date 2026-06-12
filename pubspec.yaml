@@ -142,5 +142,3 @@ flutter:
         # AppTypography display/headline tokens.
         - asset: assets/fonts/YoungSerif-Regular.ttf
           weight: 400
-        - asset: assets/fonts/YoungSerif-Medium.ttf
-          weight: 500
