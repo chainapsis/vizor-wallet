@@ -156,6 +156,8 @@ class _MobileSwapReviewScreenState
                         child: Column(
                           children: [
                             SwapReviewPageContent(
+                              // The top nav already says "Review swap".
+                              showTitle: false,
                               quote: quote,
                               addressPlan: addressPlan,
                               addressBookContacts: addressBookContacts,

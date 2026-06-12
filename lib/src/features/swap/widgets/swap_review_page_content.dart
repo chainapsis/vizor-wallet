@@ -34,6 +34,7 @@ class SwapReviewPageContent extends StatelessWidget {
     this.slippageToleranceTextOverride,
     this.payFiatTextOverride,
     this.receiveFiatTextOverride,
+    this.showTitle = true,
     super.key,
   });
 
@@ -50,6 +51,10 @@ class SwapReviewPageContent extends StatelessWidget {
   final String? payFiatTextOverride;
   final String? receiveFiatTextOverride;
 
+  /// The mobile host renders its own top-nav title; it hides this
+  /// inline one so "Review swap" doesn't appear twice.
+  final bool showTitle;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -59,15 +64,17 @@ class SwapReviewPageContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'Review swap',
-            key: const ValueKey('swap_review_title'),
-            textAlign: TextAlign.center,
-            style: AppTypography.displaySmall.copyWith(
-              color: colors.text.accent,
+          if (showTitle) ...[
+            Text(
+              'Review swap',
+              key: const ValueKey('swap_review_title'),
+              textAlign: TextAlign.center,
+              style: AppTypography.displaySmall.copyWith(
+                color: colors.text.accent,
+              ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.md),
+          ],
           _ReviewTradeSummaryCard(
             quote: quote,
             payFiatTextOverride: payFiatTextOverride,
