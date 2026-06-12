@@ -14,6 +14,7 @@ import 'account_modal_card.dart';
 /// the drafts back in through [initialName] / [profilePictureId].
 class AccountEditModal extends StatefulWidget {
   const AccountEditModal({
+    required this.accountUuid,
     required this.accountName,
     required this.initialName,
     required this.profilePictureId,
@@ -24,6 +25,12 @@ class AccountEditModal extends StatefulWidget {
     required this.onUpdate,
     super.key,
   });
+
+  /// Identity of the account being edited. When it changes while the modal
+  /// is mounted (settings binds to the active account, which the sidebar
+  /// can switch under the pane overlay), the in-progress text is dropped —
+  /// names are not unique, so the committed name can't serve as identity.
+  final String accountUuid;
 
   /// Committed account name, for change detection.
   final String accountName;
@@ -82,11 +89,9 @@ class _AccountEditModalState extends State<AccountEditModal> {
   @override
   void didUpdateWidget(covariant AccountEditModal oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // A different committed name means the modal was rebound to another
-    // account while open (settings binds to the active account, and the
-    // sidebar can switch it under the pane overlay). Drop the previous
-    // account's text so Update can't commit it to the new account.
-    if (oldWidget.accountName != widget.accountName) {
+    // The modal was rebound to another account while open. Drop the
+    // previous account's text so Update can't commit it to the new one.
+    if (oldWidget.accountUuid != widget.accountUuid) {
       _controller.text = widget.initialName;
       _submitError = null;
     }

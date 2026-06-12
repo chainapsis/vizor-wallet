@@ -183,6 +183,7 @@ void main() {
     // active account; the sidebar can switch it while the modal is open).
     await tester.pumpWidget(
       _AccountEditModalHarness(
+        accountUuid: 'uuid-3',
         accountName: 'Account 3',
         initialName: 'Account 3',
         onUpdate: (name) async {
@@ -196,6 +197,41 @@ void main() {
     expect(find.text('Account 3'), findsOneWidget);
 
     // Update stays a no-op until the user actually edits the new account.
+    await tester.tap(find.text('Update'));
+    await tester.pump();
+    expect(updatedName, isNull);
+  });
+
+  testWidgets('rebinding resets even when both accounts share a name', (
+    tester,
+  ) async {
+    String? updatedName;
+
+    await tester.pumpWidget(
+      _AccountEditModalHarness(
+        onUpdate: (name) async {
+          updatedName = name;
+        },
+      ),
+    );
+    await tester.enterText(find.byType(TextField), 'Stale draft');
+    await tester.pump();
+
+    // Names are not unique, so an identically named account must still be
+    // recognized as a different identity (uuid) and drop the draft.
+    await tester.pumpWidget(
+      _AccountEditModalHarness(
+        accountUuid: 'uuid-3',
+        onUpdate: (name) async {
+          updatedName = name;
+        },
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Stale draft'), findsNothing);
+    expect(find.text('Account 2'), findsOneWidget);
+
     await tester.tap(find.text('Update'));
     await tester.pump();
     expect(updatedName, isNull);
@@ -215,6 +251,7 @@ class _AccountEditModalHarness extends StatelessWidget {
     this.onUpdate,
     this.onEditProfilePicture,
     this.profilePictureChanged = false,
+    this.accountUuid = 'uuid-2',
     this.accountName = 'Account 2',
     this.initialName = 'Account 2',
   });
@@ -222,6 +259,7 @@ class _AccountEditModalHarness extends StatelessWidget {
   final Future<void> Function(String name)? onUpdate;
   final VoidCallback? onEditProfilePicture;
   final bool profilePictureChanged;
+  final String accountUuid;
   final String accountName;
   final String initialName;
 
@@ -234,6 +272,7 @@ class _AccountEditModalHarness extends StatelessWidget {
         child: Scaffold(
           body: Center(
             child: AccountEditModal(
+              accountUuid: accountUuid,
               accountName: accountName,
               initialName: initialName,
               profilePictureId: 'pfp-01',

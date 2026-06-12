@@ -195,6 +195,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onDismiss: _closeModal,
                 child: switch (_activeModal!) {
                   _SettingsModalType.accountName => AccountEditModal(
+                    accountUuid: accountState?.activeAccountUuid ?? '',
                     accountName: activeAccountName,
                     initialName: _editDraftName ?? activeAccountName,
                     profilePictureId:
