@@ -55,10 +55,12 @@ class AppMobileTabBar extends StatelessWidget {
   static const _iconSize = 28.0;
 
   /// Selection transition — shared by the sliding pill and the icon
-  /// tint so they read as one move. easeOutBack gives the pill a small
-  /// overshoot before it settles.
+  /// tint so they read as one move. The curve is easeOutBack
+  /// (cubic(0.34, 1.56, 0.64, 1)) with its back overshoot halved by
+  /// lowering the second control point: ~5% past the target instead of
+  /// the stock ~10%, which read as too springy.
   static const selectDuration = Duration(milliseconds: 240);
-  static const _selectCurve = Curves.easeOutBack;
+  static const _selectCurve = Cubic(0.34, 1.40, 0.64, 1.0);
 
   @visibleForTesting
   static const activePillKey = ValueKey('mobile_tab_bar_active_pill');
