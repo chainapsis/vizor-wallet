@@ -385,10 +385,18 @@ class _AppTextFieldState extends State<AppTextField> {
       strutStyle: textStrutStyle,
       cursorColor: colors.text.accent,
       selectAllOnFocus: false,
-      decoration: InputDecoration.collapsed(
-        hintText: widget.hintText,
-        hintStyle: resolvedHintStyle,
-      ),
+      // Single-line skips InputDecorator entirely: its internal baseline
+      // placement shifts the editable down by visual density / platform
+      // (4px on macOS), which breaks the Field spec's centered 16px line
+      // box. Without a decorator the editable is exactly the strut line,
+      // so the surrounding Row/Center math is deterministic. The hint is
+      // drawn by the overlay below with the same style and strut.
+      decoration: _multiline
+          ? InputDecoration.collapsed(
+              hintText: widget.hintText,
+              hintStyle: resolvedHintStyle,
+            )
+          : null,
     );
     final fieldInput = _multiline
         ? ScrollConfiguration(
@@ -397,7 +405,27 @@ class _AppTextFieldState extends State<AppTextField> {
             ),
             child: textField,
           )
-        : textField;
+        : Stack(
+            children: [
+              if (widget.hintText != null && !_hasText)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        widget.hintText!,
+                        style: resolvedHintStyle,
+                        strutStyle: textStrutStyle,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ),
+              textField,
+            ],
+          );
 
     final shell = SizedBox(
       height: shellHeight,
