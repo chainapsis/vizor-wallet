@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/sync_provider.dart';
 
 /// Figma `Forgot Passcode` (4596:50252): the reset confirmation sheet.
@@ -113,4 +114,6 @@ Future<void> resetWalletForForgottenPasscode(WidgetRef ref) async {
   await syncNotifier.clearSensitiveStateForLock();
   await ref.read(accountProvider.notifier).resetWallet();
   syncNotifier.clearCachedWalletDbPath();
+  // The escrowed passcode belongs to the wiped wallet — drop it.
+  await ref.read(biometricUnlockProvider.notifier).disable();
 }

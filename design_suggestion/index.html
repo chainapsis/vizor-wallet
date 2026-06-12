@@ -93,6 +93,7 @@
     <li><a href="#progress">온보딩 진행바의 단계별 채움 규칙</a></li>
     <li><a href="#keystone-badge">Keystone 계정 배지의 적용 표면 확장</a></li>
     <li><a href="#send-validating">송금 금액 검증 대기 상태</a></li>
+    <li><a href="#biometric">생체인증(Face ID) 설정 행 · 넘패드 글리프</a></li>
   </ol>
 </nav>
 
@@ -243,6 +244,30 @@
   <div class="shots">
     <figure><img src="images/22_send_amount_ready.png" alt="금액 입력 화면"><figcaption>금액 입력 화면 (참고)</figcaption></figure>
   </div>
+</section>
+
+<section class="item" id="biometric">
+  <h2>7. 생체인증(Face ID) 설정 행 · 넘패드 글리프</h2>
+  <div class="badges"><span class="badge">신규 행/글리프</span><span class="badge gray">피그마: 잠금·온보딩 프레임만 존재</span></div>
+  <dl>
+    <dt>왜 추가했나</dt>
+    <dd>Face ID 잠금 해제를 구현하면서(패스코드 에스크로 방식) 두 가지 표면이 디자인 없이
+    필요해졌습니다. ① 활성/비활성을 전환할 <b>설정 행</b> — 피그마 Settings 프레임에 생체인증
+    항목이 없습니다. ② 잠금 화면 넘패드의 <b>수동 재시도 키</b> — 디자인의 Sign In Face ID
+    프레임은 시스템 프롬프트만 보여주고, 취소 후 다시 시도할 진입점이 없습니다.</dd>
+    <dt>채운 디자인 방향</dt>
+    <dd>설정 행은 System 그룹에 "Face ID — On/Off" 값 행으로 추가했고(생체 하드웨어 없는
+    기기에선 숨김), 넘패드 재시도 키는 입력 전 비어 있는 우하단 슬롯(삭제 키 자리)에 머티리얼
+    Face ID/지문 아이콘을 임시로 넣었습니다. 디자인 시스템에 Face ID/지문 글리프가 없어
+    임시 아이콘입니다.</dd>
+    <dt>디자이너에게 요청</dt>
+    <dd><ul class="req">
+      <li>설정의 생체인증 행(켜짐/꺼짐 표현 — 값 텍스트 vs 토글 스위치) 디자인</li>
+      <li>디자인 시스템용 Face ID·지문 글리프 (넘패드 슬롯 + 설정 행 아이콘 공용)</li>
+      <li>생체 재등록으로 에스크로가 무효화됐을 때의 안내 문구/표현 ("Biometrics changed.
+      Enter your passcode." 임시 적용 중)</li>
+    </ul></dd>
+  </dl>
 </section>
 
 <footer>

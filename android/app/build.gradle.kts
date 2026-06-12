@@ -75,3 +75,8 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Biometric passcode escrow (BiometricPrompt + Keystore-bound key).
+    implementation("androidx.biometric:biometric:1.1.0")
+}

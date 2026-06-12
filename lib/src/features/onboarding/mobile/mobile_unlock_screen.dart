@@ -1,4 +1,6 @@
-import 'package:flutter/material.dart' show Scaffold;
+import 'dart:async';
+
+import 'package:flutter/material.dart' show Icons, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,8 +10,10 @@ import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../services/biometric_unlock.dart';
 import 'forgot_passcode_sheet.dart';
 import 'mobile_passcode_screen.dart' show kMobilePasscodeLength;
 import 'passcode_widgets.dart';
@@ -28,7 +32,48 @@ class MobileUnlockScreen extends ConsumerStatefulWidget {
 class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
   var _entry = '';
   var _submitting = false;
+  var _biometricPromptShown = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-prompt once on entry; cancel/failure leaves the numpad as
+    // the fallback and the numpad slot offers a manual retry.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _biometricPromptShown) return;
+      _biometricPromptShown = true;
+      unawaited(_tryBiometricUnlock());
+    });
+  }
+
+  Future<void> _tryBiometricUnlock() async {
+    if (_submitting) return;
+    final biometric = await ref.read(biometricUnlockProvider.future);
+    if (!mounted || !biometric.usable) return;
+
+    final wasEnabled = biometric.enabled;
+    final passcode = await ref
+        .read(biometricUnlockProvider.notifier)
+        .readPasscode(reason: 'Unlock your wallet');
+    if (!mounted) return;
+    if (passcode == null) {
+      final now = ref.read(biometricUnlockProvider).value;
+      if (wasEnabled && now != null && !now.enabled) {
+        // The escrow was invalidated (biometrics re-enrolled) — explain
+        // why the prompt stopped appearing.
+        setState(() {
+          _error = 'Biometrics changed. Enter your passcode.';
+        });
+      }
+      return;
+    }
+    setState(() {
+      _entry = passcode;
+      _error = null;
+    });
+    await _submit();
+  }
 
   void _onDigit(int digit) {
     if (_submitting || _entry.length >= kMobilePasscodeLength) return;
@@ -169,12 +214,26 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
               ),
             ),
             const Spacer(),
-            PasscodeNumpad(
-              onDigit: _onDigit,
-              onBackspace: _onBackspace,
-              canDelete: _entry.isNotEmpty,
-              onHelp: _submitting ? null : _showForgotPasscodeSheet,
-              enabled: !_submitting,
+            Builder(
+              builder: (context) {
+                final biometric =
+                    ref.watch(biometricUnlockProvider).value ??
+                    BiometricUnlockState.initial;
+                return PasscodeNumpad(
+                  onDigit: _onDigit,
+                  onBackspace: _onBackspace,
+                  canDelete: _entry.isNotEmpty,
+                  onHelp: _submitting ? null : _showForgotPasscodeSheet,
+                  onBiometric: biometric.usable && !_submitting
+                      ? () => unawaited(_tryBiometricUnlock())
+                      : null,
+                  biometricIcon:
+                      biometric.availability.kind == BiometricKind.face
+                      ? Icons.face
+                      : Icons.fingerprint,
+                  enabled: !_submitting,
+                );
+              },
             ),
             const SizedBox(height: AppSpacing.md),
           ],

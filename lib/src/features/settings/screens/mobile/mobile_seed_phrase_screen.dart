@@ -18,6 +18,7 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/app_security_provider.dart';
+import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
@@ -66,6 +67,11 @@ class _MobileSeedPhraseScreenState
     _screenshotSub = (widget.screenshotStream ?? screenshotEvents()).listen(
       (_) => _onScreenshot(),
     );
+    // Figma `FaceID Overlay`: with biometric unlock on, the gate offers
+    // the prompt first; cancel falls back to the passcode numpad.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_tryBiometricGate());
+    });
   }
 
   @override
@@ -76,6 +82,21 @@ class _MobileSeedPhraseScreenState
   }
 
   // ── Confirm access gate ────────────────────────────────────────────
+
+  Future<void> _tryBiometricGate() async {
+    if (_checking || _stage != _SeedStage.confirmAccess) return;
+    final biometric = await ref.read(biometricUnlockProvider.future);
+    if (!mounted || !biometric.usable) return;
+    final passcode = await ref
+        .read(biometricUnlockProvider.notifier)
+        .readPasscode(reason: 'Confirm access to your secret passphrase');
+    if (!mounted || passcode == null) return;
+    setState(() {
+      _entry = passcode;
+      _gateError = null;
+    });
+    await _confirmPasscode();
+  }
 
   void _onDigit(int digit) {
     if (_checking || _entry.length >= kMobilePasscodeLength) return;

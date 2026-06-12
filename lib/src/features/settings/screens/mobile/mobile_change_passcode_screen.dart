@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +11,7 @@ import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/storage/app_secure_store.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/app_security_provider.dart';
+import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/router_refresh_provider.dart';
 import '../../../onboarding/mobile/forgot_passcode_sheet.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
@@ -119,6 +122,30 @@ class _MobileChangePasscodeScreenState
     }
   }
 
+  /// Best effort only — a failed escrow refresh must never block the
+  /// passcode change itself (worst case the escrow is dropped and the
+  /// user re-enables biometrics in settings).
+  Future<void> _refreshBiometricEscrow(String newPasscode) async {
+    final notifier = ref.read(biometricUnlockProvider.notifier);
+    final BiometricUnlockState biometric;
+    try {
+      biometric = await ref.read(biometricUnlockProvider.future);
+    } catch (_) {
+      return;
+    }
+    if (!biometric.enabled) return;
+    try {
+      await notifier.enable(newPasscode);
+    } catch (_) {
+      try {
+        await notifier.disable();
+      } catch (_) {
+        // The stale escrow cannot decrypt anything on its own; leaving
+        // it behind is safe even when cleanup fails.
+      }
+    }
+  }
+
   Future<void> _submit() async {
     setState(() => _submitting = true);
     try {
@@ -142,6 +169,13 @@ class _MobileChangePasscodeScreenState
           });
           return;
         }
+        // The biometric escrow holds the old passcode now — rewrite it
+        // in the background (an unlock racing the rewrite just fails
+        // verification and falls back to the numpad). Blocking the pop
+        // on a platform channel would also hang widget tests, where
+        // unmocked channels never respond.
+        unawaited(_refreshBiometricEscrow(_newPasscode!));
+        if (!mounted) return;
         // context.pop (not Navigator.pop) so go_router's configuration
         // updates synchronously — a deferred router refresh landing in
         // the gap restores the stale config and resurrects this page.

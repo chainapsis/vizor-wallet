@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,8 +17,11 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_list_row.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/app_security_provider.dart';
+import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/theme_mode_provider.dart';
+import '../../../../services/biometric_unlock.dart';
 import '../../../accounts/widgets/mobile/account_edit_sheets.dart';
 
 /// Mobile settings tab — Figma `SETTINGS` root frame (4494:65997).
@@ -33,6 +38,8 @@ class MobileSettingsScreen extends ConsumerWidget {
     final account = ref.watch(accountProvider).value?.activeAccount;
     final endpoint = ref.watch(rpcEndpointProvider).hostPort;
     final themeMode = ref.watch(themeModeProvider);
+    final biometric =
+        ref.watch(biometricUnlockProvider).value ?? BiometricUnlockState.initial;
 
     final profileLabel = resolveProfilePictureOption(
       account?.profilePictureId ?? kDefaultProfilePictureId,
@@ -142,6 +149,22 @@ class MobileSettingsScreen extends ConsumerWidget {
                       showChevron: true,
                       onTap: () => _showThemeSheet(context, ref, themeMode),
                     ),
+                    // No Figma frame for this row yet — listed in
+                    // design_suggestion. Hidden on devices without
+                    // biometric hardware.
+                    if (biometric.availability.supported)
+                      MobileListRow(
+                        key: const ValueKey('mobile_settings_biometric_row'),
+                        leading: _RowIcon(AppIcons.lock),
+                        label: biometric.availability.kind ==
+                                BiometricKind.face
+                            ? 'Face ID'
+                            : 'Fingerprint',
+                        value: biometric.enabled ? 'On' : 'Off',
+                        showChevron: true,
+                        onTap: () =>
+                            unawaited(_toggleBiometric(context, ref)),
+                      ),
                   ],
                 ),
                 // The About row stays hidden until the legal documents
@@ -212,6 +235,34 @@ class MobileSettingsScreen extends ConsumerWidget {
     ThemeMode.light => 'Light',
     ThemeMode.dark => 'Dark',
   };
+
+  Future<void> _toggleBiometric(BuildContext context, WidgetRef ref) async {
+    final notifier = ref.read(biometricUnlockProvider.notifier);
+    final state = await ref.read(biometricUnlockProvider.future);
+    if (!context.mounted) return;
+    try {
+      if (state.enabled) {
+        await notifier.disable();
+        if (context.mounted) showAppToast(context, 'Biometric unlock off');
+        return;
+      }
+      if (!state.availability.usable) {
+        showAppToast(
+          context,
+          'Set up biometrics in your device settings first.',
+        );
+        return;
+      }
+      final passcode = ref
+          .read(appSecurityProvider.notifier)
+          .requireSessionPasswordForNativeSecretUse();
+      await notifier.enable(passcode);
+      if (context.mounted) showAppToast(context, 'Biometric unlock on');
+    } catch (e) {
+      if (!context.mounted) return;
+      showAppToast(context, "Couldn't update biometric unlock.");
+    }
+  }
 
   Future<void> _showThemeSheet(
     BuildContext context,

@@ -89,6 +89,14 @@ import UIKit
       }
     }
 
+    let biometricUnlockChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/biometric_unlock",
+      binaryMessenger: messenger
+    )
+    biometricUnlockChannel.setMethodCallHandler { (call, result) in
+      BiometricUnlockHandler.shared.handle(call, result: result)
+    }
+
     let cameraPermissionChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/camera_permission",
       binaryMessenger: messenger

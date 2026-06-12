@@ -17,6 +17,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Vizor uses the camera to scan Keystone QR codes.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Vizor uses Face ID to unlock your wallet with your passcode.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

@@ -54,6 +54,8 @@ class PasscodeNumpad extends StatelessWidget {
     required this.onBackspace,
     this.canDelete = false,
     this.onHelp,
+    this.onBiometric,
+    this.biometricIcon,
     this.enabled = true,
     super.key,
   });
@@ -66,6 +68,13 @@ class PasscodeNumpad extends StatelessWidget {
 
   /// Shows the (?) action bottom-left when provided (sign-in screens).
   final VoidCallback? onHelp;
+
+  /// Manual biometric retry in the bottom-right slot while it is not
+  /// occupied by the delete key (i.e. before any digit is typed).
+  final VoidCallback? onBiometric;
+
+  /// Glyph for [onBiometric] (Face ID vs fingerprint).
+  final IconData? biometricIcon;
 
   final bool enabled;
 
@@ -135,6 +144,18 @@ class PasscodeNumpad extends StatelessWidget {
             ),
             onTap: onBackspace,
             label: 'Delete digit',
+          )
+        : onBiometric != null
+        ? key(
+            // TODO(mobile-passcode): swap for the design-system Face ID
+            // glyph once it is exported to assets/icons.
+            Icon(
+              biometricIcon ?? Icons.fingerprint,
+              size: 28,
+              color: enabled ? colors.icon.accent : colors.icon.disabled,
+            ),
+            onTap: onBiometric,
+            label: 'Biometric unlock',
           )
         : key(const SizedBox.shrink());
 
