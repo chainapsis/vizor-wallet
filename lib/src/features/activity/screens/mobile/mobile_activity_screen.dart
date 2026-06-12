@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/storage/wallet_paths.dart';
@@ -16,6 +17,7 @@ import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../activity_feed_sections.dart';
 import '../../activity_row_mapper.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
+import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../swap_activity_row_items_provider.dart';
 import '../../swap_activity_row_mapper.dart';
 import '../../widgets/activity_feed.dart';
@@ -100,7 +102,8 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         _isLoading = false;
         _error = null;
       });
-    } catch (e) {
+    } catch (e, st) {
+      log('MobileActivity: transaction load failed: $e\n$st');
       if (!mounted) return;
       setState(() {
         _isLoading = false;
@@ -177,37 +180,39 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
     ];
     final sections = buildActivityFeedSections(entries);
 
-    return SafeArea(
-      bottom: false,
-      child: Column(
-        children: [
-          const MobileTopNav.back(title: 'Activity'),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xxs,
-                0,
-                AppSpacing.xxs,
-                kMobileTabBarHeight + AppSpacing.lg,
-              ),
-              children: [
-                ActivityFeed(
-                  sections: sections,
-                  showHeader: false,
-                  cardWidth: null,
-                  rowKeyPrefix: 'mobile_activity',
-                  isLoading:
-                      _isLoading &&
-                      loadedTransactions == null &&
-                      sections.isEmpty,
-                  errorText: sections.isEmpty && loadedTransactions == null
-                      ? _error
-                      : null,
+    return SwapActivityStatusAutoRefresh(
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            const MobileTopNav.back(title: 'Activity'),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.xxs,
+                  0,
+                  AppSpacing.xxs,
+                  kMobileTabBarHeight + AppSpacing.lg,
                 ),
-              ],
+                children: [
+                  ActivityFeed(
+                    sections: sections,
+                    showHeader: false,
+                    cardWidth: null,
+                    rowKeyPrefix: 'mobile_activity',
+                    isLoading:
+                        _isLoading &&
+                        loadedTransactions == null &&
+                        sections.isEmpty,
+                    errorText: sections.isEmpty && loadedTransactions == null
+                        ? _error
+                        : null,
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

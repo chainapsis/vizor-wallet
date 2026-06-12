@@ -20,6 +20,7 @@ import '../../../activity/activity_row_mapper.dart';
 import '../../../activity/swap_activity_row_items_provider.dart';
 import '../../../activity/swap_activity_row_mapper.dart';
 import '../../../activity/widgets/activity_feed.dart';
+import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 
 /// Mobile home tab: shielded balance card, send/receive actions, and
 /// the five most recent activity rows — Figma `HOME` section frames
@@ -44,27 +45,29 @@ class MobileHomeScreen extends ConsumerWidget {
         !sync.hasAccountScopedData &&
         sync.failure == null;
 
-    return SafeArea(
-      bottom: false,
-      child: Column(
-        children: [
-          Builder(
-            builder: (context) => MobileTopNavAccount(
-              onAccountTap: () => showMobileAccountsSheet(context),
+    return SwapActivityStatusAutoRefresh(
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            Builder(
+              builder: (context) => MobileTopNavAccount(
+                onAccountTap: () => showMobileAccountsSheet(context),
+              ),
             ),
-          ),
-          Expanded(
-            child: isImporting
-                ? _ImportingView(progress: sync.displayPercentage)
-                : _HomeContent(
-                    sync: sync,
-                    activeAccountUuid: activeAccountUuid,
-                    privacyModeEnabled: privacyModeEnabled,
-                    onTogglePrivacyMode: () =>
-                        ref.read(privacyModeProvider.notifier).toggle(),
-                  ),
-          ),
-        ],
+            Expanded(
+              child: isImporting
+                  ? _ImportingView(progress: sync.displayPercentage)
+                  : _HomeContent(
+                      sync: sync,
+                      activeAccountUuid: activeAccountUuid,
+                      privacyModeEnabled: privacyModeEnabled,
+                      onTogglePrivacyMode: () =>
+                          ref.read(privacyModeProvider.notifier).toggle(),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
