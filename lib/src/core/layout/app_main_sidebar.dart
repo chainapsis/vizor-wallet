@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart' show Colors;
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -208,9 +207,8 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         return;
       }
 
-      await Clipboard.setData(ClipboardData(text: address));
       if (!mounted) return;
-      showAppToast(context, 'Address copied');
+      copyTextWithToast(context, text: address, toastMessage: 'Address copied');
     } catch (e) {
       log('AppMainSidebar: ERROR copying shielded address: $e');
       if (!mounted) return;
@@ -246,9 +244,12 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         return;
       }
 
-      await Clipboard.setData(ClipboardData(text: address));
       if (!mounted) return;
-      showAppToast(context, 'Shielded address copied');
+      copyTextWithToast(
+        context,
+        text: address,
+        toastMessage: 'Shielded address copied',
+      );
     } catch (e) {
       log('AppMainSidebar: ERROR copying account shielded address: $e');
       if (!mounted) return;

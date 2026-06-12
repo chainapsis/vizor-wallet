@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +10,7 @@ import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
@@ -46,11 +46,13 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
   void _copyAddress(String value) {
     final address = value.trim();
     if (address.isEmpty) return;
-    unawaited(Clipboard.setData(ClipboardData(text: address)));
     final toastContext = _toastOverlayContextKey.currentContext;
-    if (toastContext != null && toastContext.mounted) {
-      showAppToast(toastContext, 'Address copied');
-    }
+    if (toastContext == null || !toastContext.mounted) return;
+    copyTextWithToast(
+      toastContext,
+      text: address,
+      toastMessage: 'Address copied',
+    );
   }
 
   void _returnToSwap() {

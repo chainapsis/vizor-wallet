@@ -14,6 +14,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_context_menu.dart';
+import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
@@ -381,9 +382,8 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         return;
       }
 
-      await Clipboard.setData(ClipboardData(text: address));
       if (!mounted) return;
-      showAppToast(context, 'Address copied');
+      copyTextWithToast(context, text: address, toastMessage: 'Address copied');
     } catch (e) {
       log('AccountsScreen: ERROR copying shielded address: $e');
       if (!mounted) return;
@@ -813,7 +813,7 @@ class _AccountsSurface extends StatelessWidget {
       decoration: BoxDecoration(
         color: _accountsSurfaceColor(context),
         borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: _accountsSurfaceShadow(context),
+        boxShadow: appSurfaceShadow(context.colors),
       ),
       child: child,
     );
@@ -1322,18 +1322,6 @@ class _AccountContextMenu extends StatelessWidget {
       ],
     );
   }
-}
-
-List<BoxShadow> _accountsSurfaceShadow(BuildContext context) {
-  final color = AppTheme.of(context) == AppThemeData.light
-      ? const Color(0x0D141818)
-      : const Color(0x00141818);
-  return [
-    BoxShadow(color: color, blurRadius: 1),
-    BoxShadow(color: color, offset: const Offset(0, 1), blurRadius: 2),
-    BoxShadow(color: color, offset: const Offset(0, 2), blurRadius: 4),
-    BoxShadow(color: color, blurRadius: 1),
-  ];
 }
 
 Color _accountsSurfaceColor(BuildContext context) {

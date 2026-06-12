@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart'
     show CircularProgressIndicator, Colors, ScaffoldMessenger, SnackBar;
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
@@ -15,11 +14,11 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
-import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/receive_address_provider.dart';
 import '../../../providers/wallet_provider.dart';
@@ -228,8 +227,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   void _copySelectedAddress() {
     final address = _selectedAddress;
     if (address.isEmpty) return;
-    Clipboard.setData(ClipboardData(text: address));
-    showAppToast(context, 'Address copied');
+    copyTextWithToast(context, text: address, toastMessage: 'Address copied');
   }
 
   void _selectAddressType(_ReceiveAddressType type) {
