@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,7 +10,6 @@ import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/mobile/app_numeric_keypad.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -24,9 +24,11 @@ import 'mobile_onboarding_scaffold.dart';
 enum _BirthdayEntryMode { date, blockHeight }
 
 /// Mobile wallet-birthday step — Figma `Import — Calendar`
-/// (4575:112136): a date / block-height entry toggle, one inline field
-/// driven by the shared numeric keypad, the calendar sheet behind the
-/// in-field calendar icon, and a circular chevron continue button.
+/// (4575:112136): a date / block-height entry toggle and a circular
+/// chevron continue button. The date "field" is not typeable — tapping
+/// it opens the calendar sheet, which is the only way to pick a date.
+/// The block height is a real text field on the system numeric
+/// keyboard.
 class MobileImportBirthdayScreen extends ConsumerStatefulWidget {
   const MobileImportBirthdayScreen({
     required this.args,
@@ -56,10 +58,9 @@ class _MobileImportBirthdayScreenState
     extends ConsumerState<MobileImportBirthdayScreen> {
   var _mode = _BirthdayEntryMode.date;
 
-  /// Raw digit strings per mode — the date keeps `mmddyyyy` digits so
-  /// keypad input and the calendar sheet share one representation.
-  var _dateDigits = '';
-  var _heightDigits = '';
+  DateTime? _selectedDate;
+  final _heightController = TextEditingController();
+  final _heightFocus = FocusNode();
 
   ImportBirthdayMetadata? _metadata;
   bool _estimating = false;
@@ -72,6 +73,13 @@ class _MobileImportBirthdayScreenState
     if (widget.loadChainMetadata) {
       unawaited(_loadMetadata());
     }
+  }
+
+  @override
+  void dispose() {
+    _heightController.dispose();
+    _heightFocus.dispose();
+    super.dispose();
   }
 
   Future<void> _loadMetadata() async {
@@ -97,22 +105,10 @@ class _MobileImportBirthdayScreenState
 
   DateTime get _lastDate => _metadata?.tipDate ?? DateTime.now();
 
-  DateTime? _typedDate() {
-    if (_dateDigits.length != 8) return null;
-    final month = int.parse(_dateDigits.substring(0, 2));
-    final day = int.parse(_dateDigits.substring(2, 4));
-    final year = int.parse(_dateDigits.substring(4));
-    final date = DateTime(year, month, day);
-    // DateTime normalizes overflow (e.g. 02/31 → March 3) — reject it.
-    if (date.month != month || date.day != day || date.year != year) {
-      return null;
-    }
-    if (date.isBefore(_firstDate) || date.isAfter(_lastDate)) return null;
-    return date;
+  int? _typedHeight() {
+    final text = _heightController.text.trim();
+    return text.isEmpty ? null : int.tryParse(text);
   }
-
-  int? _typedHeight() =>
-      _heightDigits.isEmpty ? null : int.tryParse(_heightDigits);
 
   bool get _heightPlausible {
     final height = _typedHeight();
@@ -124,7 +120,7 @@ class _MobileImportBirthdayScreenState
   }
 
   bool get _canContinue => switch (_mode) {
-    _BirthdayEntryMode.date => _typedDate() != null,
+    _BirthdayEntryMode.date => _selectedDate != null,
     _BirthdayEntryMode.blockHeight => _heightPlausible,
   };
 
@@ -136,56 +132,19 @@ class _MobileImportBirthdayScreenState
       _mode = mode;
       _error = null;
     });
-  }
-
-  void _onDigit(int digit) {
-    if (_busy) return;
-    setState(() {
-      _error = null;
-      switch (_mode) {
-        case _BirthdayEntryMode.date:
-          if (_dateDigits.length < 8) _dateDigits += '$digit';
-        case _BirthdayEntryMode.blockHeight:
-          if (_heightDigits.length < 10) _heightDigits += '$digit';
-      }
-    });
-  }
-
-  void _onBackspace() {
-    if (_busy) return;
-    setState(() {
-      switch (_mode) {
-        case _BirthdayEntryMode.date:
-          if (_dateDigits.isNotEmpty) {
-            _dateDigits = _dateDigits.substring(0, _dateDigits.length - 1);
-          }
-        case _BirthdayEntryMode.blockHeight:
-          if (_heightDigits.isNotEmpty) {
-            _heightDigits = _heightDigits.substring(
-              0,
-              _heightDigits.length - 1,
-            );
-          }
-      }
-    });
-  }
-
-  void _clearField() {
-    if (_busy) return;
-    setState(() {
-      switch (_mode) {
-        case _BirthdayEntryMode.date:
-          _dateDigits = '';
-        case _BirthdayEntryMode.blockHeight:
-          _heightDigits = '';
-      }
-      _error = null;
-    });
+    // The height field owns the system keyboard; the date "field" only
+    // opens the calendar sheet.
+    if (mode == _BirthdayEntryMode.blockHeight) {
+      _heightFocus.requestFocus();
+    } else {
+      _heightFocus.unfocus();
+    }
   }
 
   Future<void> _pickDate() async {
     if (_busy) return;
-    final initial = _typedDate() ?? _lastDate;
+    _heightFocus.unfocus();
+    final initial = _selectedDate ?? _lastDate;
     final candidate = await showAppMobileSheet<DateTime>(
       context: context,
       builder: (sheetContext) => SafeArea(
@@ -195,7 +154,7 @@ class _MobileImportBirthdayScreenState
           child: Center(
             child: ImportBirthdayCalendarPanel(
               initialMonth: initial,
-              selectedDate: _typedDate(),
+              selectedDate: _selectedDate,
               firstDate: _firstDate,
               lastDate: _lastDate,
               onDateSelected: (date) => Navigator.of(sheetContext).pop(date),
@@ -206,16 +165,14 @@ class _MobileImportBirthdayScreenState
     );
     if (candidate == null || !mounted) return;
     setState(() {
-      _dateDigits =
-          candidate.month.toString().padLeft(2, '0') +
-          candidate.day.toString().padLeft(2, '0') +
-          candidate.year.toString();
+      _selectedDate = candidate;
       _error = null;
     });
   }
 
   Future<void> _continue() async {
     if (!_canContinue || _busy) return;
+    _heightFocus.unfocus();
     switch (_mode) {
       case _BirthdayEntryMode.blockHeight:
         await _submit(_typedHeight()!);
@@ -228,7 +185,7 @@ class _MobileImportBirthdayScreenState
           final endpoint = ref.read(rpcEndpointProvider);
           final height = await ImportBirthdayEstimator.estimateBirthdayHeight(
             endpoint: endpoint,
-            selectedDate: _typedDate()!,
+            selectedDate: _selectedDate!,
           );
           if (!mounted) return;
           setState(() => _estimating = false);
@@ -304,11 +261,15 @@ class _MobileImportBirthdayScreenState
     router.go('/home');
   }
 
+  String _formattedDate(DateTime date) =>
+      '${date.month.toString().padLeft(2, '0')}/'
+      '${date.day.toString().padLeft(2, '0')}/'
+      '${date.year}';
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isDateMode = _mode == _BirthdayEntryMode.date;
-    final fieldDigits = isDateMode ? _dateDigits : _heightDigits;
 
     return MobileOnboardingStepScaffold(
       progress: 0.8,
@@ -316,13 +277,6 @@ class _MobileImportBirthdayScreenState
       title: 'Around when did you create your wallet?',
       // Two 25 px lines like the Figma subtitle block.
       subtitle: 'An estimate is enough — sync starts\nfrom there.',
-      bottomAreaPadding: EdgeInsets.zero,
-      bottomArea: AppNumericKeypad(
-        onDigit: _onDigit,
-        onBackspace: _onBackspace,
-        enabled: !_busy,
-        keyPrefix: 'mobile_import_birthday_key',
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -355,59 +309,59 @@ class _MobileImportBirthdayScreenState
             children: [
               Expanded(
                 // 61-high 2 px-bordered field per the Figma entry row.
-                child: Container(
-                  height: 61,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.s,
-                  ),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: colors.border.strong,
-                      width: 2,
-                    ),
-                    borderRadius: BorderRadius.circular(AppRadii.medium),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: isDateMode
-                            ? _DateMaskText(digits: _dateDigits)
-                            : Text(
-                                _heightDigits.isEmpty
-                                    ? 'Block height'
-                                    : _heightDigits,
-                                key: const ValueKey(
-                                  'mobile_import_birthday_height',
-                                ),
-                                maxLines: 1,
-                                style: AppTypography.headlineSmall.copyWith(
-                                  color: _heightDigits.isEmpty
-                                      ? colors.text.muted
-                                      : colors.text.accent,
-                                ),
+                child: isDateMode
+                    ? _DateFieldButton(
+                        date: _selectedDate,
+                        formatted: _selectedDate == null
+                            ? null
+                            : _formattedDate(_selectedDate!),
+                        enabled: !_busy,
+                        onTap: () => unawaited(_pickDate()),
+                      )
+                    : _FieldShell(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Stack(
+                                alignment: Alignment.centerLeft,
+                                children: [
+                                  if (_heightController.text.isEmpty)
+                                    IgnorePointer(
+                                      child: Text(
+                                        'Block height',
+                                        maxLines: 1,
+                                        style: AppTypography.headlineSmall
+                                            .copyWith(color: colors.text.muted),
+                                      ),
+                                    ),
+                                  EditableText(
+                                    key: const ValueKey(
+                                      'mobile_import_birthday_height',
+                                    ),
+                                    controller: _heightController,
+                                    focusNode: _heightFocus,
+                                    autofocus: true,
+                                    readOnly: _busy,
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                      LengthLimitingTextInputFormatter(10),
+                                    ],
+                                    onChanged: (_) =>
+                                        setState(() => _error = null),
+                                    maxLines: 1,
+                                    style: AppTypography.headlineSmall
+                                        .copyWith(color: colors.text.accent),
+                                    cursorColor: colors.text.accent,
+                                    backgroundCursorColor:
+                                        colors.background.overlay,
+                                  ),
+                                ],
                               ),
+                            ),
+                          ],
+                        ),
                       ),
-                      if (fieldDigits.isNotEmpty) ...[
-                        const SizedBox(width: AppSpacing.xs),
-                        _FieldIconButton(
-                          key: const ValueKey('mobile_import_birthday_clear'),
-                          iconName: AppIcons.cross,
-                          semanticLabel: 'Clear input',
-                          onTap: _clearField,
-                        ),
-                      ],
-                      if (isDateMode) ...[
-                        const SizedBox(width: AppSpacing.xs),
-                        _FieldIconButton(
-                          key: const ValueKey('mobile_import_birthday_date'),
-                          iconName: AppIcons.calendar,
-                          semanticLabel: 'Pick a date',
-                          onTap: _pickDate,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
               ),
               const SizedBox(width: AppSpacing.s),
               AppButton(
@@ -502,99 +456,74 @@ class _ModeTab extends StatelessWidget {
   }
 }
 
-class _FieldIconButton extends StatelessWidget {
-  const _FieldIconButton({
-    required this.iconName,
-    required this.semanticLabel,
-    required this.onTap,
-    super.key,
-  });
+/// The Figma entry-row field chrome shared by both modes.
+class _FieldShell extends StatelessWidget {
+  const _FieldShell({required this.child});
 
-  final String iconName;
-  final String semanticLabel;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: semanticLabel,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          width: 32,
-          height: 44,
-          child: Center(
-            child: AppIcon(
-              iconName,
-              size: 18,
-              color: context.colors.icon.accent,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// `mm/dd/yyyy` mask — typed digits render dark, the rest of the mask
-/// stays as a muted placeholder, slashes appear as sections fill.
-class _DateMaskText extends StatelessWidget {
-  const _DateMaskText({required this.digits});
-
-  final String digits;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    const mask = ['mm', 'dd', 'yyyy'];
-    final parts = [
-      digits.length >= 2 ? digits.substring(0, 2) : digits,
-      digits.length >= 4
-          ? digits.substring(2, 4)
-          : digits.length > 2
-          ? digits.substring(2)
-          : '',
-      digits.length > 4 ? digits.substring(4) : '',
-    ];
+    return Container(
+      height: 61,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+      decoration: BoxDecoration(
+        border: Border.all(color: colors.border.strong, width: 2),
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+      ),
+      child: child,
+    );
+  }
+}
 
-    final spans = <TextSpan>[];
-    for (var i = 0; i < 3; i++) {
-      if (i > 0) {
-        spans.add(
-          TextSpan(
-            text: '/',
-            style: TextStyle(
-              color: parts[i - 1].length == mask[i - 1].length
-                  ? colors.text.accent
-                  : colors.text.muted,
-            ),
-          ),
-        );
-      }
-      if (parts[i].isNotEmpty) {
-        spans.add(
-          TextSpan(
-            text: parts[i],
-            style: TextStyle(color: colors.text.accent),
-          ),
-        );
-      }
-      if (parts[i].length < mask[i].length) {
-        spans.add(
-          TextSpan(
-            text: mask[i].substring(parts[i].length),
-            style: TextStyle(color: colors.text.muted),
-          ),
-        );
-      }
-    }
+/// The date "field" — looks like the entry field but is not typeable;
+/// the calendar sheet is the only input. Tapping anywhere on it opens
+/// the sheet.
+class _DateFieldButton extends StatelessWidget {
+  const _DateFieldButton({
+    required this.date,
+    required this.formatted,
+    required this.enabled,
+    required this.onTap,
+  });
 
-    return Text.rich(
-      TextSpan(style: AppTypography.headlineSmall, children: spans),
-      key: const ValueKey('mobile_import_birthday_date_text'),
-      maxLines: 1,
+  final DateTime? date;
+  final String? formatted;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: true,
+      label: 'Pick a date',
+      child: GestureDetector(
+        key: const ValueKey('mobile_import_birthday_date'),
+        behavior: HitTestBehavior.opaque,
+        onTap: enabled ? onTap : null,
+        child: _FieldShell(
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  formatted ?? 'mm/dd/yyyy',
+                  key: const ValueKey('mobile_import_birthday_date_text'),
+                  maxLines: 1,
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: formatted == null
+                        ? colors.text.muted
+                        : colors.text.accent,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              AppIcon(AppIcons.calendar, size: 18, color: colors.icon.accent),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

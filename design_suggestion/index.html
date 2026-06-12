@@ -94,6 +94,7 @@
     <li><a href="#keystone-badge">Keystone 계정 배지의 적용 표면 확장</a></li>
     <li><a href="#send-validating">송금 금액 검증 대기 상태</a></li>
     <li><a href="#biometric">생체인증(Face ID) 설정 행 · 넘패드 글리프</a></li>
+    <li><a href="#birthday-input">Birthday 입력 방식 정정 (커스텀 키패드 → 캘린더 다이얼로그 / 시스템 키보드)</a></li>
   </ol>
 </nav>
 
@@ -266,6 +267,25 @@
       <li>디자인 시스템용 Face ID·지문 글리프 (넘패드 슬롯 + 설정 행 아이콘 공용)</li>
       <li>생체 재등록으로 에스크로가 무효화됐을 때의 안내 문구/표현 ("Biometrics changed.
       Enter your passcode." 임시 적용 중)</li>
+    </ul></dd>
+  </dl>
+</section>
+
+<section class="item" id="birthday-input">
+  <h2>8. Birthday 입력 방식 정정</h2>
+  <div class="badges"><span class="badge">동작 정정</span><span class="badge gray">피그마: 커스텀 키패드로 그려짐 (정정 필요)</span></div>
+  <dl>
+    <dt>무엇이 바뀌었나</dt>
+    <dd>피그마 <code>Import — Calendar</code> 계열 프레임은 화면 하단에 커스텀 숫자 키패드를
+    그려 두었지만, 이는 잘못된 접근으로 확인되어 구현을 다음과 같이 정정했습니다:
+    <b>날짜 선택</b>은 필드처럼 보이는 컴포넌트를 탭하면 곧바로 캘린더 다이얼로그가 열리고
+    직접 타이핑은 불가능합니다(캘린더가 유일한 입력 경로). <b>블록 높이</b>는 시스템 숫자
+    키보드를 쓰는 일반 텍스트 필드입니다. 커스텀 키패드는 이 화면에서 제거됐습니다.</dd>
+    <dt>디자이너에게 요청</dt>
+    <dd><ul class="req">
+      <li>프레임의 커스텀 키패드를 제거하고 두 모드의 정정된 동작(탭→캘린더 / 시스템 키보드)을
+      반영한 업데이트</li>
+      <li>날짜 선택 후 필드의 표시 형식(현재 MM/DD/YYYY) 확정</li>
     </ul></dd>
   </dl>
 </section>

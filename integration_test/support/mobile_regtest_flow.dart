@@ -308,18 +308,16 @@ Future<void> importWalletViaPaste(
   // Paste fills the slots in place; confirm moves to the review screen.
   await tapAppButton(tester, const ValueKey('mobile_import_confirm'));
   await tapAppButton(tester, const ValueKey('mobile_import_review_continue'));
-  // Birthday entry is keypad-driven: switch to block-height mode and
-  // type the digits on the in-app numeric keypad.
+  // Block height is a real text field on the system keyboard.
   await tapWidget(
     tester,
     const ValueKey('mobile_import_birthday_mode_height'),
   );
-  for (final digit in '$birthdayHeight'.split('')) {
-    await tapWidget(
-      tester,
-      ValueKey('mobile_import_birthday_key_$digit'),
-    );
-  }
+  await tester.enterText(
+    find.byKey(const ValueKey('mobile_import_birthday_height')),
+    '$birthdayHeight',
+  );
+  await tester.pump();
   await tapAppButton(
     tester,
     const ValueKey('mobile_import_birthday_continue'),

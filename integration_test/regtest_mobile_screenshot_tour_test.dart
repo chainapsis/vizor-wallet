@@ -105,14 +105,32 @@ void main() {
         description: 'import birthday',
       );
       await shot('04_import_birthday');
+      // The date "field" opens the calendar sheet on tap.
+      await tapWidget(tester, const ValueKey('mobile_import_birthday_date'));
+      await pumpUntil(
+        tester,
+        () => tester.any(find.text('Sun')),
+        description: 'birthday calendar sheet',
+      );
+      await shot('04c_import_birthday_calendar');
+      // Pop the sheet directly — the regtest chain is created per run,
+      // so the selectable date range is too narrow to tap a fixed day.
+      tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+      await settle(tester, const Duration(milliseconds: 600));
+      await pumpUntil(
+        tester,
+        () => !tester.any(find.text('Sun')),
+        description: 'calendar sheet dismissed',
+      );
       await tapWidget(
         tester,
         const ValueKey('mobile_import_birthday_mode_height'),
       );
-      await tapWidget(
-        tester,
-        const ValueKey('mobile_import_birthday_key_1'),
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_import_birthday_height')),
+        '1',
       );
+      await settle(tester, const Duration(milliseconds: 400));
       await shot('04b_import_birthday_height');
       await tapAppButton(
         tester,

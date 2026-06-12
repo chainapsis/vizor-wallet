@@ -40,13 +40,6 @@ Widget _app() {
   );
 }
 
-Future<void> _tapKey(WidgetTester tester, String name) async {
-  await tester.tap(
-    find.byKey(ValueKey('mobile_import_birthday_key_$name')),
-  );
-  await tester.pump();
-}
-
 void main() {
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -72,25 +65,47 @@ void main() {
     );
     await tester.pump();
 
+    final heightField = find.byKey(
+      const ValueKey('mobile_import_birthday_height'),
+    );
+
     // Below the Sapling activation floor → still disabled.
-    await _tapKey(tester, '1');
+    await tester.enterText(heightField, '1');
+    await tester.pump();
     expect(continueButton().onPressed, isNull);
 
     // A plausible mainnet height enables the action.
-    for (final digit in '2500000'.split('')) {
-      await _tapKey(tester, digit);
-    }
+    await tester.enterText(heightField, '2500000');
     await tester.pump();
     expect(continueButton().onPressed, isNotNull);
 
-    // Backspacing it away disables again.
-    for (var i = 0; i < 8; i++) {
-      await _tapKey(tester, 'backspace');
-    }
+    // Clearing it disables again.
+    await tester.enterText(heightField, '');
+    await tester.pump();
     expect(continueButton().onPressed, isNull);
   });
 
-  testWidgets('continue stays disabled until a full valid date is typed', (
+  testWidgets('the height field only accepts digits', (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_birthday_mode_height')),
+    );
+    await tester.pump();
+
+    final heightField = find.byKey(
+      const ValueKey('mobile_import_birthday_height'),
+    );
+    await tester.enterText(heightField, '25a.b00');
+    await tester.pump();
+    expect(
+      tester.widget<EditableText>(heightField).controller.text,
+      '2500',
+    );
+  });
+
+  testWidgets('the date field is not typeable and opens the calendar', (
     tester,
   ) async {
     await tester.pumpWidget(_app());
@@ -100,40 +115,24 @@ void main() {
       find.byKey(const ValueKey('mobile_import_birthday_continue')),
     );
 
-    // Date mode is the default; partial input keeps it disabled.
-    for (final digit in '0615'.split('')) {
-      await _tapKey(tester, digit);
-    }
+    // Date mode is the default — no editable text exists in it, and
+    // continue is disabled until the calendar provides a date.
+    expect(find.byType(EditableText), findsNothing);
     expect(continueButton().onPressed, isNull);
+    expect(find.text('mm/dd/yyyy'), findsOneWidget);
 
-    // 06/15/2023 — a valid post-Sapling date.
-    for (final digit in '2023'.split('')) {
-      await _tapKey(tester, digit);
-    }
-    await tester.pump();
-    expect(continueButton().onPressed, isNotNull);
-
-    // An impossible date (13/45/2023) stays disabled.
+    // Tapping anywhere on the field opens the calendar sheet.
     await tester.tap(
-      find.byKey(const ValueKey('mobile_import_birthday_clear')),
+      find.byKey(const ValueKey('mobile_import_birthday_date')),
     );
-    await tester.pump();
-    for (final digit in '13452023'.split('')) {
-      await _tapKey(tester, digit);
-    }
-    await tester.pump();
-    expect(continueButton().onPressed, isNull);
-  });
-
-  testWidgets('calendar icon opens the shared calendar panel in a sheet', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_app());
-    await tester.pump();
-
-    await tester.tap(find.byKey(const ValueKey('mobile_import_birthday_date')));
     await tester.pumpAndSettle();
-
     expect(find.byType(ImportBirthdayCalendarPanel), findsOneWidget);
+
+    // Selecting a (past) day fills the field and enables continue.
+    await tester.tap(find.text('10').first);
+    await tester.pumpAndSettle();
+    expect(find.byType(ImportBirthdayCalendarPanel), findsNothing);
+    expect(continueButton().onPressed, isNotNull);
+    expect(find.text('mm/dd/yyyy'), findsNothing);
   });
 }

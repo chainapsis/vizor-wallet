@@ -57,10 +57,11 @@ void main() {
         tester,
         const ValueKey('mobile_import_birthday_mode_height'),
       );
-      await tapWidget(
-        tester,
-        const ValueKey('mobile_import_birthday_key_1'),
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_import_birthday_height')),
+        '1',
       );
+      await tester.pump();
       logE2e('making primary proxy unavailable before import completes');
       proxy.setDown();
       await tapAppButton(
