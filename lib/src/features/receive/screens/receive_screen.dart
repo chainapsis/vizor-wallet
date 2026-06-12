@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart'
     show CircularProgressIndicator, Colors, ScaffoldMessenger, SnackBar;
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
@@ -15,11 +14,11 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
-import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/receive_address_provider.dart';
 import '../../../providers/wallet_provider.dart';
@@ -228,8 +227,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   void _copySelectedAddress() {
     final address = _selectedAddress;
     if (address.isEmpty) return;
-    Clipboard.setData(ClipboardData(text: address));
-    showAppToast(context, 'Address copied');
+    copyTextWithToast(context, text: address, toastMessage: 'Address copied');
   }
 
   void _selectAddressType(_ReceiveAddressType type) {
@@ -1140,7 +1138,7 @@ class _IconOnlyButton extends StatelessWidget {
   }
 }
 
-class _CopyAddressButton extends StatelessWidget {
+class _CopyAddressButton extends StatefulWidget {
   const _CopyAddressButton({
     required this.label,
     required this.type,
@@ -1155,19 +1153,45 @@ class _CopyAddressButton extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_CopyAddressButton> createState() => _CopyAddressButtonState();
+}
+
+class _CopyAddressButtonState extends State<_CopyAddressButton> {
+  bool _hovered = false;
+
+  void _setHovered(bool value) {
+    if (_hovered == value) return;
+    setState(() => _hovered = value);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final isShielded = type == _ReceiveAddressType.shielded;
+    final label = widget.label;
+    final enabled = widget.enabled;
+    final onTap = widget.onTap;
+    final isShielded = widget.type == _ReceiveAddressType.shielded;
+    final hovered = enabled && _hovered;
     final background = enabled
-        ? (isShielded ? colors.button.primary.bg : colors.button.secondary.bg)
+        ? (isShielded
+              ? (hovered
+                    ? colors.button.primary.bgHover
+                    : colors.button.primary.bg)
+              : (hovered
+                    ? colors.button.secondary.bgHover
+                    : colors.button.secondary.bg))
         : colors.button.disabled.bg;
     final labelColor = enabled
         ? (isShielded
-              ? colors.button.primary.label
+              ? (hovered
+                    ? colors.button.primary.labelHover
+                    : colors.button.primary.label)
               : colors.button.secondary.label)
         : colors.button.disabled.label;
     final borderColor = enabled && isShielded
-        ? colors.button.primary.border
+        ? (hovered
+              ? colors.button.primary.borderHover
+              : colors.button.primary.border)
         : Colors.transparent;
 
     return Semantics(
@@ -1175,6 +1199,8 @@ class _CopyAddressButton extends StatelessWidget {
       enabled: enabled,
       child: MouseRegion(
         cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        onEnter: (_) => _setHovered(true),
+        onExit: (_) => _setHovered(false),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: enabled ? onTap : null,
@@ -1251,7 +1277,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
               iconName: AppIcons.renew,
               height: 63,
               text:
-                  'A new Zcash Shielded address is generated only when you click the Renew button.',
+                  'A new Zcash shielded address is generated only when you click the renew button.',
             ),
             _InfoItemData(
               iconName: AppIcons.wallet,

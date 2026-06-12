@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -16,8 +15,8 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_back_link.dart';
-import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -226,8 +225,12 @@ class _ActivityTransactionStatusScreenState
         (expected == 'received' && actual == 'receiving');
   }
 
-  Future<void> _copyTransactionHash() async {
-    await _copyText(widget.args.txidHex, 'Transaction Hash Copied');
+  void _copyTransactionHash() {
+    copyTextWithToast(
+      context,
+      text: widget.args.txidHex,
+      toastMessage: 'Transaction hash copied',
+    );
   }
 
   Future<void> _openTransactionExplorer() async {
@@ -238,13 +241,11 @@ class _ActivityTransactionStatusScreenState
       txidOrder: ZcashExplorerTxidOrder.protocol,
     );
     if (launched || !mounted) return;
-    await _copyText(widget.args.txidHex, 'Transaction Hash Copied');
-  }
-
-  Future<void> _copyText(String text, String message) async {
-    await Clipboard.setData(ClipboardData(text: text));
-    if (!mounted) return;
-    showAppToast(context, message);
+    copyTextWithToast(
+      context,
+      text: widget.args.txidHex,
+      toastMessage: 'Transaction hash copied',
+    );
   }
 
   void _toggleMessageExpanded() {
@@ -367,7 +368,7 @@ class _ActivityTransactionStatusScreenState
     final txidLines = _splitTxid(widget.args.txidHex);
     return TransactionReceiptBlockData(
       title: 'Transaction Hash',
-      onCopy: () => unawaited(_copyTransactionHash()),
+      onCopy: _copyTransactionHash,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -14,8 +14,7 @@ void main() {
     expect(find.text('Accounts'), findsOneWidget);
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Send ZEC'), findsOneWidget);
-    expect(find.text('Edit name'), findsOneWidget);
-    expect(find.text('Change picture'), findsOneWidget);
+    expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
   });
 
@@ -25,8 +24,7 @@ void main() {
     await _pumpAccountsUseCase(tester, buildAccountsCurrentMenuUseCase);
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Edit name'), findsOneWidget);
-    expect(find.text('Change picture'), findsOneWidget);
+    expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Send ZEC'), findsNothing);
     expect(find.text('Remove account'), findsNothing);

@@ -385,10 +385,18 @@ class _AppTextFieldState extends State<AppTextField> {
       strutStyle: textStrutStyle,
       cursorColor: colors.text.accent,
       selectAllOnFocus: false,
-      decoration: InputDecoration.collapsed(
-        hintText: widget.hintText,
-        hintStyle: resolvedHintStyle,
-      ),
+      // Single-line skips InputDecorator entirely: its internal baseline
+      // placement shifts the editable down by visual density / platform
+      // (4px on macOS), which breaks the Field spec's centered 16px line
+      // box. Without a decorator the editable is exactly the strut line,
+      // so the surrounding Row/Center math is deterministic. The hint is
+      // drawn by the overlay below with the same style and strut.
+      decoration: _multiline
+          ? InputDecoration.collapsed(
+              hintText: widget.hintText,
+              hintStyle: resolvedHintStyle,
+            )
+          : null,
     );
     final fieldInput = _multiline
         ? ScrollConfiguration(
@@ -397,7 +405,32 @@ class _AppTextFieldState extends State<AppTextField> {
             ),
             child: textField,
           )
-        : textField;
+        // MergeSemantics folds the overlay hint's label into the editable's
+        // semantics node, matching what InputDecorator's hint provided
+        // before the single-line path dropped the decorator.
+        : MergeSemantics(
+            child: Stack(
+              children: [
+                if (widget.hintText != null && !_hasText)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(
+                          widget.hintText!,
+                          style: resolvedHintStyle,
+                          strutStyle: textStrutStyle,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  ),
+                textField,
+              ],
+            ),
+          );
 
     final shell = SizedBox(
       height: shellHeight,
@@ -550,7 +583,9 @@ class _AppTextFieldState extends State<AppTextField> {
                                   right:
                                       widget.inputHorizontalPadding ??
                                       AppSpacing.s,
-                                  bottom: widget.inputBottomPadding ?? 6,
+                                  // Centered like the Field component (value/hint at y15 in
+                                  // the 46px shell); override only for tuned layouts.
+                                  bottom: widget.inputBottomPadding ?? 0,
                                 ),
                                 child: fieldInput,
                               ),
@@ -594,12 +629,7 @@ class _AppTextFieldState extends State<AppTextField> {
                                 ),
                               if (widget.leading != null)
                                 const SizedBox(width: AppSpacing.xs),
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.only(bottom: 6),
-                                  child: fieldInput,
-                                ),
-                              ),
+                              Expanded(child: fieldInput),
                               if (clearButton != null) ...[
                                 const SizedBox(width: AppSpacing.xs),
                                 SizedBox(

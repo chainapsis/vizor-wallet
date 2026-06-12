@@ -2537,7 +2537,7 @@ void main() {
     expect(find.text('Review your answers'), findsOneWidget);
     final reviewTitle = tester.widget<Text>(find.text('Review your answers'));
     expect(reviewTitle.textAlign, TextAlign.center);
-    expect(reviewTitle.style?.fontFamily, 'Libre Caslon Text');
+    expect(reviewTitle.style?.fontFamily, 'Young Serif');
     expect(reviewTitle.style?.fontSize, 32);
     expect(reviewTitle.style?.letterSpacing, 0);
     expect(find.text(longRoundDescription), findsNothing);

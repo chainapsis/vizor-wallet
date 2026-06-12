@@ -1,11 +1,11 @@
-import 'package:flutter/services.dart'
-    show SystemMouseCursors, TextInputAction, TextInputType;
+import 'package:flutter/services.dart' show TextInputAction, TextInputType;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
@@ -201,7 +201,7 @@ class _PanelHeader extends StatelessWidget {
           if (onClose != null)
             Positioned(
               right: 0,
-              child: _SmallIconButton(
+              child: AppIconHoverButton(
                 icon: AppIcons.cross,
                 semanticLabel: 'Close endpoint settings',
                 onTap: onClose!,
@@ -329,70 +329,5 @@ class CustomEndpointForm extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-class _SmallIconButton extends StatefulWidget {
-  const _SmallIconButton({
-    required this.icon,
-    required this.semanticLabel,
-    required this.onTap,
-  });
-
-  final String icon;
-  final String semanticLabel;
-  final VoidCallback onTap;
-
-  @override
-  State<_SmallIconButton> createState() => _SmallIconButtonState();
-}
-
-class _SmallIconButtonState extends State<_SmallIconButton> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      button: true,
-      label: widget.semanticLabel,
-      child: ExcludeSemantics(
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          onEnter: (_) => _setHovered(true),
-          onExit: (_) => _setHovered(false),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: widget.onTap,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: _hovered
-                    ? colors.button.ghost.bgHover
-                    : colors.background.ground.withValues(alpha: 0),
-                shape: BoxShape.circle,
-              ),
-              child: SizedBox(
-                width: 32,
-                height: 32,
-                child: Center(
-                  child: AppIcon(
-                    widget.icon,
-                    size: AppIconSize.medium,
-                    color: colors.icon.accent,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _setHovered(bool hovered) {
-    if (_hovered == hovered) return;
-    setState(() {
-      _hovered = hovered;
-    });
   }
 }

@@ -68,6 +68,89 @@ class AppPaneScrollScaffold extends StatefulWidget {
 }
 
 class _AppPaneScrollScaffoldState extends State<AppPaneScrollScaffold> {
+  @override
+  Widget build(BuildContext context) {
+    final userPadding = (widget.padding ?? EdgeInsets.zero).resolve(
+      Directionality.of(context),
+    );
+    final contentPadding =
+        const EdgeInsets.only(top: AppPaneScrollScaffold.toolbarHeight) +
+        userPadding;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final minHeight = constraints.hasBoundedHeight
+            ? math.max(
+                0.0,
+                constraints.maxHeight -
+                    AppPaneScrollScaffold.toolbarHeight -
+                    userPadding.vertical,
+              )
+            : 0.0;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            // Full-pane scroll surface. The scrollbar wraps the whole pane
+            // area, so its overlay track spans the full pane height
+            // (toolbar band included), pinned at the right edge.
+            AppPaneScrollbar(
+              controller: widget.controller,
+              scrollbarKey: AppPaneScrollScaffold.scrollbarKey,
+              builder: (context, controller) => SingleChildScrollView(
+                key: AppPaneScrollScaffold.scrollViewKey,
+                controller: controller,
+                padding: contentPadding,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: minHeight),
+                  child: widget.child,
+                ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: AppPaneScrollScaffold.toolbarHeight,
+              child: widget.toolbar,
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The pane overlay scrollbar on its own, for panes that bring their own
+/// scroll view (e.g. the home backdrop pane's sliver scroll).
+///
+/// Same model as [AppPaneScrollScaffold]: 6px capsule thumb centered in an
+/// 18px transparent gutter at the right edge, hidden while the content fits,
+/// shown while the pointer hovers the pane. The [builder] receives the
+/// controller the scrollbar tracks; attach it to the scroll view.
+class AppPaneScrollbar extends StatefulWidget {
+  const AppPaneScrollbar({
+    required this.builder,
+    this.controller,
+    this.scrollbarKey,
+    super.key,
+  });
+
+  /// Builds the scroll view; must attach [ScrollController] to it.
+  final Widget Function(BuildContext context, ScrollController controller)
+  builder;
+
+  /// Optional external scroll controller. When null the scrollbar manages
+  /// its own.
+  final ScrollController? controller;
+
+  /// Key applied to the underlying [RawScrollbar] (for tests).
+  final Key? scrollbarKey;
+
+  @override
+  State<AppPaneScrollbar> createState() => _AppPaneScrollbarState();
+}
+
+class _AppPaneScrollbarState extends State<AppPaneScrollbar> {
   late final ScrollController _internalController;
   bool _isHovered = false;
   bool _canScroll = false;
@@ -86,7 +169,7 @@ class _AppPaneScrollScaffoldState extends State<AppPaneScrollScaffold> {
   }
 
   @override
-  void didUpdateWidget(covariant AppPaneScrollScaffold oldWidget) {
+  void didUpdateWidget(covariant AppPaneScrollbar oldWidget) {
     super.didUpdateWidget(oldWidget);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -115,86 +198,44 @@ class _AppPaneScrollScaffoldState extends State<AppPaneScrollScaffold> {
 
   @override
   Widget build(BuildContext context) {
-    final userPadding = (widget.padding ?? EdgeInsets.zero).resolve(
-      Directionality.of(context),
-    );
-    final contentPadding =
-        const EdgeInsets.only(top: AppPaneScrollScaffold.toolbarHeight) +
-        userPadding;
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final minHeight = constraints.hasBoundedHeight
-            ? math.max(
-                0.0,
-                constraints.maxHeight -
-                    AppPaneScrollScaffold.toolbarHeight -
-                    userPadding.vertical,
-              )
-            : 0.0;
-        return NotificationListener<ScrollMetricsNotification>(
-          onNotification: (_) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              _updateCanScroll();
-            });
-            return false;
-          },
-          child: MouseRegion(
-            onEnter: (_) {
-              if (_isHovered) return;
-              setState(() {
-                _isHovered = true;
-              });
-            },
-            onExit: (_) {
-              if (!_isHovered) return;
-              setState(() {
-                _isHovered = false;
-              });
-            },
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Full-pane scroll surface. The RawScrollbar wraps the whole
-                // pane area, so its overlay track spans the full pane height
-                // (toolbar band included), pinned at the right edge.
-                RawScrollbar(
-                  key: AppPaneScrollScaffold.scrollbarKey,
-                  controller: _effectiveController,
-                  thumbVisibility: _isHovered && _canScroll,
-                  thickness: 6,
-                  radius: const Radius.circular(AppRadii.full),
-                  crossAxisMargin: 6,
-                  mainAxisMargin: 12,
-                  thumbColor: context.colors.surface.scrollbarThumb,
-                  child: ScrollConfiguration(
-                    behavior: ScrollConfiguration.of(
-                      context,
-                    ).copyWith(scrollbars: false),
-                    child: SingleChildScrollView(
-                      key: AppPaneScrollScaffold.scrollViewKey,
-                      controller: _effectiveController,
-                      padding: contentPadding,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(minHeight: minHeight),
-                        child: widget.child,
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: AppPaneScrollScaffold.toolbarHeight,
-                  child: widget.toolbar,
-                ),
-              ],
-            ),
-          ),
-        );
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: (_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _updateCanScroll();
+        });
+        return false;
       },
+      child: MouseRegion(
+        onEnter: (_) {
+          if (_isHovered) return;
+          setState(() {
+            _isHovered = true;
+          });
+        },
+        onExit: (_) {
+          if (!_isHovered) return;
+          setState(() {
+            _isHovered = false;
+          });
+        },
+        child: RawScrollbar(
+          key: widget.scrollbarKey,
+          controller: _effectiveController,
+          thumbVisibility: _isHovered && _canScroll,
+          thickness: 6,
+          radius: const Radius.circular(AppRadii.full),
+          crossAxisMargin: 6,
+          mainAxisMargin: 12,
+          thumbColor: context.colors.surface.scrollbarThumb,
+          child: ScrollConfiguration(
+            behavior: ScrollConfiguration.of(
+              context,
+            ).copyWith(scrollbars: false),
+            child: widget.builder(context, _effectiveController),
+          ),
+        ),
+      ),
     );
   }
 }

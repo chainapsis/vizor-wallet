@@ -96,7 +96,7 @@ Widget buildAccountsEditAccountUseCase(BuildContext context) {
   return _buildAccountsUseCase(
     _accountsDesignState,
     initialModalAccountUuid: 'preview-account-2',
-    initialModal: AccountsScreenInitialModal.accountName,
+    initialModal: AccountsScreenInitialModal.editAccount,
   );
 }
 

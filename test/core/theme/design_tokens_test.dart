@@ -48,20 +48,25 @@ void main() {
     expect(AppWindowSizing.paneRadius, 20);
   });
 
-  test('desktop font tokens match 3 Fonts.zip', () {
-    expect(AppTypography.displayMedium.fontFamily, 'Libre Caslon Text');
-    expect(AppTypography.displayMedium.fontWeight, FontWeight.w400);
+  test('desktop font tokens match the design system', () {
+    const liningFigures = [FontFeature.enable('case')];
+
+    expect(AppTypography.displayMedium.fontFamily, 'Young Serif');
+    expect(AppTypography.displayMedium.fontWeight, FontWeight.w500);
+    expect(AppTypography.displayMedium.fontFeatures, liningFigures);
     expect(AppTypography.displayMedium.fontSize, 45);
     expect(AppTypography.displayMedium.height, 48 / 45);
     expect(AppTypography.displayMedium.letterSpacing, -1.35);
 
-    expect(AppTypography.headlineLarge.fontFamily, 'Libre Caslon Text');
-    expect(AppTypography.headlineLarge.fontWeight, FontWeight.w400);
+    expect(AppTypography.headlineLarge.fontFamily, 'Young Serif');
+    expect(AppTypography.headlineLarge.fontWeight, FontWeight.w500);
+    expect(AppTypography.headlineLarge.fontFeatures, liningFigures);
     expect(AppTypography.headlineLarge.fontSize, 32);
     expect(AppTypography.headlineLarge.height, 33 / 32);
 
-    expect(AppTypography.headlineMedium.fontFamily, 'Libre Caslon Text');
-    expect(AppTypography.headlineMedium.fontWeight, FontWeight.w400);
+    expect(AppTypography.headlineMedium.fontFamily, 'Young Serif');
+    expect(AppTypography.headlineMedium.fontWeight, FontWeight.w500);
+    expect(AppTypography.headlineMedium.fontFeatures, liningFigures);
     expect(AppTypography.headlineMedium.fontSize, 28);
     expect(AppTypography.headlineMedium.height, 30 / 28);
     expect(AppTypography.headlineMedium.letterSpacing, -0.28);
@@ -155,14 +160,16 @@ void main() {
     expect(light.navPanel, const Color(0x4DFFFFFF));
     expect(light.font, const Color(0xD91A1A1A));
     expect(light.thinBorder, const Color(0x8CFFFFFF));
-    expect(light.innerBorder, const Color(0x3B1A1A1A));
+    // Inner ring is the Figma inner-shadow white highlight in both modes,
+    // superseding the color-theme export value.
+    expect(light.innerBorder, const Color(0x26FFFFFF));
 
     expect(dark.window, const Color(0xFF0F0F0F));
     expect(dark.windowTransparent, const Color(0x000F0F0F));
     expect(dark.navPanel, const Color(0x4D1A1A1A));
     expect(dark.font, const Color(0xCCFFFFFF));
     expect(dark.thinBorder, const Color(0x3B1A1A1A));
-    expect(dark.innerBorder, const Color(0x3B1A1A1A));
+    expect(dark.innerBorder, const Color(0x26FFFFFF));
   });
 
   test('plum primitive tokens match 2 Color Theme.zip', () {

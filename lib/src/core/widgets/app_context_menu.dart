@@ -231,7 +231,10 @@ class _AppContextMenuItemState extends State<AppContextMenuItem> {
             vertical: AppSpacing.xxs,
           ),
           decoration: BoxDecoration(
-            color: _isHovered ? colors.state.hoverOpacity : null,
+            // The menu sits on the inverse surface, so the regular hover
+            // tint (a dark alpha in light mode) is invisible here; the
+            // inverse-opacity tint flips with the surface in both themes.
+            color: _isHovered ? colors.border.inverseOpacity : null,
             borderRadius: BorderRadius.circular(AppSpacing.xxs),
           ),
           child: Row(

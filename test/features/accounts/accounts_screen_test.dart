@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
+import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
@@ -176,14 +177,26 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Add account'), findsOneWidget);
-    final otherSurface = find.byKey(const ValueKey('accounts_other_surface'));
+
+    // The add button floats over the pane bottom (contacts contract): drive
+    // the pane scroll to the end and the last row must clear the button via
+    // the scaffold's measured bottom reserve.
+    final scrollView = find.byKey(AppPaneScrollScaffold.scrollViewKey);
+    expect(scrollView, findsOneWidget);
+    await tester.drag(scrollView, const Offset(0, -3000));
+    await tester.pumpAndSettle();
+    final scrollableState = tester.state<ScrollableState>(
+      find.descendant(of: scrollView, matching: find.byType(Scrollable)).first,
+    );
+    expect(scrollableState.position.pixels, greaterThan(0));
+
     final addAccountButton = find.byKey(
       const ValueKey('accounts_add_account_button'),
     );
+    final otherSurface = find.byKey(const ValueKey('accounts_other_surface'));
     expect(
-      tester.getTopLeft(addAccountButton).dy -
-          tester.getBottomLeft(otherSurface).dy,
-      greaterThanOrEqualTo(AppSpacing.md),
+      tester.getRect(otherSurface).bottom,
+      lessThanOrEqualTo(tester.getRect(addAccountButton).top + 0.5),
     );
   });
 
@@ -272,14 +285,12 @@ void main() {
 
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Send ZEC'), findsOneWidget);
-    expect(find.text('Edit name'), findsOneWidget);
-    expect(find.text('Change picture'), findsOneWidget);
+    expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
     _expectVerticalTextOrder(tester, const [
       'Copy address',
       'Send ZEC',
-      'Edit name',
-      'Change picture',
+      'Edit account',
       'Remove account',
     ]);
     expect(
@@ -301,8 +312,7 @@ void main() {
 
     expect(find.text('Copy address'), findsNothing);
     expect(find.text('Send ZEC'), findsNothing);
-    expect(find.text('Edit name'), findsNothing);
-    expect(find.text('Change picture'), findsNothing);
+    expect(find.text('Edit account'), findsNothing);
     expect(find.text('Remove account'), findsNothing);
   });
 
@@ -324,14 +334,9 @@ void main() {
 
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Send ZEC'), findsNothing);
-    expect(find.text('Edit name'), findsOneWidget);
-    expect(find.text('Change picture'), findsOneWidget);
+    expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsNothing);
-    _expectVerticalTextOrder(tester, const [
-      'Edit name',
-      'Change picture',
-      'Copy address',
-    ]);
+    _expectVerticalTextOrder(tester, const ['Edit account', 'Copy address']);
   });
 
   testWidgets('current imported account can be removed', (tester) async {
@@ -366,14 +371,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Edit name'), findsOneWidget);
-    expect(find.text('Change picture'), findsOneWidget);
+    expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
     expect(find.text('Send ZEC'), findsNothing);
     _expectVerticalTextOrder(tester, const [
-      'Edit name',
-      'Change picture',
+      'Edit account',
       'Copy address',
       'Remove account',
     ]);
@@ -663,7 +666,7 @@ void main() {
       find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Edit name'));
+    await tester.tap(find.text('Edit account'));
     await tester.pumpAndSettle();
 
     expect(find.text('Account name'), findsWidgets);
@@ -709,7 +712,12 @@ void main() {
       find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Change picture'));
+    await tester.tap(find.text('Edit account'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('account_edit_profile_picture_button')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Select profile picture'), findsOneWidget);
@@ -722,9 +730,18 @@ void main() {
     await tester.tap(find.text('Update'));
     await tester.pumpAndSettle();
 
+    // The picker hands the pick back to the edit modal; nothing is
+    // committed until the edit modal's own Update.
+    expect(find.text('Select profile picture'), findsNothing);
+    expect(find.text('Account name'), findsWidgets);
+    expect(accountNotifier.updatedProfilePictureUuid, isNull);
+
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
     expect(accountNotifier.updatedProfilePictureUuid, 'account-2');
     expect(accountNotifier.updatedProfilePictureId, 'pfp-02');
-    expect(find.text('Select profile picture'), findsNothing);
+    expect(find.byType(AppPaneModalOverlay), findsNothing);
   });
 
   testWidgets('remove account menu action removes the selected account', (

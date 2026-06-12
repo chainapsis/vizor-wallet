@@ -57,6 +57,9 @@ void main() {
       // 'Received ZEC' now appears only as the swap group's settled child.
       expect(find.text('Received ZEC'), findsOneWidget);
       expect(find.text('+31.10 ZEC'), findsNothing);
+      // Unconfirmed receive renders the in-flight loader row.
+      expect(find.text('Receiving ...'), findsOneWidget);
+      expect(find.text('+5.40 ZEC'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('activity_feed_child_connector')),
         findsOneWidget,
