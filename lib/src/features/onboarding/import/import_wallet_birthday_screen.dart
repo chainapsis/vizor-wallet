@@ -89,6 +89,7 @@ class _ImportWalletBirthdayScreenState
 
   @override
   void dispose() {
+    _completeAccountDiscovery(null);
     _manualHeightFocusNode
       ..removeListener(_handleFocusChanged)
       ..dispose();
@@ -232,24 +233,36 @@ class _ImportWalletBirthdayScreenState
   }
 
   void _confirmAccountDiscovery(List<int> accountIndices) {
-    final completer = _accountDiscoveryCompleter;
-    setState(() {
-      _accountDiscoveryCandidates = null;
-      _accountDiscoveryCompleter = null;
-      _accountDiscoveryAllowsEmptySelection = true;
-    });
-    completer?.complete(accountIndices);
+    _completeAccountDiscovery(accountIndices, updateState: true);
   }
 
   void _dismissAccountDiscovery() {
-    final completer = _accountDiscoveryCompleter;
+    _completeAccountDiscovery(null, updateState: true);
     setState(() {
+      _submitPhase = _ImportWalletSubmitPhase.idle;
+    });
+  }
+
+  void _completeAccountDiscovery(
+    List<int>? accountIndices, {
+    bool updateState = false,
+  }) {
+    final completer = _accountDiscoveryCompleter;
+    void clearDiscoveryState() {
       _accountDiscoveryCandidates = null;
       _accountDiscoveryCompleter = null;
       _accountDiscoveryAllowsEmptySelection = true;
-      _submitPhase = _ImportWalletSubmitPhase.idle;
-    });
-    completer?.complete(null);
+    }
+
+    if (updateState && mounted) {
+      setState(clearDiscoveryState);
+    } else {
+      clearDiscoveryState();
+    }
+
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(accountIndices);
+    }
   }
 
   Future<void> _confirmUnknownBirthday() async {
