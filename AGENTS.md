@@ -723,6 +723,34 @@ Important desktop design rule:
 - Any opaque `Container`, `ColoredBox`, decoration color, or other filled background will cover the native effect in that region.
 - Treat transparency as opt-in per region: only paint solid backgrounds where the UI should actually be solid.
 
+### Mobile Bottom Safe Area (iOS proportional padding)
+
+Mobile bottom-sheet bodies and the floating tab bar wrap their bottom
+edge in `MobileBottomSafeArea`
+(`lib/src/core/layout/mobile/mobile_bottom_safe_area.dart`), not raw
+`SafeArea(top: false)`.
+
+- The rule: on iOS, when the wrapped content's own bottom padding is
+  `kIosHomeIndicatorClearance` (16) or more, the bottom safe-area inset
+  is skipped so the bottom gap equals the side padding. Android always
+  honors the inset — navigation-bar modes vary per device.
+- Why: the iOS home indicator is an overlay occupying only the bottom
+  ~13pt of the screen (8pt offset + 5pt bar), so it floats inside 16px
+  of empty padding; stacking the 34pt inset on top of that padding
+  makes the bottom gap visually heavier than the sides.
+- `bottomPadding` must equal the bottom padding the wrapped content
+  actually provides below its last control — when changing a sheet's
+  padding token, update the argument with it.
+- Tab bar (`AppMobileShell`): the gap below the bar is 16 on iOS
+  (matching its 16px side margins) and the Figma 12 + inset on Android.
+- Keyboard avoidance is unaffected — `viewInsets` is a separate channel
+  from the `viewPadding` this consumes.
+- Platform branching uses `defaultTargetPlatform` (overridable in
+  widget tests), not `dart:io` `Platform` checks.
+- New sheets follow `MobileBottomSafeArea(bottomPadding: token)` >
+  `Padding(...)`; both platform geometries are pinned in
+  `test/core/layout/mobile/mobile_bottom_safe_area_test.dart`.
+
 ## Testing
 
 - Rust unit tests: `cd rust && cargo test` — 11 tests covering key derivation, address encoding / Orchard-only UA derivation, determinism, and PROPOSAL_STORE lifecycle (idempotent discard, consume-on-entry, replay rejection). Tests that need a DB use `tempfile::tempdir()`.
