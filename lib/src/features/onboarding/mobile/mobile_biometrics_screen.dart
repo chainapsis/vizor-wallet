@@ -17,8 +17,9 @@ import 'mobile_onboarding_scaffold.dart';
 /// Biometric unlock opt-in — Figma `Biometrics FaceID` /
 /// `Biometrics Fingerprint` (4394:83068 / 4394:83378). Enabling writes
 /// the passcode escrow behind the device's biometric set; the passcode
-/// remains the credential either way. Without an enrolled biometric
-/// set, enabling explains itself and "Not now" continues home.
+/// remains the credential either way. Devices without biometric
+/// hardware skip straight home; an un-enrolled set keeps the screen
+/// and enabling explains itself.
 class MobileBiometricsScreen extends ConsumerStatefulWidget {
   const MobileBiometricsScreen({super.key});
 
@@ -30,6 +31,26 @@ class MobileBiometricsScreen extends ConsumerStatefulWidget {
 class _MobileBiometricsScreenState
     extends ConsumerState<MobileBiometricsScreen> {
   var _enabling = false;
+  var _skipped = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // No biometric hardware at all → the opt-in question cannot be
+    // answered on this device; continue straight home. (Enrollment
+    // missing is different: the screen stays, since the user can
+    // enroll in the device settings.)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_skipWithoutHardware());
+    });
+  }
+
+  Future<void> _skipWithoutHardware() async {
+    final state = await ref.read(biometricUnlockProvider.future);
+    if (!mounted || _skipped || state.availability.supported) return;
+    _skipped = true;
+    context.go('/home');
+  }
 
   static String get _methodLabel {
     if (kIsWeb) return 'biometrics';

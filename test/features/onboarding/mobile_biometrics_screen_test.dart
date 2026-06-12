@@ -107,7 +107,11 @@ void main() {
 
   testWidgets('not now skips straight to home', (tester) async {
     final biometric = _FakeBiometricUnlock(
-      avail: BiometricAvailability.unavailable,
+      avail: const BiometricAvailability(
+        supported: true,
+        enrolled: false,
+        kind: BiometricKind.fingerprint,
+      ),
     );
     await tester.pumpWidget(_app(biometric));
     await tester.pumpAndSettle();
@@ -115,5 +119,21 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_biometrics_not_now')));
     await tester.pumpAndSettle();
     expect(find.text('home stub'), findsOneWidget);
+  });
+
+  testWidgets('a device without biometric hardware skips the screen', (
+    tester,
+  ) async {
+    final biometric = _FakeBiometricUnlock(
+      avail: BiometricAvailability.unavailable,
+    );
+    await tester.pumpWidget(_app(biometric));
+    await tester.pumpAndSettle();
+
+    expect(find.text('home stub'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_biometrics_enable')),
+      findsNothing,
+    );
   });
 }
