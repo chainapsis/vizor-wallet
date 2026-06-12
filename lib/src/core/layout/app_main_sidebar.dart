@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart' show Colors;
@@ -941,11 +942,27 @@ class _SidebarPopoverClickTarget extends StatelessWidget {
   }
 }
 
-class _SidebarSyncStatus extends StatelessWidget {
+/// Sidebar sync status row. While syncing (and reduced-motion is off) a slow
+/// shimmer band sweeps the muted-green label up to the full synced green and a
+/// breathing glow pulses the indicator bar, so the row reads as "actively
+/// working". Synced / failed / reduced-motion render static.
+///
+/// The desktop color policy is preserved: the indicator stays the sync-success
+/// green while syncing (only failed differs) — only the motion + glow are
+/// added. (The mobile top-nav has the same effect with its own colors; the
+/// small shimmer/motion helpers are intentionally duplicated rather than
+/// shared so the two surfaces ship as independent changes.)
+class _SidebarSyncStatus extends StatefulWidget {
   const _SidebarSyncStatus({required this.sync});
 
   final SyncState sync;
 
+  @override
+  State<_SidebarSyncStatus> createState() => _SidebarSyncStatusState();
+}
+
+class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
+    with SingleTickerProviderStateMixin {
   static const _width = 176.0;
   static const _height = 34.0;
   static const _indicatorWidth = 5.0;
@@ -953,10 +970,62 @@ class _SidebarSyncStatus extends StatelessWidget {
   static const _indicatorLeft = -AppSpacing.sm;
   static const _textLeft = AppSpacing.xs;
 
+  AnimationController? _controller;
+
+  AnimationController get _activeController {
+    return _controller ??= AnimationController(
+      vsync: this,
+      duration: _SidebarSyncMotion.period,
+    );
+  }
+
+  bool get _isSyncing =>
+      SyncStatusLabel.from(widget.sync).kind == SyncStatusKind.syncing;
+
+  bool get _shouldAnimate {
+    if (!_isSyncing) {
+      return false;
+    }
+    return !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SidebarSyncStatus oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncAnimation();
+  }
+
+  void _syncAnimation() {
+    if (_shouldAnimate) {
+      if (!_activeController.isAnimating) {
+        _activeController.repeat();
+      }
+    } else {
+      final controller = _controller;
+      if (controller != null) {
+        controller
+          ..stop()
+          ..value = 0;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final status = SyncStatusLabel.from(sync);
+    final status = SyncStatusLabel.from(widget.sync);
     final textColor = switch (status.kind) {
       SyncStatusKind.syncing => colors.sync.textSyncing,
       SyncStatusKind.failed => colors.sync.textError,
@@ -967,48 +1036,167 @@ class _SidebarSyncStatus extends StatelessWidget {
       _ => colors.sync.lightSuccess,
     };
 
+    final Widget body = _shouldAnimate
+        ? AnimatedBuilder(
+            animation: _activeController,
+            builder: (context, _) {
+              final t = _activeController.value;
+              return _row(
+                indicatorColor: indicatorColor,
+                glow: _SidebarSyncMotion.glowFor(t),
+                text: _SidebarSyncShimmerLabel(
+                  key: const ValueKey('sidebar_sync_text'),
+                  label: status.label,
+                  baseColor: textColor,
+                  highlightColor: colors.sync.text,
+                  progress: t,
+                ),
+              );
+            },
+          )
+        : _row(
+            indicatorColor: indicatorColor,
+            glow: null,
+            text: Text(
+              status.label,
+              key: const ValueKey('sidebar_sync_text'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.labelLarge.copyWith(color: textColor),
+            ),
+          );
+
     return SizedBox(
       width: _width,
       height: _height,
-      child: Semantics(
-        label: status.semanticsLabel,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned(
-              left: _indicatorLeft,
-              top: (_height - _indicatorHeight) / 2,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: indicatorColor,
-                  borderRadius: const BorderRadius.horizontal(
-                    right: Radius.circular(AppRadii.full),
-                  ),
-                ),
-                child: const SizedBox(
-                  key: ValueKey('sidebar_sync_indicator'),
-                  width: _indicatorWidth,
-                  height: _indicatorHeight,
-                ),
+      child: Semantics(label: status.semanticsLabel, child: body),
+    );
+  }
+
+  Widget _row({
+    required Color indicatorColor,
+    required ({double blur, double alpha})? glow,
+    required Widget text,
+  }) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned(
+          left: _indicatorLeft,
+          top: (_height - _indicatorHeight) / 2,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: indicatorColor,
+              borderRadius: const BorderRadius.horizontal(
+                right: Radius.circular(AppRadii.full),
               ),
+              boxShadow: glow == null
+                  ? null
+                  : [
+                      BoxShadow(
+                        color: indicatorColor.withValues(alpha: glow.alpha),
+                        blurRadius: glow.blur,
+                      ),
+                    ],
             ),
-            Positioned(
-              left: _textLeft,
-              right: AppSpacing.xxs,
-              top: 0,
-              bottom: 0,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  status.label,
-                  key: const ValueKey('sidebar_sync_text'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelLarge.copyWith(color: textColor),
-                ),
-              ),
+            child: const SizedBox(
+              key: ValueKey('sidebar_sync_indicator'),
+              width: _indicatorWidth,
+              height: _indicatorHeight,
             ),
+          ),
+        ),
+        Positioned(
+          left: _textLeft,
+          right: AppSpacing.xxs,
+          top: 0,
+          bottom: 0,
+          child: Align(alignment: Alignment.centerLeft, child: text),
+        ),
+      ],
+    );
+  }
+}
+
+/// Subtle/slow motion constants for the sidebar syncing affordance. One full
+/// glow breath and one shimmer sweep per [period]. (Mirrors the mobile
+/// top-nav values; duplicated to keep the two surfaces independent.)
+abstract final class _SidebarSyncMotion {
+  static const period = Duration(milliseconds: 1400);
+
+  /// Half-width of the shimmer highlight band as a gradient-stop fraction.
+  static const _bandHalf = 0.18;
+
+  /// Indicator glow breathing range (shadow blur radius + alpha).
+  static const _minGlowBlur = 8.0;
+  static const _maxGlowBlur = 16.0;
+  static const _minGlowAlpha = 0.35;
+  static const _maxGlowAlpha = 0.7;
+
+  /// 0 → 1 → 0 once per [period].
+  static double _breath(double t) => (1 - math.cos(2 * math.pi * t)) / 2;
+
+  static ({double blur, double alpha}) glowFor(double t) {
+    final e = _breath(t);
+    return (
+      blur: _lerp(_minGlowBlur, _maxGlowBlur, e),
+      alpha: _lerp(_minGlowAlpha, _maxGlowAlpha, e),
+    );
+  }
+
+  static double _lerp(double a, double b, double t) => a + (b - a) * t;
+}
+
+/// The sidebar sync label with a highlight band sweeping across it. A
+/// [ShaderMask] (`srcIn`) replaces the glyph pixels with a horizontal
+/// `base → highlight → base` gradient; sliding the gradient's mapping rect by
+/// [progress] travels the band left→right. The band fully exits both edges
+/// (pure [baseColor]) at the loop ends, so the repeat is seamless.
+class _SidebarSyncShimmerLabel extends StatelessWidget {
+  const _SidebarSyncShimmerLabel({
+    required this.label,
+    required this.baseColor,
+    required this.highlightColor,
+    required this.progress,
+    super.key,
+  });
+
+  final String label;
+  final Color baseColor;
+  final Color highlightColor;
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return ShaderMask(
+      blendMode: BlendMode.srcIn,
+      shaderCallback: (bounds) {
+        final shift = (progress * 2 - 1) * bounds.width;
+        final rect = Rect.fromLTWH(
+          bounds.left + shift,
+          bounds.top,
+          bounds.width,
+          bounds.height,
+        );
+        return LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [baseColor, highlightColor, baseColor],
+          stops: const [
+            0.5 - _SidebarSyncMotion._bandHalf,
+            0.5,
+            0.5 + _SidebarSyncMotion._bandHalf,
           ],
+          tileMode: TileMode.clamp,
+        ).createShader(rect);
+      },
+      // Solid color so `srcIn` keeps the gradient over the full glyph.
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTypography.labelLarge.copyWith(
+          color: const Color(0xFFFFFFFF),
         ),
       ),
     );
