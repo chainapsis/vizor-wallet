@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -14,8 +15,7 @@ import '../../../address_book/providers/address_book_provider.dart';
 import '../../domain/swap_direction.dart';
 import '../../models/swap_activity_navigation.dart';
 import '../../providers/swap_state_provider.dart';
-import '../../widgets/swap_near_intents_attribution.dart';
-import '../../widgets/swap_review_page_content.dart';
+import '../../widgets/mobile/mobile_swap_review_content.dart';
 import '../swap_review_screen.dart'
     show swapReviewFiatTextForAsset, swapReviewQuoteExceedsAvailableZec;
 
@@ -143,62 +143,57 @@ class _MobileSwapReviewScreenState
       body: SafeArea(
         child: Column(
           children: [
-            MobileTopNav.back(title: 'Review swap', onBack: _returnToSwap),
+            MobileTopNav.back(title: 'Review quote', onBack: _returnToSwap),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(0, AppSpacing.s, 0, 24),
-                child: Column(
-                  children: [
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: SizedBox(
-                        width: 400,
-                        child: Column(
-                          children: [
-                            SwapReviewPageContent(
-                              // The top nav already says "Review swap".
-                              showTitle: false,
-                              quote: quote,
-                              addressPlan: addressPlan,
-                              addressBookContacts: addressBookContacts,
-                              accountLabel: accountLabel,
-                              accountProfilePictureId: accountProfilePictureId,
-                              expired: swapState.quoteExpired,
-                              amountWarning:
-                                  swapState.reviewAmountDifferenceWarning,
-                              startError: swapState.statusError,
-                              startBlockedReason: startBlockedReason,
-                              payFiatTextOverride: swapReviewFiatTextForAsset(
-                                swapState,
-                                quote: quote,
-                                asset: quote.sellAsset,
-                                amount: quote.sellAmount,
-                              ),
-                              receiveFiatTextOverride:
-                                  swapReviewFiatTextForAsset(
-                                    swapState,
-                                    quote: quote,
-                                    asset: quote.receiveAsset,
-                                    amount: quote.receiveAmount,
-                                  ),
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                            SwapReviewPageActions(
-                              expired: swapState.quoteExpired,
-                              starting: swapState.startSubmitting,
-                              startBlockedReason: startBlockedReason,
-                              sendsZec: quote.direction.sendsZec,
-                              onReviewAgain: _reviewAgain,
-                              onCancelReview: _returnToSwap,
-                              onStartIntent: _startIntent,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    const SwapNearIntentsAttribution(),
-                  ],
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.sm,
+                  AppSpacing.s,
+                  AppSpacing.sm,
+                  AppSpacing.s,
+                ),
+                child: MobileSwapReviewContent(
+                  quote: quote,
+                  addressPlan: addressPlan,
+                  addressBookContacts: addressBookContacts,
+                  accountLabel: accountLabel,
+                  accountProfilePictureId: accountProfilePictureId,
+                  expired: swapState.quoteExpired,
+                  amountWarning: swapState.reviewAmountDifferenceWarning,
+                  startError: swapState.statusError,
+                  startBlockedReason: startBlockedReason,
+                  payFiatTextOverride: swapReviewFiatTextForAsset(
+                    swapState,
+                    quote: quote,
+                    asset: quote.sellAsset,
+                    amount: quote.sellAmount,
+                  ),
+                  receiveFiatTextOverride: swapReviewFiatTextForAsset(
+                    swapState,
+                    quote: quote,
+                    asset: quote.receiveAsset,
+                    amount: quote.receiveAmount,
+                  ),
+                ),
+              ),
+            ),
+            MobileBottomSafeArea(
+              bottomPadding: AppSpacing.md,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.sm,
+                  AppSpacing.s,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                ),
+                child: MobileSwapReviewActions(
+                  expired: swapState.quoteExpired,
+                  starting: swapState.startSubmitting,
+                  startBlockedReason: startBlockedReason,
+                  sendsZec: quote.direction.sendsZec,
+                  onReviewAgain: _reviewAgain,
+                  onCancelReview: _returnToSwap,
+                  onStartIntent: _startIntent,
                 ),
               ),
             ),

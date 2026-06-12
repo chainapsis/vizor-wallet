@@ -521,7 +521,7 @@ class _ReviewDetailsList extends StatelessWidget {
               label: 'Slippage tolerance',
               value:
                   slippageToleranceTextOverride ??
-                  _slippageToleranceText(quote),
+                  swapReviewSlippageToleranceText(quote),
             ),
             _ReviewDetailRow(
               label: 'Guaranteed minimum',
@@ -812,6 +812,7 @@ String _quoteFiatText(double? value) {
   return value == null ? r'$--' : swapFormatCompactFiatValue(value);
 }
 
-String _slippageToleranceText(SwapQuote quote) {
+/// Public for the mobile review content, which renders the same row.
+String swapReviewSlippageToleranceText(SwapQuote quote) {
   return compactSwapAmountText(quote.slippageToleranceText);
 }

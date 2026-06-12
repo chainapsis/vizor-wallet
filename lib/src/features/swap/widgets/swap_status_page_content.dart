@@ -188,8 +188,8 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final tabContent = widget.activeTab == SwapStatusTab.progress
-        ? _SwapProgressRoute(steps: _displayedSteps())
-        : _SwapTransactionDetails(
+        ? SwapProgressRoute(steps: _displayedSteps())
+        : SwapTransactionDetails(
             rows: widget.details,
             expanded: widget.detailsExpanded,
             onToggleExpanded: widget.onToggleDetails,
@@ -740,8 +740,8 @@ class _StatusTabLabel extends StatelessWidget {
   }
 }
 
-class _SwapProgressRoute extends StatelessWidget {
-  const _SwapProgressRoute({required this.steps});
+class SwapProgressRoute extends StatelessWidget {
+  const SwapProgressRoute({required this.steps, super.key});
 
   final List<SwapStatusStepData> steps;
 
@@ -924,10 +924,11 @@ String _inactiveProgressIcon(SwapStatusStepData step) {
   return AppIcons.check;
 }
 
-class _SwapTransactionDetails extends StatefulWidget {
-  const _SwapTransactionDetails({
+class SwapTransactionDetails extends StatefulWidget {
+  const SwapTransactionDetails({
     required this.rows,
     required this.expanded,
+    super.key,
     required this.onToggleExpanded,
   });
 
@@ -936,11 +937,11 @@ class _SwapTransactionDetails extends StatefulWidget {
   final VoidCallback? onToggleExpanded;
 
   @override
-  State<_SwapTransactionDetails> createState() =>
-      _SwapTransactionDetailsState();
+  State<SwapTransactionDetails> createState() =>
+      SwapTransactionDetailsState();
 }
 
-class _SwapTransactionDetailsState extends State<_SwapTransactionDetails> {
+class SwapTransactionDetailsState extends State<SwapTransactionDetails> {
   final _scrollController = ScrollController();
 
   @override
@@ -952,7 +953,7 @@ class _SwapTransactionDetailsState extends State<_SwapTransactionDetails> {
   }
 
   @override
-  void didUpdateWidget(covariant _SwapTransactionDetails oldWidget) {
+  void didUpdateWidget(covariant SwapTransactionDetails oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!oldWidget.expanded && widget.expanded) {
       _scrollToExpandedContentAfterLayout();
@@ -1423,6 +1424,125 @@ class _NearIntentsLink extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Animated wrapper around [SwapProgressRoute]: walks the displayed
+/// active step toward [progressIndex] one step per [interval], exactly
+/// like the desktop status page does, so far-along intents still show
+/// the route "travelling". Shared by the mobile status content.
+class SwapAnimatedProgressRoute extends StatefulWidget {
+  const SwapAnimatedProgressRoute({
+    required this.steps,
+    required this.progressIndex,
+    required this.badgeKind,
+    this.interval = swapStatusDefaultProgressAdvanceInterval,
+    super.key,
+  });
+
+  final List<SwapStatusStepData> steps;
+  final int progressIndex;
+  final SwapStatusBadgeKind badgeKind;
+  final Duration interval;
+
+  @override
+  State<SwapAnimatedProgressRoute> createState() =>
+      _SwapAnimatedProgressRouteState();
+}
+
+class _SwapAnimatedProgressRouteState extends State<SwapAnimatedProgressRoute> {
+  Timer? _timer;
+  late int _displayIndex = _bounded(widget.progressIndex);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(covariant SwapAnimatedProgressRoute oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.steps.length != widget.steps.length ||
+        oldWidget.badgeKind != widget.badgeKind) {
+      _timer?.cancel();
+      _timer = null;
+      _displayIndex = _bounded(widget.progressIndex);
+      return;
+    }
+    _sync();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  int _bounded(int index) {
+    if (widget.steps.isEmpty) return 0;
+    return index.clamp(0, widget.steps.length - 1);
+  }
+
+  bool get _animate {
+    if (widget.badgeKind != SwapStatusBadgeKind.liveQuote) return false;
+    return !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
+  }
+
+  void _sync() {
+    final target = _bounded(widget.progressIndex);
+    if (!_animate || target <= _displayIndex) {
+      _timer?.cancel();
+      _timer = null;
+      if (_displayIndex != target) {
+        setState(() => _displayIndex = target);
+      }
+      return;
+    }
+    if (target == _displayIndex + 1) {
+      _timer?.cancel();
+      _timer = null;
+      setState(() => _displayIndex = target);
+      return;
+    }
+    _advance();
+    _timer ??= Timer.periodic(widget.interval, (_) => _advance());
+  }
+
+  void _advance() {
+    if (!mounted) return;
+    final target = _bounded(widget.progressIndex);
+    if (!_animate || target <= _displayIndex) {
+      _timer?.cancel();
+      _timer = null;
+      if (_displayIndex != target) {
+        setState(() => _displayIndex = target);
+      }
+      return;
+    }
+    final next = _displayIndex + 1;
+    setState(() => _displayIndex = next);
+    if (next >= target) {
+      _timer?.cancel();
+      _timer = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.steps.isEmpty) return const SizedBox.shrink();
+    return SwapProgressRoute(
+      steps: [
+        for (var index = 0; index < widget.steps.length; index++)
+          widget.steps[index].copyWithState(
+            index < _displayIndex
+                ? SwapStatusStepState.complete
+                : index == _displayIndex
+                ? SwapStatusStepState.active
+                : SwapStatusStepState.pending,
+          ),
+      ],
     );
   }
 }
