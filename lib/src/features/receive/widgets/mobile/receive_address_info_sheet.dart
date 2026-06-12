@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -28,8 +29,8 @@ class ReceiveAddressInfoSheet extends StatelessWidget {
     final colors = context.colors;
     final items = receiveAddressInfoItems(type, touchUi: true);
 
-    return SafeArea(
-      top: false,
+    return MobileBottomSafeArea(
+      bottomPadding: AppSpacing.base,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.base,

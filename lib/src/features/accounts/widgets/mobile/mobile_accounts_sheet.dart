@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -113,8 +114,8 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
         if (account.uuid != active?.uuid) account,
     ];
 
-    return SafeArea(
-      top: false,
+    return MobileBottomSafeArea(
+      bottomPadding: AppSpacing.md,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.sm,

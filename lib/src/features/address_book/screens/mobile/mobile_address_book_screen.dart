@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -407,8 +408,8 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isEdit = widget.contact != null;
-    return SafeArea(
-      top: false,
+    return MobileBottomSafeArea(
+      bottomPadding: AppSpacing.md,
       // Scrollable so a tall keyboard (e.g. Korean with its candidate
       // bar) compresses the sheet instead of overflowing it and hiding
       // the save button.
@@ -615,8 +616,8 @@ class _NetworkPickerSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SafeArea(
-      top: false,
+    return MobileBottomSafeArea(
+      bottomPadding: AppSpacing.md,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
@@ -696,8 +697,8 @@ class _RemoveContactSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SafeArea(
-      top: false,
+    return MobileBottomSafeArea(
+      bottomPadding: AppSpacing.md,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(

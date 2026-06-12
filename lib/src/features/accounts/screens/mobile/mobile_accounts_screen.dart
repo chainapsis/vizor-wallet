@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -431,8 +432,8 @@ class _RemoveAccountSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SafeArea(
-      top: false,
+    return MobileBottomSafeArea(
+      bottomPadding: AppSpacing.md,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(

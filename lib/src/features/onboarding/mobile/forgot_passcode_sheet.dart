@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../providers/account_provider.dart';
@@ -17,8 +18,8 @@ class ForgotPasscodeSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SafeArea(
-      top: false,
+    return MobileBottomSafeArea(
+      bottomPadding: AppSpacing.md,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(

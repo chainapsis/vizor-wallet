@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/account_name_policy.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -127,8 +128,8 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SafeArea(
-      top: false,
+    return MobileBottomSafeArea(
+      bottomPadding: AppSpacing.md,
       child: Padding(
         padding: EdgeInsets.fromLTRB(
           AppSpacing.md,
@@ -260,8 +261,8 @@ class _ProfilePictureSheetState extends State<_ProfilePictureSheet> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SafeArea(
-      top: false,
+    return MobileBottomSafeArea(
+      bottomPadding: AppSpacing.md,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(

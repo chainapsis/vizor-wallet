@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/platform/screenshot_observer.dart';
 import '../../../../core/storage/wallet_paths.dart';
@@ -571,8 +572,8 @@ class _ScreenshotWarningSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SafeArea(
-      top: false,
+    return MobileBottomSafeArea(
+      bottomPadding: AppSpacing.base,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.base),
         child: Column(

@@ -11,6 +11,7 @@ import '../../../../../main.dart' show log;
 import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -324,8 +325,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       context: context,
       builder: (sheetContext) {
         final colors = sheetContext.colors;
-        return SafeArea(
-          top: false,
+        return MobileBottomSafeArea(
+          bottomPadding: AppSpacing.base,
           child: Padding(
             padding: const EdgeInsets.all(AppSpacing.base),
             child: Column(
@@ -1530,8 +1531,8 @@ class MobileSaplingParamsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SafeArea(
-      top: false,
+    return MobileBottomSafeArea(
+      bottomPadding: AppSpacing.md,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(

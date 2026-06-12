@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../layout/mobile/app_mobile_sheet.dart';
+import '../../layout/mobile/mobile_bottom_safe_area.dart';
 import '../../theme/app_theme.dart';
 import '../app_button.dart';
 
@@ -12,8 +13,8 @@ Future<void> showUnsupportedSheet(BuildContext context, {String? message}) {
     context: context,
     builder: (sheetContext) {
       final colors = sheetContext.colors;
-      return SafeArea(
-        top: false,
+      return MobileBottomSafeArea(
+        bottomPadding: AppSpacing.md,
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.md),
           child: Column(

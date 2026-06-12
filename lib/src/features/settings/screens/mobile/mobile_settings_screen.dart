@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/profile_pictures.dart';
@@ -348,8 +349,8 @@ class _ThemeSheetState extends State<_ThemeSheet> {
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-    return SafeArea(
-      top: false,
+    return MobileBottomSafeArea(
+      bottomPadding: AppSpacing.sm,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.sm),
         child: Column(

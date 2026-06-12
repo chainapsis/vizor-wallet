@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -174,8 +175,8 @@ class _MobileImportBirthdayScreenState
         // The calendar panel is its own card; drop the sheet surface so
         // only the scrim and the calendar show.
         transparentBackground: true,
-        builder: (sheetContext) => SafeArea(
-          top: false,
+        builder: (sheetContext) => MobileBottomSafeArea(
+          bottomPadding: AppSpacing.sm,
           child: Padding(
             padding: const EdgeInsets.all(AppSpacing.sm),
             // mainAxisSize.min so the sheet hugs the calendar instead of
