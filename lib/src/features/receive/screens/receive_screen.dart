@@ -1140,7 +1140,7 @@ class _IconOnlyButton extends StatelessWidget {
   }
 }
 
-class _CopyAddressButton extends StatelessWidget {
+class _CopyAddressButton extends StatefulWidget {
   const _CopyAddressButton({
     required this.label,
     required this.type,
@@ -1155,19 +1155,45 @@ class _CopyAddressButton extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_CopyAddressButton> createState() => _CopyAddressButtonState();
+}
+
+class _CopyAddressButtonState extends State<_CopyAddressButton> {
+  bool _hovered = false;
+
+  void _setHovered(bool value) {
+    if (_hovered == value) return;
+    setState(() => _hovered = value);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final isShielded = type == _ReceiveAddressType.shielded;
+    final label = widget.label;
+    final enabled = widget.enabled;
+    final onTap = widget.onTap;
+    final isShielded = widget.type == _ReceiveAddressType.shielded;
+    final hovered = enabled && _hovered;
     final background = enabled
-        ? (isShielded ? colors.button.primary.bg : colors.button.secondary.bg)
+        ? (isShielded
+              ? (hovered
+                    ? colors.button.primary.bgHover
+                    : colors.button.primary.bg)
+              : (hovered
+                    ? colors.button.secondary.bgHover
+                    : colors.button.secondary.bg))
         : colors.button.disabled.bg;
     final labelColor = enabled
         ? (isShielded
-              ? colors.button.primary.label
+              ? (hovered
+                    ? colors.button.primary.labelHover
+                    : colors.button.primary.label)
               : colors.button.secondary.label)
         : colors.button.disabled.label;
     final borderColor = enabled && isShielded
-        ? colors.button.primary.border
+        ? (hovered
+              ? colors.button.primary.borderHover
+              : colors.button.primary.border)
         : Colors.transparent;
 
     return Semantics(
@@ -1175,6 +1201,8 @@ class _CopyAddressButton extends StatelessWidget {
       enabled: enabled,
       child: MouseRegion(
         cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        onEnter: (_) => _setHovered(true),
+        onExit: (_) => _setHovered(false),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: enabled ? onTap : null,

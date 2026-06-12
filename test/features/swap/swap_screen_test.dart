@@ -1084,9 +1084,11 @@ void main() {
         .getSize(find.byKey(const ValueKey('swap_address_summary')))
         .width;
     expect(addressFieldHeight, 32);
-    expect(addressFieldWidth, closeTo(196, 1));
+    // The trigger hugs up to 240 so the full empty label fits in the
+    // real font (the square test font maxes the constraint out).
+    expect(addressFieldWidth, closeTo(240, 1));
     expect(find.text('Ethereum recipient'), findsNothing);
-    expect(find.text('Add Recipient address...'), findsOneWidget);
+    expect(find.text('Add recipient address...'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('swap_settlement_path_placeholder')),
       findsNothing,
@@ -2411,7 +2413,7 @@ void main() {
     expect(sessionStore.loadPreferencesCount, 1);
     expect(_fieldText(tester, 'swap_amount_field'), isEmpty);
     expect(_destinationSummaryText(tester), isEmpty);
-    expect(find.text('Add Refund address...'), findsOneWidget);
+    expect(find.text('Add refund address...'), findsOneWidget);
     expect(find.text('NEAR'), findsWidgets);
     expect(find.text('Wallet staging'), findsNothing);
     expect(find.text('1.25%'), findsWidgets);
