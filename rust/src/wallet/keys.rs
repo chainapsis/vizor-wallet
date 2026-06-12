@@ -241,6 +241,51 @@ pub fn software_account_first_external_transparent_address(
     ))
 }
 
+/// Return the standard transparent receivers for `account'` across the first
+/// external and internal BIP44 address indexes.
+pub fn software_account_transparent_addresses(
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    account_index: u32,
+    address_count_per_scope: u32,
+) -> Result<Vec<String>, String> {
+    let ufvk = software_account_ufvk(network, seed, account_index)?;
+    let transparent_key = ufvk
+        .transparent()
+        .ok_or("Software account does not have a transparent key")?;
+    let external_ivk = transparent_key
+        .derive_external_ivk()
+        .map_err(|e| format!("Failed to derive transparent external IVK: {e}"))?;
+    let internal_ivk = transparent_key
+        .derive_internal_ivk()
+        .map_err(|e| format!("Failed to derive transparent internal IVK: {e}"))?;
+
+    let mut addresses = Vec::with_capacity(address_count_per_scope as usize * 2);
+    for i in 0..address_count_per_scope {
+        let child_index = NonHardenedChildIndex::from_index(i)
+            .ok_or_else(|| format!("Invalid transparent address index: {i}"))?;
+        let external_taddr = external_ivk
+            .derive_address(child_index)
+            .map_err(|e| format!("Failed to derive transparent external address {i}: {e}"))?;
+        addresses.push(encode_transparent_address(
+            &network.b58_pubkey_address_prefix(),
+            &network.b58_script_address_prefix(),
+            &external_taddr,
+        ));
+
+        let internal_taddr = internal_ivk
+            .derive_address(child_index)
+            .map_err(|e| format!("Failed to derive transparent internal address {i}: {e}"))?;
+        addresses.push(encode_transparent_address(
+            &network.b58_pubkey_address_prefix(),
+            &network.b58_script_address_prefix(),
+            &internal_taddr,
+        ));
+    }
+
+    Ok(addresses)
+}
+
 fn import_ufvk_account(
     db_path: &str,
     network: WalletNetwork,
@@ -926,6 +971,26 @@ mod tests {
         assert!(account_0.starts_with("t1"));
         assert!(account_1.starts_with("t1"));
         assert_ne!(account_0, account_1);
+    }
+
+    #[test]
+    fn test_software_transparent_address_preview_range_includes_first_external_address() {
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+
+        let first_external =
+            software_account_first_external_transparent_address(WalletNetwork::Main, &seed, 1)
+                .unwrap();
+        let addresses =
+            software_account_transparent_addresses(WalletNetwork::Main, &seed, 1, 2).unwrap();
+
+        assert_eq!(addresses.len(), 4);
+        assert_eq!(addresses[0], first_external);
+        assert!(addresses.iter().all(|address| address.starts_with("t1")));
+        assert_eq!(
+            addresses.iter().collect::<HashSet<_>>().len(),
+            addresses.len()
+        );
     }
 
     #[test]

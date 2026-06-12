@@ -470,6 +470,7 @@ class _ImportWalletBirthdayScreenState
           ? ImportAccountDiscoveryModal(
               accounts: _accountDiscoveryCandidates!,
               allowEmptySelection: _accountDiscoveryAllowsEmptySelection,
+              loadTransparentBalance: _loadAccountDiscoveryTransparentBalance,
               onConfirm: _confirmAccountDiscovery,
               onCancel: _dismissAccountDiscovery,
             )
@@ -614,6 +615,17 @@ class _ImportWalletBirthdayScreenState
         ],
       ),
     );
+  }
+
+  Future<BigInt> _loadAccountDiscoveryTransparentBalance(
+    rust_wallet.SoftwareWalletDiscoveredAccount account,
+  ) {
+    return ref
+        .read(accountProvider.notifier)
+        .previewSoftwareAccountTransparentBalance(
+          mnemonic: widget.args.mnemonic,
+          accountIndex: account.zip32AccountIndex,
+        );
   }
 }
 

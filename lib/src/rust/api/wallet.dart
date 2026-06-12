@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `parse_network_and_migrate`
+// These functions are ignored because they are not marked as `pub`: `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`
 
 /// Get the latest block height from lightwalletd.
 Future<BigInt> getLatestBlockHeight({required String lightwalletdUrl}) =>
@@ -82,6 +82,24 @@ discoverSoftwareWalletImportAccounts({
   lightwalletdUrl: lightwalletdUrl,
   isFirstWalletAccount: isFirstWalletAccount,
 );
+
+/// Preview the spendable transparent UTXO balance for a software ZIP32 account.
+///
+/// This does not import the account or touch the wallet DB. It checks a bounded
+/// standard BIP44 transparent address range so the onboarding modal can update
+/// balance rows after discovery has already returned.
+Future<BigInt> previewSoftwareAccountTransparentBalance({
+  required String mnemonic,
+  required String network,
+  required String lightwalletdUrl,
+  required int zip32AccountIndex,
+}) =>
+    RustLib.instance.api.crateApiWalletPreviewSoftwareAccountTransparentBalance(
+      mnemonic: mnemonic,
+      network: network,
+      lightwalletdUrl: lightwalletdUrl,
+      zip32AccountIndex: zip32AccountIndex,
+    );
 
 /// Import a software mnemonic. `account'=0` must be imported successfully;
 /// higher account indices are imported only when selected by the caller.

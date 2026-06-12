@@ -323,6 +323,30 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
   }
 
+  Future<BigInt> previewSoftwareAccountTransparentBalance({
+    required String mnemonic,
+    required int accountIndex,
+  }) async {
+    try {
+      final endpoint = ref.read(rpcEndpointProvider);
+      final accounts = state.value?.accounts ?? const <AccountInfo>[];
+      final isFirstWalletAccount = accounts.isEmpty;
+      final network = isFirstWalletAccount
+          ? endpoint.networkName
+          : await _getNetwork();
+
+      return rust_wallet.previewSoftwareAccountTransparentBalance(
+        mnemonic: mnemonic,
+        network: network,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        zip32AccountIndex: accountIndex,
+      );
+    } catch (e, st) {
+      log('previewSoftwareAccountTransparentBalance: ERROR: $e\n$st');
+      rethrow;
+    }
+  }
+
   /// Switch active account.
   Future<void> switchAccount(String uuid) async {
     final previousActiveUuid = state.value?.activeAccountUuid;

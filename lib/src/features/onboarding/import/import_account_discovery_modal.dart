@@ -1,15 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
+import '../../../core/formatting/zec_amount.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 
+typedef ImportAccountTransparentBalanceLoader =
+    Future<BigInt> Function(
+      rust_wallet.SoftwareWalletDiscoveredAccount account,
+    );
+
 class ImportAccountDiscoveryModal extends StatefulWidget {
   const ImportAccountDiscoveryModal({
     required this.accounts,
     required this.allowEmptySelection,
+    required this.loadTransparentBalance,
     required this.onConfirm,
     required this.onCancel,
     super.key,
@@ -17,6 +26,7 @@ class ImportAccountDiscoveryModal extends StatefulWidget {
 
   final List<rust_wallet.SoftwareWalletDiscoveredAccount> accounts;
   final bool allowEmptySelection;
+  final ImportAccountTransparentBalanceLoader loadTransparentBalance;
   final ValueChanged<List<int>> onConfirm;
   final VoidCallback onCancel;
 
@@ -29,29 +39,96 @@ class _ImportAccountDiscoveryModalState
     extends State<ImportAccountDiscoveryModal> {
   static const _modalWidth = 420.0;
   static const _maxListHeight = 280.0;
+  static const _maxConcurrentBalanceLoads = 2;
 
   late Set<int> _selectedAccountIndices;
+  late Map<int, _TransparentBalanceState> _transparentBalanceStates;
   final _scrollController = ScrollController();
+  int _balanceLoadGeneration = 0;
+  int _nextBalanceLoadIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _selectedAccountIndices = {
-      for (final account in widget.accounts) account.zip32AccountIndex,
-    };
+    _resetSelectedAccounts();
+    _resetTransparentBalanceStates();
+    _scheduleTransparentBalanceLoads();
   }
 
   @override
   void didUpdateWidget(covariant ImportAccountDiscoveryModal oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.accounts == widget.accounts) return;
+    _resetSelectedAccounts();
+    _resetTransparentBalanceStates();
+    _scheduleTransparentBalanceLoads();
+  }
+
+  void _resetSelectedAccounts() {
     _selectedAccountIndices = {
       for (final account in widget.accounts) account.zip32AccountIndex,
     };
   }
 
+  void _resetTransparentBalanceStates() {
+    _transparentBalanceStates = {
+      for (final account in widget.accounts)
+        account.zip32AccountIndex: const _TransparentBalanceState.loading(),
+    };
+  }
+
+  void _scheduleTransparentBalanceLoads() {
+    final generation = ++_balanceLoadGeneration;
+    _nextBalanceLoadIndex = 0;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || generation != _balanceLoadGeneration) return;
+      _startTransparentBalanceLoads(generation);
+    });
+  }
+
+  void _startTransparentBalanceLoads(int generation) {
+    final workerCount = widget.accounts.length < _maxConcurrentBalanceLoads
+        ? widget.accounts.length
+        : _maxConcurrentBalanceLoads;
+    for (var i = 0; i < workerCount; i++) {
+      unawaited(_loadTransparentBalances(generation));
+    }
+  }
+
+  Future<void> _loadTransparentBalances(int generation) async {
+    while (mounted && generation == _balanceLoadGeneration) {
+      final account = _takeNextBalanceLoadAccount(generation);
+      if (account == null) return;
+
+      final accountIndex = account.zip32AccountIndex;
+      try {
+        final balance = await widget.loadTransparentBalance(account);
+        if (!mounted || generation != _balanceLoadGeneration) return;
+        setState(() {
+          _transparentBalanceStates[accountIndex] =
+              _TransparentBalanceState.loaded(balance);
+        });
+      } catch (_) {
+        if (!mounted || generation != _balanceLoadGeneration) return;
+        setState(() {
+          _transparentBalanceStates[accountIndex] =
+              const _TransparentBalanceState.failed();
+        });
+      }
+    }
+  }
+
+  rust_wallet.SoftwareWalletDiscoveredAccount? _takeNextBalanceLoadAccount(
+    int generation,
+  ) {
+    if (generation != _balanceLoadGeneration) return null;
+    if (_nextBalanceLoadIndex >= widget.accounts.length) return null;
+    return widget.accounts[_nextBalanceLoadIndex++];
+  }
+
   @override
   void dispose() {
+    _balanceLoadGeneration++;
     _scrollController.dispose();
     super.dispose();
   }
@@ -158,6 +235,10 @@ class _ImportAccountDiscoveryModalState
                     return _DiscoveredAccountRow(
                       account: account,
                       selected: selected,
+                      transparentBalanceState:
+                          _transparentBalanceStates[account
+                              .zip32AccountIndex] ??
+                          const _TransparentBalanceState.loading(),
                       onTap: () => _toggle(account.zip32AccountIndex),
                     );
                   },
@@ -205,11 +286,13 @@ class _DiscoveredAccountRow extends StatelessWidget {
   const _DiscoveredAccountRow({
     required this.account,
     required this.selected,
+    required this.transparentBalanceState,
     required this.onTap,
   });
 
   final rust_wallet.SoftwareWalletDiscoveredAccount account;
   final bool selected;
+  final _TransparentBalanceState transparentBalanceState;
   final VoidCallback onTap;
 
   @override
@@ -273,6 +356,13 @@ class _DiscoveredAccountRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: AppSpacing.xs),
+                SizedBox(
+                  width: 112,
+                  child: _TransparentBalancePreviewLabel(
+                    state: transparentBalanceState,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
                 _AccountToggle(
                   selected: selected,
                   accountIndex: account.zip32AccountIndex,
@@ -288,6 +378,72 @@ class _DiscoveredAccountRow extends StatelessWidget {
   String _shortAddress(String address) {
     if (address.length <= 28) return address;
     return '${address.substring(0, 12)} ... ${address.substring(address.length - 12)}';
+  }
+}
+
+enum _TransparentBalanceStatus { loading, loaded, failed }
+
+class _TransparentBalanceState {
+  const _TransparentBalanceState.loading()
+    : status = _TransparentBalanceStatus.loading,
+      zatoshi = null;
+
+  const _TransparentBalanceState.loaded(this.zatoshi)
+    : status = _TransparentBalanceStatus.loaded;
+
+  const _TransparentBalanceState.failed()
+    : status = _TransparentBalanceStatus.failed,
+      zatoshi = null;
+
+  final _TransparentBalanceStatus status;
+  final BigInt? zatoshi;
+}
+
+class _TransparentBalancePreviewLabel extends StatelessWidget {
+  const _TransparentBalancePreviewLabel({required this.state});
+
+  final _TransparentBalanceState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final balanceText = switch (state.status) {
+      _TransparentBalanceStatus.loading => 'Loading',
+      _TransparentBalanceStatus.failed => '-',
+      _TransparentBalanceStatus.loaded => ZecAmount.fromZatoshi(
+        state.zatoshi ?? BigInt.zero,
+      ).activity.toString(),
+    };
+    final color = switch (state.status) {
+      _TransparentBalanceStatus.loading => colors.text.secondary,
+      _TransparentBalanceStatus.failed => colors.text.secondary,
+      _TransparentBalanceStatus.loaded => colors.text.accent,
+    };
+
+    return Column(
+      key: const ValueKey('import_account_discovery_balance_label'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(
+          'Transparent',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.end,
+          style: AppTypography.labelMedium.copyWith(
+            color: colors.text.secondary,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          balanceText,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.end,
+          style: AppTypography.labelMedium.copyWith(color: color),
+        ),
+      ],
+    );
   }
 }
 

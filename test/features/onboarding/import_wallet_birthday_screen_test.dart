@@ -149,6 +149,41 @@ void main() {
     expect((cancelSize.width - confirmSize.width).abs(), lessThan(0.1));
     expect(cancelSize.width, greaterThan(160));
   });
+
+  testWidgets('account discovery modal updates transparent balance previews', (
+    tester,
+  ) async {
+    final account1Balance = Completer<BigInt>();
+    final account2Balance = Completer<BigInt>();
+
+    await tester.pumpWidget(
+      _modalHarness(
+        onConfirm: (_) {},
+        loadTransparentBalance: (account) {
+          return switch (account.zip32AccountIndex) {
+            1 => account1Balance.future,
+            2 => account2Balance.future,
+            _ => Future.error(StateError('unexpected account')),
+          };
+        },
+      ),
+    );
+
+    expect(find.text('Transparent'), findsNWidgets(2));
+    expect(find.text('Loading'), findsNWidgets(2));
+
+    account1Balance.complete(BigInt.from(123456789));
+    await tester.pump();
+
+    expect(find.text('1.2345 ZEC'), findsOneWidget);
+    expect(find.text('Loading'), findsOneWidget);
+
+    account2Balance.completeError(Exception('utxo unavailable'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('-'), findsOneWidget);
+  });
 }
 
 Future<void> _setDesktopSurface(WidgetTester tester) async {
@@ -184,6 +219,7 @@ Widget _birthdayHarness({
 
 Widget _modalHarness({
   bool allowEmptySelection = true,
+  ImportAccountTransparentBalanceLoader? loadTransparentBalance,
   required ValueChanged<List<int>> onConfirm,
 }) {
   return MaterialApp(
@@ -209,6 +245,8 @@ Widget _modalHarness({
                   ),
                 ],
                 allowEmptySelection: allowEmptySelection,
+                loadTransparentBalance:
+                    loadTransparentBalance ?? ((_) async => BigInt.zero),
                 onConfirm: onConfirm,
                 onCancel: () {},
               ),
