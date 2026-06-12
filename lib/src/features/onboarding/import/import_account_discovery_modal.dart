@@ -165,30 +165,34 @@ class _ImportAccountDiscoveryModalState
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                AppButton(
-                  key: const ValueKey('import_account_discovery_cancel_button'),
-                  onPressed: widget.onCancel,
-                  variant: AppButtonVariant.ghost,
-                  minWidth: 96,
-                  child: const Text('Cancel'),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: AppButton(
-                    key: const ValueKey(
-                      'import_account_discovery_confirm_button',
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final buttonWidth = (constraints.maxWidth - AppSpacing.xs) / 2;
+                return Row(
+                  children: [
+                    AppButton(
+                      key: const ValueKey(
+                        'import_account_discovery_cancel_button',
+                      ),
+                      onPressed: widget.onCancel,
+                      variant: AppButtonVariant.ghost,
+                      minWidth: buttonWidth,
+                      child: const Text('Cancel'),
                     ),
-                    onPressed: canConfirm ? _confirm : null,
-                    variant: AppButtonVariant.primary,
-                    minWidth: 120,
-                    trailing: const AppIcon(AppIcons.chevronForward),
-                    child: const Text('Import'),
-                  ),
-                ),
-              ],
+                    const SizedBox(width: AppSpacing.xs),
+                    AppButton(
+                      key: const ValueKey(
+                        'import_account_discovery_confirm_button',
+                      ),
+                      onPressed: canConfirm ? _confirm : null,
+                      variant: AppButtonVariant.primary,
+                      minWidth: buttonWidth,
+                      trailing: const AppIcon(AppIcons.chevronForward),
+                      child: const Text('Import'),
+                    ),
+                  ],
+                );
+              },
             ),
           ],
         ),

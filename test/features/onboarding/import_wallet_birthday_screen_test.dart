@@ -123,6 +123,32 @@ void main() {
 
     expect(selected, isNull);
   });
+
+  testWidgets('account discovery modal action buttons split available width', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_modalHarness(onConfirm: (_) {}));
+
+    final cancelSize = tester.getSize(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('import_account_discovery_cancel_button'),
+        ),
+        matching: find.byType(AnimatedContainer),
+      ),
+    );
+    final confirmSize = tester.getSize(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('import_account_discovery_confirm_button'),
+        ),
+        matching: find.byType(AnimatedContainer),
+      ),
+    );
+
+    expect((cancelSize.width - confirmSize.width).abs(), lessThan(0.1));
+    expect(cancelSize.width, greaterThan(160));
+  });
 }
 
 Future<void> _setDesktopSurface(WidgetTester tester) async {
