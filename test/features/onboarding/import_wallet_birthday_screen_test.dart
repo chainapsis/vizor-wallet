@@ -82,6 +82,17 @@ void main() {
     expect(selected, [1, 2]);
   });
 
+  testWidgets('account discovery modal labels candidates by BIP44 path', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_modalHarness(onConfirm: (_) {}));
+
+    expect(find.text("m/44'/133'/1'/..."), findsOneWidget);
+    expect(find.text("m/44'/133'/2'/..."), findsOneWidget);
+    expect(find.text('Account 1'), findsNothing);
+    expect(find.text('Account 2'), findsNothing);
+  });
+
   testWidgets('account discovery modal removes toggled off candidates', (
     tester,
   ) async {
@@ -219,6 +230,7 @@ Widget _birthdayHarness({
 
 Widget _modalHarness({
   bool allowEmptySelection = true,
+  int bip44CoinType = 133,
   ImportAccountTransparentBalanceLoader? loadTransparentBalance,
   required ValueChanged<List<int>> onConfirm,
 }) {
@@ -245,6 +257,7 @@ Widget _modalHarness({
                   ),
                 ],
                 allowEmptySelection: allowEmptySelection,
+                bip44CoinType: bip44CoinType,
                 loadTransparentBalance:
                     loadTransparentBalance ?? ((_) async => BigInt.zero),
                 onConfirm: onConfirm,

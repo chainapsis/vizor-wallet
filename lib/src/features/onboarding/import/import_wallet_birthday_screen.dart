@@ -483,6 +483,7 @@ class _ImportWalletBirthdayScreenState
           ? ImportAccountDiscoveryModal(
               accounts: _accountDiscoveryCandidates!,
               allowEmptySelection: _accountDiscoveryAllowsEmptySelection,
+              bip44CoinType: ref.read(rpcEndpointProvider).network.coinType,
               loadTransparentBalance: _loadAccountDiscoveryTransparentBalance,
               onConfirm: _confirmAccountDiscovery,
               onCancel: _dismissAccountDiscovery,

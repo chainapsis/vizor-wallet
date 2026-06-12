@@ -18,6 +18,7 @@ class ImportAccountDiscoveryModal extends StatefulWidget {
   const ImportAccountDiscoveryModal({
     required this.accounts,
     required this.allowEmptySelection,
+    required this.bip44CoinType,
     required this.loadTransparentBalance,
     required this.onConfirm,
     required this.onCancel,
@@ -26,6 +27,7 @@ class ImportAccountDiscoveryModal extends StatefulWidget {
 
   final List<rust_wallet.SoftwareWalletDiscoveredAccount> accounts;
   final bool allowEmptySelection;
+  final int bip44CoinType;
   final ImportAccountTransparentBalanceLoader loadTransparentBalance;
   final ValueChanged<List<int>> onConfirm;
   final VoidCallback onCancel;
@@ -235,6 +237,7 @@ class _ImportAccountDiscoveryModalState
                     return _DiscoveredAccountRow(
                       account: account,
                       selected: selected,
+                      bip44CoinType: widget.bip44CoinType,
                       transparentBalanceState:
                           _transparentBalanceStates[account
                               .zip32AccountIndex] ??
@@ -286,12 +289,14 @@ class _DiscoveredAccountRow extends StatelessWidget {
   const _DiscoveredAccountRow({
     required this.account,
     required this.selected,
+    required this.bip44CoinType,
     required this.transparentBalanceState,
     required this.onTap,
   });
 
   final rust_wallet.SoftwareWalletDiscoveredAccount account;
   final bool selected;
+  final int bip44CoinType;
   final _TransparentBalanceState transparentBalanceState;
   final VoidCallback onTap;
 
@@ -299,11 +304,12 @@ class _DiscoveredAccountRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final borderColor = selected ? colors.border.strong : colors.border.regular;
+    final accountPath = _accountPathLabel();
 
     return Semantics(
       button: true,
       selected: selected,
-      label: 'Account ${account.zip32AccountIndex}',
+      label: accountPath,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
@@ -338,7 +344,7 @@ class _DiscoveredAccountRow extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Account ${account.zip32AccountIndex}',
+                        accountPath,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelLarge.copyWith(
                           color: colors.text.accent,
@@ -373,6 +379,10 @@ class _DiscoveredAccountRow extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _accountPathLabel() {
+    return "m/44'/$bip44CoinType'/${account.zip32AccountIndex}'/...";
   }
 
   String _shortAddress(String address) {
