@@ -113,6 +113,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // The edit-account modals bind to the ACTIVE account, and the sidebar
+    // stays interactive under the pane overlay — switching accounts while a
+    // modal is open must drop the previous account's drafts so Update can't
+    // commit them to the newly selected account.
+    ref.listen(
+      accountProvider.select((state) => state.value?.activeAccountUuid),
+      (previous, next) {
+        if (previous == next) return;
+        if (_editDraftName == null && _editDraftProfilePictureId == null) {
+          return;
+        }
+        setState(() {
+          _editDraftName = null;
+          _editDraftProfilePictureId = null;
+        });
+      },
+    );
     final accountState = ref.watch(accountProvider).value;
     final activeAccountName = accountState?.activeAccount?.name ?? 'Wallet 1';
     final activeProfilePictureId =

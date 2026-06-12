@@ -163,6 +163,43 @@ void main() {
 
     expect(updatedName, 'Account 2');
   });
+
+  testWidgets('rebinding to another account drops the previous draft', (
+    tester,
+  ) async {
+    String? updatedName;
+
+    await tester.pumpWidget(
+      _AccountEditModalHarness(
+        onUpdate: (name) async {
+          updatedName = name;
+        },
+      ),
+    );
+    await tester.enterText(find.byType(TextField), 'Stale draft');
+    await tester.pump();
+
+    // Same mounted modal receives a different account (settings binds to the
+    // active account; the sidebar can switch it while the modal is open).
+    await tester.pumpWidget(
+      _AccountEditModalHarness(
+        accountName: 'Account 3',
+        initialName: 'Account 3',
+        onUpdate: (name) async {
+          updatedName = name;
+        },
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Stale draft'), findsNothing);
+    expect(find.text('Account 3'), findsOneWidget);
+
+    // Update stays a no-op until the user actually edits the new account.
+    await tester.tap(find.text('Update'));
+    await tester.pump();
+    expect(updatedName, isNull);
+  });
 }
 
 Future<void> _loadAppFonts() async {
@@ -178,11 +215,15 @@ class _AccountEditModalHarness extends StatelessWidget {
     this.onUpdate,
     this.onEditProfilePicture,
     this.profilePictureChanged = false,
+    this.accountName = 'Account 2',
+    this.initialName = 'Account 2',
   });
 
   final Future<void> Function(String name)? onUpdate;
   final VoidCallback? onEditProfilePicture;
   final bool profilePictureChanged;
+  final String accountName;
+  final String initialName;
 
   @override
   Widget build(BuildContext context) {
@@ -193,8 +234,8 @@ class _AccountEditModalHarness extends StatelessWidget {
         child: Scaffold(
           body: Center(
             child: AccountEditModal(
-              accountName: 'Account 2',
-              initialName: 'Account 2',
+              accountName: accountName,
+              initialName: initialName,
               profilePictureId: 'pfp-01',
               profilePictureChanged: profilePictureChanged,
               onEditProfilePicture: onEditProfilePicture ?? () {},

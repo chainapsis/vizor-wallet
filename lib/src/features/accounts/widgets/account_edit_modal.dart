@@ -80,6 +80,19 @@ class _AccountEditModalState extends State<AccountEditModal> {
   }
 
   @override
+  void didUpdateWidget(covariant AccountEditModal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A different committed name means the modal was rebound to another
+    // account while open (settings binds to the active account, and the
+    // sidebar can switch it under the pane overlay). Drop the previous
+    // account's text so Update can't commit it to the new account.
+    if (oldWidget.accountName != widget.accountName) {
+      _controller.text = widget.initialName;
+      _submitError = null;
+    }
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
