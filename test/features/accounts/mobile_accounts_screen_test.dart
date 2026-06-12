@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
@@ -37,14 +38,27 @@ AppBootstrapState _bootstrap(AccountState accounts) => AppBootstrapState(
 );
 
 Widget _app(AccountState accounts) {
+  final router = GoRouter(
+    initialLocation: '/accounts',
+    routes: [
+      GoRoute(
+        path: '/accounts',
+        builder: (_, _) => const MobileAccountsScreen(),
+      ),
+      GoRoute(
+        path: '/add-account',
+        builder: (_, _) => const Text('add account route'),
+      ),
+    ],
+  );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap(accounts)),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
     ],
-    child: MaterialApp(
+    child: MaterialApp.router(
+      routerConfig: router,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
-      home: const MobileAccountsScreen(),
     ),
   );
 }
@@ -143,6 +157,26 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_account_edit_save')));
     await tester.pump();
     expect(find.text('Account name'), findsOneWidget);
+  });
+
+  testWidgets('add account routes to the add-account flow', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        AccountState(
+          accounts: [_account('a', 'Knight', isSeedAnchor: true)],
+          activeAccountUuid: 'a',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('mobile_accounts_add_account'));
+    expect(button, findsOneWidget);
+    expect(find.text('Add account'), findsOneWidget);
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('add account route'), findsOneWidget);
   });
 
   testWidgets('remove asks for confirmation with the design copy', (
