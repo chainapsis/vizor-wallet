@@ -9,8 +9,7 @@ import 'app_tooltip.dart';
 enum AppTextFieldTone { neutral, destructive, success, brandCrimson }
 
 /// Figma Field `Type` variant: [primary] is the default white input
-/// surface; [secondary] is the filled gray shell with a focus-gap idle
-/// ring used on the auth screens.
+/// surface; [secondary] is the filled gray shell used on the auth screens.
 enum AppTextFieldSurface { primary, secondary }
 
 const _appTextFieldInputIconSize = AppInputSizing.iconSize;
@@ -309,9 +308,9 @@ class _AppTextFieldState extends State<AppTextField> {
       forceStrutHeight: true,
     );
 
-    // Figma Field Type=Secondary: filled gray shell with a focus-gap
-    // colored idle ring (auth screens); primary keeps the white input
-    // surface with no idle border.
+    // Figma Field Type=Secondary: filled gray shell (auth screens); its
+    // component stroke is white at 0% paint opacity, so neither surface
+    // draws an idle border. Primary keeps the white input surface.
     final baseShellColor = widget.surface == AppTextFieldSurface.secondary
         ? colors.button.secondary.bg
         : colors.surface.input;
@@ -321,13 +320,10 @@ class _AppTextFieldState extends State<AppTextField> {
             baseShellColor,
           )
         : baseShellColor;
-    final idleBorderColor = widget.surface == AppTextFieldSurface.secondary
-        ? colors.state.focusGap
-        : Colors.transparent;
     final borderColor = switch (widget.tone) {
       AppTextFieldTone.neutral when _isFocused => colors.background.inverse,
       AppTextFieldTone.neutral when _hovered => colors.border.subtleOpacity,
-      AppTextFieldTone.neutral => idleBorderColor,
+      AppTextFieldTone.neutral => Colors.transparent,
       AppTextFieldTone.destructive => colors.border.utilityDestructiveSubtle,
       AppTextFieldTone.success => colors.border.utilitySuccess,
       AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,
