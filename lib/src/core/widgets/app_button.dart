@@ -42,7 +42,7 @@ const _largeSizing = _Sizing(
   ),
   gap: AppSpacing.xxs,
   iconSize: 20,
-  labelStyle: AppTypography.labelMedium,
+  labelStyle: AppTypography.labelLarge,
 );
 
 // Medium-large button — the 36px modal CTA from the Figma modal button set
