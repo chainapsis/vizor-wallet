@@ -28,12 +28,12 @@ class MobileTopNavAccount extends ConsumerWidget {
 
     final isSyncing = status.kind == SyncStatusKind.syncing;
     // Synced reads fully green: label `sync.text` (GreenPrimitives.p900) +
-    // vivid green bar `sync.lightSuccess`. Syncing reads muted: the label is
-    // the same green at 65% (`sync.textSyncing`, slightly less saturated) and
-    // the shimmer peaks at the full synced green to preview it. The bar uses a
-    // neutral grey (`text.muted` = p500, identical in both modes) so it never
-    // muddies to olive on a light background the way a 65%-alpha dark green
-    // would; it goes vivid green only once synced.
+    // vivid green bar `sync.lightSuccess`. Syncing reads muted: the label
+    // rests at the synced green @ 65% (`sync.textSyncing`) and the shimmer
+    // peaks at the bright `sync.lightSuccess`, so the sweep stays visible on a
+    // light background. The bar stays a neutral grey (`text.muted` = p500,
+    // identical in both modes) so it never muddies to olive, and its glow is
+    // tuned down (see `_SyncStatusMotion`) so syncing reads calm, not vibrant.
     final (labelColor, indicatorColor, highlightColor) = switch (status.kind) {
       SyncStatusKind.synced => (
         colors.sync.text, // green label
@@ -41,9 +41,9 @@ class MobileTopNavAccount extends ConsumerWidget {
         colors.sync.text,
       ),
       SyncStatusKind.syncing => (
-        colors.sync.textSyncing, // muted green (synced green @ 65%)
-        colors.text.muted, // neutral grey bar (both modes)
-        colors.sync.text, // shimmer peak = the synced green
+        colors.sync.textSyncing, // muted green resting (synced green @ 65%)
+        colors.text.muted, // neutral grey bar (subtle glow)
+        colors.sync.lightSuccess, // bright shimmer peak
       ),
       SyncStatusKind.failed => (
         colors.sync.textError,
