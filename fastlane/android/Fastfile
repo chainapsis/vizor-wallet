@@ -82,6 +82,9 @@ platform :android do
         "ANDROID_REQUIRE_RELEASE_SIGNING=true",
         "fvm flutter build appbundle",
         "--release",
+        # Store builds must compile the mobile token set — release
+        # builds have no form-factor guard (see AGENTS.md).
+        "--dart-define=VIZOR_FORM_FACTOR=mobile",
         "--build-name", shell_escape(metadata.fetch(:version)),
         "--build-number", shell_escape(metadata.fetch(:build_number))
       ].join(" ")
