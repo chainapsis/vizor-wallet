@@ -356,6 +356,34 @@ void main() {
     );
   });
 
+  testWidgets('sidebar shimmers the syncing label with animations on', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(isSyncing: true, displayPercentage: 0.34),
+        disableAnimations: false,
+      ),
+    );
+    // Advance a few frames of the looping controller (never pumpAndSettle:
+    // the animation repeats forever and would time out).
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(tester.takeException(), isNull);
+    // The syncing label is wrapped in a shimmer ShaderMask.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('sidebar_sync_text')),
+        matching: find.byType(ShaderMask),
+      ),
+      findsOneWidget,
+    );
+
+    // Unmount so the active ticker is disposed cleanly.
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('sidebar shows synced state after sync completes', (
     tester,
   ) async {
@@ -516,6 +544,7 @@ Widget _sidebarHarness(
   bool swapEnabled = true,
   AccountState? accountState,
   String initialLocation = '/home',
+  bool disableAnimations = true,
 }) {
   final bootstrap = _bootstrapFor(accountState ?? _singleAccountState);
   final router = GoRouter(
@@ -567,7 +596,15 @@ Widget _sidebarHarness(
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: themeData, child: child!),
+      builder: (context, child) => MediaQuery(
+        // The syncing sidebar's shimmer + glow animate forever; default to
+        // disabling animations so pumpAndSettle settles. Tests that need the
+        // animated path opt back in with disableAnimations: false.
+        data: MediaQuery.of(
+          context,
+        ).copyWith(disableAnimations: disableAnimations),
+        child: AppTheme(data: themeData, child: child!),
+      ),
     ),
   );
 }
