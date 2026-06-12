@@ -80,7 +80,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    final errorText = find.text("That doesn't look like a valid block height.");
+    final errorText = find.text("Doesn't seem like a legit block height");
     expect(errorText, findsOneWidget);
 
     final textWidget = tester.widget<Text>(errorText);

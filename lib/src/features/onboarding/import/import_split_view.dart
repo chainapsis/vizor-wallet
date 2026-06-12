@@ -195,7 +195,11 @@ class _SidebarIllustration extends StatelessWidget {
         child: SizedBox(
           width: _frameWidth,
           height: _frameHeight,
-          child: Image.asset(asset, fit: BoxFit.cover),
+          child: Image.asset(
+            asset,
+            fit: BoxFit.cover,
+            alignment: Alignment.bottomCenter,
+          ),
         ),
       ),
     );
