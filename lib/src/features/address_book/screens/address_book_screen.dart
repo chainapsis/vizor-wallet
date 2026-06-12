@@ -11,6 +11,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_context_menu.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -243,10 +244,12 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
     }
   }
 
-  Future<void> _copyAddress(AddressBookContact contact) async {
-    await Clipboard.setData(ClipboardData(text: contact.address));
-    if (!mounted) return;
-    showAppToast(context, 'Address copied');
+  void _copyAddress(AddressBookContact contact) {
+    copyTextWithToast(
+      context,
+      text: contact.address,
+      toastMessage: 'Address copied',
+    );
   }
 
   void _sendToContact(AddressBookContact contact) {
@@ -1239,8 +1242,8 @@ class _ContactFormModalState extends State<_ContactFormModal> {
               controller: _labelController,
               hintText: 'Add label 1-20 characters',
               trailing: widget.editing
-                  ? _IconButtonLike(
-                      semanticLabel: 'Clear contact label',
+                  ? AppTappable(
+                      semanticsLabel: 'Clear contact label',
                       onTap: _clearLabel,
                       child: const AppIcon(AppIcons.cross),
                     )
@@ -1270,8 +1273,8 @@ class _ContactFormModalState extends State<_ContactFormModal> {
               showLabel: false,
               controller: _addressController,
               hintText: 'Add address',
-              trailing: _IconButtonLike(
-                semanticLabel: 'Scan address QR',
+              trailing: AppTappable(
+                semanticsLabel: 'Scan address QR',
                 onTap: widget.onScanAddress,
                 child: const AppIcon(AppIcons.qr),
               ),
@@ -1312,8 +1315,8 @@ class _EditableContactAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _IconButtonLike(
-      semanticLabel: 'Change contact picture',
+    return AppTappable(
+      semanticsLabel: 'Change contact picture',
       onTap: onPressed,
       child: SizedBox(
         width: 62,
@@ -1376,9 +1379,9 @@ class _ChainAddressSelector extends StatelessWidget {
               ),
             ),
           ),
-          _IconButtonLike(
+          AppTappable(
             key: const ValueKey('address_book_network_selector_button'),
-            semanticLabel: 'Select network',
+            semanticsLabel: 'Select network',
             onTap: onPressed,
             child: Container(
               height: 26,
@@ -1610,8 +1613,8 @@ class _NetworkSelectorRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return _IconButtonLike(
-      semanticLabel: network.label,
+    return AppTappable(
+      semanticsLabel: network.label,
       onTap: () => onSelected(network),
       child: Container(
         height: 44,
@@ -1718,35 +1721,6 @@ class _NetworkAssetIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AddressBookNetworkIcon(network: network, size: size);
-  }
-}
-
-class _IconButtonLike extends StatelessWidget {
-  const _IconButtonLike({
-    required this.semanticLabel,
-    required this.onTap,
-    required this.child,
-    super.key,
-  });
-
-  final String semanticLabel;
-  final VoidCallback onTap;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: semanticLabel,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: child,
-        ),
-      ),
-    );
   }
 }
 

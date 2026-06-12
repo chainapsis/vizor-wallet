@@ -22,8 +22,10 @@ import '../formatting/zec_amount.dart';
 import '../privacy/privacy_mask.dart';
 import '../profile_pictures.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_copy_feedback.dart';
 import '../widgets/app_icon.dart';
 import '../widgets/app_profile_picture.dart';
+import '../widgets/app_tappable.dart';
 import '../widgets/app_toast.dart';
 import 'app_desktop_shell.dart';
 
@@ -899,7 +901,7 @@ class _SidebarAccountPopoverRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return _SidebarPopoverClickTarget(
+    return AppTappable(
       onTap: onTap,
       child: Container(
         height: 40,
@@ -932,28 +934,6 @@ class _SidebarAccountPopoverRow extends StatelessWidget {
                 AppIcon(AppIcons.check, size: 16, color: colors.icon.regular),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SidebarPopoverClickTarget extends StatelessWidget {
-  const _SidebarPopoverClickTarget({required this.onTap, required this.child});
-
-  final VoidCallback onTap;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: child,
         ),
       ),
     );
