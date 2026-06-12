@@ -58,12 +58,14 @@ enum OnboardingStep {
 }
 
 extension OnboardingStepX on OnboardingStep {
+  // Sidebar step labels follow the Figma sidebar verbatim (mixed casing as
+  // drawn) — see the sentence-case exception in AGENTS.md.
   String get label => switch (this) {
     OnboardingStep.intro => 'Intro to Zcash',
     OnboardingStep.addressTypes => 'Address types',
     OnboardingStep.thingsToKnow => 'Things to know',
-    OnboardingStep.secretPassphrase => 'Secret passphrase',
-    OnboardingStep.setPassword => 'Set password',
+    OnboardingStep.secretPassphrase => 'Secret Passphrase',
+    OnboardingStep.setPassword => 'Set Password',
   };
 
   String get iconName => switch (this) {
