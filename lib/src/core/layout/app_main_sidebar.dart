@@ -1048,7 +1048,7 @@ class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
                   key: const ValueKey('sidebar_sync_text'),
                   label: status.label,
                   baseColor: textColor,
-                  highlightColor: colors.sync.text,
+                  highlightColor: colors.sync.lightSuccess,
                   progress: t,
                 ),
               );
@@ -1127,11 +1127,12 @@ abstract final class _SidebarSyncMotion {
   /// Half-width of the shimmer highlight band as a gradient-stop fraction.
   static const _bandHalf = 0.18;
 
-  /// Indicator glow breathing range (shadow blur radius + alpha).
+  /// Indicator glow breathing range (shadow blur radius + alpha). Kept gentle
+  /// so the syncing glow stays calm rather than vibrant.
   static const _minGlowBlur = 8.0;
-  static const _maxGlowBlur = 16.0;
-  static const _minGlowAlpha = 0.35;
-  static const _maxGlowAlpha = 0.7;
+  static const _maxGlowBlur = 13.0;
+  static const _minGlowAlpha = 0.2;
+  static const _maxGlowAlpha = 0.45;
 
   /// 0 → 1 → 0 once per [period].
   static double _breath(double t) => (1 - math.cos(2 * math.pi * t)) / 2;
