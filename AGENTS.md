@@ -52,6 +52,9 @@ operating-system chrome and presentation-only background layers.
 - This applies to interpolated labels too: `'$symbol deposit tx'`, not
   `'$symbol Deposit tx'`. The asset symbol carries its own casing; the rest of
   the label is sentence case.
+- **Exception**: sidebar entries and screen titles may use Title Case (e.g.
+  onboarding step labels `Secret Passphrase`, `Wallet Birthday Height`) — do
+  not sentence-case them in copy sweeps.
 - Existing rationale and full audit are in `qa-copy-review.csv` and
   `copy-review-20260528-1554.csv` at the repo root. Reference these before
   introducing new copy in this project.

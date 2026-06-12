@@ -19,12 +19,14 @@ enum KeystoneOnboardingStep {
 }
 
 extension KeystoneOnboardingStepX on KeystoneOnboardingStep {
+  // Sidebar step labels keep their original Title Case — see the
+  // sentence-case exception in AGENTS.md (UI Copy Conventions).
   String get label => switch (this) {
-    KeystoneOnboardingStep.howToConnect => 'How to connect',
-    KeystoneOnboardingStep.scanQrCode => 'Scan QR code',
-    KeystoneOnboardingStep.selectAccount => 'Select account',
-    KeystoneOnboardingStep.walletBirthdayHeight => 'Wallet birthday height',
-    KeystoneOnboardingStep.setPassword => 'Set password',
+    KeystoneOnboardingStep.howToConnect => 'How to Connect',
+    KeystoneOnboardingStep.scanQrCode => 'Scan QR Code',
+    KeystoneOnboardingStep.selectAccount => 'Select Account',
+    KeystoneOnboardingStep.walletBirthdayHeight => 'Wallet Birthday Height',
+    KeystoneOnboardingStep.setPassword => 'Set Password',
   };
 
   String get iconName => switch (this) {

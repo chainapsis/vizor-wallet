@@ -15,10 +15,12 @@ enum ImportOnboardingStep {
 }
 
 extension ImportOnboardingStepX on ImportOnboardingStep {
+  // Sidebar step labels keep their original Title Case — see the
+  // sentence-case exception in AGENTS.md (UI Copy Conventions).
   String get label => switch (this) {
-    ImportOnboardingStep.secretPassphrase => 'Secret passphrase',
-    ImportOnboardingStep.walletBirthdayHeight => 'Wallet birthday height',
-    ImportOnboardingStep.setPassword => 'Set password',
+    ImportOnboardingStep.secretPassphrase => 'Secret Passphrase',
+    ImportOnboardingStep.walletBirthdayHeight => 'Wallet Birthday Height',
+    ImportOnboardingStep.setPassword => 'Set Password',
   };
 
   String get iconName => switch (this) {
