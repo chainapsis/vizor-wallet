@@ -170,6 +170,9 @@ class _MobileImportBirthdayScreenState
     if (!picked) {
       candidate = await showAppMobileSheet<DateTime>(
         context: context,
+        // The calendar panel is its own card; drop the sheet surface so
+        // only the scrim and the calendar show.
+        transparentBackground: true,
         builder: (sheetContext) => SafeArea(
           top: false,
           child: Padding(

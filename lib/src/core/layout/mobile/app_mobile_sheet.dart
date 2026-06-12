@@ -15,6 +15,7 @@ Future<T?> showAppMobileSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool isDismissible = true,
+  bool transparentBackground = false,
 }) {
   final colors = context.colors;
   return showModalBottomSheet<T>(
@@ -26,7 +27,13 @@ Future<T?> showAppMobileSheet<T>({
     // bar (the shell's bottomNavigationBar sits outside the branch
     // navigators) — the Figma modals always overlay the nav.
     useRootNavigator: true,
-    backgroundColor: colors.background.ground,
+    // Transparent mode is for content that is already its own card
+    // (e.g. the birthday calendar panel): only the scrim and the
+    // content render, instead of a card floating on a sheet surface.
+    backgroundColor: transparentBackground
+        ? const Color(0x00000000)
+        : colors.background.ground,
+    elevation: transparentBackground ? 0 : null,
     barrierColor: colors.background.neutralScrim,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.large)),

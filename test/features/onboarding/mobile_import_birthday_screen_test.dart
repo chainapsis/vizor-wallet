@@ -136,6 +136,13 @@ void main() {
     final sheetHeight = tester.getSize(find.byType(BottomSheet)).height;
     expect(sheetHeight, closeTo(panelHeight + AppSpacing.sm * 2, 1.0));
 
+    // The panel is its own card, so the sheet surface stays invisible —
+    // only the scrim and the calendar render.
+    expect(
+      tester.widget<BottomSheet>(find.byType(BottomSheet)).backgroundColor,
+      const Color(0x00000000),
+    );
+
     // Selecting a (past) day fills the field and enables continue.
     await tester.tap(find.text('10').first);
     await tester.pumpAndSettle();
