@@ -459,6 +459,53 @@ void main() {
     final thumbRectAfter = tester.getRect(thumbFinder);
     expect(thumbRectAfter.top, greaterThan(thumbRectBefore.top));
   });
+
+  testWidgets('single-line hint labels the editable for screen readers', (
+    tester,
+  ) async {
+    // The single-line path draws its own hint instead of the
+    // InputDecorator's; MergeSemantics must fold that hint into the
+    // editable's node so label-less fields (search inputs) stay named.
+    final handle = tester.ensureSemantics();
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 352,
+                child: AppTextField(
+                  label: 'Search',
+                  showLabel: false,
+                  controller: controller,
+                  hintText: 'Search for label or network',
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final node = tester.getSemantics(find.byType(EditableText));
+    expect(node.flagsCollection.isTextField, isTrue);
+    expect(node.label, 'Search for label or network');
+
+    // With text entered the hint disappears, matching the decorator's
+    // empty-only hint semantics; the value carries the content instead.
+    await tester.enterText(find.byType(EditableText), 'zec');
+    await tester.pump();
+    final filledNode = tester.getSemantics(find.byType(EditableText));
+    expect(filledNode.label, isEmpty);
+    expect(filledNode.value, 'zec');
+
+    handle.dispose();
+  });
 }
 
 class _ThemedHarness extends StatelessWidget {

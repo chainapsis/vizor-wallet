@@ -405,26 +405,31 @@ class _AppTextFieldState extends State<AppTextField> {
             ),
             child: textField,
           )
-        : Stack(
-            children: [
-              if (widget.hintText != null && !_hasText)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: Text(
-                        widget.hintText!,
-                        style: resolvedHintStyle,
-                        strutStyle: textStrutStyle,
-                        maxLines: 1,
-                        softWrap: false,
-                        overflow: TextOverflow.ellipsis,
+        // MergeSemantics folds the overlay hint's label into the editable's
+        // semantics node, matching what InputDecorator's hint provided
+        // before the single-line path dropped the decorator.
+        : MergeSemantics(
+            child: Stack(
+              children: [
+                if (widget.hintText != null && !_hasText)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(
+                          widget.hintText!,
+                          style: resolvedHintStyle,
+                          strutStyle: textStrutStyle,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              textField,
-            ],
+                textField,
+              ],
+            ),
           );
 
     final shell = SizedBox(
