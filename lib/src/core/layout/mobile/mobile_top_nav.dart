@@ -40,7 +40,8 @@ class MobileTopNav extends StatelessWidget {
   }) : _variant = _MobileTopNavVariant.account,
        title = '',
        progress = 0,
-       onBack = null;
+       onBack = null,
+       trailing = null;
 
   const MobileTopNav.steps({required this.progress, this.onBack, super.key})
     : _variant = _MobileTopNavVariant.steps,
@@ -53,20 +54,25 @@ class MobileTopNav extends StatelessWidget {
       syncHighlightColor = null,
       avatar = null,
       onAccountTap = null,
-      title = '';
+      title = '',
+      trailing = null;
 
-  const MobileTopNav.back({required this.title, this.onBack, super.key})
-    : _variant = _MobileTopNavVariant.back,
-      accountName = '',
-      balanceLabel = null,
-      syncLabel = null,
-      syncLabelColor = null,
-      syncIndicatorColor = null,
-      syncAnimated = false,
-      syncHighlightColor = null,
-      avatar = null,
-      onAccountTap = null,
-      progress = 0;
+  const MobileTopNav.back({
+    required this.title,
+    this.onBack,
+    this.trailing,
+    super.key,
+  }) : _variant = _MobileTopNavVariant.back,
+       accountName = '',
+       balanceLabel = null,
+       syncLabel = null,
+       syncLabelColor = null,
+       syncIndicatorColor = null,
+       syncAnimated = false,
+       syncHighlightColor = null,
+       avatar = null,
+       onAccountTap = null,
+       progress = 0;
 
   final _MobileTopNavVariant _variant;
 
@@ -99,6 +105,10 @@ class MobileTopNav extends StatelessWidget {
 
   /// Back variant: centered serif title.
   final String title;
+
+  /// Back variant: right-aligned widget (e.g. the swap composer's
+  /// "Powered by NEAR Intents" lockup — Figma 4686:102067).
+  final Widget? trailing;
 
   final VoidCallback? onBack;
 
@@ -248,6 +258,7 @@ class MobileTopNav extends StatelessWidget {
             left: AppSpacing.s,
             child: _BackButton(size: _backButtonSize, onTap: onBack),
           ),
+        if (trailing != null) Positioned(right: AppSpacing.s, child: trailing!),
       ],
     );
   }
