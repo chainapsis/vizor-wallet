@@ -42,7 +42,7 @@ void main() {
           accountName: 'Account1',
           syncLabel: '20% Syncing...',
           syncLabelColor: AppThemeData.dark.colors.sync.textSyncing,
-          syncIndicatorColor: AppThemeData.dark.colors.sync.textSyncing,
+          syncIndicatorColor: AppThemeData.dark.colors.text.muted,
           syncHighlightColor: AppThemeData.dark.colors.sync.text,
           syncAnimated: true,
         ),
@@ -67,7 +67,8 @@ void main() {
   testWidgets('MobileTopNav.account syncing is static under reduce-motion', (
     tester,
   ) async {
-    final muted = AppThemeData.dark.colors.sync.textSyncing;
+    final mutedGreen = AppThemeData.dark.colors.sync.textSyncing;
+    final greyBar = AppThemeData.dark.colors.text.muted;
     await tester.pumpWidget(
       _harness(
         Builder(
@@ -76,8 +77,8 @@ void main() {
             child: MobileTopNav.account(
               accountName: 'Account1',
               syncLabel: '20% Syncing...',
-              syncLabelColor: muted,
-              syncIndicatorColor: muted,
+              syncLabelColor: mutedGreen,
+              syncIndicatorColor: greyBar,
               syncHighlightColor: AppThemeData.dark.colors.sync.text,
               syncAnimated: true,
             ),
@@ -87,20 +88,20 @@ void main() {
     );
 
     // No shimmer mask; the label keeps its muted (less-saturated) green base
-    // and the edge bar stays the same muted green. The full synced green only
-    // appears as the animated shimmer peak.
+    // and the edge bar is a neutral grey. The full synced green only appears
+    // as the animated shimmer peak.
     expect(find.byType(ShaderMask), findsNothing);
     final label = tester.widget<Text>(find.text('20% Syncing...'));
-    expect(label.style?.color, muted);
+    expect(label.style?.color, mutedGreen);
 
-    final mutedBars = tester
+    final greyBars = tester
         .widgetList<Container>(find.byType(Container))
         .where(
           (c) =>
               c.decoration is BoxDecoration &&
-              (c.decoration as BoxDecoration).color == muted,
+              (c.decoration as BoxDecoration).color == greyBar,
         );
-    expect(mutedBars, isNotEmpty);
+    expect(greyBars, isNotEmpty);
   });
 
   testWidgets('MobileTopNav.back shows serif title and fires onBack', (
