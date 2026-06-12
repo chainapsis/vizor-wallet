@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_floating_bar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
@@ -34,17 +35,6 @@ const double _kContactsContentWidth = 352;
 /// narrower than the group cards).
 const double _kContactsSearchFieldWidth = 256;
 
-/// Minimum height of the floating add-contact overlay (Figma: the bottom
-/// gradient band is min 96 tall with 16px vertical padding around the 36px
-/// button), and the matching minimum scroll reserve. Mirrors the settings
-/// endpoint floating-bar contract.
-const double _kFloatingAddContactMinOverlayHeight = 96;
-
-/// Breathing room between the last group card and the top of the floating
-/// overlay once it grows past its minimum (matches the settings endpoint
-/// floating-bar gap).
-const double _kFloatingAddContactGap = 12;
-
 class AddressBookScreen extends ConsumerStatefulWidget {
   const AddressBookScreen({super.key});
 
@@ -67,26 +57,6 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
   AddressBookContact? _editingContact;
   AddressBookContact? _removingContact;
   String? _submitError;
-
-  final _floatingButtonKey = GlobalKey();
-
-  /// Latest measured height of the floating add-contact overlay (gradient
-  /// band + button). Drives the scroll scaffold's reserved bottom padding so
-  /// the last group card scrolls clear of the overlay.
-  double _floatingButtonReserve = _kFloatingAddContactMinOverlayHeight;
-
-  void _measureFloatingButton() {
-    final box =
-        _floatingButtonKey.currentContext?.findRenderObject() as RenderBox?;
-    final measured = box?.hasSize == true ? box!.size.height : null;
-    if (measured == null) return;
-    // Only rebuild when the value actually moves to avoid a layout feedback
-    // loop.
-    if ((measured - _floatingButtonReserve).abs() < 0.5) return;
-    setState(() {
-      _floatingButtonReserve = measured;
-    });
-  }
 
   void _openAddContact() {
     setState(() {
@@ -275,91 +245,42 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
     );
     final showBottomAction = paneState?.hasContacts ?? false;
 
-    if (showBottomAction) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _measureFloatingButton();
-      });
-    }
-
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
         child: Stack(
           children: [
-            AppPaneScrollScaffold(
-              toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
-              padding: EdgeInsets.only(
-                top: AppSpacing.md,
-                // The minimum reserve matches the overlay's minimum height;
-                // once the overlay grows past it the gap is added on top so
-                // the last card never slides under the button.
-                bottom: !showBottomAction
-                    ? 0
-                    : (_floatingButtonReserve <=
-                              _kFloatingAddContactMinOverlayHeight
-                          ? _kFloatingAddContactMinOverlayHeight
-                          : _floatingButtonReserve + _kFloatingAddContactGap),
-              ),
-              child: paneState == null
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                      child: _AddressBookError(),
-                    )
-                  : _AddressBookPane(
-                      state: paneState,
-                      onQueryChanged: (query) => ref
-                          .read(addressBookProvider.notifier)
-                          .setQuery(query),
-                      onAddContact: _openAddContact,
-                      onEditContact: _openEditContact,
-                      onCopyAddress: _copyAddress,
-                      onSendContact: _sendToContact,
-                      onRemoveContact: _openRemoveContact,
-                    ),
-            ),
-            if (showBottomAction)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Stack(
-                  children: [
-                    // Bottom fade so list content scrolling beneath the
-                    // floating button dissolves into the window background
-                    // (Figma: window-transparent -> window gradient band).
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                context.colors.macosUtility.windowTransparent,
-                                context.colors.macosUtility.window,
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Container(
-                      key: _floatingButtonKey,
-                      constraints: const BoxConstraints(
-                        minHeight: _kFloatingAddContactMinOverlayHeight,
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.sm,
-                      ),
-                      alignment: Alignment.bottomCenter,
-                      // Flat per the updated design — no shadow wrapper.
-                      child: _AddressBookAddButton(onPressed: _openAddContact),
-                    ),
-                  ],
+            AppPaneFloatingBar(
+              visible: showBottomAction,
+              // Flat per the updated design — no shadow wrapper.
+              bar: _AddressBookAddButton(onPressed: _openAddContact),
+              builder: (context, bottomReserve) => AppPaneScrollScaffold(
+                toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
+                padding: EdgeInsets.only(
+                  top: AppSpacing.md,
+                  bottom: bottomReserve,
                 ),
+                child: paneState == null
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: AppSpacing.md,
+                        ),
+                        child: _AddressBookError(),
+                      )
+                    : _AddressBookPane(
+                        state: paneState,
+                        onQueryChanged: (query) => ref
+                            .read(addressBookProvider.notifier)
+                            .setQuery(query),
+                        onAddContact: _openAddContact,
+                        onEditContact: _openEditContact,
+                        onCopyAddress: _copyAddress,
+                        onSendContact: _sendToContact,
+                        onRemoveContact: _openRemoveContact,
+                      ),
               ),
+            ),
             if (_modal != null)
               AppPaneModalOverlay(onDismiss: _closeModal, child: _buildModal()),
           ],

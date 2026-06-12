@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
+import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
@@ -176,14 +177,26 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Add account'), findsOneWidget);
-    final otherSurface = find.byKey(const ValueKey('accounts_other_surface'));
+
+    // The add button floats over the pane bottom (contacts contract): drive
+    // the pane scroll to the end and the last row must clear the button via
+    // the scaffold's measured bottom reserve.
+    final scrollView = find.byKey(AppPaneScrollScaffold.scrollViewKey);
+    expect(scrollView, findsOneWidget);
+    await tester.drag(scrollView, const Offset(0, -3000));
+    await tester.pumpAndSettle();
+    final scrollableState = tester.state<ScrollableState>(
+      find.descendant(of: scrollView, matching: find.byType(Scrollable)).first,
+    );
+    expect(scrollableState.position.pixels, greaterThan(0));
+
     final addAccountButton = find.byKey(
       const ValueKey('accounts_add_account_button'),
     );
+    final otherSurface = find.byKey(const ValueKey('accounts_other_surface'));
     expect(
-      tester.getTopLeft(addAccountButton).dy -
-          tester.getBottomLeft(otherSurface).dy,
-      greaterThanOrEqualTo(AppSpacing.md),
+      tester.getRect(otherSurface).bottom,
+      lessThanOrEqualTo(tester.getRect(addAccountButton).top + 0.5),
     );
   });
 

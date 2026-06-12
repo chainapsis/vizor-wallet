@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/app_pane_floating_bar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
@@ -42,7 +43,6 @@ const _accountsRowGap = AppSpacing.xs;
 const _accountsContentHorizontalPadding = AppSpacing.s;
 const _accountsContentVerticalPadding = AppSpacing.sm;
 const _accountsTitleSurfaceGap = AppSpacing.base;
-const _accountsListAddButtonMinGap = AppSpacing.md;
 
 enum AccountsScreenInitialModal { editAccount, profilePicture, removeAccount }
 
@@ -261,17 +261,20 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         backgroundColor: Colors.transparent,
         child: Stack(
           children: [
-            AppPaneScrollScaffold(
-              toolbar: const AppPaneToolbar(
-                key: ValueKey('accounts_pane_toolbar'),
-                leading: AppRouteBackLink(
-                  key: ValueKey('accounts_pane_back_button'),
-                  minWidth: 60,
-                ),
+            AppPaneFloatingBar(
+              bar: _AccountsAddAccountButton(
+                key: const ValueKey('accounts_add_account_button'),
+                onPressed: () => context.go('/add-account'),
               ),
-              // IntrinsicHeight keeps the pane's Spacer working: the column
-              // needs a bounded height even when content exceeds the viewport.
-              child: IntrinsicHeight(
+              builder: (context, bottomReserve) => AppPaneScrollScaffold(
+                toolbar: const AppPaneToolbar(
+                  key: ValueKey('accounts_pane_toolbar'),
+                  leading: AppRouteBackLink(
+                    key: ValueKey('accounts_pane_back_button'),
+                    minWidth: 60,
+                  ),
+                ),
+                padding: EdgeInsets.only(bottom: bottomReserve),
                 child: _AccountsPane(
                   activeAccount: activeAccount,
                   otherAccounts: otherAccounts,
@@ -515,7 +518,8 @@ class _AccountsPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    return Align(
+      alignment: Alignment.topCenter,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: _accountsContentWidth),
         child: Padding(
@@ -524,6 +528,7 @@ class _AccountsPane extends StatelessWidget {
             vertical: _accountsContentVerticalPadding,
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
@@ -543,15 +548,6 @@ class _AccountsPane extends StatelessWidget {
                 onEditAccount: onEditAccount,
                 onRemoveAccount: onRemoveAccount,
                 initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
-              ),
-              const SizedBox(height: _accountsListAddButtonMinGap),
-              const Spacer(),
-              Align(
-                alignment: Alignment.center,
-                child: _AccountsAddAccountButton(
-                  key: const ValueKey('accounts_add_account_button'),
-                  onPressed: () => context.go('/add-account'),
-                ),
               ),
             ],
           ),

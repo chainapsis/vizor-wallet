@@ -6,6 +6,7 @@ import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_floating_bar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -24,16 +25,6 @@ class SettingsEndpointScreen extends ConsumerStatefulWidget {
 }
 
 enum _EndpointTab { list, custom }
-
-/// Minimum height the floating update bar occupies, and the matching minimum
-/// bottom padding the scroll view reserves so the bar never overlaps the last
-/// preset card. Shared by [_SettingsEndpointPaneState] and [_FloatingUpdateBar]
-/// so the reserved space and the rendered bar stay in lockstep.
-const double _kFloatingBarMinHeight = 96.0;
-
-/// Extra breathing room between the last card and the top of the bar once the
-/// bar grows past its minimum (e.g. when wrapped error text is shown).
-const double _kFloatingBarGap = 12.0;
 
 class _SettingsEndpointScreenState
     extends ConsumerState<SettingsEndpointScreen> {
@@ -246,25 +237,6 @@ class _SettingsEndpointPane extends StatefulWidget {
 class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
   static const _contentWidth = 420.0;
 
-  final _floatingBarKey = GlobalKey();
-
-  /// Latest measured floating-bar height. Drives the reserved scroll padding so
-  /// it tracks the bar's real rendered size (e.g. wrapped error text) instead of
-  /// a fixed guess. Defaults to the shared minimum.
-  double _floatingBarHeight = _kFloatingBarMinHeight;
-
-  void _measureFloatingBar() {
-    final box =
-        _floatingBarKey.currentContext?.findRenderObject() as RenderBox?;
-    final measured = box?.hasSize == true ? box!.size.height : null;
-    if (measured == null) return;
-    // Only rebuild when the value actually moves to avoid a layout feedback loop.
-    if ((measured - _floatingBarHeight).abs() < 0.5) return;
-    setState(() {
-      _floatingBarHeight = measured;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -272,116 +244,86 @@ class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
         widget.activeTab == _EndpointTab.list &&
         (widget.canUpdate || widget.isSubmitting || widget.submitError != null);
 
-    if (showFloatingBar) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _measureFloatingBar();
-      });
-    }
-
-    // When the bar sits at its minimum height (the no-error case) the reserve
-    // stays at exactly the shared minimum — no behavior change. Once wrapped
-    // error text grows the bar past the minimum, the gap is added on top of the
-    // real height so the bar never overlaps the last preset card.
-    final reservedBottomPadding = showFloatingBar
-        ? (_floatingBarHeight <= _kFloatingBarMinHeight
-              ? _kFloatingBarMinHeight
-              : _floatingBarHeight + _kFloatingBarGap)
-        : 0.0;
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        AppPaneScrollScaffold(
-          toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
-          padding: EdgeInsets.only(bottom: reservedBottomPadding),
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: SizedBox(
-              width: _contentWidth,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.s,
-                  vertical: AppSpacing.sm,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Endpoint',
-                      textAlign: TextAlign.center,
-                      style: AppTypography.headlineLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
+    return AppPaneFloatingBar(
+      visible: showFloatingBar,
+      // The scrim box is the 420 content column in the design, not the full
+      // pane width.
+      overlayWidth: _contentWidth,
+      bar: _FloatingUpdateBar(
+        submitError: widget.submitError,
+        isSubmitting: widget.isSubmitting,
+        canUpdate: widget.canUpdate,
+        showButton: widget.canUpdate || widget.isSubmitting,
+        onSubmit: widget.onSubmit,
+      ),
+      builder: (context, bottomReserve) => AppPaneScrollScaffold(
+        toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
+        padding: EdgeInsets.only(bottom: bottomReserve),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            width: _contentWidth,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.s,
+                vertical: AppSpacing.sm,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Endpoint',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.headlineLarge.copyWith(
+                      color: colors.text.accent,
                     ),
-                    const SizedBox(height: AppSpacing.s),
-                    _CurrentEndpointSubtitle(
-                      current: widget.current,
-                      latencyState: widget.latencyState,
+                  ),
+                  const SizedBox(height: AppSpacing.s),
+                  _CurrentEndpointSubtitle(
+                    current: widget.current,
+                    latencyState: widget.latencyState,
+                  ),
+                  const SizedBox(height: AppSpacing.base),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.xs,
                     ),
-                    const SizedBox(height: AppSpacing.base),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.xs,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _EndpointTabs(
-                            activeTab: widget.activeTab,
-                            onSelect: widget.onSelectTab,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _EndpointTabs(
+                          activeTab: widget.activeTab,
+                          onSelect: widget.onSelectTab,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        switch (widget.activeTab) {
+                          _EndpointTab.list => _PresetList(
+                            networkName: widget.current.networkName,
+                            latencyState: widget.latencyState,
+                            currentPresetId: widget.current.effectivePresetId,
+                            pendingPresetId: widget.selectedPresetId,
+                            onSelect: widget.onSelectPreset,
                           ),
-                          const SizedBox(height: AppSpacing.md),
-                          switch (widget.activeTab) {
-                            _EndpointTab.list => _PresetList(
-                              networkName: widget.current.networkName,
-                              latencyState: widget.latencyState,
-                              currentPresetId: widget.current.effectivePresetId,
-                              pendingPresetId: widget.selectedPresetId,
-                              onSelect: widget.onSelectPreset,
-                            ),
-                            _EndpointTab.custom => _CustomEndpointTab(
-                              controller: widget.customController,
-                              messageText: widget.customMessageText,
-                              submitError: widget.submitError,
-                              isSubmitting: widget.isSubmitting,
-                              canUpdate: widget.canUpdate,
-                              onChanged: widget.onCustomChanged,
-                              onSubmit: widget.onSubmit,
-                            ),
-                          },
-                        ],
-                      ),
+                          _EndpointTab.custom => _CustomEndpointTab(
+                            controller: widget.customController,
+                            messageText: widget.customMessageText,
+                            submitError: widget.submitError,
+                            isSubmitting: widget.isSubmitting,
+                            canUpdate: widget.canUpdate,
+                            onChanged: widget.onCustomChanged,
+                            onSubmit: widget.onSubmit,
+                          ),
+                        },
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
-        if (showFloatingBar)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            // The scrim box is the 420 content column in the design,
-            // not the full pane width.
-            child: Center(
-              child: SizedBox(
-                width: _contentWidth,
-                child: _FloatingUpdateBar(
-                  key: _floatingBarKey,
-                  submitError: widget.submitError,
-                  isSubmitting: widget.isSubmitting,
-                  canUpdate: widget.canUpdate,
-                  showButton: widget.canUpdate || widget.isSubmitting,
-                  onSubmit: widget.onSubmit,
-                ),
-              ),
-            ),
-          ),
-      ],
+      ),
     );
   }
 }
@@ -774,7 +716,6 @@ class _PresetIndicator extends StatelessWidget {
 
 class _FloatingUpdateBar extends StatelessWidget {
   const _FloatingUpdateBar({
-    super.key,
     required this.submitError,
     required this.isSubmitting,
     required this.canUpdate,
@@ -792,55 +733,29 @@ class _FloatingUpdateBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-    return Stack(
-      alignment: Alignment.bottomCenter,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Positioned.fill(
-          child: IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    colors.macosUtility.windowTransparent,
-                    colors.macosUtility.window,
-                  ],
-                ),
+        if (submitError != null) ...[
+          SizedBox(
+            width: 396,
+            child: Text(
+              submitError!,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.destructive,
               ),
             ),
           ),
-        ),
-        Container(
-          constraints: const BoxConstraints(minHeight: _kFloatingBarMinHeight),
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-          alignment: Alignment.bottomCenter,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (submitError != null) ...[
-                SizedBox(
-                  width: 396,
-                  child: Text(
-                    submitError!,
-                    textAlign: TextAlign.center,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.destructive,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-              ],
-              if (showButton)
-                AppButton(
-                  onPressed: canUpdate ? onSubmit : null,
-                  variant: AppButtonVariant.primary,
-                  minWidth: 196,
-                  child: Text(isSubmitting ? 'Updating...' : 'Update endpoint'),
-                ),
-            ],
+          const SizedBox(height: AppSpacing.xs),
+        ],
+        if (showButton)
+          AppButton(
+            onPressed: canUpdate ? onSubmit : null,
+            variant: AppButtonVariant.primary,
+            minWidth: 196,
+            child: Text(isSubmitting ? 'Updating...' : 'Update endpoint'),
           ),
-        ),
       ],
     );
   }
