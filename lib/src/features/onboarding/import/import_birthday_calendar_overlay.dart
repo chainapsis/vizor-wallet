@@ -70,6 +70,10 @@ class _ImportBirthdayCalendarPanelState
   static const _panelWidth = 312.0;
   static const _calendarWidth = 280.0;
   static const _cellSize = 40.0;
+  // Weekday row + the fixed six-week day grid. Month/year grids center
+  // within the same box so mode switches and paging never reflow the
+  // panel (VZR-75).
+  static const _modeAreaHeight = _cellSize * 7;
   static const _weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   late DateTime _visibleMonth;
@@ -234,39 +238,44 @@ class _ImportBirthdayCalendarPanelState
               const SizedBox(height: AppSpacing.xs),
               const AppDecorativeDivider(width: _calendarWidth),
               const SizedBox(height: AppSpacing.xs),
-              ...switch (_selectionMode) {
-                _CalendarSelectionMode.day => [
-                  _WeekdayRow(weekdays: _weekdays),
-                  _DayGrid(
-                    visibleMonth: _visibleMonth,
-                    selectedDate: widget.selectedDate,
-                    firstDate: widget.firstDate,
-                    lastDate: widget.lastDate,
-                    cellSize: _cellSize,
-                    onDateSelected: widget.onDateSelected,
+              SizedBox(
+                height: _modeAreaHeight,
+                child: switch (_selectionMode) {
+                  _CalendarSelectionMode.day => Column(
+                    children: [
+                      _WeekdayRow(weekdays: _weekdays),
+                      _DayGrid(
+                        visibleMonth: _visibleMonth,
+                        selectedDate: widget.selectedDate,
+                        firstDate: widget.firstDate,
+                        lastDate: widget.lastDate,
+                        cellSize: _cellSize,
+                        onDateSelected: widget.onDateSelected,
+                      ),
+                    ],
                   ),
-                ],
-                _CalendarSelectionMode.month => [
-                  _MonthGrid(
-                    visibleYear: _visibleMonth.year,
-                    selectedMonth: widget.selectedDate ?? _visibleMonth,
-                    firstMonth: _firstMonth,
-                    lastMonth: _lastMonth,
-                    width: _calendarWidth,
-                    onMonthSelected: _selectMonth,
+                  _CalendarSelectionMode.month => Center(
+                    child: _MonthGrid(
+                      visibleYear: _visibleMonth.year,
+                      selectedMonth: widget.selectedDate ?? _visibleMonth,
+                      firstMonth: _firstMonth,
+                      lastMonth: _lastMonth,
+                      width: _calendarWidth,
+                      onMonthSelected: _selectMonth,
+                    ),
                   ),
-                ],
-                _CalendarSelectionMode.year => [
-                  _YearGrid(
-                    pageStartYear: _visibleYearPageStart,
-                    selectedYear: (widget.selectedDate ?? _visibleMonth).year,
-                    firstYear: _firstMonth.year,
-                    lastYear: _lastMonth.year,
-                    width: _calendarWidth,
-                    onYearSelected: _selectYear,
+                  _CalendarSelectionMode.year => Center(
+                    child: _YearGrid(
+                      pageStartYear: _visibleYearPageStart,
+                      selectedYear: (widget.selectedDate ?? _visibleMonth).year,
+                      firstYear: _firstMonth.year,
+                      lastYear: _lastMonth.year,
+                      width: _calendarWidth,
+                      onYearSelected: _selectYear,
+                    ),
                   ),
-                ],
-              },
+                },
+              ),
             ],
           ),
         ),
@@ -609,15 +618,11 @@ class _DayGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final firstOfMonth = _monthStart(visibleMonth);
     final leadingDays = firstOfMonth.weekday % DateTime.daysPerWeek;
-    final daysInMonth = DateTime(
-      visibleMonth.year,
-      visibleMonth.month + 1,
-      0,
-    ).day;
-    final minimumCells = leadingDays + daysInMonth;
-    final neededRows = _ceilDiv(minimumCells, DateTime.daysPerWeek);
-    final rowCount = neededRows < 5 ? 5 : neededRows;
-    final cellCount = rowCount * DateTime.daysPerWeek;
+    // Always six weeks: the tallest month layout, so paging between
+    // months never changes the grid height (VZR-75). Trailing cells
+    // render adjacent-month days disabled and muted, as before.
+    const rowCount = 6;
+    const cellCount = rowCount * DateTime.daysPerWeek;
     final firstCellDate = firstOfMonth.subtract(Duration(days: leadingDays));
 
     return SizedBox(
@@ -737,10 +742,6 @@ bool _isDateBefore(DateTime value, DateTime boundary) {
 
 bool _isDateAfter(DateTime value, DateTime boundary) {
   return _dateOnly(value).isAfter(_dateOnly(boundary));
-}
-
-int _ceilDiv(int value, int divisor) {
-  return (value + divisor - 1) ~/ divisor;
 }
 
 DateTime _clampMonth(DateTime value, DateTime firstMonth, DateTime lastMonth) {

@@ -151,6 +151,11 @@ private final class DatePickerSheetViewController: UIViewController,
   private let maxDate: Date
   private var pickedDate: Date?
   private var finished = false
+  /// Largest calendar fitting height seen so far. The detent is
+  /// monotonic — it grows for 6-week months and never shrinks back for
+  /// 5-week ones — so browsing months doesn't bounce the sheet
+  /// (VZR-75).
+  private var maxCalendarFitHeight: CGFloat = 0
 
   init(
     initialDate: Date?,
@@ -176,10 +181,14 @@ private final class DatePickerSheetViewController: UIViewController,
           let fit = self.calendarView
             .systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
             .height
+          self.maxCalendarFitHeight = max(self.maxCalendarFitHeight, fit)
           // Grabber + vertical padding + home-indicator safe area; the
           // floor covers the pre-layout pass where the fitting height
           // is still zero (Apple's minimum calendar size is 320x371).
-          return min(max(fit + 56, 380), context.maximumDetentValue)
+          return min(
+            max(self.maxCalendarFitHeight + 56, 380),
+            context.maximumDetentValue
+          )
         }
       ]
     }
@@ -225,9 +234,16 @@ private final class DatePickerSheetViewController: UIViewController,
 
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
-    // The custom detent resolves before the calendar has a width; once
-    // laid out, re-resolve so the sheet settles at the true fit height.
-    sheetPresentationController?.invalidateDetents()
+    // The custom detent resolves before the calendar has a width, and
+    // 6-week months fit taller than 5-week ones. Re-resolve only when
+    // the calendar outgrows the tallest height seen so far — never on
+    // shrink — so month navigation doesn't bounce the sheet (VZR-75).
+    let fit = calendarView
+      .systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+      .height
+    if fit > maxCalendarFitHeight, let sheet = sheetPresentationController {
+      sheet.animateChanges { sheet.invalidateDetents() }
+    }
   }
 
   override func viewDidDisappear(_ animated: Bool) {
