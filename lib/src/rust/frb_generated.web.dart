@@ -298,6 +298,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<SoftwareWalletDiscoveredAccount>
+  dco_decode_list_software_wallet_discovered_account(dynamic raw);
+
+  @protected
   List<SoftwareWalletImportAccount>
   dco_decode_list_software_wallet_import_account(dynamic raw);
 
@@ -434,9 +438,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  SoftwareWalletDiscoveredAccount dco_decode_software_wallet_discovered_account(
+    dynamic raw,
+  );
+
+  @protected
   SoftwareWalletImportAccount dco_decode_software_wallet_import_account(
     dynamic raw,
   );
+
+  @protected
+  SoftwareWalletImportDiscoveryResult
+  dco_decode_software_wallet_import_discovery_result(dynamic raw);
 
   @protected
   SoftwareWalletImportWithDiscoveryResult
@@ -855,6 +868,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<SoftwareWalletDiscoveredAccount>
+  sse_decode_list_software_wallet_discovered_account(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<SoftwareWalletImportAccount>
   sse_decode_list_software_wallet_import_account(SseDeserializer deserializer);
 
@@ -1023,7 +1042,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  SoftwareWalletDiscoveredAccount sse_decode_software_wallet_discovered_account(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   SoftwareWalletImportAccount sse_decode_software_wallet_import_account(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SoftwareWalletImportDiscoveryResult
+  sse_decode_software_wallet_import_discovery_result(
     SseDeserializer deserializer,
   );
 
@@ -1542,6 +1572,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_software_wallet_discovered_account(
+    List<SoftwareWalletDiscoveredAccount> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_software_wallet_import_account(
     List<SoftwareWalletImportAccount> self,
     SseSerializer serializer,
@@ -1746,8 +1782,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_software_wallet_discovered_account(
+    SoftwareWalletDiscoveredAccount self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_software_wallet_import_account(
     SoftwareWalletImportAccount self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_software_wallet_import_discovery_result(
+    SoftwareWalletImportDiscoveryResult self,
     SseSerializer serializer,
   );
 

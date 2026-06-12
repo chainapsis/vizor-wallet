@@ -6,11 +6,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/onboarding/import/import_account_discovery_modal.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_calendar_overlay.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_estimator.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_wallet_birthday_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
+import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 void main() {
   testWidgets('birthday tab labels show a click cursor', (tester) async {
@@ -64,6 +66,124 @@ void main() {
     metadataCompleter.complete(_metadataFixture());
     await tester.pump();
   });
+
+  testWidgets('account discovery modal imports all candidates by default', (
+    tester,
+  ) async {
+    List<int>? selected;
+
+    await tester.pumpWidget(
+      _modalHarness(onConfirm: (value) => selected = value),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('import_account_discovery_confirm_button')),
+    );
+
+    expect(selected, [1, 2]);
+  });
+
+  testWidgets('account discovery modal removes toggled off candidates', (
+    tester,
+  ) async {
+    List<int>? selected;
+
+    await tester.pumpWidget(
+      _modalHarness(onConfirm: (value) => selected = value),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('import_account_discovery_row_1')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('import_account_discovery_confirm_button')),
+    );
+
+    expect(selected, [2]);
+  });
+
+  testWidgets('account discovery modal blocks empty selection when required', (
+    tester,
+  ) async {
+    List<int>? selected;
+
+    await tester.pumpWidget(
+      _modalHarness(
+        allowEmptySelection: false,
+        onConfirm: (value) => selected = value,
+      ),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('import_account_discovery_row_1')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('import_account_discovery_row_2')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('import_account_discovery_confirm_button')),
+    );
+
+    expect(selected, isNull);
+  });
+
+  testWidgets('account discovery modal action buttons split available width', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_modalHarness(onConfirm: (_) {}));
+
+    final cancelSize = tester.getSize(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('import_account_discovery_cancel_button'),
+        ),
+        matching: find.byType(AnimatedContainer),
+      ),
+    );
+    final confirmSize = tester.getSize(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('import_account_discovery_confirm_button'),
+        ),
+        matching: find.byType(AnimatedContainer),
+      ),
+    );
+
+    expect((cancelSize.width - confirmSize.width).abs(), lessThan(0.1));
+    expect(cancelSize.width, greaterThan(160));
+  });
+
+  testWidgets('account discovery modal updates transparent balance previews', (
+    tester,
+  ) async {
+    final account1Balance = Completer<BigInt>();
+    final account2Balance = Completer<BigInt>();
+
+    await tester.pumpWidget(
+      _modalHarness(
+        onConfirm: (_) {},
+        loadTransparentBalance: (account) {
+          return switch (account.zip32AccountIndex) {
+            1 => account1Balance.future,
+            2 => account2Balance.future,
+            _ => Future.error(StateError('unexpected account')),
+          };
+        },
+      ),
+    );
+
+    expect(find.text('Transparent'), findsNWidgets(2));
+    expect(find.text('Loading'), findsNWidgets(2));
+
+    account1Balance.complete(BigInt.from(123456789));
+    await tester.pump();
+
+    expect(find.text('1.2345 ZEC'), findsOneWidget);
+    expect(find.text('Loading'), findsOneWidget);
+
+    account2Balance.completeError(Exception('utxo unavailable'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('-'), findsOneWidget);
+  });
 }
 
 Future<void> _setDesktopSurface(WidgetTester tester) async {
@@ -90,6 +210,47 @@ Widget _birthdayHarness({
           data: AppThemeData.light,
           child: const ImportWalletBirthdayScreen(
             args: ImportBirthdayArgs(mnemonic: 'test mnemonic'),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _modalHarness({
+  bool allowEmptySelection = true,
+  ImportAccountTransparentBalanceLoader? loadTransparentBalance,
+  required ValueChanged<List<int>> onConfirm,
+}) {
+  return MaterialApp(
+    home: MediaQuery(
+      data: const MediaQueryData(textScaler: TextScaler.linear(1)),
+      child: AppTheme(
+        data: AppThemeData.light,
+        child: Directionality(
+          textDirection: TextDirection.ltr,
+          child: Stack(
+            children: [
+              ImportAccountDiscoveryModal(
+                accounts: const [
+                  rust_wallet.SoftwareWalletDiscoveredAccount(
+                    zip32AccountIndex: 1,
+                    firstTransparentAddress:
+                        't1VzLrfU8ZRs3xEGzR84xHWL2QK7C9Tt6yV',
+                  ),
+                  rust_wallet.SoftwareWalletDiscoveredAccount(
+                    zip32AccountIndex: 2,
+                    firstTransparentAddress:
+                        't1UhrwzXxQBmduARnkbYqkKFSUMN6VAx9QS',
+                  ),
+                ],
+                allowEmptySelection: allowEmptySelection,
+                loadTransparentBalance:
+                    loadTransparentBalance ?? ((_) async => BigInt.zero),
+                onConfirm: onConfirm,
+                onCancel: () {},
+              ),
+            ],
           ),
         ),
       ),
