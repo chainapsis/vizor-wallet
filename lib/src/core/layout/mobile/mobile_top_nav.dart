@@ -322,11 +322,12 @@ abstract final class _SyncStatusMotion {
   /// Kept narrow for a gentle, low-contrast sparkle.
   static const _bandHalf = 0.18;
 
-  /// Edge-bar glow breathing range (shadow blur radius + alpha).
+  /// Edge-bar glow breathing range (shadow blur radius + alpha). Kept gentle
+  /// so the syncing glow stays subtle rather than vibrant.
   static const _minGlowBlur = 8.0;
-  static const _maxGlowBlur = 16.0;
-  static const _minGlowAlpha = 0.35;
-  static const _maxGlowAlpha = 0.7;
+  static const _maxGlowBlur = 13.0;
+  static const _minGlowAlpha = 0.2;
+  static const _maxGlowAlpha = 0.45;
 
   /// 0 → 1 → 0 once per [period].
   static double _breath(double t) => (1 - math.cos(2 * math.pi * t)) / 2;

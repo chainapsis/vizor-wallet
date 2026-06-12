@@ -44,7 +44,7 @@ void main() {
           syncLabel: '20% Syncing...',
           syncLabelColor: AppThemeData.dark.colors.sync.textSyncing,
           syncIndicatorColor: AppThemeData.dark.colors.text.muted,
-          syncHighlightColor: AppThemeData.dark.colors.sync.text,
+          syncHighlightColor: AppThemeData.dark.colors.sync.lightSuccess,
           syncAnimated: true,
         ),
       ),
@@ -80,7 +80,7 @@ void main() {
               syncLabel: '20% Syncing...',
               syncLabelColor: mutedGreen,
               syncIndicatorColor: greyBar,
-              syncHighlightColor: AppThemeData.dark.colors.sync.text,
+              syncHighlightColor: AppThemeData.dark.colors.sync.lightSuccess,
               syncAnimated: true,
             ),
           ),
@@ -88,9 +88,9 @@ void main() {
       ),
     );
 
-    // No shimmer mask; the label keeps its muted (less-saturated) green base
-    // and the edge bar is a neutral grey. The full synced green only appears
-    // as the animated shimmer peak.
+    // No shimmer mask; the label keeps its muted green base and the edge bar
+    // is a neutral grey. The brighter shimmer peak only appears in the
+    // animated state.
     expect(find.byType(ShaderMask), findsNothing);
     final label = tester.widget<Text>(find.text('20% Syncing...'));
     expect(label.style?.color, mutedGreen);
