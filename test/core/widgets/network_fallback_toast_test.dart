@@ -55,6 +55,7 @@ void main() {
       expect(text.style?.fontSize, AppTypography.labelLarge.fontSize);
       expect(text.style?.height, AppTypography.labelLarge.height);
       expect(text.style?.letterSpacing, AppTypography.labelLarge.letterSpacing);
+      expect(text.maxLines, 2);
       expect(find.byType(AppIcon), findsNothing);
     },
   );
@@ -170,6 +171,67 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Fallback selected'), findsNothing);
+  });
+
+  testWidgets('the toast clears the status bar inset on phones', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        theme: AppThemeData.light,
+        child: MediaQuery(
+          // A Dynamic Island iPhone reports ~59 of top padding.
+          data: MediaQueryData(padding: EdgeInsets.only(top: 59)),
+          child: NetworkFallbackToastHost(
+            child: _ToastTrigger(message: 'Fallback selected'),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Show toast'));
+    await tester.pump();
+    await tester.pump(NetworkFallbackToastHost.animationDuration);
+
+    final hostTop = tester
+        .getTopLeft(find.byType(NetworkFallbackToastHost))
+        .dy;
+    expect(
+      tester.getTopLeft(find.byType(NetworkFallbackToast)).dy,
+      hostTop + 59 + AppSpacing.xs,
+    );
+  });
+
+  testWidgets('long messages keep the side margins on a phone width', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        theme: AppThemeData.light,
+        child: Center(
+          child: SizedBox(
+            width: 390,
+            height: 600,
+            child: NetworkFallbackToastHost(
+              child: _ToastTrigger(
+                message:
+                    'Selected endpoint is unstable. Switched to fallback '
+                    'endpoint.',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Show toast'));
+    await tester.pump();
+    await tester.pump(NetworkFallbackToastHost.animationDuration);
+
+    final host = tester.getRect(find.byType(NetworkFallbackToastHost));
+    final toast = tester.getRect(find.byType(NetworkFallbackToast));
+    expect(toast.left, host.left + AppSpacing.sm);
+    expect(toast.right, host.right - AppSpacing.sm);
   });
 }
 
