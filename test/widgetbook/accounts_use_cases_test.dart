@@ -101,9 +101,17 @@ Future<void> _pumpAccountsUseCase(
   await tester.pumpWidget(
     MaterialApp(
       key: UniqueKey(),
-      home: AppTheme(
-        data: AppThemeData.light,
-        child: Builder(builder: builder),
+      home: Builder(
+        builder: (context) => MediaQuery(
+          // The previewed sidebar renders the syncing state, whose shimmer +
+          // breathing glow animate forever; disable animations so
+          // pumpAndSettle can settle (size/scale preserved via copyWith).
+          data: MediaQuery.of(context).copyWith(disableAnimations: true),
+          child: AppTheme(
+            data: AppThemeData.light,
+            child: Builder(builder: builder),
+          ),
+        ),
       ),
     ),
   );
