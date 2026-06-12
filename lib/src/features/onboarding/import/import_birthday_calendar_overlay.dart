@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 
@@ -204,7 +203,19 @@ class _ImportBirthdayCalendarOverlayState
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xs),
-                const AppDecorativeDivider(width: _calendarWidth),
+                // Current `_Divider` component (the ornament divider was the
+                // old onboarding language): 1.5px hairline, border/default,
+                // Figma r12 — a pill at this height.
+                SizedBox(
+                  width: _calendarWidth,
+                  height: 1.5,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: context.colors.border.regular,
+                      borderRadius: BorderRadius.circular(AppRadii.small),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: AppSpacing.xs),
                 ...switch (_selectionMode) {
                   _CalendarSelectionMode.day => [

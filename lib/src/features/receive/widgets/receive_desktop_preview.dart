@@ -987,8 +987,8 @@ class _ReceiveInfoModal extends StatelessWidget {
               iconName: AppIcons.renew,
               height: 63,
               text:
-                  'A new Zcash Shielded address\ngenerated every time you '
-                  'open the\nReceive page or click Renew button.',
+                  'A new Zcash shielded address\ngenerated every time you '
+                  'open the\nreceive page or click renew button.',
             ),
             _InfoItemData(
               iconName: AppIcons.wallet,

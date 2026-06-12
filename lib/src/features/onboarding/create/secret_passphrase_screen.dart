@@ -354,8 +354,6 @@ class _TitleBlock extends StatelessWidget {
           child: Text(
             'Secret Passphrase',
             style: AppTypography.displayLarge.copyWith(
-              fontFamily: 'Young Serif',
-              fontWeight: FontWeight.w400,
               color: colors.text.accent,
             ),
             maxLines: 1,

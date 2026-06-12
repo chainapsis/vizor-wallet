@@ -31,9 +31,18 @@ ActivityRowData buildTransactionActivityRow({
       ? _poolLabel(transaction.displayPool)
       : null;
 
+  // Unconfirmed sends/receives render as in-flight rows: a pulsing loader
+  // in the leading slot and a progressive title, per the Content Line
+  // pending variant in the design.
+  final isInFlight = isPending && (isInbound || isSent);
+
   return ActivityRowData(
-    title: isFailed && isSent ? 'Send failed' : _txTitle(kind),
-    leadingIconName: _txIcon(kind),
+    title: isFailed && isSent
+        ? 'Send failed'
+        : isInFlight
+        ? (isSent ? 'Sending ...' : 'Receiving ...')
+        : _txTitle(kind),
+    leadingIconName: isInFlight ? AppIcons.loader : _txIcon(kind),
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
     subtitle: subtitle,

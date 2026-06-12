@@ -45,7 +45,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Remove contact'), findsWidgets);
     expect(
-      find.text('Mike will be removed from your address book.'),
+      find.text('Mike will be removed from your contacts.'),
       findsOneWidget,
     );
   });

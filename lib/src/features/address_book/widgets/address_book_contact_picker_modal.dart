@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
@@ -115,10 +116,16 @@ class _AddressBookContactPickerModalState
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
-              _ContactPickerIconButton(
-                semanticLabel: 'Close contacts',
-                iconName: AppIcons.cross,
-                onTap: widget.onCancel,
+              Builder(
+                builder: (context) => AppIconHoverButton(
+                  semanticLabel: 'Close contacts',
+                  icon: AppIcons.cross,
+                  onTap: widget.onCancel,
+                  size: 24,
+                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                  hoverColor: context.colors.background.ground,
+                  iconColor: context.colors.icon.regular,
+                ),
               ),
             ],
           ),
@@ -149,18 +156,16 @@ class _AddressBookContactPickerModalState
                   const SizedBox(height: AppSpacing.md),
                   Expanded(
                     child: contactsAsync.when(
-                      loading:
-                          () => const Center(
-                            child: SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: AppIcon(AppIcons.loader, size: 18),
-                            ),
-                          ),
-                      error:
-                          (_, _) => const _ContactPickerEmptyResult(
-                            title: "Couldn't load contacts. Try again.",
-                          ),
+                      loading: () => const Center(
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: AppIcon(AppIcons.loader, size: 18),
+                        ),
+                      ),
+                      error: (_, _) => const _ContactPickerEmptyResult(
+                        title: "Couldn't load contacts. Try again.",
+                      ),
                       data: (state) {
                         final contacts = _filteredContacts(state);
                         if (contacts.isEmpty) {
@@ -253,64 +258,6 @@ class _ContactPickerListState extends State<_ContactPickerList> {
         ),
       ),
     );
-  }
-}
-
-class _ContactPickerIconButton extends StatefulWidget {
-  const _ContactPickerIconButton({
-    required this.semanticLabel,
-    required this.iconName,
-    required this.onTap,
-  });
-
-  final String semanticLabel;
-  final String iconName;
-  final VoidCallback onTap;
-
-  @override
-  State<_ContactPickerIconButton> createState() =>
-      _ContactPickerIconButtonState();
-}
-
-class _ContactPickerIconButtonState extends State<_ContactPickerIconButton> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      button: true,
-      label: widget.semanticLabel,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => _setHovered(true),
-        onExit: (_) => _setHovered(false),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: widget.onTap,
-          child: Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: _hovered ? colors.background.ground : null,
-              borderRadius: BorderRadius.circular(AppRadii.xSmall),
-            ),
-            child: Center(
-              child: AppIcon(
-                widget.iconName,
-                size: AppIconSize.medium,
-                color: colors.icon.regular,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _setHovered(bool value) {
-    if (_hovered == value) return;
-    setState(() => _hovered = value);
   }
 }
 

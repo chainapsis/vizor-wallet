@@ -16,8 +16,8 @@ import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_back_link.dart';
-import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/zec_usd_price_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -212,12 +212,14 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     context.go('/home');
   }
 
-  Future<void> _copyTransactionHash() async {
+  void _copyTransactionHash() {
     final txid = _txid;
     if (txid == null) return;
-    await Clipboard.setData(ClipboardData(text: txid));
-    if (!mounted) return;
-    showAppToast(context, 'Transaction Hash Copied');
+    copyTextWithToast(
+      context,
+      text: txid,
+      toastMessage: 'Transaction hash copied',
+    );
   }
 
   Future<void> _openTransactionExplorer() async {
@@ -230,7 +232,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       txidOrder: ZcashExplorerTxidOrder.display,
     );
     if (launched || !mounted) return;
-    await _copyTransactionHash();
+    _copyTransactionHash();
   }
 
   Future<bool> _abortIfUnmounted() async {

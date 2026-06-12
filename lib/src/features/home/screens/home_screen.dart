@@ -19,6 +19,7 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_layout.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
@@ -1077,66 +1078,69 @@ class _HomeDesktopPane extends StatelessWidget {
       builder: (context, constraints) {
         final contentTop = _contentTop(constraints.maxHeight);
         if (!isImporting) {
-          return CustomScrollView(
-            key: const ValueKey('home_desktop_scroll_view'),
-            clipBehavior: Clip.none,
-            slivers: [
-              SliverPadding(
-                padding: EdgeInsets.only(top: contentTop),
-                sliver: _HomeDesktopCenteredSliver(
-                  contentKey: const ValueKey('home_desktop_content'),
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.s,
-                    AppSpacing.sm,
-                    AppSpacing.s,
-                    0,
-                  ),
-                  child: _HomeDesktopBalanceCard(
-                    hasBalance: hasBalance,
-                    shieldedBalanceText: shieldedBalanceText,
-                    shieldedFiatBalanceText: shieldedFiatBalanceText,
-                    transparentBalanceText: transparentBalanceText,
-                    hasTransparentBalance: hasTransparentBalance,
-                    canShieldBalance: canShieldBalance,
-                    isShieldingBalance: isShieldingBalance,
-                    privacyModeEnabled: privacyModeEnabled,
-                    onTogglePrivacyMode: onTogglePrivacyMode,
-                    onShieldBalancePressed: onShieldBalancePressed,
-                    onSend: onSend,
-                    onReceive: onReceive,
+          return AppPaneScrollbar(
+            builder: (context, controller) => CustomScrollView(
+              key: const ValueKey('home_desktop_scroll_view'),
+              controller: controller,
+              clipBehavior: Clip.none,
+              slivers: [
+                SliverPadding(
+                  padding: EdgeInsets.only(top: contentTop),
+                  sliver: _HomeDesktopCenteredSliver(
+                    contentKey: const ValueKey('home_desktop_content'),
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.s,
+                      AppSpacing.sm,
+                      AppSpacing.s,
+                      0,
+                    ),
+                    child: _HomeDesktopBalanceCard(
+                      hasBalance: hasBalance,
+                      shieldedBalanceText: shieldedBalanceText,
+                      shieldedFiatBalanceText: shieldedFiatBalanceText,
+                      transparentBalanceText: transparentBalanceText,
+                      hasTransparentBalance: hasTransparentBalance,
+                      canShieldBalance: canShieldBalance,
+                      isShieldingBalance: isShieldingBalance,
+                      privacyModeEnabled: privacyModeEnabled,
+                      onTogglePrivacyMode: onTogglePrivacyMode,
+                      onShieldBalancePressed: onShieldBalancePressed,
+                      onSend: onSend,
+                      onReceive: onReceive,
+                    ),
                   ),
                 ),
-              ),
-              if (notice != null) ...[
-                const SliverToBoxAdapter(
-                  child: SizedBox(height: AppSpacing.xs),
-                ),
-                _HomeDesktopCenteredSliver(
-                  child: _HomeNoticeCard(data: notice!),
+                if (notice != null) ...[
+                  const SliverToBoxAdapter(
+                    child: SizedBox(height: AppSpacing.xs),
+                  ),
+                  _HomeDesktopCenteredSliver(
+                    child: _HomeNoticeCard(data: notice!),
+                  ),
+                ],
+                SliverPadding(
+                  padding: EdgeInsets.only(
+                    top: hasTransparentBalance ? AppSpacing.s : AppSpacing.md,
+                  ),
+                  sliver: activityRows.isEmpty
+                      ? _HomeDesktopEmptyActivitySliver(
+                          isLoading: isActivityLoading,
+                        )
+                      : _HomeDesktopCenteredSliver(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.s,
+                            0,
+                            AppSpacing.s,
+                            AppSpacing.sm,
+                          ),
+                          child: _HomeDesktopActivityCard(
+                            rows: activityRows.take(5).toList(),
+                            onSeeAll: onActivity,
+                          ),
+                        ),
                 ),
               ],
-              SliverPadding(
-                padding: EdgeInsets.only(
-                  top: hasTransparentBalance ? AppSpacing.s : AppSpacing.md,
-                ),
-                sliver: activityRows.isEmpty
-                    ? _HomeDesktopEmptyActivitySliver(
-                        isLoading: isActivityLoading,
-                      )
-                    : _HomeDesktopCenteredSliver(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.s,
-                          0,
-                          AppSpacing.s,
-                          AppSpacing.sm,
-                        ),
-                        child: _HomeDesktopActivityCard(
-                          rows: activityRows.take(5).toList(),
-                          onSeeAll: onActivity,
-                        ),
-                      ),
-              ),
-            ],
+            ),
           );
         }
 
@@ -1427,7 +1431,14 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                           const SizedBox(height: AppSpacing.xs),
                         ],
                         Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                          // The Figma balance is one text run (amount 45px,
+                          // ticker 32px) sharing a baseline. The Regular cut
+                          // stands in for the spec'd Medium: white-on-dark
+                          // rasterization runs ~8% heavier than Figma's
+                          // renderer, so Medium reads bolder here than the
+                          // design intends.
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
                           children: [
                             Text(
                               widget.hasBalance ? visibleBalance : '0',
@@ -1436,19 +1447,18 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                               ),
                               style: AppTypography.displayMedium.copyWith(
                                 color: colors.text.homeCard,
+                                fontWeight: FontWeight.w400,
                               ),
                             ),
                             const SizedBox(width: AppSpacing.xs),
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: Text(
-                                kZcashDefaultCurrencyTicker,
-                                key: const ValueKey(
-                                  'home_desktop_balance_currency_text',
-                                ),
-                                style: AppTypography.headlineMedium.copyWith(
-                                  color: colors.text.homeCard,
-                                ),
+                            Text(
+                              kZcashDefaultCurrencyTicker,
+                              key: const ValueKey(
+                                'home_desktop_balance_currency_text',
+                              ),
+                              style: AppTypography.headlineLarge.copyWith(
+                                color: colors.text.homeCard,
+                                fontWeight: FontWeight.w400,
                               ),
                             ),
                           ],
@@ -1875,34 +1885,26 @@ class _HomeDesktopActivityCard extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
         color: isDark ? colors.surface.card : const Color(0xFFFFFFFF),
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF000000).withValues(alpha: 0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: appSurfaceShadow(colors),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           _HomeDesktopActivityHeader(
             onSeeAll: onSeeAll,
-            titleStyle: AppTypography.labelMedium.copyWith(
+            titleStyle: AppTypography.labelLarge.copyWith(
               color: colors.text.accent,
               fontWeight: FontWeight.w600,
             ),
-            seeAllStyle: AppTypography.labelMedium.copyWith(
-              color: colors.text.accent,
-              fontWeight: FontWeight.w400,
+            seeAllStyle: AppTypography.labelLarge.copyWith(
+              color: colors.button.ghost.label,
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
           for (var index = 0; index < rows.length; index++) ...[
             _HomeDesktopActivityRow(index: index, row: rows[index]),
-            if (index != rows.length - 1)
-              const SizedBox(height: AppSpacing.xxs),
+            if (index != rows.length - 1) const SizedBox(height: AppSpacing.s),
           ],
         ],
       ),
@@ -2068,7 +2070,7 @@ class _HomeDesktopActivityRowContent extends StatelessWidget {
                         row.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelMedium.copyWith(
+                        style: AppTypography.labelLarge.copyWith(
                           color: colors.text.accent,
                         ),
                       ),
@@ -2088,7 +2090,7 @@ class _HomeDesktopActivityRowContent extends StatelessWidget {
                               row.subtitle ?? row.statusText,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: AppTypography.labelMedium.copyWith(
+                              style: AppTypography.labelLarge.copyWith(
                                 color: colors.text.secondary,
                                 fontWeight: FontWeight.w400,
                               ),
@@ -2099,14 +2101,15 @@ class _HomeDesktopActivityRowContent extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: AppSpacing.xs),
+                // Content Line separates its left and right blocks by 10px.
+                const SizedBox(width: 10),
                 Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
                       row.amountText,
-                      style: AppTypography.labelMedium.copyWith(
+                      style: AppTypography.labelLarge.copyWith(
                         color: amountColor,
                         fontWeight: FontWeight.w600,
                       ),

@@ -7,7 +7,7 @@ import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 
 void main() {
   // Render with the real app fonts instead of the square-glyph test font.
-  // The test font is much wider than Geist/Libre Caslon, which produces
+  // The test font is much wider than Geist/Young Serif, which produces
   // RenderFlex overflows that do not exist in the running app.
   setUpAll(() async {
     final fonts = <String, List<String>>{
@@ -21,7 +21,10 @@ void main() {
         'assets/fonts/GeistMono-Regular.ttf',
         'assets/fonts/GeistMono-Medium.ttf',
       ],
-      'Libre Caslon Text': ['assets/fonts/LibreCaslonText-Regular.ttf'],
+      'Young Serif': [
+        'assets/fonts/YoungSerif-Regular.ttf',
+        'assets/fonts/YoungSerif-Medium.ttf',
+      ],
       'Inter': [
         'assets/fonts/Inter-Regular.ttf',
         'assets/fonts/Inter-Medium.ttf',

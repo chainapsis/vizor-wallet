@@ -8,11 +8,11 @@ import '../../../core/formatting/date_format.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
-import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_state.dart';
@@ -289,85 +289,23 @@ class _VotingTopBar extends StatelessWidget {
             ),
             Align(
               alignment: Alignment.centerRight,
-              child: _VotingTopBarIconButton(
-                icon: AppIcons.cog,
-                tooltip: 'Voting config',
-                semanticLabel: 'Voting config settings',
-                onTap: onSettings,
+              child: Builder(
+                builder: (context) => AppIconHoverButton(
+                  icon: AppIcons.cog,
+                  tooltip: 'Voting config',
+                  semanticLabel: 'Voting config settings',
+                  onTap: onSettings,
+                  size: AppBackLink.height,
+                  iconSize: 20,
+                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                  hoverColor: context.colors.state.hover,
+                ),
               ),
             ),
           ],
         ),
       ),
     );
-  }
-}
-
-class _VotingTopBarIconButton extends StatefulWidget {
-  const _VotingTopBarIconButton({
-    required this.icon,
-    required this.tooltip,
-    required this.semanticLabel,
-    required this.onTap,
-  });
-
-  final String icon;
-  final String tooltip;
-  final String semanticLabel;
-  final VoidCallback onTap;
-
-  @override
-  State<_VotingTopBarIconButton> createState() =>
-      _VotingTopBarIconButtonState();
-}
-
-class _VotingTopBarIconButtonState extends State<_VotingTopBarIconButton> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return AppTooltip(
-      message: widget.tooltip,
-      child: Semantics(
-        button: true,
-        label: widget.semanticLabel,
-        child: ExcludeSemantics(
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            onEnter: (_) => _setHovered(true),
-            onExit: (_) => _setHovered(false),
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: widget.onTap,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 120),
-                width: AppBackLink.height,
-                height: AppBackLink.height,
-                decoration: BoxDecoration(
-                  color: _hovered ? colors.state.hover : null,
-                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
-                ),
-                child: Center(
-                  child: AppIcon(
-                    widget.icon,
-                    size: 20,
-                    color: colors.icon.accent,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _setHovered(bool hovered) {
-    if (_hovered == hovered) return;
-    setState(() {
-      _hovered = hovered;
-    });
   }
 }
 

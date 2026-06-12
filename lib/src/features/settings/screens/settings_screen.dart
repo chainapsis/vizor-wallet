@@ -20,7 +20,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
 import '../../../providers/windows_update_provider.dart';
 import '../../accounts/widgets/account_modal_card.dart';
-import '../../accounts/widgets/account_name_modal.dart';
+import '../../accounts/widgets/account_edit_modal.dart';
 import '../../accounts/widgets/account_profile_picture_modal.dart';
 
 const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
@@ -40,6 +40,13 @@ enum _SettingsModalType { accountName, profilePicture, theme, updates }
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   _SettingsModalType? _activeModal;
 
+  // Edit-account drafts for the picker round-trip (same model as the
+  // accounts screen): the in-progress name and picked picture survive
+  // while the picker temporarily replaces the edit modal.
+  String? _editDraftName;
+  String? _editDraftProfilePictureId;
+  bool _pfpPickerFromEdit = false;
+
   void _showModal(_SettingsModalType modal) {
     setState(() {
       _activeModal = modal;
@@ -49,13 +56,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   void _closeModal() {
     setState(() {
       _activeModal = null;
+      _editDraftName = null;
+      _editDraftProfilePictureId = null;
+      _pfpPickerFromEdit = false;
     });
   }
 
-  Future<void> _updateAccountName(String name) async {
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    if (accountUuid == null) return;
-    await ref.read(accountProvider.notifier).renameAccount(accountUuid, name);
+  void _openEditProfilePicturePicker() {
+    setState(() {
+      _pfpPickerFromEdit = true;
+      _activeModal = _SettingsModalType.profilePicture;
+    });
+  }
+
+  void _returnToEditAccountModal({String? pickedProfilePictureId}) {
+    setState(() {
+      if (pickedProfilePictureId != null) {
+        _editDraftProfilePictureId = pickedProfilePictureId;
+      }
+      _pfpPickerFromEdit = false;
+      _activeModal = _SettingsModalType.accountName;
+    });
+  }
+
+  Future<void> _commitEditAccount(String name) async {
+    final accountState = ref.read(accountProvider).value;
+    final account = accountState?.activeAccount;
+    if (account == null) return;
+    final notifier = ref.read(accountProvider.notifier);
+    if (name.trim() != account.name.trim()) {
+      await notifier.renameAccount(account.uuid, name);
+    }
+    final draftPicture = _editDraftProfilePictureId;
+    if (draftPicture != null && draftPicture != account.profilePictureId) {
+      await notifier.updateProfilePicture(account.uuid, draftPicture);
+    }
     if (!mounted) return;
     _closeModal();
   }
@@ -78,6 +113,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // The edit-account modals bind to the ACTIVE account, and the sidebar
+    // stays interactive under the pane overlay — switching accounts while a
+    // modal is open must drop the previous account's drafts so Update can't
+    // commit them to the newly selected account.
+    ref.listen(
+      accountProvider.select((state) => state.value?.activeAccountUuid),
+      (previous, next) {
+        if (previous == next) return;
+        if (_editDraftName == null && _editDraftProfilePictureId == null) {
+          return;
+        }
+        setState(() {
+          _editDraftName = null;
+          _editDraftProfilePictureId = null;
+        });
+      },
+    );
     final accountState = ref.watch(accountProvider).value;
     final activeAccountName = accountState?.activeAccount?.name ?? 'Wallet 1';
     final activeProfilePictureId =
@@ -142,17 +194,39 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               AppPaneModalOverlay(
                 onDismiss: _closeModal,
                 child: switch (_activeModal!) {
-                  _SettingsModalType.accountName => AccountNameModal(
+                  _SettingsModalType.accountName => AccountEditModal(
+                    accountUuid: accountState?.activeAccountUuid ?? '',
                     accountName: activeAccountName,
-                    profilePictureId: activeProfilePictureId,
+                    initialName: _editDraftName ?? activeAccountName,
+                    profilePictureId:
+                        _editDraftProfilePictureId ?? activeProfilePictureId,
+                    profilePictureChanged:
+                        (_editDraftProfilePictureId ??
+                            activeProfilePictureId) !=
+                        activeProfilePictureId,
+                    onEditProfilePicture: _openEditProfilePicturePicker,
+                    onNameChanged: (name) => _editDraftName = name,
                     onCancel: _closeModal,
-                    onUpdate: _updateAccountName,
+                    onUpdate: _commitEditAccount,
                   ),
                   _SettingsModalType.profilePicture =>
                     AccountProfilePictureModal(
-                      currentProfilePictureId: activeProfilePictureId,
-                      onCancel: _closeModal,
-                      onUpdate: _updateProfilePicture,
+                      currentProfilePictureId: _pfpPickerFromEdit
+                          ? (_editDraftProfilePictureId ??
+                                activeProfilePictureId)
+                          : activeProfilePictureId,
+                      onCancel: _pfpPickerFromEdit
+                          ? () => _returnToEditAccountModal()
+                          : _closeModal,
+                      onUpdate: (profilePictureId) async {
+                        if (_pfpPickerFromEdit) {
+                          _returnToEditAccountModal(
+                            pickedProfilePictureId: profilePictureId,
+                          );
+                          return;
+                        }
+                        await _updateProfilePicture(profilePictureId);
+                      },
                     ),
                   _SettingsModalType.theme => _ThemeModal(
                     currentMode: themeMode,
@@ -372,7 +446,7 @@ class _SettingsList extends StatelessWidget {
             ),
             _SettingsRow(
               iconName: AppIcons.users,
-              label: 'Address book',
+              label: 'Contacts',
               onTap: onAddressBook,
             ),
           ],

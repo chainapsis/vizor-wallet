@@ -200,7 +200,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 ),
                 trailing: _AddressTrigger(
                   value: state.destinationText,
-                  emptyText: 'Add Refund address...',
+                  emptyText: 'Add refund address...',
                   onTap: widget.onOpenDestinationAddress,
                 ),
               ),
@@ -244,7 +244,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 ),
                 trailing: _AddressTrigger(
                   value: state.destinationText,
-                  emptyText: 'Add Recipient address...',
+                  emptyText: 'Add recipient address...',
                   onTap: widget.onOpenDestinationAddress,
                 ),
               )
@@ -640,7 +640,9 @@ class _AddressTrigger extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 196),
+          // Wide enough for the full 'Add recipient address...' empty label;
+          // the footer's Expanded leading absorbs the difference.
+          constraints: const BoxConstraints(maxWidth: 240),
           height: 32,
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Row(

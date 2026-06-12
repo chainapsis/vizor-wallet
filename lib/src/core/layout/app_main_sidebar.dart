@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart' show Colors;
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -22,8 +21,10 @@ import '../formatting/zec_amount.dart';
 import '../privacy/privacy_mask.dart';
 import '../profile_pictures.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_copy_feedback.dart';
 import '../widgets/app_icon.dart';
 import '../widgets/app_profile_picture.dart';
+import '../widgets/app_tappable.dart';
 import '../widgets/app_toast.dart';
 import 'app_desktop_shell.dart';
 
@@ -206,9 +207,8 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         return;
       }
 
-      await Clipboard.setData(ClipboardData(text: address));
       if (!mounted) return;
-      showAppToast(context, 'Address copied');
+      copyTextWithToast(context, text: address, toastMessage: 'Address copied');
     } catch (e) {
       log('AppMainSidebar: ERROR copying shielded address: $e');
       if (!mounted) return;
@@ -244,9 +244,12 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         return;
       }
 
-      await Clipboard.setData(ClipboardData(text: address));
       if (!mounted) return;
-      showAppToast(context, 'Shielded address copied');
+      copyTextWithToast(
+        context,
+        text: address,
+        toastMessage: 'Shielded address copied',
+      );
     } catch (e) {
       log('AppMainSidebar: ERROR copying account shielded address: $e');
       if (!mounted) return;
@@ -374,7 +377,6 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       iconName: isImporting ? AppIcons.loader : AppIcons.home,
                       iconAnimated: !isImporting,
                       active: _homeShouldBeActive,
-                      inactiveOpacity: 0.5,
                       onTap: isImporting || _isHomeRoute
                           ? null
                           : () => _navigateTo('/home'),
@@ -386,7 +388,6 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         label: 'Swap',
                         iconName: AppIcons.swapArrows,
                         active: _matches('/swap'),
-                        inactiveOpacity: 0.5,
                         onTap: isImporting || _matches('/swap')
                             ? null
                             : () => _navigateTo('/swap'),
@@ -398,10 +399,11 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       label: 'Activity',
                       iconName: AppIcons.history,
                       active: _matches('/activity'),
-                      inactiveOpacity: 0.5,
-                      onTap: isImporting || _matches('/activity')
+                      // Stays tappable on detail subroutes (tx/swap status)
+                      // as a way back to the main activity feed.
+                      onTap: isImporting || _matchedLocation == '/activity'
                           ? null
-                          : () => _navigateTo('/activity'),
+                          : () => context.go('/activity'),
                     ),
                     const Spacer(),
                     AppSidebarItem(
@@ -460,7 +462,7 @@ class _SidebarAccountHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final row = SizedBox(
-      height: 48,
+      height: 44,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xxs),
         child: Row(
@@ -469,7 +471,7 @@ class _SidebarAccountHeader extends StatelessWidget {
               profilePictureId: profilePictureId,
               showsKeystone: showsKeystone,
             ),
-            const SizedBox(width: AppSpacing.s),
+            const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -500,6 +502,7 @@ class _SidebarAccountHeader extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.secondary,
+                            fontWeight: FontWeight.w400,
                           ),
                         ),
                       ),
@@ -564,7 +567,13 @@ class _SidebarAccountAvatar extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: colors.background.inverse,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: colors.background.ground, width: 2),
+                  // The ring sits OUTSIDE the 16px badge like the Figma
+                  // stroke, leaving the full box to the 14px logo.
+                  border: Border.all(
+                    color: colors.background.ground,
+                    width: 2,
+                    strokeAlign: BorderSide.strokeAlignOutside,
+                  ),
                 ),
                 child: Center(
                   child: AppIcon(
@@ -606,7 +615,7 @@ class _SidebarHideBalanceButton extends StatelessWidget {
           onTap: enabled ? onTap : null,
           child: SizedBox(
             width: 16,
-            height: 18,
+            height: 16,
             child: Center(
               child: AppIcon(
                 privacyModeEnabled ? AppIcons.eyeClosed : AppIcons.eye,
@@ -647,7 +656,7 @@ class _SidebarCopyAddressButton extends StatelessWidget {
           onTap: onTap,
           child: SizedBox(
             width: 16,
-            height: 18,
+            height: 16,
             child: Center(
               child: AppIcon(AppIcons.copy, size: 16, color: iconColor),
             ),
@@ -713,15 +722,23 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
             decoration: BoxDecoration(
               color: colors.surface.nav,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: colors.border.subtle,
-                strokeAlign: BorderSide.strokeAlignOutside,
-              ),
-              boxShadow: [
+              // Figma's dropdown shadow stack (no stroke): 0/14/28 @ 8%,
+              // 0/-6/12 @ 3%, 0/2/8 @ 6%.
+              boxShadow: const [
                 BoxShadow(
-                  color: colors.shadows.regular,
-                  blurRadius: 16,
-                  offset: const Offset(0, 8),
+                  color: Color(0x14000000),
+                  blurRadius: 28,
+                  offset: Offset(0, 14),
+                ),
+                BoxShadow(
+                  color: Color(0x08000000),
+                  blurRadius: 12,
+                  offset: Offset(0, -6),
+                ),
+                BoxShadow(
+                  color: Color(0x0F000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
                 ),
               ],
             ),
@@ -732,7 +749,7 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                   padding: const EdgeInsets.all(AppSpacing.xxs),
                   child: Text(
                     'My accounts',
-                    style: AppTypography.labelMedium.copyWith(
+                    style: AppTypography.labelLarge.copyWith(
                       color: colors.text.muted,
                       fontWeight: FontWeight.w400,
                     ),
@@ -741,7 +758,7 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                 const SizedBox(height: AppSpacing.xs),
                 SizedBox(
                   key: const ValueKey('sidebar_accounts_list'),
-                  height: 161,
+                  height: 153,
                   child: RawScrollbar(
                     key: const ValueKey('sidebar_accounts_scrollbar'),
                     controller: _scrollController,
@@ -750,7 +767,7 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                     thickness: 6,
                     mainAxisMargin: 6,
                     crossAxisMargin: 6,
-                    thumbColor: colors.background.neutralStrongOpacity,
+                    thumbColor: colors.surface.scrollbarThumb,
                     child: Padding(
                       key: const ValueKey('sidebar_accounts_list_gutter'),
                       padding: const EdgeInsets.only(right: 18),
@@ -786,40 +803,45 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                     ),
                   ),
                 ),
+                const SizedBox(height: AppSpacing.xs),
                 const _SidebarAccountsActionsDivider(),
                 const SizedBox(height: AppSpacing.xs),
                 SizedBox(
                   height: 36,
                   child: Row(
                     children: [
-                      _SidebarPopoverClickTarget(
+                      _SidebarPopoverHoverTarget(
                         onTap: widget.onManageAccounts,
-                        child: Container(
+                        builder: (context, hovered) => Container(
                           key: const ValueKey('sidebar_accounts_manage'),
                           width: 153,
                           height: 36,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: colors.button.secondary.bg,
+                            color: hovered
+                                ? colors.button.secondary.bgHover
+                                : colors.button.secondary.bg,
                             borderRadius: BorderRadius.circular(AppRadii.full),
                           ),
                           child: Text(
                             'Manage',
-                            style: AppTypography.labelMedium.copyWith(
+                            style: AppTypography.labelLarge.copyWith(
                               color: colors.button.secondary.label,
                             ),
                           ),
                         ),
                       ),
                       const SizedBox(width: AppSpacing.xxs),
-                      _SidebarPopoverClickTarget(
+                      _SidebarPopoverHoverTarget(
                         onTap: widget.onAddAccount,
-                        child: Container(
+                        builder: (context, hovered) => Container(
                           key: const ValueKey('sidebar_accounts_add'),
                           width: 48,
                           height: 32,
                           decoration: BoxDecoration(
-                            color: colors.button.primary.bg,
+                            color: hovered
+                                ? colors.button.primary.bgHover
+                                : colors.button.primary.bg,
                             borderRadius: BorderRadius.circular(AppRadii.full),
                             border: Border.all(
                               color: colors.border.subtleOpacity,
@@ -880,7 +902,7 @@ class _SidebarAccountPopoverRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return _SidebarPopoverClickTarget(
+    return AppTappable(
       onTap: onTap,
       child: Container(
         height: 40,
@@ -902,7 +924,7 @@ class _SidebarAccountPopoverRow extends StatelessWidget {
                   account.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelMedium.copyWith(
+                  style: AppTypography.labelLarge.copyWith(
                     color: colors.text.accent,
                   ),
                 ),
@@ -919,11 +941,29 @@ class _SidebarAccountPopoverRow extends StatelessWidget {
   }
 }
 
-class _SidebarPopoverClickTarget extends StatelessWidget {
-  const _SidebarPopoverClickTarget({required this.onTap, required this.child});
+/// Click target that also tracks hover, for the popover's pill buttons.
+class _SidebarPopoverHoverTarget extends StatefulWidget {
+  const _SidebarPopoverHoverTarget({
+    required this.onTap,
+    required this.builder,
+  });
 
   final VoidCallback onTap;
-  final Widget child;
+  final Widget Function(BuildContext context, bool hovered) builder;
+
+  @override
+  State<_SidebarPopoverHoverTarget> createState() =>
+      _SidebarPopoverHoverTargetState();
+}
+
+class _SidebarPopoverHoverTargetState
+    extends State<_SidebarPopoverHoverTarget> {
+  bool _hovered = false;
+
+  void _setHovered(bool value) {
+    if (_hovered == value) return;
+    setState(() => _hovered = value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -931,10 +971,12 @@ class _SidebarPopoverClickTarget extends StatelessWidget {
       button: true,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
+        onEnter: (_) => _setHovered(true),
+        onExit: (_) => _setHovered(false),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: child,
+          onTap: widget.onTap,
+          child: widget.builder(context, _hovered),
         ),
       ),
     );
@@ -947,7 +989,7 @@ class _SidebarSyncStatus extends StatelessWidget {
   final SyncState sync;
 
   static const _width = 176.0;
-  static const _height = 34.0;
+  static const _height = 32.0;
   static const _indicatorWidth = 5.0;
   static const _indicatorHeight = 32.0;
   static const _indicatorLeft = -AppSpacing.sm;
@@ -1004,7 +1046,10 @@ class _SidebarSyncStatus extends StatelessWidget {
                   key: const ValueKey('sidebar_sync_text'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelLarge.copyWith(color: textColor),
+                  style: AppTypography.labelLarge.copyWith(
+                    color: textColor,
+                    fontWeight: FontWeight.w400,
+                  ),
                 ),
               ),
             ),
