@@ -21,6 +21,7 @@ import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../swap_activity_row_items_provider.dart';
 import '../../swap_activity_row_mapper.dart';
 import '../../widgets/activity_feed.dart';
+import 'mobile_transaction_status_screen.dart';
 
 /// Loads the full transaction history for one account; injectable so
 /// widget tests can avoid the Rust FFI.
@@ -112,6 +113,23 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
     }
   }
 
+  void _openTransactionStatus(
+    BuildContext context,
+    rust_sync.TransactionInfo transaction,
+  ) {
+    context.push(
+      Uri(
+        path: '/activity/tx/${transaction.txidHex}',
+        queryParameters: {'kind': transaction.txKind},
+      ).toString(),
+      extra: MobileTransactionStatusArgs(
+        txidHex: transaction.txidHex,
+        txKind: transaction.txKind,
+        initialTransaction: transaction,
+      ),
+    );
+  }
+
   String _recentSignature(SyncState? sync) {
     return sync?.recentTransactions
             .map(
@@ -156,8 +174,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
               context: context,
               transaction: tx,
               privacyModeEnabled: privacyModeEnabled,
-              // Mobile transaction detail isn't designed yet.
-              onTap: null,
+              onTap: () => _openTransactionStatus(context, tx),
             ),
           ),
       for (final item in swapItems)

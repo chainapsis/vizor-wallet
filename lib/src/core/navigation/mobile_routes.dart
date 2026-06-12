@@ -8,6 +8,7 @@ import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
 import '../../features/address_book/screens/mobile/mobile_address_book_screen.dart';
 import '../../features/activity/screens/mobile/mobile_swap_activity_detail_screen.dart';
+import '../../features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import '../../features/send/screens/mobile/mobile_keystone_sign_screen.dart';
 import '../../features/swap/models/swap_activity_navigation.dart';
 import '../../features/swap/screens/mobile/mobile_swap_review_screen.dart';
@@ -128,6 +129,24 @@ List<RouteBase> buildMobileRoutes({
         key: state.pageKey,
         child: const MobileSwapReviewScreen(),
       ),
+    ),
+    // Same path as the desktop transaction status route so the shared
+    // redirect guard and deep links treat them identically.
+    GoRoute(
+      path: '/activity/tx/:txid',
+      pageBuilder: (context, state) {
+        final extra = state.extra;
+        final args = extra is MobileTransactionStatusArgs
+            ? extra
+            : MobileTransactionStatusArgs(
+                txidHex: state.pathParameters['txid'] ?? '',
+                txKind: state.uri.queryParameters['kind'],
+              );
+        return CupertinoPage(
+          key: state.pageKey,
+          child: MobileTransactionStatusScreen(args: args),
+        );
+      },
     ),
     GoRoute(
       path: '/activity/swap/:swapId',

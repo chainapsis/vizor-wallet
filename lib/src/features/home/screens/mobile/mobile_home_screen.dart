@@ -17,9 +17,11 @@ import '../../../../providers/sync_provider.dart';
 import '../../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../../../activity/activity_feed_sections.dart';
 import '../../../activity/activity_row_mapper.dart';
+import '../../../activity/screens/mobile/mobile_transaction_status_screen.dart';
 import '../../../activity/swap_activity_row_items_provider.dart';
 import '../../../activity/swap_activity_row_mapper.dart';
 import '../../../activity/widgets/activity_feed.dart';
+import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 
 /// Mobile home tab: shielded balance card, send/receive actions, and
@@ -108,9 +110,17 @@ class _HomeContent extends ConsumerWidget {
             context: context,
             transaction: tx,
             privacyModeEnabled: privacyModeEnabled,
-            // Mobile transaction detail isn't designed yet; rows are
-            // display-only until it lands.
-            onTap: null,
+            onTap: () => context.push(
+              Uri(
+                path: '/activity/tx/${tx.txidHex}',
+                queryParameters: {'kind': tx.txKind},
+              ).toString(),
+              extra: MobileTransactionStatusArgs(
+                txidHex: tx.txidHex,
+                txKind: tx.txKind,
+                initialTransaction: tx,
+              ),
+            ),
           ),
         ),
       for (final item in swapItems)
@@ -120,7 +130,12 @@ class _HomeContent extends ConsumerWidget {
             context: context,
             item: item,
             privacyModeEnabled: privacyModeEnabled,
-            onTap: null,
+            onTap: () => context.push(
+              swapActivityDetailUri(
+                intentId: item.intentId,
+                returnTarget: SwapActivityReturnTarget.home,
+              ).toString(),
+            ),
           ),
         ),
     ]..sort(compareActivityEntries);
