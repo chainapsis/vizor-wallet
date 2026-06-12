@@ -12,7 +12,11 @@
 //   FIGMA_TOKEN=xxx node scripts/figma-export.js \
 //     --file <fileKey> --node <nodeId> \
 //     --output assets/illustrations/foo.png \
-//     [--scale 1|2|3] [--format png|jpg|svg|pdf]
+//     [--scale 1|2|3] [--format png|jpg|svg|pdf] [--force]
+//
+// Overwriting a git-tracked output requires --force: a wrong node ID still
+// renders "successfully" (usually as a tiny junk image), and writing that
+// straight onto a committed asset destroys the good file.
 //
 // `fileKey` and `nodeId` come from the Figma URL:
 //   https://www.figma.com/design/<fileKey>/<name>?node-id=<nodeId>
@@ -23,6 +27,7 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const { execFileSync } = require('child_process');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -44,6 +49,7 @@ function parseArgs(argv) {
       case '--format': out.format = next(); break;
       case '--output': out.output = next(); break;
       case '--absolute-bounds': out.absoluteBounds = true; break;
+      case '--force': out.force = true; break;
       case '-h':
       case '--help': out.help = true; break;
       default: throw new Error(`unknown flag ${a}`);
@@ -57,8 +63,29 @@ function printHelp() {
     'Usage: FIGMA_TOKEN=xxx figma-export.js ' +
     '--file <fileKey> --node <nodeId> --output <path> ' +
     '[--scale 1|2|3] [--format png|jpg|svg|pdf] ' +
-    '[--absolute-bounds]'
+    '[--absolute-bounds] [--force]'
   );
+}
+
+// A wrong node ID renders "successfully" as a tiny junk image, and writing
+// it straight onto a committed asset silently destroys the good file. Treat
+// git-tracked outputs as protected: overwriting one requires --force.
+function isGitTracked(p) {
+  try {
+    execFileSync('git', ['ls-files', '--error-unmatch', path.resolve(p)], {
+      cwd: path.dirname(path.resolve(p)),
+      stdio: 'ignore',
+    });
+    return true;
+  } catch (e) {
+    return false; // untracked, outside a repo, or git unavailable
+  }
+}
+
+function pngDimensions(buf) {
+  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+  if (buf.length < 24 || !buf.subarray(0, 4).equals(sig)) return null;
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }
 
 function httpGet(url, headers = {}, retries = 4) {
@@ -109,6 +136,13 @@ async function main() {
   const token = process.env.FIGMA_TOKEN;
   if (!token) throw new Error('FIGMA_TOKEN env var is required');
 
+  if (!args.force && fs.existsSync(args.output) && isGitTracked(args.output)) {
+    throw new Error(
+      `refusing to overwrite git-tracked file ${args.output} ` +
+      '(verify the render first, then pass --force)'
+    );
+  }
+
   console.log(`[figma-export] exporting ${args.nodeId} @ ${args.scale}x ${args.format}`);
 
   // `use_absolute_bounds=true` tells Figma to render the node at its full
@@ -141,11 +175,22 @@ async function main() {
   console.log('[figma-export] downloading rendered image');
   const imgBuf = await httpGet(imgUrl);
 
+  // Write via a temp file so a failed download can never leave a partial
+  // file at the destination.
   fs.mkdirSync(path.dirname(args.output), { recursive: true });
-  fs.writeFileSync(args.output, imgBuf);
+  const tmpPath = `${args.output}.tmp-download`;
+  try {
+    fs.writeFileSync(tmpPath, imgBuf);
+    fs.renameSync(tmpPath, args.output);
+  } catch (e) {
+    fs.rmSync(tmpPath, { force: true });
+    throw e;
+  }
 
   const kb = Math.round(imgBuf.length / 1024);
-  console.log(`[figma-export] ok: ${args.output} (${kb} KB)`);
+  const dims = pngDimensions(imgBuf);
+  const dimNote = dims ? `, ${dims.width}x${dims.height}` : '';
+  console.log(`[figma-export] ok: ${args.output} (${kb} KB${dimNote})`);
 }
 
 main().catch((e) => {

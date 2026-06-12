@@ -79,13 +79,14 @@ node scripts/figma-export.js \
   --output assets/illustrations/foo.png \
   [--scale 1|2|3]  # default 1
   [--format png|jpg|svg|pdf]  # default png
+  [--force]  # required to overwrite a git-tracked output
 ```
 
 `fileKey` and `nodeId` come from the Figma URL — `figma.com/design/<fileKey>/<name>?node-id=<nodeId>`. The node-id in the URL uses a dash (`258-5229`); the script expects the canonical colon form (`258:5229`).
 
 `FIGMA_TOKEN` (read scope is enough, Settings → Security → "Generate new token") must be set. Keep it in `~/.zshenv` rather than `~/.zshrc` — Claude Code's Bash tool spawns a non-interactive zsh which only sources `.zshenv` by default.
 
-Output is minimal: start line, "downloading rendered image", and either `ok: <path> (<KB>)` or `fail: <msg>` with a non-zero exit.
+Output is minimal: start line, "downloading rendered image", and either `ok: <path> (<KB>, <WxH> for PNG)` or `fail: <msg>` with a non-zero exit. Check the printed dimensions before trusting the file — a wrong node ID still renders "successfully", usually as a tiny junk image. Overwriting a git-tracked output is refused without `--force`; verify the render at an untracked path first.
 
 ## Architecture
 
