@@ -94,7 +94,9 @@ class _ImportOnboardingWindowBackground extends StatelessWidget {
             ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
             : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
       ImportOnboardingStep.setPassword =>
-        'assets/illustrations/onboarding_set_password_background_light.png',
+        isDark
+            ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
+            : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
     };
 
     return DecoratedBox(
@@ -156,13 +158,15 @@ class _Sidebar extends StatelessWidget {
             active: step == activeStep,
           ),
       ],
-      illustration: const _SidebarIllustration(),
+      illustration: _SidebarIllustration(activeStep: activeStep),
     );
   }
 }
 
 class _SidebarIllustration extends StatelessWidget {
-  const _SidebarIllustration();
+  const _SidebarIllustration({required this.activeStep});
+
+  final ImportOnboardingStep activeStep;
 
   static const _frameWidth = 256.0;
   static const _frameHeight = 405.0;
@@ -170,9 +174,20 @@ class _SidebarIllustration extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
-    final asset = isDark
-        ? 'assets/illustrations/onboarding_intro_sidebar_dark.png'
-        : 'assets/illustrations/onboarding_intro_sidebar_light.png';
+    final asset = switch (activeStep) {
+      ImportOnboardingStep.secretPassphrase =>
+        isDark
+            ? 'assets/illustrations/onboarding_import_secret_passphrase_sidebar_dark.png'
+            : 'assets/illustrations/onboarding_import_secret_passphrase_sidebar_light.png',
+      ImportOnboardingStep.walletBirthdayHeight =>
+        isDark
+            ? 'assets/illustrations/onboarding_wallet_birthday_sidebar_dark.png'
+            : 'assets/illustrations/onboarding_wallet_birthday_sidebar_light.png',
+      ImportOnboardingStep.setPassword =>
+        isDark
+            ? 'assets/illustrations/onboarding_set_password_sidebar_dark.png'
+            : 'assets/illustrations/onboarding_set_password_sidebar_light.png',
+    };
     return IgnorePointer(
       child: Align(
         alignment: Alignment.bottomCenter,
