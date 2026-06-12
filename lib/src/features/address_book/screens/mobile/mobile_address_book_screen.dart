@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show Scaffold;
+import 'package:flutter/material.dart' show Scaffold, TextField;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -513,7 +513,10 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
             _FieldLabel('Name'),
             const SizedBox(height: AppSpacing.xxs),
             _FieldShell(
-              child: EditableText(
+              // A real TextField (bare, no decoration) rather than raw
+              // EditableText so long-press selection and the paste menu
+              // work; the shell owns all visible chrome.
+              child: TextField(
                 key: const ValueKey('mobile_address_book_label'),
                 controller: _labelController,
                 focusNode: _labelFocus,
@@ -521,14 +524,14 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                   color: colors.text.accent,
                 ),
                 cursorColor: colors.text.accent,
-                backgroundCursorColor: colors.background.overlay,
+                decoration: null,
               ),
             ),
             const SizedBox(height: AppSpacing.s),
             _FieldLabel('Address'),
             const SizedBox(height: AppSpacing.xxs),
             _FieldShell(
-              child: EditableText(
+              child: TextField(
                 key: const ValueKey('mobile_address_book_address'),
                 controller: _addressController,
                 focusNode: _addressFocus,
@@ -537,7 +540,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                   color: colors.text.accent,
                 ),
                 cursorColor: colors.text.accent,
-                backgroundCursorColor: colors.background.overlay,
+                decoration: null,
               ),
             ),
             if (_error != null) ...[

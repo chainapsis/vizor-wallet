@@ -100,7 +100,7 @@ void main() {
     await tester.enterText(heightField, '25a.b00');
     await tester.pump();
     expect(
-      tester.widget<EditableText>(heightField).controller.text,
+      tester.widget<TextField>(heightField).controller!.text,
       '2500',
     );
   });

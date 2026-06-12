@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show TextField;
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
@@ -263,7 +264,10 @@ class _WordField extends StatelessWidget {
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
-            child: EditableText(
+            // A real TextField (bare, no decoration) rather than raw
+            // EditableText so long-press selection and the paste menu
+            // work; the row container owns all visible chrome.
+            child: TextField(
               key: const ValueKey('mobile_import_manual_field'),
               controller: controller,
               focusNode: focusNode,
@@ -274,7 +278,7 @@ class _WordField extends StatelessWidget {
                 color: colors.text.accent,
               ),
               cursorColor: colors.text.accent,
-              backgroundCursorColor: colors.background.overlay,
+              decoration: null,
               keyboardType: TextInputType.visiblePassword,
               autocorrect: false,
               enableSuggestions: false,

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show TextField;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -203,7 +204,10 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
                 borderRadius: BorderRadius.circular(AppRadii.medium),
                 border: Border.all(color: colors.border.subtle),
               ),
-              child: EditableText(
+              // A real TextField (bare, no decoration) rather than raw
+              // EditableText so long-press selection and the paste menu
+              // work; the container owns all visible chrome.
+              child: TextField(
                 key: const ValueKey('mobile_account_edit_name'),
                 controller: _nameController,
                 focusNode: _nameFocusNode,
@@ -211,7 +215,7 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
                   color: colors.text.accent,
                 ),
                 cursorColor: colors.text.accent,
-                backgroundCursorColor: colors.background.overlay,
+                decoration: null,
               ),
             ),
             if (_error != null) ...[

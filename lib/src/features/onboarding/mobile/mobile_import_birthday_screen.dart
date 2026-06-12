@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/material.dart' show TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -367,7 +368,12 @@ class _MobileImportBirthdayScreenState
                                             .copyWith(color: colors.text.muted),
                                       ),
                                     ),
-                                  EditableText(
+                                  // A real TextField (bare, no
+                                  // decoration) rather than raw
+                                  // EditableText so long-press selection
+                                  // and the paste menu work; the shell
+                                  // owns all visible chrome.
+                                  TextField(
                                     key: const ValueKey(
                                       'mobile_import_birthday_height',
                                     ),
@@ -386,8 +392,7 @@ class _MobileImportBirthdayScreenState
                                     style: AppTypography.headlineSmall
                                         .copyWith(color: colors.text.accent),
                                     cursorColor: colors.text.accent,
-                                    backgroundCursorColor:
-                                        colors.background.overlay,
+                                    decoration: null,
                                   ),
                                 ],
                               ),
