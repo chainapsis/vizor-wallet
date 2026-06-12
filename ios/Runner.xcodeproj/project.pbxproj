@@ -28,6 +28,7 @@
 		B7C6E66ECB0517259883CB1B /* LiveActivitiesAppAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F754445942A6FAE31362F45C /* LiveActivitiesAppAttributes.swift */; };
 		BGSYNC001ED2DC5600515810 /* BackgroundSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BGSYNC000ED2DC5600515810 /* BackgroundSyncManager.swift */; };
 		BIOUNLK01ED2DC5600515810 /* BiometricUnlockHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BIOUNLK00ED2DC5600515810 /* BiometricUnlockHandler.swift */; };
+		DATEPCK01ED2DC5600515810 /* DatePickerHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = DATEPCK00ED2DC5600515810 /* DatePickerHandler.swift */; };
 		SYNCPSH01ED2DC5600515810 /* SyncProgressStreamHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = SYNCPSH00ED2DC5600515810 /* SyncProgressStreamHandler.swift */; };
 /* End PBXBuildFile section */
 
@@ -108,6 +109,7 @@
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BGSYNC000ED2DC5600515810 /* BackgroundSyncManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BackgroundSyncManager.swift; sourceTree = "<group>"; };
 		BIOUNLK00ED2DC5600515810 /* BiometricUnlockHandler.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BiometricUnlockHandler.swift; sourceTree = "<group>"; };
+		DATEPCK00ED2DC5600515810 /* DatePickerHandler.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = DatePickerHandler.swift; sourceTree = "<group>"; };
 		DF27B9D22ECBFA88CAE99FA5 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		EF9D05AE0B7A994911C4F6F2 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		F754445942A6FAE31362F45C /* LiveActivitiesAppAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveActivitiesAppAttributes.swift; sourceTree = "<group>"; };
@@ -251,6 +253,7 @@
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				BGSYNC000ED2DC5600515810 /* BackgroundSyncManager.swift */,
 				BIOUNLK00ED2DC5600515810 /* BiometricUnlockHandler.swift */,
+				DATEPCK00ED2DC5600515810 /* DatePickerHandler.swift */,
 				5736417D0A4E184E8572693A /* WalletPathResolver.swift */,
 				9F6D0C6B2F82A11100ABC002 /* RpcEndpointConfigStore.swift */,
 				SYNCPSH00ED2DC5600515810 /* SyncProgressStreamHandler.swift */,
@@ -521,6 +524,7 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				BGSYNC001ED2DC5600515810 /* BackgroundSyncManager.swift in Sources */,
 				BIOUNLK01ED2DC5600515810 /* BiometricUnlockHandler.swift in Sources */,
+				DATEPCK01ED2DC5600515810 /* DatePickerHandler.swift in Sources */,
 				5736417E0A4E184E8572693A /* WalletPathResolver.swift in Sources */,
 				9F6D0C6B2F82A11100ABC001 /* RpcEndpointConfigStore.swift in Sources */,
 				SYNCPSH01ED2DC5600515810 /* SyncProgressStreamHandler.swift in Sources */,

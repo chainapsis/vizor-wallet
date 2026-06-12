@@ -409,7 +409,10 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
     final isEdit = widget.contact != null;
     return SafeArea(
       top: false,
-      child: Padding(
+      // Scrollable so a tall keyboard (e.g. Korean with its candidate
+      // bar) compresses the sheet instead of overflowing it and hiding
+      // the save button.
+      child: SingleChildScrollView(
         padding: EdgeInsets.only(
           left: AppSpacing.md,
           right: AppSpacing.md,
@@ -513,7 +516,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
               child: EditableText(
                 key: const ValueKey('mobile_address_book_label'),
                 controller: _labelController,
-                focusNode: FocusNode(),
+                focusNode: _labelFocus,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.accent,
                 ),
@@ -528,7 +531,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
               child: EditableText(
                 key: const ValueKey('mobile_address_book_address'),
                 controller: _addressController,
-                focusNode: FocusNode(),
+                focusNode: _addressFocus,
                 maxLines: 2,
                 style: AppTypography.codeMedium.copyWith(
                   color: colors.text.accent,

@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/services/native_date_picker.dart';
 
 import 'support/mobile_regtest_flow.dart';
 
@@ -105,23 +106,16 @@ void main() {
         description: 'import birthday',
       );
       await shot('04_import_birthday');
-      // The date "field" opens the calendar sheet on tap.
+      // The date "field" opens the OS-native UICalendarView sheet on
+      // iOS (the tour only runs on the iOS simulator). There are no
+      // Flutter widgets to wait on — give the present animation real
+      // time, capture, then dismiss through the picker channel since
+      // flutter_test cannot tap native UIKit views.
       await tapWidget(tester, const ValueKey('mobile_import_birthday_date'));
-      await pumpUntil(
-        tester,
-        () => tester.any(find.text('Sun')),
-        description: 'birthday calendar sheet',
-      );
+      await settle(tester, const Duration(milliseconds: 1500));
       await shot('04c_import_birthday_calendar');
-      // Pop the sheet directly — the regtest chain is created per run,
-      // so the selectable date range is too narrow to tap a fixed day.
-      tester.state<NavigatorState>(find.byType(Navigator).first).pop();
-      await settle(tester, const Duration(milliseconds: 600));
-      await pumpUntil(
-        tester,
-        () => !tester.any(find.text('Sun')),
-        description: 'calendar sheet dismissed',
-      );
+      await NativeDatePicker.cancel();
+      await settle(tester, const Duration(milliseconds: 800));
       await tapWidget(
         tester,
         const ValueKey('mobile_import_birthday_mode_height'),
@@ -432,12 +426,23 @@ void main() {
         'tmEEzy3GZ8bQyaQXAbtnoVHBjDPSDfWPSkE',
       );
       await settle(tester, const Duration(milliseconds: 300));
+      // Drop the keyboard so the whole form is in the shot and the save
+      // button cannot be obscured regardless of the simulator's active
+      // keyboard (a Korean layout with candidate bar is taller).
+      FocusManager.instance.primaryFocus?.unfocus();
+      await settle(tester, const Duration(milliseconds: 400));
       await shot('30g_address_book_add');
       await tapAppButton(tester, const ValueKey('mobile_address_book_save'));
+      // 'Tea house' alone is satisfied by the form field itself — wait
+      // for the sheet to actually close.
       await pumpUntil(
         tester,
-        () => tester.any(find.text('Tea house')),
-        description: 'contact saved',
+        () =>
+            !tester.any(
+              find.byKey(const ValueKey('mobile_address_book_save')),
+            ) &&
+            tester.any(find.text('Tea house')),
+        description: 'contact saved and sheet closed',
       );
       await settle(tester, const Duration(milliseconds: 300));
       await shot('30h_address_book_list');

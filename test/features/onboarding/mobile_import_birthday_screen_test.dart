@@ -128,6 +128,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(ImportBirthdayCalendarPanel), findsOneWidget);
 
+    // The sheet hugs the calendar instead of claiming the full
+    // scroll-controlled height (panel + the AppSpacing.sm padding).
+    final panelHeight = tester
+        .getSize(find.byType(ImportBirthdayCalendarPanel))
+        .height;
+    final sheetHeight = tester.getSize(find.byType(BottomSheet)).height;
+    expect(sheetHeight, closeTo(panelHeight + AppSpacing.sm * 2, 1.0));
+
     // Selecting a (past) day fills the field and enables continue.
     await tester.tap(find.text('10').first);
     await tester.pumpAndSettle();

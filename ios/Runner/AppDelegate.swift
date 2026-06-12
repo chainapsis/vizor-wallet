@@ -114,6 +114,14 @@ import UIKit
       BiometricUnlockHandler.shared.handle(call, result: result)
     }
 
+    let datePickerChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/date_picker",
+      binaryMessenger: messenger
+    )
+    datePickerChannel.setMethodCallHandler { (call, result) in
+      DatePickerHandler.shared.handle(call, result: result)
+    }
+
     let cameraPermissionChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/camera_permission",
       binaryMessenger: messenger

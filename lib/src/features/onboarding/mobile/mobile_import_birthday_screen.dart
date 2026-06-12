@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -14,6 +15,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
+import '../../../services/native_date_picker.dart';
 import '../import/import_birthday_calendar_overlay.dart'
     show ImportBirthdayCalendarPanel;
 import '../import/import_birthday_estimator.dart';
@@ -145,24 +147,52 @@ class _MobileImportBirthdayScreenState
     if (_busy) return;
     _heightFocus.unfocus();
     final initial = _selectedDate ?? _lastDate;
-    final candidate = await showAppMobileSheet<DateTime>(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.sm),
-          child: Center(
-            child: ImportBirthdayCalendarPanel(
-              initialMonth: initial,
-              selectedDate: _selectedDate,
-              firstDate: _firstDate,
-              lastDate: _lastDate,
-              onDateSelected: (date) => Navigator.of(sheetContext).pop(date),
+
+    DateTime? candidate;
+    var picked = false;
+    if (Platform.isIOS) {
+      // iOS gets the OS-native calendar sheet; the Flutter sheet below
+      // stays as the fallback (handler requires iOS 16+).
+      try {
+        candidate = await NativeDatePicker.pickDate(
+          initialDate: _selectedDate,
+          firstDate: _firstDate,
+          lastDate: _lastDate,
+          isDarkTheme: AppTheme.of(context) == AppThemeData.dark,
+          accentColor: context.colors.text.accent,
+        );
+        picked = true;
+      } catch (e) {
+        log('MobileImportBirthday: native date picker failed: $e');
+      }
+      if (!mounted) return;
+    }
+    if (!picked) {
+      candidate = await showAppMobileSheet<DateTime>(
+        context: context,
+        builder: (sheetContext) => SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            // mainAxisSize.min so the sheet hugs the calendar instead of
+            // claiming the scroll-controlled full height.
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ImportBirthdayCalendarPanel(
+                  initialMonth: initial,
+                  selectedDate: _selectedDate,
+                  firstDate: _firstDate,
+                  lastDate: _lastDate,
+                  onDateSelected: (date) =>
+                      Navigator.of(sheetContext).pop(date),
+                ),
+              ],
             ),
           ),
         ),
-      ),
-    );
+      );
+    }
     if (candidate == null || !mounted) return;
     setState(() {
       _selectedDate = candidate;
