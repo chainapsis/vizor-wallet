@@ -3,6 +3,8 @@ library;
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart'
+    show debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -68,14 +70,24 @@ const faceAvailability = BiometricAvailability(
   kind: BiometricKind.face,
 );
 
-Widget _app({FakeBiometricUnlock? biometric}) {
+Widget _app({FakeBiometricUnlock? biometric, EdgeInsets? insets}) {
   return ProviderScope(
     overrides: [
       if (biometric != null)
         biometricUnlockServiceProvider.overrideWithValue(biometric),
     ],
     child: MaterialApp(
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      builder: (context, c) {
+        final themed = AppTheme(data: AppThemeData.light, child: c!);
+        if (insets == null) return themed;
+        // Simulated device safe-area insets for geometry tests.
+        return MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(padding: insets, viewPadding: insets),
+          child: themed,
+        );
+      },
       home: const MobileUnlockScreen(),
     ),
   );
@@ -134,6 +146,50 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Delete digit'));
     await tester.pump();
     expect(find.bySemanticsLabel('Delete digit'), findsNothing);
+  });
+
+  group('vertical balance (VZR-72)', () {
+    // iPhone 15 Pro-class insets: 59px island/status top, 34px home
+    // indicator bottom.
+    const insets = EdgeInsets.only(top: 59, bottom: 34);
+
+    testWidgets('iOS skips the home-indicator inset and clears the island', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+
+      await tester.pumpWidget(_app(insets: insets));
+      await tester.pump();
+
+      // Bottom gap is the column's own 24px padding — the 34px inset
+      // is skipped per the MobileBottomSafeArea policy.
+      final screenHeight = tester
+          .getSize(find.byType(MobileUnlockScreen))
+          .height;
+      final numpadBottom = tester.getBottomLeft(find.byType(PasscodeNumpad)).dy;
+      expect(numpadBottom, screenHeight - AppSpacing.md);
+
+      // The badge keeps a deliberate clearance below the island.
+      final badgeTop = tester.getTopLeft(find.byType(Image)).dy;
+      expect(badgeTop, greaterThanOrEqualTo(insets.top + AppSpacing.md));
+
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('Android keeps the navigation-bar inset', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+
+      await tester.pumpWidget(_app(insets: insets));
+      await tester.pump();
+
+      final screenHeight = tester
+          .getSize(find.byType(MobileUnlockScreen))
+          .height;
+      final numpadBottom = tester.getBottomLeft(find.byType(PasscodeNumpad)).dy;
+      expect(numpadBottom, screenHeight - insets.bottom - AppSpacing.md);
+
+      debugDefaultTargetPlatformOverride = null;
+    });
   });
 
   group('haptics', () {

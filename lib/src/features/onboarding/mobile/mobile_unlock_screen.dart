@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
@@ -170,75 +171,90 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     final colors = context.colors;
     return Scaffold(
       backgroundColor: colors.background.window,
+      // Bottom edge follows the MobileBottomSafeArea policy: the
+      // trailing 24px of column padding already clears the iOS home
+      // indicator, so skipping the 34px inset keeps the numpad from
+      // floating high above the screen edge (VZR-72).
       body: SafeArea(
-        child: Column(
-          children: [
-            const Spacer(),
-            Image.asset(
-              'assets/illustrations/welcome_badge.png',
-              width: 50,
-              height: 50,
-            ),
-            const SizedBox(height: AppSpacing.base),
-            Text(
-              'Welcome Back',
-              textAlign: TextAlign.center,
-              style: AppTypography.displayLarge.copyWith(
-                color: colors.text.accent,
+        bottom: false,
+        child: MobileBottomSafeArea(
+          bottomPadding: AppSpacing.md,
+          child: Column(
+            children: [
+              // Deliberate clearance below the status bar / dynamic
+              // island so the badge never crowds it; the Spacers keep
+              // the welcome group centered in what remains.
+              const SizedBox(height: AppSpacing.md),
+              const Spacer(),
+              Image.asset(
+                'assets/illustrations/welcome_badge.png',
+                width: 50,
+                height: 50,
               ),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            Text(
-              _submitting
-                  ? 'Opening your wallet...'
-                  : 'Enter your passcode to open Vizor',
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.secondary,
+              const SizedBox(height: AppSpacing.base),
+              Text(
+                'Welcome Back',
+                textAlign: TextAlign.center,
+                style: AppTypography.displayLarge.copyWith(
+                  color: colors.text.accent,
+                ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            PasscodeDots(length: kMobilePasscodeLength, filled: _entry.length),
-            SizedBox(
-              // Tall enough to hold the error message ~30 px below the
-              // dots, where the Sign In Passcode frame places it.
-              height: 84,
-              child: Center(
-                child: _error == null
-                    ? null
-                    : Text(
-                        _error!,
-                        textAlign: TextAlign.center,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: colors.text.destructive,
+              const SizedBox(height: AppSpacing.s),
+              Text(
+                _submitting
+                    ? 'Opening your wallet...'
+                    : 'Enter your passcode to open Vizor',
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              PasscodeDots(
+                length: kMobilePasscodeLength,
+                filled: _entry.length,
+              ),
+              SizedBox(
+                // Tall enough to hold the error message ~30 px below
+                // the dots, where the Sign In Passcode frame places it.
+                height: 84,
+                child: Center(
+                  child: _error == null
+                      ? null
+                      : Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: colors.text.destructive,
+                          ),
                         ),
-                      ),
+                ),
               ),
-            ),
-            const Spacer(),
-            Builder(
-              builder: (context) {
-                final biometric =
-                    ref.watch(biometricUnlockProvider).value ??
-                    BiometricUnlockState.initial;
-                return PasscodeNumpad(
-                  onDigit: _onDigit,
-                  onBackspace: _onBackspace,
-                  canDelete: _entry.isNotEmpty,
-                  onHelp: _submitting ? null : _showForgotPasscodeSheet,
-                  onBiometric: biometric.usable && !_submitting
-                      ? () => unawaited(_tryBiometricUnlock())
-                      : null,
-                  biometricIcon:
-                      biometric.availability.kind == BiometricKind.face
-                      ? Icons.face
-                      : Icons.fingerprint,
-                  enabled: !_submitting,
-                );
-              },
-            ),
-            const SizedBox(height: AppSpacing.md),
-          ],
+              const Spacer(),
+              Builder(
+                builder: (context) {
+                  final biometric =
+                      ref.watch(biometricUnlockProvider).value ??
+                      BiometricUnlockState.initial;
+                  return PasscodeNumpad(
+                    onDigit: _onDigit,
+                    onBackspace: _onBackspace,
+                    canDelete: _entry.isNotEmpty,
+                    onHelp: _submitting ? null : _showForgotPasscodeSheet,
+                    onBiometric: biometric.usable && !_submitting
+                        ? () => unawaited(_tryBiometricUnlock())
+                        : null,
+                    biometricIcon:
+                        biometric.availability.kind == BiometricKind.face
+                        ? Icons.face
+                        : Icons.fingerprint,
+                    enabled: !_submitting,
+                  );
+                },
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
+          ),
         ),
       ),
     );
