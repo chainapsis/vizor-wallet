@@ -206,7 +206,22 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
           ],
         ],
       ),
-      child: ImportSlotsCard(words: _words),
+      // VZR-71: users instinctively tap the slot grid expecting to
+      // type — route the tap into the manual wizard, same as the Enter
+      // manually link. Once a valid phrase fills the card it is a
+      // review surface and the tap is disabled.
+      child: _filled
+          ? ImportSlotsCard(words: _words)
+          : Semantics(
+              button: true,
+              label: 'Enter secret phrase manually',
+              child: GestureDetector(
+                key: const ValueKey('mobile_import_slots'),
+                behavior: HitTestBehavior.opaque,
+                onTap: () => context.push('/import/manual'),
+                child: ImportSlotsCard(words: _words),
+              ),
+            ),
     );
   }
 }
