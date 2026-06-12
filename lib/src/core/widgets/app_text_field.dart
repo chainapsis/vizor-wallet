@@ -320,15 +320,25 @@ class _AppTextFieldState extends State<AppTextField> {
             baseShellColor,
           )
         : baseShellColor;
+    // The filled secondary shell keeps its surface color on hover (no
+    // alpha ring — it reads as a pale halo on the gray fill); focus still
+    // draws the inverse ring on both surfaces.
+    final hoverBorderColor = widget.surface == AppTextFieldSurface.secondary
+        ? Colors.transparent
+        : colors.border.subtleOpacity;
     final borderColor = switch (widget.tone) {
       AppTextFieldTone.neutral when _isFocused => colors.background.inverse,
-      AppTextFieldTone.neutral when _hovered => colors.border.subtleOpacity,
+      AppTextFieldTone.neutral when _hovered => hoverBorderColor,
       AppTextFieldTone.neutral => Colors.transparent,
       AppTextFieldTone.destructive => colors.border.utilityDestructiveSubtle,
       AppTextFieldTone.success => colors.border.utilitySuccess,
       AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,
     };
-    final boxShadow = widget.tone == AppTextFieldTone.destructive
+    // The secondary shell is flat in the design (no effects on the Field
+    // frame); the surface shadow belongs to the white primary input only.
+    final boxShadow =
+        widget.tone == AppTextFieldTone.destructive ||
+            widget.surface == AppTextFieldSurface.secondary
         ? const <BoxShadow>[]
         : _appTextFieldSurfaceShadow(colors);
     final messageColor = switch (widget.tone) {
