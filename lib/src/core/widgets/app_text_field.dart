@@ -550,7 +550,9 @@ class _AppTextFieldState extends State<AppTextField> {
                                   right:
                                       widget.inputHorizontalPadding ??
                                       AppSpacing.s,
-                                  bottom: widget.inputBottomPadding ?? 6,
+                                  // Centered like the Field component (value/hint at y15 in
+                                  // the 46px shell); override only for tuned layouts.
+                                  bottom: widget.inputBottomPadding ?? 0,
                                 ),
                                 child: fieldInput,
                               ),
@@ -594,12 +596,7 @@ class _AppTextFieldState extends State<AppTextField> {
                                 ),
                               if (widget.leading != null)
                                 const SizedBox(width: AppSpacing.xs),
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.only(bottom: 6),
-                                  child: fieldInput,
-                                ),
-                              ),
+                              Expanded(child: fieldInput),
                               if (clearButton != null) ...[
                                 const SizedBox(width: AppSpacing.xs),
                                 SizedBox(
