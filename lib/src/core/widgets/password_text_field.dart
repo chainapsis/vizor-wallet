@@ -20,6 +20,7 @@ class PasswordTextField extends StatefulWidget {
     this.inputHorizontalPadding,
     this.inputBottomPadding,
     this.tone = AppTextFieldTone.neutral,
+    this.surface = AppTextFieldSurface.primary,
     this.onChanged,
     this.onSubmitted,
     this.autofocus = false,
@@ -41,6 +42,7 @@ class PasswordTextField extends StatefulWidget {
   final double? inputHorizontalPadding;
   final double? inputBottomPadding;
   final AppTextFieldTone tone;
+  final AppTextFieldSurface surface;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
   final bool autofocus;
@@ -77,6 +79,7 @@ class _PasswordTextFieldState extends State<PasswordTextField> {
       inputHorizontalPadding: widget.inputHorizontalPadding,
       inputBottomPadding: widget.inputBottomPadding,
       tone: widget.tone,
+      surface: widget.surface,
       leading: const AppIcon(AppIcons.lock, size: 20),
       trailing: widget.showVisibilityToggle
           ? GestureDetector(

@@ -8,6 +8,11 @@ import 'app_tooltip.dart';
 
 enum AppTextFieldTone { neutral, destructive, success, brandCrimson }
 
+/// Figma Field `Type` variant: [primary] is the default white input
+/// surface; [secondary] is the filled gray shell with a focus-gap idle
+/// ring used on the auth screens.
+enum AppTextFieldSurface { primary, secondary }
+
 const _appTextFieldInputIconSize = AppInputSizing.iconSize;
 
 class AppTextField extends StatefulWidget {
@@ -32,6 +37,7 @@ class AppTextField extends StatefulWidget {
     this.messageStyle,
     this.labelStyle,
     this.tone = AppTextFieldTone.neutral,
+    this.surface = AppTextFieldSurface.primary,
     this.showClearButton = false,
     this.clearButtonRequiresText = true,
     this.clearButtonSemanticLabel = 'Clear text',
@@ -81,6 +87,7 @@ class AppTextField extends StatefulWidget {
   final TextStyle? messageStyle;
   final TextStyle? labelStyle;
   final AppTextFieldTone tone;
+  final AppTextFieldSurface surface;
   final bool showClearButton;
   final bool clearButtonRequiresText;
   final String clearButtonSemanticLabel;
@@ -302,16 +309,25 @@ class _AppTextFieldState extends State<AppTextField> {
       forceStrutHeight: true,
     );
 
+    // Figma Field Type=Secondary: filled gray shell with a focus-gap
+    // colored idle ring (auth screens); primary keeps the white input
+    // surface with no idle border.
+    final baseShellColor = widget.surface == AppTextFieldSurface.secondary
+        ? colors.button.secondary.bg
+        : colors.surface.input;
     final shellColor = widget.tone == AppTextFieldTone.destructive
         ? Color.alphaBlend(
             colors.background.utilityDestructiveAlphaSubtle,
-            colors.surface.input,
+            baseShellColor,
           )
-        : colors.surface.input;
+        : baseShellColor;
+    final idleBorderColor = widget.surface == AppTextFieldSurface.secondary
+        ? colors.state.focusGap
+        : Colors.transparent;
     final borderColor = switch (widget.tone) {
       AppTextFieldTone.neutral when _isFocused => colors.background.inverse,
       AppTextFieldTone.neutral when _hovered => colors.border.subtleOpacity,
-      AppTextFieldTone.neutral => Colors.transparent,
+      AppTextFieldTone.neutral => idleBorderColor,
       AppTextFieldTone.destructive => colors.border.utilityDestructiveSubtle,
       AppTextFieldTone.success => colors.border.utilitySuccess,
       AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,

@@ -204,6 +204,8 @@ class _UnlockContent extends StatelessWidget {
                 label: 'Password',
                 hintText: 'Enter password',
                 showLabel: false,
+                // Figma Field Type=Secondary on the auth card.
+                surface: AppTextFieldSurface.secondary,
                 leadingSlotWidth: 32,
                 inputHorizontalPadding: AppSpacing.s,
                 controller: passwordController,
