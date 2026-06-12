@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 
 import '../../theme/app_theme.dart';
@@ -30,6 +32,8 @@ class MobileTopNav extends StatelessWidget {
     this.syncLabel,
     this.syncLabelColor,
     this.syncIndicatorColor,
+    this.syncAnimated = false,
+    this.syncHighlightColor,
     this.avatar,
     this.onAccountTap,
     super.key,
@@ -45,6 +49,8 @@ class MobileTopNav extends StatelessWidget {
       syncLabel = null,
       syncLabelColor = null,
       syncIndicatorColor = null,
+      syncAnimated = false,
+      syncHighlightColor = null,
       avatar = null,
       onAccountTap = null,
       title = '';
@@ -56,6 +62,8 @@ class MobileTopNav extends StatelessWidget {
       syncLabel = null,
       syncLabelColor = null,
       syncIndicatorColor = null,
+      syncAnimated = false,
+      syncHighlightColor = null,
       avatar = null,
       onAccountTap = null,
       progress = 0;
@@ -71,6 +79,15 @@ class MobileTopNav extends StatelessWidget {
   final String? syncLabel;
   final Color? syncLabelColor;
   final Color? syncIndicatorColor;
+
+  /// When true (the live syncing state, reduced-motion off) the label
+  /// shimmers a bright-green band across itself and the edge bar breathes
+  /// a slow glow pulse. Otherwise the label and bar render static.
+  final bool syncAnimated;
+
+  /// Bright-green peak used for the shimmer band and the breathing glow.
+  /// Falls back to [syncLabelColor] when null.
+  final Color? syncHighlightColor;
 
   /// Account variant: leading 40×40 avatar. Falls back to a plain
   /// surface circle until real profile pictures are wired in.
@@ -149,19 +166,17 @@ class MobileTopNav extends StatelessWidget {
         Expanded(
           child: Align(alignment: Alignment.centerLeft, child: account),
         ),
-        if (syncLabel != null) ...[
-          Text(
-            syncLabel!,
-            style: AppTypography.labelMedium.copyWith(
-              color: syncLabelColor ?? colors.sync.text,
-            ),
-          ),
-          const SizedBox(width: AppSpacing.s),
-          _SyncEdgeIndicator(
-            size: _syncIndicatorSize,
-            color: syncIndicatorColor ?? colors.sync.glow,
-          ),
-        ] else
+        if (syncLabel != null)
+          _SyncStatus(
+            label: syncLabel!,
+            baseColor: syncLabelColor ?? colors.sync.text,
+            highlightColor:
+                syncHighlightColor ?? syncLabelColor ?? colors.sync.text,
+            indicatorColor: syncIndicatorColor ?? colors.sync.glow,
+            indicatorSize: _syncIndicatorSize,
+            animated: syncAnimated,
+          )
+        else
           const SizedBox(width: AppSpacing.sm),
       ],
     );
@@ -288,13 +303,233 @@ class _AvatarPlaceholder extends StatelessWidget {
   }
 }
 
+/// Subtle/slow motion constants for the syncing affordance. One full
+/// breath (glow swell) and one shimmer sweep per [period]; both are
+/// driven by the same controller so the label and bar feel coordinated.
+abstract final class _SyncStatusMotion {
+  static const period = Duration(milliseconds: 1400);
+
+  /// Half-width of the shimmer highlight band as a gradient-stop fraction.
+  /// Kept narrow for a gentle, low-contrast sparkle.
+  static const _bandHalf = 0.18;
+
+  /// Edge-bar glow breathing range (shadow blur radius + alpha).
+  static const _minGlowBlur = 8.0;
+  static const _maxGlowBlur = 16.0;
+  static const _minGlowAlpha = 0.35;
+  static const _maxGlowAlpha = 0.7;
+
+  /// 0 → 1 → 0 once per [period].
+  static double _breath(double t) => (1 - math.cos(2 * math.pi * t)) / 2;
+
+  static ({double blur, double alpha}) glowFor(double t) {
+    final e = _breath(t);
+    return (
+      blur: _lerp(_minGlowBlur, _maxGlowBlur, e),
+      alpha: _lerp(_minGlowAlpha, _maxGlowAlpha, e),
+    );
+  }
+
+  static double _lerp(double a, double b, double t) => a + (b - a) * t;
+}
+
+/// The right-aligned sync status: the label plus the edge glow bar.
+///
+/// While [animated] (the live syncing state, reduced-motion off) a single
+/// [AnimationController] drives a bright-green shimmer band sweeping across
+/// the label and a slow breathing pulse on the green edge bar, so the two
+/// read as one "actively working" affordance. Otherwise — synced, failed,
+/// or reduced-motion — it renders the same static label + bar as before.
+class _SyncStatus extends StatefulWidget {
+  const _SyncStatus({
+    required this.label,
+    required this.baseColor,
+    required this.highlightColor,
+    required this.indicatorColor,
+    required this.indicatorSize,
+    required this.animated,
+  });
+
+  final String label;
+  final Color baseColor;
+  final Color highlightColor;
+  final Color indicatorColor;
+  final Size indicatorSize;
+  final bool animated;
+
+  @override
+  State<_SyncStatus> createState() => _SyncStatusState();
+}
+
+class _SyncStatusState extends State<_SyncStatus>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _controller;
+
+  AnimationController get _activeController {
+    return _controller ??= AnimationController(
+      vsync: this,
+      duration: _SyncStatusMotion.period,
+    );
+  }
+
+  bool get _shouldAnimate {
+    if (!widget.animated) {
+      return false;
+    }
+    return !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Re-evaluate on dependency changes (e.g. the reduce-motion setting).
+    _syncAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SyncStatus oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animated != widget.animated) {
+      _syncAnimation();
+    }
+  }
+
+  void _syncAnimation() {
+    if (_shouldAnimate) {
+      if (!_activeController.isAnimating) {
+        _activeController.repeat();
+      }
+    } else {
+      final controller = _controller;
+      if (controller != null) {
+        controller
+          ..stop()
+          ..value = 0;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_shouldAnimate) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            widget.label,
+            style: AppTypography.labelMedium.copyWith(color: widget.baseColor),
+          ),
+          const SizedBox(width: AppSpacing.s),
+          _SyncEdgeIndicator(
+            size: widget.indicatorSize,
+            color: widget.indicatorColor,
+          ),
+        ],
+      );
+    }
+
+    return AnimatedBuilder(
+      animation: _activeController,
+      builder: (context, _) {
+        final t = _activeController.value;
+        final glow = _SyncStatusMotion.glowFor(t);
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _ShimmerLabel(
+              label: widget.label,
+              baseColor: widget.baseColor,
+              highlightColor: widget.highlightColor,
+              progress: t,
+            ),
+            const SizedBox(width: AppSpacing.s),
+            _SyncEdgeIndicator(
+              size: widget.indicatorSize,
+              color: widget.indicatorColor,
+              glowBlur: glow.blur,
+              glowAlpha: glow.alpha,
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The sync label with a bright-green highlight band sweeping across it.
+///
+/// A [ShaderMask] (`srcIn`) replaces the glyph pixels with a horizontal
+/// `base → highlight → base` gradient; sliding the gradient's mapping
+/// rect by [progress] travels the band left→right. The band fully exits
+/// both edges (pure base) at the loop ends, so the repeat is seamless.
+class _ShimmerLabel extends StatelessWidget {
+  const _ShimmerLabel({
+    required this.label,
+    required this.baseColor,
+    required this.highlightColor,
+    required this.progress,
+  });
+
+  final String label;
+  final Color baseColor;
+  final Color highlightColor;
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return ShaderMask(
+      blendMode: BlendMode.srcIn,
+      shaderCallback: (bounds) {
+        final shift = (progress * 2 - 1) * bounds.width;
+        final rect = Rect.fromLTWH(
+          bounds.left + shift,
+          bounds.top,
+          bounds.width,
+          bounds.height,
+        );
+        return LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [baseColor, highlightColor, baseColor],
+          stops: const [
+            0.5 - _SyncStatusMotion._bandHalf,
+            0.5,
+            0.5 + _SyncStatusMotion._bandHalf,
+          ],
+          tileMode: TileMode.clamp,
+        ).createShader(rect);
+      },
+      // Solid color so `srcIn` keeps the gradient over the full glyph.
+      child: Text(
+        label,
+        style: AppTypography.labelMedium.copyWith(
+          color: const Color(0xFFFFFFFF),
+        ),
+      ),
+    );
+  }
+}
+
 /// The thin glow bar hugging the right screen edge in the account
 /// variant — Figma `_Nav Sync Widget > light` (node 4237:92744).
 class _SyncEdgeIndicator extends StatelessWidget {
-  const _SyncEdgeIndicator({required this.size, required this.color});
+  const _SyncEdgeIndicator({
+    required this.size,
+    required this.color,
+    this.glowBlur = 12,
+    this.glowAlpha = 0.6,
+  });
 
   final Size size;
   final Color color;
+  final double glowBlur;
+  final double glowAlpha;
 
   @override
   Widget build(BuildContext context) {
@@ -307,7 +542,10 @@ class _SyncEdgeIndicator extends StatelessWidget {
           left: Radius.circular(size.width / 2),
         ),
         boxShadow: [
-          BoxShadow(color: color.withValues(alpha: 0.6), blurRadius: 12),
+          BoxShadow(
+            color: color.withValues(alpha: glowAlpha),
+            blurRadius: glowBlur,
+          ),
         ],
       ),
     );

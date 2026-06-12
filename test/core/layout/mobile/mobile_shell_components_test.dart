@@ -33,6 +33,76 @@ void main() {
     expect(sync.style?.color, AppThemeData.dark.colors.sync.text);
   });
 
+  testWidgets('MobileTopNav.account syncing shimmers the label', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        MobileTopNav.account(
+          accountName: 'Account1',
+          syncLabel: '20% Syncing...',
+          syncLabelColor: AppThemeData.dark.colors.sync.textSyncing,
+          syncIndicatorColor: AppThemeData.dark.colors.sync.textSyncing,
+          syncHighlightColor: AppThemeData.dark.colors.sync.text,
+          syncAnimated: true,
+        ),
+      ),
+    );
+    // Let the looping controller advance a few frames (never pumpAndSettle:
+    // the animation repeats forever and would time out).
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('20% Syncing...'), findsOneWidget);
+    // The label is wrapped in a shimmer ShaderMask over a solid-color Text.
+    expect(find.byType(ShaderMask), findsOneWidget);
+    final label = tester.widget<Text>(find.text('20% Syncing...'));
+    expect(label.style?.color, const Color(0xFFFFFFFF));
+
+    // Unmount so the active ticker is disposed cleanly.
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('MobileTopNav.account syncing is static under reduce-motion', (
+    tester,
+  ) async {
+    final muted = AppThemeData.dark.colors.sync.textSyncing;
+    await tester.pumpWidget(
+      _harness(
+        Builder(
+          builder: (context) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(disableAnimations: true),
+            child: MobileTopNav.account(
+              accountName: 'Account1',
+              syncLabel: '20% Syncing...',
+              syncLabelColor: muted,
+              syncIndicatorColor: muted,
+              syncHighlightColor: AppThemeData.dark.colors.sync.text,
+              syncAnimated: true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // No shimmer mask; the label keeps its muted (less-saturated) green base
+    // and the edge bar stays the same muted green. The full synced green only
+    // appears as the animated shimmer peak.
+    expect(find.byType(ShaderMask), findsNothing);
+    final label = tester.widget<Text>(find.text('20% Syncing...'));
+    expect(label.style?.color, muted);
+
+    final mutedBars = tester
+        .widgetList<Container>(find.byType(Container))
+        .where(
+          (c) =>
+              c.decoration is BoxDecoration &&
+              (c.decoration as BoxDecoration).color == muted,
+        );
+    expect(mutedBars, isNotEmpty);
+  });
+
   testWidgets('MobileTopNav.back shows serif title and fires onBack', (
     tester,
   ) async {

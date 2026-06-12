@@ -26,10 +26,27 @@ class MobileTopNavAccount extends ConsumerWidget {
     final sync = ref.watch(syncProvider).value ?? SyncState();
     final status = SyncStatusLabel.from(sync);
 
-    final (labelColor, indicatorColor) = switch (status.kind) {
-      SyncStatusKind.synced => (colors.sync.text, colors.sync.glow),
-      SyncStatusKind.syncing => (colors.sync.textSyncing, colors.sync.glow),
-      SyncStatusKind.failed => (colors.sync.textError, colors.sync.lightError),
+    final isSyncing = status.kind == SyncStatusKind.syncing;
+    // Per Vizor's Figma sync tokens: synced is the full green
+    // (`sync.text` = GreenPrimitives.p900), syncing is the SAME green at
+    // 65% (`sync.textSyncing`) — i.e. slightly less saturated, reading as a
+    // muted grey-green. The shimmer peaks at the synced green to preview it.
+    final (labelColor, indicatorColor, highlightColor) = switch (status.kind) {
+      SyncStatusKind.synced => (
+        colors.sync.text, // green label
+        colors.sync.lightSuccess, // green bar
+        colors.sync.text,
+      ),
+      SyncStatusKind.syncing => (
+        colors.sync.textSyncing, // muted green (synced green @ 65%)
+        colors.sync.textSyncing, // muted green bar
+        colors.sync.text, // shimmer peak = the synced green
+      ),
+      SyncStatusKind.failed => (
+        colors.sync.textError,
+        colors.sync.lightError,
+        colors.sync.textError,
+      ),
     };
 
     return MobileTopNav.account(
@@ -43,6 +60,8 @@ class MobileTopNavAccount extends ConsumerWidget {
       syncLabel: status.label,
       syncLabelColor: labelColor,
       syncIndicatorColor: indicatorColor,
+      syncAnimated: isSyncing,
+      syncHighlightColor: highlightColor,
       onAccountTap: onAccountTap,
     );
   }
