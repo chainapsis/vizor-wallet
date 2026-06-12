@@ -392,10 +392,12 @@ class _LegalFooter extends StatefulWidget {
 }
 
 class _LegalFooterState extends State<_LegalFooter> {
+  // `from=onboarding` keeps the legal pages on the bare full pane (no
+  // sidebar) even when a wallet exists (the /add-account variant).
   late final TapGestureRecognizer _termsRecognizer = TapGestureRecognizer()
-    ..onTap = () => context.push('/terms');
+    ..onTap = () => context.push('/terms?from=onboarding');
   late final TapGestureRecognizer _privacyRecognizer = TapGestureRecognizer()
-    ..onTap = () => context.push('/privacy');
+    ..onTap = () => context.push('/privacy?from=onboarding');
 
   @override
   void dispose() {
