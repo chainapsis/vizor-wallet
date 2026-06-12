@@ -409,6 +409,10 @@ class _LegalFooterState extends State<_LegalFooter> {
     final style = AppTypography.bodySmall.copyWith(
       color: context.colors.text.muted,
     );
+    final linkStyle = style.copyWith(
+      decoration: TextDecoration.underline,
+      decorationColor: context.colors.text.muted,
+    );
     return SizedBox(
       width: 154,
       child: Text.rich(
@@ -416,9 +420,17 @@ class _LegalFooterState extends State<_LegalFooter> {
           style: style,
           children: [
             const TextSpan(text: 'By using Vizor you agree to our '),
-            TextSpan(text: 'Terms', recognizer: _termsRecognizer),
+            TextSpan(
+              text: 'Terms',
+              style: linkStyle,
+              recognizer: _termsRecognizer,
+            ),
             const TextSpan(text: ' and '),
-            TextSpan(text: 'Privacy', recognizer: _privacyRecognizer),
+            TextSpan(
+              text: 'Privacy',
+              style: linkStyle,
+              recognizer: _privacyRecognizer,
+            ),
           ],
         ),
         textAlign: TextAlign.center,

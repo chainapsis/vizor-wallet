@@ -200,13 +200,14 @@ class _LostPasswordContent extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: AppSpacing.sm),
+            // Line breaks pinned to the design's rendered wrap (348px box).
             Text.rich(
               TextSpan(
                 style: bodyStyle,
                 children: [
                   const TextSpan(
                     text:
-                        "If you've lost your password, the only way to recover your account is to ",
+                        "If you've lost your password, the only way to recover\nyour account is to ",
                   ),
                   TextSpan(
                     text: 'completely reset Vizor app',
@@ -214,7 +215,7 @@ class _LostPasswordContent extends StatelessWidget {
                   ),
                   const TextSpan(
                     text:
-                        ', which means deleting all accounts and requiring you to ',
+                        ', which\nmeans deleting all accounts and requiring you to\n',
                   ),
                   TextSpan(text: 'import accounts again', style: strongStyle),
                   const TextSpan(text: '.'),
