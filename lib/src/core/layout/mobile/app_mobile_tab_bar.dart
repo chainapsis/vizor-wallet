@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/widgets.dart';
 
+import '../../feedback/app_haptics.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_icon.dart';
 
@@ -29,6 +31,13 @@ class AppMobileTabItem {
 /// tokens. Figma gives the active item a slightly wider fixed width
 /// (100px vs flex) — equal widths keep the widget tree shape constant
 /// across selection changes and read the same at this size.
+///
+/// The resting states match the Figma frame exactly; only transitions
+/// move. One shared highlight pill slides between items (instead of
+/// fading out/in per item), the icon tint crossfades on the same curve,
+/// the newly active icon does a one-shot pop, and pressing an item
+/// scales its icon down with a light haptic. All of it collapses to
+/// instant switches under reduced motion.
 class AppMobileTabBar extends StatelessWidget {
   const AppMobileTabBar({
     required this.items,
@@ -45,10 +54,24 @@ class AppMobileTabBar extends StatelessWidget {
   static const _itemHeight = 56.0;
   static const _iconSize = 28.0;
 
+  /// Selection transition — shared by the sliding pill and the icon
+  /// tint so they read as one move. easeOutBack gives the pill a small
+  /// overshoot before it settles.
+  static const selectDuration = Duration(milliseconds: 240);
+  static const _selectCurve = Curves.easeOutBack;
+
+  @visibleForTesting
+  static const activePillKey = ValueKey('mobile_tab_bar_active_pill');
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final radius = BorderRadius.circular(AppRadii.full);
+    final motion = !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+    final pillAlignment = Alignment(
+      items.length > 1 ? -1 + 2 * currentIndex / (items.length - 1) : 0,
+      0,
+    );
 
     return SizedBox(
       height: kMobileTabBarHeight,
@@ -79,16 +102,40 @@ class AppMobileTabBar extends StatelessWidget {
               ),
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.xxs),
-                child: Row(
+                child: Stack(
                   children: [
-                    for (var i = 0; i < items.length; i++)
-                      Expanded(
-                        child: _TabBarItem(
-                          item: items[i],
-                          active: i == currentIndex,
-                          onTap: () => onSelect(i),
+                    AnimatedAlign(
+                      key: activePillKey,
+                      duration: motion ? selectDuration : Duration.zero,
+                      curve: _selectCurve,
+                      alignment: pillAlignment,
+                      child: FractionallySizedBox(
+                        widthFactor: 1 / items.length,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: colors.navPanel.activeBg,
+                            borderRadius: BorderRadius.circular(AppRadii.full),
+                            border: Border.all(
+                              color: colors.border.subtleOpacity,
+                            ),
+                          ),
+                          child: const SizedBox(height: _itemHeight),
                         ),
                       ),
+                    ),
+                    Row(
+                      children: [
+                        for (var i = 0; i < items.length; i++)
+                          Expanded(
+                            child: _TabBarItem(
+                              item: items[i],
+                              active: i == currentIndex,
+                              motion: motion,
+                              onTap: () => onSelect(i),
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -100,47 +147,112 @@ class AppMobileTabBar extends StatelessWidget {
   }
 }
 
-class _TabBarItem extends StatelessWidget {
+class _TabBarItem extends StatefulWidget {
   const _TabBarItem({
     required this.item,
     required this.active,
+    required this.motion,
     required this.onTap,
   });
 
   final AppMobileTabItem item;
   final bool active;
+  final bool motion;
   final VoidCallback onTap;
+
+  @override
+  State<_TabBarItem> createState() => _TabBarItemState();
+}
+
+class _TabBarItemState extends State<_TabBarItem>
+    with SingleTickerProviderStateMixin {
+  /// One-shot pop when this item becomes the active one — a small
+  /// bounce timed to land with the arriving pill.
+  late final AnimationController _pop = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 250),
+  );
+  late final Animation<double> _popScale = TweenSequence<double>([
+    TweenSequenceItem(
+      tween: Tween(
+        begin: 1.0,
+        end: 1.12,
+      ).chain(CurveTween(curve: Curves.easeOut)),
+      weight: 45,
+    ),
+    TweenSequenceItem(
+      tween: Tween(
+        begin: 1.12,
+        end: 1.0,
+      ).chain(CurveTween(curve: Curves.easeIn)),
+      weight: 55,
+    ),
+  ]).animate(_pop);
+
+  var _pressed = false;
+
+  @override
+  void didUpdateWidget(covariant _TabBarItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.active && widget.active && widget.motion) {
+      _pop.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pop.dispose();
+    super.dispose();
+  }
+
+  void _setPressed(bool pressed) {
+    if (!widget.motion || _pressed == pressed) return;
+    setState(() => _pressed = pressed);
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    // Inactive items use the muted decorative tint per the Figma nav
+    // (grey, not the max-contrast accent).
+    final iconColor = widget.active
+        ? colors.navPanel.activeIcon
+        : colors.icon.muted;
+
     return Semantics(
-      label: item.label,
+      label: widget.item.label,
       button: true,
-      selected: active,
+      selected: widget.active,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
+        onTapDown: (_) => _setPressed(true),
+        onTapCancel: () => _setPressed(false),
+        onTapUp: (_) => _setPressed(false),
+        onTap: () {
+          unawaited(AppHaptics.auxiliaryKey());
+          widget.onTap();
+        },
+        child: SizedBox(
           height: AppMobileTabBar._itemHeight,
-          decoration: BoxDecoration(
-            color: active ? colors.navPanel.activeBg : null,
-            borderRadius: BorderRadius.circular(AppRadii.full),
-            border: Border.all(
-              color: active
-                  ? colors.border.subtleOpacity
-                  : const Color(0x00000000),
-            ),
-          ),
           child: Center(
-            child: AppIcon(
-              item.iconName,
-              size: AppMobileTabBar._iconSize,
-              // Inactive items use the muted decorative tint per the
-              // Figma nav (grey, not the max-contrast accent).
-              color: active ? colors.navPanel.activeIcon : colors.icon.muted,
+            child: AnimatedScale(
+              scale: _pressed ? 0.9 : 1.0,
+              duration: Duration(milliseconds: _pressed ? 90 : 180),
+              curve: _pressed ? Curves.easeOut : Curves.easeOutBack,
+              child: ScaleTransition(
+                scale: _popScale,
+                child: TweenAnimationBuilder<Color?>(
+                  tween: ColorTween(end: iconColor),
+                  duration: widget.motion
+                      ? AppMobileTabBar.selectDuration
+                      : Duration.zero,
+                  builder: (_, color, _) => AppIcon(
+                    widget.item.iconName,
+                    size: AppMobileTabBar._iconSize,
+                    color: color ?? iconColor,
+                  ),
+                ),
+              ),
             ),
           ),
         ),

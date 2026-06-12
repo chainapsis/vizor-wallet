@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_tab_bar.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 
 void main() {
   testWidgets('MobileTopNav.account shows name, balance, and sync label', (
@@ -129,7 +130,7 @@ void main() {
     expect(fill.widthFactor, 0.5);
   });
 
-  testWidgets('AppMobileTabBar highlights current item and reports taps', (
+  testWidgets('AppMobileTabBar slides the pill and tints the active icon', (
     tester,
   ) async {
     final taps = <int>[];
@@ -139,32 +140,54 @@ void main() {
       AppMobileTabItem(iconName: 'history', label: 'Activity'),
       AppMobileTabItem(iconName: 'cog', label: 'Settings'),
     ];
-    await tester.pumpWidget(
-      _harness(
-        SizedBox(
-          width: 361,
-          child: AppMobileTabBar(
-            items: items,
-            currentIndex: 0,
-            onSelect: taps.add,
-          ),
+    Widget bar(int index) => _harness(
+      SizedBox(
+        width: 361,
+        child: AppMobileTabBar(
+          items: items,
+          currentIndex: index,
+          onSelect: taps.add,
         ),
       ),
     );
+    Alignment pillAlignment() =>
+        tester
+                .widget<AnimatedAlign>(
+                  find.byKey(AppMobileTabBar.activePillKey),
+                )
+                .alignment
+            as Alignment;
+    List<AppIcon> icons() =>
+        tester.widgetList<AppIcon>(find.byType(AppIcon)).toList();
+
+    await tester.pumpWidget(bar(0));
+
+    // One shared pill carries the active decoration, parked on item 0.
+    expect(pillAlignment(), const Alignment(-1, 0));
+    final pillBox = tester.widget<DecoratedBox>(
+      find.descendant(
+        of: find.byKey(AppMobileTabBar.activePillKey),
+        matching: find.byType(DecoratedBox),
+      ),
+    );
+    expect(
+      (pillBox.decoration as BoxDecoration).color,
+      AppThemeData.dark.colors.navPanel.activeBg,
+    );
+    expect(icons()[0].color, AppThemeData.dark.colors.navPanel.activeIcon);
+    expect(icons()[2].color, AppThemeData.dark.colors.icon.muted);
 
     await tester.tap(find.bySemanticsLabel('Activity'));
+    await tester.pumpAndSettle();
     expect(taps, [2]);
 
-    final containers = tester
-        .widgetList<AnimatedContainer>(find.byType(AnimatedContainer))
-        .toList();
-    expect(containers, hasLength(4));
-    final activeDecoration =
-        (containers.first.decoration ?? const BoxDecoration()) as BoxDecoration;
-    expect(activeDecoration.color, AppThemeData.dark.colors.navPanel.activeBg);
-    final inactiveDecoration =
-        (containers.last.decoration ?? const BoxDecoration()) as BoxDecoration;
-    expect(inactiveDecoration.color, isNull);
+    // Selection is owned by the caller — rebuilding with the new index
+    // slides the pill there and swaps the icon tints.
+    await tester.pumpWidget(bar(2));
+    await tester.pumpAndSettle();
+    expect(pillAlignment().x, closeTo(-1 + 2 * 2 / 3, 1e-9));
+    expect(icons()[0].color, AppThemeData.dark.colors.icon.muted);
+    expect(icons()[2].color, AppThemeData.dark.colors.navPanel.activeIcon);
   });
 
   testWidgets('AppMobileShell extends body behind the floating tab bar', (
