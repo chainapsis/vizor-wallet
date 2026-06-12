@@ -86,7 +86,7 @@ class BiometricUnlockHandler(private val activity: FragmentActivity) {
 
     private fun deleteKey() {
         val store = keyStore()
-        if (store.containsAlias(KEY_ALIAS)) store.deleteAlias(KEY_ALIAS)
+        if (store.containsAlias(KEY_ALIAS)) store.deleteEntry(KEY_ALIAS)
     }
 
     private fun enable(passcode: String, result: MethodChannel.Result) {
