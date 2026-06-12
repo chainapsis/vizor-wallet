@@ -11,6 +11,7 @@ import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/platform/screenshot_observer.dart';
 import '../../../../core/storage/wallet_paths.dart';
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -122,6 +123,7 @@ class _MobileSeedPhraseScreenState
           .confirmPassword(_entry);
       if (!mounted) return;
       if (!valid) {
+        unawaited(AppHaptics.error());
         setState(() {
           _entry = '';
           _checking = false;

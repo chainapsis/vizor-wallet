@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/feedback/app_haptics.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -129,6 +130,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     }
 
     if (!unlocked && mounted) {
+      unawaited(AppHaptics.error());
       setState(() {
         _submitting = false;
         _entry = '';

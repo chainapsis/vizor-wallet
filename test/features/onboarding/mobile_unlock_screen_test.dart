@@ -5,6 +5,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
@@ -81,6 +82,12 @@ Widget _app({FakeBiometricUnlock? biometric}) {
 }
 
 void main() {
+  setUpAll(() {
+    RustLib.initMock(api: _RustSecretApiFake());
+  });
+
+  tearDownAll(RustLib.dispose);
+
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
@@ -129,13 +136,72 @@ void main() {
     expect(find.bySemanticsLabel('Delete digit'), findsNothing);
   });
 
-  group('biometric unlock', () {
-    setUpAll(() {
-      RustLib.initMock(api: _RustSecretApiFake());
+  group('haptics', () {
+    setUp(() {
+      FlutterSecureStorage.setMockInitialValues({});
+      AppSecureStore.instance.clearSessionPassword();
     });
 
-    tearDownAll(RustLib.dispose);
+    testWidgets('digits knock medium and a wrong passcode buzzes the error', (
+      tester,
+    ) async {
+      await AppSecureStore.instance.configurePassword('123456');
+      AppSecureStore.instance.clearSessionPassword();
 
+      final impactTypes = <Object?>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'HapticFeedback.vibrate') {
+            impactTypes.add(call.arguments);
+          }
+          return null;
+        },
+      );
+      final errorHaptics = <MethodCall>[];
+      const hapticsChannel = MethodChannel('com.zcash.wallet/haptics');
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        hapticsChannel,
+        (call) async {
+          errorHaptics.add(call);
+          return true;
+        },
+      );
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        );
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          hapticsChannel,
+          null,
+        );
+      });
+
+      await tester.pumpWidget(_app());
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Digit 1'));
+      await tester.pump();
+      expect(impactTypes, ['HapticFeedbackType.mediumImpact']);
+
+      await tester.tap(find.bySemanticsLabel('Delete digit'));
+      await tester.pump();
+      expect(impactTypes.last, 'HapticFeedbackType.lightImpact');
+
+      // A full wrong passcode lands the error haptic exactly once.
+      for (final d in '999999'.split('')) {
+        await tester.tap(find.bySemanticsLabel('Digit $d'));
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('Incorrect Passcode'), findsOneWidget);
+      expect(errorHaptics, hasLength(1));
+      expect(errorHaptics.single.method, 'error');
+    });
+  });
+
+  group('biometric unlock', () {
     setUp(() {
       FlutterSecureStorage.setMockInitialValues({});
       AppSecureStore.instance.clearSessionPassword();

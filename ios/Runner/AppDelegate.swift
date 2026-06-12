@@ -89,6 +89,23 @@ import UIKit
       }
     }
 
+    let hapticsChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/haptics",
+      binaryMessenger: messenger
+    )
+    hapticsChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "error":
+        // The system's error notification haptic — the triple knock
+        // users know from failed Face ID / wrong system passcode.
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.error)
+        result(true)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     let biometricUnlockChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/biometric_unlock",
       binaryMessenger: messenger

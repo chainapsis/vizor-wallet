@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/feedback/app_haptics.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -77,6 +80,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         if (_entry == _firstPasscode) {
           _submit(_entry);
         } else {
+          unawaited(AppHaptics.error());
           setState(() {
             _entry = '';
             _firstPasscode = null;

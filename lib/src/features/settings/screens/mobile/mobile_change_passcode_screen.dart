@@ -9,6 +9,7 @@ import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/storage/app_secure_store.dart';
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
@@ -98,6 +99,7 @@ class _MobileChangePasscodeScreenState
           .confirmPassword(_entry);
       if (!mounted) return;
       if (!isValid) {
+        unawaited(AppHaptics.error());
         setState(() {
           _submitting = false;
           _entry = '';

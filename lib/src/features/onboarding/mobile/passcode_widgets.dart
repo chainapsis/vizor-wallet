@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart' show Icons, Icon;
 import 'package:flutter/widgets.dart';
 
+import '../../../core/feedback/app_haptics.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
@@ -107,7 +109,10 @@ class PasscodeNumpad extends StatelessWidget {
           color: enabled ? colors.text.accent : colors.text.disabled,
         ),
       ),
-      onTap: () => onDigit(digit),
+      onTap: () {
+        unawaited(AppHaptics.digit());
+        onDigit(digit);
+      },
       label: 'Digit $digit',
     );
 
@@ -142,7 +147,10 @@ class PasscodeNumpad extends StatelessWidget {
               size: 26,
               color: enabled ? colors.icon.accent : colors.icon.disabled,
             ),
-            onTap: onBackspace,
+            onTap: () {
+              unawaited(AppHaptics.auxiliaryKey());
+              onBackspace();
+            },
             label: 'Delete digit',
           )
         : onBiometric != null
@@ -154,7 +162,10 @@ class PasscodeNumpad extends StatelessWidget {
               size: 28,
               color: enabled ? colors.icon.accent : colors.icon.disabled,
             ),
-            onTap: onBiometric,
+            onTap: () {
+              unawaited(AppHaptics.auxiliaryKey());
+              onBiometric?.call();
+            },
             label: 'Biometric unlock',
           )
         : key(const SizedBox.shrink());
