@@ -159,7 +159,7 @@ class _LostPasswordContent extends StatelessWidget {
   static const double cardWidth = 396;
   static const double cardHeight = 520;
   static const double _buttonGroupWidth = 256;
-  static const double _destructiveButtonWidth = 230;
+  static const double _destructiveButtonWidth = 232;
 
   @override
   Widget build(BuildContext context) {
@@ -178,8 +178,10 @@ class _LostPasswordContent extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
+        // Figma: this screen's badge sits on a 30% gray shield, unlike the
+        // crimson welcome/unlock badge.
         Image.asset(
-          'assets/illustrations/welcome_badge.png',
+          'assets/illustrations/lost_password_badge.png',
           width: 50,
           height: 50,
         ),
