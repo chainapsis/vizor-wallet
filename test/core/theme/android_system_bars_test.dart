@@ -4,8 +4,11 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme_host.dart';
 
 void main() {
-  test('light theme puts the nav bar on light window with dark buttons', () {
+  test('light theme puts both bars on light window with dark icons', () {
     final style = androidSystemBarsStyleFor(Brightness.light);
+    expect(style.statusBarColor, AppColors.light.background.window);
+    expect(style.statusBarIconBrightness, Brightness.dark);
+    expect(style.systemStatusBarContrastEnforced, isFalse);
     expect(
       style.systemNavigationBarColor,
       AppColors.light.background.window,
@@ -18,8 +21,11 @@ void main() {
     expect(style.systemNavigationBarContrastEnforced, isFalse);
   });
 
-  test('dark theme puts the nav bar on dark window with light buttons', () {
+  test('dark theme puts both bars on dark window with light icons', () {
     final style = androidSystemBarsStyleFor(Brightness.dark);
+    expect(style.statusBarColor, AppColors.dark.background.window);
+    expect(style.statusBarIconBrightness, Brightness.light);
+    expect(style.systemStatusBarContrastEnforced, isFalse);
     expect(
       style.systemNavigationBarColor,
       AppColors.dark.background.window,
@@ -32,11 +38,15 @@ void main() {
     expect(style.systemNavigationBarContrastEnforced, isFalse);
   });
 
-  test('status bar fields stay unset so current behavior is untouched', () {
-    final style = androidSystemBarsStyleFor(Brightness.light);
-    expect(style.statusBarColor, isNull);
-    expect(style.statusBarIconBrightness, isNull);
-    expect(style.statusBarBrightness, isNull);
+  test('statusBarBrightness stays unset — that field is iOS-side', () {
+    expect(
+      androidSystemBarsStyleFor(Brightness.light).statusBarBrightness,
+      isNull,
+    );
+    expect(
+      androidSystemBarsStyleFor(Brightness.dark).statusBarBrightness,
+      isNull,
+    );
   });
 
   test('launch theme hexes in styles.xml match the window tokens', () {

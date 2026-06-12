@@ -79,15 +79,16 @@ class _MacOSWindowAppearanceSyncState
   Widget build(BuildContext context) => widget.child;
 }
 
-/// Keeps the Android system navigation bar (3-button / gesture) on the
-/// app's themed `background.window` color.
+/// Keeps the Android system bars — the status bar and the navigation
+/// bar (3-button / gesture) — on the app's themed `background.window`
+/// color with matching icon contrast.
 ///
 /// Two OS regimes share this one overlay style:
-/// * API <= 34: `systemNavigationBarColor` paints the bar directly.
+/// * API <= 34: the bar colors paint directly.
 /// * Android 15+ with targetSdk 35+: the OS enforces edge-to-edge and
-///   ignores the color — the transparent bar shows the scaffold's
+///   ignores the colors — the transparent bars show the scaffold's
 ///   `background.window` instead, and disabling contrast enforcement
-///   stops the OS from laying its own scrim over it. Only the icon
+///   stops the OS from laying its own scrim over them. Only the icon
 ///   brightness needs setting.
 class _AndroidSystemBarsSync extends StatefulWidget {
   const _AndroidSystemBarsSync({required this.brightness, required this.child});
@@ -130,22 +131,26 @@ abstract final class _AndroidSystemBars {
   }
 }
 
-/// Overlay style for the resolved app theme brightness — the navigation
-/// bar takes the theme's `background.window` (the scaffold background
+/// Overlay style for the resolved app theme brightness — both system
+/// bars take the theme's `background.window` (the scaffold background
 /// used across the mobile shell, onboarding, and unlock screens) with
-/// matching icon contrast. The status bar fields stay unset so current
-/// behavior is untouched.
+/// matching icon contrast. `statusBarBrightness` is the iOS-side field
+/// and stays unset; this style only ever applies on Android.
 @visibleForTesting
 SystemUiOverlayStyle androidSystemBarsStyleFor(Brightness brightness) {
   final window = brightness == Brightness.dark
       ? AppColors.dark.background.window
       : AppColors.light.background.window;
+  final icons = brightness == Brightness.dark
+      ? Brightness.light
+      : Brightness.dark;
   return SystemUiOverlayStyle(
+    statusBarColor: window,
+    statusBarIconBrightness: icons,
+    systemStatusBarContrastEnforced: false,
     systemNavigationBarColor: window,
     systemNavigationBarDividerColor: window,
-    systemNavigationBarIconBrightness: brightness == Brightness.dark
-        ? Brightness.light
-        : Brightness.dark,
+    systemNavigationBarIconBrightness: icons,
     systemNavigationBarContrastEnforced: false,
   );
 }

@@ -5,8 +5,11 @@
         <!-- Show a splash screen on the activity. Automatically removed when
              the Flutter engine draws its first frame -->
         <item name="android:windowBackground">@drawable/launch_background</item>
-        <!-- Dark background.window token with light buttons — the dark-mode
+        <!-- Dark background.window token with light icons — the dark-mode
              mirror of values/styles.xml; Dart side in app_theme_host.dart. -->
+        <item name="android:statusBarColor">#0F0F0F</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:enforceStatusBarContrast">false</item>
         <item name="android:navigationBarColor">#0F0F0F</item>
         <item name="android:windowLightNavigationBar">false</item>
         <item name="android:enforceNavigationBarContrast">false</item>
@@ -19,6 +22,9 @@
          This Theme is only used starting with V2 of Flutter's Android embedding. -->
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:statusBarColor">#0F0F0F</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:enforceStatusBarContrast">false</item>
         <item name="android:navigationBarColor">#0F0F0F</item>
         <item name="android:windowLightNavigationBar">false</item>
         <item name="android:enforceNavigationBarContrast">false</item>
