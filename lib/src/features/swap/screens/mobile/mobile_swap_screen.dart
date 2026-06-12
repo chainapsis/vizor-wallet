@@ -25,7 +25,7 @@ import '../../widgets/swap_address_edit_modal.dart';
 import '../../widgets/swap_asset_selector_modal.dart';
 import '../../widgets/swap_composer_panel.dart';
 import '../../widgets/swap_near_intents_attribution.dart';
-import '../../widgets/swap_slippage_modal.dart';
+import '../../widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
 
 enum _SwapModalSurface {
   assetSelector,
@@ -176,14 +176,15 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                         onCancel: () =>
                             _openModal(_SwapModalSurface.addressEditor),
                       ),
-                    _SwapModalSurface.slippageSettings => SwapSlippageModal(
-                      slippageBps: swapState.slippageBps,
-                      onSubmitted: (value) {
-                        swapNotifier.updateSlippageBps(value);
-                        _closeSwapModal();
-                      },
-                      onCancel: _closeSwapModal,
-                    ),
+                    _SwapModalSurface.slippageSettings =>
+                      MobileSwapSlippageStepperModal(
+                        slippageBps: swapState.slippageBps,
+                        onSubmitted: (value) {
+                          swapNotifier.updateSlippageBps(value);
+                          _closeSwapModal();
+                        },
+                        onCancel: _closeSwapModal,
+                      ),
                   },
                 ),
               ),
