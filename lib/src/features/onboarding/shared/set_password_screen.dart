@@ -383,13 +383,10 @@ class _SetPasswordTitle extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'Set password',
+            'Set Password',
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.visible,
-            softWrap: false,
             textAlign: TextAlign.center,
           ),
         ),

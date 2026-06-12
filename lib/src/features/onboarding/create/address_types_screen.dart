@@ -91,16 +91,13 @@ class _TitleBlock extends StatelessWidget {
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.visible,
-            softWrap: false,
             textAlign: TextAlign.center,
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Zcash has two addresses types.\n'
-          'One for Privacy, one for Transparency.',
+          'Zcash has two address types.\n'
+          'One for privacy, one for transparency.',
           style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
           textAlign: TextAlign.center,
         ),
@@ -117,8 +114,7 @@ class _AddressTypesPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final isDark = context.appTheme == AppThemeData.dark;
-    final fill = isDark ? colors.background.base : colors.background.ground;
+    final fill = colors.background.ground;
 
     return Container(
       width: double.infinity,
@@ -218,12 +214,14 @@ class _AddressTypeHeader extends StatelessWidget {
                     ? AppIcons.shieldKeyholeOutline
                     : AppIcons.transparentBalance,
                 size: 24,
-                color: colors.icon.brandCrimson,
+                color: _isShielded
+                    ? colors.icon.brandCrimson
+                    : colors.text.accent,
               ),
               const SizedBox(width: AppSpacing.xs),
               Flexible(
                 child: Text(
-                  _isShielded ? 'Shielded Address' : 'Transparent Address',
+                  _isShielded ? 'Shielded address' : 'Transparent address',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.bodyLarge.copyWith(

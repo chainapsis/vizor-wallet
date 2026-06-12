@@ -16,9 +16,9 @@ enum ImportOnboardingStep {
 
 extension ImportOnboardingStepX on ImportOnboardingStep {
   String get label => switch (this) {
-    ImportOnboardingStep.secretPassphrase => 'Secret Passphrase',
-    ImportOnboardingStep.walletBirthdayHeight => 'Wallet Birthday Height',
-    ImportOnboardingStep.setPassword => 'Set Password',
+    ImportOnboardingStep.secretPassphrase => 'Secret passphrase',
+    ImportOnboardingStep.walletBirthdayHeight => 'Wallet birthday height',
+    ImportOnboardingStep.setPassword => 'Set password',
   };
 
   String get iconName => switch (this) {
@@ -93,10 +93,11 @@ class _ImportOnboardingWindowBackground extends StatelessWidget {
         isDark
             ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
             : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
+      // Figma uses the same castle line-art for both themes (alpha-only
+      // strokes composite against the window color), so one asset serves
+      // light and dark — same wiring as the create flow.
       ImportOnboardingStep.setPassword =>
-        isDark
-            ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
-            : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
+        'assets/illustrations/onboarding_set_password_background_light.png',
     };
 
     return DecoratedBox(

@@ -56,7 +56,7 @@ void main() {
 
   test('sidebar metadata matches the Keystone navigation labels', () {
     expect(KeystoneOnboardingStep.howToConnect.iconName, AppIcons.book);
-    expect(KeystoneOnboardingStep.selectAccount.label, 'Select Account');
+    expect(KeystoneOnboardingStep.selectAccount.label, 'Select account');
     expect(KeystoneOnboardingStep.selectAccount.iconName, AppIcons.user);
   });
 }

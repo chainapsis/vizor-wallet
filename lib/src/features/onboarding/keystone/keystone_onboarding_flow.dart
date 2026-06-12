@@ -20,11 +20,11 @@ enum KeystoneOnboardingStep {
 
 extension KeystoneOnboardingStepX on KeystoneOnboardingStep {
   String get label => switch (this) {
-    KeystoneOnboardingStep.howToConnect => 'How to Connect',
-    KeystoneOnboardingStep.scanQrCode => 'Scan QR Code',
-    KeystoneOnboardingStep.selectAccount => 'Select Account',
-    KeystoneOnboardingStep.walletBirthdayHeight => 'Wallet Birthday Height',
-    KeystoneOnboardingStep.setPassword => 'Set Password',
+    KeystoneOnboardingStep.howToConnect => 'How to connect',
+    KeystoneOnboardingStep.scanQrCode => 'Scan QR code',
+    KeystoneOnboardingStep.selectAccount => 'Select account',
+    KeystoneOnboardingStep.walletBirthdayHeight => 'Wallet birthday height',
+    KeystoneOnboardingStep.setPassword => 'Set password',
   };
 
   String get iconName => switch (this) {

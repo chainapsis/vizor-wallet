@@ -91,16 +91,13 @@ class _TitleBlock extends StatelessWidget {
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.visible,
-            softWrap: false,
             textAlign: TextAlign.center,
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Zcash has two addresses types.\n'
-          'One for Privacy, one for Transparency.',
+          'Zcash has two address types.\n'
+          'One for privacy, one for transparency.',
           style: AppTypography.bodyMediumStrong.copyWith(
             color: colors.text.accent,
           ),
@@ -120,8 +117,7 @@ class _ThingsToKnowPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final isDark = context.appTheme == AppThemeData.dark;
-    final fill = isDark ? colors.background.base : colors.background.ground;
+    final fill = colors.background.ground;
 
     return Container(
       width: double.infinity,

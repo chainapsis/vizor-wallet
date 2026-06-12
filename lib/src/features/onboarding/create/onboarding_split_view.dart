@@ -62,8 +62,8 @@ extension OnboardingStepX on OnboardingStep {
     OnboardingStep.intro => 'Intro to Zcash',
     OnboardingStep.addressTypes => 'Address types',
     OnboardingStep.thingsToKnow => 'Things to know',
-    OnboardingStep.secretPassphrase => 'Secret Passphrase',
-    OnboardingStep.setPassword => 'Set Password',
+    OnboardingStep.secretPassphrase => 'Secret passphrase',
+    OnboardingStep.setPassword => 'Set password',
   };
 
   String get iconName => switch (this) {
@@ -157,10 +157,15 @@ class _OnboardingWindowBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final asset = switch (activeStep) {
-      OnboardingStep.secretPassphrase || OnboardingStep.setPassword =>
+      OnboardingStep.secretPassphrase =>
         isDark
             ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
             : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
+      // Figma uses the same castle line-art for both themes (alpha-only
+      // strokes composite against the window color), so one asset serves
+      // light and dark.
+      OnboardingStep.setPassword =>
+        'assets/illustrations/onboarding_set_password_background_light.png',
       _ => null,
     };
 
@@ -263,7 +268,7 @@ class _SidebarIllustration extends StatelessWidget {
   final bool secretPassphraseRevealed;
 
   static const _frameWidth = 256.0;
-  static const _frameHeight = 405.0;
+  static const _frameHeight = 430.0;
 
   @override
   Widget build(BuildContext context) {
