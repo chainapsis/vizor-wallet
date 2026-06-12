@@ -211,10 +211,7 @@ void main() {
     expect(find.text('Message'), findsOneWidget);
     expect(find.text(memo), findsNothing);
     await tester.tap(
-      find.descendant(
-        of: find.byKey(const ValueKey('mobile_tx_status_message')),
-        matching: find.byType(GestureDetector),
-      ),
+      find.byKey(const ValueKey('mobile_tx_status_message_toggle')),
     );
     await tester.pump();
     expect(find.text(memo), findsOneWidget);

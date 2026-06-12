@@ -323,6 +323,53 @@ void main() {
       await openActivityTab(tester);
       await shot('26_activity');
 
+      // ── Transaction status (Figma ACTIVITY & STATUS frames) ────────
+      // The just-sent memo tx: sending (unmined) or sent state.
+      await tapUntilVisible(
+        tester,
+        trigger: find.text('Sent').first,
+        outcome: find.text('Status'),
+        description: 'sent tx status screen',
+      );
+      await shot('26b_tx_status_sent');
+      await tapWidget(
+        tester,
+        const ValueKey('mobile_tx_status_toggle_address'),
+      );
+      await settle(tester, const Duration(milliseconds: 400));
+      await shot('26c_tx_status_full_address');
+      await tapWidget(
+        tester,
+        const ValueKey('mobile_tx_status_toggle_address'),
+      );
+      await settle(tester, const Duration(milliseconds: 400));
+      await tapWidget(
+        tester,
+        const ValueKey('mobile_tx_status_message_toggle'),
+      );
+      await settle(tester, const Duration(milliseconds: 400));
+      await shot('26d_tx_status_message');
+      await tapUntilVisible(
+        tester,
+        trigger: find.bySemanticsLabel('Back'),
+        outcome: find.byKey(const ValueKey('mobile_activity_row_0')),
+        description: 'back to activity',
+      );
+      // A mined funding tx: the received completed state.
+      await tapUntilVisible(
+        tester,
+        trigger: find.text('Received').first,
+        outcome: find.text('Completed'),
+        description: 'received tx status screen',
+      );
+      await shot('26e_tx_status_received');
+      await tapUntilVisible(
+        tester,
+        trigger: find.bySemanticsLabel('Back'),
+        outcome: find.byKey(const ValueKey('mobile_activity_row_0')),
+        description: 'back to activity again',
+      );
+
       // ── Settings + change passcode ─────────────────────────────────
       await tapUntilVisible(
         tester,

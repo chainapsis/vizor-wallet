@@ -270,18 +270,53 @@ class _MobileTransactionStatusScreenState
     final poolLabel = _poolLabel(tx?.displayPool);
     final memo = detail?.memo?.trim();
 
+    final hasAddress = address != null && address.isNotEmpty;
     final amountRow = _ReviewInfoRow(
       label: 'Amount',
       value: amountText,
       leading: const _ZecCoinBadge(),
+      // With no counterparty row (shielded senders are unknown), the
+      // pool tag moves under the amount — Figma `Received` keeps the
+      // pool on the bottom strip.
+      bottom: !hasAddress && poolLabel != null
+          ? Row(
+              children: [
+                AppIcon(
+                  poolLabel == 'Transparent'
+                      ? AppIcons.transparentBalance
+                      : AppIcons.shieldKeyhole,
+                  size: AppIconSize.medium,
+                  color: poolLabel == 'Transparent'
+                      ? colors.icon.muted
+                      : colors.icon.brandCrimson,
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                Text(
+                  poolLabel,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ],
+            )
+          : null,
     );
     final addressRow = (address == null || address.isEmpty)
         ? null
         : _ReviewInfoRow(
             label: _isIncoming ? 'From' : 'To',
-            value: _addressExpanded ? address : _truncateAddress(address),
+            value: _truncateAddress(address),
             strikethrough: failed,
-            wrapValue: _addressExpanded,
+            // Same pattern as the send review: the serif value stays
+            // truncated and the full address joins below in label type.
+            expandedDetail: _addressExpanded
+                ? Text(
+                    address,
+                    style: AppTypography.labelMedium.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  )
+                : null,
             leading: _IconBadge(
               child: AppIcon(
                 AppIcons.wallet,
@@ -297,7 +332,9 @@ class _MobileTransactionStatusScreenState
                         ? AppIcons.transparentBalance
                         : AppIcons.shieldKeyhole,
                     size: AppIconSize.medium,
-                    color: colors.text.brandCrimson,
+                    color: poolLabel == 'Transparent'
+                        ? colors.icon.muted
+                        : colors.icon.brandCrimson,
                   ),
                   const SizedBox(width: AppSpacing.xxs),
                   Text(
@@ -342,7 +379,10 @@ class _MobileTransactionStatusScreenState
         child: SafeArea(
           child: Column(
             children: [
-              MobileTopNav.back(title: _title),
+              MobileTopNav.back(
+                title: _title,
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
               Expanded(
                 child: SingleChildScrollView(
                   key: const ValueKey('mobile_tx_status_scroll'),
@@ -471,16 +511,19 @@ class _ReviewInfoRow extends StatelessWidget {
     required this.value,
     required this.leading,
     this.bottom,
+    this.expandedDetail,
     this.strikethrough = false,
-    this.wrapValue = false,
   });
 
   final String label;
   final String value;
   final Widget leading;
   final Widget? bottom;
+
+  /// Optional full-form line under the serif value (the expanded
+  /// address).
+  final Widget? expandedDetail;
   final bool strikethrough;
-  final bool wrapValue;
 
   @override
   Widget build(BuildContext context) {
@@ -511,8 +554,8 @@ class _ReviewInfoRow extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xxs),
                 Text(
                   value,
-                  maxLines: wrapValue ? null : 1,
-                  overflow: wrapValue ? null : TextOverflow.ellipsis,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: AppTypography.headlineLarge.copyWith(
                     color: colors.text.accent,
                     decoration: strikethrough
@@ -520,6 +563,10 @@ class _ReviewInfoRow extends StatelessWidget {
                         : TextDecoration.none,
                   ),
                 ),
+                if (expandedDetail != null) ...[
+                  const SizedBox(height: AppSpacing.xxs),
+                  expandedDetail!,
+                ],
                 const SizedBox(height: AppSpacing.xxs),
                 SizedBox(height: 24, child: bottom ?? const SizedBox()),
               ],
@@ -683,9 +730,9 @@ class _DetailCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           if (memoText != null && memoText.isNotEmpty) ...[
             _ListRow(
-              key: const ValueKey('mobile_tx_status_message'),
               label: 'Message',
               value: _ValueWithIcon(
+                key: const ValueKey('mobile_tx_status_message_toggle'),
                 text: messageExpanded ? null : _previewMemo(memoText),
                 iconName: AppIcons.expand,
                 onTap: onToggleMessage,
@@ -723,9 +770,10 @@ class _DetailCard extends StatelessWidget {
           ),
           if (feeText != null) ...[
             const SizedBox(height: AppSpacing.sm),
+            // Figma `border/neutral/default` (#d4d4d4 light).
             Container(
               height: 1,
-              color: colors.border.subtle,
+              color: colors.border.regular,
             ),
             const SizedBox(height: AppSpacing.sm),
             _ListRow(
@@ -791,7 +839,7 @@ class _ListRow extends StatelessWidget {
 /// Right-side value: text plus an optional trailing 20px icon, padded
 /// like the Figma `Item Right` (8 left, 4 right/vertical).
 class _ValueWithIcon extends StatelessWidget {
-  const _ValueWithIcon({this.text, this.iconName, this.onTap});
+  const _ValueWithIcon({this.text, this.iconName, this.onTap, super.key});
 
   final String? text;
   final String? iconName;
