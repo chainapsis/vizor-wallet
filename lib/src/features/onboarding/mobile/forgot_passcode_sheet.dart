@@ -132,7 +132,7 @@ class ForgotPasscodeLastWarningSheet extends StatelessWidget {
                   child: Text(
                     'Are you sure?',
                     style: AppTypography.headlineSmall.copyWith(
-                      color: colors.text.primary,
+                      color: colors.text.accent,
                     ),
                   ),
                 ),
@@ -167,16 +167,18 @@ class ForgotPasscodeLastWarningSheet extends StatelessWidget {
             Text.rich(
               TextSpan(
                 children: [
+                  // Figma 4752:26222 emphasises the irreversible line in the
+                  // destructive magenta; the follow-up sits in plain accent.
                   TextSpan(
                     text: "This can't be undone.\n",
                     style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.accent,
+                      color: colors.text.destructive,
                     ),
                   ),
                   TextSpan(
                     text: 'Proceed on your responsibility.',
                     style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.primary,
+                      color: colors.text.accent,
                     ),
                   ),
                 ],
