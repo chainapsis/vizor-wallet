@@ -37,7 +37,7 @@ class MobileWelcomeScreen extends StatelessWidget {
           // in both light and dark mode (no hard seam).
           Positioned.fill(
             child: Image.asset(
-              'assets/illustrations/welcome_hero.png',
+              'assets/illustrations/mobile_welcome_hero.png',
               fit: BoxFit.cover,
               alignment: Alignment.bottomCenter,
             ),

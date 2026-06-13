@@ -66,7 +66,7 @@ void main() {
       (w) =>
           w is Image &&
           w.image is AssetImage &&
-          (w.image as AssetImage).assetName.contains('welcome_hero'),
+          (w.image as AssetImage).assetName.contains('mobile_welcome_hero'),
     );
     expect(hero, findsOneWidget);
     final size = tester.getSize(hero);
