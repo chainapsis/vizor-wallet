@@ -179,7 +179,9 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            const Spacer(),
+            // Figma `Sign In Passcode` (4596:50000) top-anchors the badge
+            // ~52 px below the safe area rather than vertically centring.
+            const SizedBox(height: AppSpacing.lg),
             Image.asset(
               'assets/illustrations/welcome_badge.png',
               width: 50,
@@ -199,11 +201,12 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
                   ? 'Opening your wallet...'
                   : 'Enter your passcode to open Vizor',
               textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.secondary,
+              // Figma: Body M Medium on text/primary.
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.primary,
               ),
             ),
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.base),
             PasscodeDots(length: kMobilePasscodeLength, filled: _entry.length),
             SizedBox(
               // Tall enough to hold the error message ~30 px below the
@@ -215,7 +218,8 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
                     : Text(
                         _error!,
                         textAlign: TextAlign.center,
-                        style: AppTypography.bodyMedium.copyWith(
+                        // Figma: Label M on text/destructive.
+                        style: AppTypography.labelLarge.copyWith(
                           color: colors.text.destructive,
                         ),
                       ),

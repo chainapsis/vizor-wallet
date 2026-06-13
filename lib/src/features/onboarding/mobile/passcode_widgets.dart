@@ -29,14 +29,15 @@ class PasscodeDots extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
             child: Transform.rotate(
               angle: math.pi / 4,
+              // 14 px square → ~20 px diamond, matching the Figma index.
               child: Container(
-                width: 12,
-                height: 12,
+                width: 14,
+                height: 14,
                 decoration: BoxDecoration(
                   color: i < filled
                       ? colors.icon.brandCrimson
                       : colors.background.overlay,
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: BorderRadius.circular(3),
                 ),
               ),
             ),
@@ -170,14 +171,21 @@ class PasscodeNumpad extends StatelessWidget {
           )
         : key(const SizedBox.shrink());
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(children: [digitKey(1), digitKey(2), digitKey(3)]),
-        Row(children: [digitKey(4), digitKey(5), digitKey(6)]),
-        Row(children: [digitKey(7), digitKey(8), digitKey(9)]),
-        Row(children: [helpKey, digitKey(0), deleteKey]),
-      ],
+    // Figma keypad is a fixed 320-wide block centred in the screen, not
+    // full-bleed; ConstrainedBox keeps it from spreading on wide phones.
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 320),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(children: [digitKey(1), digitKey(2), digitKey(3)]),
+            Row(children: [digitKey(4), digitKey(5), digitKey(6)]),
+            Row(children: [digitKey(7), digitKey(8), digitKey(9)]),
+            Row(children: [helpKey, digitKey(0), deleteKey]),
+          ],
+        ),
+      ),
     );
   }
 }
