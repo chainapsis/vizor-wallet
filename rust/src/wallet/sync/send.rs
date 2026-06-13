@@ -724,36 +724,27 @@ pub async fn migrate_orchard_to_ironwood(
     pending_salt_base64: &str,
 ) -> Result<IronwoodMigrationResult, String> {
     let migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
-    let usk = with_wallet_db_write_lock("send.migrate_orchard_to_ironwood.keys", move || {
-        let db = open_wallet_db_for_read(db_path, network)?;
-        let account_id = parse_account_uuid(account_uuid)?;
-        let account = db
-            .get_account(account_id)
-            .map_err(|e| format!("{e}"))?
-            .ok_or("Account not found")?;
-        let zip32_index = account
-            .source()
-            .key_derivation()
-            .ok_or("No key derivation")?
-            .account_index();
-        let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
-            .map_err(|e| format!("USK derivation failed: {e:?}"))?;
-        drop(seed);
-
-        Ok::<_, String>(usk)
-    })?;
 
     if let Some(run) = super::migration::active_migration_run(db_path, account_uuid, network)? {
-        if let Some(prep_broadcast) = broadcast_pending_migration_prep_tx(
+        if super::migration::pending_prep_tx_for_run(
             db_path,
-            lightwalletd_url,
-            network,
             &run.run_id,
             pending_password.as_slice(),
             pending_salt_base64,
-        )
-        .await?
+        )?
+        .is_some()
         {
+            drop(seed);
+            let prep_broadcast = broadcast_pending_migration_prep_tx(
+                db_path,
+                lightwalletd_url,
+                network,
+                &run.run_id,
+                pending_password.as_slice(),
+                pending_salt_base64,
+            )
+            .await?
+            .ok_or("Migration prep transaction disappeared before broadcast")?;
             let result = migration_result_from_prep_broadcast(
                 prep_broadcast,
                 run.target_values_zatoshi.len() as u32,
@@ -767,6 +758,7 @@ pub async fn migrate_orchard_to_ironwood(
         if super::migration::pending_totals_for_run(db_path, &run.run_id)?.total_count == 0
             && super::migration::signed_child_pczt_count(db_path, &run.run_id)? > 0
         {
+            drop(seed);
             if !run_may_finalize_presigned_migration_children(&run) {
                 let result = prepared_notes_not_spendable_result(
                     run.target_values_zatoshi.len() as u32,
@@ -805,13 +797,20 @@ pub async fn migrate_orchard_to_ironwood(
             drop(migration_guard);
             return result;
         }
-        let result = resume_active_migration_run(
+        let action = prepare_active_migration_resume(
             db_path,
-            lightwalletd_url,
             network,
             account_uuid,
             run,
-            &usk,
+            seed,
+            pending_password.as_slice(),
+            pending_salt_base64,
+        )?;
+        let result = execute_active_migration_resume_action(
+            action,
+            db_path,
+            lightwalletd_url,
+            network,
             pending_password.as_slice(),
             pending_salt_base64,
         )
@@ -820,66 +819,18 @@ pub async fn migrate_orchard_to_ironwood(
         return result;
     }
 
-    let split = with_wallet_db_write_lock("send.migration.create_denominations", || {
-        create_orchard_denomination_split_transaction(db_path, network, &usk)
+    let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
+        prepare_software_migration_run(db_path, network, account_uuid, seed)
     })?;
 
-    let Some(split) = split else {
+    let Some(prepared) = prepared else {
         return Err(
             "Create migration denominations failed: insufficient spendable Orchard funds"
                 .to_string(),
         );
     };
 
-    let child_messages = split
-        .predicted_notes
-        .iter()
-        .enumerate()
-        .map(|(index, predicted)| {
-            create_orchard_to_ironwood_pczt_from_predicted_note(
-                db_path,
-                network,
-                account_uuid,
-                predicted,
-                (index + 1) as u32,
-            )?
-            .ok_or("Predicted migration note is below the migration fee threshold".to_string())
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let signed_children = child_messages
-        .iter()
-        .enumerate()
-        .map(|(index, child)| {
-            let signed_pczt = sign_orchard_migration_pczt_with_usk(
-                &child.base_pczt,
-                &child.orchard_spend_action_indices,
-                &usk,
-            )?;
-            let selected_note = super::migration::PreparedOrchardNoteRef {
-                txid_hex: format!("{}", split.txid),
-                output_index: child.selected_note.output_index,
-                value_zatoshi: child.selected_note.value_zatoshi,
-                note_version: child.selected_note.note_version,
-                nullifier_hex: None,
-            };
-            Ok(super::migration::SignedMigrationPcztInsert {
-                message_id: child.id.clone(),
-                child_index: index as u32,
-                base_pczt: child.base_pczt.clone(),
-                signed_pczt,
-                target_height: child.target_height,
-                expiry_height: child.expiry_height,
-                value_zatoshi: child.migrated_zatoshi,
-                fee_zatoshi: child.fee_zatoshi,
-                selected_note: selected_note.clone(),
-                metadata: super::migration::PendingMigrationTxMetadata {
-                    tx_kind: "migration".to_string(),
-                    funding_account_uuid: account_uuid.to_string(),
-                    selected_note,
-                },
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
+    let split = prepared.split;
     let split_txid = format!("{}", split.txid);
     let run_id = super::migration::create_run_with_prepared_notes_and_signed_children(
         db_path,
@@ -888,7 +839,7 @@ pub async fn migrate_orchard_to_ironwood(
         &split.plan,
         &split.migrated_outputs,
         true,
-        signed_children,
+        prepared.signed_children,
         pending_password.as_slice(),
         pending_salt_base64,
         Some(&split_txid),
@@ -1733,16 +1684,17 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
     ))
 }
 
-async fn resume_active_migration_run(
+// Returns a non-secret action for the async caller. Any software signing needed
+// while resuming an active run happens before this function returns.
+fn prepare_active_migration_resume(
     db_path: &str,
-    lightwalletd_url: &str,
     network: WalletNetwork,
     account_uuid: &str,
     run: super::migration::ActiveRun,
-    usk: &UnifiedSpendingKey,
+    seed: SecretVec<u8>,
     pending_password: &[u8],
     pending_salt_base64: &str,
-) -> Result<IronwoodMigrationResult, String> {
+) -> Result<ActiveMigrationResumeAction, String> {
     let fallback_total_count = run.target_values_zatoshi.len() as u32;
     let fallback_migrated_zatoshi = run.target_values_zatoshi.iter().sum();
 
@@ -1761,45 +1713,59 @@ async fn resume_active_migration_run(
         if pending_totals.total_count == 0 {
             let prepared_notes = super::migration::prepared_notes_for_run(db_path, &run.run_id)?;
             if prepared_notes.is_empty() {
+                drop(seed);
                 return Err("Migration run has no prepared denomination notes".to_string());
             }
             if !prepared_note_spend_metadata_is_available(db_path, &run.run_id)? {
-                return Ok(prepared_notes_not_spendable_result(
-                    fallback_total_count,
-                    fallback_migrated_zatoshi,
+                drop(seed);
+                return Ok(ActiveMigrationResumeAction::Return(
+                    prepared_notes_not_spendable_result(
+                        fallback_total_count,
+                        fallback_migrated_zatoshi,
+                    ),
                 ));
             }
 
-            let mut pending = Vec::with_capacity(prepared_notes.len());
-            for note_ref in &prepared_notes {
-                let tx = match with_wallet_db_write_lock("send.migration.create_exact_note", || {
-                    create_orchard_to_ironwood_transaction_from_note(
-                        db_path,
-                        network,
-                        usk,
-                        account_uuid,
-                        note_ref,
-                    )
+            let pending =
+                match with_wallet_db_write_lock("send.migration.create_exact_notes", move || {
+                    let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
+                    let mut pending = Vec::with_capacity(prepared_notes.len());
+                    for note_ref in &prepared_notes {
+                        let Some(tx) = create_orchard_to_ironwood_transaction_from_note(
+                            db_path,
+                            network,
+                            &usk,
+                            account_uuid,
+                            note_ref,
+                        )?
+                        else {
+                            return Ok(None);
+                        };
+                        pending.push(tx);
+                    }
+                    Ok::<_, String>(Some(pending))
                 }) {
-                    Ok(tx) => tx,
+                    Ok(Some(pending)) => pending,
+                    Ok(None) => {
+                        mark_prepared_notes_waiting(db_path, &run.run_id)?;
+                        return Ok(ActiveMigrationResumeAction::Return(
+                            prepared_notes_not_spendable_result(
+                                fallback_total_count,
+                                fallback_migrated_zatoshi,
+                            ),
+                        ));
+                    }
                     Err(e) if is_orchard_witness_not_ready_error(&e) => {
                         mark_prepared_notes_waiting(db_path, &run.run_id)?;
-                        return Ok(prepared_notes_not_spendable_result(
-                            fallback_total_count,
-                            fallback_migrated_zatoshi,
+                        return Ok(ActiveMigrationResumeAction::Return(
+                            prepared_notes_not_spendable_result(
+                                fallback_total_count,
+                                fallback_migrated_zatoshi,
+                            ),
                         ));
                     }
                     Err(e) => return Err(e),
                 };
-                let Some(tx) = tx else {
-                    mark_prepared_notes_waiting(db_path, &run.run_id)?;
-                    return Ok(prepared_notes_not_spendable_result(
-                        fallback_total_count,
-                        fallback_migrated_zatoshi,
-                    ));
-                };
-                pending.push(tx);
-            }
 
             let pending_inserts = pending
                 .iter()
@@ -1826,31 +1792,57 @@ async fn resume_active_migration_run(
                 pending_salt_base64,
             )?;
             let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
-            return Ok(migration_result_from_pending_totals(
-                totals,
-                super::migration::PHASE_BROADCAST_SCHEDULED,
-                Some(
-                    "Migration transactions were signed and scheduled for delayed broadcast."
-                        .to_string(),
+            return Ok(ActiveMigrationResumeAction::Return(
+                migration_result_from_pending_totals(
+                    totals,
+                    super::migration::PHASE_BROADCAST_SCHEDULED,
+                    Some(
+                        "Migration transactions were signed and scheduled for delayed broadcast."
+                            .to_string(),
+                    ),
+                    fallback_total_count,
+                    fallback_migrated_zatoshi,
                 ),
-                fallback_total_count,
-                fallback_migrated_zatoshi,
             ));
         }
     }
 
-    let result = broadcast_due_scheduled_migration_txs(
-        db_path,
-        lightwalletd_url,
-        network,
-        &run.run_id,
-        pending_password,
-        pending_salt_base64,
+    drop(seed);
+    Ok(ActiveMigrationResumeAction::BroadcastDue {
+        run_id: run.run_id,
         fallback_total_count,
         fallback_migrated_zatoshi,
-    )
-    .await?;
-    Ok(result)
+    })
+}
+
+async fn execute_active_migration_resume_action(
+    action: ActiveMigrationResumeAction,
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<IronwoodMigrationResult, String> {
+    match action {
+        ActiveMigrationResumeAction::Return(result) => Ok(result),
+        ActiveMigrationResumeAction::BroadcastDue {
+            run_id,
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+        } => {
+            broadcast_due_scheduled_migration_txs(
+                db_path,
+                lightwalletd_url,
+                network,
+                &run_id,
+                pending_password,
+                pending_salt_base64,
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+            )
+            .await
+        }
+    }
 }
 
 fn is_orchard_witness_not_ready_error(error: &str) -> bool {
@@ -1903,6 +1895,100 @@ fn run_may_finalize_presigned_migration_children(run: &super::migration::ActiveR
     )
 }
 
+fn derive_migration_usk(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    seed: SecretVec<u8>,
+) -> Result<UnifiedSpendingKey, String> {
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| format!("{e}"))?
+        .ok_or("Account not found")?;
+    let zip32_index = account
+        .source()
+        .key_derivation()
+        .ok_or("No key derivation")?
+        .account_index();
+    let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
+        .map_err(|e| format!("USK derivation failed: {e:?}"))?;
+    drop(seed);
+
+    Ok(usk)
+}
+
+// Keep software migration signing in synchronous preparation scopes. These
+// helpers return only signed PCZT or raw transaction artifacts, so callers can
+// perform network broadcast after seed and USK values have been dropped.
+fn prepare_software_migration_run(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    seed: SecretVec<u8>,
+) -> Result<Option<PreparedSoftwareMigrationRun>, String> {
+    let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
+    let Some(split) = create_orchard_denomination_split_transaction(db_path, network, &usk)? else {
+        return Ok(None);
+    };
+
+    let child_messages = split
+        .predicted_notes
+        .iter()
+        .enumerate()
+        .map(|(index, predicted)| {
+            create_orchard_to_ironwood_pczt_from_predicted_note(
+                db_path,
+                network,
+                account_uuid,
+                predicted,
+                (index + 1) as u32,
+            )?
+            .ok_or("Predicted migration note is below the migration fee threshold".to_string())
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let signed_children = child_messages
+        .iter()
+        .enumerate()
+        .map(|(index, child)| {
+            let signed_pczt = sign_orchard_migration_pczt_with_usk(
+                &child.base_pczt,
+                &child.orchard_spend_action_indices,
+                &usk,
+            )?;
+            let selected_note = super::migration::PreparedOrchardNoteRef {
+                txid_hex: format!("{}", split.txid),
+                output_index: child.selected_note.output_index,
+                value_zatoshi: child.selected_note.value_zatoshi,
+                note_version: child.selected_note.note_version,
+                nullifier_hex: None,
+            };
+            Ok(super::migration::SignedMigrationPcztInsert {
+                message_id: child.id.clone(),
+                child_index: index as u32,
+                base_pczt: child.base_pczt.clone(),
+                signed_pczt,
+                target_height: child.target_height,
+                expiry_height: child.expiry_height,
+                value_zatoshi: child.migrated_zatoshi,
+                fee_zatoshi: child.fee_zatoshi,
+                selected_note: selected_note.clone(),
+                metadata: super::migration::PendingMigrationTxMetadata {
+                    tx_kind: "migration".to_string(),
+                    funding_account_uuid: account_uuid.to_string(),
+                    selected_note,
+                },
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    Ok(Some(PreparedSoftwareMigrationRun {
+        split,
+        signed_children,
+    }))
+}
+
 struct CreatedDenominationSplitTx {
     txid: TxId,
     raw_tx: Vec<u8>,
@@ -1911,6 +1997,20 @@ struct CreatedDenominationSplitTx {
     predicted_notes: Vec<PredictedMigrationNote>,
     total_migratable: Zatoshis,
     plan: super::migration::DenominationPlan,
+}
+
+struct PreparedSoftwareMigrationRun {
+    split: CreatedDenominationSplitTx,
+    signed_children: Vec<super::migration::SignedMigrationPcztInsert>,
+}
+
+enum ActiveMigrationResumeAction {
+    Return(IronwoodMigrationResult),
+    BroadcastDue {
+        run_id: String,
+        fallback_total_count: u32,
+        fallback_migrated_zatoshi: u64,
+    },
 }
 
 struct CreatedPendingMigrationTx {
