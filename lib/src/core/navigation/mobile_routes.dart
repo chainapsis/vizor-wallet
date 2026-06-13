@@ -52,38 +52,9 @@ List<RouteBase> buildMobileRoutes({
                 path: tab.path,
                 pageBuilder: (context, state) =>
                     NoTransitionPage(key: state.pageKey, child: tab.screen),
-                // Settings detail screens keep the floating tab bar
-                // visible in their Figma frames, so they push inside
-                // the branch navigator. Full-screen flows (send,
-                // receive, scan) stay outside the shell below.
-                routes: tab.path == '/settings'
-                    ? [
-                        // Same paths as the desktop routes so the
-                        // shared redirect guard and deep links treat
-                        // them identically.
-                        GoRoute(
-                          path: 'seed-phrase',
-                          pageBuilder: (context, state) => CupertinoPage(
-                            key: state.pageKey,
-                            child: const MobileSeedPhraseScreen(),
-                          ),
-                        ),
-                        GoRoute(
-                          path: 'address-book',
-                          pageBuilder: (context, state) => CupertinoPage(
-                            key: state.pageKey,
-                            child: const MobileAddressBookScreen(),
-                          ),
-                        ),
-                        GoRoute(
-                          path: 'endpoint',
-                          pageBuilder: (context, state) => CupertinoPage(
-                            key: state.pageKey,
-                            child: const MobileEndpointScreen(),
-                          ),
-                        ),
-                      ]
-                    : const <RouteBase>[],
+                // Settings detail screens push over the shell (top-level
+                // routes below) so the bottom tab bar is hidden while
+                // they're open; nothing extra nests inside a branch.
               ),
               // The Accounts screen lives in the home branch (its
               // Figma frame keeps the tab bar) under its own path.
@@ -99,9 +70,33 @@ List<RouteBase> buildMobileRoutes({
           ),
       ],
     ),
-    // The Update Passcode frames drop the tab bar, so this stays a
-    // full-screen push (same path as the desktop change-password
-    // route for the shared redirect guard and deep links).
+    // Settings detail screens are full-screen pushes over the shell so
+    // the bottom tab bar is hidden while they're open. Absolute paths
+    // match the desktop routes for the shared redirect guard and deep
+    // links.
+    GoRoute(
+      path: '/settings/seed-phrase',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileSeedPhraseScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/settings/address-book',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileAddressBookScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/settings/endpoint',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileEndpointScreen(),
+      ),
+    ),
+    // The Update Passcode frames also drop the tab bar — same
+    // full-screen push pattern.
     GoRoute(
       path: '/settings/change-password',
       pageBuilder: (context, state) => CupertinoPage(
