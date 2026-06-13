@@ -17,6 +17,9 @@ use super::READ_DB_BUSY_TIMEOUT;
 pub(crate) const ZATOSHIS_PER_ZEC: u64 = 100_000_000;
 pub(crate) const MIGRATION_BROADCAST_WINDOW_SECS: u64 = 180;
 pub(crate) const MIGRATION_MAX_PREPARED_NOTES_PER_RUN: usize = 64;
+pub(crate) const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
+// Mirrors the one-action ZIP-317 migration fee estimate used by send planning.
+const MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI: u64 = 10_000;
 
 const RUNS_TABLE: &str = "vizor_migration_runs";
 const PREPARED_NOTES_TABLE: &str = "vizor_migration_prepared_notes";
@@ -249,7 +252,8 @@ pub(crate) fn migration_status(
         return status_for_run(&conn, run);
     }
 
-    let phase = if orchard_spendable > 0 {
+    let orchard_migratable = orchard_balance_can_create_migration_output(orchard_spendable)?;
+    let phase = if orchard_migratable {
         PHASE_READY_TO_PREPARE
     } else if orchard_pending > 0 {
         PHASE_WAITING_FOR_SPENDABLE_ORCHARD
@@ -279,6 +283,19 @@ pub(crate) fn migration_status(
         max_prepared_notes_per_run: MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
         scheduled_broadcasts: Vec::new(),
     })
+}
+
+fn orchard_balance_can_create_migration_output(orchard_spendable: u64) -> Result<bool, String> {
+    if orchard_spendable == 0 {
+        return Ok(false);
+    }
+    let plan = plan_denominations(
+        orchard_spendable,
+        0,
+        MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI,
+        MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+    )?;
+    Ok(!plan.migration_outputs.is_empty())
 }
 
 #[derive(Clone, Debug)]
@@ -1755,6 +1772,105 @@ mod tests {
         assert!(offsets
             .iter()
             .all(|offset| *offset <= MIGRATION_BROADCAST_WINDOW_SECS));
+    }
+
+    #[test]
+    fn migration_status_treats_non_migratable_residual_as_complete() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+
+        let status = migration_status(
+            &db_path,
+            WalletNetwork::Test,
+            "account-1",
+            MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI,
+            0,
+            ZATOSHIS_PER_ZEC,
+        )
+        .unwrap();
+
+        assert_eq!(status.phase, PHASE_COMPLETE);
+    }
+
+    #[test]
+    fn migration_status_treats_threshold_residual_as_complete() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+
+        let status = migration_status(
+            &db_path,
+            WalletNetwork::Test,
+            "account-1",
+            MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI + MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+            0,
+            ZATOSHIS_PER_ZEC,
+        )
+        .unwrap();
+
+        assert_eq!(status.phase, PHASE_COMPLETE);
+    }
+
+    #[test]
+    fn migration_status_keeps_completed_run_complete_with_residual_orchard() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+        let plan = DenominationPlan {
+            migration_outputs: vec![ZATOSHIS_PER_ZEC],
+            orchard_change: Some(MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI),
+            prep_fee_zatoshi: 10_000,
+            migration_fee_zatoshi: MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI,
+            total_input_zatoshi: ZATOSHIS_PER_ZEC + 20_000,
+            total_migratable_zatoshi: ZATOSHIS_PER_ZEC,
+        };
+        let run_id = create_run_with_prepared_notes_and_signed_children(
+            &db_path,
+            "account-1",
+            WalletNetwork::Test,
+            &plan,
+            &[],
+            false,
+            Vec::new(),
+            b"correct horse battery staple",
+            "AQIDBAUGBwgJCgsMDQ4PEA==",
+            None,
+            None,
+        )
+        .unwrap();
+        mark_run_phase(&db_path, &run_id, PHASE_COMPLETE, None).unwrap();
+
+        let status = migration_status(
+            &db_path,
+            WalletNetwork::Test,
+            "account-1",
+            MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI,
+            0,
+            ZATOSHIS_PER_ZEC,
+        )
+        .unwrap();
+
+        assert_eq!(status.phase, PHASE_COMPLETE);
+    }
+
+    #[test]
+    fn migration_status_keeps_migratable_orchard_ready_after_ironwood_exists() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+
+        let status = migration_status(
+            &db_path,
+            WalletNetwork::Test,
+            "account-1",
+            MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI + MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI + 1,
+            0,
+            ZATOSHIS_PER_ZEC,
+        )
+        .unwrap();
+
+        assert_eq!(status.phase, PHASE_READY_TO_PREPARE);
     }
 
     #[test]

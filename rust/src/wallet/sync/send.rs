@@ -90,6 +90,7 @@ use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES;
 use crate::wallet::network::WalletNetwork;
 
+use super::migration::MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI;
 use super::{
     consume_stored_proposal, open_readonly_conn, open_wallet_db, open_wallet_db_for_read,
     StoredProposal, WalletDatabase, PROPOSAL_STORE,
@@ -196,7 +197,6 @@ pub(crate) struct KeystoneMigrationProofStatus {
 }
 
 const SHIELDING_THRESHOLD_ZATOSHI: u64 = 100_000;
-const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
 const MIGRATION_NO_EXPIRY_HEIGHT: u32 = 0;
 static ACTIVE_IRONWOOD_MIGRATIONS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 static KEYSTONE_DENOMINATION_REQUESTS: OnceLock<Mutex<HashMap<String, StoredDenominationPczt>>> =
