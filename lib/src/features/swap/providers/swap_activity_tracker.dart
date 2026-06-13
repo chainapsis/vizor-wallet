@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../main.dart' show log;
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
 import 'swap_activity_store.dart';
@@ -262,6 +263,9 @@ class SwapActivityTracker {
         );
         updatedIntents = updatedIntents.replaceSwapIntent(intent.id, updated);
       } catch (e) {
+        // The raw error is the only way to tell a 1Click outage from a local
+        // bug once the policy collapses it into a generic message.
+        log('Swap: refresh status failed intent=${intent.id} error=$e');
         final message = swapFailureMessage(
           SwapFailureOperation.refreshStatus,
           e,
