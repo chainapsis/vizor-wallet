@@ -6873,7 +6873,7 @@ void main() {
   });
 
   testWidgets(
-    'hardware ZEC signing shows QR while proofs are still preparing',
+    'hardware ZEC signing keeps the modal preparing until proofs are ready',
     (tester) async {
       await _setDesktopViewport(tester);
       final swapProvider = _FakeSwapProvider();
@@ -6931,12 +6931,15 @@ void main() {
 
       expect(hardwareSigningService.proofDrafts, hasLength(1));
       expect(find.text('Sign ZEC deposit on Keystone'), findsOneWidget);
-      expect(
-        find.text('Scan now. Signature import unlocks after proofs are ready.'),
-        findsOneWidget,
-      );
-      expect(find.text('Preparing'), findsOneWidget);
-      expect(find.text('Get signature'), findsNothing);
+      // Matches the home shielding overlay: the modal stays in the preparing
+      // phase (no separate 'Preparing' button label) and 'Get signature'
+      // is rendered but inert until proving completes.
+      expect(find.text('Preparing'), findsNothing);
+      expect(find.text('Get signature'), findsOneWidget);
+      await tester.tap(find.text('Get signature'));
+      await tester.pump();
+      expect(hardwareSigningService.proofDrafts, hasLength(1));
+      expect(find.text('Sign ZEC deposit on Keystone'), findsOneWidget);
 
       proofCompleter.complete(const [7, 8, 9]);
       await tester.pump();

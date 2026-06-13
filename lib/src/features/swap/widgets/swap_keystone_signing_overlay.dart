@@ -100,14 +100,6 @@ class _SwapKeystoneSigningOverlayState
       }
 
       final urParts = await service.encodeSigningUrParts(draft: draft);
-      if (!mounted) return;
-      setState(() {
-        _phase = _SwapKeystonePhase.ready;
-        _draft = draft;
-        _urParts = urParts;
-        _saplingParams = saplingParams;
-      });
-
       final pcztWithProofs = await service.addProofsForSigning(
         draft: draft,
         spendParamsPath: draft.needsSaplingParams
@@ -119,6 +111,10 @@ class _SwapKeystoneSigningOverlayState
       );
       if (!mounted) return;
       setState(() {
+        _phase = _SwapKeystonePhase.ready;
+        _draft = draft;
+        _urParts = urParts;
+        _saplingParams = saplingParams;
         _pcztWithProofs = pcztWithProofs;
       });
     } catch (e, st) {
@@ -271,13 +267,9 @@ class _SwapKeystoneSigningOverlayState
                 ? 'Keep Vizor open while the transaction is sent.'
                 : _phase == _SwapKeystonePhase.failed
                 ? null
-                : _pcztWithProofs == null
-                ? 'Scan now. Signature import unlocks after proofs are ready.'
                 : 'After you scanned, click Get signature.',
             primaryLabel: _phase == _SwapKeystonePhase.failed || isBroadcasting
                 ? null
-                : _pcztWithProofs == null
-                ? 'Preparing'
                 : 'Get signature',
             onPrimary:
                 _phase == _SwapKeystonePhase.ready && _pcztWithProofs != null
