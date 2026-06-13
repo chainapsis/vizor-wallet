@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
 
 /// Mobile slippage editor — Figma `Slippage` (4700:121854 / 4700:123165 /
 /// 4700:123470): a serif value that can be nudged with the minus/plus
@@ -165,6 +166,10 @@ class _MobileSwapSlippageStepperModalState
                             decimal: true,
                           ),
                           inputFormatters: [
+                            // The decimal-pad key follows the device
+                            // locale; normalise a comma to the period the
+                            // filter keeps.
+                            const CommaToDotInputFormatter(),
                             FilteringTextInputFormatter.allow(
                               RegExp(r'[0-9.]'),
                             ),

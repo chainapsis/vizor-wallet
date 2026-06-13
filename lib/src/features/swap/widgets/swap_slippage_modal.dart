@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../models/swap_models.dart';
 import 'swap_modal_controls.dart';
 
@@ -350,6 +351,9 @@ class _SlippageCustomRadioCard extends StatelessWidget {
                             decimal: true,
                           ),
                           inputFormatters: const [
+                            // The decimal-pad key follows the device
+                            // locale; normalise a comma to a period first.
+                            CommaToDotInputFormatter(),
                             _SlippageCustomInputFormatter(),
                           ],
                           style: valueStyle,

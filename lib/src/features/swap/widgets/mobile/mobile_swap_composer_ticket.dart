@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_fiat_amount.dart';
 import '../../models/swap_models.dart';
@@ -406,6 +407,9 @@ class _SwapAmountInput extends StatelessWidget {
             onChanged: onChanged,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
+              // The decimal-pad key follows the device locale, so map a
+              // comma to the period the validator below expects.
+              const CommaToDotInputFormatter(),
               _DecimalAmountInputFormatter(
                 maxFractionDigits: maxFractionDigits,
               ),
