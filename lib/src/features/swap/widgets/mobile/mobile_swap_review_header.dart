@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
-import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../accounts/widgets/mobile/account_edit_sheets.dart'
@@ -231,51 +230,51 @@ Future<void> showSwapAddressVerifySheet(
       final label =
           networkLabel ??
           (asset.isNativeZec ? 'Zcash address' : '${asset.chainLabel} address');
-      return MobileBottomSafeArea(
-        bottomPadding: AppSpacing.md,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  SwapAssetIcon(asset: asset, size: 32, showChainBadge: false),
-                  const SizedBox(width: AppSpacing.s),
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: AppTypography.headlineSmall.copyWith(
-                        color: colors.text.accent,
-                      ),
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.sm,
+          AppSpacing.md,
+          AppSpacing.sm,
+          AppSpacing.md,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                SwapAssetIcon(asset: asset, size: 32, showChainBadge: false),
+                const SizedBox(width: AppSpacing.s),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: AppTypography.headlineSmall.copyWith(
+                      color: colors.text.accent,
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Wrap(
-                key: const ValueKey('mobile_swap_verify_address_chunks'),
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.s,
-                children: [
-                  for (var i = 0; i < chunks.length; i++)
-                    Text(
-                      chunks[i],
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: i == 0 || i == chunks.length - 1
-                            ? colors.text.brandCrimson
-                            : colors.text.accent,
-                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Wrap(
+              key: const ValueKey('mobile_swap_verify_address_chunks'),
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.s,
+              children: [
+                for (var i = 0; i < chunks.length; i++)
+                  Text(
+                    chunks[i],
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: i == 0 || i == chunks.length - 1
+                          ? colors.text.brandCrimson
+                          : colors.text.accent,
                     ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              MobileSheetCancel(
-                onTap: () => Navigator.of(sheetContext).pop(),
-              ),
-            ],
-          ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            MobileSheetCancel(onTap: () => Navigator.of(sheetContext).pop()),
+          ],
         ),
       );
     },

@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
-import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -114,93 +113,88 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
         if (account.uuid != active?.uuid) account,
     ];
 
-    return MobileBottomSafeArea(
-      bottomPadding: AppSpacing.md,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.sm,
-          AppSpacing.sm,
-          AppSpacing.sm,
-          AppSpacing.md,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: _CloseButton(onTap: () => Navigator.of(context).pop()),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.sm,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: _CloseButton(onTap: () => Navigator.of(context).pop()),
+          ),
+          // Centered so the stretch column can't blow the circle up
+          // to full width; 56 px per the Figma accounts modal.
+          Center(
+            child: MobileAccountAvatar(
+              profilePictureId:
+                  active?.profilePictureId ?? kDefaultProfilePictureId,
+              size: AppProfilePictureSize.xLarge,
+              isHardware: active?.isHardware ?? false,
             ),
-            // Centered so the stretch column can't blow the circle up
-            // to full width; 56 px per the Figma accounts modal.
-            Center(
-              child: MobileAccountAvatar(
-                profilePictureId:
-                    active?.profilePictureId ?? kDefaultProfilePictureId,
-                size: AppProfilePictureSize.xLarge,
-                isHardware: active?.isHardware ?? false,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            Text(
-              active?.name ?? '',
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyLarge.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-            if (others.isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                'Other accounts',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 240),
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    for (final account in others)
-                      MobileListRow(
-                        key: ValueKey('account_row_${account.uuid}'),
-                        leading: MobileAccountAvatar(
-                          profilePictureId: account.profilePictureId,
-                          size: AppProfilePictureSize.large,
-                          isHardware: account.isHardware,
-                        ),
-                        label: account.name,
-                        trailing: _CopyAddressButton(
-                          onTap: () => unawaited(_copyShieldedAddress(account)),
-                        ),
-                        onTap: () => unawaited(_switchAccount(account.uuid)),
-                      ),
-                  ],
-                ),
-              ),
-            ],
+          ),
+          const SizedBox(height: AppSpacing.s),
+          Text(
+            active?.name ?? '',
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyLarge.copyWith(color: colors.text.accent),
+          ),
+          if (others.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.md),
-            Row(
-              children: [
-                Expanded(
-                  child: AppButton(
-                    variant: AppButtonVariant.secondary,
-                    expand: true,
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      context.push('/accounts');
-                    },
-                    child: const Text('Manage accounts'),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                _AddAccountButton(onTap: _addAccount),
-              ],
+            Text(
+              'Other accounts',
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240),
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final account in others)
+                    MobileListRow(
+                      key: ValueKey('account_row_${account.uuid}'),
+                      leading: MobileAccountAvatar(
+                        profilePictureId: account.profilePictureId,
+                        size: AppProfilePictureSize.large,
+                        isHardware: account.isHardware,
+                      ),
+                      label: account.name,
+                      trailing: _CopyAddressButton(
+                        onTap: () => unawaited(_copyShieldedAddress(account)),
+                      ),
+                      onTap: () => unawaited(_switchAccount(account.uuid)),
+                    ),
+                ],
+              ),
             ),
           ],
-        ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              Expanded(
+                child: AppButton(
+                  variant: AppButtonVariant.secondary,
+                  expand: true,
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    context.push('/accounts');
+                  },
+                  child: const Text('Manage accounts'),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              _AddAccountButton(onTap: _addAccount),
+            ],
+          ),
+        ],
       ),
     );
   }

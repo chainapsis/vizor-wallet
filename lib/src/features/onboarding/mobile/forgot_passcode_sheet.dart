@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -20,89 +19,91 @@ class ForgotPasscodeSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return MobileBottomSafeArea(
-      bottomPadding: AppSpacing.md,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Forgot Passcode?',
-                    style: AppTypography.headlineSmall.copyWith(
-                      color: colors.text.accent,
-                    ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Forgot Passcode?',
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.text.accent,
                   ),
                 ),
-                Semantics(
-                  button: true,
-                  label: 'Close',
-                  excludeSemantics: true,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Navigator.of(context).pop(false),
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: colors.background.raised,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          '✕',
-                          style: AppTypography.labelMedium.copyWith(
-                            color: colors.text.accent,
-                          ),
+              ),
+              Semantics(
+                button: true,
+                label: 'Close',
+                excludeSemantics: true,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.of(context).pop(false),
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: colors.background.raised,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '✕',
+                        style: AppTypography.labelMedium.copyWith(
+                          color: colors.text.accent,
                         ),
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              "If you can't remember your passcode, the only way to "
-              'recover your account is to completely reset the Vizor app, '
-              'which means deleting all accounts and requiring you to '
-              'import accounts again.',
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.primary,
               ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            "If you can't remember your passcode, the only way to "
+            'recover your account is to completely reset the Vizor app, '
+            'which means deleting all accounts and requiring you to '
+            'import accounts again.',
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.primary,
             ),
-            const SizedBox(height: AppSpacing.md),
-            AppButton(
-              key: const ValueKey('mobile_forgot_passcode_reset'),
-              expand: true,
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Continue to reset Vizor'),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            Semantics(
-              button: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => Navigator.of(context).pop(false),
-                child: SizedBox(
-                  height: 44,
-                  child: Center(
-                    child: Text(
-                      'Cancel',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.primary,
-                      ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('mobile_forgot_passcode_reset'),
+            expand: true,
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Continue to reset Vizor'),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          Semantics(
+            button: true,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).pop(false),
+              child: SizedBox(
+                height: 44,
+                child: Center(
+                  child: Text(
+                    'Cancel',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.primary,
                     ),
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -118,102 +119,104 @@ class ForgotPasscodeLastWarningSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return MobileBottomSafeArea(
-      bottomPadding: AppSpacing.md,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Are you sure?',
-                    style: AppTypography.headlineSmall.copyWith(
-                      color: colors.text.accent,
-                    ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Are you sure?',
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.text.accent,
                   ),
                 ),
-                Semantics(
-                  button: true,
-                  label: 'Close',
-                  excludeSemantics: true,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Navigator.of(context).pop(false),
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: colors.background.raised,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          '✕',
-                          style: AppTypography.labelMedium.copyWith(
-                            color: colors.text.accent,
-                          ),
+              ),
+              Semantics(
+                button: true,
+                label: 'Close',
+                excludeSemantics: true,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.of(context).pop(false),
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: colors.background.raised,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '✕',
+                        style: AppTypography.labelMedium.copyWith(
+                          color: colors.text.accent,
                         ),
                       ),
                     ),
                   ),
                 ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text.rich(
+            TextSpan(
+              children: [
+                // Figma 4752:26222 emphasises the irreversible line in the
+                // destructive magenta; the follow-up sits in plain accent.
+                TextSpan(
+                  text: "This can't be undone.\n",
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.destructive,
+                  ),
+                ),
+                TextSpan(
+                  text: 'Proceed on your responsibility.',
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: AppSpacing.sm),
-            Text.rich(
-              TextSpan(
-                children: [
-                  // Figma 4752:26222 emphasises the irreversible line in the
-                  // destructive magenta; the follow-up sits in plain accent.
-                  TextSpan(
-                    text: "This can't be undone.\n",
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.destructive,
-                    ),
-                  ),
-                  TextSpan(
-                    text: 'Proceed on your responsibility.',
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppButton(
-              key: const ValueKey('mobile_forgot_passcode_last_warning_reset'),
-              variant: AppButtonVariant.destructive,
-              expand: true,
-              leading: const AppIcon(AppIcons.warning),
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Reset Vizor'),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            Semantics(
-              button: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => Navigator.of(context).pop(false),
-                child: SizedBox(
-                  height: 44,
-                  child: Center(
-                    child: Text(
-                      'Cancel',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.primary,
-                      ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('mobile_forgot_passcode_last_warning_reset'),
+            variant: AppButtonVariant.destructive,
+            expand: true,
+            leading: const AppIcon(AppIcons.warning),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Reset Vizor'),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          Semantics(
+            button: true,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).pop(false),
+              child: SizedBox(
+                height: 44,
+                child: Center(
+                  child: Text(
+                    'Cancel',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.primary,
                     ),
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

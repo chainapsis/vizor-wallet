@@ -11,7 +11,6 @@ import '../../../../../main.dart' show log;
 import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
-import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -191,10 +190,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   Future<void> _showFullAddressSheet(String address) {
     final chunks = <String>[
       for (var i = 0; i < address.length; i += 5)
-        address.substring(
-          i,
-          i + 5 > address.length ? address.length : i + 5,
-        ),
+        address.substring(i, i + 5 > address.length ? address.length : i + 5),
     ];
     final label =
         _contactLabel ??
@@ -203,83 +199,85 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       context: context,
       builder: (sheetContext) {
         final colors = sheetContext.colors;
-        return MobileBottomSafeArea(
-          bottomPadding: AppSpacing.md,
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    AppProfilePicture(
-                      profilePictureId: _contactPictureId ?? '',
-                      size: AppProfilePictureSize.medium,
-                    ),
-                    const SizedBox(width: AppSpacing.s),
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: AppTypography.headlineSmall.copyWith(
-                          color: colors.text.accent,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sm,
+            AppSpacing.md,
+            AppSpacing.sm,
+            AppSpacing.md,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  AppProfilePicture(
+                    profilePictureId: _contactPictureId ?? '',
+                    size: AppProfilePictureSize.medium,
+                  ),
+                  const SizedBox(width: AppSpacing.s),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: AppTypography.headlineSmall.copyWith(
+                        color: colors.text.accent,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    Semantics(
-                      button: true,
-                      label: 'Close',
-                      excludeSemantics: true,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => Navigator.of(sheetContext).pop(),
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: colors.background.raised,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: AppIcon(
-                              AppIcons.cross,
-                              size: 16,
-                              color: colors.icon.accent,
-                            ),
-                          ),
+                  ),
+                  Semantics(
+                    button: true,
+                    label: 'Close',
+                    excludeSemantics: true,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => Navigator.of(sheetContext).pop(),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: colors.background.raised,
+                          shape: BoxShape.circle,
                         ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                _AddressChunkGrid(
-                  key: const ValueKey('mobile_send_full_address_chunks'),
-                  chunks: chunks,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Semantics(
-                  button: true,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Navigator.of(sheetContext).pop(),
-                    child: SizedBox(
-                      height: 44,
-                      child: Center(
-                        child: Text(
-                          'Close',
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.primary,
+                        child: Center(
+                          child: AppIcon(
+                            AppIcons.cross,
+                            size: 16,
+                            color: colors.icon.accent,
                           ),
                         ),
                       ),
                     ),
                   ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _AddressChunkGrid(
+                key: const ValueKey('mobile_send_full_address_chunks'),
+                chunks: chunks,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Semantics(
+                button: true,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.of(sheetContext).pop(),
+                  child: SizedBox(
+                    height: 44,
+                    child: Center(
+                      child: Text(
+                        'Close',
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.primary,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         );
       },
@@ -423,7 +421,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   Future<void> _editMemo() async {
-    final next = await showAppMobileFloatingCard<String>(
+    // A bottom sheet, not a top-pinned card: the modal rises from the
+    // bottom and the sheet frame floats it 16px above the software
+    // keyboard (Figma `Review Add Memo`, 4638:74505).
+    final next = await showAppMobileSheet<String>(
       context: context,
       builder: (_) => _MemoSheet(initial: _memo),
     );
@@ -437,37 +438,39 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       context: context,
       builder: (sheetContext) {
         final colors = sheetContext.colors;
-        return MobileBottomSafeArea(
-          bottomPadding: AppSpacing.base,
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.base),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Tx fee',
-                  style: AppTypography.headlineSmall.copyWith(
-                    color: colors.text.accent,
-                  ),
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sm,
+            AppSpacing.base,
+            AppSpacing.sm,
+            AppSpacing.base,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Tx fee',
+                style: AppTypography.headlineSmall.copyWith(
+                  color: colors.text.accent,
                 ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  'The network fee is set by the Zcash protocol (ZIP 317) '
-                  'based on the transaction size. Vizor adds no extra fee.',
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.primary,
-                  ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'The network fee is set by the Zcash protocol (ZIP 317) '
+                'based on the transaction size. Vizor adds no extra fee.',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.primary,
                 ),
-                const SizedBox(height: AppSpacing.md),
-                AppButton(
-                  variant: AppButtonVariant.secondary,
-                  expand: true,
-                  onPressed: () => Navigator.of(sheetContext).pop(),
-                  child: const Text('Close'),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppButton(
+                variant: AppButtonVariant.secondary,
+                expand: true,
+                onPressed: () => Navigator.of(sheetContext).pop(),
+                child: const Text('Close'),
+              ),
+            ],
           ),
         );
       },
@@ -735,9 +738,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 // it has text the shared clear (X) takes the slot. The
                 // pill needs its intrinsic width, hence trailingFitsSlot.
                 showClearButton: true,
-                trailing: _PasteButton(
-                  onTap: () => unawaited(_pasteAddress()),
-                ),
+                trailing: _PasteButton(onTap: () => unawaited(_pasteAddress())),
                 trailingFitsSlot: true,
                 onChanged: (_) => _handleAddressChanged(),
                 onClear: _handleAddressChanged,
@@ -1117,7 +1118,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                           child: GestureDetector(
                             key: const ValueKey('mobile_send_full_address'),
                             behavior: HitTestBehavior.opaque,
-                            onTap: () => unawaited(_showFullAddressSheet(address)),
+                            onTap: () =>
+                                unawaited(_showFullAddressSheet(address)),
                             child: Row(
                               children: [
                                 AppIcon(
@@ -1492,8 +1494,8 @@ class _MemoSheetState extends State<_MemoSheet> {
     final colors = context.colors;
     final overLimit = _usedBytes > _memoByteLimit;
 
-    // Hosted in the floating card (pinned top), so the keyboard slides
-    // in below the card and no inset compensation is needed.
+    // The sheet frame floats this card above the software keyboard, so
+    // no manual keyboard inset is needed here.
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
@@ -1639,63 +1641,65 @@ class MobileSaplingParamsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return MobileBottomSafeArea(
-      bottomPadding: AppSpacing.md,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Download Required',
-              style: AppTypography.headlineSmall.copyWith(
-                color: colors.text.accent,
-              ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Download Required',
+            style: AppTypography.headlineSmall.copyWith(
+              color: colors.text.accent,
             ),
-            const SizedBox(height: AppSpacing.s),
-            Text(
-              'To create this private transaction, your wallet needs to '
-              'download about 50MB of cryptographic parameters.',
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.primary,
-              ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          Text(
+            'To create this private transaction, your wallet needs to '
+            'download about 50MB of cryptographic parameters.',
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.primary,
             ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              "This happens once, then it's done.\n"
-              'Network data charges may apply.',
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.secondary,
-              ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            "This happens once, then it's done.\n"
+            'Network data charges may apply.',
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
             ),
-            const SizedBox(height: AppSpacing.md),
-            AppButton(
-              key: const ValueKey('mobile_send_sapling_download'),
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Download'),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Semantics(
-              button: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => Navigator.of(context).pop(false),
-                child: SizedBox(
-                  height: 44,
-                  child: Center(
-                    child: Text(
-                      'Cancel',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.primary,
-                      ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('mobile_send_sapling_download'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Download'),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Semantics(
+            button: true,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).pop(false),
+              child: SizedBox(
+                height: 44,
+                child: Center(
+                  child: Text(
+                    'Cancel',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.primary,
                     ),
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1754,9 +1758,7 @@ class _AddressChunkGrid extends StatelessWidget {
     const columns = 5;
     final rows = <List<int>>[];
     for (var i = 0; i < chunks.length; i += columns) {
-      rows.add([
-        for (var c = i; c < i + columns && c < chunks.length; c++) c,
-      ]);
+      rows.add([for (var c = i; c < i + columns && c < chunks.length; c++) c]);
     }
     final lastIndex = chunks.length - 1;
     return Column(
@@ -1773,8 +1775,7 @@ class _AddressChunkGrid extends StatelessWidget {
                         ? Text(
                             chunks[rows[r][c]],
                             style: AppTypography.bodyMediumStrong.copyWith(
-                              color:
-                                  rows[r][c] == 0 || rows[r][c] == lastIndex
+                              color: rows[r][c] == 0 || rows[r][c] == lastIndex
                                   ? colors.text.brandCrimson
                                   : colors.text.accent,
                             ),

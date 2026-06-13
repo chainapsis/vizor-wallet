@@ -9,7 +9,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
-import '../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -175,25 +174,21 @@ class _MobileImportBirthdayScreenState
         // The calendar panel is its own card; drop the sheet surface so
         // only the scrim and the calendar show.
         transparentBackground: true,
-        builder: (sheetContext) => MobileBottomSafeArea(
-          bottomPadding: AppSpacing.sm,
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.sm),
-            // mainAxisSize.min so the sheet hugs the calendar instead of
-            // claiming the scroll-controlled full height.
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ImportBirthdayCalendarPanel(
-                  initialMonth: initial,
-                  selectedDate: _selectedDate,
-                  firstDate: _firstDate,
-                  lastDate: _lastDate,
-                  onDateSelected: (date) =>
-                      Navigator.of(sheetContext).pop(date),
-                ),
-              ],
-            ),
+        builder: (sheetContext) => Padding(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          // mainAxisSize.min so the sheet hugs the calendar instead of
+          // claiming the scroll-controlled full height.
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ImportBirthdayCalendarPanel(
+                initialMonth: initial,
+                selectedDate: _selectedDate,
+                firstDate: _firstDate,
+                lastDate: _lastDate,
+                onDateSelected: (date) => Navigator.of(sheetContext).pop(date),
+              ),
+            ],
           ),
         ),
       );
@@ -390,8 +385,9 @@ class _MobileImportBirthdayScreenState
                                     onChanged: (_) =>
                                         setState(() => _error = null),
                                     maxLines: 1,
-                                    style: AppTypography.headlineSmall
-                                        .copyWith(color: colors.text.accent),
+                                    style: AppTypography.headlineSmall.copyWith(
+                                      color: colors.text.accent,
+                                    ),
                                     cursorColor: colors.text.accent,
                                     decoration: null,
                                   ),
@@ -436,9 +432,7 @@ class _MobileImportBirthdayScreenState
                   ? 'At least $_minHeight.'
                   : 'Between $_minHeight and ${_metadata!.tipHeight}.',
               textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.muted,
-              ),
+              style: AppTypography.bodySmall.copyWith(color: colors.text.muted),
             ),
         ],
       ),

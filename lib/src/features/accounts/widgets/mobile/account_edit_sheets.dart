@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/account_name_policy.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
-import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -128,119 +127,116 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return MobileBottomSafeArea(
-      bottomPadding: AppSpacing.md,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.md + MediaQuery.viewInsetsOf(context).bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: MobileSheetClose(
-                onTap: () => Navigator.of(context).pop(),
-              ),
-            ),
-            Center(
-              child: Semantics(
-                button: true,
-                label: 'Change profile picture',
-                excludeSemantics: true,
-                child: GestureDetector(
-                  key: const ValueKey('mobile_account_edit_avatar'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _pickPicture,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      AppProfilePicture(
-                        profilePictureId: _profilePictureId,
-                        size: AppProfilePictureSize.xLarge,
-                      ),
-                      Positioned(
-                        right: -4,
-                        bottom: -4,
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: colors.background.homeCard,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: AppIcon(
-                              AppIcons.edit,
-                              size: AppIconSize.medium,
-                              color: colors.text.homeCard,
-                            ),
+    return Padding(
+      // The keyboard inset is handled by the sheet frame, which floats the
+      // whole card above the software keyboard.
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: MobileSheetClose(onTap: () => Navigator.of(context).pop()),
+          ),
+          Center(
+            child: Semantics(
+              button: true,
+              label: 'Change profile picture',
+              excludeSemantics: true,
+              child: GestureDetector(
+                key: const ValueKey('mobile_account_edit_avatar'),
+                behavior: HitTestBehavior.opaque,
+                onTap: _pickPicture,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    AppProfilePicture(
+                      profilePictureId: _profilePictureId,
+                      size: AppProfilePictureSize.xLarge,
+                    ),
+                    Positioned(
+                      right: -4,
+                      bottom: -4,
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: colors.background.homeCard,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: AppIcon(
+                            AppIcons.edit,
+                            size: AppIconSize.medium,
+                            color: colors.text.homeCard,
                           ),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              'Account name',
-              style: AppTypography.labelMedium.copyWith(
-                color: colors.text.secondary,
-              ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            'Account name',
+            style: AppTypography.labelMedium.copyWith(
+              color: colors.text.secondary,
             ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: AppSpacing.s,
+            ),
+            decoration: BoxDecoration(
+              color: colors.background.ground,
+              borderRadius: BorderRadius.circular(AppRadii.medium),
+              border: Border.all(color: colors.border.subtle),
+            ),
+            // A real TextField (bare, no decoration) rather than raw
+            // EditableText so long-press selection and the paste menu
+            // work; the container owns all visible chrome.
+            child: TextField(
+              key: const ValueKey('mobile_account_edit_name'),
+              controller: _nameController,
+              focusNode: _nameFocusNode,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.accent,
+              ),
+              cursorColor: colors.text.accent,
+              decoration: null,
+            ),
+          ),
+          if (_error != null) ...[
             const SizedBox(height: AppSpacing.xs),
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.sm,
-                vertical: AppSpacing.s,
-              ),
-              decoration: BoxDecoration(
-                color: colors.background.ground,
-                borderRadius: BorderRadius.circular(AppRadii.medium),
-                border: Border.all(color: colors.border.subtle),
-              ),
-              // A real TextField (bare, no decoration) rather than raw
-              // EditableText so long-press selection and the paste menu
-              // work; the container owns all visible chrome.
-              child: TextField(
-                key: const ValueKey('mobile_account_edit_name'),
-                controller: _nameController,
-                focusNode: _nameFocusNode,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.accent,
-                ),
-                cursorColor: colors.text.accent,
-                decoration: null,
+            Text(
+              _error!,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.destructive,
               ),
             ),
-            if (_error != null) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                _error!,
-                style: AppTypography.bodySmall.copyWith(
-                  color: colors.text.destructive,
-                ),
-              ),
-            ],
-            // 48 from the field to Save edits per the Accounts Edits
-            // frame (field bottom 627 → button top 677).
-            const SizedBox(height: AppSpacing.lg),
-            AppButton(
-              key: const ValueKey('mobile_account_edit_save'),
-              expand: true,
-              onPressed: _save,
-              child: const Text('Save edits'),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
           ],
-        ),
+          // 48 from the field to Save edits per the Accounts Edits
+          // frame (field bottom 627 → button top 677).
+          const SizedBox(height: AppSpacing.lg),
+          AppButton(
+            key: const ValueKey('mobile_account_edit_save'),
+            expand: true,
+            onPressed: _save,
+            child: const Text('Save edits'),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
+        ],
       ),
     );
   }
@@ -261,94 +257,94 @@ class _ProfilePictureSheetState extends State<_ProfilePictureSheet> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return MobileBottomSafeArea(
-      bottomPadding: AppSpacing.md,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Align(
-              alignment: Alignment.topRight,
-              child: MobileSheetClose(
-                onTap: () => Navigator.of(context).pop(),
-              ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.topRight,
+            child: MobileSheetClose(onTap: () => Navigator.of(context).pop()),
+          ),
+          Center(
+            child: AppProfilePicture(
+              profilePictureId: _selected,
+              size: AppProfilePictureSize.xLarge,
             ),
-            Center(
-              child: AppProfilePicture(
-                profilePictureId: _selected,
-                size: AppProfilePictureSize.xLarge,
-              ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Select profile picture',
+            textAlign: TextAlign.center,
+            style: AppTypography.headlineSmall.copyWith(
+              color: colors.text.accent,
             ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              'Select profile picture',
-              textAlign: TextAlign.center,
-              style: AppTypography.headlineSmall.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            // 5-up grid of 56 px portraits per the Figma PFP modal.
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              children: [
-                for (final option in kProfilePictureOptions)
-                  Semantics(
-                    button: true,
-                    label: option.label,
-                    selected: option.id == _selected,
-                    excludeSemantics: true,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => setState(() => _selected = option.id),
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          AppProfilePicture(
-                            profilePictureId: option.id,
-                            size: AppProfilePictureSize.xLarge,
-                          ),
-                          if (option.id == _selected)
-                            Positioned(
-                              left: -2,
-                              bottom: -2,
-                              child: Container(
-                                width: 22,
-                                height: 22,
-                                decoration: BoxDecoration(
-                                  color: colors.background.homeCard,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child: AppIcon(
-                                    AppIcons.check,
-                                    size: 14,
-                                    color: colors.text.homeCard,
-                                  ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          // 5-up grid of 56 px portraits per the Figma PFP modal.
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: [
+              for (final option in kProfilePictureOptions)
+                Semantics(
+                  button: true,
+                  label: option.label,
+                  selected: option.id == _selected,
+                  excludeSemantics: true,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => setState(() => _selected = option.id),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        AppProfilePicture(
+                          profilePictureId: option.id,
+                          size: AppProfilePictureSize.xLarge,
+                        ),
+                        if (option.id == _selected)
+                          Positioned(
+                            left: -2,
+                            bottom: -2,
+                            child: Container(
+                              width: 22,
+                              height: 22,
+                              decoration: BoxDecoration(
+                                color: colors.background.homeCard,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: AppIcon(
+                                  AppIcons.check,
+                                  size: 14,
+                                  color: colors.text.homeCard,
                                 ),
                               ),
                             ),
-                        ],
-                      ),
+                          ),
+                      ],
                     ),
                   ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppButton(
-              key: const ValueKey('mobile_account_pfp_update'),
-              expand: true,
-              onPressed: () => Navigator.of(context).pop(_selected),
-              child: const Text('Update picture'),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
-          ],
-        ),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('mobile_account_pfp_update'),
+            expand: true,
+            onPressed: () => Navigator.of(context).pop(_selected),
+            child: const Text('Update picture'),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
+        ],
       ),
     );
   }

@@ -9,7 +9,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
-import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -445,54 +444,56 @@ class _RemoveAccountSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return MobileBottomSafeArea(
-      bottomPadding: AppSpacing.md,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                MobileAccountAvatar(
-                  profilePictureId: account.profilePictureId,
-                  size: AppProfilePictureSize.large,
-                  isHardware: account.isHardware,
-                ),
-                const SizedBox(width: AppSpacing.s),
-                Expanded(
-                  child: Text(
-                    'Remove account',
-                    style: AppTypography.headlineSmall.copyWith(
-                      color: colors.text.accent,
-                    ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              MobileAccountAvatar(
+                profilePictureId: account.profilePictureId,
+                size: AppProfilePictureSize.large,
+                isHardware: account.isHardware,
+              ),
+              const SizedBox(width: AppSpacing.s),
+              Expanded(
+                child: Text(
+                  'Remove account',
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.text.accent,
                   ),
                 ),
-                MobileSheetClose(onTap: () => Navigator.of(context).pop(false)),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              "Are you sure you want to remove this account? This action "
-              "can't be reverted. You will have to re-import your account.",
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.primary,
               ),
+              MobileSheetClose(onTap: () => Navigator.of(context).pop(false)),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            "Are you sure you want to remove this account? This action "
+            "can't be reverted. You will have to re-import your account.",
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.primary,
             ),
-            const SizedBox(height: AppSpacing.md),
-            AppButton(
-              key: const ValueKey('mobile_account_remove_confirm'),
-              variant: AppButtonVariant.destructive,
-              expand: true,
-              onPressed: () => Navigator.of(context).pop(true),
-              leading: const AppIcon(AppIcons.trash),
-              child: const Text('Remove'),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            MobileSheetCancel(onTap: () => Navigator.of(context).pop(false)),
-          ],
-        ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('mobile_account_remove_confirm'),
+            variant: AppButtonVariant.destructive,
+            expand: true,
+            onPressed: () => Navigator.of(context).pop(true),
+            leading: const AppIcon(AppIcons.trash),
+            child: const Text('Remove'),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          MobileSheetCancel(onTap: () => Navigator.of(context).pop(false)),
+        ],
       ),
     );
   }

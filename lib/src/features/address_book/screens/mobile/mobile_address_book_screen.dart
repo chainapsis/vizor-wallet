@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
-import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -180,7 +179,11 @@ class _EmptyState extends StatelessWidget {
               borderRadius: BorderRadius.circular(AppRadii.small),
             ),
             child: Center(
-              child: AppIcon(AppIcons.users, size: 24, color: colors.icon.inverse),
+              child: AppIcon(
+                AppIcons.users,
+                size: 24,
+                color: colors.icon.inverse,
+              ),
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -408,162 +411,159 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isEdit = widget.contact != null;
-    return MobileBottomSafeArea(
-      bottomPadding: AppSpacing.md,
-      // Scrollable so a tall keyboard (e.g. Korean with its candidate
-      // bar) compresses the sheet instead of overflowing it and hiding
-      // the save button.
-      child: SingleChildScrollView(
-        padding: EdgeInsets.only(
-          left: AppSpacing.md,
-          right: AppSpacing.md,
-          top: AppSpacing.md,
-          // Keep the fields above the keyboard.
-          bottom: MediaQuery.viewInsetsOf(context).bottom + AppSpacing.md,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    isEdit ? 'Edit contact' : 'Add contact',
-                    style: AppTypography.headlineSmall.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ),
-                MobileSheetClose(onTap: () => Navigator.of(context).pop()),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Center(
-              child: Semantics(
-                button: true,
-                label: 'Change contact picture',
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _pickAvatar(),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      AppProfilePicture(
-                        profilePictureId: _profilePictureId,
-                        size: AppProfilePictureSize.xLarge,
-                      ),
-                      Positioned(
-                        right: -2,
-                        bottom: -2,
-                        child: Container(
-                          width: 22,
-                          height: 22,
-                          decoration: BoxDecoration(
-                            color: colors.background.inverse,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: AppIcon(
-                              AppIcons.edit,
-                              size: 12,
-                              color: colors.icon.inverse,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+    // Scrollable so a tall keyboard (e.g. Korean with its candidate bar)
+    // compresses the sheet instead of overflowing it and hiding the save
+    // button. The sheet frame floats the whole card above the keyboard,
+    // so no manual keyboard inset is needed here.
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  isEdit ? 'Edit contact' : 'Add contact',
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.text.accent,
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            _FieldLabel('Network'),
-            const SizedBox(height: AppSpacing.xxs),
-            Semantics(
-              button: true,
-              label: 'Select network',
-              child: GestureDetector(
-                key: const ValueKey('mobile_address_book_network'),
-                behavior: HitTestBehavior.opaque,
-                onTap: () => unawaited(_pickNetwork()),
-                child: _FieldShell(
-                  child: Row(
-                    children: [
-                      AddressBookNetworkIcon(network: _network, size: 20),
-                      const SizedBox(width: AppSpacing.xs),
-                      Expanded(
-                        child: Text(
-                          _network.label,
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.accent,
-                          ),
-                        ),
-                      ),
-                      AppIcon(
-                        AppIcons.expand,
-                        size: AppIconSize.medium,
-                        color: colors.icon.muted,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            _FieldLabel('Name'),
-            const SizedBox(height: AppSpacing.xxs),
-            _FieldShell(
-              // A real TextField (bare, no decoration) rather than raw
-              // EditableText so long-press selection and the paste menu
-              // work; the shell owns all visible chrome.
-              child: TextField(
-                key: const ValueKey('mobile_address_book_label'),
-                controller: _labelController,
-                focusNode: _labelFocus,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.accent,
-                ),
-                cursorColor: colors.text.accent,
-                decoration: null,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            _FieldLabel('Address'),
-            const SizedBox(height: AppSpacing.xxs),
-            _FieldShell(
-              child: TextField(
-                key: const ValueKey('mobile_address_book_address'),
-                controller: _addressController,
-                focusNode: _addressFocus,
-                maxLines: 2,
-                style: AppTypography.codeMedium.copyWith(
-                  color: colors.text.accent,
-                ),
-                cursorColor: colors.text.accent,
-                decoration: null,
-              ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                _error!,
-                style: AppTypography.bodySmall.copyWith(
-                  color: colors.text.destructive,
-                ),
-              ),
+              MobileSheetClose(onTap: () => Navigator.of(context).pop()),
             ],
-            const SizedBox(height: AppSpacing.md),
-            AppButton(
-              key: const ValueKey('mobile_address_book_save'),
-              expand: true,
-              onPressed: _save,
-              child: Text(isEdit ? 'Save contact' : 'Add contact'),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Center(
+            child: Semantics(
+              button: true,
+              label: 'Change contact picture',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _pickAvatar(),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    AppProfilePicture(
+                      profilePictureId: _profilePictureId,
+                      size: AppProfilePictureSize.xLarge,
+                    ),
+                    Positioned(
+                      right: -2,
+                      bottom: -2,
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: colors.background.inverse,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: AppIcon(
+                            AppIcons.edit,
+                            size: 12,
+                            color: colors.icon.inverse,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: AppSpacing.s),
-            MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          _FieldLabel('Network'),
+          const SizedBox(height: AppSpacing.xxs),
+          Semantics(
+            button: true,
+            label: 'Select network',
+            child: GestureDetector(
+              key: const ValueKey('mobile_address_book_network'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => unawaited(_pickNetwork()),
+              child: _FieldShell(
+                child: Row(
+                  children: [
+                    AddressBookNetworkIcon(network: _network, size: 20),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        _network.label,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                    ),
+                    AppIcon(
+                      AppIcons.expand,
+                      size: AppIconSize.medium,
+                      color: colors.icon.muted,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          _FieldLabel('Name'),
+          const SizedBox(height: AppSpacing.xxs),
+          _FieldShell(
+            // A real TextField (bare, no decoration) rather than raw
+            // EditableText so long-press selection and the paste menu
+            // work; the shell owns all visible chrome.
+            child: TextField(
+              key: const ValueKey('mobile_address_book_label'),
+              controller: _labelController,
+              focusNode: _labelFocus,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.accent,
+              ),
+              cursorColor: colors.text.accent,
+              decoration: null,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          _FieldLabel('Address'),
+          const SizedBox(height: AppSpacing.xxs),
+          _FieldShell(
+            child: TextField(
+              key: const ValueKey('mobile_address_book_address'),
+              controller: _addressController,
+              focusNode: _addressFocus,
+              maxLines: 2,
+              style: AppTypography.codeMedium.copyWith(
+                color: colors.text.accent,
+              ),
+              cursorColor: colors.text.accent,
+              decoration: null,
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              _error!,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.destructive,
+              ),
+            ),
           ],
-        ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('mobile_address_book_save'),
+            expand: true,
+            onPressed: _save,
+            child: Text(isEdit ? 'Save contact' : 'Add contact'),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
+        ],
       ),
     );
   }
@@ -616,74 +616,73 @@ class _NetworkPickerSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return MobileBottomSafeArea(
-      bottomPadding: AppSpacing.md,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Select network',
-                    style: AppTypography.headlineSmall.copyWith(
-                      color: colors.text.accent,
-                    ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Select network',
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.text.accent,
                   ),
                 ),
-                MobileSheetClose(onTap: () => Navigator.of(context).pop()),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 420),
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final network in AddressBookNetwork.values)
-                    Semantics(
-                      button: true,
-                      selected: network == selected,
-                      label: network.label,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => Navigator.of(context).pop(network),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(minHeight: 52),
-                          child: Row(
-                            children: [
-                              AddressBookNetworkIcon(
-                                network: network,
-                                size: 24,
-                              ),
-                              const SizedBox(width: AppSpacing.s),
-                              Expanded(
-                                child: Text(
-                                  network.label,
-                                  style: AppTypography.bodyMedium.copyWith(
-                                    color: colors.text.accent,
-                                  ),
+              ),
+              MobileSheetClose(onTap: () => Navigator.of(context).pop()),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 420),
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final network in AddressBookNetwork.values)
+                  Semantics(
+                    button: true,
+                    selected: network == selected,
+                    label: network.label,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => Navigator.of(context).pop(network),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 52),
+                        child: Row(
+                          children: [
+                            AddressBookNetworkIcon(network: network, size: 24),
+                            const SizedBox(width: AppSpacing.s),
+                            Expanded(
+                              child: Text(
+                                network.label,
+                                style: AppTypography.bodyMedium.copyWith(
+                                  color: colors.text.accent,
                                 ),
                               ),
-                              if (network == selected)
-                                AppIcon(
-                                  AppIcons.check,
-                                  size: AppIconSize.medium,
-                                  color: colors.icon.accent,
-                                ),
-                            ],
-                          ),
+                            ),
+                            if (network == selected)
+                              AppIcon(
+                                AppIcons.check,
+                                size: AppIconSize.medium,
+                                color: colors.icon.accent,
+                              ),
+                          ],
                         ),
                       ),
                     ),
-                ],
-              ),
+                  ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -697,49 +696,49 @@ class _RemoveContactSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return MobileBottomSafeArea(
-      bottomPadding: AppSpacing.md,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Remove contact?',
-                    style: AppTypography.headlineSmall.copyWith(
-                      color: colors.text.accent,
-                    ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Remove contact?',
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.text.accent,
                   ),
                 ),
-                MobileSheetClose(
-                  onTap: () => Navigator.of(context).pop(false),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              '"${contact.label}" will be removed from your address book. '
-              'This does not affect any past transactions.',
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.primary,
               ),
+              MobileSheetClose(onTap: () => Navigator.of(context).pop(false)),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            '"${contact.label}" will be removed from your address book. '
+            'This does not affect any past transactions.',
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.primary,
             ),
-            const SizedBox(height: AppSpacing.md),
-            AppButton(
-              key: const ValueKey('mobile_address_book_remove_confirm'),
-              expand: true,
-              variant: AppButtonVariant.destructive,
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Remove contact'),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            MobileSheetCancel(onTap: () => Navigator.of(context).pop(false)),
-          ],
-        ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('mobile_address_book_remove_confirm'),
+            expand: true,
+            variant: AppButtonVariant.destructive,
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Remove contact'),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          MobileSheetCancel(onTap: () => Navigator.of(context).pop(false)),
+        ],
       ),
     );
   }

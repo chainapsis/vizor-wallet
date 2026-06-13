@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
-import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/profile_pictures.dart';
@@ -40,7 +39,8 @@ class MobileSettingsScreen extends ConsumerWidget {
     final endpoint = ref.watch(rpcEndpointProvider).hostPort;
     final themeMode = ref.watch(themeModeProvider);
     final biometric =
-        ref.watch(biometricUnlockProvider).value ?? BiometricUnlockState.initial;
+        ref.watch(biometricUnlockProvider).value ??
+        BiometricUnlockState.initial;
 
     return SafeArea(
       bottom: false,
@@ -148,14 +148,12 @@ class MobileSettingsScreen extends ConsumerWidget {
                       MobileListRow(
                         key: const ValueKey('mobile_settings_biometric_row'),
                         leading: _RowIcon(AppIcons.lock),
-                        label: biometric.availability.kind ==
-                                BiometricKind.face
+                        label: biometric.availability.kind == BiometricKind.face
                             ? 'Face ID'
                             : 'Fingerprint',
                         value: biometric.enabled ? 'On' : 'Off',
                         showChevron: true,
-                        onTap: () =>
-                            unawaited(_toggleBiometric(context, ref)),
+                        onTap: () => unawaited(_toggleBiometric(context, ref)),
                       ),
                   ],
                 ),
@@ -340,89 +338,86 @@ class _ThemeSheetState extends State<_ThemeSheet> {
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-    return MobileBottomSafeArea(
-      bottomPadding: AppSpacing.sm,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.sm),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Theme',
-                    style: AppTypography.headlineSmall.copyWith(
-                      color: colors.text.accent,
-                    ),
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Theme',
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.text.accent,
                   ),
                 ),
-                Semantics(
-                  label: 'Close',
-                  button: true,
-                  excludeSemantics: true,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Navigator.of(context).pop(),
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: colors.background.raised,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: AppIcon(
-                          AppIcons.cross,
-                          size: AppIconSize.medium,
-                          color: colors.icon.accent,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            for (final (mode, iconName, label) in _options) ...[
-              _ThemeOptionCard(
-                key: ValueKey('mobile_theme_option_${mode.name}'),
-                iconName: iconName,
-                label: label,
-                selected: mode == _selected,
-                onTap: () => setState(() => _selected = mode),
               ),
-              const SizedBox(height: AppSpacing.xs),
+              Semantics(
+                label: 'Close',
+                button: true,
+                excludeSemantics: true,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: colors.background.raised,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: AppIcon(
+                        AppIcons.cross,
+                        size: AppIconSize.medium,
+                        color: colors.icon.accent,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ],
-            const SizedBox(height: AppSpacing.xs),
-            AppButton(
-              key: const ValueKey('mobile_theme_update'),
-              expand: true,
-              onPressed: () => Navigator.of(context).pop(_selected),
-              child: const Text('Update'),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          for (final (mode, iconName, label) in _options) ...[
+            _ThemeOptionCard(
+              key: ValueKey('mobile_theme_option_${mode.name}'),
+              iconName: iconName,
+              label: label,
+              selected: mode == _selected,
+              onTap: () => setState(() => _selected = mode),
             ),
             const SizedBox(height: AppSpacing.xs),
-            Semantics(
-              button: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => Navigator.of(context).pop(),
-                child: SizedBox(
-                  height: 44,
-                  child: Center(
-                    child: Text(
-                      'Cancel',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.primary,
-                      ),
+          ],
+          const SizedBox(height: AppSpacing.xs),
+          AppButton(
+            key: const ValueKey('mobile_theme_update'),
+            expand: true,
+            onPressed: () => Navigator.of(context).pop(_selected),
+            child: const Text('Update'),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Semantics(
+            button: true,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).pop(),
+              child: SizedBox(
+                height: 44,
+                child: Center(
+                  child: Text(
+                    'Cancel',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.primary,
                     ),
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

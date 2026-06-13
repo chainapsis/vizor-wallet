@@ -8,7 +8,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
-import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/platform/screenshot_observer.dart';
 import '../../../../core/storage/wallet_paths.dart';
@@ -153,8 +152,7 @@ class _MobileSeedPhraseScreenState
     if (account == null) {
       revealError = 'No active account is selected.';
     } else if (account.isHardware) {
-      revealError =
-          'Secret passphrase is not available for hardware accounts.';
+      revealError = 'Secret passphrase is not available for hardware accounts.';
     } else {
       mnemonic = await ref
           .read(accountProvider.notifier)
@@ -353,8 +351,7 @@ class _MobileSeedPhraseScreenState
                     _CopyChip(
                       key: const ValueKey('mobile_seed_copy'),
                       label: 'Copy',
-                      onTap: () =>
-                          _copy(_mnemonic, 'Secret passphrase copied'),
+                      onTap: () => _copy(_mnemonic, 'Secret passphrase copied'),
                     ),
                   ],
                 ),
@@ -383,14 +380,13 @@ class _MobileSeedPhraseScreenState
                 ),
                 _BirthdayRow(
                   label: 'Birthday block height',
-                  value: _birthdayHeight?.toString() ??
+                  value:
+                      _birthdayHeight?.toString() ??
                       (_birthdayLoading ? '…' : '—'),
                   onCopy: _birthdayHeight == null
                       ? null
-                      : () => _copy(
-                          '$_birthdayHeight',
-                          'Birthday height copied',
-                        ),
+                      : () =>
+                            _copy('$_birthdayHeight', 'Birthday height copied'),
                 ),
               ],
             ),
@@ -528,9 +524,7 @@ class _BirthdayRow extends StatelessWidget {
           ),
           Text(
             value,
-            style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.accent,
-            ),
+            style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           ),
           if (onCopy != null) ...[
             const SizedBox(width: AppSpacing.xs),
@@ -568,57 +562,55 @@ class _ScreenshotWarningSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return MobileBottomSafeArea(
-      bottomPadding: AppSpacing.base,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.base),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            AppIcon(
-              AppIcons.eyeClosed,
-              size: 28,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.base,
+        AppSpacing.sm,
+        AppSpacing.base,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppIcon(AppIcons.eyeClosed, size: 28, color: colors.text.destructive),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            "Don't take screenshots of\nyour Secret Passphrase",
+            textAlign: TextAlign.center,
+            style: AppTypography.displaySmall.copyWith(
               color: colors.text.destructive,
             ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              "Don't take screenshots of\nyour Secret Passphrase",
-              textAlign: TextAlign.center,
-              style: AppTypography.displaySmall.copyWith(
-                color: colors.text.destructive,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text.rich(
+            TextSpan(
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.primary,
               ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text.rich(
-              TextSpan(
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.primary,
+              children: const [
+                TextSpan(
+                  text: 'Screenshots are not reliable. ',
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                children: const [
-                  TextSpan(
-                    text: 'Screenshots are not reliable. ',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  TextSpan(
-                    text:
-                        'Anyone who has access to your phone or your photo '
-                        'library will be able to see your Secret Passphrase. '
-                        'Write down your Phrase on a piece of paper instead.',
-                  ),
-                ],
-              ),
-              textAlign: TextAlign.center,
+                TextSpan(
+                  text:
+                      'Anyone who has access to your phone or your photo '
+                      'library will be able to see your Secret Passphrase. '
+                      'Write down your Phrase on a piece of paper instead.',
+                ),
+              ],
             ),
-            const SizedBox(height: AppSpacing.md),
-            AppButton(
-              key: const ValueKey('mobile_seed_screenshot_ack'),
-              expand: true,
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('I understand'),
-            ),
-          ],
-        ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('mobile_seed_screenshot_ack'),
+            expand: true,
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('I understand'),
+          ),
+        ],
       ),
     );
   }
