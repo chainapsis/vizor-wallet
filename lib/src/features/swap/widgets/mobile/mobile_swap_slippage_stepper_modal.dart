@@ -1,12 +1,16 @@
+import 'package:flutter/material.dart' show InputDecoration, TextField;
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 
-/// Mobile slippage editor — Figma `Slippage` (4700:121854): a serif
-/// value with minus/plus steppers instead of the desktop's radio
-/// presets. Steps by 0.25% within 0.1–5%.
+/// Mobile slippage editor — Figma `Slippage` (4700:121854 / 4700:123165 /
+/// 4700:123470): a serif value that can be nudged with the minus/plus
+/// steppers (0.25% within 0.1–5%) OR typed directly via the system
+/// keypad. Out-of-range input turns the value and a "Slippage must be
+/// 0.1 - 5%" message accent-magenta and disables Update.
 class MobileSwapSlippageStepperModal extends StatefulWidget {
   const MobileSwapSlippageStepperModal({
     required this.slippageBps,
@@ -30,11 +34,30 @@ class _MobileSwapSlippageStepperModalState
   static const _maxBps = 500; // 5%
   static const _stepBps = 25; // 0.25%
 
-  late int _bps = widget.slippageBps.clamp(_minBps, _maxBps);
+  late final TextEditingController _controller;
+  final FocusNode _focusNode = FocusNode();
 
-  String get _percentText {
-    final percent = _bps / 100;
-    var text = percent.toStringAsFixed(2);
+  /// Parsed basis points from the current text, or null when the field is
+  /// empty / unparseable.
+  int? _bps;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.slippageBps.clamp(_minBps, _maxBps);
+    _bps = initial;
+    _controller = TextEditingController(text: _formatBps(initial));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  static String _formatBps(int bps) {
+    var text = (bps / 100).toStringAsFixed(2);
     while (text.endsWith('0')) {
       text = text.substring(0, text.length - 1);
     }
@@ -42,15 +65,33 @@ class _MobileSwapSlippageStepperModalState
     return text;
   }
 
+  bool get _inRange => _bps != null && _bps! >= _minBps && _bps! <= _maxBps;
+  bool get _canUpdate => _inRange && _bps != widget.slippageBps;
+
+  void _onChanged(String text) {
+    final value = double.tryParse(text.trim());
+    setState(() => _bps = value == null ? null : (value * 100).round());
+  }
+
   void _step(int direction) {
+    final base = (_bps ?? widget.slippageBps).clamp(_minBps, _maxBps);
+    final next = (base + direction * _stepBps).clamp(_minBps, _maxBps);
     setState(() {
-      _bps = (_bps + direction * _stepBps).clamp(_minBps, _maxBps);
+      _bps = next;
+      _controller.text = _formatBps(next);
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final invalid = !_inRange;
+    // Out-of-range turns the value and message the destructive magenta
+    // tone (Figma 4700:123470); in-range stays the primary serif colour.
+    final valueColor = invalid ? colors.text.destructive : colors.text.primary;
     return Container(
       width: 360,
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -99,49 +140,80 @@ class _MobileSwapSlippageStepperModalState
           ),
           const SizedBox(height: AppSpacing.md),
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _StepperButton(
                 key: const ValueKey('mobile_swap_slippage_minus'),
                 label: '-',
-                enabled: _bps > _minBps,
+                enabled: (_bps ?? _minBps) > _minBps,
                 onTap: () => _step(-1),
               ),
               Expanded(
-                child: Text.rich(
-                  key: const ValueKey('mobile_swap_slippage_value'),
-                  TextSpan(
-                    text: _percentText,
-                    style: AppTypography.headlineLarge.copyWith(
-                      color: colors.text.accent,
-                    ),
-                    children: [
-                      TextSpan(
-                        text: ' %',
-                        style: AppTypography.headlineMedium.copyWith(
-                          color: colors.text.secondary,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: IntrinsicWidth(
+                        child: TextField(
+                          key: const ValueKey('mobile_swap_slippage_value'),
+                          controller: _controller,
+                          focusNode: _focusNode,
+                          autofocus: true,
+                          onChanged: _onChanged,
+                          textAlign: TextAlign.center,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                              RegExp(r'[0-9.]'),
+                            ),
+                          ],
+                          style: AppTypography.headlineLarge.copyWith(
+                            color: valueColor,
+                          ),
+                          cursorColor: colors.text.accent,
+                          cursorWidth: 2,
+                          cursorRadius: const Radius.circular(AppRadii.full),
+                          decoration: const InputDecoration.collapsed(
+                            hintText: '0',
+                          ),
                         ),
                       ),
-                    ],
-                  ),
-                  textAlign: TextAlign.center,
+                    ),
+                    Text(
+                      ' %',
+                      style: AppTypography.headlineMedium.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               _StepperButton(
                 key: const ValueKey('mobile_swap_slippage_plus'),
                 label: '+',
-                enabled: _bps < _maxBps,
+                enabled: (_bps ?? _maxBps) < _maxBps,
                 onTap: () => _step(1),
               ),
             ],
           ),
+          if (invalid) ...[
+            const SizedBox(height: AppSpacing.s),
+            Text(
+              'Slippage must be 0.1 - 5%',
+              key: const ValueKey('mobile_swap_slippage_error'),
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.destructive,
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.md),
           AppButton(
             key: const ValueKey('swap_slippage_update_button'),
             expand: true,
-            onPressed: _bps == widget.slippageBps
-                ? null
-                : () => widget.onSubmitted(_bps),
+            onPressed: _canUpdate ? () => widget.onSubmitted(_bps!) : null,
             child: const Text('Update'),
           ),
           const SizedBox(height: AppSpacing.s),

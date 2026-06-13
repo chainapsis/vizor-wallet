@@ -174,6 +174,11 @@ class _ReviewCard extends StatelessWidget {
             value: swapReviewSlippageToleranceText(quote),
           ),
           _ReviewRow(
+            label: 'Price protection',
+            value: compactSwapAmountText(quote.priceProtectionText),
+            helpTooltip: swapPriceProtectionTooltip,
+          ),
+          _ReviewRow(
             label: 'Minimum receive',
             value: compactSwapAmountText(quote.minimumReceiveText),
             helpTooltip: swapMinimumReceiveTooltip(quote.receiveAsset.symbol),

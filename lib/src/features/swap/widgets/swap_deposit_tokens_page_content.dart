@@ -51,7 +51,7 @@ class SwapDepositTokensPageContent extends StatelessWidget {
       actionArea: _DepositConfirmActionArea(
         checking: checking,
         warning: checkWarning,
-        buttonLabel: "I've deposited",
+        buttonLabel: "I've deposited tokens",
         onDeposited: onDeposited,
       ),
     );
@@ -687,10 +687,10 @@ class _DepositDetailsList extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _DepositDetailRow(
-            label: 'Amount',
+            label: 'Amount to deposit',
             value: amountText,
             copyText: amountText,
-            toastMessage: 'Amount Copied',
+            toastMessage: 'Amount copied',
             copyKey: const ValueKey('swap_copy_deposit_amount'),
           ),
           _DepositDetailRow(
