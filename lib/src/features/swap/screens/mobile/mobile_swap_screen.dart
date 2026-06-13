@@ -361,13 +361,6 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                           ),
                         ),
                       ],
-                      const SizedBox(height: AppSpacing.lg),
-                      const Center(
-                        child: Opacity(
-                          opacity: 0.5,
-                          child: SwapNearIntentsAttribution(),
-                        ),
-                      ),
                     ],
                   ),
                 ),
