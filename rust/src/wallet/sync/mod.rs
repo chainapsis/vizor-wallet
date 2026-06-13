@@ -493,6 +493,10 @@ mod tests {
     }
 
     #[test]
+    // TODO(#228): This rejection is correct for normal sends, but will need to
+    // become conditional once advanced Sprout migration is implemented. Sprout
+    // addresses should still be rejected for receive/show unless the user is in
+    // the legacy-migration flow.
     fn validate_address_rejects_sprout_addresses() {
         use zcash_address::ToAddress;
 
