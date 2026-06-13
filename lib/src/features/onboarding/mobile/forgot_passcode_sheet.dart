@@ -4,14 +4,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/sync_provider.dart';
 
-/// Figma `Forgot Passcode` (4596:50252): the reset confirmation sheet.
-/// Pops `true` when the user confirms the reset. Shown from the unlock
-/// screen and from the change-passcode verify step — losing the
-/// passcode has the same recovery either way.
+/// Figma `Forgot Passcode` (4596:50252): the first reset confirmation
+/// sheet. Pops `true` when the user wants to proceed; the caller then
+/// shows [ForgotPasscodeLastWarningSheet] as a second, irreversible-action
+/// gate before actually wiping the wallet. Shown only from the app-entry
+/// unlock screen (settings has no reset path — the user is already in).
 class ForgotPasscodeSheet extends StatelessWidget {
   const ForgotPasscodeSheet({super.key});
 
@@ -79,6 +81,115 @@ class ForgotPasscodeSheet extends StatelessWidget {
               expand: true,
               onPressed: () => Navigator.of(context).pop(true),
               child: const Text('Continue to reset Vizor'),
+            ),
+            const SizedBox(height: AppSpacing.s),
+            Semantics(
+              button: true,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).pop(false),
+                child: SizedBox(
+                  height: 44,
+                  child: Center(
+                    child: Text(
+                      'Cancel',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.primary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Figma `Forgot Passcode Last warning` (4600:50435): the second,
+/// irreversible-action confirmation shown after [ForgotPasscodeSheet].
+/// Pops `true` only when the user taps the destructive "Reset Vizor"
+/// button, so wiping the wallet always takes two deliberate confirmations.
+class ForgotPasscodeLastWarningSheet extends StatelessWidget {
+  const ForgotPasscodeLastWarningSheet({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MobileBottomSafeArea(
+      bottomPadding: AppSpacing.md,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Are you sure?',
+                    style: AppTypography.headlineSmall.copyWith(
+                      color: colors.text.primary,
+                    ),
+                  ),
+                ),
+                Semantics(
+                  button: true,
+                  label: 'Close',
+                  excludeSemantics: true,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => Navigator.of(context).pop(false),
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: colors.background.raised,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Text(
+                          '✕',
+                          style: AppTypography.labelMedium.copyWith(
+                            color: colors.text.accent,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: "This can't be undone.\n",
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
+                  TextSpan(
+                    text: 'Proceed on your responsibility.',
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppButton(
+              key: const ValueKey('mobile_forgot_passcode_last_warning_reset'),
+              variant: AppButtonVariant.destructive,
+              expand: true,
+              leading: const AppIcon(AppIcons.warning),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Reset Vizor'),
             ),
             const SizedBox(height: AppSpacing.s),
             Semantics(

@@ -114,7 +114,10 @@ void main() {
     await open(tester);
 
     expect(find.text('Enter Passcode'), findsOneWidget);
-    expect(find.bySemanticsLabel('Passcode help'), findsOneWidget);
+    // Reaching settings means the user is already authenticated, so the
+    // change flow has no forgot/reset help affordance on any phase — that
+    // recovery path lives only on the app-entry unlock screen.
+    expect(find.bySemanticsLabel('Passcode help'), findsNothing);
 
     await _enterPasscode(tester, '111111');
     expect(find.text('Incorrect Passcode'), findsOneWidget);
@@ -131,7 +134,7 @@ void main() {
 
     await _enterPasscode(tester, '111111');
     expect(find.text('Update Passcode'), findsOneWidget);
-    // The reset help only belongs to the verify phase.
+    // No forgot/reset help affordance on any change-passcode phase.
     expect(find.bySemanticsLabel('Passcode help'), findsNothing);
 
     await _enterPasscode(tester, '222222');
@@ -174,20 +177,4 @@ void main() {
     expect(security.changedWith, isNull);
   });
 
-  testWidgets('help on the verify phase opens the forgot-passcode sheet', (
-    tester,
-  ) async {
-    final security = _FakeSecurityNotifier();
-    await tester.pumpWidget(_app(security, popResult: []));
-    await open(tester);
-
-    await tester.tap(find.bySemanticsLabel('Passcode help'));
-    await tester.pumpAndSettle();
-    expect(find.text('Forgot Passcode?'), findsOneWidget);
-
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    expect(find.text('Forgot Passcode?'), findsNothing);
-    expect(find.text('Enter Passcode'), findsOneWidget);
-  });
 }

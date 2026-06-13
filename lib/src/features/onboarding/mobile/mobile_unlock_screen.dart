@@ -145,6 +145,12 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       builder: (sheetContext) => const ForgotPasscodeSheet(),
     );
     if (confirmed != true || !mounted) return;
+    // Second, irreversible-action gate before the wallet is wiped.
+    final lastWarningConfirmed = await showAppMobileSheet<bool>(
+      context: context,
+      builder: (sheetContext) => const ForgotPasscodeLastWarningSheet(),
+    );
+    if (lastWarningConfirmed != true || !mounted) return;
     await _resetWallet();
   }
 
