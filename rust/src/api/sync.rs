@@ -1076,8 +1076,11 @@ pub async fn complete_orchard_migration_denominations_pczt(
     account_uuid: String,
     request_id: String,
     signed_messages: Vec<KeystoneSignedMigrationMessage>,
+    password: String,
+    salt_base64: String,
 ) -> Result<IronwoodMigrationResult, String> {
     let network = parse_network_and_migrate(&db_path, &network)?;
+    let password = Zeroizing::new(password.into_bytes());
     let signed_messages = signed_messages
         .into_iter()
         .map(|message| wallet_sync::KeystoneSignedMigrationMessage {
@@ -1092,6 +1095,8 @@ pub async fn complete_orchard_migration_denominations_pczt(
         &account_uuid,
         &request_id,
         signed_messages,
+        password.as_slice(),
+        &salt_base64,
     )
     .await?;
     Ok(IronwoodMigrationResult {

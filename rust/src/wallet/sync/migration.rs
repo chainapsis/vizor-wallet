@@ -299,43 +299,6 @@ pub(crate) fn active_migration_run(
     active_run(&conn, account_uuid, network)
 }
 
-pub(crate) fn create_run(
-    db_path: &str,
-    account_uuid: &str,
-    network: WalletNetwork,
-    plan: &DenominationPlan,
-) -> Result<String, String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    if let Some(run) = active_run(&conn, account_uuid, network)? {
-        return Err(format!("Migration already active: {}", run.run_id));
-    }
-
-    let run_id = new_run_id(account_uuid);
-    let now = now_ms()?;
-    let target_values_json = serde_json::to_string(&plan.migration_outputs)
-        .map_err(|e| format!("Encode migration targets: {e}"))?;
-    conn.execute(
-        &format!(
-            "INSERT INTO {RUNS_TABLE}
-             (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
-              updated_at_ms, target_values_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)"
-        ),
-        params![
-            run_id,
-            account_uuid,
-            network_name(network),
-            db_path,
-            PHASE_PREPARING_DENOMINATIONS,
-            now,
-            target_values_json,
-        ],
-    )
-    .map_err(|e| format!("Create migration run: {e}"))?;
-    Ok(run_id)
-}
-
 pub(crate) fn create_run_with_prepared_notes_and_signed_children(
     db_path: &str,
     account_uuid: &str,
@@ -401,6 +364,33 @@ pub(crate) fn create_run_with_prepared_notes_and_signed_children(
     Ok(run_id)
 }
 
+pub(crate) fn create_run_with_prepared_notes_and_prep_tx(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    plan: &DenominationPlan,
+    prepared_notes: &[PreparedOrchardNoteRef],
+    locked: bool,
+    prep_txid: &str,
+    prep_raw_tx: Vec<u8>,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<String, String> {
+    create_run_with_prepared_notes_and_signed_children(
+        db_path,
+        account_uuid,
+        network,
+        plan,
+        prepared_notes,
+        locked,
+        Vec::new(),
+        password,
+        salt_base64,
+        Some(prep_txid),
+        Some(prep_raw_tx),
+    )
+}
+
 pub(crate) fn mark_run_phase(
     db_path: &str,
     run_id: &str,
@@ -419,26 +409,6 @@ pub(crate) fn mark_run_phase(
         params![phase, now, message, run_id],
     )
     .map_err(|e| format!("Update migration run phase: {e}"))?;
-    Ok(())
-}
-
-pub(crate) fn mark_prep_broadcast(
-    db_path: &str,
-    run_id: &str,
-    prep_txid: &str,
-) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let now = now_ms()?;
-    conn.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET phase = ?1, prep_txid = ?2, updated_at_ms = ?3, last_error = NULL
-             WHERE run_id = ?4"
-        ),
-        params![PHASE_WAITING_DENOM_CONFIRMATIONS, prep_txid, now, run_id],
-    )
-    .map_err(|e| format!("Mark denomination prep broadcast: {e}"))?;
     Ok(())
 }
 
@@ -470,23 +440,6 @@ pub(crate) fn prepared_notes_for_run(
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Read prepared notes: {e}"))
-}
-
-pub(crate) fn insert_prepared_notes(
-    db_path: &str,
-    run_id: &str,
-    notes: &[PreparedOrchardNoteRef],
-    locked: bool,
-) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin prepared-note insert: {e}"))?;
-    insert_prepared_notes_with_tx(&tx, run_id, notes, locked)?;
-    tx.commit()
-        .map_err(|e| format!("Commit prepared-note insert: {e}"))?;
-    Ok(())
 }
 
 fn insert_prepared_notes_with_tx(
@@ -1780,6 +1733,138 @@ mod tests {
         assert!(offsets
             .iter()
             .all(|offset| *offset <= MIGRATION_BROADCAST_WINDOW_SECS));
+    }
+
+    #[test]
+    fn create_run_with_prep_tx_stages_pending_broadcast_state() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+        let txid_hex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+        let plan = DenominationPlan {
+            migration_outputs: vec![100_000_000],
+            orchard_change: None,
+            prep_fee_zatoshi: 10_000,
+            migration_fee_zatoshi: 10_000,
+            total_input_zatoshi: 100_010_000,
+            total_migratable_zatoshi: 100_000_000,
+        };
+        let prepared_notes = vec![PreparedOrchardNoteRef {
+            txid_hex: txid_hex.to_string(),
+            output_index: 0,
+            value_zatoshi: 100_000_000,
+            note_version: 2,
+            nullifier_hex: None,
+        }];
+        let raw_tx = vec![1, 2, 3, 4];
+
+        let run_id = create_run_with_prepared_notes_and_prep_tx(
+            &db_path,
+            "account-1",
+            WalletNetwork::Test,
+            &plan,
+            &prepared_notes,
+            true,
+            txid_hex,
+            raw_tx.clone(),
+            b"correct horse battery staple",
+            "AQIDBAUGBwgJCgsMDQ4PEA==",
+        )
+        .unwrap();
+
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        let (phase, prep_txid): (String, Option<String>) = conn
+            .query_row(
+                &format!("SELECT phase, prep_txid FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
+        assert_eq!(prep_txid.as_deref(), Some(txid_hex));
+
+        let lock_state: String = conn
+            .query_row(
+                &format!("SELECT lock_state FROM {PREPARED_NOTES_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(lock_state, "locked");
+
+        let prep_tx = pending_prep_tx_for_run(
+            &db_path,
+            &run_id,
+            b"correct horse battery staple",
+            "AQIDBAUGBwgJCgsMDQ4PEA==",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(prep_tx.txid_hex, txid_hex);
+        assert_eq!(prep_tx.raw_tx, raw_tx);
+    }
+
+    #[test]
+    fn create_run_with_prep_tx_rolls_back_on_encrypt_failure() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+        let txid_hex = "101112131415161718191a1b1c1d1e1f000102030405060708090a0b0c0d0e0f";
+        let plan = DenominationPlan {
+            migration_outputs: vec![100_000_000],
+            orchard_change: None,
+            prep_fee_zatoshi: 10_000,
+            migration_fee_zatoshi: 10_000,
+            total_input_zatoshi: 100_010_000,
+            total_migratable_zatoshi: 100_000_000,
+        };
+        let prepared_notes = vec![PreparedOrchardNoteRef {
+            txid_hex: txid_hex.to_string(),
+            output_index: 0,
+            value_zatoshi: 100_000_000,
+            note_version: 2,
+            nullifier_hex: None,
+        }];
+
+        let err = create_run_with_prepared_notes_and_prep_tx(
+            &db_path,
+            "account-1",
+            WalletNetwork::Test,
+            &plan,
+            &prepared_notes,
+            true,
+            txid_hex,
+            vec![1, 2, 3, 4],
+            b"correct horse battery staple",
+            "not base64",
+        )
+        .unwrap_err();
+        assert!(err.contains("Failed to decode migration prep tx salt"));
+
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        let run_count: i64 = conn
+            .query_row(&format!("SELECT COUNT(*) FROM {RUNS_TABLE}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let note_count: i64 = conn
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {PREPARED_NOTES_TABLE}"),
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let prep_count: i64 = conn
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {PREP_TXS_TABLE}"),
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(run_count, 0);
+        assert_eq!(note_count, 0);
+        assert_eq!(prep_count, 0);
     }
 
     #[test]

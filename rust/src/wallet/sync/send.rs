@@ -1071,6 +1071,8 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
     account_uuid: &str,
     request_id: &str,
     signed_messages: Vec<KeystoneSignedMigrationMessage>,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
 ) -> Result<IronwoodMigrationResult, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let signed_by_id = signed_migration_messages_by_id(request_id, signed_messages)?;
@@ -1128,25 +1130,20 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
         }
     };
 
-    let result = match super::pczt::extract_and_broadcast_pczt(
-        db_path,
-        lightwalletd_url,
-        network,
+    let extracted_split = match super::pczt::extract_transaction_from_pczt(
         &stored.pczt_with_proofs,
         signed_pczt,
         None,
         None,
-    )
-    .await
-    {
-        Ok(result) => result,
+    ) {
+        Ok(extracted) => extracted,
         Err(e) => {
             reset_denomination_request_after_failed_completion(request_id);
             return Err(e);
         }
     };
 
-    let txid = result.txid.clone();
+    let txid = extracted_split.txid.to_string();
     let prepared_refs = stored
         .migrated_outputs
         .iter()
@@ -1159,15 +1156,21 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
         })
         .collect::<Vec<_>>();
 
-    let finalize_result = (|| -> Result<(), String> {
-        let run_id = super::migration::create_run(db_path, account_uuid, network, &stored.plan)?;
-        super::migration::insert_prepared_notes(db_path, &run_id, &prepared_refs, true)?;
-        super::migration::mark_prep_broadcast(db_path, &run_id, &txid)
-    })();
-    match finalize_result {
-        Ok(()) => {}
+    let run_id = match super::migration::create_run_with_prepared_notes_and_prep_tx(
+        db_path,
+        account_uuid,
+        network,
+        &stored.plan,
+        &prepared_refs,
+        true,
+        &txid,
+        extracted_split.raw_tx,
+        pending_password,
+        pending_salt_base64,
+    ) {
+        Ok(run_id) => run_id,
         Err(e) => {
-            fail_denomination_request_after_post_broadcast_error(request_id, &e);
+            reset_denomination_request_after_failed_completion(request_id);
             return Err(e);
         }
     };
@@ -1175,18 +1178,27 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
         store.remove(request_id);
     }
 
-    Ok(IronwoodMigrationResult {
-        txids: txid,
-        status: super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS.to_string(),
-        broadcasted_count: if result.status == "broadcasted" { 1 } else { 0 },
-        total_count: prepared_refs.len() as u32,
-        message: Some(result.message.unwrap_or_else(|| {
-            "Denomination notes were created. Sync until they are spendable, then resume migration."
-                .to_string()
-        })),
-        fee_zatoshi: stored.fee_zatoshi,
-        migrated_zatoshi: stored.total_migratable_zatoshi,
-    })
+    let Some(broadcast) = broadcast_pending_migration_prep_tx(
+        db_path,
+        lightwalletd_url,
+        network,
+        &run_id,
+        pending_password,
+        pending_salt_base64,
+    )
+    .await?
+    else {
+        return Err(
+            "Migration denomination split was staged without a prep transaction".to_string(),
+        );
+    };
+
+    Ok(migration_result_from_prep_broadcast(
+        broadcast,
+        prepared_refs.len() as u32,
+        stored.fee_zatoshi,
+        stored.total_migratable_zatoshi,
+    ))
 }
 
 pub(crate) fn prepare_orchard_migration_single_qr_pczt(
@@ -2503,17 +2515,6 @@ fn reset_single_qr_request_after_failed_completion(request_id: &str) {
             if stored.state == KeystoneMigrationRequestState::Completing {
                 stored.state = KeystoneMigrationRequestState::ProofReady;
             }
-        }
-    }
-}
-
-fn fail_denomination_request_after_post_broadcast_error(request_id: &str, error: &str) {
-    if let Ok(mut store) = keystone_denomination_requests().lock() {
-        if let Some(stored) = store.get_mut(request_id) {
-            stored.state = KeystoneMigrationRequestState::ProofFailed;
-            stored.proof_error = Some(format!(
-                "Denomination split may already be on the network, but Vizor could not finish local migration state: {error}. Refresh migration status before retrying."
-            ));
         }
     }
 }

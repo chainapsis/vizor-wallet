@@ -552,6 +552,8 @@ fn wire__crate__api__sync__complete_orchard_migration_denominations_pczt_impl(
                 <Vec<crate::api::sync::KeystoneSignedMigrationMessage>>::sse_decode(
                     &mut deserializer,
                 );
+            let api_password = <String>::sse_decode(&mut deserializer);
+            let api_salt_base64 = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
@@ -564,6 +566,8 @@ fn wire__crate__api__sync__complete_orchard_migration_denominations_pczt_impl(
                                 api_account_uuid,
                                 api_request_id,
                                 api_signed_messages,
+                                api_password,
+                                api_salt_base64,
                             )
                             .await?;
                         Ok(output_ok)

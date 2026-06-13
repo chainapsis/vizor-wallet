@@ -191,6 +191,8 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required String requestId,
     required List<KeystoneSignedMigrationMessage> signedMessages,
+    required String password,
+    required String saltBase64,
   });
 
   Future<IronwoodMigrationResult>
@@ -1512,6 +1514,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required String requestId,
     required List<KeystoneSignedMigrationMessage> signedMessages,
+    required String password,
+    required String saltBase64,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1526,6 +1530,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             signedMessages,
             serializer,
           );
+          sse_encode_String(password, serializer);
+          sse_encode_String(saltBase64, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1546,6 +1552,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           accountUuid,
           requestId,
           signedMessages,
+          password,
+          saltBase64,
         ],
         apiImpl: this,
       ),
@@ -1563,6 +1571,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "accountUuid",
           "requestId",
           "signedMessages",
+          "password",
+          "saltBase64",
         ],
       );
 

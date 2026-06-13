@@ -784,8 +784,12 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     try {
       result = switch (session.intent) {
         MigrationRunIntent.preparing => await () async {
-          // Denominations-only completion (staged fallback) signs + broadcasts
-          // just the split and takes NO password/salt.
+          final security = ref.read(appSecurityProvider.notifier);
+          final password = security.requireSessionPasswordForNativeSecretUse();
+          final saltBase64 = await security
+              .requireSecretPayloadSaltForNativeSecretUse();
+          // Denominations-only completion stores the signed split as a retryable
+          // prep transaction before broadcasting it.
           if (_keystoneStagedFallback) {
             return rust_sync.completeOrchardMigrationDenominationsPczt(
               dbPath: dbPath,
@@ -794,14 +798,10 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
               accountUuid: accountUuid,
               requestId: requestId,
               signedMessages: signedMessages,
+              password: password,
+              saltBase64: saltBase64,
             );
           }
-          // Single-QR completion stores presigned children, so it needs the
-          // session password + salt.
-          final security = ref.read(appSecurityProvider.notifier);
-          final password = security.requireSessionPasswordForNativeSecretUse();
-          final saltBase64 = await security
-              .requireSecretPayloadSaltForNativeSecretUse();
           return rust_sync.completeOrchardMigrationSingleQrPczt(
             dbPath: dbPath,
             lightwalletdUrl: lightwalletdUrl,
