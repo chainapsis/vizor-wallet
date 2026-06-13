@@ -63,6 +63,30 @@ void main() {
     expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
   });
 
+  testWidgets('tapping the slot grid opens the manual wizard', (tester) async {
+    await tester.pumpWidget(_app('/import'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_slots')));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
+  });
+
+  testWidgets('the slot grid stays tappable after a rejected paste', (
+    tester,
+  ) async {
+    _mockClipboard(tester, 'one two three');
+    await tester.pumpWidget(_app('/import'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_slots')));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
+  });
+
   testWidgets('word-count validation rejects a short paste', (tester) async {
     _mockClipboard(tester, 'one two three');
     await tester.pumpWidget(_app('/import'));
