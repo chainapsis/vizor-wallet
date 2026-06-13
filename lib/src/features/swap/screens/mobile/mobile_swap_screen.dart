@@ -1,12 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart'
-    show Material, MaterialType, showGeneralDialog;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/formatting/zec_amount.dart';
+import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -119,74 +118,72 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
           builder: (context, ref, _) {
             final swapState = ref.watch(swapStateProvider);
             final swapNotifier = ref.read(swapStateProvider.notifier);
-            return Padding(
-              // The root route doesn't resize with the shell scaffold,
-              // so it keeps the card above the keyboard itself.
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.viewInsetsOf(context).bottom,
+            final surfaceContent = switch (surface) {
+              _SwapModalSurface.assetSelector => SwapAssetSelectorModal(
+                assets: swapState.supportedExternalAssets,
+                selected: swapState.externalAsset,
+                onSelected: (asset) {
+                  swapNotifier.selectExternalAsset(asset);
+                  _closeSwapModal();
+                },
               ),
-              child: Center(
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: switch (surface) {
-                    _SwapModalSurface.assetSelector => SwapAssetSelectorModal(
-                      assets: swapState.supportedExternalAssets,
-                      selected: swapState.externalAsset,
-                      onSelected: (asset) {
-                        swapNotifier.selectExternalAsset(asset);
-                        _closeSwapModal();
-                      },
-                    ),
-                    _SwapModalSurface.addressEditor => SwapAddressEditModal(
-                      state: swapState,
-                      onSubmitted:
-                          (value, remember, nickname, profilePictureId) {
-                            if (remember) {
-                              unawaited(
-                                _rememberSwapAddress(
-                                  value,
-                                  swapState,
-                                  nickname,
-                                  profilePictureId,
-                                ),
-                              );
-                            }
-                            swapNotifier.updateDestination(value);
-                            _closeSwapModal();
-                          },
-                      onScan: () =>
-                          _openModal(_SwapModalSurface.addressScanner),
-                      onOpenContacts: () =>
-                          _openModal(_SwapModalSurface.contactPicker),
-                      onCancel: _closeSwapModal,
-                    ),
-                    _SwapModalSurface.addressScanner => AddressQrScanModal(
-                      onAddressScanned: (value) {
-                        swapNotifier.updateDestination(value);
-                        _closeSwapModal();
-                      },
-                      onCancel: _closeSwapModal,
-                    ),
-                    _SwapModalSurface.contactPicker =>
-                      AddressBookContactPickerModal(
-                        title: swapContactPickerTitle(swapState),
-                        networks: swapContactPickerNetworks(swapState),
-                        emptyTitle: swapContactPickerEmptyTitle(swapState),
-                        onSelected: _selectAddressBookContact,
-                        onCancel: () =>
-                            _openModal(_SwapModalSurface.addressEditor),
+              _SwapModalSurface.addressEditor => SwapAddressEditModal(
+                state: swapState,
+                onSubmitted: (value, remember, nickname, profilePictureId) {
+                  if (remember) {
+                    unawaited(
+                      _rememberSwapAddress(
+                        value,
+                        swapState,
+                        nickname,
+                        profilePictureId,
                       ),
-                    _SwapModalSurface.slippageSettings =>
-                      MobileSwapSlippageStepperModal(
-                        slippageBps: swapState.slippageBps,
-                        onSubmitted: (value) {
-                          swapNotifier.updateSlippageBps(value);
-                          _closeSwapModal();
-                        },
-                        onCancel: _closeSwapModal,
-                      ),
+                    );
+                  }
+                  swapNotifier.updateDestination(value);
+                  _closeSwapModal();
+                },
+                onScan: () => _openModal(_SwapModalSurface.addressScanner),
+                onOpenContacts: () =>
+                    _openModal(_SwapModalSurface.contactPicker),
+                onCancel: _closeSwapModal,
+              ),
+              _SwapModalSurface.addressScanner => AddressQrScanModal(
+                onAddressScanned: (value) {
+                  swapNotifier.updateDestination(value);
+                  _closeSwapModal();
+                },
+                onCancel: _closeSwapModal,
+              ),
+              _SwapModalSurface.contactPicker => AddressBookContactPickerModal(
+                title: swapContactPickerTitle(swapState),
+                networks: swapContactPickerNetworks(swapState),
+                emptyTitle: swapContactPickerEmptyTitle(swapState),
+                onSelected: _selectAddressBookContact,
+                onCancel: () => _openModal(_SwapModalSurface.addressEditor),
+              ),
+              _SwapModalSurface.slippageSettings =>
+                MobileSwapSlippageStepperModal(
+                  slippageBps: swapState.slippageBps,
+                  onSubmitted: (value) {
+                    swapNotifier.updateSlippageBps(value);
+                    _closeSwapModal();
                   },
+                  onCancel: _closeSwapModal,
                 ),
+            };
+            // The shared base card provides the ground surface, radius,
+            // side margins, bottom gap and keyboard avoidance — the same
+            // chrome as showAppMobileSheet — so the swap modals match the
+            // other mobile modals. Bottom-anchored and full-width.
+            return SafeArea(
+              bottom: false,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Spacer(),
+                  MobileModalCard(child: surfaceContent),
+                ],
               ),
             );
           },

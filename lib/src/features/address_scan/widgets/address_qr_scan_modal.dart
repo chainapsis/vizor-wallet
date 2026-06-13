@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -294,26 +295,37 @@ class AddressQrScanModalContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    // On mobile the swap modal route wraps this in the shared
+    // MobileModalCard (ground surface, radius 32, bottom-anchored); the
+    // camera viewport is fixed-size, so the card hugs it. Desktop keeps the
+    // fixed centered card.
+    final isMobile = kAppFormFactor == AppFormFactor.mobile;
     return Container(
       key: const ValueKey('address_scan_modal'),
-      width: width,
-      height: height,
+      width: isMobile ? double.infinity : width,
+      height: isMobile ? null : height,
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
+      decoration: isMobile
+          ? null
+          : BoxDecoration(
+              color: colors.background.ground,
+              borderRadius: BorderRadius.circular(AppRadii.large),
+            ),
       child: Column(
+        mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const _AddressQrScanTitle(),
           const SizedBox(height: 16),
-          Expanded(
+          _scanExpand(
+            isMobile,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Column(
+                mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
                 children: [
-                  Expanded(
+                  _scanExpand(
+                    isMobile,
                     child: Center(
                       child: _AddressQrCameraModal(
                         status: status,
@@ -355,6 +367,11 @@ class AddressQrScanModalContent extends StatelessWidget {
     );
   }
 }
+
+/// Desktop fills the fixed-height card ([Expanded]); mobile lets the card
+/// hug the fixed-size camera viewport.
+Widget _scanExpand(bool mobile, {required Widget child}) =>
+    mobile ? child : Expanded(child: child);
 
 class _AddressQrScanTitle extends StatelessWidget {
   const _AddressQrScanTitle();

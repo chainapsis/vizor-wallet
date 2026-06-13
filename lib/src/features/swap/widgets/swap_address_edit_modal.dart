@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -157,14 +158,21 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
         ? null
         : _nicknameError;
 
+    // On mobile the swap modal route wraps this in the shared
+    // MobileModalCard (ground surface, radius 32, 16px side margins,
+    // bottom-anchored), so the surface is full-width and draws no card of
+    // its own. Desktop keeps the fixed centered card.
+    final isMobile = kAppFormFactor == AppFormFactor.mobile;
     return Container(
       key: const ValueKey('swap_address_modal'),
-      width: 312,
+      width: isMobile ? double.infinity : 312,
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
+      decoration: isMobile
+          ? null
+          : BoxDecoration(
+              color: colors.background.ground,
+              borderRadius: BorderRadius.circular(AppRadii.large),
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -509,7 +517,10 @@ class _AddressAvatarButton extends StatelessWidget {
 }
 
 class _AvatarPickerStrip extends StatelessWidget {
-  const _AvatarPickerStrip({required this.selectedId, required this.onSelected});
+  const _AvatarPickerStrip({
+    required this.selectedId,
+    required this.onSelected,
+  });
 
   final String selectedId;
   final ValueChanged<String> onSelected;

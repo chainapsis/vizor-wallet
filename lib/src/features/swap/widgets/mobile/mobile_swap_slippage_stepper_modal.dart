@@ -93,12 +93,14 @@ class _MobileSwapSlippageStepperModalState
     // Out-of-range turns the value and message the destructive magenta
     // tone (Figma 4700:123470); in-range stays the primary serif colour.
     final valueColor = invalid ? colors.text.destructive : colors.text.primary;
-    return Container(
-      width: 360,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
+    // Content only — the swap modal route wraps this in the shared
+    // MobileModalCard (ground surface, radius 32, bottom-anchored).
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

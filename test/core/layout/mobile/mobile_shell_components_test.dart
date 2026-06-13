@@ -247,9 +247,11 @@ void main() {
 
 Widget _harness(Widget child) {
   return MaterialApp(
-    home: AppTheme(
-      data: AppThemeData.dark,
-      child: Center(child: child),
-    ),
+    // AppTheme wraps the navigator (like the real app's AppThemeHost in
+    // MaterialApp.builder) so root-navigator overlays — modal sheets shown
+    // with useRootNavigator — can resolve it too.
+    builder: (context, navigator) =>
+        AppTheme(data: AppThemeData.dark, child: navigator!),
+    home: Center(child: child),
   );
 }

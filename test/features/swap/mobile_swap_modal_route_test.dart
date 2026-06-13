@@ -96,16 +96,14 @@ void main() {
     expect(find.byType(SwapAddressEditModal), findsNothing);
     expect(find.byType(MobileSwapScreen), findsOneWidget);
 
-    // The tab bar is under the barrier too: tapping where Activity
-    // sits dismisses the modal instead of switching branches (the old
-    // overlay let the tab bar win and navigate beneath the modal).
+    // The bottom strip — where the floating tab bar sits — is under the
+    // barrier too. The modal card is bottom-anchored with a gap beneath
+    // it, so a tap in that gap hits the barrier and dismisses the modal
+    // instead of reaching the tab bar to switch branches.
     await tester.tap(find.text('Add recipient address'));
     await tester.pumpAndSettle();
     expect(find.byType(SwapAddressEditModal), findsOneWidget);
-    await tester.tap(
-      find.bySemanticsLabel('Activity').last,
-      warnIfMissed: false,
-    );
+    await tester.tapAt(Offset(screen.center.dx, screen.bottom - 4));
     await tester.pumpAndSettle();
     expect(find.byType(SwapAddressEditModal), findsNothing);
     expect(find.byType(MobileSwapScreen), findsOneWidget);

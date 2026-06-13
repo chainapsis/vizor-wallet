@@ -51,21 +51,28 @@ Future<T?> showAppMobileSheet<T>({
     backgroundColor: const Color(0x00000000),
     elevation: 0,
     barrierColor: colors.background.neutralScrim,
-    builder: (sheetContext) => _MobileSheetFrame(
+    builder: (sheetContext) => MobileModalCard(
       transparentBackground: transparentBackground,
       child: builder(sheetContext),
     ),
   );
 }
 
-/// The floating-card frame applied to every [showAppMobileSheet] body:
-/// side margins, the keyboard/safe-area-aware bottom gap, and (unless
-/// [transparentBackground]) the rounded ground surface with the modal
-/// shadow.
-class _MobileSheetFrame extends StatelessWidget {
-  const _MobileSheetFrame({
+/// The floating-card frame for mobile modals: side margins, the
+/// keyboard/safe-area-aware bottom gap, and (unless [transparentBackground])
+/// the rounded ground surface with the modal shadow.
+///
+/// [showAppMobileSheet] wraps every sheet body in this. It is also reused
+/// by the swap modal route (a custom multi-surface dialog), which
+/// bottom-anchors it inside its own page — so the swap modals share the
+/// exact base chrome. When used outside a bottom sheet, place it at the
+/// bottom of a full-height column with `crossAxisAlignment.stretch` so it
+/// fills the width and hugs its content height.
+class MobileModalCard extends StatelessWidget {
+  const MobileModalCard({
     required this.child,
-    required this.transparentBackground,
+    this.transparentBackground = false,
+    super.key,
   });
 
   final Widget child;
