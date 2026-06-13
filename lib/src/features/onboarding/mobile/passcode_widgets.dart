@@ -89,6 +89,9 @@ class PasscodePromptField extends StatelessWidget {
           builder: (context, constraints) {
             final centerY = constraints.maxHeight / 2;
             return Stack(
+              // Let the error spill into the floor gap on short windows
+              // rather than being clipped.
+              clipBehavior: Clip.none,
               children: [
                 Positioned(
                   top: centerY - kPasscodeDotSize / 2,
@@ -98,8 +101,10 @@ class PasscodePromptField extends StatelessWidget {
                 ),
                 if (error != null)
                   Positioned(
-                    // Just below the dots, without affecting their centre.
-                    top: centerY + kPasscodeDotSize / 2 + AppSpacing.s,
+                    // Figma `Passcode Digits` (4596:50019) sets the message
+                    // ~36 px below the dots' centre (8 px under the 57-tall
+                    // dots field) — keep that gap with the dots centred.
+                    top: centerY + 36,
                     left: 0,
                     right: 0,
                     child: Padding(
