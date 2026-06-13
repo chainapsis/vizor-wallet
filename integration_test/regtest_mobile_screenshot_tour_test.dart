@@ -57,7 +57,7 @@ void main() {
       await shot('01_welcome');
 
       // ── Method selection ───────────────────────────────────────────
-      await tapAppButton(
+      await tapWidget(
         tester,
         const ValueKey('mobile_welcome_get_started'),
       );
@@ -513,7 +513,7 @@ void main() {
       await openHomeTab(tester);
       await openAddAccountFlow(tester);
       await shot('31_welcome_add_account');
-      await tapAppButton(
+      await tapWidget(
         tester,
         const ValueKey('mobile_welcome_get_started'),
       );

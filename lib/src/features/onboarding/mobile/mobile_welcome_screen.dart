@@ -25,60 +25,69 @@ class MobileWelcomeScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: colors.background.window,
       body: Stack(
+        // The only non-positioned child is the min-height content Column, so
+        // without `expand` the Stack collapses to it (~300px) and the
+        // Positioned.fill hero shrinks into a band at the top. `expand`
+        // pins the Stack to the full screen so the hero truly fills it.
+        fit: StackFit.expand,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SafeArea(
-                bottom: false,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 35),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Figma `Logo` 106×40, centered near the top.
-                      VizorWordmark(
-                        width: 106,
-                        height: 40,
-                        color: colors.text.accent,
-                      ),
-                      const SizedBox(height: AppSpacing.xl),
-                      Text(
-                        'Private Money.\nBy default',
-                        textAlign: TextAlign.center,
-                        // Figma `Welcome` tagline — Young Serif 48 / 1.1,
-                        // larger than the standard Headline XL token.
-                        style: AppTypography.displayLarge.copyWith(
-                          color: colors.text.accent,
-                          fontSize: 48,
-                          height: 1.1,
-                          letterSpacing: -1.35,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                      // Centered primary pill (Figma `Buttons Stack`,
-                      // 4750:24094 — ~200 wide; sized to its content so the
-                      // label + chevron never clip).
-                      AppButton(
-                        key: const ValueKey('mobile_welcome_get_started'),
-                        onPressed: () => context.push('/onboarding/method'),
-                        trailing: const AppIcon(AppIcons.chevronForward),
-                        child: const Text('Get started'),
-                      ),
-                    ],
+          // Full-screen hero — Figma `Welcome BG` (4750:24095). The asset
+          // is a 393×852 knight that fades to transparent at the top, so
+          // the same image bottom-aligns and blends into the window colour
+          // in both light and dark mode (no hard seam).
+          Positioned.fill(
+            child: Image.asset(
+              'assets/illustrations/welcome_hero.png',
+              fit: BoxFit.cover,
+              alignment: Alignment.bottomCenter,
+            ),
+          ),
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              // Figma logo top is 35 below the system status area.
+              padding: const EdgeInsets.only(top: 35),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Figma `Logo` 106×40, centered near the top.
+                  VizorWordmark(
+                    width: 106,
+                    height: 40,
+                    color: colors.text.accent,
                   ),
-                ),
+                  // Figma rhythm: logo→tagline 38, tagline→button 29,
+                  // placing the button over the faded part of the hero
+                  // rather than down on the opaque treasure.
+                  const SizedBox(height: 38),
+                  Text(
+                    'Private Money.\nBy default',
+                    textAlign: TextAlign.center,
+                    // Figma `Welcome` tagline — Young Serif 48 / 1.1,
+                    // larger than the standard Headline XL token.
+                    style: AppTypography.displayLarge.copyWith(
+                      color: colors.text.accent,
+                      fontSize: 48,
+                      height: 1.1,
+                      letterSpacing: -1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 29),
+                  // Figma `Buttons Stack` (4750:24094): a 200-wide primary
+                  // pill with the Label M (14) text and a trailing chevron —
+                  // the standard large AppButton. `minWidth` (not a tight
+                  // box) pins it to 200 with centred content while letting it
+                  // grow if a wide test font would otherwise overflow.
+                  AppButton(
+                    key: const ValueKey('mobile_welcome_get_started'),
+                    onPressed: () => context.push('/onboarding/method'),
+                    minWidth: 200,
+                    trailing: const AppIcon(AppIcons.chevronForward),
+                    child: const Text('Get started'),
+                  ),
+                ],
               ),
-              const SizedBox(height: AppSpacing.md),
-              Expanded(
-                child: Image.asset(
-                  'assets/illustrations/welcome_hero_dark.png',
-                  fit: BoxFit.cover,
-                  alignment: Alignment.bottomCenter,
-                  width: double.infinity,
-                ),
-              ),
-            ],
+            ),
           ),
           if (showBackButton)
             Positioned(

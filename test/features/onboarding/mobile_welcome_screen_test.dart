@@ -55,6 +55,26 @@ void main() {
     expect(find.text('Create wallet'), findsNothing);
   });
 
+  testWidgets('hero illustration fills the whole screen', (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    // The full-bleed hero is the Positioned.fill background. Guards against
+    // the Stack collapsing to its min-height content column (which would
+    // shrink the hero into a band at the top).
+    final hero = find.byWidgetPredicate(
+      (w) =>
+          w is Image &&
+          w.image is AssetImage &&
+          (w.image as AssetImage).assetName.contains('welcome_hero'),
+    );
+    expect(hero, findsOneWidget);
+    final size = tester.getSize(hero);
+    final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+    expect(size.width, screen.width);
+    expect(size.height, screen.height);
+  });
+
   testWidgets(
     'Get started opens method selection with the three entry points and '
     'the legal footer',

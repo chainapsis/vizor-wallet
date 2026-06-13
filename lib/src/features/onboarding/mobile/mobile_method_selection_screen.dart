@@ -1,58 +1,109 @@
+import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
-import 'mobile_onboarding_scaffold.dart';
 
 /// Second onboarding step — Figma `Method Selection` (4752:26334): the
 /// "Welcome to Vizor" title over three illustrated cards (create /
 /// import / Keystone), reached from the Welcome screen's "Get started"
 /// button. Keeps the `mobile_welcome_*` keys so the onboarding flow
 /// helpers route through here unchanged.
+///
+/// Unlike the scrolling step scaffold, the Figma frame pins the title to
+/// the top and the legal line to the bottom, then vertically centres the
+/// three cards in the space between (≈69 px above and below). The layout
+/// below mirrors that: a fixed top nav + title block, an [Expanded] that
+/// centres the cards, and a pinned footer.
 class MobileMethodSelectionScreen extends StatelessWidget {
   const MobileMethodSelectionScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MobileOnboardingStepScaffold(
-      // First step, just before the create flow's step 1
-      // (mobileCreateProgress(1) ≈ 0.167) so the track never moves back.
-      progress: 0.15,
-      onBack: () => context.pop(),
-      title: 'Welcome to Vizor',
-      subtitle: 'Select the method you want.',
-      bottomArea: const _MethodLegalFooter(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _MethodCard(
-            buttonKey: const ValueKey('mobile_welcome_create'),
-            iconName: AppIcons.addNew,
-            label: 'Create wallet',
-            illustration: 'assets/illustrations/method_create_dark.png',
-            // The create knight is taller than the card and bleeds above
-            // its top edge in Figma (4752:26357).
-            bleed: true,
-            onTap: () => context.push('/onboarding/intro'),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          _MethodCard(
-            buttonKey: const ValueKey('mobile_welcome_import'),
-            iconName: AppIcons.importWallet,
-            label: 'Import wallet',
-            illustration: 'assets/illustrations/method_import_dark.png',
-            onTap: () => context.push('/import'),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          _MethodCard(
-            buttonKey: const ValueKey('mobile_welcome_keystone'),
-            iconName: AppIcons.qr,
-            label: 'Connect Keystone',
-            illustration: 'assets/illustrations/method_keystone_dark.png',
-            onTap: () => context.push('/onboarding/keystone'),
-          ),
-        ],
+    final colors = context.colors;
+    return Scaffold(
+      backgroundColor: colors.background.window,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // First step, just before the create flow's step 1
+            // (mobileCreateProgress(1) ≈ 0.167) so the track never moves back.
+            MobileTopNav.steps(progress: 0.15, onBack: () => context.pop()),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: AppSpacing.md),
+                    Text(
+                      'Welcome to Vizor',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.displayLarge.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'Select the method you want.',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: colors.text.primary,
+                      ),
+                    ),
+                    // Cards centred in the space between title and footer.
+                    Expanded(
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _MethodCard(
+                              buttonKey: const ValueKey('mobile_welcome_create'),
+                              iconName: AppIcons.addNew,
+                              label: 'Create wallet',
+                              illustration:
+                                  'assets/illustrations/method_create_dark.png',
+                              // The create knight is taller than the card and
+                              // bleeds above its top edge in Figma (4752:26357).
+                              bleed: true,
+                              onTap: () => context.push('/onboarding/intro'),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            _MethodCard(
+                              buttonKey: const ValueKey('mobile_welcome_import'),
+                              iconName: AppIcons.importWallet,
+                              label: 'Import wallet',
+                              illustration:
+                                  'assets/illustrations/method_import_dark.png',
+                              onTap: () => context.push('/import'),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            _MethodCard(
+                              buttonKey: const ValueKey(
+                                'mobile_welcome_keystone',
+                              ),
+                              iconName: AppIcons.qr,
+                              label: 'Connect Keystone',
+                              illustration:
+                                  'assets/illustrations/method_keystone_dark.png',
+                              onTap: () => context.push('/onboarding/keystone'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const _MethodLegalFooter(),
+                    const SizedBox(height: AppSpacing.s),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -86,7 +137,7 @@ class _MethodCard extends StatelessWidget {
     // Figma `New Wallet Bg` 186×151 @ top -32.5; `Import/keystone card bg`
     // 180×120 @ top 0, both right-aligned.
     final art = Positioned(
-      top: bleed ? -31 : 0,
+      top: bleed ? -32.5 : 0,
       right: 0,
       width: bleed ? 186 : 180,
       height: bleed ? 151 : 120,
@@ -153,14 +204,17 @@ class _MethodLegalFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final base = AppTypography.bodySmall.copyWith(color: colors.text.muted);
-    // The legal documents aren't ready yet, so Terms/Privacy render as
-    // plain emphasised text — no links (product decision, 2026-06).
+    // Figma underlines Terms/Privacy in text/primary (#c2c3c3). The legal
+    // documents aren't ready yet, so they match the design visually but
+    // carry no tap target (product decision, 2026-06).
     final emphasis = AppTypography.bodySmall.copyWith(
-      color: colors.text.secondary,
+      color: colors.text.primary,
+      decoration: TextDecoration.underline,
+      decorationColor: colors.text.primary,
     );
     return Center(
       child: SizedBox(
-        width: 200,
+        width: 193,
         child: Text.rich(
           TextSpan(
             style: base,

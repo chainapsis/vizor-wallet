@@ -264,7 +264,7 @@ Future<void> _stopRustWorkForCleanup() async {
 /// Welcome → create flow → passcode ×2 → biometrics → home.
 Future<void> createWalletWithPasscode(WidgetTester tester) async {
   logE2e('creating wallet');
-  await tapAppButton(tester, const ValueKey('mobile_welcome_get_started'));
+  await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
   await tapWidget(tester, const ValueKey('mobile_welcome_create'));
   await tapAppButton(tester, const ValueKey('mobile_intro_continue'));
   await tapAppButton(
@@ -303,7 +303,7 @@ Future<void> importWalletViaPaste(
   required bool isFirstWallet,
 }) async {
   logE2e('importing wallet (first=$isFirstWallet)');
-  await tapAppButton(tester, const ValueKey('mobile_welcome_get_started'));
+  await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
   await tapWidget(tester, const ValueKey('mobile_welcome_import'));
   await Clipboard.setData(ClipboardData(text: mnemonic));
   await tapAppButton(tester, const ValueKey('mobile_import_paste'));
