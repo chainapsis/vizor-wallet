@@ -9,7 +9,6 @@ import '../../../core/formatting/number_format.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/voting/voting_session_provider.dart';
@@ -424,21 +423,7 @@ class _ActivePollContentState extends State<_ActivePollContent> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Padding(
-          // Design: back chevron sits 16px into the pane on every top toolbar
-          // (4px pane padding + AppBackLink's 12px internal inset).
-          padding: EdgeInsets.fromLTRB(
-            AppSpacing.xxs,
-            AppSpacing.md,
-            AppSpacing.md,
-            0,
-          ),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: AppRouteBackLink(minWidth: 60),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.s),
+        const AppPaneToolbar(backLinkMinWidth: 60),
         Expanded(
           child: widget.proposals.isEmpty
               ? const _Message(
@@ -847,21 +832,7 @@ class _VotedPollContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Padding(
-          // Design: back chevron sits 16px into the pane on every top toolbar
-          // (4px pane padding + AppBackLink's 12px internal inset).
-          padding: EdgeInsets.fromLTRB(
-            AppSpacing.xxs,
-            AppSpacing.md,
-            AppSpacing.md,
-            0,
-          ),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: AppRouteBackLink(),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.s),
+        const AppPaneToolbar(),
         Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),
@@ -938,20 +909,7 @@ class _PendingVoteContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Padding(
-          // Design: back chevron sits 16px into the pane on every top toolbar
-          // (4px pane padding + AppBackLink's 12px internal inset).
-          padding: EdgeInsets.fromLTRB(
-            AppSpacing.xxs,
-            AppSpacing.md,
-            AppSpacing.md,
-            0,
-          ),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: AppRouteBackLink(),
-          ),
-        ),
+        const AppPaneToolbar(),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(

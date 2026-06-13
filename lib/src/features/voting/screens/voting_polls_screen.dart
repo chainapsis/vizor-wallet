@@ -72,7 +72,6 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _VotingTopBar(onSettings: _openSettings),
-                const SizedBox(height: AppSpacing.s),
                 Expanded(
                   child: _entryRefreshInFlight && !rounds.hasValue
                       ? const Center(child: CircularProgressIndicator())
@@ -269,41 +268,19 @@ class _VotingTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      // Design: back chevron sits 16px into the pane on every top toolbar
-      // (4px pane padding + AppBackLink's 12px internal inset).
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.xxs,
-        AppSpacing.md,
-        AppSpacing.md,
-        0,
-      ),
-      child: SizedBox(
-        height: AppBackLink.height,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: AppRouteBackLink(minWidth: 60),
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Builder(
-                builder: (context) => AppIconHoverButton(
-                  icon: AppIcons.cog,
-                  tooltip: 'Voting config',
-                  semanticLabel: 'Voting config settings',
-                  onTap: onSettings,
-                  size: AppBackLink.height,
-                  iconSize: 20,
-                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
-                  hoverColor: context.colors.state.hover,
-                ),
-              ),
-            ),
-          ],
-        ),
+    // Shared pane toolbar (standard 48px band, back chevron 16px into the
+    // pane) with the voting-config gear as the trailing action.
+    return AppPaneToolbar(
+      backLinkMinWidth: 60,
+      trailing: AppIconHoverButton(
+        icon: AppIcons.cog,
+        tooltip: 'Voting config',
+        semanticLabel: 'Voting config settings',
+        onTap: onSettings,
+        size: AppBackLink.height,
+        iconSize: 20,
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+        hoverColor: context.colors.state.hover,
       ),
     );
   }

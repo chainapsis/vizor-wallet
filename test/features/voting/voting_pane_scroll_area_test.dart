@@ -2,7 +2,7 @@ import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/core/layout/app_layout.dart';
+import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_pane_scroll_area.dart';
 
 void main() {
@@ -27,7 +27,7 @@ void main() {
     await tester.pump();
 
     expect(
-      tester.widget<Scrollbar>(find.byType(Scrollbar)).thumbVisibility,
+      tester.widget<RawScrollbar>(find.byType(RawScrollbar)).thumbVisibility,
       isFalse,
     );
 
@@ -37,9 +37,11 @@ void main() {
     await mouse.moveTo(tester.getCenter(find.byType(VotingPaneListView)));
     await tester.pump();
 
+    // The shared pane scrollbar shows the design thumb on hover when the pane
+    // can scroll (no desktop-platform gate; it relies on hover instead).
     expect(
-      tester.widget<Scrollbar>(find.byType(Scrollbar)).thumbVisibility,
-      isDesktopLayoutPlatform,
+      tester.widget<RawScrollbar>(find.byType(RawScrollbar)).thumbVisibility,
+      isTrue,
     );
 
     await tester.pumpWidget(
@@ -55,7 +57,7 @@ void main() {
     await tester.pump();
 
     expect(
-      tester.widget<Scrollbar>(find.byType(Scrollbar)).thumbVisibility,
+      tester.widget<RawScrollbar>(find.byType(RawScrollbar)).thumbVisibility,
       isFalse,
     );
   });
@@ -77,7 +79,10 @@ class _Harness extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      home: Scaffold(body: SizedBox.expand(child: child)),
+      home: AppTheme(
+        data: AppThemeData.light,
+        child: Scaffold(body: SizedBox.expand(child: child)),
+      ),
     );
   }
 }

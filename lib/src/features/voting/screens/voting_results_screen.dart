@@ -8,7 +8,6 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
 import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_service_providers.dart';
 import '../../../providers/voting/voting_session_provider.dart';
@@ -74,19 +73,7 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(
-                AppSpacing.xxs,
-                AppSpacing.md,
-                AppSpacing.md,
-                0,
-              ),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: AppRouteBackLink(),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.s),
+            const AppPaneToolbar(),
             Expanded(
               child: tally.when(
                 skipLoadingOnRefresh: false,

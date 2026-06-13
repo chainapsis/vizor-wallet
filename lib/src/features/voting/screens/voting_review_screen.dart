@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_state.dart';
@@ -181,22 +180,7 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Padding(
-                  // Design: back chevron sits 16px into the pane on every
-                  // top toolbar (4px pane padding + AppBackLink's 12px
-                  // internal inset).
-                  padding: EdgeInsets.fromLTRB(
-                    AppSpacing.xxs,
-                    AppSpacing.md,
-                    AppSpacing.md,
-                    0,
-                  ),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: AppRouteBackLink(minWidth: 60),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.s),
+                const AppPaneToolbar(backLinkMinWidth: 60),
                 Expanded(
                   child: VotingPaneScrollView(
                     maxWidth: 560,
