@@ -20,7 +20,8 @@ import '../../../../services/qr_scanner.dart';
 import '../../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../../services/sapling_params.dart';
 import '../../services/send_flow.dart';
-import 'mobile_send_scan_screen.dart' show MobileScanViewfinderCorners;
+import '../../../address_scan/widgets/mobile_address_scan_view.dart'
+    show MobileScanViewfinderCorners;
 import 'mobile_send_screen.dart' show MobileSaplingParamsSheet;
 
 enum _SignStage { preparing, showQr, scanning, failed }
@@ -319,9 +320,7 @@ class _MobileKeystoneSignScreenState
             Text(
               'Confirm transaction',
               textAlign: TextAlign.center,
-              style: AppTypography.headlineSmall.copyWith(
-                color: Colors.white,
-              ),
+              style: AppTypography.headlineSmall.copyWith(color: Colors.white),
             ),
             const SizedBox(height: AppSpacing.s),
             Text(

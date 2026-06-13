@@ -295,16 +295,28 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     final surfaceColor = _mobileFormFactor
         ? colors.background.ground
         : colors.background.base;
+    // Mobile draws a single full-bleed rounded camera card (Figma
+    // `Keystone Scan`, radius 32, no inner frame and no camera-picker
+    // footer — the back camera is the only camera). Desktop keeps the
+    // 4 px inset frame around the feed and the camera controls.
+    final outerPadding = _mobileFormFactor
+        ? EdgeInsets.zero
+        : const EdgeInsets.all(AppSpacing.xxs);
+    final outerRadius = _mobileFormFactor ? AppRadii.xLarge : _outerRadius;
+    final cameraRadius = _mobileFormFactor ? AppRadii.xLarge : _cameraRadius;
+    final cameraAreaWidth = _mobileFormFactor
+        ? double.infinity
+        : (widget.cardWidth ?? _cardWidth) - AppSpacing.xxs * 2;
     return SizedBox(
       width: widget.cardWidth ?? _cardWidth,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            padding: const EdgeInsets.all(AppSpacing.xxs),
+            padding: outerPadding,
             decoration: BoxDecoration(
               color: surfaceColor,
-              borderRadius: BorderRadius.circular(_outerRadius),
+              borderRadius: BorderRadius.circular(outerRadius),
             ),
             clipBehavior: Clip.antiAlias,
             child: Stack(
@@ -312,14 +324,13 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                 Column(
                   children: [
                     SizedBox(
-                      width: (widget.cardWidth ?? _cardWidth) -
-                          AppSpacing.xxs * 2,
+                      width: cameraAreaWidth,
                       height: widget.cameraHeight ?? _cameraHeight,
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
                           ClipRRect(
-                            borderRadius: BorderRadius.circular(_cameraRadius),
+                            borderRadius: BorderRadius.circular(cameraRadius),
                             clipBehavior: Clip.antiAliasWithSaveLayer,
                             child: DecoratedBox(
                               decoration: BoxDecoration(color: surfaceColor),
@@ -390,11 +401,13 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                                 label: widget.decodingLabel,
                                                 borderRadius:
                                                     BorderRadius.circular(
-                                                      _cameraRadius,
+                                                      cameraRadius,
                                                     ),
                                               ),
                                         ),
-                                      if (canScan && _cameraPickerOpen)
+                                      if (canScan &&
+                                          _cameraPickerOpen &&
+                                          !_mobileFormFactor)
                                         AppPaneModalOverlay(
                                           onDismiss: _toggleCameraPicker,
                                           borderRadius: BorderRadius.circular(
@@ -454,11 +467,12 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                           icon: AppIcons.cameraDenied,
                                           title: _cameraDeniedTitle,
                                           description: _cameraDeniedDescription,
-                                          iconStyle: _mobileFormFactor
-                                              ? _CameraPermissionIconStyle
-                                                    .inverse
-                                              : _CameraPermissionIconStyle
-                                                    .raised,
+                                          // Denied draws the slashed glyph on a
+                                          // raised (grey) square on both
+                                          // platforms — Figma `Keystone Scan`
+                                          // denied state.
+                                          iconStyle:
+                                              _CameraPermissionIconStyle.raised,
                                           action: AppButton(
                                             onPressed: () => unawaited(
                                               _retryCameraStart(
@@ -501,7 +515,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                   return DecoratedBox(
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(
-                                        _cameraRadius,
+                                        cameraRadius,
                                       ),
                                       border: Border.all(
                                         color: colors.border.subtleOpacity,
@@ -522,10 +536,12 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                         final active =
                             _cameraAccessStatus(scannerState) ==
                             _CameraAccessStatus.active;
-                        // The mobile frames have no footer until the
-                        // camera feed is live; desktop keeps the
-                        // trouble-scanning link visible in every state.
-                        if (_mobileFormFactor && !active) {
+                        // Mobile has no footer at all — the back camera is
+                        // the only camera, so there is no picker, and the
+                        // trouble-scanning link is dropped in favour of the
+                        // page's "Tell me how Zcash works" button. Desktop
+                        // keeps the link + camera controls in every state.
+                        if (_mobileFormFactor) {
                           return const SizedBox.shrink();
                         }
                         return Column(

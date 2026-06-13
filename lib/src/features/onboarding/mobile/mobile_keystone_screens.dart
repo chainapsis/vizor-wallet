@@ -162,9 +162,7 @@ class _SectionHeading extends StatelessWidget {
         Expanded(
           child: Text(
             title,
-            style: AppTypography.bodyLarge.copyWith(
-              color: colors.text.accent,
-            ),
+            style: AppTypography.bodyLarge.copyWith(color: colors.text.accent),
           ),
         ),
       ],
@@ -251,10 +249,10 @@ class _MobileKeystoneScanScreenState
           decoding: _decoding,
           error: _error,
           // The Keystone Scan frames run the card edge-to-edge inside the
-          // 16 px content inset, with a 396 px viewfinder card (the 4 px
-          // outer padding sits on top of the 388 px camera area).
+          // 16 px content inset, as a single 464 px rounded camera card
+          // (Figma `Camera` 4654:72631 — no inner frame on mobile).
           cardWidth: double.infinity,
-          cameraHeight: 388,
+          cameraHeight: 464,
           onProgress: (progress) {
             if (!mounted) return;
             setState(() {
@@ -437,11 +435,7 @@ class _AccountCard extends StatelessWidget {
 class MobileKeystoneBirthdayScreen extends ConsumerWidget {
   const MobileKeystoneBirthdayScreen({super.key});
 
-  Future<void> _confirm(
-    BuildContext context,
-    WidgetRef ref,
-    int height,
-  ) async {
+  Future<void> _confirm(BuildContext context, WidgetRef ref, int height) async {
     final account = ref.read(keystoneOnboardingProvider).selectedAccount;
     if (account == null) {
       if (context.mounted) {
