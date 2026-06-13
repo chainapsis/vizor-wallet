@@ -101,8 +101,62 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
     }
   }
 
+  /// Split arbitrary pasted/typed text into candidate words. BIP39 words
+  /// are pure lowercase a–z, so anything else (spaces, commas, numbered
+  /// "1." prefixes, punctuation) is treated as a separator — a phrase
+  /// copied in almost any shape tokenises cleanly.
+  List<String> _tokenize(String raw) =>
+      raw.toLowerCase().split(RegExp(r'[^a-z]+')).where((t) => t.isNotEmpty).toList();
+
+  void _onChanged(String value) {
+    final tokens = _tokenize(value);
+    // Two or more tokens in a single edit means a multi-word paste —
+    // typing only ever produces one token per keystroke.
+    if (tokens.length >= 2) {
+      _distributePaste(tokens);
+      return;
+    }
+    // A trailing space accepts the single word, like the keyboard's
+    // suggestion flow.
+    if (value.endsWith(' ')) _onSubmitted(value);
+  }
+
+  /// Fill consecutive slots from the current position with [tokens] (each
+  /// already normalised to a–z). Stops at the first token that isn't a
+  /// BIP39 word — that token and everything after it are ignored — and at
+  /// the 24-word ceiling. Auto-advances to review when the phrase fills.
+  void _distributePaste(List<String> tokens) {
+    String? stoppedAt;
+    setState(() {
+      for (final word in tokens) {
+        if (_accepted.length >= kMnemonicMaxWords) break;
+        if (_wordList.contains(word)) {
+          _accepted.add(word);
+        } else {
+          stoppedAt = word;
+          break;
+        }
+      }
+      _controller.clear();
+      // Light heads-up so the user knows why the fill stopped early.
+      _error = stoppedAt == null
+          ? null
+          : "Stopped at '$stoppedAt' — it isn't in the passphrase word list.";
+    });
+    if (_accepted.length >= kMnemonicMaxWords) {
+      _review();
+    } else {
+      _focusNode.requestFocus();
+    }
+  }
+
   void _onSubmitted(String raw) {
-    final word = raw.trim().toLowerCase();
+    final tokens = _tokenize(raw);
+    if (tokens.length >= 2) {
+      _distributePaste(tokens);
+      return;
+    }
+    final word = tokens.isEmpty ? '' : tokens.first;
     if (word.isEmpty) {
       if (_canReview) _review();
       return;
@@ -176,6 +230,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
             index: position,
             controller: _controller,
             focusNode: _focusNode,
+            onChanged: _onChanged,
             onSubmitted: _onSubmitted,
           ),
           if (_error != null) ...[
@@ -237,12 +292,14 @@ class _WordField extends StatelessWidget {
     required this.index,
     required this.controller,
     required this.focusNode,
+    required this.onChanged,
     required this.onSubmitted,
   });
 
   final int index;
   final TextEditingController controller;
   final FocusNode focusNode;
+  final ValueChanged<String> onChanged;
   final ValueChanged<String> onSubmitted;
 
   @override
@@ -283,13 +340,9 @@ class _WordField extends StatelessWidget {
               autocorrect: false,
               enableSuggestions: false,
               onSubmitted: onSubmitted,
-              onChanged: (value) {
-                // A trailing space accepts the word, like the system
-                // keyboard's suggestion flow.
-                if (value.endsWith(' ')) {
-                  onSubmitted(value);
-                }
-              },
+              // The parent decides: a multi-word paste distributes across
+              // slots; a single word + trailing space accepts.
+              onChanged: onChanged,
             ),
           ),
         ],

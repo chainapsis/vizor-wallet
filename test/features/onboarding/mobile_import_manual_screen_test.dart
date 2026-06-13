@@ -85,4 +85,73 @@ void main() {
 
     expect(find.text('Word 1/24'), findsOneWidget);
   });
+
+  Future<void> paste(WidgetTester tester, String text) async {
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_import_manual_field')),
+      text,
+    );
+    await tester.pump();
+  }
+
+  testWidgets('pasting multiple valid words fills consecutive slots', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    await paste(tester, 'abandon ability able');
+
+    expect(find.text('Word 4/24'), findsOneWidget);
+    expect(find.text('abandon · ability · able'), findsOneWidget);
+  });
+
+  testWidgets('pasting stops at the first non-word and ignores the rest', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    await paste(tester, 'abandon ability notaword able');
+
+    expect(find.text('Word 3/24'), findsOneWidget);
+    expect(find.text('abandon · ability'), findsOneWidget);
+    expect(find.textContaining("Stopped at 'notaword'"), findsOneWidget);
+  });
+
+  testWidgets('pasting cleans separators like commas and numbering', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    await paste(tester, '1. abandon, 2. ability; 3. able');
+
+    expect(find.text('Word 4/24'), findsOneWidget);
+    expect(find.text('abandon · ability · able'), findsOneWidget);
+  });
+
+  testWidgets('pasting appends from the current position', (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    await paste(tester, 'zebra ');
+    expect(find.text('Word 2/24'), findsOneWidget);
+
+    await paste(tester, 'abandon ability');
+
+    expect(find.text('Word 4/24'), findsOneWidget);
+    expect(find.text('zebra · abandon · ability'), findsOneWidget);
+  });
+
+  testWidgets('pasting a leading non-word fills nothing', (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    await paste(tester, 'notaword abandon');
+
+    expect(find.text('Word 1/24'), findsOneWidget);
+    expect(find.textContaining("Stopped at 'notaword'"), findsOneWidget);
+    expect(find.text('Undo last word'), findsNothing);
+  });
 }
