@@ -82,7 +82,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   // Review state.
   String _memo = '';
   BigInt? _feeZatoshi;
-  bool _showFullAddress = false;
   int _feeSeq = 0;
 
   // Broadcast state.
@@ -172,6 +171,119 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       selection: TextSelection.collapsed(offset: scanned.trim().length),
     );
     _handleAddressChanged();
+  }
+
+  Future<void> _pasteAddress() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final pasted = data?.text?.trim() ?? '';
+    if (pasted.isEmpty || !mounted) return;
+    _addressController.value = TextEditingValue(
+      text: pasted,
+      selection: TextSelection.collapsed(offset: pasted.length),
+    );
+    _handleAddressChanged();
+  }
+
+  /// Full recipient address in a chunked grid for visual verification —
+  /// Figma `Full Address WIP` (4638:13249): 5-character chunks laid out
+  /// five per row with the first and last highlighted crimson, replacing
+  /// the old inline expand.
+  Future<void> _showFullAddressSheet(String address) {
+    final chunks = <String>[
+      for (var i = 0; i < address.length; i += 5)
+        address.substring(
+          i,
+          i + 5 > address.length ? address.length : i + 5,
+        ),
+    ];
+    final label =
+        _contactLabel ??
+        (_isShieldedAddress ? 'Shielded address' : 'Transparent address');
+    return showAppMobileSheet<void>(
+      context: context,
+      builder: (sheetContext) {
+        final colors = sheetContext.colors;
+        return MobileBottomSafeArea(
+          bottomPadding: AppSpacing.md,
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    AppProfilePicture(
+                      profilePictureId: _contactPictureId ?? '',
+                      size: AppProfilePictureSize.medium,
+                    ),
+                    const SizedBox(width: AppSpacing.s),
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: AppTypography.headlineSmall.copyWith(
+                          color: colors.text.accent,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Semantics(
+                      button: true,
+                      label: 'Close',
+                      excludeSemantics: true,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => Navigator.of(sheetContext).pop(),
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: colors.background.raised,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: AppIcon(
+                              AppIcons.cross,
+                              size: 16,
+                              color: colors.icon.accent,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _AddressChunkGrid(
+                  key: const ValueKey('mobile_send_full_address_chunks'),
+                  chunks: chunks,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Semantics(
+                  button: true,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => Navigator.of(sheetContext).pop(),
+                    child: SizedBox(
+                      height: 44,
+                      child: Center(
+                        child: Text(
+                          'Close',
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _continueToAmount() {
@@ -619,7 +731,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   'error' => 'Address validation failed',
                   _ => null,
                 },
+                // Empty field offers Paste (Figma `Send to Focus`); once
+                // it has text the shared clear (X) takes the slot. The
+                // pill needs its intrinsic width, hence trailingFitsSlot.
                 showClearButton: true,
+                trailing: _PasteButton(
+                  onTap: () => unawaited(_pasteAddress()),
+                ),
+                trailingFitsSlot: true,
                 onChanged: (_) => _handleAddressChanged(),
                 onClear: _handleAddressChanged,
                 keyboardType: TextInputType.text,
@@ -998,9 +1117,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                           child: GestureDetector(
                             key: const ValueKey('mobile_send_full_address'),
                             behavior: HitTestBehavior.opaque,
-                            onTap: () => setState(
-                              () => _showFullAddress = !_showFullAddress,
-                            ),
+                            onTap: () => unawaited(_showFullAddressSheet(address)),
                             child: Row(
                               children: [
                                 AppIcon(
@@ -1038,15 +1155,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                             ),
                           ),
                         ),
-                        if (_showFullAddress) ...[
-                          const SizedBox(height: AppSpacing.xs),
-                          Text(
-                            address,
-                            style: AppTypography.labelMedium.copyWith(
-                              color: colors.text.accent,
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),
@@ -1589,6 +1697,97 @@ class MobileSaplingParamsSheet extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Inline "Paste" pill shown in the recipient field's trailing slot while
+/// it is empty — Figma `Send to Focus` (4423:119668). Tapping pastes the
+/// clipboard text into the address field.
+class _PasteButton extends StatelessWidget {
+  const _PasteButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: true,
+      label: 'Paste',
+      excludeSemantics: true,
+      child: GestureDetector(
+        key: const ValueKey('mobile_send_address_paste'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s,
+            vertical: AppSpacing.xs,
+          ),
+          decoration: BoxDecoration(
+            color: colors.background.raised,
+            borderRadius: BorderRadius.circular(AppRadii.full),
+          ),
+          child: Text(
+            'Paste',
+            style: AppTypography.labelMedium.copyWith(
+              color: colors.text.primary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Five-per-row grid of 5-character address chunks with the first and
+/// last chunk highlighted crimson — Figma `Full Address WIP`.
+class _AddressChunkGrid extends StatelessWidget {
+  const _AddressChunkGrid({required this.chunks, super.key});
+
+  final List<String> chunks;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    const columns = 5;
+    final rows = <List<int>>[];
+    for (var i = 0; i < chunks.length; i += columns) {
+      rows.add([
+        for (var c = i; c < i + columns && c < chunks.length; c++) c,
+      ]);
+    }
+    final lastIndex = chunks.length - 1;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var r = 0; r < rows.length; r++) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            child: Row(
+              children: [
+                for (var c = 0; c < columns; c++)
+                  Expanded(
+                    child: c < rows[r].length
+                        ? Text(
+                            chunks[rows[r][c]],
+                            style: AppTypography.bodyMediumStrong.copyWith(
+                              color:
+                                  rows[r][c] == 0 || rows[r][c] == lastIndex
+                                  ? colors.text.brandCrimson
+                                  : colors.text.accent,
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+              ],
+            ),
+          ),
+          if (r < rows.length - 1)
+            Container(height: 1, color: colors.border.regular),
+        ],
+      ],
     );
   }
 }
