@@ -3986,6 +3986,10 @@ fn build_send_max_proposal(
         db,
         &network,
         account_id,
+        // NU7 Ironwood notes are selected through the Orchard protocol path as
+        // v3 note rows; librustzcash does not expose a separate Ironwood
+        // ShieldedProtocol selector. This is why balance prechecks can treat
+        // spendable Ironwood value as available to ordinary sends.
         &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
         &fee_rule,
         to,
