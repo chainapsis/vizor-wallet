@@ -127,7 +127,10 @@ class AppGhostButtonColors {
 
   static const dark = AppGhostButtonColors(
     bg: Primitives.p0Dark,
-    bgHover: Primitives.p100Dark,
+    // p100Dark equals the raised/modal surface (#232828), which made the
+    // hover fill invisible on modal panels — one step up stays visible on
+    // both ground and raised surfaces.
+    bgHover: Primitives.p150Dark,
     border: Primitives.p300Dark,
     label: Primitives.p700Dark,
   );
