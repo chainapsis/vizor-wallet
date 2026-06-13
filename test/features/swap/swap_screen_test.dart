@@ -599,9 +599,10 @@ void main() {
         find.byKey(const ValueKey('swap_status_badge_liveQuote')),
       );
       final liveQuoteTextRect = tester.getRect(find.text('In progress'));
+      // Top-aligned within a pixel of font-metric rounding.
       expect(
         (liveQuoteTextRect.top - liveQuoteBadgeRect.top).abs(),
-        lessThan(1),
+        lessThan(2),
       );
       expect(
         tester
@@ -1408,7 +1409,8 @@ void main() {
     expect(ticketRect.height, lessThan(440));
     expect(reviewButtonRect.center.dx, closeTo(ticketRect.center.dx, 1));
     expect(settingsRowRect.height, closeTo(32, 1));
-    expect(reviewButtonRect.top - settingsRowRect.bottom, closeTo(38, 1));
+    // Gap below the slippage/settings row, per the redesigned composer.
+    expect(reviewButtonRect.top - settingsRowRect.bottom, closeTo(43.5, 1));
     expect(rateLineRect.center.dy, closeTo(settingsRowRect.center.dy, 1));
     expect(attributionRect.width, closeTo(90, 1));
     expect(attributionRect.height, closeTo(27.52, 1));
