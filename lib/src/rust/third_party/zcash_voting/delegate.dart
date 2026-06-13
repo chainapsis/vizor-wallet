@@ -20,7 +20,7 @@ class KeystoneSigningRequest {
   /// Randomized verification key (rk) for signature verification.
   final Uint8List rk;
 
-  /// Orchard action index containing the governance spend/output.
+  /// Governance action index within the selected shielded protocol bundle.
   final int actionIndex;
 
   /// Human-readable memo shown to the signer.
