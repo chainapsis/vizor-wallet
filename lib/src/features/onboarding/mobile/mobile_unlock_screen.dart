@@ -206,26 +206,15 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
                 color: colors.text.primary,
               ),
             ),
-            const SizedBox(height: AppSpacing.base),
-            PasscodeDots(length: kMobilePasscodeLength, filled: _entry.length),
-            SizedBox(
-              // Tall enough to hold the error message ~30 px below the
-              // dots, where the Sign In Passcode frame places it.
-              height: 84,
-              child: Center(
-                child: _error == null
-                    ? null
-                    : Text(
-                        _error!,
-                        textAlign: TextAlign.center,
-                        // Figma: Label M on text/destructive.
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.destructive,
-                        ),
-                      ),
+            // Dots + error centred in the space above the keypad rather
+            // than pinned under the subtitle.
+            Expanded(
+              child: PasscodePromptField(
+                length: kMobilePasscodeLength,
+                filled: _entry.length,
+                error: _error,
               ),
             ),
-            const Spacer(),
             Builder(
               builder: (context) {
                 final biometric =

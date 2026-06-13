@@ -246,28 +246,14 @@ class _MobileChangePasscodeScreenState
                 color: colors.text.secondary,
               ),
             ),
-            const SizedBox(height: AppSpacing.xl),
-            PasscodeDots(length: kMobilePasscodeLength, filled: _entry.length),
-            ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 44),
-              child: Center(
-                child: _error == null
-                    ? null
-                    : Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.md,
-                        ),
-                        child: Text(
-                          _error!,
-                          textAlign: TextAlign.center,
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.destructive,
-                          ),
-                        ),
-                      ),
+            // Dots + error centred in the space above the keypad.
+            Expanded(
+              child: PasscodePromptField(
+                length: kMobilePasscodeLength,
+                filled: _entry.length,
+                error: _error,
               ),
             ),
-            const Spacer(),
             PasscodeNumpad(
               onDigit: _onDigit,
               onBackspace: _onBackspace,

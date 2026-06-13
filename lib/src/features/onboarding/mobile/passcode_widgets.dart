@@ -8,6 +8,11 @@ import '../../../core/feedback/app_haptics.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
+/// Layout box of a single diamond dot (a rotated square → ~20 px diamond,
+/// matching the Figma index). [PasscodePromptField] uses it to centre the
+/// dots, so keep the two in sync.
+const double kPasscodeDotSize = 14;
+
 /// Diamond progress dots for passcode entry — Figma `Passcode 1/2`
 /// (4394:82593 / 4394:82878): six rotated squares that fill crimson as
 /// digits are typed; errors are conveyed by the plum message below, not
@@ -29,10 +34,9 @@ class PasscodeDots extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
             child: Transform.rotate(
               angle: math.pi / 4,
-              // 14 px square → ~20 px diamond, matching the Figma index.
               child: Container(
-                width: 14,
-                height: 14,
+                width: kPasscodeDotSize,
+                height: kPasscodeDotSize,
                 decoration: BoxDecoration(
                   color: i < filled
                       ? colors.icon.brandCrimson
@@ -43,6 +47,80 @@ class PasscodeDots extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// The passcode entry field: the [PasscodeDots] pinned to the vertical
+/// centre of the space it is given, with the error message rendered just
+/// below them WITHOUT shifting the dots.
+///
+/// Centring (rather than fixed gaps under the title) keeps the field
+/// balanced across window heights; rendering the error out of layout flow
+/// keeps the dots from jumping when it toggles, so no reserved error slot
+/// is needed. Place it inside an [Expanded] so it centres between the
+/// title block and the keypad. [minGap] keeps a small breathing gap top
+/// and bottom on short windows so the field never butts against its
+/// neighbours.
+class PasscodePromptField extends StatelessWidget {
+  const PasscodePromptField({
+    required this.length,
+    required this.filled,
+    this.error,
+    this.minGap = AppSpacing.s,
+    super.key,
+  });
+
+  final int length;
+  final int filled;
+  final String? error;
+  final double minGap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: minGap),
+      child: SizedBox(
+        // Fill the cross axis: the host Columns centre their children, so
+        // without this the full-width dots/error rows would collapse.
+        width: double.infinity,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final centerY = constraints.maxHeight / 2;
+            return Stack(
+              children: [
+                Positioned(
+                  top: centerY - kPasscodeDotSize / 2,
+                  left: 0,
+                  right: 0,
+                  child: PasscodeDots(length: length, filled: filled),
+                ),
+                if (error != null)
+                  Positioned(
+                    // Just below the dots, without affecting their centre.
+                    top: centerY + kPasscodeDotSize / 2 + AppSpacing.s,
+                    left: 0,
+                    right: 0,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                      ),
+                      child: Text(
+                        error!,
+                        textAlign: TextAlign.center,
+                        // Figma: Label M on text/destructive.
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.destructive,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 }

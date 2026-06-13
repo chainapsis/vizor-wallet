@@ -297,18 +297,14 @@ class _MobileSeedPhraseScreenState
             color: colors.text.secondary,
           ),
         ),
-        const SizedBox(height: AppSpacing.md),
-        PasscodeDots(length: kMobilePasscodeLength, filled: _entry.length),
-        const SizedBox(height: AppSpacing.sm),
-        if (_gateError != null)
-          Text(
-            _gateError!,
-            textAlign: TextAlign.center,
-            style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.destructive,
-            ),
+        // Dots + error centred in the space above the keypad.
+        Expanded(
+          child: PasscodePromptField(
+            length: kMobilePasscodeLength,
+            filled: _entry.length,
+            error: _gateError,
           ),
-        const Spacer(),
+        ),
         PasscodeNumpad(
           onDigit: _onDigit,
           onBackspace: _onBackspace,
