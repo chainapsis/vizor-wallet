@@ -203,20 +203,14 @@ class PasscodeNumpad extends StatelessWidget {
     final helpKey = onHelp == null
         ? key(const SizedBox.shrink())
         : key(
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: colors.border.regular, width: 1.5),
-              ),
-              child: Center(
-                child: AppIcon(
-                  AppIcons.help,
-                  size: AppIconSize.medium,
-                  color: colors.icon.accent,
-                ),
-              ),
+            // Figma `Help` (4596:50240): a single ~25px "?-in-circle" in
+            // icon/muted. help.svg already draws the ring, so there is no
+            // bordered container — wrapping it in one produced a double
+            // circle (ring inside ring).
+            AppIcon(
+              AppIcons.help,
+              size: 25,
+              color: colors.icon.muted,
             ),
             onTap: onHelp,
             label: 'Passcode help',
