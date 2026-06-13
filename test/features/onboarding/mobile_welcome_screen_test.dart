@@ -52,7 +52,7 @@ void main() {
     );
     expect(find.text('Get started'), findsOneWidget);
     // The entry points moved to the method-selection step.
-    expect(find.text('Create a wallet'), findsNothing);
+    expect(find.text('Create wallet'), findsNothing);
   });
 
   testWidgets(
@@ -64,8 +64,8 @@ void main() {
       await _openMethodSelection(tester);
 
       expect(find.byType(MobileMethodSelectionScreen), findsOneWidget);
-      expect(find.text('Create a wallet'), findsOneWidget);
-      expect(find.text('Import a wallet'), findsOneWidget);
+      expect(find.text('Create wallet'), findsOneWidget);
+      expect(find.text('Import wallet'), findsOneWidget);
       expect(find.text('Connect Keystone'), findsOneWidget);
       expect(find.textContaining('you agree to our'), findsOneWidget);
     },

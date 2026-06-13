@@ -24,85 +24,86 @@ class MobileWelcomeScreen extends StatelessWidget {
     final colors = context.colors;
     return Scaffold(
       backgroundColor: colors.background.window,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: Stack(
         children: [
-          SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(28, AppSpacing.s, 28, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    height: 44,
-                    child: Row(
-                      children: [
-                        if (showBackButton)
-                          Semantics(
-                            label: 'Back',
-                            button: true,
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () => context.go('/home'),
-                              child: SizedBox(
-                                width: 44,
-                                height: 44,
-                                child: Center(
-                                  child: AppIcon(
-                                    AppIcons.chevronBackward,
-                                    size: 24,
-                                    color: colors.text.accent,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        Expanded(
-                          child: Center(
-                            child: VizorWordmark(
-                              width: 96,
-                              height: 36,
-                              color: colors.text.accent,
-                            ),
-                          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 35),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Figma `Logo` 106×40, centered near the top.
+                      VizorWordmark(
+                        width: 106,
+                        height: 40,
+                        color: colors.text.accent,
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+                      Text(
+                        'Private Money.\nBy default',
+                        textAlign: TextAlign.center,
+                        // Figma `Welcome` tagline — Young Serif 48 / 1.1,
+                        // larger than the standard Headline XL token.
+                        style: AppTypography.displayLarge.copyWith(
+                          color: colors.text.accent,
+                          fontSize: 48,
+                          height: 1.1,
+                          letterSpacing: -1.35,
                         ),
-                        // Balances the back button so the wordmark stays
-                        // centered.
-                        if (showBackButton) const SizedBox(width: 44),
-                      ],
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      // Centered primary pill (Figma `Buttons Stack`,
+                      // 4750:24094 — ~200 wide; sized to its content so the
+                      // label + chevron never clip).
+                      AppButton(
+                        key: const ValueKey('mobile_welcome_get_started'),
+                        onPressed: () => context.push('/onboarding/method'),
+                        trailing: const AppIcon(AppIcons.chevronForward),
+                        child: const Text('Get started'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Expanded(
+                child: Image.asset(
+                  'assets/illustrations/welcome_hero_dark.png',
+                  fit: BoxFit.cover,
+                  alignment: Alignment.bottomCenter,
+                  width: double.infinity,
+                ),
+              ),
+            ],
+          ),
+          if (showBackButton)
+            Positioned(
+              top: MediaQuery.paddingOf(context).top + AppSpacing.xs,
+              left: AppSpacing.s,
+              child: Semantics(
+                label: 'Back',
+                button: true,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => context.go('/home'),
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Center(
+                      child: AppIcon(
+                        AppIcons.chevronBackward,
+                        size: 24,
+                        color: colors.text.accent,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.xl),
-                  Text(
-                    'Private Money.\nBy default',
-                    style: AppTypography.displayLarge.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: AppButton(
-                      key: const ValueKey('mobile_welcome_get_started'),
-                      onPressed: () => context.push('/onboarding/method'),
-                      trailing: const AppIcon(AppIcons.chevronForward),
-                      child: const Text('Get started'),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          Expanded(
-            child: Image.asset(
-              'assets/illustrations/welcome_hero_dark.png',
-              fit: BoxFit.cover,
-              alignment: Alignment.topCenter,
-              width: double.infinity,
-            ),
-          ),
         ],
       ),
     );
