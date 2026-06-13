@@ -36,7 +36,8 @@ void main() {
 
       // ── Add a second account through the create flow ─────────────
       await openAddAccountFlow(tester);
-      await tapAppButton(tester, const ValueKey('mobile_welcome_create'));
+      await tapAppButton(tester, const ValueKey('mobile_welcome_get_started'));
+      await tapWidget(tester, const ValueKey('mobile_welcome_create'));
       await tapAppButton(tester, const ValueKey('mobile_intro_continue'));
       await tapAppButton(
         tester,

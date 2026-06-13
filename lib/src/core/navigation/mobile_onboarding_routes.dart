@@ -8,6 +8,7 @@ import '../../features/onboarding/mobile/mobile_import_manual_screen.dart';
 import '../../features/onboarding/mobile/mobile_import_review_screen.dart';
 import '../../features/onboarding/mobile/mobile_import_screens.dart';
 import '../../features/onboarding/mobile/mobile_keystone_screens.dart';
+import '../../features/onboarding/mobile/mobile_method_selection_screen.dart';
 import '../../features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../../features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../../features/onboarding/mobile/mobile_welcome_screen.dart';
@@ -31,6 +32,13 @@ List<RouteBase> mobileOnboardingRoutes() => [
     pageBuilder: (context, state) => CupertinoPage(
       key: state.pageKey,
       child: const MobileWelcomeScreen(showBackButton: true),
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/method',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileMethodSelectionScreen(),
     ),
   ),
   GoRoute(

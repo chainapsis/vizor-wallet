@@ -264,7 +264,8 @@ Future<void> _stopRustWorkForCleanup() async {
 /// Welcome → create flow → passcode ×2 → biometrics → home.
 Future<void> createWalletWithPasscode(WidgetTester tester) async {
   logE2e('creating wallet');
-  await tapAppButton(tester, const ValueKey('mobile_welcome_create'));
+  await tapAppButton(tester, const ValueKey('mobile_welcome_get_started'));
+  await tapWidget(tester, const ValueKey('mobile_welcome_create'));
   await tapAppButton(tester, const ValueKey('mobile_intro_continue'));
   await tapAppButton(
     tester,
@@ -302,7 +303,8 @@ Future<void> importWalletViaPaste(
   required bool isFirstWallet,
 }) async {
   logE2e('importing wallet (first=$isFirstWallet)');
-  await tapAppButton(tester, const ValueKey('mobile_welcome_import'));
+  await tapAppButton(tester, const ValueKey('mobile_welcome_get_started'));
+  await tapWidget(tester, const ValueKey('mobile_welcome_import'));
   await Clipboard.setData(ClipboardData(text: mnemonic));
   await tapAppButton(tester, const ValueKey('mobile_import_paste'));
   // Paste fills the slots in place; confirm moves to the review screen.
@@ -391,7 +393,7 @@ Future<void> settle(WidgetTester tester, Duration duration) async {
 /// sheet when a stray tap dismissed it.
 Future<void> openAddAccountFlow(WidgetTester tester) async {
   final deadline = DateTime.now().add(const Duration(seconds: 45));
-  final welcome = find.byKey(const ValueKey('mobile_welcome_import'));
+  final welcome = find.byKey(const ValueKey('mobile_welcome_get_started'));
   final addButton = find.byKey(const ValueKey('mobile_accounts_add'));
   while (!tester.any(welcome)) {
     if (DateTime.now().isAfter(deadline)) {

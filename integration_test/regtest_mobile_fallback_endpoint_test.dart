@@ -50,6 +50,10 @@ void main() {
       // kicks off.
       await tapAppButton(
         tester,
+        const ValueKey('mobile_welcome_get_started'),
+      );
+      await tapWidget(
+        tester,
         const ValueKey('mobile_welcome_import'),
       );
       await _pasteAndReview(tester);

@@ -48,14 +48,28 @@ void main() {
       await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
       await pumpUntil(
         tester,
-        () => tester.any(find.byKey(const ValueKey('mobile_welcome_create'))),
+        () => tester.any(
+          find.byKey(const ValueKey('mobile_welcome_get_started')),
+        ),
         description: 'welcome screen',
         timeout: const Duration(minutes: 1),
       );
       await shot('01_welcome');
 
+      // ── Method selection ───────────────────────────────────────────
+      await tapAppButton(
+        tester,
+        const ValueKey('mobile_welcome_get_started'),
+      );
+      await pumpUntil(
+        tester,
+        () => tester.any(find.byKey(const ValueKey('mobile_welcome_import'))),
+        description: 'method selection screen',
+      );
+      await shot('01b_method_selection');
+
       // ── Import flow (funded wallet) ────────────────────────────────
-      await tapAppButton(tester, const ValueKey('mobile_welcome_import'));
+      await tapWidget(tester, const ValueKey('mobile_welcome_import'));
       await shot('02_import_entry');
       await tapWidget(
         tester,
@@ -499,7 +513,17 @@ void main() {
       await openHomeTab(tester);
       await openAddAccountFlow(tester);
       await shot('31_welcome_add_account');
-      await tapAppButton(tester, const ValueKey('mobile_welcome_keystone'));
+      await tapAppButton(
+        tester,
+        const ValueKey('mobile_welcome_get_started'),
+      );
+      await pumpUntil(
+        tester,
+        () =>
+            tester.any(find.byKey(const ValueKey('mobile_welcome_keystone'))),
+        description: 'method selection (add account)',
+      );
+      await tapWidget(tester, const ValueKey('mobile_welcome_keystone'));
       await pumpUntil(
         tester,
         () => tester.any(
@@ -513,9 +537,9 @@ void main() {
         tester,
         () =>
             tester.any(find.byKey(const ValueKey('mobile_welcome_create'))),
-        description: 'back on add-account welcome',
+        description: 'back on method selection',
       );
-      await tapAppButton(tester, const ValueKey('mobile_welcome_create'));
+      await tapWidget(tester, const ValueKey('mobile_welcome_create'));
       await pumpUntil(
         tester,
         () =>

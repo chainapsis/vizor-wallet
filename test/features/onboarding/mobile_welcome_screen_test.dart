@@ -10,7 +10,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_screens.dart';
-import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_method_selection_screen.dart';
 
 Widget _app({String initialLocation = '/welcome'}) {
   final router = GoRouter(
@@ -25,6 +25,13 @@ Widget _app({String initialLocation = '/welcome'}) {
   );
 }
 
+/// Welcome → "Get started" → Method Selection (where the entry points now
+/// live).
+Future<void> _openMethodSelection(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('mobile_welcome_get_started')));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -33,37 +40,52 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
-  testWidgets('welcome shows the three entry points and the legal footer', (
+  testWidgets('welcome shows the Get started call to action only', (
     tester,
   ) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
 
-    expect(find.text('Create a wallet'), findsOneWidget);
-    expect(find.text('Import a wallet'), findsOneWidget);
-    expect(find.text('Connect Keystone'), findsOneWidget);
-    expect(find.textContaining('you agree to our'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_welcome_get_started')),
+      findsOneWidget,
+    );
+    expect(find.text('Get started'), findsOneWidget);
+    // The entry points moved to the method-selection step.
+    expect(find.text('Create a wallet'), findsNothing);
   });
 
-  testWidgets('create pushes the intro step with swipe-back semantics', (
-    tester,
-  ) async {
+  testWidgets(
+    'Get started opens method selection with the three entry points and '
+    'the legal footer',
+    (tester) async {
+      await tester.pumpWidget(_app());
+      await tester.pumpAndSettle();
+      await _openMethodSelection(tester);
+
+      expect(find.byType(MobileMethodSelectionScreen), findsOneWidget);
+      expect(find.text('Create a wallet'), findsOneWidget);
+      expect(find.text('Import a wallet'), findsOneWidget);
+      expect(find.text('Connect Keystone'), findsOneWidget);
+      expect(find.textContaining('you agree to our'), findsOneWidget);
+    },
+  );
+
+  testWidgets('create pushes the intro step', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
+    await _openMethodSelection(tester);
 
     await tester.tap(find.byKey(const ValueKey('mobile_welcome_create')));
     await tester.pumpAndSettle();
 
     expect(find.byType(MobileOnboardingIntroScreen), findsOneWidget);
-
-    await tester.tap(find.bySemanticsLabel('Back'));
-    await tester.pumpAndSettle();
-    expect(find.byType(MobileWelcomeScreen), findsOneWidget);
   });
 
   testWidgets('import pushes the import entry step', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
+    await _openMethodSelection(tester);
 
     await tester.tap(find.byKey(const ValueKey('mobile_welcome_import')));
     await tester.pumpAndSettle();
@@ -73,6 +95,7 @@ void main() {
   testWidgets('keystone pushes the keystone intro step', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
+    await _openMethodSelection(tester);
 
     await tester.tap(find.byKey(const ValueKey('mobile_welcome_keystone')));
     await tester.pumpAndSettle();
