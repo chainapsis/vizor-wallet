@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/content_overlay_inset.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/network_fallback_toast.dart';
@@ -170,6 +171,51 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Fallback selected'), findsNothing);
+  });
+
+  testWidgets('toast clears a mounted sidebar inset and re-centers on release', (
+    tester,
+  ) async {
+    const inset = 272.0;
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        theme: AppThemeData.light,
+        child: SizedBox(
+          width: 800,
+          height: 300,
+          child: NetworkFallbackToastHost(
+            child: ContentOverlayInset(
+              leftInset: inset,
+              child: _ToastTrigger(message: 'Fallback selected'),
+            ),
+          ),
+        ),
+      ),
+    );
+    // Let the post-frame inset push land.
+    await tester.pump();
+
+    await tester.tap(find.text('Show toast'));
+    await tester.pump();
+    await tester.pump(NetworkFallbackToastHost.animationDuration);
+
+    final hostTopLeft = tester.getTopLeft(
+      find.byType(NetworkFallbackToastHost),
+    );
+    final hostSize = tester.getSize(find.byType(NetworkFallbackToastHost));
+    final toastTopLeft = tester.getTopLeft(find.byType(NetworkFallbackToast));
+    final toastSize = tester.getSize(find.byType(NetworkFallbackToast));
+
+    // Centered within the pane region [inset, width], not the full window.
+    final paneCenter = hostTopLeft.dx + inset + (hostSize.width - inset) / 2;
+    expect(
+      toastTopLeft.dx + toastSize.width / 2,
+      moreOrLessEquals(paneCenter),
+    );
+    expect(toastTopLeft.dx, greaterThan(hostTopLeft.dx + inset / 2));
+
+    await tester.pump(NetworkFallbackToast.defaultDuration);
+    await tester.pumpAndSettle();
   });
 }
 

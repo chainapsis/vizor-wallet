@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_back_link.dart';
 import '../widgets/app_icon.dart';
 import '../widgets/app_toast.dart';
+import 'content_overlay_inset.dart';
 
 class AppDesktopShell extends StatelessWidget {
   const AppDesktopShell({
@@ -28,26 +29,32 @@ class AppDesktopShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final background = this.background;
-    return Scaffold(
-      backgroundColor: backgroundColor ?? context.colors.macosUtility.window,
-      body: SafeArea(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (background != null)
-              Positioned.fill(child: IgnorePointer(child: background)),
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.xs),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(width: sidebarWidth, child: sidebar),
-                  const SizedBox(width: AppSpacing.xs),
-                  Expanded(child: pane),
-                ],
+    // Where the trailing pane begins: outer padding + sidebar + the gap.
+    // Window-level overlays clear this so they align with the pane.
+    final paneLeftInset = AppSpacing.xs + sidebarWidth + AppSpacing.xs;
+    return ContentOverlayInset(
+      leftInset: paneLeftInset,
+      child: Scaffold(
+        backgroundColor: backgroundColor ?? context.colors.macosUtility.window,
+        body: SafeArea(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (background != null)
+                Positioned.fill(child: IgnorePointer(child: background)),
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.xs),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(width: sidebarWidth, child: sidebar),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(child: pane),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
