@@ -42,10 +42,6 @@ class MobileSettingsScreen extends ConsumerWidget {
     final biometric =
         ref.watch(biometricUnlockProvider).value ?? BiometricUnlockState.initial;
 
-    final profileLabel = resolveProfilePictureOption(
-      account?.profilePictureId ?? kDefaultProfilePictureId,
-    ).label;
-
     return SafeArea(
       bottom: false,
       child: Column(
@@ -80,7 +76,9 @@ class MobileSettingsScreen extends ConsumerWidget {
                       key: const ValueKey('mobile_settings_pfp_row'),
                       leading: _RowIcon(AppIcons.user),
                       label: 'Profile Picture',
-                      // Avatar → name → chevron, per the Figma row.
+                      // Just the avatar thumbnail → chevron. The "Profile
+                      // picture N" label was redundant with the thumbnail
+                      // and only ate horizontal space.
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -89,13 +87,6 @@ class MobileSettingsScreen extends ConsumerWidget {
                                 account?.profilePictureId ??
                                 kDefaultProfilePictureId,
                             size: AppProfilePictureSize.medium,
-                          ),
-                          const SizedBox(width: AppSpacing.xs),
-                          Text(
-                            profileLabel,
-                            style: AppTypography.bodyMedium.copyWith(
-                              color: context.colors.text.secondary,
-                            ),
                           ),
                           const SizedBox(width: AppSpacing.xs),
                           AppIcon(
