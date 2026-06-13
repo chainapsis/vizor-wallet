@@ -142,7 +142,7 @@ void main() {
       AppSecureStore.instance.clearSessionPassword();
     });
 
-    testWidgets('digits knock medium and a wrong passcode buzzes the error', (
+    testWidgets('digits tap light and a wrong passcode buzzes the error', (
       tester,
     ) async {
       await AppSecureStore.instance.configurePassword('123456');
@@ -183,11 +183,11 @@ void main() {
 
       await tester.tap(find.bySemanticsLabel('Digit 1'));
       await tester.pump();
-      expect(impactTypes, ['HapticFeedbackType.mediumImpact']);
+      expect(impactTypes, ['HapticFeedbackType.lightImpact']);
 
       await tester.tap(find.bySemanticsLabel('Delete digit'));
       await tester.pump();
-      expect(impactTypes.last, 'HapticFeedbackType.lightImpact');
+      expect(impactTypes.last, 'HapticFeedbackType.selectionClick');
 
       // A full wrong passcode lands the error haptic exactly once.
       for (final d in '999999'.split('')) {

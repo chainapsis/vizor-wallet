@@ -1,18 +1,20 @@
 import 'package:flutter/services.dart';
 
-/// Haptic vocabulary for the passcode surfaces.
+/// Haptic vocabulary for the passcode surfaces and the mobile tab bar.
 ///
 /// All methods are fire-and-forget safe — call them unawaited so a slow
 /// platform round trip never delays input handling.
 abstract final class AppHaptics {
   static const _channel = MethodChannel('com.zcash.wallet/haptics');
 
-  /// A passcode digit key press.
-  static Future<void> digit() => HapticFeedback.mediumImpact();
+  /// A passcode digit key press — a short, light tap (iOS
+  /// UIImpactFeedbackGenerator(.light)).
+  static Future<void> digit() => HapticFeedback.lightImpact();
 
-  /// Auxiliary keys (delete, biometric retry) — one step softer than
-  /// the digits.
-  static Future<void> auxiliaryKey() => HapticFeedback.lightImpact();
+  /// Auxiliary keys (delete, biometric retry) and tab switches — the
+  /// subtle selection tick (iOS UISelectionFeedbackGenerator), one step
+  /// softer than the digits.
+  static Future<void> auxiliaryKey() => HapticFeedback.selectionClick();
 
   /// A rejected passcode. Native notification-error where the platform
   /// has one (iOS UINotificationFeedbackGenerator(.error), Android
