@@ -340,6 +340,19 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
                         ],
                       ),
                     ],
+                    // VZR-73: the page-level add affordance, mirroring
+                    // the accounts sheet and the desktop accounts page.
+                    const SizedBox(height: AppSpacing.sm),
+                    AppButton(
+                      key: const ValueKey('mobile_accounts_add_account'),
+                      variant: AppButtonVariant.secondary,
+                      expand: true,
+                      onPressed: _busy
+                          ? null
+                          : () => context.push('/add-account'),
+                      leading: const AppIcon(AppIcons.addNew),
+                      child: const Text('Add account'),
+                    ),
                   ],
                 ),
               ),
