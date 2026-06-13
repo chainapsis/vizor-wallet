@@ -7,6 +7,7 @@ import '../../../../core/config/network_config.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav_account.dart';
+import '../../../../core/layout/mobile/mobile_top_scroll_fade.dart';
 import '../../../../core/privacy/privacy_mask.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -58,15 +59,19 @@ class MobileHomeScreen extends ConsumerWidget {
               ),
             ),
             Expanded(
-              child: isImporting
-                  ? _ImportingView(progress: sync.displayPercentage)
-                  : _HomeContent(
-                      sync: sync,
-                      activeAccountUuid: activeAccountUuid,
-                      privacyModeEnabled: privacyModeEnabled,
-                      onTogglePrivacyMode: () =>
-                          ref.read(privacyModeProvider.notifier).toggle(),
-                    ),
+              // VZR-74: dissolve scrolled content under the top nav
+              // with a soft eased fade instead of a hard clip line.
+              child: MobileTopScrollFade(
+                child: isImporting
+                    ? _ImportingView(progress: sync.displayPercentage)
+                    : _HomeContent(
+                        sync: sync,
+                        activeAccountUuid: activeAccountUuid,
+                        privacyModeEnabled: privacyModeEnabled,
+                        onTogglePrivacyMode: () =>
+                            ref.read(privacyModeProvider.notifier).toggle(),
+                      ),
+              ),
             ),
           ],
         ),
