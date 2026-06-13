@@ -524,6 +524,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
           checking: depositChecking || state.statusRefreshing,
           checkWarning: depositCheckWarning,
           onDeposited: onMarkDeposited,
+          mobile: layout == SwapActivityDetailLayout.mobile,
         ),
       _ when showHardwareDepositPage && depositInstruction != null =>
         SwapHardwareZecDepositPageContent(
@@ -534,6 +535,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
           expiresAt: intent.depositDeadline,
           memo: depositInstruction.memo,
           onDepositZec: () => onSignZecDeposit(intent),
+          mobile: layout == SwapActivityDetailLayout.mobile,
         ),
       _ => _SwapStatusForIntent(
         intent: intent,
@@ -543,21 +545,15 @@ class _SwapActivityFlowContent extends StatelessWidget {
     };
 
     final mobile = layout == SwapActivityDetailLayout.mobile;
-    // The deposit pages still render the 400pt desktop content; scale
-    // them into the phone width until their mobile frames land.
-    final fittedPrimaryContent =
-        mobile &&
-            primaryContent is! _SwapStatusForIntent &&
-            primaryContent is! MobileSwapTimeoutContent
-        ? FittedBox(fit: BoxFit.scaleDown, child: primaryContent)
-        : primaryContent;
+    // All mobile branches now render native full-width content (deposit,
+    // status, timeout), so no desktop-content down-scaling is needed.
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: mobile
           ? CrossAxisAlignment.stretch
           : CrossAxisAlignment.center,
       children: [
-        fittedPrimaryContent,
+        primaryContent,
         if (statusError != null) ...[
           const SizedBox(height: AppSpacing.md),
           if (mobile)
