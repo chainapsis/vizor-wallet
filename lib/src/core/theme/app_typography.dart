@@ -20,11 +20,11 @@
 ///
 /// Font sizes and letter spacings are authored in logical pixels. The
 /// sans families and letter spacings are identical across modes; the
-/// headline scale keeps Libre Caslon Text in both modes, with mobile-only
-/// size adjustments for `Headline XL` and `Headline M`. Line heights are
-/// stored as the unitless multiplier Flutter expects (`TextStyle.height`)
-/// — computed as `figmaLineHeightPx / fontSizePx` so the original Figma
-/// design still reproduces exactly.
+/// serif display scale differs by family (Desktop: Libre Caslon Text,
+/// Mobile: Young Serif) as well as size. Line heights are stored as the
+/// unitless multiplier Flutter expects (`TextStyle.height`) — computed
+/// as `figmaLineHeightPx / fontSizePx` so the original Figma design
+/// still reproduces exactly.
 ///
 /// Colors are not baked into these styles. Callers merge colors in at
 /// the call site (usually through `DefaultTextStyle.merge` or
@@ -40,6 +40,9 @@ import '../layout/app_form_factor.dart';
 // ─── Mode-invariant styles (identical in both Figma modes) ───────────
 
 /// Figma `Headline L` — Libre Caslon Text Regular, 32 / 33 px.
+///
+/// Desktop keeps Libre Caslon Text; the mobile app screens still render
+/// the display headline scale as Young Serif (see [_headlineLMobile]).
 const _headlineL = TextStyle(
   fontFamily: 'Libre Caslon Text',
   fontWeight: FontWeight.w400,
@@ -57,13 +60,35 @@ const _headlineM = TextStyle(
   letterSpacing: -0.28,
 );
 
-/// Figma `Headline M`, Mobile mode — Libre Caslon Text, 24 / 28 px, −0.4.
-const _headlineMMobile = TextStyle(
-  fontFamily: 'Libre Caslon Text',
+/// Young Serif's default numerals are old-style figures (6/8 ascend,
+/// 3/4/5/7/9 descend below the baseline); the mobile frames render every
+/// serif number — balance, send amount, numpad — with uniform lining
+/// figures, so the Young Serif tokens pin the font's `lnum` feature.
+const _youngSerifFigures = [FontFeature.liningFigures()];
+
+/// Figma mobile app `Headline L` — Young Serif, 32 / 33 px.
+///
+/// The current `3 Fonts-3.zip` variable export lists Libre Caslon Text for
+/// this slot, but the actual mobile screen frames still render the display
+/// headline scale with Young Serif. Keep the app token aligned with the
+/// screen frames until the design file and variable export agree.
+const _headlineLMobile = TextStyle(
+  fontFamily: 'Young Serif',
   fontWeight: FontWeight.w400,
-  fontSize: 24,
-  height: 28 / 24,
-  letterSpacing: -0.4,
+  fontSize: 32,
+  height: 33 / 32,
+  letterSpacing: 0,
+  fontFeatures: _youngSerifFigures,
+);
+
+/// Figma mobile app `Headline M` — Young Serif, 28 / 30 px, −0.28.
+const _headlineMMobile = TextStyle(
+  fontFamily: 'Young Serif',
+  fontWeight: FontWeight.w400,
+  fontSize: 28,
+  height: 30 / 28,
+  letterSpacing: -0.28,
+  fontFeatures: _youngSerifFigures,
 );
 
 /// Figma `Code M` — Geist Mono Medium, 14 / 21 px.
@@ -188,22 +213,23 @@ abstract final class AppTypographyDesktop {
 
 /// The Mobile mode of the Figma `Fonts` collection.
 ///
-/// Families, weights, and letter spacings match the desktop set except
-/// where the Figma mobile mode explicitly changes metrics (`Headline XL`,
-/// `Headline M`, body/label scale, and `Code M`).
+/// Body, label, and code metrics follow the current mobile variable
+/// export. The display headline scale intentionally follows the actual
+/// mobile screen frames, which still use Young Serif.
 abstract final class AppTypographyMobile {
-  /// Figma `Headline XL` — Libre Caslon Text, 40 / 40 px, −1.35.
+  /// Figma mobile app `Headline XL` — Young Serif, 40 / 40 px, −1.35.
   static const displayLarge = TextStyle(
-    fontFamily: 'Libre Caslon Text',
+    fontFamily: 'Young Serif',
     fontWeight: FontWeight.w400,
     fontSize: 40,
     height: 40 / 40,
     letterSpacing: -1.35,
+    fontFeatures: _youngSerifFigures,
   );
 
   static const displayMedium = displayLarge;
-  static const displaySmall = _headlineL;
-  static const headlineLarge = _headlineL;
+  static const displaySmall = _headlineLMobile;
+  static const headlineLarge = _headlineLMobile;
   static const headlineMedium = _headlineMMobile;
 
   /// Figma `Headline S` — Geist Medium, 18 / 22 px.

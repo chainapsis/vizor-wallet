@@ -74,7 +74,7 @@ class MobileWelcomeScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 29),
                   // Figma `Buttons Stack` (4750:24094): a 200-wide primary
-                  // pill with the Label M (14) text and a trailing chevron —
+                  // pill with Label M text and a trailing chevron —
                   // the standard large AppButton. `minWidth` (not a tight
                   // box) pins it to 200 with centred content while letting it
                   // grow if a wide test font would otherwise overflow.

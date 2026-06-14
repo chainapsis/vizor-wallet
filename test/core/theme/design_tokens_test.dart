@@ -166,17 +166,21 @@ void main() {
     expect(AppTypographyDesktop.codeSmall.height, 17 / 13);
   });
 
-  test('mobile font tokens match 3 Fonts-3.zip', () {
-    // Headline XL scales down on mobile (45 -> 40), while Headline M
-    // shifts to 24 / 28 with tighter tracking. The zip keeps Libre
-    // Caslon Text as the headline family in both modes.
-    expect(AppTypographyMobile.displayLarge.fontFamily, 'Libre Caslon Text');
+  test('mobile font tokens match 3 Fonts-3.zip and app screen overrides', () {
+    // The current variable export updates mobile body/label/code metrics,
+    // but actual mobile app frames still render display headlines with
+    // Young Serif. Keep that intentional app-level screen behavior pinned.
+    expect(AppTypographyMobile.displayLarge.fontFamily, 'Young Serif');
     expect(AppTypographyMobile.displayLarge.fontWeight, FontWeight.w400);
     expect(AppTypographyMobile.displayLarge.fontSize, 40);
     expect(AppTypographyMobile.displayLarge.height, 40 / 40);
     expect(AppTypographyMobile.displayLarge.letterSpacing, -1.35);
+    const lining = [FontFeature.liningFigures()];
+    expect(AppTypographyMobile.displayLarge.fontFeatures, lining);
+    expect(AppTypographyMobile.headlineLarge.fontFeatures, lining);
+    expect(AppTypographyMobile.headlineMedium.fontFeatures, lining);
 
-    expect(AppTypographyMobile.headlineLarge.fontFamily, 'Libre Caslon Text');
+    expect(AppTypographyMobile.headlineLarge.fontFamily, 'Young Serif');
     expect(
       AppTypographyMobile.headlineLarge.fontSize,
       AppTypographyDesktop.headlineLarge.fontSize,
@@ -185,10 +189,16 @@ void main() {
       AppTypographyMobile.headlineLarge.height,
       AppTypographyDesktop.headlineLarge.height,
     );
-    expect(AppTypographyMobile.headlineMedium.fontFamily, 'Libre Caslon Text');
-    expect(AppTypographyMobile.headlineMedium.fontSize, 24);
-    expect(AppTypographyMobile.headlineMedium.height, 28 / 24);
-    expect(AppTypographyMobile.headlineMedium.letterSpacing, -0.4);
+    expect(AppTypographyMobile.headlineMedium.fontFamily, 'Young Serif');
+    expect(
+      AppTypographyMobile.headlineMedium.fontSize,
+      AppTypographyDesktop.headlineMedium.fontSize,
+    );
+    expect(
+      AppTypographyMobile.headlineMedium.height,
+      AppTypographyDesktop.headlineMedium.height,
+    );
+    expect(AppTypographyMobile.headlineMedium.letterSpacing, -0.28);
 
     // Code S is mode-invariant; Code M scales up on mobile.
     expect(AppTypographyMobile.codeMedium.fontSize, 16);
