@@ -14,12 +14,17 @@ class ReviewButtonsStack extends StatelessWidget {
     required this.secondaryLabel,
     required this.onSecondaryPressed,
     this.primaryLeadingIconName,
+    this.primaryKey,
     super.key,
   });
 
   /// Primary CTA label ("Confirm & send"). `null` handler disables it.
   final String primaryLabel;
   final VoidCallback? onPrimaryPressed;
+
+  /// Optional key for the primary CTA, used by integration tests to tap the
+  /// confirm action regardless of the (hardware-dependent) label.
+  final Key? primaryKey;
 
   /// Ghost secondary label ("Cancel").
   final String secondaryLabel;
@@ -36,6 +41,7 @@ class ReviewButtonsStack extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         AppButton(
+          key: primaryKey,
           onPressed: onPrimaryPressed,
           minWidth: _minButtonWidth,
           leading: primaryLeadingIconName != null

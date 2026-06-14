@@ -41,7 +41,6 @@ const _password = 'Vizor123!';
 const _sendAmount = '0.25';
 final _sendZatoshi = BigInt.from(25_000_000);
 final _currencyTicker = kZcashDefaultCurrencyTicker;
-final _currencyTickerLower = _currencyTicker.toLowerCase();
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -67,7 +66,7 @@ void main() {
       await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
 
       await _importFirstWallet(tester);
-      await _waitForBalance(tester, shielded: '1.25 $_currencyTickerLower');
+      await _waitForBalance(tester, shielded: '1.25');
 
       await _openAddAccountFlow(tester);
       await _importAdditionalWallet(tester);
@@ -83,7 +82,7 @@ void main() {
 
       await _openWallet(tester);
       await _switchAccount(tester, 0);
-      await _waitForBalance(tester, shielded: '1.25 $_currencyTickerLower');
+      await _waitForBalance(tester, shielded: '1.25');
       final expectedSenderFee = await _estimateSendFee(
         accountUuid: senderAccountUuid,
         toAddress: _texAddress,
@@ -105,7 +104,7 @@ void main() {
       await _switchAccount(tester, 1);
       await _waitForBalance(
         tester,
-        transparent: 'Transparent balance: $_sendAmount $_currencyTicker',
+        transparent: 'Transparent: $_sendAmount $_currencyTicker',
         timeout: const Duration(minutes: 5),
       );
       await _waitForHistoryEntry(
@@ -118,7 +117,7 @@ void main() {
       );
       await _expectActivityRow(
         tester,
-        const ValueKey('home_activity_row_0'),
+        const ValueKey('home_desktop_activity_row_0'),
         title: 'Received',
         amount: '+$_sendAmount $_currencyTicker',
         status: 'Completed',
@@ -186,8 +185,10 @@ Future<void> _importAdditionalWallet(WidgetTester tester) async {
 
 Future<void> _openAddAccountFlow(WidgetTester tester) async {
   _log('opening add-account flow');
+  // The redesigned sidebar account header opens a popover; "Add account"
+  // lives inside it and routes to /add-account.
   await _tapWidget(tester, const ValueKey('sidebar_accounts_button'));
-  await _tapAppButton(tester, const ValueKey('accounts_add_account_button'));
+  await _tapWidget(tester, const ValueKey('sidebar_accounts_add'));
   await _pumpUntil(
     tester,
     () =>
@@ -202,7 +203,7 @@ Future<void> _sendToAddress(
   String amount,
 ) async {
   _log('sending $amount $_currencyTicker to TEX recipient');
-  await _tapAppButton(tester, const ValueKey('home_send_button'));
+  await _tapWidget(tester, const ValueKey('home_desktop_send_button'));
   await _enterText(tester, const ValueKey('send_address_field'), address);
   await _enterText(tester, const ValueKey('send_amount_field'), amount);
   await _tapAppButton(
@@ -217,7 +218,7 @@ Future<void> _sendToAddress(
   );
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('send_status_succeeded'))),
+    () => tester.any(find.byKey(const ValueKey('send_status_completed'))),
     description: 'send status to succeed',
     timeout: const Duration(minutes: 4),
   );
@@ -303,7 +304,7 @@ Future<T> _zcashdRpc<T>(
 }
 
 Future<void> _openWallet(WidgetTester tester) async {
-  if (tester.any(find.byKey(const ValueKey('home_shielded_balance_text')))) {
+  if (tester.any(find.byKey(const ValueKey('home_desktop_balance_amount_text')))) {
     return;
   }
   await _tapWidget(tester, const ValueKey('sidebar_home_button'));
@@ -324,14 +325,14 @@ Future<void> _switchAccount(WidgetTester tester, int accountOrder) async {
   _log('switching to account order $accountOrder');
   final accountUuid = await _accountUuidAtOrder(accountOrder);
   await _tapWidget(tester, const ValueKey('sidebar_accounts_button'));
-  await _tapWidget(tester, ValueKey('accounts_other_row_$accountUuid'));
+  await _tapWidget(tester, ValueKey('sidebar_account_popover_row_$accountUuid'));
   await _waitForHome(tester);
 }
 
 Future<void> _waitForHome(WidgetTester tester) async {
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('home_shielded_balance_text'))),
+    () => tester.any(find.byKey(const ValueKey('home_desktop_balance_amount_text'))),
     description: 'home balance card to render',
     timeout: const Duration(minutes: 1),
   );
@@ -432,7 +433,7 @@ Future<void> _waitForBalance(
       tester,
       () => _keyedTextEquals(
         tester,
-        const ValueKey('home_shielded_balance_text'),
+        const ValueKey('home_desktop_balance_amount_text'),
         shielded,
       ),
       description: 'shielded balance to show $shielded',
@@ -455,6 +456,25 @@ Future<void> _waitForBalance(
   }
 }
 
+/// Pending rows append an ellipsis to the action title ("Receiving ...");
+/// completed/other rows use the plain title. Compact home rows convey status
+/// via the title/icon and omit the status label, while the full activity
+/// screen rows render it. Accept either title form and only enforce the status
+/// text when the row actually shows one.
+bool _activityRowMatches(
+  Set<String> texts,
+  String title,
+  String amount,
+  String status,
+) {
+  if (!texts.contains(amount)) return false;
+  final titleOk = texts.contains(title) || texts.contains('$title ...');
+  if (!titleOk) return false;
+  const knownStatuses = {'In progress', 'Completed', 'Failed', 'Refunded'};
+  final rendered = texts.where(knownStatuses.contains);
+  return rendered.isEmpty || rendered.contains(status);
+}
+
 Future<void> _expectActivityRow(
   WidgetTester tester,
   Key key, {
@@ -464,12 +484,12 @@ Future<void> _expectActivityRow(
 }) async {
   await _pumpUntil(
     tester,
-    () {
-      final texts = _textSetIn(tester, find.byKey(key));
-      return texts.contains(title) &&
-          texts.contains(amount) &&
-          texts.contains(status);
-    },
+    () => _activityRowMatches(
+      _textSetIn(tester, find.byKey(key)),
+      title,
+      amount,
+      status,
+    ),
     description: '$key activity row to show $title $amount $status',
     timeout: const Duration(minutes: 2),
   );

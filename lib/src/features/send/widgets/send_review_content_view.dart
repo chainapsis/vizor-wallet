@@ -107,6 +107,7 @@ class SendReviewContentView extends StatelessWidget {
           ],
         ),
         ReviewButtonsStack(
+          primaryKey: const ValueKey('send_confirm_button'),
           primaryLabel: confirmLabel,
           primaryLeadingIconName: confirmLeadingIconName,
           onPrimaryPressed: onConfirm,
