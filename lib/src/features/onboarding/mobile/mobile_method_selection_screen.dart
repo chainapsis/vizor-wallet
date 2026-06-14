@@ -23,6 +23,7 @@ class MobileMethodSelectionScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = context.appTheme == AppThemeData.dark;
     return Scaffold(
       backgroundColor: colors.background.window,
       body: SafeArea(
@@ -72,6 +73,7 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                               // The create knight is taller than the card and
                               // bleeds above its top edge in Figma (4752:26357).
                               bleed: true,
+                              emphasized: true,
                               onTap: () => context.push('/onboarding/intro'),
                             ),
                             const SizedBox(height: AppSpacing.sm),
@@ -92,8 +94,9 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                               ),
                               iconName: AppIcons.qr,
                               label: 'Connect Keystone',
-                              illustration:
-                                  'assets/illustrations/method_keystone_dark.png',
+                              illustration: isDark
+                                  ? 'assets/illustrations/method_keystone_dark.png'
+                                  : 'assets/illustrations/method_keystone_light.png',
                               onTap: () => context.push('/onboarding/keystone'),
                             ),
                           ],
@@ -121,6 +124,7 @@ class _MethodCard extends StatelessWidget {
     required this.illustration,
     required this.onTap,
     this.bleed = false,
+    this.emphasized = false,
   });
 
   final Key buttonKey;
@@ -128,6 +132,7 @@ class _MethodCard extends StatelessWidget {
   final String label;
   final String illustration;
   final VoidCallback onTap;
+  final bool emphasized;
 
   /// The create knight is rendered at 186×151 and bleeds 31px above the
   /// card; the masked import/Keystone art is 180×120 and stays inside the
@@ -138,6 +143,11 @@ class _MethodCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isLight = context.appTheme == AppThemeData.light;
+    final cardBackgroundColor = emphasized && isLight
+        ? colors.background.homeCard
+        : colors.background.raised;
+    final contentColor = emphasized ? colors.text.homeCard : colors.text.accent;
     final cardRadius = BorderRadius.circular(AppRadii.large);
     final keySuffix = label.toLowerCase().replaceAll(' ', '_');
     // Figma `New Wallet Bg` 186×151 @ top -32.5; `Import/keystone card bg`
@@ -151,24 +161,6 @@ class _MethodCard extends StatelessWidget {
         illustration,
         key: ValueKey('mobile_method_${keySuffix}_art'),
         fit: BoxFit.fill,
-      ),
-    );
-    final content = Padding(
-      key: ValueKey('mobile_method_${keySuffix}_content'),
-      // Figma insets the icon/label 14.5 from the card edge (~sm).
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AppIcon(iconName, size: 20, color: colors.icon.accent),
-          const Spacer(),
-          Text(
-            label,
-            style: AppTypography.headlineMedium.copyWith(
-              color: colors.text.accent,
-            ),
-          ),
-        ],
       ),
     );
     return Semantics(
@@ -189,21 +181,69 @@ class _MethodCard extends StatelessWidget {
             children: [
               ClipRRect(
                 borderRadius: cardRadius,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Positioned.fill(
-                      child: ColoredBox(color: colors.background.raised),
-                    ),
-                    if (!bleed) art,
-                  ],
+                child: DecoratedBox(
+                  decoration: BoxDecoration(color: cardBackgroundColor),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [if (!bleed) art],
+                  ),
                 ),
               ),
               if (bleed) art,
-              content,
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: cardRadius,
+                      border: Border.all(
+                        color: colors.border.subtle,
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              _MethodCardContent(
+                key: ValueKey('mobile_method_${keySuffix}_content'),
+                iconName: iconName,
+                label: label,
+                color: contentColor,
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _MethodCardContent extends StatelessWidget {
+  const _MethodCardContent({
+    super.key,
+    required this.iconName,
+    required this.label,
+    required this.color,
+  });
+
+  final String iconName;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      // Figma insets the icon/label 14.5 from the card edge (~sm).
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppIcon(iconName, size: 20, color: color),
+          const Spacer(),
+          Text(
+            label,
+            style: AppTypography.headlineMedium.copyWith(color: color),
+          ),
+        ],
       ),
     );
   }

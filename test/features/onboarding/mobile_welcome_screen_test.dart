@@ -7,12 +7,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_method_selection_screen.dart';
 
-Widget _app({String initialLocation = '/welcome'}) {
+Widget _app({
+  String initialLocation = '/welcome',
+  AppThemeData theme = AppThemeData.light,
+}) {
   final router = GoRouter(
     initialLocation: initialLocation,
     routes: mobileOnboardingRoutes(),
@@ -20,7 +24,7 @@ Widget _app({String initialLocation = '/welcome'}) {
   return ProviderScope(
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => AppTheme(data: theme, child: child!),
     ),
   );
 }
@@ -30,6 +34,51 @@ Widget _app({String initialLocation = '/welcome'}) {
 Future<void> _openMethodSelection(WidgetTester tester) async {
   await tester.tap(find.byKey(const ValueKey('mobile_welcome_get_started')));
   await tester.pumpAndSettle();
+}
+
+BoxDecoration _cardBackgroundDecoration(WidgetTester tester, Key cardKey) {
+  return tester
+      .widgetList<DecoratedBox>(
+        find.descendant(
+          of: find.byKey(cardKey),
+          matching: find.byType(DecoratedBox),
+        ),
+      )
+      .map((box) => box.decoration)
+      .whereType<BoxDecoration>()
+      .firstWhere((decoration) => decoration.color != null);
+}
+
+Border _cardBorder(WidgetTester tester, Key cardKey) {
+  final decoration = tester
+      .widgetList<DecoratedBox>(
+        find.descendant(
+          of: find.byKey(cardKey),
+          matching: find.byType(DecoratedBox),
+        ),
+      )
+      .map((box) => box.decoration)
+      .whereType<BoxDecoration>()
+      .firstWhere((decoration) => decoration.border != null);
+  return decoration.border! as Border;
+}
+
+Color? _cardIconColor(WidgetTester tester, Key cardKey) {
+  final icon = tester.widget<AppIcon>(
+    find
+        .descendant(of: find.byKey(cardKey), matching: find.byType(AppIcon))
+        .first,
+  );
+  return icon.color;
+}
+
+Color? _textColor(WidgetTester tester, String text) {
+  return tester.widget<Text>(find.text(text)).style?.color;
+}
+
+String _assetNameForKey(WidgetTester tester, Key key) {
+  final image = tester.widget<Image>(find.byKey(key));
+  return (image.image as AssetImage).assetName;
 }
 
 void main() {
@@ -126,6 +175,108 @@ void main() {
     );
 
     expect(contentIndex, greaterThan(artIndex));
+  });
+
+  testWidgets('method cards use figma light theme colors and assets', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(initialLocation: '/onboarding/method'));
+    await tester.pumpAndSettle();
+
+    final colors = AppThemeData.light.colors;
+
+    expect(
+      _cardBackgroundDecoration(
+        tester,
+        const ValueKey('mobile_welcome_create'),
+      ).color,
+      colors.background.homeCard,
+    );
+    expect(_textColor(tester, 'Create wallet'), colors.text.homeCard);
+    expect(
+      _cardIconColor(tester, const ValueKey('mobile_welcome_create')),
+      colors.text.homeCard,
+    );
+
+    expect(
+      _cardBackgroundDecoration(
+        tester,
+        const ValueKey('mobile_welcome_import'),
+      ).color,
+      colors.background.raised,
+    );
+    expect(_textColor(tester, 'Import wallet'), colors.text.accent);
+    expect(
+      _cardIconColor(tester, const ValueKey('mobile_welcome_import')),
+      colors.text.accent,
+    );
+
+    final createBorder = _cardBorder(
+      tester,
+      const ValueKey('mobile_welcome_create'),
+    );
+    expect(createBorder.top.color, colors.border.subtle);
+    expect(createBorder.top.width, 1.5);
+
+    expect(
+      _assetNameForKey(
+        tester,
+        const ValueKey('mobile_method_connect_keystone_art'),
+      ),
+      'assets/illustrations/method_keystone_light.png',
+    );
+  });
+
+  testWidgets('method cards use figma dark theme colors and assets', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(initialLocation: '/onboarding/method', theme: AppThemeData.dark),
+    );
+    await tester.pumpAndSettle();
+
+    final colors = AppThemeData.dark.colors;
+
+    expect(
+      _cardBackgroundDecoration(
+        tester,
+        const ValueKey('mobile_welcome_create'),
+      ).color,
+      colors.background.raised,
+    );
+    expect(_textColor(tester, 'Create wallet'), colors.text.homeCard);
+    expect(
+      _cardIconColor(tester, const ValueKey('mobile_welcome_create')),
+      colors.text.homeCard,
+    );
+
+    expect(
+      _cardBackgroundDecoration(
+        tester,
+        const ValueKey('mobile_welcome_import'),
+      ).color,
+      colors.background.raised,
+    );
+    expect(_textColor(tester, 'Import wallet'), colors.text.accent);
+    expect(
+      _cardIconColor(tester, const ValueKey('mobile_welcome_import')),
+      colors.text.accent,
+    );
+
+    final createBorder = _cardBorder(
+      tester,
+      const ValueKey('mobile_welcome_create'),
+    );
+    expect(createBorder.top.color, colors.border.subtle);
+    expect(createBorder.top.width, 1.5);
+
+    expect(
+      _assetNameForKey(
+        tester,
+        const ValueKey('mobile_method_connect_keystone_art'),
+      ),
+      'assets/illustrations/method_keystone_dark.png',
+    );
   });
 
   testWidgets('create pushes the intro step', (tester) async {
