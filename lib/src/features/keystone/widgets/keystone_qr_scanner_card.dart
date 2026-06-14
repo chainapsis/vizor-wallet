@@ -70,6 +70,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   bool _loadingCameras = false;
   bool _cameraPickerOpen = false;
   bool _troubleScanningPopoverOpen = false;
+  bool _restartCameraOnResume = false;
   int _scanProgress = 0;
   int _scanSessionResetToken = 0;
 
@@ -253,7 +254,11 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
       : 'Request again, or enable manually\nin the System settings.';
 
   Future<void> _retryCameraStart({required bool openSettingsOnDenied}) async {
-    if (!QrScanner.isAvailable || _controller.value.isStarting) return;
+    if (!QrScanner.isAvailable ||
+        _controller.value.isStarting ||
+        _controller.value.isRunning) {
+      return;
+    }
 
     try {
       await _controller.start();
@@ -266,15 +271,14 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
       return;
     }
 
-    final opened = await CameraPermissionSettings.open();
-    if (!opened) {
-      log('KeystoneQrScannerCard: failed to open camera permission settings');
-    }
+    await _openCameraSettings();
   }
 
   Future<void> _openCameraSettings() async {
+    _restartCameraOnResume = true;
     final opened = await CameraPermissionSettings.open();
     if (!opened) {
+      _restartCameraOnResume = false;
       log('KeystoneQrScannerCard: failed to open camera permission settings');
     }
   }
@@ -322,6 +326,8 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
+    if (!_restartCameraOnResume) return;
+    _restartCameraOnResume = false;
     unawaited(_retryCameraStart(openSettingsOnDenied: false));
   }
 

@@ -39,6 +39,7 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
   bool _loadingCameras = false;
   bool _switchingCamera = false;
   bool _completed = false;
+  bool _restartCameraOnResume = false;
   int _scanResetToken = 0;
   String? _error;
 
@@ -58,6 +59,8 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
+    if (!_restartCameraOnResume) return;
+    _restartCameraOnResume = false;
     unawaited(_retryCameraStart(openSettingsOnDenied: false));
   }
 
@@ -150,7 +153,11 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
   }
 
   Future<void> _retryCameraStart({required bool openSettingsOnDenied}) async {
-    if (!QrScanner.isAvailable || _controller.value.isStarting) return;
+    if (!QrScanner.isAvailable ||
+        _controller.value.isStarting ||
+        _controller.value.isRunning) {
+      return;
+    }
 
     try {
       await _controller.start();
@@ -164,8 +171,14 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
       return;
     }
 
+    await _openCameraSettings();
+  }
+
+  Future<void> _openCameraSettings() async {
+    _restartCameraOnResume = true;
     final opened = await CameraPermissionSettings.open();
     if (!opened) {
+      _restartCameraOnResume = false;
       log('AddressQrScanModal: failed to open camera permission settings');
     }
   }

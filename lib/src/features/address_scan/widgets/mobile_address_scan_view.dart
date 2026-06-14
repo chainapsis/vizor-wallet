@@ -66,7 +66,8 @@ class MobileAddressScanView extends StatefulWidget {
   State<MobileAddressScanView> createState() => _MobileAddressScanViewState();
 }
 
-class _MobileAddressScanViewState extends State<MobileAddressScanView> {
+class _MobileAddressScanViewState extends State<MobileAddressScanView>
+    with WidgetsBindingObserver {
   // No `facing` argument: mobile_scanner defaults to the back camera,
   // which is the only camera the mobile scan flows ever use.
   final _controller = MobileScannerController(
@@ -74,10 +75,26 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView> {
     detectionSpeed: QrScanner.detectionSpeed,
   );
   bool _validating = false;
+  bool _restartCameraOnResume = false;
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    if (!_restartCameraOnResume) return;
+    _restartCameraOnResume = false;
+    unawaited(_restartCameraAfterSettings());
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(_controller.dispose());
     super.dispose();
   }
@@ -114,9 +131,25 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView> {
   }
 
   Future<void> _openCameraSettings() async {
+    _restartCameraOnResume = true;
     final opened = await CameraPermissionSettings.open();
     if (!opened) {
+      _restartCameraOnResume = false;
       log('MobileAddressScanView: failed to open camera permission settings');
+    }
+  }
+
+  Future<void> _restartCameraAfterSettings() async {
+    if (!QrScanner.isAvailable ||
+        _controller.value.isStarting ||
+        _controller.value.isRunning) {
+      return;
+    }
+
+    try {
+      await _controller.start();
+    } catch (e, st) {
+      log('MobileAddressScanView: camera settings return retry error: $e\n$st');
     }
   }
 

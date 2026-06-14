@@ -45,13 +45,15 @@ class MobileKeystoneSignScreen extends ConsumerStatefulWidget {
 }
 
 class _MobileKeystoneSignScreenState
-    extends ConsumerState<MobileKeystoneSignScreen> {
+    extends ConsumerState<MobileKeystoneSignScreen>
+    with WidgetsBindingObserver {
   var _stage = _SignStage.preparing;
   String? _error;
   List<String> _urParts = const [];
   List<int>? _pcztWithProofs;
   bool _proofsFailed = false;
   bool _decoding = false;
+  bool _restartCameraOnResume = false;
   int _scanProgress = 0;
   String? _scanHint;
 
@@ -60,11 +62,21 @@ class _MobileKeystoneSignScreenState
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_preparePczt());
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    if (!_restartCameraOnResume) return;
+    _restartCameraOnResume = false;
+    unawaited(_restartCameraAfterSettings());
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(_scanController?.dispose());
     super.dispose();
   }
@@ -183,9 +195,26 @@ class _MobileKeystoneSignScreenState
   }
 
   Future<void> _openCameraSettings() async {
+    _restartCameraOnResume = true;
     final opened = await CameraPermissionSettings.open();
     if (!opened) {
+      _restartCameraOnResume = false;
       log('MobileKeystoneSign: failed to open camera permission settings');
+    }
+  }
+
+  Future<void> _restartCameraAfterSettings() async {
+    final scanController = _scanController;
+    if (scanController == null ||
+        scanController.value.isStarting ||
+        scanController.value.isRunning) {
+      return;
+    }
+
+    try {
+      await scanController.start();
+    } catch (e, st) {
+      log('MobileKeystoneSign: camera settings return retry error: $e\n$st');
     }
   }
 
