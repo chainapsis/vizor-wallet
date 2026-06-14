@@ -1,7 +1,7 @@
 /// Typography tokens from the Figma design system.
 ///
 /// The Figma `Fonts` variable collection has a Desktop and a Mobile mode
-/// (`3 Fonts-new.zip`). Both modes are materialized as complete const
+/// (`3 Fonts-3.zip`). Both modes are materialized as complete const
 /// token sets — [AppTypographyDesktop] and [AppTypographyMobile] — and
 /// [AppTypography] selects between them at **compile time** via
 /// [kAppFormFactor], so call sites keep the familiar
@@ -20,11 +20,11 @@
 ///
 /// Font sizes and letter spacings are authored in logical pixels. The
 /// sans families and letter spacings are identical across modes; the
-/// serif display scale differs by family (Desktop: Libre Caslon Text,
-/// Mobile: Young Serif) as well as size. Line heights are stored as the
-/// unitless multiplier Flutter expects (`TextStyle.height`) — computed
-/// as `figmaLineHeightPx / fontSizePx` so the original Figma design
-/// still reproduces exactly.
+/// headline scale keeps Libre Caslon Text in both modes, with mobile-only
+/// size adjustments for `Headline XL` and `Headline M`. Line heights are
+/// stored as the unitless multiplier Flutter expects (`TextStyle.height`)
+/// — computed as `figmaLineHeightPx / fontSizePx` so the original Figma
+/// design still reproduces exactly.
 ///
 /// Colors are not baked into these styles. Callers merge colors in at
 /// the call site (usually through `DefaultTextStyle.merge` or
@@ -40,9 +40,6 @@ import '../layout/app_form_factor.dart';
 // ─── Mode-invariant styles (identical in both Figma modes) ───────────
 
 /// Figma `Headline L` — Libre Caslon Text Regular, 32 / 33 px.
-///
-/// Desktop keeps Libre Caslon Text; the mobile Figma frames resolve the
-/// `Fonts/Display/*` styles to Young Serif (see [_headlineLMobile]).
 const _headlineL = TextStyle(
   fontFamily: 'Libre Caslon Text',
   fontWeight: FontWeight.w400,
@@ -60,42 +57,30 @@ const _headlineM = TextStyle(
   letterSpacing: -0.28,
 );
 
-/// Young Serif's default numerals are old-style figures (6/8 ascend,
-/// 3/4/5/7/9 descend below the baseline); the mobile frames render every
-/// serif number — balance, send amount, numpad — with uniform lining
-/// figures, so the Young Serif tokens pin the font's `lnum` feature.
-const _youngSerifFigures = [FontFeature.liningFigures()];
-
-/// Figma `Headline L`, Mobile mode — Young Serif, 32 / 33 px.
-///
-/// The mobile `Fonts/Display/Headline *` styles resolve to the Young
-/// Serif family (single Regular cut; Figma's "Medium" style label maps
-/// onto it). Desktop stays on Libre Caslon Text.
-const _headlineLMobile = TextStyle(
-  fontFamily: 'Young Serif',
-  fontWeight: FontWeight.w400,
-  fontSize: 32,
-  height: 33 / 32,
-  letterSpacing: 0,
-  fontFeatures: _youngSerifFigures,
-);
-
-/// Figma `Headline M`, Mobile mode — Young Serif, 28 / 30 px, −0.28.
+/// Figma `Headline M`, Mobile mode — Libre Caslon Text, 24 / 28 px, −0.4.
 const _headlineMMobile = TextStyle(
-  fontFamily: 'Young Serif',
+  fontFamily: 'Libre Caslon Text',
   fontWeight: FontWeight.w400,
-  fontSize: 28,
-  height: 30 / 28,
-  letterSpacing: -0.28,
-  fontFeatures: _youngSerifFigures,
+  fontSize: 24,
+  height: 28 / 24,
+  letterSpacing: -0.4,
 );
 
 /// Figma `Code M` — Geist Mono Medium, 14 / 21 px.
-const _codeM = TextStyle(
+const _codeMDesktop = TextStyle(
   fontFamily: 'Geist Mono',
   fontWeight: FontWeight.w500,
   fontSize: 14,
   height: 21 / 14,
+  letterSpacing: 0,
+);
+
+/// Figma `Code M`, Mobile mode — Geist Mono Medium, 16 / 21 px.
+const _codeMMobile = TextStyle(
+  fontFamily: 'Geist Mono',
+  fontWeight: FontWeight.w500,
+  fontSize: 16,
+  height: 21 / 16,
   letterSpacing: 0,
 );
 
@@ -197,29 +182,28 @@ abstract final class AppTypographyDesktop {
   );
 
   static const labelSmall = labelMedium;
-  static const codeMedium = _codeM;
+  static const codeMedium = _codeMDesktop;
   static const codeSmall = _codeS;
 }
 
 /// The Mobile mode of the Figma `Fonts` collection.
 ///
-/// Families, weights, and letter spacings match the desktop set; only
-/// font sizes and line heights differ (body/label scale up ~2 px for
-/// touch readability, `Headline XL` scales down 45 → 40).
+/// Families, weights, and letter spacings match the desktop set except
+/// where the Figma mobile mode explicitly changes metrics (`Headline XL`,
+/// `Headline M`, body/label scale, and `Code M`).
 abstract final class AppTypographyMobile {
-  /// Figma `Headline XL` — Young Serif, 40 / 40 px, letter-spacing −1.35.
+  /// Figma `Headline XL` — Libre Caslon Text, 40 / 40 px, −1.35.
   static const displayLarge = TextStyle(
-    fontFamily: 'Young Serif',
+    fontFamily: 'Libre Caslon Text',
     fontWeight: FontWeight.w400,
     fontSize: 40,
     height: 40 / 40,
     letterSpacing: -1.35,
-    fontFeatures: _youngSerifFigures,
   );
 
   static const displayMedium = displayLarge;
-  static const displaySmall = _headlineLMobile;
-  static const headlineLarge = _headlineLMobile;
+  static const displaySmall = _headlineL;
+  static const headlineLarge = _headlineL;
   static const headlineMedium = _headlineMMobile;
 
   /// Figma `Headline S` — Geist Medium, 18 / 22 px.
@@ -295,7 +279,7 @@ abstract final class AppTypographyMobile {
   );
 
   static const labelSmall = labelMedium;
-  static const codeMedium = _codeM;
+  static const codeMedium = _codeMMobile;
   static const codeSmall = _codeS;
 }
 
@@ -318,15 +302,21 @@ abstract final class AppTypography {
   static const displayMedium = displayLarge;
 
   /// Step-level headlines inside onboarding flows (Figma `Headline L`).
-  static const displaySmall = _headlineL;
+  static const displaySmall = _mobile
+      ? AppTypographyMobile.displaySmall
+      : AppTypographyDesktop.displaySmall;
 
   // ─── Headline ─────────────────────────────────────────────────────
 
   /// Section headings inside content panes (Figma `Headline L`).
-  static const headlineLarge = _headlineL;
+  static const headlineLarge = _mobile
+      ? AppTypographyMobile.headlineLarge
+      : AppTypographyDesktop.headlineLarge;
 
   /// Sub-section headings (Figma `Headline M`).
-  static const headlineMedium = _headlineM;
+  static const headlineMedium = _mobile
+      ? AppTypographyMobile.headlineMedium
+      : AppTypographyDesktop.headlineMedium;
 
   /// Card titles, group labels (Figma `Headline S`).
   static const headlineSmall = _mobile
@@ -385,7 +375,9 @@ abstract final class AppTypography {
   // dumps.
 
   /// Primary monospace copy (Figma `Code M`).
-  static const codeMedium = _codeM;
+  static const codeMedium = _mobile
+      ? AppTypographyMobile.codeMedium
+      : AppTypographyDesktop.codeMedium;
 
   /// Secondary monospace copy: mnemonic word indices, compact numeric
   /// metadata (Figma `Code S`).

@@ -7,9 +7,9 @@ import '../theme/app_theme.dart';
 /// tokens — not onto Figma's variant naming (which calls primary "Accent").
 enum AppButtonVariant { primary, secondary, ghost, destructive }
 
-/// Vertical density. Large uses 20px icons while Medium/Small use 16px;
-/// label family/weight stays consistent, with Small using the reduced label
-/// token from the Figma component.
+/// Vertical density. Large uses 20px icons while Medium/Small use the
+/// form-factor token from the Figma component; label family/weight stays
+/// consistent, with Small using the reduced label token.
 enum AppButtonSize { large, medium, small }
 
 class _Sizing {
@@ -33,7 +33,7 @@ class _Sizing {
   final TextStyle labelStyle;
 }
 
-// Large button — the primary CTA. Uses Desktop `Label M`.
+// Large button — the primary CTA. Uses Figma `Label M`.
 const _largeSizing = _Sizing(
   height: AppButtonSizing.largeHeight,
   padding: EdgeInsets.symmetric(
@@ -42,10 +42,10 @@ const _largeSizing = _Sizing(
   ),
   gap: AppSpacing.xxs,
   iconSize: 20,
-  labelStyle: AppTypography.labelMedium,
+  labelStyle: AppTypography.labelLarge,
 );
 
-// Medium button — standard inline action. Uses Desktop `Label M`.
+// Medium button — standard inline action. Uses Figma `Label M`.
 const _mediumSizing = _Sizing(
   height: 32,
   padding: EdgeInsets.symmetric(
@@ -53,16 +53,16 @@ const _mediumSizing = _Sizing(
     vertical: AppSpacing.xxs,
   ),
   gap: AppSpacing.xxs,
-  iconSize: AppIconSize.medium,
-  labelStyle: AppTypography.labelMedium,
+  iconSize: AppButtonSizing.mediumSmallIconSize,
+  labelStyle: AppTypography.labelLarge,
 );
 
-// Small (compact) button — inline/dense actions. Uses Desktop `Label S`.
+// Small (compact) button — inline/dense actions. Uses Figma `Label S`.
 const _smallSizing = _Sizing(
   height: 24,
   padding: EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
   gap: AppSpacing.xxs,
-  iconSize: AppIconSize.medium,
+  iconSize: AppButtonSizing.mediumSmallIconSize,
   labelStyle: AppTypography.labelSmall,
 );
 

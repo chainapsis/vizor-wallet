@@ -18,15 +18,23 @@ void main() {
 
     expect(
       AppTypography.bodyMedium,
-      mobile
-          ? AppTypographyMobile.bodyMedium
-          : AppTypographyDesktop.bodyMedium,
+      mobile ? AppTypographyMobile.bodyMedium : AppTypographyDesktop.bodyMedium,
     );
     expect(
       AppTypography.displayLarge,
       mobile
           ? AppTypographyMobile.displayLarge
           : AppTypographyDesktop.displayLarge,
+    );
+    expect(
+      AppTypography.headlineMedium,
+      mobile
+          ? AppTypographyMobile.headlineMedium
+          : AppTypographyDesktop.headlineMedium,
+    );
+    expect(
+      AppTypography.codeMedium,
+      mobile ? AppTypographyMobile.codeMedium : AppTypographyDesktop.codeMedium,
     );
     expect(
       AppButtonSizing.largeHeight,
@@ -42,9 +50,15 @@ void main() {
       AppAssetSize.size,
       mobile ? AppAssetSizeMobile.size : AppAssetSizeDesktop.size,
     );
+    expect(
+      AppButtonSizing.mediumSmallIconSize,
+      mobile
+          ? AppButtonSizingMobile.mediumSmallIconSize
+          : AppButtonSizingDesktop.mediumSmallIconSize,
+    );
   });
 
-  test('desktop sizing tokens match 1 Sizing-new.zip', () {
+  test('desktop sizing tokens match 1 Sizing-3.zip', () {
     expect(AppSpacing.xxs, 4);
     expect(AppSpacing.xs, 8);
     expect(AppSpacing.s, 12);
@@ -69,6 +83,7 @@ void main() {
     expect(AppIconSize.medium, AppAssetSizeDesktop.icon);
 
     expect(AppButtonSizingDesktop.largeHeight, 44);
+    expect(AppButtonSizingDesktop.mediumSmallIconSize, 16);
 
     expect(AppInputSizingDesktop.height, 46);
     expect(AppInputSizingDesktop.iconWrapWidth, 32);
@@ -83,12 +98,13 @@ void main() {
     expect(AppWindowSizing.paneRadius, 20);
   });
 
-  test('mobile sizing tokens match 1 Sizing-new.zip', () {
+  test('mobile sizing tokens match 1 Sizing-3.zip', () {
     expect(AppAssetSizeMobile.size, 40);
     expect(AppAssetSizeMobile.icon, 18);
     expect(AppAssetSizeMobile.padding, 0);
 
     expect(AppButtonSizingMobile.largeHeight, 50);
+    expect(AppButtonSizingMobile.mediumSmallIconSize, 20);
 
     expect(AppInputSizingMobile.height, 60);
     expect(AppInputSizingMobile.iconWrapWidth, 36);
@@ -98,7 +114,7 @@ void main() {
     expect(AppInputSizingMobile.radius, AppRadii.medium);
   });
 
-  test('desktop font tokens match 3 Fonts-new.zip', () {
+  test('desktop font tokens match 3 Fonts-3.zip', () {
     expect(AppTypographyDesktop.displayMedium.fontFamily, 'Libre Caslon Text');
     expect(AppTypographyDesktop.displayMedium.fontWeight, FontWeight.w400);
     expect(AppTypographyDesktop.displayMedium.fontSize, 45);
@@ -150,26 +166,17 @@ void main() {
     expect(AppTypographyDesktop.codeSmall.height, 17 / 13);
   });
 
-  test('mobile font tokens match 3 Fonts-new.zip', () {
-    // Headline XL scales DOWN on mobile (45 → 40) and the mobile serif
-    // display scale resolves to Young Serif (the mobile Figma frames'
-    // Fonts/Display styles); sans families, weights, and letter
-    // spacings are identical to desktop across all styles.
-    expect(AppTypographyMobile.displayLarge.fontFamily, 'Young Serif');
+  test('mobile font tokens match 3 Fonts-3.zip', () {
+    // Headline XL scales down on mobile (45 -> 40), while Headline M
+    // shifts to 24 / 28 with tighter tracking. The zip keeps Libre
+    // Caslon Text as the headline family in both modes.
+    expect(AppTypographyMobile.displayLarge.fontFamily, 'Libre Caslon Text');
     expect(AppTypographyMobile.displayLarge.fontWeight, FontWeight.w400);
     expect(AppTypographyMobile.displayLarge.fontSize, 40);
     expect(AppTypographyMobile.displayLarge.height, 40 / 40);
     expect(AppTypographyMobile.displayLarge.letterSpacing, -1.35);
 
-    // Young Serif defaults to old-style figures; the frames render all
-    // serif numbers (balance, send amount, numpad) with lining figures.
-    const lining = [FontFeature.liningFigures()];
-    expect(AppTypographyMobile.displayLarge.fontFeatures, lining);
-    expect(AppTypographyMobile.headlineLarge.fontFeatures, lining);
-    expect(AppTypographyMobile.headlineMedium.fontFeatures, lining);
-
-    // Headline L / M keep desktop metrics but swap to Young Serif.
-    expect(AppTypographyMobile.headlineLarge.fontFamily, 'Young Serif');
+    expect(AppTypographyMobile.headlineLarge.fontFamily, 'Libre Caslon Text');
     expect(
       AppTypographyMobile.headlineLarge.fontSize,
       AppTypographyDesktop.headlineLarge.fontSize,
@@ -178,17 +185,14 @@ void main() {
       AppTypographyMobile.headlineLarge.height,
       AppTypographyDesktop.headlineLarge.height,
     );
-    expect(AppTypographyMobile.headlineMedium.fontFamily, 'Young Serif');
-    expect(
-      AppTypographyMobile.headlineMedium.fontSize,
-      AppTypographyDesktop.headlineMedium.fontSize,
-    );
-    expect(
-      AppTypographyMobile.headlineMedium.height,
-      AppTypographyDesktop.headlineMedium.height,
-    );
-    // Code M / S are mode-invariant.
-    expect(AppTypographyMobile.codeMedium, AppTypographyDesktop.codeMedium);
+    expect(AppTypographyMobile.headlineMedium.fontFamily, 'Libre Caslon Text');
+    expect(AppTypographyMobile.headlineMedium.fontSize, 24);
+    expect(AppTypographyMobile.headlineMedium.height, 28 / 24);
+    expect(AppTypographyMobile.headlineMedium.letterSpacing, -0.4);
+
+    // Code S is mode-invariant; Code M scales up on mobile.
+    expect(AppTypographyMobile.codeMedium.fontSize, 16);
+    expect(AppTypographyMobile.codeMedium.height, 21 / 16);
     expect(AppTypographyMobile.codeSmall, AppTypographyDesktop.codeSmall);
 
     expect(AppTypographyMobile.headlineSmall.fontSize, 18);
@@ -216,7 +220,7 @@ void main() {
     expect(AppTypographyMobile.labelSmall, AppTypographyMobile.labelMedium);
   });
 
-  test('semantic color tokens match 2 Color Theme.zip', () {
+  test('semantic color tokens match 2 Color Theme-3.zip', () {
     final light = AppThemeData.light.colors;
     final dark = AppThemeData.dark.colors;
 
@@ -256,6 +260,8 @@ void main() {
 
     expect(light.background.utilitySuccessAlpha, const Color(0x263BD38B));
     expect(dark.background.utilitySuccessAlpha, const Color(0x260DC87D));
+    expect(light.fade.illustration, Primitives.p0Alpha0Dark);
+    expect(dark.fade.illustration, Primitives.p0Alpha50Dark);
 
     expect(light.state.hover, Primitives.p50Light);
     expect(light.state.hoverOpacity, const Color(0x0D141818));
@@ -279,7 +285,7 @@ void main() {
     expect(dark.sync.glow, Primitives.p500Dark);
   });
 
-  test('macOS utility color tokens match 2 Color Theme.zip', () {
+  test('macOS utility color tokens match 2 Color Theme-3.zip', () {
     final light = AppThemeData.light.colors.macosUtility;
     final dark = AppThemeData.dark.colors.macosUtility;
 
@@ -302,7 +308,7 @@ void main() {
     expect(dark.innerBorder, const Color(0x3B1A1A1A));
   });
 
-  test('plum primitive tokens match 2 Color Theme.zip', () {
+  test('plum primitive tokens match 2 Color Theme-3.zip', () {
     expect(PlumPrimitives.p0Light, const Color(0xFFF6ECF9));
     expect(PlumPrimitives.p50Light, const Color(0xFFE6C5EC));
     expect(PlumPrimitives.p300Light, const Color(0xFFAB40BF));

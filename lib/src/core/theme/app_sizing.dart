@@ -1,4 +1,4 @@
-/// Component sizing tokens from `1 Sizing-new.zip`.
+/// Component sizing tokens from `1 Sizing-3.zip`.
 ///
 /// The Figma `Sizing` variable collection has a Desktop and a Mobile
 /// mode. Like `AppTypography`, both modes exist as complete const sets
@@ -32,11 +32,17 @@ abstract final class AppAssetSizeMobile {
 /// Button sizing — Desktop mode (Figma `Buttons/L`).
 abstract final class AppButtonSizingDesktop {
   static const double largeHeight = 44;
+
+  /// Figma `Buttons/MSIconSize`.
+  static const double mediumSmallIconSize = 16;
 }
 
 /// Button sizing — Mobile mode (Figma `Buttons/L`).
 abstract final class AppButtonSizingMobile {
   static const double largeHeight = 50;
+
+  /// Figma `Buttons/MSIconSize`.
+  static const double mediumSmallIconSize = 20;
 }
 
 /// Input sizing — Desktop mode.
@@ -82,6 +88,9 @@ abstract final class AppButtonSizing {
   static const largeHeight = _mobile
       ? AppButtonSizingMobile.largeHeight
       : AppButtonSizingDesktop.largeHeight;
+  static const mediumSmallIconSize = _mobile
+      ? AppButtonSizingMobile.mediumSmallIconSize
+      : AppButtonSizingDesktop.mediumSmallIconSize;
 }
 
 /// Input sizing for this binary's form factor.
