@@ -21,7 +21,7 @@ import '../../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../../services/sapling_params.dart';
 import '../../services/send_flow.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
-    show MobileScanViewfinderCorners;
+    show MobileScanCameraErrorOverlay, MobileScanViewfinderCorners;
 import 'mobile_send_screen.dart' show MobileSaplingParamsSheet;
 
 enum _SignStage { preparing, showQr, scanning, failed }
@@ -359,13 +359,17 @@ class _MobileKeystoneSignScreenState
 
   Widget _buildScanner() {
     const viewfinderSize = 260.0;
+    final scanController = _scanController;
+    if (scanController == null) return const SizedBox.shrink();
+
     return Stack(
       fit: StackFit.expand,
       children: [
         AnimatedUrScannerView(
-          controller: _scanController,
+          controller: scanController,
           expectedUrType: 'zcash-pczt',
           scanSessionResetToken: _stage,
+          errorBuilder: (context, error) => const SizedBox.shrink(),
           onProgress: (progress) {
             if (!mounted || _scanProgress == progress) return;
             setState(() => _scanProgress = progress);
@@ -408,6 +412,13 @@ class _MobileKeystoneSignScreenState
             height: viewfinderSize,
             child: const MobileScanViewfinderCorners(),
           ),
+        ),
+        MobileScanCameraErrorOverlay(
+          controller: scanController,
+          maxWidth: viewfinderSize,
+          permissionDeniedMessage:
+              'Camera access is off. Allow it in Settings to scan Keystone signatures.',
+          unavailableMessage: 'The camera is unavailable right now.',
         ),
         Align(
           alignment: Alignment.center,

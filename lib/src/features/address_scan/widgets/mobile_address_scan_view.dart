@@ -124,19 +124,10 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView> {
           MobileScanner(
             controller: _controller,
             onDetect: (capture) => unawaited(_handleDetect(capture)),
-            errorBuilder: (context, error) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Text(
-                  error.errorCode == MobileScannerErrorCode.permissionDenied
-                      ? 'Camera access is off. Allow it in Settings to scan '
-                            'addresses.'
-                      : 'The camera is unavailable right now.',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyMedium.copyWith(color: Colors.white),
-                ),
-              ),
-            ),
+            // Camera errors are rendered above the scrim below. If the scanner
+            // paints them here, text outside the clear viewfinder is tinted by
+            // the BlendMode overlay.
+            errorBuilder: (context, error) => const SizedBox.shrink(),
           ),
           // Dark scrim with a clear viewfinder window.
           ColorFiltered(
@@ -172,6 +163,13 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView> {
               height: viewfinderSize,
               child: MobileScanViewfinderCorners(),
             ),
+          ),
+          MobileScanCameraErrorOverlay(
+            controller: _controller,
+            maxWidth: viewfinderSize,
+            permissionDeniedMessage:
+                'Camera access is off. Allow it in Settings to scan addresses.',
+            unavailableMessage: 'The camera is unavailable right now.',
           ),
           SafeArea(
             child: Column(
@@ -248,6 +246,61 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView> {
         ],
       ),
     );
+  }
+}
+
+/// Camera error text for full-bleed mobile scan surfaces.
+///
+/// Render this above the dark scrim, not inside [MobileScanner.errorBuilder].
+/// Otherwise text that extends outside the transparent viewfinder hole is
+/// composited through the scrim and appears to change color at the edges.
+class MobileScanCameraErrorOverlay extends StatelessWidget {
+  const MobileScanCameraErrorOverlay({
+    required this.controller,
+    required this.permissionDeniedMessage,
+    required this.unavailableMessage,
+    this.maxWidth = 260,
+    super.key,
+  });
+
+  final MobileScannerController controller;
+  final String permissionDeniedMessage;
+  final String unavailableMessage;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<MobileScannerState>(
+      valueListenable: controller,
+      builder: (context, state, _) {
+        final message = _messageFor(state);
+        if (message == null) return const SizedBox.shrink();
+
+        return IgnorePointer(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(color: Colors.white),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String? _messageFor(MobileScannerState state) {
+    final error = state.error;
+    if (error == null) return null;
+    return error.errorCode == MobileScannerErrorCode.permissionDenied
+        ? permissionDeniedMessage
+        : unavailableMessage;
   }
 }
 
