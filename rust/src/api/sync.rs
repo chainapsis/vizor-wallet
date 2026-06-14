@@ -835,6 +835,7 @@ pub fn estimate_send_max(
     account_uuid: String,
     to_address: String,
     memo: Option<String>,
+    legacy_v5_pczt: bool,
 ) -> Result<SendMaxEstimateResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -844,6 +845,7 @@ pub fn estimate_send_max(
             &account_uuid,
             &to_address,
             memo.as_deref(),
+            legacy_v5_pczt,
         )?;
         Ok(SendMaxEstimateResult {
             amount_zatoshi: r.amount_zatoshi,
@@ -1322,7 +1324,7 @@ pub fn get_shield_transparent_status(
     })
 }
 
-/// Create a PCZT for shielding spendable transparent funds on a hardware account.
+/// Hardware transparent shielding is disabled until it can shield to Ironwood.
 pub fn create_shield_transparent_pczt(
     db_path: String,
     network: String,
@@ -1341,8 +1343,7 @@ pub fn create_shield_transparent_pczt(
 }
 
 /// Shield spendable transparent funds into the account's shielded balance.
-/// Software-account only; hardware shielding uses `create_shield_transparent_pczt`
-/// followed by the PCZT QR signing flow.
+/// Software-account only.
 pub fn shield_transparent_balance(
     db_path: String,
     lightwalletd_url: String,

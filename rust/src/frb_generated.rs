@@ -1692,6 +1692,7 @@ fn wire__crate__api__sync__estimate_send_max_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_to_address = <String>::sse_decode(&mut deserializer);
             let api_memo = <Option<String>>::sse_decode(&mut deserializer);
+            let api_legacy_v5_pczt = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -1701,6 +1702,7 @@ fn wire__crate__api__sync__estimate_send_max_impl(
                         api_account_uuid,
                         api_to_address,
                         api_memo,
+                        api_legacy_v5_pczt,
                     )?;
                     Ok(output_ok)
                 })())

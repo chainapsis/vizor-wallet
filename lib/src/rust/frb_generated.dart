@@ -367,6 +367,7 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required String toAddress,
     String? memo,
+    required bool legacyV5Pczt,
   });
 
   Future<ExecuteProposalResult> crateApiSyncExecuteProposal({
@@ -2705,6 +2706,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required String toAddress,
     String? memo,
+    required bool legacyV5Pczt,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -2715,6 +2717,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(toAddress, serializer);
           sse_encode_opt_String(memo, serializer);
+          sse_encode_bool(legacyV5Pczt, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -2727,7 +2730,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncEstimateSendMaxConstMeta,
-        argValues: [dbPath, network, accountUuid, toAddress, memo],
+        argValues: [
+          dbPath,
+          network,
+          accountUuid,
+          toAddress,
+          memo,
+          legacyV5Pczt,
+        ],
         apiImpl: this,
       ),
     );
@@ -2736,7 +2746,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSyncEstimateSendMaxConstMeta =>
       const TaskConstMeta(
         debugName: "estimate_send_max",
-        argNames: ["dbPath", "network", "accountUuid", "toAddress", "memo"],
+        argNames: [
+          "dbPath",
+          "network",
+          "accountUuid",
+          "toAddress",
+          "memo",
+          "legacyV5Pczt",
+        ],
       );
 
   @override

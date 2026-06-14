@@ -451,10 +451,19 @@ pub(crate) fn estimate_send_max(
     account_uuid: &str,
     to_address: &str,
     memo_str: Option<&str>,
+    legacy_v5_pczt: bool,
 ) -> Result<SendMaxEstimateResult, String> {
+    let proposed_tx_version = legacy_v5_pczt.then_some(TxVersion::V5);
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
-    let proposal = build_send_max_proposal(&mut db, network, account_id, to_address, memo_str)?;
+    let proposal = build_send_max_proposal(
+        &mut db,
+        network,
+        account_id,
+        to_address,
+        memo_str,
+        proposed_tx_version,
+    )?;
     summarize_send_max_proposal(&proposal)
 }
 
@@ -486,45 +495,13 @@ pub(crate) fn get_shield_transparent_status(
     }
 }
 
-/// Create a PCZT for shielding transparent funds on a hardware account.
-/// This mirrors `shield_transparent_balance` up to proposal creation, but
-/// stops before signing/broadcast and returns the base PCZT for Keystone.
+/// Hardware transparent shielding is disabled until it can shield to Ironwood.
 pub(crate) fn create_shield_transparent_pczt(
-    db_path: &str,
-    network: WalletNetwork,
-    account_uuid: &str,
+    _db_path: &str,
+    _network: WalletNetwork,
+    _account_uuid: &str,
 ) -> Result<ShieldTransparentPcztResult, String> {
-    use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
-
-    let shielding_threshold = shielding_threshold()?;
-    with_wallet_db_write_lock("send.create_shield_transparent_pczt", || {
-        let mut db = open_wallet_db(db_path, network)?;
-        let account_id = parse_account_uuid(account_uuid)?;
-        let (proposal, _) =
-            build_shielding_proposal(&mut db, network, account_id, shielding_threshold)?;
-        let fee_zatoshi = proposal_fee_zatoshi(&proposal);
-        let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
-        let needs_sapling_params = proposal
-            .steps()
-            .iter()
-            .any(|step| step.involves(PoolType::Shielded(ShieldedProtocol::Sapling)));
-
-        let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
-            &mut db,
-            &network,
-            account_id,
-            OvkPolicy::Sender,
-            &proposal,
-        )
-        .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
-
-        Ok(ShieldTransparentPcztResult {
-            pczt_bytes: pczt.serialize(),
-            fee_zatoshi,
-            shielded_zatoshi,
-            needs_sapling_params,
-        })
-    })
+    Err("Keystone transparent shielding is not available after NU7 yet.".to_string())
 }
 
 /// Shield spendable transparent funds for a software account to its
@@ -4008,6 +3985,7 @@ fn build_send_max_proposal(
     account_id: AccountUuid,
     to_address: &str,
     memo_str: Option<&str>,
+    proposed_tx_version: Option<TxVersion>,
 ) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
     let to: zcash_address::ZcashAddress = to_address
         .parse()
@@ -4036,6 +4014,7 @@ fn build_send_max_proposal(
         memo_bytes,
         MaxSpendMode::MaxSpendable,
         ConfirmationsPolicy::default(),
+        proposed_tx_version,
     )
     .map_err(|e| format!("Propose max failed: {e}"))
 }

@@ -270,12 +270,14 @@ Future<SendMaxEstimateResult> estimateSendMax({
   required String accountUuid,
   required String toAddress,
   String? memo,
+  required bool legacyV5Pczt,
 }) => RustLib.instance.api.crateApiSyncEstimateSendMax(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
   toAddress: toAddress,
   memo: memo,
+  legacyV5Pczt: legacyV5Pczt,
 );
 
 /// Step 2: Execute a previously proposed transfer and broadcast to the network.
@@ -493,7 +495,7 @@ Future<ShieldTransparentStatus> getShieldTransparentStatus({
   accountUuid: accountUuid,
 );
 
-/// Create a PCZT for shielding spendable transparent funds on a hardware account.
+/// Hardware transparent shielding is disabled until it can shield to Ironwood.
 Future<ShieldTransparentPcztResult> createShieldTransparentPczt({
   required String dbPath,
   required String network,
@@ -505,8 +507,7 @@ Future<ShieldTransparentPcztResult> createShieldTransparentPczt({
 );
 
 /// Shield spendable transparent funds into the account's shielded balance.
-/// Software-account only; hardware shielding uses `create_shield_transparent_pczt`
-/// followed by the PCZT QR signing flow.
+/// Software-account only.
 Future<ShieldTransparentResult> shieldTransparentBalance({
   required String dbPath,
   required String lightwalletdUrl,

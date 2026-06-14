@@ -12,14 +12,15 @@ import '../../../app_bootstrap.dart';
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/formatting/zec_amount.dart';
-import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
+import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/zcash/transparent_shielding_policy.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
@@ -35,7 +36,6 @@ import '../../activity/swap_activity_row_mapper.dart';
 import '../../activity/widgets/activity_table.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
-import '../widgets/keystone_shield_signing_overlay.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
@@ -59,7 +59,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _canBackgroundSync = false;
   bool _isShieldingBalance = false;
-  bool _showKeystoneShieldSigning = false;
   String? _shieldBalanceError;
   String? _shieldBalanceErrorDetail;
 
@@ -109,8 +108,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final accountNotifier = ref.read(accountProvider.notifier);
     if (accountNotifier.isHardwareAccount(accountUuid)) {
       setState(() {
-        _showKeystoneShieldSigning = true;
-        _shieldBalanceError = null;
+        _shieldBalanceError = kKeystoneTransparentShieldingUnavailableMessage;
         _shieldBalanceErrorDetail = null;
       });
       return;
@@ -267,12 +265,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return message.isEmpty ? null : message;
   }
 
-  void _closeKeystoneShieldSigning() {
-    setState(() {
-      _showKeystoneShieldSigning = false;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final walletAsync = ref.watch(walletProvider);
@@ -307,7 +299,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         sync.ironwoodPendingBalance;
     final transparentBalance =
         sync.transparentBalance + sync.transparentPendingBalance;
-    final canShieldTransparentBalance = sync.canShieldTransparentBalance;
+    final activeAccountIsHardware = ref.watch(
+      accountProvider.select(
+        (value) => value.value?.activeAccount?.isHardware ?? false,
+      ),
+    );
+    final canShieldTransparentBalance =
+        sync.canShieldTransparentBalance &&
+        transparentShieldingAvailableForAccount(
+          isHardwareAccount: activeAccountIsHardware,
+        );
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -370,11 +371,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
             ),
-            if (_showKeystoneShieldSigning)
-              KeystoneShieldSigningOverlay(
-                onCancel: _closeKeystoneShieldSigning,
-                onComplete: _closeKeystoneShieldSigning,
-              ),
           ],
         ),
       ),
