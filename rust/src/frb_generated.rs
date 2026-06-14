@@ -1646,6 +1646,7 @@ fn wire__crate__api__sync__estimate_fee_impl(
             let api_to_address = <String>::sse_decode(&mut deserializer);
             let api_amount_zatoshi = <u64>::sse_decode(&mut deserializer);
             let api_memo = <Option<String>>::sse_decode(&mut deserializer);
+            let api_legacy_v5_pczt = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -1656,6 +1657,7 @@ fn wire__crate__api__sync__estimate_fee_impl(
                         api_to_address,
                         api_amount_zatoshi,
                         api_memo,
+                        api_legacy_v5_pczt,
                     )?;
                     Ok(output_ok)
                 })())
@@ -3676,6 +3678,7 @@ fn wire__crate__api__sync__propose_send_impl(
             let api_to_address = <String>::sse_decode(&mut deserializer);
             let api_amount_zatoshi = <u64>::sse_decode(&mut deserializer);
             let api_memo = <Option<String>>::sse_decode(&mut deserializer);
+            let api_legacy_v5_pczt = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -3687,6 +3690,7 @@ fn wire__crate__api__sync__propose_send_impl(
                         api_to_address,
                         api_amount_zatoshi,
                         api_memo,
+                        api_legacy_v5_pczt,
                     )?;
                     Ok(output_ok)
                 })())

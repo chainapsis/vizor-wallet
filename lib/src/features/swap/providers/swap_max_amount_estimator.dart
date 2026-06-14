@@ -49,6 +49,7 @@ class RustSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
             toAddress: estimateAddress,
             amountZatoshi: amountZatoshi,
             memo: null,
+            legacyV5Pczt: false,
           );
           return true;
         } catch (e) {

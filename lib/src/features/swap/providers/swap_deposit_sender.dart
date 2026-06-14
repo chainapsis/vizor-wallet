@@ -20,6 +20,7 @@ abstract interface class SwapDepositSender {
   Future<BigInt> estimateZecDepositFee({
     required String accountUuid,
     required SwapQuote quote,
+    required bool legacyV5Pczt,
   });
 
   Future<SwapDepositBroadcastResult> sendZecDeposit({
@@ -37,6 +38,7 @@ class RustSwapDepositSender implements SwapDepositSender {
   Future<BigInt> estimateZecDepositFee({
     required String accountUuid,
     required SwapQuote quote,
+    required bool legacyV5Pczt,
   }) async {
     if (quote.sellAsset != SwapAsset.zec) {
       throw StateError('Only ZEC deposits can be sent by this wallet');
@@ -57,6 +59,7 @@ class RustSwapDepositSender implements SwapDepositSender {
       accountUuid: accountUuid,
       toAddress: quote.depositInstruction.address,
       amountZatoshi: amountZatoshi,
+      legacyV5Pczt: legacyV5Pczt,
     );
     log('SwapDepositSender: preflight complete fee=$fee');
     return fee;
@@ -91,6 +94,7 @@ class RustSwapDepositSender implements SwapDepositSender {
         sendFlowId: sendFlowId,
         toAddress: quote.depositInstruction.address,
         amountZatoshi: amountZatoshi,
+        legacyV5Pczt: false,
       );
       proposalId = proposal.proposalId;
       log(

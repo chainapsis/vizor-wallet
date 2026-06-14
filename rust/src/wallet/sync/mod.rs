@@ -423,6 +423,7 @@ pub(super) struct StoredProposal {
         send::WalletFeeRule,
         zcash_client_sqlite::ReceivedNoteId,
     >,
+    pub proposed_tx_version: Option<zcash_primitives::transaction::TxVersion>,
     pub network: WalletNetwork,
     pub account_id: AccountUuid,
     pub send_flow_id: String,

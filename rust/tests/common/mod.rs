@@ -183,6 +183,7 @@ pub fn execute_send(
         to_address.into(),
         amount_zatoshi,
         None,
+        false,
     )
     .expect("propose_send");
 

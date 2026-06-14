@@ -215,6 +215,7 @@ Future<ProposalResult> proposeSend({
   required String toAddress,
   required BigInt amountZatoshi,
   String? memo,
+  required bool legacyV5Pczt,
 }) => RustLib.instance.api.crateApiSyncProposeSend(
   dbPath: dbPath,
   network: network,
@@ -223,6 +224,7 @@ Future<ProposalResult> proposeSend({
   toAddress: toAddress,
   amountZatoshi: amountZatoshi,
   memo: memo,
+  legacyV5Pczt: legacyV5Pczt,
 );
 
 /// Propose a PCZT batch while reserving selected shielded notes between messages.
@@ -250,6 +252,7 @@ Future<BigInt> estimateFee({
   required String toAddress,
   required BigInt amountZatoshi,
   String? memo,
+  required bool legacyV5Pczt,
 }) => RustLib.instance.api.crateApiSyncEstimateFee(
   dbPath: dbPath,
   network: network,
@@ -257,6 +260,7 @@ Future<BigInt> estimateFee({
   toAddress: toAddress,
   amountZatoshi: amountZatoshi,
   memo: memo,
+  legacyV5Pczt: legacyV5Pczt,
 );
 
 /// Estimate the maximum recipient amount for the current recipient and memo.

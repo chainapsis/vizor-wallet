@@ -738,6 +738,7 @@ pub fn propose_send(
     to_address: String,
     amount_zatoshi: u64,
     memo: Option<String>,
+    legacy_v5_pczt: bool,
 ) -> Result<ProposalResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -749,6 +750,7 @@ pub fn propose_send(
             &to_address,
             amount_zatoshi,
             memo.as_deref(),
+            legacy_v5_pczt,
         )?;
         Ok(ProposalResult {
             proposal_id: r.proposal_id,
@@ -810,6 +812,7 @@ pub fn estimate_fee(
     to_address: String,
     amount_zatoshi: u64,
     memo: Option<String>,
+    legacy_v5_pczt: bool,
 ) -> Result<u64, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -820,6 +823,7 @@ pub fn estimate_fee(
             &to_address,
             amount_zatoshi,
             memo.as_deref(),
+            legacy_v5_pczt,
         )
     })
 }

@@ -70,7 +70,6 @@ use zcash_client_backend::{
 };
 use zcash_client_sqlite::{wallet::commitment_tree, AccountUuid, ReceivedNoteId};
 use zcash_keys::keys::UnifiedSpendingKey;
-#[cfg(zcash_unstable = "nu7")]
 use zcash_primitives::transaction::TxVersion;
 use zcash_primitives::transaction::{
     builder::{BuildConfig, Builder},
@@ -268,6 +267,7 @@ pub fn propose_send(
     to_address: &str,
     amount_zatoshi: u64,
     memo_str: Option<&str>,
+    legacy_v5_pczt: bool,
 ) -> Result<ProposalResult, String> {
     use zcash_protocol::{PoolType, ShieldedProtocol as SP};
 
@@ -275,6 +275,7 @@ pub fn propose_send(
         return Err("Send flow id is required".to_string());
     }
 
+    let proposed_tx_version = legacy_v5_pczt.then_some(TxVersion::V5);
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
     let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
@@ -286,6 +287,7 @@ pub fn propose_send(
         request,
         &BTreeSet::new(),
         &migration_locks,
+        proposed_tx_version,
     )?;
 
     let needs_sapling = proposal
@@ -309,6 +311,7 @@ pub fn propose_send(
         id,
         StoredProposal {
             proposal,
+            proposed_tx_version,
             network,
             account_id,
             send_flow_id: send_flow_id.to_string(),
@@ -362,6 +365,7 @@ pub(crate) fn create_reserved_pczt_batch(
             transaction_request,
             &reserved,
             &migration_locks,
+            None,
         )
         .map_err(|e| format!("Proposal {} failed: {e}", request.id))?;
 
@@ -409,7 +413,9 @@ pub fn estimate_fee(
     to_address: &str,
     amount_zatoshi: u64,
     memo_str: Option<&str>,
+    legacy_v5_pczt: bool,
 ) -> Result<u64, String> {
+    let proposed_tx_version = legacy_v5_pczt.then_some(TxVersion::V5);
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
     let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
@@ -421,6 +427,7 @@ pub fn estimate_fee(
         request,
         &BTreeSet::new(),
         &migration_locks,
+        proposed_tx_version,
     )?;
 
     let fee: u64 = proposal
@@ -2739,7 +2746,9 @@ fn predicted_note_from_split_action(
         .as_ref()
         .copied()
         .ok_or("Denomination split output rseed missing")?;
-    let rho = orchard::note::Rho::from_nf_old(*action.spend().nullifier());
+    let rho = orchard::note::Rho::from_bytes(&action.spend().nullifier().to_bytes())
+        .into_option()
+        .ok_or("Denomination split output rho is invalid")?;
     orchard::Note::from_parts(
         recipient,
         orchard::value::NoteValue::from_raw(value_zatoshi),
@@ -3769,7 +3778,7 @@ fn build_shielding_proposal(
         .map_err(|e| format!("Failed to get transparent balances: {e}"))?;
     let (from_addrs, selected_value) = select_shielding_sources(balances, shielding_threshold)?;
 
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
+    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None, None);
     let proposal = propose_shielding::<_, _, _, _, Infallible>(
         db,
         &network,
@@ -3817,6 +3826,7 @@ fn propose_send_with_reserved_notes(
     request: TransactionRequest,
     reserved: &BTreeSet<ReceivedNoteId>,
     migration_locks: &BTreeSet<(String, u32)>,
+    proposed_tx_version: Option<TxVersion>,
 ) -> Result<Proposal<WalletFeeRule, ReceivedNoteId>, String> {
     let confirmations_policy = ConfirmationsPolicy::default();
     let (target_height, anchor_height) = db
@@ -3828,7 +3838,8 @@ fn propose_send_with_reserved_notes(
         reserved,
         migration_locks,
     };
-    let (change_strategy, input_selector) = zip317_helper::<ReservedInputSource<'_>>(None);
+    let (change_strategy, input_selector) =
+        zip317_helper::<ReservedInputSource<'_>>(None, proposed_tx_version);
 
     input_selector
         .propose_transaction(
@@ -3840,7 +3851,7 @@ fn propose_send_with_reserved_notes(
             account_id,
             request,
             &change_strategy,
-            None,
+            proposed_tx_version,
         )
         .map_err(|e| format!("Propose failed: {e}"))
 }
@@ -4980,23 +4991,29 @@ where
 /// place so the two entry points can't drift.
 fn zip317_helper<DbT: InputSource>(
     change_memo: Option<MemoBytes>,
+    proposed_tx_version: Option<TxVersion>,
 ) -> (
     MultiOutputChangeStrategy<WalletFeeRule, DbT>,
     GreedyInputSelector<DbT>,
 ) {
-    (
-        MultiOutputChangeStrategy::new(
-            ConservativeZip317FeeRule,
-            change_memo,
-            ShieldedProtocol::Orchard,
-            DustOutputPolicy::default(),
-            SplitPolicy::with_min_output_value(
-                NonZeroUsize::new(4).unwrap(),
-                Zatoshis::const_from_u64(1000_0000),
-            ),
+    let change_strategy = MultiOutputChangeStrategy::new(
+        ConservativeZip317FeeRule,
+        change_memo,
+        ShieldedProtocol::Orchard,
+        DustOutputPolicy::default(),
+        SplitPolicy::with_min_output_value(
+            NonZeroUsize::new(4).unwrap(),
+            Zatoshis::const_from_u64(1000_0000),
         ),
-        GreedyInputSelector::new(),
-    )
+    );
+    #[cfg(zcash_unstable = "nu7")]
+    let change_strategy = if matches!(proposed_tx_version, Some(TxVersion::V5)) {
+        change_strategy.with_legacy_orchard_change()
+    } else {
+        change_strategy
+    };
+
+    (change_strategy, GreedyInputSelector::new())
 }
 
 // ======================== No-op Sapling Provers ========================

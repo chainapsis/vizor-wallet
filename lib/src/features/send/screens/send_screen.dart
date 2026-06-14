@@ -386,6 +386,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         parseZecAmount(_amountController.text.trim()) == quote.amountZatoshi;
   }
 
+  bool get _useLegacyV5Pczt {
+    final accountUuid = widget.activeAccountUuid;
+    if (accountUuid == null) return false;
+    return ref.read(accountProvider.notifier).isHardwareAccount(accountUuid);
+  }
+
   int get _memoLength => utf8.encode(_memoController.text).length;
 
   String? get _memoError {
@@ -566,6 +572,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         toAddress: address,
         amountZatoshi: zatoshi,
         memo: memo.isNotEmpty ? memo : null,
+        legacyV5Pczt: _useLegacyV5Pczt,
       );
 
       // Stale check — new input arrived while awaiting
@@ -701,6 +708,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         toAddress: address,
         amountZatoshi: amountZatoshi,
         memo: memo.isNotEmpty ? memo : null,
+        legacyV5Pczt: _useLegacyV5Pczt,
       );
       activeProposalId = proposal.proposalId;
 

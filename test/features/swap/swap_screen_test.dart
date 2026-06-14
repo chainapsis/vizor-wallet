@@ -6713,6 +6713,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(depositSender.preflightRequests, hasLength(1));
+    expect(depositSender.preflightRequests.single.legacyV5Pczt, isFalse);
     expect(depositSender.requests, isEmpty);
     expect(swapProvider.startedQuotes, isEmpty);
     expect(swapProvider.submittedDeposits, isEmpty);
@@ -6769,6 +6770,7 @@ void main() {
     await tester.pump();
 
     expect(depositSender.preflightRequests, hasLength(1));
+    expect(depositSender.preflightRequests.single.legacyV5Pczt, isTrue);
     expect(depositSender.requests, isEmpty);
     expect(swapProvider.startedQuotes, hasLength(1));
     expect(swapProvider.submittedDeposits, isEmpty);
@@ -7831,12 +7833,14 @@ class _DepositSendRequest {
     required this.depositAddress,
     required this.sellAmountText,
     required this.sellAmountBaseUnits,
+    required this.legacyV5Pczt,
   });
 
   final String accountUuid;
   final String depositAddress;
   final String sellAmountText;
   final BigInt? sellAmountBaseUnits;
+  final bool legacyV5Pczt;
 }
 
 Future<void> _setDesktopViewport(WidgetTester tester) async {

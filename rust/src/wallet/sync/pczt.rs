@@ -148,7 +148,10 @@ pub fn create_pczt_from_proposal(
     proposal_id: u64,
     send_flow_id: &str,
 ) -> Result<Vec<u8>, String> {
-    use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
+    use zcash_client_backend::data_api::wallet::{
+        create_pczt_from_proposal as zcb_create_pczt,
+        create_pczt_from_proposal_with_tx_version as zcb_create_pczt_with_tx_version,
+    };
     use zcash_client_backend::wallet::OvkPolicy;
 
     // Consume the proposal up-front (matches execute_proposal), so
@@ -161,13 +164,24 @@ pub fn create_pczt_from_proposal(
 
     let pczt = with_wallet_db_write_lock("pczt.create_pczt_from_proposal", || {
         let mut db = open_wallet_db(db_path, network)?;
-        zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
-            &mut db,
-            &network,
-            stored.account_id,
-            OvkPolicy::Sender,
-            &stored.proposal,
-        )
+        if let Some(proposed_tx_version) = stored.proposed_tx_version {
+            zcb_create_pczt_with_tx_version::<_, _, Infallible, _, Infallible, _>(
+                &mut db,
+                &network,
+                stored.account_id,
+                OvkPolicy::Sender,
+                &stored.proposal,
+                proposed_tx_version,
+            )
+        } else {
+            zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+                &mut db,
+                &network,
+                stored.account_id,
+                OvkPolicy::Sender,
+                &stored.proposal,
+            )
+        }
         .map_err(|e| format!("Create PCZT failed: {e}"))
     })?;
 
@@ -282,7 +296,13 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
         })
         .finish();
 
-    Ok(redacted.serialize())
+    if *redacted.global().tx_version() == 5 {
+        redacted
+            .serialize_legacy_v1()
+            .map_err(|e| format!("Serialize legacy PCZT for signer: {e}"))
+    } else {
+        Ok(redacted.serialize())
+    }
 }
 
 pub(crate) fn set_orchard_anchor_and_witness(

@@ -86,6 +86,7 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
         sendFlowId: sendFlowId,
         toAddress: depositAddress,
         amountZatoshi: amountZatoshi,
+        legacyV5Pczt: true,
       );
       proposalId = proposal.proposalId;
       final pcztBytes = await rust_sync.createPcztFromProposal(
