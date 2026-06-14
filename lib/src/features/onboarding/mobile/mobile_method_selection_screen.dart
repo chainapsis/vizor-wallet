@@ -6,6 +6,13 @@ import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
+const double _methodCardHeight = 120;
+const double _regularArtWidth = 180;
+const double _regularArtHeight = 120;
+const double _bleedArtWidth = 186;
+const double _bleedArtHeight = 151;
+const double _bleedArtTopOverflow = 32.5;
+
 /// Second onboarding step — Figma `Method Selection` (4752:26334): the
 /// "Welcome to Vizor" title over three illustrated cards (create /
 /// import / Keystone), reached from the Welcome screen's "Get started"
@@ -152,17 +159,46 @@ class _MethodCard extends StatelessWidget {
     final keySuffix = label.toLowerCase().replaceAll(' ', '_');
     // Figma `New Wallet Bg` 186×151 @ top -32.5; `Import/keystone card bg`
     // 180×120 @ top 0, both right-aligned.
-    final art = Positioned(
-      top: bleed ? -32.5 : 0,
-      right: 0,
-      width: bleed ? 186 : 180,
-      height: bleed ? 151 : 120,
-      child: Image.asset(
-        illustration,
-        key: ValueKey('mobile_method_${keySuffix}_art'),
-        fit: BoxFit.fill,
-      ),
+    final artImage = Image.asset(
+      illustration,
+      key: ValueKey('mobile_method_${keySuffix}_art'),
+      fit: BoxFit.fill,
     );
+    final art = bleed
+        ? Positioned(
+            top: -_bleedArtTopOverflow,
+            left: 0,
+            right: 0,
+            height: _methodCardHeight + _bleedArtTopOverflow,
+            child: ClipPath(
+              key: ValueKey('mobile_method_${keySuffix}_art_clip'),
+              clipper: const _TopBleedOnlyClipper(
+                topBleed: _bleedArtTopOverflow,
+                cardRadius: AppRadii.large,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                fit: StackFit.expand,
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    width: _bleedArtWidth,
+                    height: _bleedArtHeight,
+                    child: artImage,
+                  ),
+                ],
+              ),
+            ),
+          )
+        : Positioned(
+            top: 0,
+            right: 0,
+            width: _regularArtWidth,
+            height: _regularArtHeight,
+            child: artImage,
+          );
     final border = Positioned.fill(
       child: IgnorePointer(
         child: DecoratedBox(
@@ -182,7 +218,7 @@ class _MethodCard extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: SizedBox(
-          height: 120,
+          height: _methodCardHeight,
           // clipBehavior none lets the create knight bleed above the card;
           // expand keeps the rounded card filling the full 120 box.
           child: Stack(
@@ -213,6 +249,34 @@ class _MethodCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _TopBleedOnlyClipper extends CustomClipper<Path> {
+  const _TopBleedOnlyClipper({
+    required this.topBleed,
+    required this.cardRadius,
+  });
+
+  final double topBleed;
+  final double cardRadius;
+
+  @override
+  Path getClip(Size size) {
+    return Path()
+      ..addRect(Rect.fromLTWH(0, 0, size.width, topBleed))
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(0, topBleed, size.width, size.height - topBleed),
+          Radius.circular(cardRadius),
+        ),
+      );
+  }
+
+  @override
+  bool shouldReclip(_TopBleedOnlyClipper oldClipper) {
+    return topBleed != oldClipper.topBleed ||
+        cardRadius != oldClipper.cardRadius;
   }
 }
 

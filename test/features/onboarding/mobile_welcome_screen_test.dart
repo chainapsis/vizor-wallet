@@ -151,24 +151,33 @@ void main() {
     await _openMethodSelection(tester);
 
     const artKey = ValueKey('mobile_method_create_wallet_art');
+    const artClipKey = ValueKey('mobile_method_create_wallet_art_clip');
     const contentKey = ValueKey('mobile_method_create_wallet_content');
     expect(find.byKey(artKey), findsOneWidget);
+    expect(
+      find.descendant(of: find.byKey(artClipKey), matching: find.byKey(artKey)),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<ClipPath>(find.byKey(artClipKey)).clipBehavior,
+      Clip.antiAlias,
+    );
     expect(find.byKey(contentKey), findsOneWidget);
 
     final createCardStack = tester
         .widgetList<Stack>(find.byType(Stack))
         .firstWhere((stack) {
-          final hasArt = stack.children.any(
-            (child) => child is Positioned && child.child.key == artKey,
+          final hasArtClip = stack.children.any(
+            (child) => child is Positioned && child.child.key == artClipKey,
           );
           final hasContent = stack.children.any(
             (child) => child.key == contentKey,
           );
-          return hasArt && hasContent;
+          return hasArtClip && hasContent;
         });
 
-    final artIndex = createCardStack.children.indexWhere(
-      (child) => child is Positioned && child.child.key == artKey,
+    final artClipIndex = createCardStack.children.indexWhere(
+      (child) => child is Positioned && child.child.key == artClipKey,
     );
     final borderIndex = createCardStack.children.indexWhere(
       (child) => child is Positioned && child.child is IgnorePointer,
@@ -177,8 +186,8 @@ void main() {
       (child) => child.key == contentKey,
     );
 
-    expect(borderIndex, lessThan(artIndex));
-    expect(contentIndex, greaterThan(artIndex));
+    expect(borderIndex, lessThan(artClipIndex));
+    expect(contentIndex, greaterThan(artClipIndex));
   });
 
   testWidgets('method cards use figma light theme colors and assets', (
