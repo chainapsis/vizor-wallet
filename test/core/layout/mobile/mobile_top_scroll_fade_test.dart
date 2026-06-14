@@ -10,9 +10,13 @@ Widget _app(Widget home) {
   );
 }
 
-Widget _fadeOverList({void Function()? onFirstRowTap}) {
+Widget _fadeOverList({
+  ScrollController? controller,
+  void Function()? onFirstRowTap,
+}) {
   return MobileTopScrollFade(
     child: ListView(
+      controller: controller,
       children: [
         GestureDetector(
           key: const ValueKey('first_row'),
@@ -26,47 +30,118 @@ Widget _fadeOverList({void Function()? onFirstRowTap}) {
   );
 }
 
-Finder get _overlayOpacity => find.descendant(
+Finder get _overlayPositioned => find.descendant(
   of: find.byType(MobileTopScrollFade),
-  matching: find.byType(Opacity),
+  matching: find.byType(Positioned),
+);
+
+Finder get _overlayBox => find.descendant(
+  of: find.byType(MobileTopScrollFade),
+  matching: find.byType(DecoratedBox),
 );
 
 void main() {
-  testWidgets('invisible at rest, eased in once scrolled, gone again at the '
-      'top', (tester) async {
-    await tester.pumpWidget(_app(_fadeOverList()));
-
-    expect(tester.widget<Opacity>(_overlayOpacity).opacity, 0);
-
-    await tester.drag(find.byType(ListView), const Offset(0, -100));
-    await tester.pump();
-    expect(tester.widget<Opacity>(_overlayOpacity).opacity, 1);
-
-    await tester.drag(find.byType(ListView), const Offset(0, 200));
-    await tester.pumpAndSettle();
-    expect(tester.widget<Opacity>(_overlayOpacity).opacity, 0);
-  });
-
-  testWidgets('the fade samples a smoothstep curve, not a two-stop ramp', (
+  testWidgets('grows the fade band across the first 24px of scroll', (
     tester,
   ) async {
-    await tester.pumpWidget(_app(_fadeOverList()));
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(_app(_fadeOverList(controller: controller)));
 
-    final box = tester.widget<DecoratedBox>(
-      find.descendant(of: _overlayOpacity, matching: find.byType(DecoratedBox)),
+    expect(tester.widget<Positioned>(_overlayPositioned).height, 0);
+
+    controller.jumpTo(AppSpacing.md / 2);
+    await tester.pump();
+    expect(
+      tester.widget<Positioned>(_overlayPositioned).height,
+      closeTo(16, 0.005),
     );
-    final gradient =
-        (box.decoration as BoxDecoration).gradient! as LinearGradient;
 
-    expect(gradient.stops, [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]);
-    final alphas = [for (final color in gradient.colors) color.a];
+    controller.jumpTo(AppSpacing.md);
+    await tester.pump();
+    expect(
+      tester.widget<Positioned>(_overlayPositioned).height,
+      AppSpacing.base,
+    );
+
+    controller.jumpTo(0);
+    await tester.pump();
+    expect(tester.widget<Positioned>(_overlayPositioned).height, 0);
+  });
+
+  testWidgets('the fade keeps the top edge opaque while scaling the tail', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(_app(_fadeOverList(controller: controller)));
+
+    LinearGradient gradient() {
+      final box = tester.widget<DecoratedBox>(_overlayBox);
+      return (box.decoration as BoxDecoration).gradient! as LinearGradient;
+    }
+
+    const expectedStops = [
+      0.0,
+      0.071,
+      0.143,
+      0.214,
+      0.286,
+      0.357,
+      0.429,
+      0.5,
+      0.571,
+      0.643,
+      0.714,
+      0.786,
+      0.857,
+      0.929,
+      1.0,
+    ];
+    const expectedTailAlphas = [
+      0.985,
+      0.945,
+      0.882,
+      0.802,
+      0.708,
+      0.606,
+      0.5,
+      0.394,
+      0.292,
+      0.198,
+      0.118,
+      0.055,
+      0.015,
+      0.0,
+    ];
+
+    var currentGradient = gradient();
+    expect(currentGradient.stops, expectedStops);
+    var alphas = [for (final color in currentGradient.colors) color.a];
     expect(alphas.first, 1.0);
     expect(alphas.last, 0.0);
-    // Interior samples follow smoothstep 3t² − 2t³.
-    expect(alphas[1], closeTo(0.896, 0.005));
-    expect(alphas[2], closeTo(0.648, 0.005));
-    expect(alphas[3], closeTo(0.352, 0.005));
-    expect(alphas[4], closeTo(0.104, 0.005));
+    for (final alpha in alphas.skip(1)) {
+      expect(alpha, 0.0);
+    }
+
+    controller.jumpTo(AppSpacing.md / 2);
+    await tester.pump();
+    currentGradient = gradient();
+    alphas = [for (final color in currentGradient.colors) color.a];
+    expect(alphas.first, 1.0);
+    for (var i = 0; i < expectedTailAlphas.length; i++) {
+      expect(alphas[i + 1], closeTo(expectedTailAlphas[i] * 0.5, 0.005));
+    }
+
+    controller.jumpTo(AppSpacing.md);
+    await tester.pump();
+    currentGradient = gradient();
+    alphas = [for (final color in currentGradient.colors) color.a];
+    expect(alphas.first, 1.0);
+    // Interior samples follow smoothstep 3t² − 2t³ at full strength.
+    for (var i = 0; i < expectedTailAlphas.length; i++) {
+      expect(alphas[i + 1], closeTo(expectedTailAlphas[i], 0.005));
+    }
   });
 
   testWidgets('the overlay never intercepts taps in the fade band', (
@@ -75,7 +150,7 @@ void main() {
     var taps = 0;
     await tester.pumpWidget(_app(_fadeOverList(onFirstRowTap: () => taps++)));
 
-    // The first row sits inside the 40px overlay band; the tap must
+    // The first row sits inside the 32px overlay band; the tap must
     // reach it through the IgnorePointer.
     await tester.tapAt(
       tester.getTopLeft(find.byType(MobileTopScrollFade)) +
