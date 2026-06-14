@@ -163,6 +163,16 @@ class _MethodCard extends StatelessWidget {
         fit: BoxFit.fill,
       ),
     );
+    final border = Positioned.fill(
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: cardRadius,
+            border: Border.all(color: colors.border.subtle, width: 1.5),
+          ),
+        ),
+      ),
+    );
     return Semantics(
       button: true,
       label: label,
@@ -189,20 +199,9 @@ class _MethodCard extends StatelessWidget {
                   ),
                 ),
               ),
+              if (bleed) border,
               if (bleed) art,
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: cardRadius,
-                      border: Border.all(
-                        color: colors.border.subtle,
-                        width: 1.5,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              if (!bleed) border,
               _MethodCardContent(
                 key: ValueKey('mobile_method_${keySuffix}_content'),
                 iconName: iconName,

@@ -170,10 +170,14 @@ void main() {
     final artIndex = createCardStack.children.indexWhere(
       (child) => child is Positioned && child.child.key == artKey,
     );
+    final borderIndex = createCardStack.children.indexWhere(
+      (child) => child is Positioned && child.child is IgnorePointer,
+    );
     final contentIndex = createCardStack.children.indexWhere(
       (child) => child.key == contentKey,
     );
 
+    expect(borderIndex, lessThan(artIndex));
     expect(contentIndex, greaterThan(artIndex));
   });
 
