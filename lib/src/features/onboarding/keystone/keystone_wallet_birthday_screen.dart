@@ -79,11 +79,12 @@ class _KeystoneWalletBirthdayScreenState
     if (mounted) setState(() {});
   }
 
-  int get _minimumBirthdayHeight =>
-      _metadata?.saplingActivationHeight ??
-      (isLocalIronwoodTestnetEndpoint(ref.read(rpcEndpointProvider))
-          ? 1
-          : ref.read(rpcEndpointProvider).network.saplingActivationHeight);
+  int get _minimumBirthdayHeight {
+    final endpoint = ref.read(rpcEndpointProvider);
+    if (isLocalIronwoodTestnetEndpoint(endpoint)) return 1;
+    return _metadata?.saplingActivationHeight ??
+        endpoint.network.saplingActivationHeight;
+  }
 
   Future<void> _loadMetadata() async {
     setState(() {
