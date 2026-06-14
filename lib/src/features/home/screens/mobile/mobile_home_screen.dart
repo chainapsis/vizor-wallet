@@ -26,13 +26,13 @@ import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 
 /// Mobile home tab: shielded balance card, send/receive actions, and
-/// the five most recent activity rows — Figma `HOME` section frames
+/// up to ten recent activity rows — Figma `HOME` section frames
 /// `Home Default` (4394:88353), `Home NO Activity NO Balance`
 /// (4394:90024), and `Importing` (4394:88886).
 class MobileHomeScreen extends ConsumerWidget {
   const MobileHomeScreen({super.key});
 
-  static const _recentActivityLimit = 5;
+  static const _recentActivityLimit = 10;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -87,6 +88,23 @@ SyncState _syncedState({BigInt? orchardBalance}) => SyncState(
   orchardBalance: orchardBalance ?? BigInt.zero,
 );
 
+rust_sync.TransactionInfo _tx(int index) {
+  final seconds = BigInt.from(1800000000 + index);
+  return rust_sync.TransactionInfo(
+    txidHex: 'tx-$index',
+    minedHeight: BigInt.from(index),
+    expiredUnmined: false,
+    accountBalanceDelta: 0,
+    fee: BigInt.zero,
+    blockTime: seconds,
+    isTransparent: false,
+    txKind: 'received',
+    displayAmount: BigInt.from(index) * BigInt.from(100000000),
+    displayPool: 'shielded',
+    createdTime: seconds,
+  );
+}
+
 void main() {
   testWidgets('shows the importing state before account data exists', (
     tester,
@@ -147,5 +165,32 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('143.12', findRichText: true), findsNothing);
+  });
+
+  testWidgets('shows up to ten recent activity rows', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1400));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(100000000)).copyWith(
+          recentTransactions: [for (var i = 0; i < 11; i++) _tx(i + 1)],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    for (var i = 0; i < 10; i++) {
+      expect(
+        find.byKey(ValueKey('mobile_home_activity_row_$i')),
+        findsOneWidget,
+      );
+    }
+    expect(
+      find.byKey(const ValueKey('mobile_home_activity_row_10')),
+      findsNothing,
+    );
   });
 }
