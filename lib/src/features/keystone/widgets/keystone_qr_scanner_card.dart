@@ -539,11 +539,10 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                         final active =
                             _cameraAccessStatus(scannerState) ==
                             _CameraAccessStatus.active;
-                        // Mobile has no footer at all — the back camera is
-                        // the only camera, so there is no picker, and the
-                        // trouble-scanning link is dropped in favour of the
-                        // page's "Tell me how Zcash works" button. Desktop
-                        // keeps the link + camera controls in every state.
+                        // Mobile has no footer at all — the scan screen is a
+                        // single camera workflow, and the back camera is the
+                        // only camera. Desktop keeps the link + camera
+                        // controls in every state.
                         if (_mobileFormFactor) {
                           return const SizedBox.shrink();
                         }

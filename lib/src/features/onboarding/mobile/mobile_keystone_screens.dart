@@ -240,26 +240,14 @@ class _MobileKeystoneScanScreenState
       title: 'Scan QR Code',
       subtitle: 'Prepare your Keystone wallet',
       scrollable: false,
-      bottomArea: AppButton(
-        key: const ValueKey('mobile_keystone_scan_explainer'),
-        expand: true,
-        onPressed: () => context.push('/onboarding/address-types'),
-        trailing: const AppIcon(AppIcons.chevronForward),
-        child: const SizedBox(
-          width: 244,
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text('Tell me how Zcash works'),
-          ),
-        ),
-      ),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final availableHeight = constraints.maxHeight.isFinite
               ? math.max(0.0, constraints.maxHeight)
               : _cameraMaxHeight;
           final cameraHeight = math.min(_cameraMaxHeight, availableHeight);
-          return Center(
+          return Align(
+            alignment: Alignment.topCenter,
             child: KeystoneQrScannerCard(
               key: const ValueKey('mobile_keystone_scan_card'),
               expectedUrType: 'zcash-accounts',
@@ -308,6 +296,15 @@ class MobileKeystoneSelectAccountScreen extends ConsumerWidget {
     final accounts = state.accounts;
     final selected = state.selectedAccount;
 
+    if (accounts.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        GoRouter.maybeOf(
+          context,
+        )?.go(KeystoneOnboardingStep.scanQrCode.routePath);
+      });
+    }
+
     return MobileOnboardingStepScaffold(
       progress: 0.6,
       onBack: () => Navigator.of(context).maybePop(),
@@ -321,7 +318,6 @@ class MobileKeystoneSelectAccountScreen extends ConsumerWidget {
             : () => context.push(
                 KeystoneOnboardingStep.walletBirthdayHeight.routePath,
               ),
-        trailing: const AppIcon(AppIcons.chevronForward),
         child: const Text('Select account'),
       ),
       child: Column(
