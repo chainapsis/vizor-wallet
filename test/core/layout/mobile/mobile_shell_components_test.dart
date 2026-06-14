@@ -243,6 +243,78 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Sheet content'), findsNothing);
   });
+
+  testWidgets('MobileModalCard uses the Figma modal base in both themes', (
+    tester,
+  ) async {
+    Future<void> pumpCard(AppThemeData theme) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, navigator) =>
+              AppTheme(data: theme, child: navigator!),
+          home: const Center(
+            child: SizedBox(
+              width: 393,
+              height: 852,
+              child: MobileModalCard(
+                child: SizedBox(height: 200, child: Text('Modal content')),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    for (final theme in [AppThemeData.dark, AppThemeData.light]) {
+      await pumpCard(theme);
+
+      final cardFinder = find.byType(MobileModalCard);
+      final decoratedBox = tester.widget<DecoratedBox>(
+        find.descendant(of: cardFinder, matching: find.byType(DecoratedBox)),
+      );
+      final decoration = decoratedBox.decoration as BoxDecoration;
+      expect(
+        decoration.borderRadius,
+        const BorderRadius.all(Radius.circular(AppRadii.xLarge)),
+      );
+      expect(decoration.boxShadow, const [
+        BoxShadow(
+          color: Color(0x14000000),
+          offset: Offset(0, 14),
+          blurRadius: 28,
+        ),
+        BoxShadow(
+          color: Color(0x08000000),
+          offset: Offset(0, -6),
+          blurRadius: 12,
+        ),
+        BoxShadow(
+          color: Color(0x0F000000),
+          offset: Offset(0, 2),
+          blurRadius: 8,
+        ),
+      ]);
+
+      final material = tester.widget<Material>(
+        find.descendant(of: cardFinder, matching: find.byType(Material)),
+      );
+      expect(material.color, theme.colors.background.base);
+      expect(
+        material.shape,
+        const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(AppRadii.xLarge)),
+        ),
+      );
+
+      final rim = tester.widget<CustomPaint>(
+        find
+            .descendant(of: cardFinder, matching: find.byType(CustomPaint))
+            .first,
+      );
+      expect(rim.foregroundPainter, isNotNull);
+    }
+  });
 }
 
 Widget _harness(Widget child) {

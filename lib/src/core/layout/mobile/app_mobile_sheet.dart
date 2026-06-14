@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart' show Material, showModalBottomSheet;
@@ -20,7 +22,7 @@ import '../../theme/app_theme.dart';
 ///   real, device-dependent space, so its inset is added on top of the
 ///   visual gap.
 /// - All-corner radius of [AppRadii.xLarge] (radii/L = 32) on a
-///   `background.ground` surface with the Figma shadow overlay.
+///   `background.base` surface with the Figma shadow overlay.
 /// - When the software keyboard is open the card floats 16px above it
 ///   (Figma `Review Add Memo`, 4638:74505), so text-entry modals like the
 ///   send memo no longer need a separate top-pinned presentation.
@@ -60,7 +62,7 @@ Future<T?> showAppMobileSheet<T>({
 
 /// The floating-card frame for mobile modals: side margins, the
 /// keyboard/safe-area-aware bottom gap, and (unless [transparentBackground])
-/// the rounded ground surface with the modal shadow.
+/// the rounded base surface with the modal shadow.
 ///
 /// [showAppMobileSheet] wraps every sheet body in this. It is also reused
 /// by the swap modal route (a custom multi-surface dialog), which
@@ -78,7 +80,7 @@ class MobileModalCard extends StatelessWidget {
   final Widget child;
 
   /// For content that is already its own card (e.g. the birthday calendar
-  /// panel): only the outer margins are applied, not the ground surface.
+  /// panel): only the outer margins are applied, not the base surface.
   final bool transparentBackground;
 
   @override
@@ -110,17 +112,17 @@ class MobileModalCard extends StatelessWidget {
               boxShadow: _modalShadow,
             ),
             child: Material(
-              color: colors.background.ground,
+              color: colors.background.base,
               clipBehavior: Clip.antiAlias,
-              // The 1px highlight approximates the Figma inner-shadow rim
-              // (#FFFFFF26) that separates the card from the dark scrim.
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.all(
                   Radius.circular(AppRadii.xLarge),
                 ),
-                side: BorderSide(color: _modalRimHighlight),
               ),
-              child: child,
+              child: CustomPaint(
+                foregroundPainter: const _ModalInnerHighlightPainter(),
+                child: child,
+              ),
             ),
           );
 
@@ -139,15 +141,34 @@ class MobileModalCard extends StatelessWidget {
   }
 }
 
-/// Figma `Shadow Overlay` inner highlight (#FFFFFF26) — a faint rim that
-/// separates the card from the dark scrim.
-const Color _modalRimHighlight = Color(0x26FFFFFF);
+/// Figma `Shadow Overlay` inner shadow (#FFFFFF26, blur radius 2) — a
+/// soft rim that separates the card from the scrim without a hard stroke.
+class _ModalInnerHighlightPainter extends CustomPainter {
+  const _ModalInnerHighlightPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      const Radius.circular(AppRadii.xLarge),
+    );
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = const Color(0x26FFFFFF)
+      ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.inner, 2);
+    canvas.drawRRect(rrect, paint);
+  }
+
+  @override
+  bool shouldRepaint(_ModalInnerHighlightPainter oldDelegate) => false;
+}
 
 /// Figma `Shadow Overlay` — a soft, mostly-downward elevation behind the
 /// modal card. The black layers are subtle over the dark scrim; the card
 /// surface and the rim highlight do most of the visual separation.
 const List<BoxShadow> _modalShadow = [
   BoxShadow(color: Color(0x14000000), offset: Offset(0, 14), blurRadius: 28),
-  BoxShadow(color: Color(0x0A000000), offset: Offset(0, -6), blurRadius: 12),
+  BoxShadow(color: Color(0x08000000), offset: Offset(0, -6), blurRadius: 12),
   BoxShadow(color: Color(0x0F000000), offset: Offset(0, 2), blurRadius: 8),
 ];

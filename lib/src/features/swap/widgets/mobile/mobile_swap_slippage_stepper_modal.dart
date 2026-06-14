@@ -94,7 +94,7 @@ class _MobileSwapSlippageStepperModalState
     // tone (Figma 4700:123470); in-range stays the primary serif colour.
     final valueColor = invalid ? colors.text.destructive : colors.text.primary;
     // Content only — the swap modal route wraps this in the shared
-    // MobileModalCard (ground surface, radius 32, bottom-anchored).
+    // MobileModalCard (base surface, radius 32, bottom-anchored).
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,

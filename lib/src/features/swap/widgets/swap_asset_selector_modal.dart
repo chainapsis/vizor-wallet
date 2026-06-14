@@ -91,7 +91,7 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
         : colors.border.regular;
 
     // On mobile the swap modal route wraps this in the shared
-    // MobileModalCard (ground surface, radius 32, bottom-anchored), so the
+    // MobileModalCard (base surface, radius 32, bottom-anchored), so the
     // surface is full-width, draws no card, and the list scrolls within a
     // bounded height that the card hugs. Desktop keeps the fixed card.
     final isMobile = kAppFormFactor == AppFormFactor.mobile;

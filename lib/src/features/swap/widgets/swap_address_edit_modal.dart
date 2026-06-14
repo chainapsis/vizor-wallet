@@ -159,7 +159,7 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
         : _nicknameError;
 
     // On mobile the swap modal route wraps this in the shared
-    // MobileModalCard (ground surface, radius 32, 16px side margins,
+    // MobileModalCard (base surface, radius 32, 16px side margins,
     // bottom-anchored), so the surface is full-width and draws no card of
     // its own. Desktop keeps the fixed centered card.
     final isMobile = kAppFormFactor == AppFormFactor.mobile;

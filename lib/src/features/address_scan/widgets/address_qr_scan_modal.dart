@@ -296,7 +296,7 @@ class AddressQrScanModalContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     // On mobile the swap modal route wraps this in the shared
-    // MobileModalCard (ground surface, radius 32, bottom-anchored); the
+    // MobileModalCard (base surface, radius 32, bottom-anchored); the
     // camera viewport is fixed-size, so the card hugs it. Desktop keeps the
     // fixed centered card.
     final isMobile = kAppFormFactor == AppFormFactor.mobile;
