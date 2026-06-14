@@ -21,6 +21,7 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
     this.bottomAreaPadding,
     this.aboveTitle,
     this.titleStyle,
+    this.scrollable = true,
     super.key,
   });
 
@@ -31,8 +32,8 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
   final String title;
   final String? subtitle;
 
-  /// Step content below the title block; wrapped in a scroll view so
-  /// small phones and the software keyboard never clip it.
+  /// Step content below the title block. The scaffold wraps this in a scroll
+  /// view by default so small phones and the software keyboard never clip it.
   final Widget child;
 
   /// Pinned actions (primary button, secondary link) at the bottom.
@@ -50,9 +51,53 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
   /// the smaller Headline M serif.
   final TextStyle? titleStyle;
 
+  /// Keeps the default onboarding behavior scrollable. Screens with a
+  /// live camera viewport can opt out so the viewport resizes instead of
+  /// being partially scrolled off-screen on shorter phones.
+  final bool scrollable;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final contentPadding = const EdgeInsets.fromLTRB(
+      AppSpacing.xs,
+      AppSpacing.md,
+      AppSpacing.xs,
+      AppSpacing.md,
+    );
+    final contentChildren = <Widget>[
+      if (aboveTitle != null) ...[
+        aboveTitle!,
+        const SizedBox(height: AppSpacing.md),
+      ],
+      Text(
+        title,
+        textAlign: TextAlign.center,
+        style: (titleStyle ?? AppTypography.displayLarge).copyWith(
+          color: colors.text.accent,
+        ),
+      ),
+      if (subtitle != null) ...[
+        const SizedBox(height: AppSpacing.sm),
+        // Body M Medium on text/primary, wrapped to the narrow centered
+        // measure of the step frames (subtitle nodes are 259–277 wide in
+        // Figma).
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: Text(
+              subtitle!,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.primary,
+              ),
+            ),
+          ),
+        ),
+      ],
+      const SizedBox(height: AppSpacing.md),
+    ];
+    final childPadding = const EdgeInsets.symmetric(horizontal: AppSpacing.xs);
     return Scaffold(
       backgroundColor: colors.background.window,
       resizeToAvoidBottomInset: true,
@@ -63,58 +108,36 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
             children: [
               MobileTopNav.steps(progress: progress, onBack: onBack),
               Expanded(
-                child: SingleChildScrollView(
-                  // The title gets the near-full screen width (long serif
-                  // titles like "Zcash Address Types" stay on one line per
-                  // the Figma frames); the content keeps the standard sm
-                  // inset via the inner padding below.
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.xs,
-                    AppSpacing.md,
-                    AppSpacing.xs,
-                    AppSpacing.md,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (aboveTitle != null) ...[
-                        aboveTitle!,
-                        const SizedBox(height: AppSpacing.md),
-                      ],
-                      Text(
-                        title,
-                        textAlign: TextAlign.center,
-                        style: (titleStyle ?? AppTypography.displayLarge)
-                            .copyWith(color: colors.text.accent),
-                      ),
-                      if (subtitle != null) ...[
-                        const SizedBox(height: AppSpacing.sm),
-                        // Body M Medium on text/primary, wrapped to the
-                        // narrow centered measure of the step frames
-                        // (subtitle nodes are 259–277 wide in Figma).
-                        Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 320),
-                            child: Text(
-                              subtitle!,
-                              textAlign: TextAlign.center,
-                              style: AppTypography.bodyMediumStrong.copyWith(
-                                color: colors.text.primary,
+                child: scrollable
+                    ? SingleChildScrollView(
+                        // The title gets the near-full screen width (long
+                        // serif titles like "Zcash Address Types" stay on one
+                        // line per the Figma frames); the content keeps the
+                        // standard sm inset via the inner padding below.
+                        padding: contentPadding,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            ...contentChildren,
+                            Padding(padding: childPadding, child: child),
+                          ],
+                        ),
+                      )
+                    : Padding(
+                        padding: contentPadding,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            ...contentChildren,
+                            Expanded(
+                              child: Padding(
+                                padding: childPadding,
+                                child: child,
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
-                      const SizedBox(height: AppSpacing.md),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.xs,
-                        ),
-                        child: child,
                       ),
-                    ],
-                  ),
-                ),
               ),
               if (bottomArea != null)
                 Padding(

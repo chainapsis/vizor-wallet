@@ -324,6 +324,9 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                 Column(
                   children: [
                     SizedBox(
+                      key: const ValueKey(
+                        'keystone_qr_scanner_camera_viewport',
+                      ),
                       width: cameraAreaWidth,
                       height: widget.cameraHeight ?? _cameraHeight,
                       child: Stack(

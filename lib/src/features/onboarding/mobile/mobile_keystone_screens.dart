@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -183,6 +184,8 @@ class MobileKeystoneScanScreen extends ConsumerStatefulWidget {
 
 class _MobileKeystoneScanScreenState
     extends ConsumerState<MobileKeystoneScanScreen> {
+  static const _cameraMaxHeight = 464.0;
+
   bool _decoding = false;
   String? _error;
 
@@ -236,36 +239,53 @@ class _MobileKeystoneScanScreenState
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Scan QR Code',
       subtitle: 'Prepare your Keystone wallet',
+      scrollable: false,
       bottomArea: AppButton(
         key: const ValueKey('mobile_keystone_scan_explainer'),
         expand: true,
         onPressed: () => context.push('/onboarding/address-types'),
         trailing: const AppIcon(AppIcons.chevronForward),
-        child: const Text('Tell me how Zcash works'),
-      ),
-      child: Center(
-        child: KeystoneQrScannerCard(
-          expectedUrType: 'zcash-accounts',
-          decoding: _decoding,
-          error: _error,
-          // The Keystone Scan frames run the card edge-to-edge inside the
-          // 16 px content inset, as a single 464 px rounded camera card
-          // (Figma `Camera` 4654:72631 — no inner frame on mobile).
-          cardWidth: double.infinity,
-          cameraHeight: 464,
-          onProgress: (progress) {
-            if (!mounted) return;
-            setState(() {
-              if (progress > 0) _error = null;
-            });
-          },
-          onDecodeError: _handleDecodeError,
-          onComplete: _handleScanComplete,
-          decodingLabel: 'Reading accounts...',
-          unavailableMessage:
-              'A camera is required to connect Keystone. You can revert '
-              'this in settings anytime later.',
+        child: const SizedBox(
+          width: 244,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text('Tell me how Zcash works'),
+          ),
         ),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final availableHeight = constraints.maxHeight.isFinite
+              ? math.max(0.0, constraints.maxHeight)
+              : _cameraMaxHeight;
+          final cameraHeight = math.min(_cameraMaxHeight, availableHeight);
+          return Center(
+            child: KeystoneQrScannerCard(
+              key: const ValueKey('mobile_keystone_scan_card'),
+              expectedUrType: 'zcash-accounts',
+              decoding: _decoding,
+              error: _error,
+              // The Keystone Scan frames run the card edge-to-edge inside the
+              // 16 px content inset, as a single 464 px rounded camera card
+              // (Figma `Camera` 4654:72631 — no inner frame on mobile). Shorter
+              // phones keep the page fixed and shrink only this viewport.
+              cardWidth: double.infinity,
+              cameraHeight: cameraHeight,
+              onProgress: (progress) {
+                if (!mounted) return;
+                setState(() {
+                  if (progress > 0) _error = null;
+                });
+              },
+              onDecodeError: _handleDecodeError,
+              onComplete: _handleScanComplete,
+              decodingLabel: 'Reading accounts...',
+              unavailableMessage:
+                  'A camera is required to connect Keystone. You can revert '
+                  'this in settings anytime later.',
+            ),
+          );
+        },
       ),
     );
   }
