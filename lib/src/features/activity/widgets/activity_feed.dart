@@ -680,6 +680,7 @@ class _ActivityRowIcon extends StatelessWidget {
                   row.leadingIconName,
                   size: 16,
                   color: row.leadingIconColor,
+                  animated: row.leadingIconName == AppIcons.loader,
                 ),
               ),
             ),
@@ -712,6 +713,7 @@ class _ActivityIconFallback extends StatelessWidget {
           row.leadingIconName,
           size: 16,
           color: row.leadingIconColor,
+          animated: row.leadingIconName == AppIcons.loader,
         ),
       ),
     );

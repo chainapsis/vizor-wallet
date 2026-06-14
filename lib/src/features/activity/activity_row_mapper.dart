@@ -32,14 +32,14 @@ ActivityRowData buildTransactionActivityRow({
       : null;
 
   return ActivityRowData(
-    title: isFailed && isSent ? 'Send failed' : _txTitle(kind),
-    leadingIconName: _txIcon(kind),
+    title: isFailed && isSent
+        ? 'Send failed'
+        : _txTitle(kind, isPending: isPending),
+    leadingIconName: _txIcon(kind, isPending: isPending),
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
     subtitle: subtitle,
-    subtitleIconName: transaction.displayPool == 'shielded'
-        ? AppIcons.shieldKeyholeOutline
-        : null,
+    subtitleIconName: _poolIcon(transaction.displayPool),
     amountText: _transactionAmountText(
       amount: amount,
       signedAmount: signedAmount,
@@ -106,7 +106,14 @@ String formatActivityTimestamp(DateTime? timestamp) {
   return '${_monthName(local.month)} ${local.day}, $time';
 }
 
-String _txTitle(String kind) {
+String _txTitle(String kind, {required bool isPending}) {
+  if (isPending) {
+    return switch (kind) {
+      'receiving' || 'received' => 'Receiving...',
+      'sent' => 'Sending...',
+      _ => 'Transaction',
+    };
+  }
   return switch (kind) {
     'receiving' => 'Receiving',
     'received' => 'Received',
@@ -116,7 +123,13 @@ String _txTitle(String kind) {
   };
 }
 
-String _txIcon(String kind) {
+String _txIcon(String kind, {required bool isPending}) {
+  if (isPending) {
+    return switch (kind) {
+      'receiving' || 'received' || 'sent' => AppIcons.loader,
+      _ => AppIcons.history,
+    };
+  }
   return switch (kind) {
     'receiving' => AppIcons.arrowDownCircle,
     'received' => AppIcons.arrowDownCircle,
@@ -131,6 +144,14 @@ String? _poolLabel(String pool) {
     'transparent' => 'Transparent',
     'shielded' => 'Shielded',
     'mixed' => 'Mixed',
+    _ => null,
+  };
+}
+
+String? _poolIcon(String pool) {
+  return switch (pool) {
+    'transparent' => AppIcons.transparentBalance,
+    'shielded' => AppIcons.shieldKeyholeOutline,
     _ => null,
   };
 }
