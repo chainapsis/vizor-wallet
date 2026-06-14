@@ -33,6 +33,12 @@ enum ZcashNetwork {
     regtest => 'uregtest1',
   };
 
+  String get texPrefix => switch (this) {
+    mainnet => 'tex1',
+    testnet => 'textest1',
+    regtest => 'texregtest1',
+  };
+
   int get defaultPort => switch (this) {
     mainnet => 9067,
     testnet => 18232,

@@ -296,6 +296,9 @@ class _SwapKeystoneSigningOverlayState
 
   String _friendlyError(Object error) {
     final lower = error.toString().toLowerCase();
+    if (lower.contains('does not support tex')) {
+      return 'Keystone does not support TEX sends yet.';
+    }
     if (lower.contains('sapling') || lower.contains('download')) {
       return 'Required proving parameters could not be prepared.';
     }

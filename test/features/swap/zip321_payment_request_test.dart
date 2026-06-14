@@ -45,6 +45,15 @@ void main() {
       expect(request.primaryPayment.memoIsBinary, isFalse);
     });
 
+    test('rejects memos for TEX payment handoff', () {
+      expect(
+        () => Zip321PaymentRequest.parse(
+          'zcash:tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte?amount=1&memo=VGhpcyBpcyBhIHNpbXBsZSBtZW1vLg',
+        ),
+        throwsA(isA<Zip321ParseException>()),
+      );
+    });
+
     test('parses binary memos as unsupported by the swap flow', () {
       final request = Zip321PaymentRequest.parse(
         'zcash:u1zip321destination?amount=1&memo=_w',
