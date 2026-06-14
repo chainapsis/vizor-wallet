@@ -12,6 +12,7 @@ const double _regularArtHeight = 120;
 const double _bleedArtWidth = 186;
 const double _bleedArtHeight = 151;
 const double _bleedArtTopOverflow = 32.5;
+const double _methodCardBorderWidth = 1.5;
 
 /// Second onboarding step — Figma `Method Selection` (4752:26334): the
 /// "Welcome to Vizor" title over three illustrated cards (create /
@@ -175,6 +176,7 @@ class _MethodCard extends StatelessWidget {
               clipper: const _TopBleedOnlyClipper(
                 topBleed: _bleedArtTopOverflow,
                 cardRadius: AppRadii.large,
+                rightInset: _methodCardBorderWidth,
               ),
               clipBehavior: Clip.antiAlias,
               child: Stack(
@@ -204,7 +206,10 @@ class _MethodCard extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: cardRadius,
-            border: Border.all(color: colors.border.subtle, width: 1.5),
+            border: Border.all(
+              color: colors.border.subtle,
+              width: _methodCardBorderWidth,
+            ),
           ),
         ),
       ),
@@ -256,18 +261,21 @@ class _TopBleedOnlyClipper extends CustomClipper<Path> {
   const _TopBleedOnlyClipper({
     required this.topBleed,
     required this.cardRadius,
+    required this.rightInset,
   });
 
   final double topBleed;
   final double cardRadius;
+  final double rightInset;
 
   @override
   Path getClip(Size size) {
+    final clippedWidth = (size.width - rightInset).clamp(0.0, size.width);
     return Path()
-      ..addRect(Rect.fromLTWH(0, 0, size.width, topBleed))
+      ..addRect(Rect.fromLTWH(0, 0, clippedWidth, topBleed))
       ..addRRect(
         RRect.fromRectAndRadius(
-          Rect.fromLTWH(0, topBleed, size.width, size.height - topBleed),
+          Rect.fromLTWH(0, topBleed, clippedWidth, size.height - topBleed),
           Radius.circular(cardRadius),
         ),
       );
@@ -276,7 +284,8 @@ class _TopBleedOnlyClipper extends CustomClipper<Path> {
   @override
   bool shouldReclip(_TopBleedOnlyClipper oldClipper) {
     return topBleed != oldClipper.topBleed ||
-        cardRadius != oldClipper.cardRadius;
+        cardRadius != oldClipper.cardRadius ||
+        rightInset != oldClipper.rightInset;
   }
 }
 
