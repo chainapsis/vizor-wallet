@@ -69,6 +69,27 @@ Widget _app() => ProviderScope(
 );
 
 void main() {
+  testWidgets('swap composer CTA fits on narrow Android-sized screens', (
+    tester,
+  ) async {
+    await _setNarrowMobileViewport(tester);
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileSwapScreen), findsOneWidget);
+    expect(find.text('Add recipient address'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    final screen = tester.getRect(find.byType(MaterialApp));
+    final button = tester.getRect(
+      find.byKey(const ValueKey('mobile_swap_review_button')),
+    );
+    expect(button.right, lessThanOrEqualTo(screen.right - AppSpacing.sm));
+  });
+
   testWidgets('swap modal rides the root navigator and covers the whole '
       'screen, tab bar included', (tester) async {
     await tester.pumpWidget(_app());
@@ -126,5 +147,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(SwapAddressEditModal), findsNothing);
     expect(find.byType(MobileSwapScreen), findsOneWidget);
+  });
+}
+
+Future<void> _setNarrowMobileViewport(WidgetTester tester) async {
+  await tester.binding.setSurfaceSize(const Size(432, 960));
+  addTearDown(() async {
+    await tester.binding.setSurfaceSize(null);
   });
 }

@@ -442,8 +442,18 @@ class _MobileSwapReviewButton extends StatelessWidget {
     return AppButton(
       key: const ValueKey('mobile_swap_review_button'),
       expand: true,
+      constrainContent: true,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xs,
+        vertical: AppSpacing.xs,
+      ),
       onPressed: onPressed,
-      child: Text(label),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+      ),
     );
   }
 }

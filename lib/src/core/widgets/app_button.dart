@@ -177,6 +177,7 @@ class AppButton extends StatefulWidget {
     this.variant = AppButtonVariant.primary,
     this.size = AppButtonSize.large,
     this.height,
+    this.contentPadding,
     this.leading,
     this.trailing,
     this.minWidth,
@@ -185,6 +186,7 @@ class AppButton extends StatefulWidget {
     this.focusNode,
     this.autofocus = false,
     this.expand = false,
+    this.constrainContent = false,
   });
 
   /// Tap handler. `null` disables the button.
@@ -201,6 +203,11 @@ class AppButton extends StatefulWidget {
   /// Optional visual height override for one-off composed components that
   /// use the button palette but have a different fixed height in Figma.
   final double? height;
+
+  /// Optional override for the button's internal padding. Default (`null`)
+  /// keeps the design-system sizing for all regular buttons; narrow composed
+  /// rows can opt in without changing the global component metrics.
+  final EdgeInsets? contentPadding;
 
   /// Optional widget shown before [child]. Auto-sized to 16×16 and tinted
   /// to the label color via [IconTheme].
@@ -230,6 +237,11 @@ class AppButton extends StatefulWidget {
   /// in `Expanded` or a stretched `Column` makes the pill fill — the
   /// mobile Figma frames use full-width primary CTAs throughout.
   final bool expand;
+
+  /// Allows the label area to shrink inside bounded/expanded layouts instead
+  /// of letting long text overflow the pill. Intended for one-line CTAs in
+  /// narrow mobile rows; default keeps the historical intrinsic layout.
+  final bool constrainContent;
 
   @override
   State<AppButton> createState() => _AppButtonState();
@@ -291,6 +303,7 @@ class _AppButtonState extends State<AppButton> {
         : palette.border;
     final borderWidth = _enabled ? palette.borderWidth : 0.0;
     final iconGap = widget.iconGap ?? sizing.gap;
+    final contentPadding = widget.contentPadding ?? sizing.padding;
 
     final rowChildren = <Widget>[];
     if (widget.leading != null) {
@@ -308,13 +321,16 @@ class _AppButtonState extends State<AppButton> {
       style: sizing.labelStyle.copyWith(color: labelColor),
       child: widget.child,
     );
+    final labelSlot = widget.size == AppButtonSize.small
+        ? label
+        : Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+            child: label,
+          );
     rowChildren.add(
-      widget.size == AppButtonSize.small
-          ? label
-          : Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-              child: label,
-            ),
+      widget.constrainContent
+          ? Flexible(fit: FlexFit.loose, child: labelSlot)
+          : labelSlot,
     );
     if (widget.trailing != null) {
       rowChildren
@@ -353,11 +369,13 @@ class _AppButtonState extends State<AppButton> {
                 : BorderSide(color: borderColor, width: borderWidth),
           ),
         ),
-        padding: sizing.padding,
+        padding: contentPadding,
         child: IconTheme.merge(
           data: IconThemeData(color: labelColor, size: sizing.iconSize),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: widget.constrainContent
+                ? MainAxisSize.max
+                : MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: rowChildren,

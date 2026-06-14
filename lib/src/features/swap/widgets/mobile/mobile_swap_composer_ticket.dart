@@ -364,7 +364,12 @@ class _SwapCard extends StatelessWidget {
                 Expanded(child: fiat),
                 if (addressChip != null) ...[
                   const SizedBox(width: AppSpacing.xs),
-                  addressChip!,
+                  Flexible(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: addressChip!,
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -710,5 +715,9 @@ String _amountMetaText(
       tokenAmountText: tokenAmountText,
     );
   }
-  return swapFiatDisplayText(state, asset: asset, tokenAmountText: tokenAmountText);
+  return swapFiatDisplayText(
+    state,
+    asset: asset,
+    tokenAmountText: tokenAmountText,
+  );
 }
