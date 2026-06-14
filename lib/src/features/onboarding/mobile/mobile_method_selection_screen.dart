@@ -62,7 +62,9 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             _MethodCard(
-                              buttonKey: const ValueKey('mobile_welcome_create'),
+                              buttonKey: const ValueKey(
+                                'mobile_welcome_create',
+                              ),
                               iconName: AppIcons.addNew,
                               label: 'Create wallet',
                               illustration:
@@ -74,7 +76,9 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: AppSpacing.sm),
                             _MethodCard(
-                              buttonKey: const ValueKey('mobile_welcome_import'),
+                              buttonKey: const ValueKey(
+                                'mobile_welcome_import',
+                              ),
                               iconName: AppIcons.importWallet,
                               label: 'Import wallet',
                               illustration:
@@ -134,6 +138,8 @@ class _MethodCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final cardRadius = BorderRadius.circular(AppRadii.large);
+    final keySuffix = label.toLowerCase().replaceAll(' ', '_');
     // Figma `New Wallet Bg` 186×151 @ top -32.5; `Import/keystone card bg`
     // 180×120 @ top 0, both right-aligned.
     final art = Positioned(
@@ -141,9 +147,14 @@ class _MethodCard extends StatelessWidget {
       right: 0,
       width: bleed ? 186 : 180,
       height: bleed ? 151 : 120,
-      child: Image.asset(illustration, fit: BoxFit.fill),
+      child: Image.asset(
+        illustration,
+        key: ValueKey('mobile_method_${keySuffix}_art'),
+        fit: BoxFit.fill,
+      ),
     );
     final content = Padding(
+      key: ValueKey('mobile_method_${keySuffix}_content'),
       // Figma insets the icon/label 14.5 from the card edge (~sm).
       padding: const EdgeInsets.all(AppSpacing.sm),
       child: Column(
@@ -177,18 +188,19 @@ class _MethodCard extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               ClipRRect(
-                borderRadius: BorderRadius.circular(AppRadii.large),
+                borderRadius: cardRadius,
                 child: Stack(
+                  fit: StackFit.expand,
                   children: [
                     Positioned.fill(
                       child: ColoredBox(color: colors.background.raised),
                     ),
                     if (!bleed) art,
-                    content,
                   ],
                 ),
               ),
               if (bleed) art,
+              content,
             ],
           ),
         ),

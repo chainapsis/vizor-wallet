@@ -91,6 +91,43 @@ void main() {
     },
   );
 
+  testWidgets('create method text paints above the bleeding illustration', (
+    tester,
+  ) async {
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    binding.platformDispatcher.views.first.physicalSize = const Size(393, 852);
+
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _openMethodSelection(tester);
+
+    const artKey = ValueKey('mobile_method_create_wallet_art');
+    const contentKey = ValueKey('mobile_method_create_wallet_content');
+    expect(find.byKey(artKey), findsOneWidget);
+    expect(find.byKey(contentKey), findsOneWidget);
+
+    final createCardStack = tester
+        .widgetList<Stack>(find.byType(Stack))
+        .firstWhere((stack) {
+          final hasArt = stack.children.any(
+            (child) => child is Positioned && child.child.key == artKey,
+          );
+          final hasContent = stack.children.any(
+            (child) => child.key == contentKey,
+          );
+          return hasArt && hasContent;
+        });
+
+    final artIndex = createCardStack.children.indexWhere(
+      (child) => child is Positioned && child.child.key == artKey,
+    );
+    final contentIndex = createCardStack.children.indexWhere(
+      (child) => child.key == contentKey,
+    );
+
+    expect(contentIndex, greaterThan(artIndex));
+  });
+
   testWidgets('create pushes the intro step', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
