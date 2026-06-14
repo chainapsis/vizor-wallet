@@ -1,14 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/material.dart' show CircularProgressIndicator, Scaffold;
+import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
-import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -21,7 +20,6 @@ import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
-import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
@@ -32,14 +30,12 @@ import '../../../../core/widgets/mobile/app_numeric_keypad.dart';
 
 enum _SendStep { recipient, amount, review }
 
-enum _SendPhase { compose, sending, succeeded, pendingBroadcast, failed }
+enum _SendPhase { compose, failed }
 
 /// The mobile send wizard — Figma `Send to` → `Enter amount` →
 /// `Review Send` (4423:119950, 4479:47503, 4481:51525) plus the memo
-/// modal (4484:62917) — driving the shared send pipeline in
-/// `send_flow.dart`. One screen owns the whole flow so proposal
-/// lifetime stays trivially scoped: a proposal exists only between
-/// Confirm & Send and the broadcast outcome.
+/// modal (4484:62917). This screen owns proposal creation and hands
+/// the proposal to the mobile status route for broadcast.
 class MobileSendScreen extends ConsumerStatefulWidget {
   const MobileSendScreen({
     this.loadWalletDbPath = getWalletDbPath,
@@ -66,6 +62,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   var _step = _SendStep.recipient;
   var _phase = _SendPhase.compose;
+  var _isConfirmingSend = false;
 
   // Recipient state.
   String _addressType = '';
@@ -83,9 +80,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   BigInt? _feeZatoshi;
   int _feeSeq = 0;
 
-  // Broadcast state.
-  String? _txid;
-  String? _statusMessage;
+  // Failure state.
   String? _error;
 
   @override
@@ -477,18 +472,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
-  Future<bool> _confirmSaplingParamsDownload() async {
-    if (!mounted) return false;
-    final confirmed = await showAppMobileSheet<bool>(
-      context: context,
-      isDismissible: false,
-      builder: (_) => const MobileSaplingParamsSheet(),
-    );
-    return confirmed == true;
-  }
-
   Future<void> _confirmAndSend() async {
-    if (_phase != _SendPhase.compose) return;
+    if (_phase != _SendPhase.compose || _isConfirmingSend) return;
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
     final isHardware = ref
@@ -498,7 +483,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (amountZatoshi == null || amountZatoshi <= BigInt.zero) return;
 
     setState(() {
-      _phase = _SendPhase.sending;
+      _isConfirmingSend = true;
       _error = null;
     });
 
@@ -518,6 +503,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       log('MobileSend: propose error: $e');
       if (!mounted) return;
       setState(() {
+        _isConfirmingSend = false;
         _phase = _SendPhase.failed;
         _error = friendlyProposeSendError(e.toString());
       });
@@ -553,69 +539,27 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             logContext: 'MobileSend(keystone cancelled)',
           ),
         );
-        if (mounted) setState(() => _phase = _SendPhase.compose);
+        if (mounted) {
+          setState(() {
+            _isConfirmingSend = false;
+            _phase = _SendPhase.compose;
+          });
+        }
         return;
       }
       if (!mounted) return;
+      context.go('/send/status', extra: keystone);
+      return;
     }
 
-    final outcome = await runSendBroadcast(
-      ref: ref,
-      args: args,
-      keystone: keystone,
-      confirmSaplingParamsDownload: _confirmSaplingParamsDownload,
-      shouldAbort: () async => !mounted,
-    );
-    if (outcome.phase == SendBroadcastPhase.failed &&
-        !outcome.proposalConsumed) {
-      // Non-consuming failure (e.g. params declined) — release it so a
-      // retry can propose again.
-      unawaited(
-        discardSendProposal(
-          proposalId: args.proposalId,
-          sendFlowId: _sendFlowId,
-          logContext: 'MobileSend(failed before execute)',
-        ),
-      );
-    }
-    if (outcome.phase == SendBroadcastPhase.aborted || !mounted) return;
-    setState(() {
-      _phase = switch (outcome.phase) {
-        SendBroadcastPhase.succeeded => _SendPhase.succeeded,
-        SendBroadcastPhase.pendingBroadcast => _SendPhase.pendingBroadcast,
-        _ => _SendPhase.failed,
-      };
-      _txid = outcome.txid;
-      _statusMessage = outcome.statusMessage;
-      _error = outcome.error;
-    });
-  }
-
-  Future<void> _openExplorer() async {
-    final txid = _txid;
-    if (txid == null) return;
-    final endpoint = ref.read(rpcEndpointFailoverProvider).current;
-    final launched = await launchZcashExplorerTransaction(
-      networkName: endpoint.networkName,
-      txidHex: txid,
-      txidOrder: ZcashExplorerTxidOrder.display,
-    );
-    if (launched || !mounted) return;
-    await Clipboard.setData(ClipboardData(text: txid));
     if (!mounted) return;
-    showAppToast(context, 'Transaction Hash Copied');
+    context.go('/send/status', extra: args);
   }
 
   // ── Navigation ─────────────────────────────────────────────────────
 
   void _handleBack() {
     switch (_phase) {
-      case _SendPhase.sending:
-        return; // Blocked while broadcasting.
-      case _SendPhase.succeeded:
-      case _SendPhase.pendingBroadcast:
-        context.go('/home');
-        return;
       case _SendPhase.failed:
         setState(() => _phase = _SendPhase.compose);
         return;
@@ -649,9 +593,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _SendStep.amount => 'Enter amount',
         _SendStep.review => 'Review Send',
       },
-      _SendPhase.sending => 'Sending',
-      _SendPhase.succeeded => 'Sent',
-      _SendPhase.pendingBroadcast => 'Almost there',
       _SendPhase.failed => 'Send failed',
     };
 
@@ -676,10 +617,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           child: SafeArea(
             child: Column(
               children: [
-                MobileTopNav.back(
-                  title: title,
-                  onBack: _phase == _SendPhase.sending ? null : _handleBack,
-                ),
+                MobileTopNav.back(title: title, onBack: _handleBack),
                 Expanded(child: body),
               ],
             ),
@@ -1284,9 +1222,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               AppButton(
                 key: const ValueKey('mobile_send_confirm'),
                 expand: true,
-                onPressed: () => unawaited(_confirmAndSend()),
+                onPressed: _isConfirmingSend
+                    ? null
+                    : () => unawaited(_confirmAndSend()),
                 leading: const AppIcon(AppIcons.plane, size: 20),
-                child: const Text('Confirm & Send'),
+                child: Text(
+                  _isConfirmingSend ? 'Preparing...' : 'Confirm & Send',
+                ),
               ),
               const SizedBox(height: AppSpacing.xs),
               Semantics(
@@ -1322,33 +1264,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final toLabel =
         _contactLabel ?? _truncateAddress(_addressController.text.trim());
 
-    final (Widget icon, String headline, String? detail) = switch (_phase) {
-      _SendPhase.sending => (
-        const SizedBox(
-          width: 48,
-          height: 48,
-          child: CircularProgressIndicator(strokeWidth: 3),
-        ),
-        'Sending...',
-        null,
-      ),
-      _SendPhase.succeeded => (
-        AppIcon(AppIcons.checkCircle, size: 48, color: colors.icon.accent),
-        'Sent',
-        null,
-      ),
-      _SendPhase.pendingBroadcast => (
-        AppIcon(AppIcons.warning, size: 48, color: colors.icon.accent),
-        'Almost there',
-        _statusMessage,
-      ),
-      _ => (
-        AppIcon(AppIcons.warning, size: 48, color: colors.text.destructive),
-        'Send failed',
-        _error,
-      ),
-    };
-
     return Padding(
       key: ValueKey('mobile_send_status_${_phase.name}'),
       padding: const EdgeInsets.all(AppSpacing.sm),
@@ -1358,10 +1273,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                icon,
+                AppIcon(
+                  AppIcons.warning,
+                  size: 48,
+                  color: colors.text.destructive,
+                ),
                 const SizedBox(height: AppSpacing.md),
                 Text(
-                  headline,
+                  'Send failed',
                   textAlign: TextAlign.center,
                   style: AppTypography.displayLarge.copyWith(
                     color: colors.text.accent,
@@ -1375,73 +1294,47 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                     color: colors.text.secondary,
                   ),
                 ),
-                if (detail != null) ...[
+                if (_error != null) ...[
                   const SizedBox(height: AppSpacing.sm),
                   Text(
-                    detail,
+                    _error!,
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
-                      color: _phase == _SendPhase.failed
-                          ? colors.text.destructive
-                          : colors.text.primary,
+                      color: colors.text.destructive,
                     ),
                   ),
                 ],
               ],
             ),
           ),
-          if (_phase != _SendPhase.sending) ...[
-            if ((_phase == _SendPhase.succeeded ||
-                    _phase == _SendPhase.pendingBroadcast) &&
-                _txid != null) ...[
-              SizedBox(
-                width: double.infinity,
-                child: AppButton(
-                  variant: AppButtonVariant.secondary,
-                  onPressed: () => unawaited(_openExplorer()),
-                  child: const Text('View transaction'),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-            ],
-            SizedBox(
-              width: double.infinity,
-              child: _phase == _SendPhase.failed
-                  ? AppButton(
-                      key: const ValueKey('mobile_send_try_again'),
-                      onPressed: () =>
-                          setState(() => _phase = _SendPhase.compose),
-                      child: const Text('Try again'),
-                    )
-                  : AppButton(
-                      key: const ValueKey('mobile_send_done'),
-                      onPressed: () => context.go('/home'),
-                      child: const Text('Done'),
-                    ),
+          SizedBox(
+            width: double.infinity,
+            child: AppButton(
+              key: const ValueKey('mobile_send_try_again'),
+              onPressed: () => setState(() => _phase = _SendPhase.compose),
+              child: const Text('Try again'),
             ),
-            if (_phase == _SendPhase.failed) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Semantics(
-                button: true,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => context.go('/home'),
-                  child: SizedBox(
-                    height: 44,
-                    child: Center(
-                      child: Text(
-                        'Back to wallet',
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.primary,
-                        ),
-                      ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Semantics(
+            button: true,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => context.go('/home'),
+              child: SizedBox(
+                height: 44,
+                child: Center(
+                  child: Text(
+                    'Back to wallet',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.primary,
                     ),
                   ),
                 ),
               ),
-            ],
-            const SizedBox(height: AppSpacing.xs),
-          ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
         ],
       ),
     );

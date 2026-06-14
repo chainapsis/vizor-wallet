@@ -321,6 +321,13 @@ void main() {
         const ValueKey('mobile_send_confirm'),
         timeout: const Duration(minutes: 1),
       );
+      await pumpUntil(
+        tester,
+        () =>
+            tester.any(find.byKey(const ValueKey('mobile_send_status_sending'))),
+        description: 'send status to start',
+        timeout: const Duration(minutes: 1),
+      );
       await shot('25c_send_sending');
       await pumpUntil(
         tester,
@@ -330,7 +337,8 @@ void main() {
         timeout: const Duration(minutes: 4),
       );
       await shot('25d_send_success');
-      await tapAppButton(tester, const ValueKey('mobile_send_done'));
+      await tester.tap(find.bySemanticsLabel('Back').first);
+      await tester.pump(const Duration(milliseconds: 250));
       await waitForHome(tester);
 
       // ── Activity tab ───────────────────────────────────────────────

@@ -12,9 +12,11 @@ import '../../features/activity/screens/mobile/mobile_transaction_status_screen.
 import '../../features/send/screens/mobile/mobile_keystone_sign_screen.dart';
 import '../../features/swap/models/swap_activity_navigation.dart';
 import '../../features/swap/screens/mobile/mobile_swap_review_screen.dart';
-import '../../features/send/services/send_flow.dart' show SendReviewArgs;
+import '../../features/send/services/send_flow.dart'
+    show KeystoneBroadcastArgs, SendReviewArgs;
 import '../../features/send/screens/mobile/mobile_send_scan_screen.dart';
 import '../../features/send/screens/mobile/mobile_send_screen.dart';
+import '../../features/send/screens/mobile/mobile_send_status_screen.dart';
 import '../../features/about/screens/mobile/mobile_about_screens.dart';
 import '../../features/settings/screens/mobile/mobile_change_passcode_screen.dart';
 import '../../features/settings/screens/mobile/mobile_endpoint_screen.dart';
@@ -117,6 +119,21 @@ List<RouteBase> buildMobileRoutes({
         key: state.pageKey,
         child: const MobileSendScanScreen(),
       ),
+    ),
+    GoRoute(
+      path: '/send/status',
+      pageBuilder: (context, state) {
+        final extra = state.extra;
+        final child = switch (extra) {
+          KeystoneBroadcastArgs() => MobileSendStatusScreen(
+            args: extra.reviewArgs,
+            keystone: extra,
+          ),
+          SendReviewArgs() => MobileSendStatusScreen(args: extra),
+          _ => const MobileSendScreen(),
+        };
+        return CupertinoPage(key: state.pageKey, child: child);
+      },
     ),
     GoRoute(
       path: '/swap/review',

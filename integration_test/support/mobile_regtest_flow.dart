@@ -503,7 +503,8 @@ Future<void> sendViaWizard(
     timeout: const Duration(minutes: 4),
   );
   logE2e('send succeeded');
-  await tapAppButton(tester, const ValueKey('mobile_send_done'));
+  await tester.tap(find.bySemanticsLabel('Back').first);
+  await tester.pump(const Duration(milliseconds: 250));
   await waitForHome(tester);
 }
 
