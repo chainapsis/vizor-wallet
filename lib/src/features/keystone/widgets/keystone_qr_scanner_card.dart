@@ -272,6 +272,53 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     }
   }
 
+  Future<void> _openCameraSettings() async {
+    final opened = await CameraPermissionSettings.open();
+    if (!opened) {
+      log('KeystoneQrScannerCard: failed to open camera permission settings');
+    }
+  }
+
+  Widget _cameraDeniedActions() {
+    if (!_mobileFormFactor) {
+      return AppButton(
+        onPressed: () =>
+            unawaited(_retryCameraStart(openSettingsOnDenied: true)),
+        variant: AppButtonVariant.secondary,
+        size: AppButtonSize.medium,
+        minWidth: 96,
+        leading: const AppIcon(AppIcons.renew),
+        child: const Text('Allow camera'),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppButton(
+          key: const ValueKey('keystone_scan_retry_button'),
+          onPressed: () =>
+              unawaited(_retryCameraStart(openSettingsOnDenied: false)),
+          variant: AppButtonVariant.secondary,
+          size: AppButtonSize.medium,
+          minWidth: 128,
+          leading: const AppIcon(AppIcons.renew),
+          child: const Text('Request again'),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        AppButton(
+          key: const ValueKey('keystone_scan_open_settings_button'),
+          onPressed: () => unawaited(_openCameraSettings()),
+          variant: AppButtonVariant.secondary,
+          size: AppButtonSize.medium,
+          minWidth: 128,
+          leading: const AppIcon(AppIcons.cog),
+          child: const Text('Open settings'),
+        ),
+      ],
+    );
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
@@ -476,24 +523,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                           // denied state.
                                           iconStyle:
                                               _CameraPermissionIconStyle.raised,
-                                          action: AppButton(
-                                            onPressed: () => unawaited(
-                                              _retryCameraStart(
-                                                openSettingsOnDenied: true,
-                                              ),
-                                            ),
-                                            variant: AppButtonVariant.secondary,
-                                            size: AppButtonSize.medium,
-                                            minWidth: 96,
-                                            leading: const AppIcon(
-                                              AppIcons.renew,
-                                            ),
-                                            child: Text(
-                                              _mobileFormFactor
-                                                  ? 'Request again'
-                                                  : 'Allow camera',
-                                            ),
-                                          ),
+                                          action: _cameraDeniedActions(),
                                         ),
                                     ],
                                   );

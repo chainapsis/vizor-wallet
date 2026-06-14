@@ -4,8 +4,11 @@ import 'package:flutter/material.dart' show Colors, Icons, Material;
 import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../services/camera_permission_settings.dart';
 import '../../../services/qr_scanner.dart' show QrScanner;
 
 /// Result of resolving a scanned QR payload — either an accepted address
@@ -110,6 +113,13 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView> {
     }
   }
 
+  Future<void> _openCameraSettings() async {
+    final opened = await CameraPermissionSettings.open();
+    if (!opened) {
+      log('MobileAddressScanView: failed to open camera permission settings');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     const viewfinderSize = 260.0;
@@ -170,6 +180,7 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView> {
             permissionDeniedMessage:
                 'Camera access is off. Allow it in Settings to scan addresses.',
             unavailableMessage: 'The camera is unavailable right now.',
+            onOpenSettings: _openCameraSettings,
           ),
           SafeArea(
             child: Column(
@@ -260,6 +271,8 @@ class MobileScanCameraErrorOverlay extends StatelessWidget {
     required this.permissionDeniedMessage,
     required this.unavailableMessage,
     this.maxWidth = 260,
+    this.onOpenSettings,
+    this.openSettingsLabel = 'Open settings',
     super.key,
   });
 
@@ -267,6 +280,8 @@ class MobileScanCameraErrorOverlay extends StatelessWidget {
   final String permissionDeniedMessage;
   final String unavailableMessage;
   final double maxWidth;
+  final Future<void> Function()? onOpenSettings;
+  final String openSettingsLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -275,22 +290,45 @@ class MobileScanCameraErrorOverlay extends StatelessWidget {
       builder: (context, state, _) {
         final message = _messageFor(state);
         if (message == null) return const SizedBox.shrink();
+        final showSettingsButton =
+            state.error?.errorCode == MobileScannerErrorCode.permissionDenied &&
+            onOpenSettings != null;
 
-        return IgnorePointer(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: maxWidth),
-                child: Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyMedium.copyWith(color: Colors.white),
-                ),
+        final content = Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxWidth),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: Colors.white,
+                    ),
+                  ),
+                  if (showSettingsButton) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    AppButton(
+                      key: const ValueKey('mobile_scan_open_settings_button'),
+                      onPressed: () => unawaited(onOpenSettings!()),
+                      variant: AppButtonVariant.secondary,
+                      size: AppButtonSize.medium,
+                      minWidth: 128,
+                      leading: const AppIcon(AppIcons.cog),
+                      child: Text(openSettingsLabel),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
         );
+
+        if (showSettingsButton) return content;
+        return IgnorePointer(child: content);
       },
     );
   }

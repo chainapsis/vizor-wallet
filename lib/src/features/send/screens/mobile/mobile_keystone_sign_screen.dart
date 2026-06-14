@@ -16,6 +16,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../../rust/api/sync.dart' as rust_sync;
+import '../../../../services/camera_permission_settings.dart';
 import '../../../../services/qr_scanner.dart';
 import '../../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../../services/sapling_params.dart';
@@ -179,6 +180,13 @@ class _MobileKeystoneSignScreenState
       _scanHint = null;
       _scanProgress = 0;
     });
+  }
+
+  Future<void> _openCameraSettings() async {
+    final opened = await CameraPermissionSettings.open();
+    if (!opened) {
+      log('MobileKeystoneSign: failed to open camera permission settings');
+    }
   }
 
   Future<void> _handleScanComplete(ScanResult result) async {
@@ -419,6 +427,7 @@ class _MobileKeystoneSignScreenState
           permissionDeniedMessage:
               'Camera access is off. Allow it in Settings to scan Keystone signatures.',
           unavailableMessage: 'The camera is unavailable right now.',
+          onOpenSettings: _openCameraSettings,
         ),
         Align(
           alignment: Alignment.center,

@@ -7,7 +7,10 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_view.dart';
 
-Widget _app(MobileScannerController controller) {
+Widget _app(
+  MobileScannerController controller, {
+  Future<void> Function()? onOpenSettings,
+}) {
   return AppTheme(
     data: AppThemeData.dark,
     child: Directionality(
@@ -21,6 +24,7 @@ Widget _app(MobileScannerController controller) {
           permissionDeniedMessage:
               'Camera access is off. Allow it in Settings to scan addresses.',
           unavailableMessage: 'The camera is unavailable right now.',
+          onOpenSettings: onOpenSettings,
         ),
       ),
     ),
@@ -69,5 +73,43 @@ void main() {
     await tester.pump();
 
     expect(find.text('The camera is unavailable right now.'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_scan_open_settings_button')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('opens settings from permission denied errors', (tester) async {
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
+    var opens = 0;
+
+    await tester.pumpWidget(
+      _app(
+        controller,
+        onOpenSettings: () async {
+          opens++;
+        },
+      ),
+    );
+
+    controller.value = controller.value.copyWith(
+      isInitialized: true,
+      error: const MobileScannerException(
+        errorCode: MobileScannerErrorCode.permissionDenied,
+      ),
+    );
+    await tester.pump();
+
+    final button = find.byKey(
+      const ValueKey('mobile_scan_open_settings_button'),
+    );
+    expect(button, findsOneWidget);
+    expect(find.text('Open settings'), findsOneWidget);
+
+    await tester.tap(button);
+    await tester.pump();
+
+    expect(opens, 1);
   });
 }
