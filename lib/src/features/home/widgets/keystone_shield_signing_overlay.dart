@@ -290,6 +290,10 @@ class _KeystoneShieldSigningOverlayState
 
   String _friendlyError(Object error) {
     final lower = error.toString().toLowerCase();
+    if (lower.contains('expired before broadcast') ||
+        lower.contains('expiry height')) {
+      return 'This shield request expired before broadcast. Start Shield Balance again and sign a new request.';
+    }
     if (lower.contains('sync')) {
       return 'Sync the wallet before shielding transparent balance.';
     }

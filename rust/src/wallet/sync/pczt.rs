@@ -546,6 +546,14 @@ pub async fn extract_and_broadcast_pczt(
     let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;
+    let latest = crate::wallet::sync_engine::get_latest_block(&mut client)
+        .await
+        .map_err(|e| e.to_string())?;
+    if let Some(error) =
+        pczt_broadcast_expiry_error(&txid, u32::from(tx.expiry_height()), latest.height)
+    {
+        return Err(error);
+    }
 
     let resp = match crate::wallet::sync_engine::send_transaction_with_status(
         &mut client,
@@ -587,6 +595,22 @@ pub async fn extract_and_broadcast_pczt(
     };
 
     handle_pczt_send_response(&txid.to_string(), &resp, store_locally)
+}
+
+fn pczt_broadcast_expiry_error(
+    txid: &TxId,
+    expiry_height: u32,
+    current_height: u64,
+) -> Option<String> {
+    if expiry_height == 0 || current_height < u64::from(expiry_height) {
+        None
+    } else {
+        Some(format!(
+            "Hardware signing request expired before broadcast: txid={txid}, \
+             expiry height {expiry_height}, current chain height {current_height}. \
+             Start the signing flow again so Vizor can build a fresh transaction."
+        ))
+    }
 }
 
 fn handle_pczt_send_response<F>(
@@ -702,5 +726,30 @@ mod tests {
 
         assert_eq!(err, "Broadcast rejected: bad-txns-inputs-spent (code 18)");
         assert_eq!(store_calls.get(), 0);
+    }
+
+    #[test]
+    fn pczt_broadcast_expiry_allows_no_expiry() {
+        let txid = TxId::from_bytes([0; 32]);
+
+        assert!(pczt_broadcast_expiry_error(&txid, 0, 500).is_none());
+    }
+
+    #[test]
+    fn pczt_broadcast_expiry_allows_unexpired_tx() {
+        let txid = TxId::from_bytes([0; 32]);
+
+        assert!(pczt_broadcast_expiry_error(&txid, 501, 500).is_none());
+    }
+
+    #[test]
+    fn pczt_broadcast_expiry_rejects_expired_tx() {
+        let txid = TxId::from_bytes([0; 32]);
+
+        let err = pczt_broadcast_expiry_error(&txid, 500, 500).unwrap();
+
+        assert!(err.contains("expired before broadcast"));
+        assert!(err.contains("expiry height 500"));
+        assert!(err.contains("current chain height 500"));
     }
 }
