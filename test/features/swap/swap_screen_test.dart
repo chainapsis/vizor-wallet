@@ -2257,6 +2257,40 @@ void main() {
     expect(_fieldText(tester, 'swap_amount_field'), '1.2339');
   });
 
+  testWidgets('ZEC swap composer masks the max balance in privacy mode', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final maxEstimator = _FakeSwapMaxAmountEstimator(
+      maxZatoshi: BigInt.from(123390000),
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        bootstrap: _privacyModeBootstrap,
+        seedSwapActivityFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(),
+        spendableBalance: BigInt.from(123450000),
+        maxAmountEstimator: maxEstimator,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Privacy mode masks the available balance amount, not the "Max:" label.
+    expect(find.text('Max: ****** ZEC'), findsOneWidget);
+    expect(find.text('Max: 1.2345 ZEC'), findsNothing);
+
+    // The mask is display-only: tapping still applies the real max amount.
+    await tester.tap(find.byKey(const ValueKey('swap_max_amount_button')));
+    await tester.pumpAndSettle();
+    expect(maxEstimator.requests, ['account-1']);
+    expect(_fieldText(tester, 'swap_amount_field'), '1.2339');
+  });
+
   testWidgets('ZEC max amount request keeps the max label spinner-free', (
     tester,
   ) async {
@@ -8195,6 +8229,23 @@ final _bootstrap = AppBootstrapState(
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
   themeMode: ThemeMode.system,
   privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+final _privacyModeBootstrap = AppBootstrapState(
+  initialLocation: '/swap',
+  initialAccountState: const AccountState(
+    accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1swapaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: true,
   isPasswordConfigured: true,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
