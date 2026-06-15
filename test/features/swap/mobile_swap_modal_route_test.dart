@@ -7,11 +7,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_routes.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
-import 'package:zcash_wallet/src/features/swap/widgets/swap_address_edit_modal.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_address_edit_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
@@ -101,7 +104,7 @@ void main() {
 
     await tester.tap(find.text('Add recipient address'));
     await tester.pumpAndSettle();
-    expect(find.byType(SwapAddressEditModal), findsOneWidget);
+    expect(find.byType(MobileSwapAddressEditModal), findsOneWidget);
 
     // The dialog barrier spans the full screen — including the status
     // bar strip at the very top and the floating tab bar at the bottom
@@ -114,7 +117,7 @@ void main() {
     // uncovered — now hits the barrier and dismisses the modal.
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
-    expect(find.byType(SwapAddressEditModal), findsNothing);
+    expect(find.byType(MobileSwapAddressEditModal), findsNothing);
     expect(find.byType(MobileSwapScreen), findsOneWidget);
 
     // The bottom strip — where the floating tab bar sits — is under the
@@ -123,10 +126,10 @@ void main() {
     // instead of reaching the tab bar to switch branches.
     await tester.tap(find.text('Add recipient address'));
     await tester.pumpAndSettle();
-    expect(find.byType(SwapAddressEditModal), findsOneWidget);
+    expect(find.byType(MobileSwapAddressEditModal), findsOneWidget);
     await tester.tapAt(Offset(screen.center.dx, screen.bottom - 4));
     await tester.pumpAndSettle();
-    expect(find.byType(SwapAddressEditModal), findsNothing);
+    expect(find.byType(MobileSwapAddressEditModal), findsNothing);
     expect(find.byType(MobileSwapScreen), findsOneWidget);
   });
 
@@ -141,12 +144,121 @@ void main() {
 
     await tester.tap(find.text('Add recipient address'));
     await tester.pumpAndSettle();
-    expect(find.byType(SwapAddressEditModal), findsOneWidget);
+    expect(find.byType(MobileSwapAddressEditModal), findsOneWidget);
 
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
-    expect(find.byType(SwapAddressEditModal), findsNothing);
+    expect(find.byType(MobileSwapAddressEditModal), findsNothing);
     expect(find.byType(MobileSwapScreen), findsOneWidget);
+  });
+
+  testWidgets('swap leading back button returns to the previously active '
+      'tab', (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileHomeScreen), findsOneWidget);
+
+    // Switch from Home to the Swap tab; the shell records Home as the
+    // previous tab.
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileSwapScreen), findsOneWidget);
+
+    // The composer's leading back button routes back to where the user
+    // came from — the Swap tab is an indexedStack root with no pop stack.
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileSwapScreen), findsNothing);
+    expect(find.byType(MobileHomeScreen), findsOneWidget);
+  });
+
+  testWidgets('typing an amount keeps the labels shown and the field intact', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+
+    // The "You pay" / "You receive" labels stay pinned — they are no longer
+    // hidden on input — and the focused amount field keeps the SAME
+    // EditableText element across the keystroke rebuild (the title/amount/
+    // bottom rows are keyed). Recreating the EditableText is exactly what
+    // tears down the live platform text-input connection and dismisses the
+    // keyboard on device, so we assert the element survives.
+    expect(find.text('You receive'), findsOneWidget);
+    final field = find.byKey(const ValueKey('swap_receive_amount_field'));
+    final editableFinder = find.descendant(
+      of: field,
+      matching: find.byType(EditableText),
+    );
+    await tester.tap(field);
+    await tester.pump();
+    final EditableTextState stateBefore = tester.state(editableFinder);
+
+    await tester.enterText(field, '5');
+    await tester.pump();
+
+    // The label stays put...
+    expect(find.text('You receive'), findsOneWidget);
+    // ...and the EditableText is the same element, not a recreated one.
+    final EditableTextState stateAfter = tester.state(editableFinder);
+    expect(identical(stateBefore, stateAfter), isTrue);
+    expect(stateAfter.widget.focusNode.hasFocus, isTrue);
+  });
+
+  testWidgets('address editor remember toggle has no nickname or avatar form', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add recipient address'));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileSwapAddressEditModal), findsOneWidget);
+
+    // Toggling "Remember this address" must save hands-free (auto-named +
+    // random avatar, like the desktop editor) — it must NOT reveal a nickname
+    // field or an avatar picker.
+    final remember = find.byKey(const ValueKey('swap_address_remember_toggle'));
+    expect(remember, findsOneWidget);
+    await tester.tap(remember);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('swap_address_nickname_field')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_address_avatar_button')),
+      findsNothing,
+    );
+  });
+
+  // The screen-level morph (keyboardOpen ? cross : chevron) is driven by
+  // MediaQuery.viewInsets, which the test environment doesn't inset the way a
+  // real number-pad does — that wiring is verified on device. Here we cover
+  // the MobileTopNav.back mechanism it relies on: a cross backIcon renders as
+  // a "Close" affordance rather than the default "Back".
+  testWidgets('MobileTopNav.back renders a close affordance for a cross '
+      'backIcon', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
+        home: Builder(
+          builder: (context) => MobileTopNav.back(
+            title: 'Swap',
+            backIcon: AppIcons.cross,
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.bySemanticsLabel('Close'), findsOneWidget);
+    expect(find.bySemanticsLabel('Back'), findsNothing);
   });
 }
 

@@ -7,12 +7,14 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/navigation/mobile_tab_history.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/sync_provider.dart';
+import '../../../address_book/contact_label_generator.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/address_book_contact_picker_modal.dart';
@@ -21,8 +23,8 @@ import '../../../address_scan/widgets/mobile_address_scan_view.dart';
 import '../../models/swap_address_book_helpers.dart';
 import '../../models/swap_models.dart';
 import '../../providers/swap_state_provider.dart';
-import '../../widgets/swap_address_edit_modal.dart';
-import '../../widgets/swap_asset_selector_modal.dart';
+import '../../widgets/mobile/mobile_swap_address_edit_modal.dart';
+import '../../widgets/mobile/mobile_swap_asset_selector_modal.dart';
 import '../../widgets/swap_near_intents_attribution.dart';
 import '../../widgets/mobile/mobile_swap_composer_ticket.dart';
 import '../../widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
@@ -141,26 +143,20 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
               );
             }
             final surfaceContent = switch (surface) {
-              _SwapModalSurface.assetSelector => SwapAssetSelectorModal(
+              _SwapModalSurface.assetSelector => MobileSwapAssetSelectorModal(
                 assets: swapState.supportedExternalAssets,
                 selected: swapState.externalAsset,
                 onSelected: (asset) {
                   swapNotifier.selectExternalAsset(asset);
                   _closeSwapModal();
                 },
+                onClose: _closeSwapModal,
               ),
-              _SwapModalSurface.addressEditor => SwapAddressEditModal(
+              _SwapModalSurface.addressEditor => MobileSwapAddressEditModal(
                 state: swapState,
-                onSubmitted: (value, remember, nickname, profilePictureId) {
+                onSubmitted: (value, remember) {
                   if (remember) {
-                    unawaited(
-                      _rememberSwapAddress(
-                        value,
-                        swapState,
-                        nickname,
-                        profilePictureId,
-                      ),
-                    );
+                    unawaited(_rememberSwapAddress(value, swapState));
                   }
                   swapNotifier.updateDestination(value);
                   _closeSwapModal();
@@ -209,22 +205,14 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     );
   }
 
-  /// Same convenience save as the desktop swap screen.
-  Future<void> _rememberSwapAddress(
-    String value,
-    SwapState swapState,
-    String? nickname,
-    String profilePictureId,
-  ) async {
+  /// Same convenience save as the desktop swap screen: remembered swap
+  /// addresses are saved hands-free with an auto-assigned persona label and a
+  /// random avatar (no nickname/picture form on the modal).
+  Future<void> _rememberSwapAddress(String value, SwapState swapState) async {
     final address = value.trim();
     if (address.isEmpty) return;
     final network = addressBookNetworkForSwapDestination(swapState);
     if (network == null) return;
-
-    final trimmedNickname = nickname?.trim() ?? '';
-    final label = trimmedNickname.isEmpty
-        ? swapAddressBookLabel(swapState)
-        : trimmedNickname;
 
     try {
       final current =
@@ -245,13 +233,20 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
         return;
       }
 
+      // Remembered addresses are saved hands-free: a persona label from the
+      // keep-themed pool (deduped against existing labels) and a random
+      // avatar, matching the desktop swap editor.
       await ref
           .read(addressBookProvider.notifier)
           .addContact(
-            label: label,
+            label: generateContactLabel(
+              existingLabels: [
+                for (final contact in current.contacts) contact.label,
+              ],
+            ),
             network: network,
             address: address,
-            profilePictureId: profilePictureId,
+            profilePictureId: randomContactProfilePictureId(),
           );
     } catch (_) {
       // Saving a convenience contact must not block the swap form update.
@@ -297,15 +292,32 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     final quoteError =
         swapState.quoteAmountPrecisionError ?? swapState.quoteError;
 
+    // While the amount number-pad is open, the leading nav button becomes a
+    // close (X) that dismisses the keyboard instead of a back chevron.
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+
     return SafeArea(
       bottom: false,
       child: Stack(
         children: [
           Column(
             children: [
-              const MobileTopNav.back(
+              MobileTopNav.back(
                 title: 'Swap',
-                trailing: SwapNearIntentsAttribution(),
+                // With the number-pad open the leading button is a close (X)
+                // that dismisses the keyboard; otherwise it's a back chevron
+                // that returns to the tab the user came from (the Swap tab is
+                // an indexedStack root with no navigator history, Home on a
+                // cold start). Figma 4686:101421 / filled frames.
+                backIcon: keyboardOpen
+                    ? AppIcons.cross
+                    : AppIcons.chevronBackward,
+                onBack: keyboardOpen
+                    ? () => FocusManager.instance.primaryFocus?.unfocus()
+                    : () => context.go(
+                        ref.read(mobilePreviousTabPathProvider) ?? '/home',
+                      ),
+                trailing: const SwapNearIntentsAttribution(alignEnd: true),
               ),
               Expanded(
                 child: SingleChildScrollView(

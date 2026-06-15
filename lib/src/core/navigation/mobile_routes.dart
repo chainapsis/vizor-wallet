@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart' show CupertinoPage;
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/accounts/screens/mobile/mobile_accounts_screen.dart';
@@ -26,6 +27,7 @@ import '../../features/swap/screens/mobile/mobile_swap_screen.dart';
 import '../layout/mobile/app_mobile_shell.dart';
 import '../layout/mobile/app_mobile_tab_bar.dart';
 import '../widgets/app_icon.dart';
+import 'mobile_tab_history.dart';
 
 /// The mobile route tree: the shared entry/onboarding routes, a
 /// stateful tab shell (home / swap / activity / settings), and
@@ -192,10 +194,8 @@ List<RouteBase> buildMobileRoutes({
     ),
     GoRoute(
       path: '/about',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
-        child: const MobileAboutScreen(),
-      ),
+      pageBuilder: (context, state) =>
+          CupertinoPage(key: state.pageKey, child: const MobileAboutScreen()),
     ),
   ];
 }
@@ -238,25 +238,36 @@ List<_MobileTab> _mobileTabs({required bool swapFeatureEnabled}) => [
   ),
 ];
 
-class _MobileTabShell extends StatelessWidget {
+class _MobileTabShell extends ConsumerWidget {
   const _MobileTabShell({required this.navigationShell, required this.tabs});
 
   final StatefulNavigationShell navigationShell;
   final List<_MobileTab> tabs;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return AppMobileShell(
       body: navigationShell,
       tabBar: AppMobileTabBar(
         items: [for (final tab in tabs) tab.item],
         currentIndex: navigationShell.currentIndex,
-        onSelect: (index) => navigationShell.goBranch(
-          index,
-          // Re-selecting the active tab resets that tab to its root,
-          // the platform-conventional behavior.
-          initialLocation: index == navigationShell.currentIndex,
-        ),
+        onSelect: (index) {
+          // Record the outgoing tab path so a tab root can offer a
+          // "back to where you came from" affordance (the indexedStack
+          // shell keeps no tab history of its own). Skip when re-selecting
+          // the active tab — that just resets it to root.
+          if (index != navigationShell.currentIndex) {
+            ref
+                .read(mobilePreviousTabPathProvider.notifier)
+                .record(tabs[navigationShell.currentIndex].path);
+          }
+          navigationShell.goBranch(
+            index,
+            // Re-selecting the active tab resets that tab to its root,
+            // the platform-conventional behavior.
+            initialLocation: index == navigationShell.currentIndex,
+          );
+        },
       ),
     );
   }
