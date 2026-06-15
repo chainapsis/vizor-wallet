@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
 import '../core/config/swap_feature_config.dart';
+import '../core/formatting/zec_amount.dart';
+import '../features/swap/models/swap_fiat_value_formatting.dart';
 
 const kVizorCoinGeckoPriceBaseUrlEnvKey = 'VIZOR_COINGECKO_PRICE_BASE_URL';
 const kVizorCoinGeckoDefaultPriceBaseUrl = 'https://api.coingecko.com/api/v3';
@@ -155,6 +157,20 @@ final zecHomeUsdUnitPriceProvider = Provider.autoDispose<double?>((ref) {
 final zecPriceChange24hPctProvider = Provider.autoDispose<double?>((ref) {
   return ref.watch(zecHomeMarketDataProvider)?.change24hPct;
 });
+
+/// "$250.12"-style fiat text for a zatoshi amount, or null when the amount
+/// or [zecUsdUnitPrice] cannot be priced (callers hide the sub-label).
+String? fiatTextForZatoshi(BigInt zatoshi, {required double? zecUsdUnitPrice}) {
+  if (zatoshi <= BigInt.zero ||
+      zecUsdUnitPrice == null ||
+      !zecUsdUnitPrice.isFinite ||
+      zecUsdUnitPrice <= 0) {
+    return null;
+  }
+  final zec = zatoshi.toDouble() / zatoshiPerZec.toDouble();
+  if (!zec.isFinite || zec <= 0) return null;
+  return swapFormatCompactFiatValue(zec * zecUsdUnitPrice);
+}
 
 /// Rounds to the displayed 2-decimal precision so text and color agree —
 /// e.g. -0.004 renders as a neutral "0.00%", not a red zero.

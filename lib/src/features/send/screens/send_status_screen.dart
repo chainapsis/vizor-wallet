@@ -19,7 +19,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../providers/account_provider.dart';
-import '../../../providers/zec_usd_price_provider.dart';
+import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -504,7 +504,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       address: widget.args.address,
       ownAccounts: ownAccounts,
     );
-    final zecUsdUnitPrice = ref.watch(zecUsdUnitPriceProvider).asData?.value;
+    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final memo = widget.args.memo;
     final hasMemo = memo != null && memo.trim().isNotEmpty;
     final canOpenExplorer =

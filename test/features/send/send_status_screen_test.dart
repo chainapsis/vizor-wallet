@@ -25,6 +25,7 @@ import 'package:zcash_wallet/src/features/send/screens/send_status_screen.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
@@ -72,6 +73,7 @@ void main() {
     expect(find.text(_txid), findsOneWidget);
     expect(find.text('Timestamp'), findsOneWidget);
     expect(find.text('15.12 ZEC'), findsOneWidget);
+    expect(find.text(r'$1.06K'), findsOneWidget);
     expect(find.text('0.00012 ZEC'), findsOneWidget);
     expect(find.text(truncatedAddress(_address)), findsOneWidget);
     expect(rustApi.discardCalls, isEmpty);
@@ -282,6 +284,9 @@ Widget _harness(
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap(isHardware)),
+      zecMarketDataSourceProvider.overrideWithValue(
+        const _FakeMarketDataSource(),
+      ),
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(),
       ),
@@ -333,6 +338,15 @@ SendReviewArgs _reviewArgs({String? memo}) {
     needsSaplingParams: false,
     memo: memo,
   );
+}
+
+class _FakeMarketDataSource implements ZecMarketDataSource {
+  const _FakeMarketDataSource();
+
+  @override
+  Future<ZecMarketData?> fetchMarketData() async {
+    return const ZecMarketData(usdPrice: 70);
+  }
 }
 
 class _FakePathProviderPlatform extends Fake
