@@ -28,6 +28,7 @@ import '../widgets/app_profile_picture.dart';
 import '../widgets/app_tappable.dart';
 import '../widgets/app_toast.dart';
 import 'app_desktop_shell.dart';
+import 'desktop_sidebar_spacing.dart';
 
 class AppMainSidebar extends ConsumerStatefulWidget {
   const AppMainSidebar({super.key});
@@ -328,7 +329,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxHeight < 640;
-          final topPadding = compact ? AppSpacing.s : 40.0;
+          final topPadding = mainSidebarTopPadding(compact: compact);
           final headerNavGap = compact ? AppSpacing.xs : AppSpacing.md;
           final bottomPadding = compact ? AppSpacing.xs : AppSpacing.md;
           final bottomSyncGap = compact ? AppSpacing.xs : AppSpacing.md;
@@ -402,9 +403,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       active: _matches('/voting'),
                       // Stays tappable while active: _navigateTo requests a
                       // poll-list refresh when re-tapped on /voting.
-                      onTap: isImporting
-                          ? null
-                          : () => _navigateTo('/voting'),
+                      onTap: isImporting ? null : () => _navigateTo('/voting'),
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(
