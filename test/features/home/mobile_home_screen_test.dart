@@ -263,10 +263,30 @@ void main() {
     final rowRect = tester.getRect(
       find.byKey(const ValueKey('mobile_home_activity_row_0')),
     );
-    final headerRect = tester.getRect(find.text('Recent activity'));
+    final headerFinder = find.text('Recent activity');
+    final seeAllFinder = find.text('See all');
+    final headerRect = tester.getRect(headerFinder);
+    final seeAllRect = tester.getRect(
+      find.ancestor(
+        of: seeAllFinder,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is SizedBox && widget.height == 24,
+        ),
+      ),
+    );
+    final headerText = tester.widget<Text>(headerFinder);
+    final seeAllText = tester.widget<Text>(seeAllFinder);
 
     expect(rowRect.left, sendRect.left + AppSpacing.xs);
     expect(rowRect.right, receiveRect.right - AppSpacing.xs);
     expect(headerRect.left, rowRect.left);
+    expect(seeAllRect.height, 24);
+    expect(headerText.style?.fontSize, AppTypography.labelLarge.fontSize);
+    expect(headerText.style?.fontWeight, FontWeight.w600);
+    expect(seeAllText.style?.fontSize, AppTypography.labelLarge.fontSize);
+    expect(
+      seeAllText.style?.color,
+      AppThemeData.dark.colors.button.ghost.label,
+    );
   });
 }

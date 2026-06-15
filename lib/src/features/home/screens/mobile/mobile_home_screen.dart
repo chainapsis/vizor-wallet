@@ -433,27 +433,40 @@ class _RecentActivityHeader extends StatelessWidget {
         Expanded(
           child: Text(
             'Recent activity',
-            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+            style: AppTypography.labelLarge.copyWith(
+              color: colors.text.accent,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onSeeAll,
-          child: Row(
-            children: [
-              Text(
-                'See all',
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.text.secondary,
+        Semantics(
+          button: true,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onSeeAll,
+            child: SizedBox(
+              height: 24,
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.xxs),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'See all',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.button.ghost.label,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xxs),
+                    AppIcon(
+                      AppIcons.chevronForward,
+                      size: AppIconSize.medium,
+                      color: colors.button.ghost.label,
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: AppSpacing.xxs),
-              AppIcon(
-                AppIcons.chevronForward,
-                size: AppIconSize.medium,
-                color: colors.icon.muted,
-              ),
-            ],
+            ),
           ),
         ),
       ],
