@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 
 const _wordList = ['abandon', 'ability', 'able', 'about', 'zebra'];
+const _pasteCardKey = ValueKey('mobile_import_paste_card');
 
 Widget _app(String initialLocation) {
   final router = GoRouter(
@@ -84,11 +85,15 @@ void _mockClipboardFailure(WidgetTester tester) {
 }
 
 void main() {
-  setUp(() {
+  void setViewport(Size size) {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
-      ..physicalSize = const Size(520, 1300)
+      ..physicalSize = size
       ..devicePixelRatio = 1.0;
+  }
+
+  setUp(() {
+    setViewport(const Size(520, 1300));
   });
 
   test('normalises pasted mnemonic-like text', () {
@@ -117,6 +122,45 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
+  });
+
+  testWidgets('keeps the Figma card height on the baseline viewport', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_pasteApp());
+    await tester.pumpAndSettle();
+
+    expect(tester.getSize(find.byKey(_pasteCardKey)).height, 370);
+  });
+
+  testWidgets('shrinks the paste card before the manual link leaves view', (
+    tester,
+  ) async {
+    setViewport(const Size(520, 700));
+    await tester.pumpWidget(_pasteApp());
+    await tester.pumpAndSettle();
+
+    final cardHeight = tester.getSize(find.byKey(_pasteCardKey)).height;
+    final manualBottom = tester
+        .getBottomLeft(
+          find.byKey(const ValueKey('mobile_import_enter_manually')),
+        )
+        .dy;
+
+    expect(cardHeight, lessThan(370));
+    expect(cardHeight, greaterThanOrEqualTo(320));
+    expect(manualBottom, lessThanOrEqualTo(700));
+  });
+
+  testWidgets('uses scrolling instead of shrinking the paste card too far', (
+    tester,
+  ) async {
+    setViewport(const Size(520, 560));
+    await tester.pumpWidget(_pasteApp());
+    await tester.pumpAndSettle();
+
+    expect(tester.getSize(find.byKey(_pasteCardKey)).height, 320);
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
   });
 
   testWidgets('paste shows a reading state while clipboard data resolves', (

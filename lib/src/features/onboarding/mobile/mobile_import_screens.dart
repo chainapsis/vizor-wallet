@@ -13,6 +13,12 @@ import 'mobile_onboarding_scaffold.dart';
 const kMnemonicWordCounts = [12, 15, 18, 21, 24];
 const kMnemonicMaxWords = 24;
 const _kImportSeedCardWidth = 361.0;
+const _kImportPasteCardIdleHeight = 370.0;
+const _kImportPasteCardActiveHeight = 390.0;
+const _kImportPasteCardMinHeight = 320.0;
+const _kImportManualLinkHeight = 50.0;
+const _kImportContentTopGap = AppSpacing.xs;
+const _kImportContentGap = AppSpacing.base;
 const _kClipboardReadError = "Can’t read clipboard data";
 const _kClipboardEmptyError = "Clipboard doesn’t contain a Secret Passphrase";
 const _kMnemonicWordCountError =
@@ -153,29 +159,85 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       // Line break matches the Figma subtitle wrap.
       subtitle:
           'Paste your Secret Passphrase or\nenter it manually word by word.',
-      child: Column(
-        children: [
-          const SizedBox(height: AppSpacing.xs),
-          _ImportPasteCard(
-            phase: _phase,
-            errorTitle: _errorTitle,
-            onPaste: _paste,
-          ),
-          const SizedBox(height: AppSpacing.base),
-          _ManualImportLink(onTap: () => context.push('/import/manual')),
-        ],
+      scrollable: false,
+      child: _ImportPasteContent(
+        phase: _phase,
+        errorTitle: _errorTitle,
+        onPaste: _paste,
+        onEnterManually: () => context.push('/import/manual'),
       ),
+    );
+  }
+}
+
+class _ImportPasteContent extends StatelessWidget {
+  const _ImportPasteContent({
+    required this.phase,
+    required this.errorTitle,
+    required this.onPaste,
+    required this.onEnterManually,
+  });
+
+  final _ImportPastePhase phase;
+  final String errorTitle;
+  final VoidCallback onPaste;
+  final VoidCallback onEnterManually;
+
+  double get _preferredCardHeight => phase == _ImportPastePhase.idle
+      ? _kImportPasteCardIdleHeight
+      : _kImportPasteCardActiveHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final fixedHeight =
+            _kImportContentTopGap +
+            _kImportContentGap +
+            _kImportManualLinkHeight;
+
+        final availableCardHeight = constraints.hasBoundedHeight
+            ? constraints.maxHeight - fixedHeight
+            : _preferredCardHeight;
+        final shouldScroll =
+            constraints.hasBoundedHeight &&
+            availableCardHeight < _kImportPasteCardMinHeight;
+        final cardHeight = shouldScroll
+            ? _kImportPasteCardMinHeight
+            : availableCardHeight
+                  .clamp(_kImportPasteCardMinHeight, _preferredCardHeight)
+                  .toDouble();
+        final content = Column(
+          mainAxisSize: shouldScroll ? MainAxisSize.min : MainAxisSize.max,
+          children: [
+            const SizedBox(height: _kImportContentTopGap),
+            _ImportPasteCard(
+              height: cardHeight,
+              phase: phase,
+              errorTitle: errorTitle,
+              onPaste: onPaste,
+            ),
+            const SizedBox(height: _kImportContentGap),
+            _ManualImportLink(onTap: onEnterManually),
+          ],
+        );
+
+        if (!shouldScroll) return content;
+        return SingleChildScrollView(child: content);
+      },
     );
   }
 }
 
 class _ImportPasteCard extends StatelessWidget {
   const _ImportPasteCard({
+    required this.height,
     required this.phase,
     required this.errorTitle,
     required this.onPaste,
   });
 
+  final double height;
   final _ImportPastePhase phase;
   final String errorTitle;
   final VoidCallback onPaste;
@@ -183,16 +245,30 @@ class _ImportPasteCard extends StatelessWidget {
   bool get _isError => phase == _ImportPastePhase.error;
   bool get _isReading => phase == _ImportPastePhase.reading;
 
+  double get _preferredHeight => phase == _ImportPastePhase.idle
+      ? _kImportPasteCardIdleHeight
+      : _kImportPasteCardActiveHeight;
+
+  double _scaled(double min, double max) {
+    final range = _preferredHeight - _kImportPasteCardMinHeight;
+    if (range <= 0) return max;
+    final t = ((height - _kImportPasteCardMinHeight) / range)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    return min + ((max - min) * t);
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final cardHeight = phase == _ImportPastePhase.idle ? 370.0 : 390.0;
-    final verticalPadding = phase == _ImportPastePhase.idle
+    final preferredVerticalPadding = phase == _ImportPastePhase.idle
         ? AppSpacing.lg
         : AppSpacing.base;
-    final contentGap = phase == _ImportPastePhase.idle
+    final preferredContentGap = phase == _ImportPastePhase.idle
         ? AppSpacing.lg - 3
         : AppSpacing.base - 1;
+    final verticalPadding = _scaled(AppSpacing.base, preferredVerticalPadding);
+    final contentGap = _scaled(AppSpacing.sm, preferredContentGap);
     final iconColor = _isError
         ? colors.text.destructive
         : colors.text.homeCard.withValues(alpha: 0.5);
@@ -200,8 +276,9 @@ class _ImportPasteCard extends StatelessWidget {
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: _kImportSeedCardWidth),
       child: SizedBox(
+        key: const ValueKey('mobile_import_paste_card'),
         width: double.infinity,
-        height: cardHeight,
+        height: height,
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: colors.background.homeCard,
