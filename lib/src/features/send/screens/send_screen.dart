@@ -388,7 +388,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   }
 
   bool get _useLegacyV5Pczt {
-    return shouldUseLegacyV5PcztForAccount(
+    return shouldAllowLegacyV5PcztFallbackForAccount(
       accountUuid: widget.activeAccountUuid,
       isHardwareAccount: ref.read(accountProvider.notifier).isHardwareAccount,
     );

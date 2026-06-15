@@ -153,7 +153,7 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
         rustPhase: migrationStatus?.phase,
         hasPendingMigration: hasPendingMigration,
         hasCompletedMigration: hasCompletedMigration,
-        orchardBalance: sync.orchardBalance,
+        orchardBalance: sync.orchardBalance + sync.orchardPendingBalance,
         ironwoodBalance: sync.ironwoodBalance,
         preparingInFlight:
             runState.keepsProgressVisible &&
@@ -1249,7 +1249,7 @@ class _MigrationBody extends StatelessWidget {
     final colors = context.colors;
     final canStart = migrationCanStartFromEntry(viewState);
     final amount = ZecAmount.fromZatoshi(
-      sync.orchardBalance,
+      amountZatoshi,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
     final note = viewState == MigrationViewState.noOrchardFunds
         ? MigrationCopy.noFundsNote
@@ -1392,7 +1392,7 @@ BigInt _migrationDisplayAmount(
     (sum, tx) => sum + tx.displayAmount,
   );
   if (txAmount > BigInt.zero) return txAmount;
-  return sync.orchardBalance;
+  return sync.orchardBalance + sync.orchardPendingBalance;
 }
 
 class _KeystoneMigrationError {

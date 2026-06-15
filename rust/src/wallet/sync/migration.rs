@@ -253,10 +253,10 @@ pub(crate) fn migration_status(
     }
 
     let orchard_migratable = orchard_balance_can_create_migration_output(orchard_spendable)?;
-    let phase = if orchard_migratable {
-        PHASE_READY_TO_PREPARE
-    } else if orchard_pending > 0 {
+    let phase = if orchard_pending > 0 {
         PHASE_WAITING_FOR_SPENDABLE_ORCHARD
+    } else if orchard_migratable {
+        PHASE_READY_TO_PREPARE
     } else if ironwood_spendable > 0 {
         PHASE_COMPLETE
     } else {
@@ -1871,6 +1871,25 @@ mod tests {
         .unwrap();
 
         assert_eq!(status.phase, PHASE_READY_TO_PREPARE);
+    }
+
+    #[test]
+    fn migration_status_waits_for_pending_orchard_before_partial_migration() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+
+        let status = migration_status(
+            &db_path,
+            WalletNetwork::Test,
+            "account-1",
+            ZATOSHIS_PER_ZEC,
+            ZATOSHIS_PER_ZEC,
+            0,
+        )
+        .unwrap();
+
+        assert_eq!(status.phase, PHASE_WAITING_FOR_SPENDABLE_ORCHARD);
     }
 
     #[test]

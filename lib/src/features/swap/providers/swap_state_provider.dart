@@ -527,7 +527,7 @@ class SwapNotifier extends Notifier<SwapState> {
     final activeAccountIsHardware = ref
         .read(accountProvider.notifier)
         .isActiveAccountHardware;
-    final legacyV5Pczt = shouldUseLegacyV5PcztForAccount(
+    final legacyV5Pczt = shouldAllowLegacyV5PcztFallbackForAccount(
       accountUuid: accountUuid,
       isHardwareAccount: ref.read(accountProvider.notifier).isHardwareAccount,
     );

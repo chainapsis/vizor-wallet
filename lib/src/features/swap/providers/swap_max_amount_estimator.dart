@@ -33,7 +33,7 @@ class RustSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
     final estimateAddress = await _ref
         .read(receiveAddressServiceProvider)
         .loadTransparentAddress(accountUuid: accountUuid);
-    final legacyV5Pczt = shouldUseLegacyV5PcztForAccount(
+    final legacyV5Pczt = shouldAllowLegacyV5PcztFallbackForAccount(
       accountUuid: accountUuid,
       isHardwareAccount: _ref.read(accountProvider.notifier).isHardwareAccount,
     );

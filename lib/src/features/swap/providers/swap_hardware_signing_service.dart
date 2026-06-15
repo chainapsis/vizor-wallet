@@ -88,7 +88,7 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
         sendFlowId: sendFlowId,
         toAddress: depositAddress,
         amountZatoshi: amountZatoshi,
-        legacyV5Pczt: shouldUseLegacyV5PcztForAccount(
+        legacyV5Pczt: shouldAllowLegacyV5PcztFallbackForAccount(
           accountUuid: accountUuid,
           isHardwareAccount: _ref
               .read(accountProvider.notifier)

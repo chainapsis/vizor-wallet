@@ -275,12 +275,12 @@ pub fn propose_send(
         return Err("Send flow id is required".to_string());
     }
 
-    let proposed_tx_version = legacy_v5_pczt.then_some(TxVersion::V5);
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
+    let proposed_tx_version = proposed_tx_version_for_wallet_db(&db, network, "creating a send")?;
     let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
     let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
-    let proposal = propose_send_with_reserved_notes(
+    let mut proposal = propose_send_with_reserved_notes(
         &db,
         network,
         account_id,
@@ -289,6 +289,20 @@ pub fn propose_send(
         &migration_locks,
         proposed_tx_version,
     )?;
+    let mut stored_tx_version = proposed_tx_version;
+    if proposal_should_use_legacy_v5(&proposal, to_address, legacy_v5_pczt)? {
+        let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
+        proposal = propose_send_with_reserved_notes(
+            &db,
+            network,
+            account_id,
+            request,
+            &BTreeSet::new(),
+            &migration_locks,
+            Some(TxVersion::V5),
+        )?;
+        stored_tx_version = Some(TxVersion::V5);
+    }
 
     let needs_sapling = proposal
         .steps()
@@ -311,7 +325,7 @@ pub fn propose_send(
         id,
         StoredProposal {
             proposal,
-            proposed_tx_version,
+            proposed_tx_version: stored_tx_version,
             network,
             account_id,
             send_flow_id: send_flow_id.to_string(),
@@ -415,12 +429,13 @@ pub fn estimate_fee(
     memo_str: Option<&str>,
     legacy_v5_pczt: bool,
 ) -> Result<u64, String> {
-    let proposed_tx_version = legacy_v5_pczt.then_some(TxVersion::V5);
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
+    let proposed_tx_version =
+        proposed_tx_version_for_wallet_db(&db, network, "estimating a send fee")?;
     let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
     let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
-    let proposal = propose_send_with_reserved_notes(
+    let mut proposal = propose_send_with_reserved_notes(
         &db,
         network,
         account_id,
@@ -429,6 +444,18 @@ pub fn estimate_fee(
         &migration_locks,
         proposed_tx_version,
     )?;
+    if proposal_should_use_legacy_v5(&proposal, to_address, legacy_v5_pczt)? {
+        let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
+        proposal = propose_send_with_reserved_notes(
+            &db,
+            network,
+            account_id,
+            request,
+            &BTreeSet::new(),
+            &migration_locks,
+            Some(TxVersion::V5),
+        )?;
+    }
 
     let fee: u64 = proposal
         .steps()
@@ -453,10 +480,11 @@ pub(crate) fn estimate_send_max(
     memo_str: Option<&str>,
     legacy_v5_pczt: bool,
 ) -> Result<SendMaxEstimateResult, String> {
-    let proposed_tx_version = legacy_v5_pczt.then_some(TxVersion::V5);
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
-    let proposal = build_send_max_proposal(
+    let proposed_tx_version =
+        proposed_tx_version_for_wallet_db(&db, network, "estimating max send")?;
+    let mut proposal = build_send_max_proposal(
         &mut db,
         network,
         account_id,
@@ -464,6 +492,16 @@ pub(crate) fn estimate_send_max(
         memo_str,
         proposed_tx_version,
     )?;
+    if proposal_should_use_legacy_v5(&proposal, to_address, legacy_v5_pczt)? {
+        proposal = build_send_max_proposal(
+            &mut db,
+            network,
+            account_id,
+            to_address,
+            memo_str,
+            Some(TxVersion::V5),
+        )?;
+    }
     summarize_send_max_proposal(&proposal)
 }
 
@@ -684,6 +722,7 @@ async fn execute_stored_proposal(
             let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
                 .map_err(|e| format!("USK derivation failed: {e:?}"))?;
             drop(seed);
+            let proposed_tx_version = stored.proposed_tx_version;
 
             let txids = match (spend_params_path, output_params_path) {
                 (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
@@ -697,7 +736,7 @@ async fn execute_stored_proposal(
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
                         &stored.proposal,
-                        None,
+                        proposed_tx_version,
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -712,7 +751,7 @@ async fn execute_stored_proposal(
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
                         &stored.proposal,
-                        None,
+                        proposed_tx_version,
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -3873,6 +3912,52 @@ fn proposal_selected_note_refs(
         .map(|note| *note.internal_note_id())
 }
 
+#[derive(Default)]
+struct SelectedOrchardNoteVersions {
+    has_v2: bool,
+    has_v3: bool,
+}
+
+fn proposal_selected_orchard_note_versions(
+    proposal: &Proposal<WalletFeeRule, ReceivedNoteId>,
+) -> SelectedOrchardNoteVersions {
+    let mut versions = SelectedOrchardNoteVersions::default();
+    for note in proposal.steps().iter().flat_map(|step| {
+        step.shielded_inputs()
+            .into_iter()
+            .flat_map(|inputs| inputs.notes().iter())
+    }) {
+        if let Note::Orchard(note) = note.note() {
+            match note.version() {
+                orchard::note::NoteVersion::V2 => versions.has_v2 = true,
+                orchard::note::NoteVersion::V3 => versions.has_v3 = true,
+            }
+        }
+    }
+    versions
+}
+
+fn proposal_should_use_legacy_v5(
+    proposal: &Proposal<WalletFeeRule, ReceivedNoteId>,
+    to_address: &str,
+    legacy_v5_pczt: bool,
+) -> Result<bool, String> {
+    let recipient_is_transparent = super::validate_address(to_address)? == "transparent";
+    Ok(should_force_legacy_v5_for_selected_versions(
+        legacy_v5_pczt,
+        recipient_is_transparent,
+        proposal_selected_orchard_note_versions(proposal),
+    ))
+}
+
+fn should_force_legacy_v5_for_selected_versions(
+    legacy_v5_pczt: bool,
+    recipient_is_transparent: bool,
+    versions: SelectedOrchardNoteVersions,
+) -> bool {
+    legacy_v5_pczt && recipient_is_transparent && versions.has_v2 && !versions.has_v3
+}
+
 struct ReservedInputSource<'a> {
     inner: &'a WalletDatabase,
     reserved: &'a BTreeSet<ReceivedNoteId>,
@@ -4046,6 +4131,39 @@ fn build_send_max_proposal(
         proposed_tx_version,
     )
     .map_err(|e| format!("Propose max failed: {e}"))
+}
+
+fn proposed_tx_version_for_wallet_db(
+    db: &WalletDatabase,
+    network: WalletNetwork,
+    context: &str,
+) -> Result<Option<TxVersion>, String> {
+    let confirmations_policy = ConfirmationsPolicy::default();
+    let (target_height, _) = db
+        .get_target_and_anchor_heights(confirmations_policy.trusted())
+        .map_err(|e| format!("Read chain state for {context}: {e}"))?
+        .ok_or_else(|| format!("Wallet must sync before {context}"))?;
+    Ok(proposed_tx_version_for_send(network, target_height))
+}
+
+fn proposed_tx_version_for_send(
+    network: WalletNetwork,
+    target_height: wallet::TargetHeight,
+) -> Option<TxVersion> {
+    #[cfg(zcash_unstable = "nu7")]
+    {
+        if network.is_nu_active(
+            consensus::NetworkUpgrade::Nu7,
+            BlockHeight::from(target_height),
+        ) {
+            return Some(TxVersion::V6);
+        }
+    }
+
+    #[cfg(not(zcash_unstable = "nu7"))]
+    let _ = (network, target_height);
+
+    None
 }
 
 fn summarize_send_max_proposal<NoteRef>(
@@ -5216,6 +5334,63 @@ mod tests {
         assert_eq!(result.message.as_deref(), Some("Broadcast could not start"));
         assert_eq!(result.fee_zatoshi, 10_000);
         assert_eq!(result.shielded_zatoshi, 90_000);
+    }
+
+    #[test]
+    #[cfg(zcash_unstable = "nu7")]
+    fn send_proposals_use_v6_after_nu7() {
+        let network = WalletNetwork::LocalIronwoodTestnet;
+
+        assert_eq!(
+            proposed_tx_version_for_send(
+                network,
+                zcash_client_backend::data_api::wallet::TargetHeight::from(119),
+            ),
+            None
+        );
+        assert_eq!(
+            proposed_tx_version_for_send(
+                network,
+                zcash_client_backend::data_api::wallet::TargetHeight::from(120),
+            ),
+            Some(TxVersion::V6)
+        );
+    }
+
+    #[test]
+    fn legacy_v5_policy_only_for_transparent_orchard_v2_spends() {
+        assert!(should_force_legacy_v5_for_selected_versions(
+            true,
+            true,
+            SelectedOrchardNoteVersions {
+                has_v2: true,
+                has_v3: false,
+            },
+        ));
+        assert!(!should_force_legacy_v5_for_selected_versions(
+            true,
+            true,
+            SelectedOrchardNoteVersions {
+                has_v2: false,
+                has_v3: true,
+            },
+        ));
+        assert!(!should_force_legacy_v5_for_selected_versions(
+            true,
+            false,
+            SelectedOrchardNoteVersions {
+                has_v2: true,
+                has_v3: false,
+            },
+        ));
+        assert!(!should_force_legacy_v5_for_selected_versions(
+            false,
+            true,
+            SelectedOrchardNoteVersions {
+                has_v2: true,
+                has_v3: false,
+            },
+        ));
     }
 
     #[test]
