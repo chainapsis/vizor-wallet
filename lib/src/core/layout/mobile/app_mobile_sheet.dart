@@ -6,6 +6,7 @@ import 'package:flutter/material.dart' show Material, showModalBottomSheet;
 import 'package:flutter/widgets.dart';
 
 import '../../theme/app_theme.dart';
+import '../../widgets/app_icon.dart';
 
 /// Shows a mobile modal as a floating card — the Figma modal base
 /// (`_Modal Type`, e.g. 4600:50437). It still rises from the bottom, but
@@ -172,3 +173,144 @@ const List<BoxShadow> _modalShadow = [
   BoxShadow(color: Color(0x08000000), offset: Offset(0, -6), blurRadius: 12),
   BoxShadow(color: Color(0x0F000000), offset: Offset(0, 2), blurRadius: 8),
 ];
+
+/// The shared `_Modal Type` content layout (Figma 4697:102962) for sheets
+/// shown inside a [MobileModalCard]: the common header (title top-left, a
+/// 32×32 circular close pinned top-right) plus the standard content padding,
+/// so every mobile modal lines its title, close button and body up the same
+/// way.
+///
+/// - Padding: top 32 ([AppSpacing.base]) / bottom 24 ([AppSpacing.md]) /
+///   horizontal 16 ([AppSpacing.sm]); a 16px gap between the title and the
+///   body. The body ([child]) owns its own internal spacing.
+/// - Title: Body L SemiBold in `text.accent`, kept clear of the close button.
+/// - Close: absolutely pinned to the top-right (right 16, top 15.5) so it sits
+///   slightly above the title baseline, exactly as the Figma component does —
+///   not vertically centered in the title row.
+class MobileModalScaffold extends StatelessWidget {
+  const MobileModalScaffold({
+    required this.title,
+    required this.onClose,
+    required this.child,
+    this.bodyGap = AppSpacing.sm,
+    this.bottomPadding = AppSpacing.md,
+    super.key,
+  });
+
+  final String title;
+  final VoidCallback onClose;
+  final Widget child;
+
+  /// Gap between the title and the body. Defaults to 16; the asset picker
+  /// (whose body is a fixed-height scrolling list filling to the card edge)
+  /// passes 8 to match its `_Modal Type` variant.
+  final double bodyGap;
+
+  /// Bottom inset below the body. Defaults to 24; the asset picker passes 0 so
+  /// its list fills to the card edge.
+  final double bottomPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Stack(
+      children: [
+        Padding(
+          padding: EdgeInsets.only(
+            top: AppSpacing.base,
+            bottom: bottomPadding,
+            left: AppSpacing.sm,
+            right: AppSpacing.sm,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                // Clear the absolute 32px close (+ an 8px gap) so a long title
+                // ellipsizes instead of sliding under it.
+                padding: const EdgeInsets.only(right: 40),
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodyLarge.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
+              SizedBox(height: bodyGap),
+              child,
+            ],
+          ),
+        ),
+        Positioned(
+          top: 15.5,
+          right: AppSpacing.sm,
+          child: _ModalCloseButton(onTap: onClose),
+        ),
+      ],
+    );
+  }
+}
+
+/// The pinned modal close — a 32×32 secondary-surface circle that picks up the
+/// desktop hover tint (`button.secondary.bgHover`) on pointer devices. Mobile
+/// is touch-only, but the form factor previews on desktop / Widgetbook, so the
+/// hover state matches the desktop modals.
+class _ModalCloseButton extends StatefulWidget {
+  const _ModalCloseButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  State<_ModalCloseButton> createState() => _ModalCloseButtonState();
+}
+
+class _ModalCloseButtonState extends State<_ModalCloseButton> {
+  var _hovered = false;
+  var _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final secondary = colors.button.secondary;
+    // Fill priority pressed > hover > default — mirrors AppButton, so a tap
+    // (touch) shows the pressed tint even with no pointer hover.
+    final fill = _pressed
+        ? secondary.bgPressed
+        : _hovered
+        ? secondary.bgHover
+        : secondary.bg;
+    return Semantics(
+      label: 'Close',
+      button: true,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          onTapDown: (_) => setState(() => _pressed = true),
+          onTapUp: (_) => setState(() => _pressed = false),
+          onTapCancel: () => setState(() => _pressed = false),
+          child: Container(
+            width: 32,
+            height: 32,
+            padding: const EdgeInsets.all(AppSpacing.xxs),
+            decoration: BoxDecoration(color: fill, shape: BoxShape.circle),
+            child: Center(
+              child: AppIcon(
+                AppIcons.cross,
+                size: AppIconSize.medium,
+                color: colors.icon.accent,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

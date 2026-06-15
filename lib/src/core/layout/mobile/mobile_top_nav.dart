@@ -39,7 +39,8 @@ class MobileTopNav extends StatelessWidget {
        title = '',
        progress = 0,
        onBack = null,
-       trailing = null;
+       trailing = null,
+       backIcon = AppIcons.chevronBackward;
 
   const MobileTopNav.steps({required this.progress, this.onBack, super.key})
     : _variant = _MobileTopNavVariant.steps,
@@ -53,12 +54,14 @@ class MobileTopNav extends StatelessWidget {
       avatar = null,
       onAccountTap = null,
       title = '',
-      trailing = null;
+      trailing = null,
+      backIcon = AppIcons.chevronBackward;
 
   const MobileTopNav.back({
     required this.title,
     this.onBack,
     this.trailing,
+    this.backIcon = AppIcons.chevronBackward,
     super.key,
   }) : _variant = _MobileTopNavVariant.back,
        accountName = '',
@@ -109,6 +112,11 @@ class MobileTopNav extends StatelessWidget {
   final Widget? trailing;
 
   final VoidCallback? onBack;
+
+  /// Back-variant leading icon. Defaults to the chevron; the swap composer
+  /// swaps it to a cross while its number-pad keyboard is open so the leading
+  /// button dismisses the keyboard instead of leaving the tab.
+  final String backIcon;
 
   static const _avatarSize = 40.0;
   static const _backButtonSize = 44.0;
@@ -254,7 +262,11 @@ class MobileTopNav extends StatelessWidget {
         if (onBack != null)
           Positioned(
             left: AppSpacing.s,
-            child: _BackButton(size: _backButtonSize, onTap: onBack),
+            child: _BackButton(
+              size: _backButtonSize,
+              onTap: onBack,
+              iconName: backIcon,
+            ),
           ),
         if (trailing != null) Positioned(right: AppSpacing.s, child: trailing!),
       ],
@@ -265,15 +277,20 @@ class MobileTopNav extends StatelessWidget {
 enum _MobileTopNavVariant { account, steps, back }
 
 class _BackButton extends StatelessWidget {
-  const _BackButton({required this.size, this.onTap});
+  const _BackButton({
+    required this.size,
+    this.onTap,
+    this.iconName = AppIcons.chevronBackward,
+  });
 
   final double size;
   final VoidCallback? onTap;
+  final String iconName;
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'Back',
+      label: iconName == AppIcons.cross ? 'Close' : 'Back',
       button: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -283,7 +300,7 @@ class _BackButton extends StatelessWidget {
           height: size,
           child: Center(
             child: AppIcon(
-              AppIcons.chevronBackward,
+              iconName,
               size: 24,
               color: context.colors.icon.accent,
             ),

@@ -9,6 +9,8 @@ class SwapAssetIcon extends StatelessWidget {
     this.size = 32,
     this.selected = false,
     this.showChainBadge = true,
+    this.badgeScale = 0.625,
+    this.overhangScale = 0.125,
     super.key,
   });
 
@@ -17,9 +19,26 @@ class SwapAssetIcon extends StatelessWidget {
   final bool selected;
   final bool showChainBadge;
 
+  /// Chain-badge diameter as a fraction of [size]. Desktop renders a 5/8
+  /// badge (0.625) on its 32px asset = a 20px chain circle. The mobile
+  /// composer draws a larger 40px asset but keeps the chain circle at the
+  /// same absolute 20px, so it passes 0.5.
+  final double badgeScale;
+
+  /// How far the badge overhangs the asset's bottom-right corner, as a
+  /// fraction of [size]. Desktop 1/8 (0.125); the mobile 40px asset uses 0.1
+  /// so the 20px badge sits flush with a 4px overhang per Figma.
+  final double overhangScale;
+
   @override
   Widget build(BuildContext context) {
-    final badgeSize = (size * 0.5).clamp(16.0, 24.0);
+    // Figma Asset Image: the chain icon is a circle ringed by a 2px OUTSIDE
+    // stroke in the backdrop surface color (no gray border, no inner
+    // padding). On desktop's 32px asset it is a 20px circle at (16,16) — 5/8
+    // of the asset, overhanging by 1/8; the mobile composer keeps the 20px
+    // circle on a 40px asset (0.5 / 0.1).
+    final badgeSize = size * badgeScale;
+    final overhang = size * overhangScale;
     return SizedBox(
       width: size,
       height: size,
@@ -35,17 +54,19 @@ class SwapAssetIcon extends StatelessWidget {
           ),
           if (showChainBadge)
             Positioned(
-              right: -2,
-              bottom: -2,
+              right: -overhang,
+              bottom: -overhang,
               child: Container(
                 key: ValueKey('swap_asset_chain_badge_${asset.identityKey}'),
                 width: badgeSize,
                 height: badgeSize,
-                padding: const EdgeInsets.all(1),
                 decoration: BoxDecoration(
-                  color: context.colors.background.base,
-                  borderRadius: BorderRadius.circular(AppRadii.full),
-                  border: Border.all(color: context.colors.border.regular),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: context.colors.background.ground,
+                    width: 2,
+                    strokeAlign: BorderSide.strokeAlignOutside,
+                  ),
                 ),
                 child: _RoundAssetImage(
                   assetPath: asset.chainIconAsset,
@@ -80,12 +101,11 @@ class _RoundAssetImage extends StatelessWidget {
       child: Image.asset(
         assetPath,
         fit: BoxFit.cover,
-        errorBuilder:
-            (context, _, _) => _AssetImageFallback(
-              label: fallbackText,
-              selected: selected,
-              small: small,
-            ),
+        errorBuilder: (context, _, _) => _AssetImageFallback(
+          label: fallbackText,
+          selected: selected,
+          small: small,
+        ),
       ),
     );
   }
@@ -109,10 +129,9 @@ class _AssetImageFallback extends StatelessWidget {
     return Container(
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color:
-            selected
-                ? colors.background.brandCrimsonAlpha
-                : colors.background.raised,
+        color: selected
+            ? colors.background.brandCrimsonAlpha
+            : colors.background.raised,
         border: Border.all(color: colors.border.subtle),
         borderRadius: BorderRadius.circular(AppRadii.full),
       ),

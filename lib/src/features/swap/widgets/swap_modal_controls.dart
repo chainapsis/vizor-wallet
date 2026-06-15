@@ -34,11 +34,16 @@ class SwapInlineIconButton extends StatelessWidget {
   const SwapInlineIconButton({
     required this.iconName,
     required this.onTap,
+    this.size = 20,
     super.key,
   });
 
   final String iconName;
   final VoidCallback onTap;
+
+  /// Tap-target / glyph size. Defaults to 20 (desktop field); mobile modal
+  /// fields pass [AppInputSizing.iconSize] (24).
+  final double size;
 
   @override
   Widget build(BuildContext context) {
@@ -49,9 +54,9 @@ class SwapInlineIconButton extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: SizedBox(
-          width: 20,
-          height: 20,
-          child: AppIcon(iconName, size: 20, color: colors.icon.accent),
+          width: size,
+          height: size,
+          child: AppIcon(iconName, size: size, color: colors.icon.accent),
         ),
       ),
     );
