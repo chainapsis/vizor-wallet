@@ -16,6 +16,15 @@ import 'mobile_onboarding_scaffold.dart';
 const kMnemonicWordCounts = [12, 15, 18, 21, 24];
 const kMnemonicMaxWords = 24;
 
+/// Split arbitrary pasted/typed text into candidate BIP39 words. English
+/// BIP39 words are pure lowercase a-z, so quotes, numbering, and punctuation
+/// can all be treated as separators.
+List<String> tokenizeMnemonicWords(String raw) => raw
+    .toLowerCase()
+    .split(RegExp(r'[^a-z]+'))
+    .where((word) => word.isNotEmpty)
+    .toList();
+
 /// Words ready for review, carried between the import steps.
 class MobileImportReviewArgs {
   const MobileImportReviewArgs({required this.words});
@@ -72,11 +81,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       }
       return;
     }
-    final words = (text ?? '')
-        .split(RegExp(r'\s+'))
-        .where((w) => w.isNotEmpty)
-        .map((w) => w.toLowerCase())
-        .toList();
+    final words = tokenizeMnemonicWords(text ?? '');
     if (words.isEmpty) {
       if (!mounted) return;
       setState(() {
@@ -117,7 +122,8 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Import Your Wallet',
       // Line break matches the Figma subtitle wrap.
-      subtitle: 'Paste your Secret Passphrase or\nenter it manually word by word.',
+      subtitle:
+          'Paste your Secret Passphrase or\nenter it manually word by word.',
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

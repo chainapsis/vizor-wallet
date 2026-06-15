@@ -127,7 +127,7 @@ void main() {
     await tester.pumpWidget(_app());
     await tester.pump();
 
-    await paste(tester, '1. abandon, 2. ability; 3. able');
+    await paste(tester, '1. "abandon", 2. "ability"; 3. "able"');
 
     expect(find.text('04'), findsOneWidget);
     expect(find.text('abandon · ability · able'), findsOneWidget);

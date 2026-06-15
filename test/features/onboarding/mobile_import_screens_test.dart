@@ -100,6 +100,23 @@ void main() {
     expect(find.text('one'), findsOneWidget);
   });
 
+  testWidgets('paste normalizes quoted and numbered mnemonic text', (
+    tester,
+  ) async {
+    _mockClipboard(tester, '1. "one", 2. "two"; 3. "three"');
+    await tester.pumpWidget(_app('/import'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('found 3'), findsOneWidget);
+    expect(find.text('one'), findsOneWidget);
+    expect(find.text('two'), findsOneWidget);
+    expect(find.text('three'), findsOneWidget);
+    expect(find.textContaining('"one"'), findsNothing);
+  });
+
   testWidgets('an empty clipboard surfaces a toast', (tester) async {
     _mockClipboard(tester, '   ');
     await tester.pumpWidget(_app('/import'));

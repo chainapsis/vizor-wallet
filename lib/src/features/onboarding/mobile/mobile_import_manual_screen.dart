@@ -100,18 +100,8 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
     }
   }
 
-  /// Split arbitrary pasted/typed text into candidate words. BIP39 words
-  /// are pure lowercase a–z, so anything else (spaces, commas, numbered
-  /// "1." prefixes, punctuation) is treated as a separator — a phrase
-  /// copied in almost any shape tokenises cleanly.
-  List<String> _tokenize(String raw) => raw
-      .toLowerCase()
-      .split(RegExp(r'[^a-z]+'))
-      .where((t) => t.isNotEmpty)
-      .toList();
-
   void _onChanged(String value) {
-    final tokens = _tokenize(value);
+    final tokens = tokenizeMnemonicWords(value);
     // Two or more tokens in a single edit means a multi-word paste —
     // typing only ever produces one token per keystroke.
     if (tokens.length >= 2) {
@@ -153,7 +143,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
   }
 
   void _onSubmitted(String raw) {
-    final tokens = _tokenize(raw);
+    final tokens = tokenizeMnemonicWords(raw);
     if (tokens.length >= 2) {
       _distributePaste(tokens);
       return;
