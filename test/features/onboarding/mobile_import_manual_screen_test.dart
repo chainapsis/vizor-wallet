@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_manual_screen.dart';
 
 const _wordList = ['abandon', 'ability', 'able', 'about', 'zebra'];
+const _wordCountSubtitle = 'Accept 12, 15, 18, 21 or 24 words';
 
 Widget _app() {
   return ProviderScope(
@@ -32,7 +33,8 @@ void main() {
     await tester.pumpWidget(_app());
     await tester.pump();
 
-    expect(find.text('Word 1/24'), findsOneWidget);
+    expect(find.text(_wordCountSubtitle), findsOneWidget);
+    expect(find.text('01'), findsOneWidget);
 
     await tester.enterText(
       find.byKey(const ValueKey('mobile_import_manual_field')),
@@ -48,7 +50,7 @@ void main() {
     await tester.tap(find.text('abandon'));
     await tester.pump();
 
-    expect(find.text('Word 2/24'), findsOneWidget);
+    expect(find.text('02'), findsOneWidget);
     expect(find.textContaining('abandon'), findsOneWidget);
   });
 
@@ -66,7 +68,7 @@ void main() {
       find.text("'notaword' isn't in the passphrase word list."),
       findsOneWidget,
     );
-    expect(find.text('Word 1/24'), findsOneWidget);
+    expect(find.text('01'), findsOneWidget);
   });
 
   testWidgets('undo steps back to re-edit the previous word', (tester) async {
@@ -78,12 +80,12 @@ void main() {
       'zebra ',
     );
     await tester.pump();
-    expect(find.text('Word 2/24'), findsOneWidget);
+    expect(find.text('02'), findsOneWidget);
 
     await tester.tap(find.text('Undo last word'));
     await tester.pump();
 
-    expect(find.text('Word 1/24'), findsOneWidget);
+    expect(find.text('01'), findsOneWidget);
   });
 
   Future<void> paste(WidgetTester tester, String text) async {
@@ -102,7 +104,7 @@ void main() {
 
     await paste(tester, 'abandon ability able');
 
-    expect(find.text('Word 4/24'), findsOneWidget);
+    expect(find.text('04'), findsOneWidget);
     expect(find.text('abandon · ability · able'), findsOneWidget);
   });
 
@@ -114,7 +116,7 @@ void main() {
 
     await paste(tester, 'abandon ability notaword able');
 
-    expect(find.text('Word 3/24'), findsOneWidget);
+    expect(find.text('03'), findsOneWidget);
     expect(find.text('abandon · ability'), findsOneWidget);
     expect(find.textContaining("Stopped at 'notaword'"), findsOneWidget);
   });
@@ -127,7 +129,7 @@ void main() {
 
     await paste(tester, '1. abandon, 2. ability; 3. able');
 
-    expect(find.text('Word 4/24'), findsOneWidget);
+    expect(find.text('04'), findsOneWidget);
     expect(find.text('abandon · ability · able'), findsOneWidget);
   });
 
@@ -136,11 +138,11 @@ void main() {
     await tester.pump();
 
     await paste(tester, 'zebra ');
-    expect(find.text('Word 2/24'), findsOneWidget);
+    expect(find.text('02'), findsOneWidget);
 
     await paste(tester, 'abandon ability');
 
-    expect(find.text('Word 4/24'), findsOneWidget);
+    expect(find.text('04'), findsOneWidget);
     expect(find.text('zebra · abandon · ability'), findsOneWidget);
   });
 
@@ -150,7 +152,7 @@ void main() {
 
     await paste(tester, 'notaword abandon');
 
-    expect(find.text('Word 1/24'), findsOneWidget);
+    expect(find.text('01'), findsOneWidget);
     expect(find.textContaining("Stopped at 'notaword'"), findsOneWidget);
     expect(find.text('Undo last word'), findsNothing);
   });

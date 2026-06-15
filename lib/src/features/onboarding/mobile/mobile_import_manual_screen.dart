@@ -76,8 +76,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
     return _accepted.length + 1 == kMnemonicMaxWords;
   }
 
-  bool get _primaryEnabled =>
-      _controller.text.trim().isNotEmpty || _canReview;
+  bool get _primaryEnabled => _controller.text.trim().isNotEmpty || _canReview;
 
   void _primaryAction() {
     final raw = _controller.text.trim();
@@ -105,8 +104,11 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
   /// are pure lowercase a–z, so anything else (spaces, commas, numbered
   /// "1." prefixes, punctuation) is treated as a separator — a phrase
   /// copied in almost any shape tokenises cleanly.
-  List<String> _tokenize(String raw) =>
-      raw.toLowerCase().split(RegExp(r'[^a-z]+')).where((t) => t.isNotEmpty).toList();
+  List<String> _tokenize(String raw) => raw
+      .toLowerCase()
+      .split(RegExp(r'[^a-z]+'))
+      .where((t) => t.isNotEmpty)
+      .toList();
 
   void _onChanged(String value) {
     final tokens = _tokenize(value);
@@ -202,7 +204,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
       progress: 0.4,
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Enter your Secret Passphrase',
-      subtitle: 'Word $position/$kMnemonicMaxWords',
+      subtitle: 'Accept 12, 15, 18, 21 or 24 words',
       // Only the BIP39 suggestions stay pinned above the keyboard; per
       // the Figma frame the CTA flows directly under the word field.
       bottomArea: _suggestions.isEmpty
