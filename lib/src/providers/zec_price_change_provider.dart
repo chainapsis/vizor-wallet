@@ -6,96 +6,130 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
 import '../core/config/swap_feature_config.dart';
+import '../core/formatting/zec_amount.dart';
+import '../features/swap/models/swap_fiat_value_formatting.dart';
 
-/// 24h ZEC price change source. The production implementation queries the
-/// Chainapsis satellite service (the same backend the Keplr extension uses
-/// for its 24h change badges); tests substitute a fake.
-abstract interface class ZecPriceChange24hSource {
-  /// Returns the 24h change in percentage points (e.g. `-0.26` for -0.26%),
-  /// or null when the value is unavailable.
-  Future<double?> fetchChangePct();
+const kVizorCoinGeckoPriceBaseUrlEnvKey = 'VIZOR_COINGECKO_PRICE_BASE_URL';
+const kVizorCoinGeckoDefaultPriceBaseUrl = 'https://api.coingecko.com/api/v3';
+const kVizorCoinGeckoPriceBaseUrl = String.fromEnvironment(
+  kVizorCoinGeckoPriceBaseUrlEnvKey,
+  defaultValue: kVizorCoinGeckoDefaultPriceBaseUrl,
+);
+
+class ZecMarketData {
+  const ZecMarketData({required this.usdPrice, this.change24hPct});
+
+  final double usdPrice;
+  final double? change24hPct;
 }
 
-class SatelliteZecPriceChange24hSource implements ZecPriceChange24hSource {
-  SatelliteZecPriceChange24hSource({
-    HttpClient? client,
-    this.timeout = const Duration(seconds: 12),
-  }) : _client = client ?? HttpClient();
+/// Home ZEC market data source. Swap keeps using its provider-specific pricing
+/// snapshot; this source is only for the home balance fiat label and 24h badge.
+abstract interface class ZecMarketDataSource {
+  /// Returns the current ZEC/USD price plus optional 24h change percentage
+  /// points (e.g. `-0.26` for -0.26%), or null when unavailable.
+  Future<ZecMarketData?> fetchMarketData();
+}
 
-  static final _endpoint = Uri.parse(
-    'https://satellite.keplr.app/price/changes/24h?ids=zcash',
-  );
+class CoinGeckoZecMarketDataSource implements ZecMarketDataSource {
+  CoinGeckoZecMarketDataSource({
+    HttpClient? client,
+    Uri? baseUri,
+    this.timeout = const Duration(seconds: 12),
+  }) : _client = client ?? HttpClient(),
+       _baseUri = baseUri ?? Uri.parse(kVizorCoinGeckoPriceBaseUrl);
 
   final HttpClient _client;
+  final Uri _baseUri;
   final Duration timeout;
 
   @override
-  Future<double?> fetchChangePct() async {
+  Future<ZecMarketData?> fetchMarketData() async {
+    final endpoint = coinGeckoSimplePriceUri(_baseUri);
     try {
-      final request = await _client.getUrl(_endpoint).timeout(timeout);
+      final request = await _client.getUrl(endpoint).timeout(timeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       final response = await request.close().timeout(timeout);
       final body = await utf8.decoder.bind(response).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        log('zecPriceChange24h: satellite returned ${response.statusCode}');
+        log('zecMarketData: CoinGecko returned ${response.statusCode}');
         return null;
       }
-      return parseZecPriceChange24hPct(body);
+      return parseZecMarketData(body);
     } catch (e) {
-      log('zecPriceChange24h: fetch failed: $e');
+      log('zecMarketData: fetch failed: $e');
       return null;
     }
   }
 }
 
-/// Parses a satellite `/price/changes/24h` response body into the zcash
-/// percentage. Returns null when the id is absent — satellite omits ids its
-/// subscriber has not tracked yet (the first request registers the id and a
-/// ~3-minute backend loop fills it in), so an empty `{}` is a normal warm-up
-/// state rather than an error.
-double? parseZecPriceChange24hPct(String body) {
+Uri coinGeckoSimplePriceUri(Uri baseUri) {
+  final basePath = baseUri.path.replaceFirst(RegExp(r'/+$'), '');
+  return baseUri.replace(
+    path: '$basePath/simple/price',
+    queryParameters: const {
+      'ids': 'zcash',
+      'names': 'Zcash',
+      'symbols': 'zec',
+      'vs_currencies': 'usd',
+      'include_24hr_change': 'true',
+    },
+  );
+}
+
+/// Parses CoinGecko `/simple/price` into the home market data model.
+/// Returns null when the required ZEC/USD price is missing or unusable.
+ZecMarketData? parseZecMarketData(String body) {
   try {
     final decoded = jsonDecode(body);
     if (decoded is! Map<String, dynamic>) return null;
-    final value = decoded['zcash'];
-    if (value is! num) return null;
-    final pct = value.toDouble();
-    return pct.isFinite ? pct : null;
+    final zcash = decoded['zcash'];
+    if (zcash is! Map<String, dynamic>) return null;
+
+    final usdRaw = zcash['usd'];
+    if (usdRaw is! num) return null;
+    final usdPrice = usdRaw.toDouble();
+    if (!usdPrice.isFinite || usdPrice <= 0) return null;
+
+    final changeRaw = zcash['usd_24h_change'];
+    final change24hPct = changeRaw is num && changeRaw.toDouble().isFinite
+        ? changeRaw.toDouble()
+        : null;
+
+    return ZecMarketData(usdPrice: usdPrice, change24hPct: change24hPct);
   } catch (_) {
     return null;
   }
 }
 
-/// Matches satellite's own refresh cadence; polling faster cannot observe
-/// new values, and the poll doubles as the retry for the warm-up case above.
-const zecPriceChange24hRefreshInterval = Duration(minutes: 3);
+double? parseZecPriceChange24hPct(String body) {
+  return parseZecMarketData(body)?.change24hPct;
+}
 
-final zecPriceChange24hSourceProvider = Provider<ZecPriceChange24hSource>((
-  ref,
-) {
-  return SatelliteZecPriceChange24hSource();
+const zecMarketDataRefreshInterval = Duration(minutes: 3);
+
+final zecMarketDataSourceProvider = Provider<ZecMarketDataSource>((ref) {
+  return CoinGeckoZecMarketDataSource();
 });
 
-/// Latest known 24h ZEC price change in percentage points, or null until the
-/// first successful fetch. Stays on the last known value across transient
-/// fetch failures. Null while the swap feature is disabled (testnet/regtest),
-/// mirroring [zecUsdUnitPriceProvider]'s gating so the badge and the fiat
-/// sub-label it rides on appear together.
-final zecPriceChange24hPctProvider =
-    NotifierProvider.autoDispose<ZecPriceChange24hNotifier, double?>(
-      ZecPriceChange24hNotifier.new,
+/// Latest known home ZEC market data, or null until the first successful fetch.
+/// Stays on the last known value across transient fetch failures. Null while
+/// market-price UI is disabled on non-mainnet builds.
+final zecHomeMarketDataProvider =
+    NotifierProvider.autoDispose<ZecHomeMarketDataNotifier, ZecMarketData?>(
+      ZecHomeMarketDataNotifier.new,
     );
 
-class ZecPriceChange24hNotifier extends Notifier<double?> {
+class ZecHomeMarketDataNotifier extends Notifier<ZecMarketData?> {
   Timer? _timer;
   int _epoch = 0;
 
   @override
-  double? build() {
+  ZecMarketData? build() {
     _timer?.cancel();
     final epoch = ++_epoch;
     if (!ref.watch(swapFeatureEnabledProvider)) return null;
-    final source = ref.watch(zecPriceChange24hSourceProvider);
+    final source = ref.watch(zecMarketDataSourceProvider);
 
     ref.onDispose(() {
       _epoch++;
@@ -103,10 +137,10 @@ class ZecPriceChange24hNotifier extends Notifier<double?> {
     });
 
     Future<void> tick() async {
-      final pct = await source.fetchChangePct();
+      final data = await source.fetchMarketData();
       if (epoch != _epoch) return;
-      if (pct != null) state = pct;
-      _timer = Timer(zecPriceChange24hRefreshInterval, () => unawaited(tick()));
+      if (data != null) state = data;
+      _timer = Timer(zecMarketDataRefreshInterval, () => unawaited(tick()));
     }
 
     scheduleMicrotask(() {
@@ -114,6 +148,28 @@ class ZecPriceChange24hNotifier extends Notifier<double?> {
     });
     return null;
   }
+}
+
+final zecHomeUsdUnitPriceProvider = Provider.autoDispose<double?>((ref) {
+  return ref.watch(zecHomeMarketDataProvider)?.usdPrice;
+});
+
+final zecPriceChange24hPctProvider = Provider.autoDispose<double?>((ref) {
+  return ref.watch(zecHomeMarketDataProvider)?.change24hPct;
+});
+
+/// "$250.12"-style fiat text for a zatoshi amount, or null when the amount
+/// or [zecUsdUnitPrice] cannot be priced (callers hide the sub-label).
+String? fiatTextForZatoshi(BigInt zatoshi, {required double? zecUsdUnitPrice}) {
+  if (zatoshi <= BigInt.zero ||
+      zecUsdUnitPrice == null ||
+      !zecUsdUnitPrice.isFinite ||
+      zecUsdUnitPrice <= 0) {
+    return null;
+  }
+  final zec = zatoshi.toDouble() / zatoshiPerZec.toDouble();
+  if (!zec.isFinite || zec <= 0) return null;
+  return swapFormatCompactFiatValue(zec * zecUsdUnitPrice);
 }
 
 /// Rounds to the displayed 2-decimal precision so text and color agree —

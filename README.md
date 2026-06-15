@@ -40,7 +40,8 @@ Make sure the commit matches the GitHub release, then build:
 fvm install
 fvm flutter pub get
 fvm flutter build macos --release \
-  --dart-define=ZCASH_DEFAULT_NETWORK=main
+  --dart-define=ZCASH_DEFAULT_NETWORK=main \
+  --dart-define=VIZOR_COINGECKO_PRICE_BASE_URL=https://api.coingecko.com/api/v3
 ```
 
 For testnet:
@@ -49,6 +50,10 @@ For testnet:
 fvm flutter build macos --release \
   --dart-define=ZCASH_DEFAULT_NETWORK=test
 ```
+
+`VIZOR_COINGECKO_PRICE_BASE_URL` controls the home screen ZEC price and 24h
+change source. Open-source builds should use the public CoinGecko base URL
+above; production builds can point this define at a Vizor-operated proxy.
 
 The built app is at:
 

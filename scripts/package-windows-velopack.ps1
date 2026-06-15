@@ -11,6 +11,7 @@ param(
   [string]$UpdateFeedPublicKey = $env:VIZOR_UPDATE_FEED_PUBLIC_KEY_B64,
   [string]$UpdateRepositoryUrl = $env:VIZOR_UPDATE_GITHUB_REPO_URL,
   [string]$UpdateReleaseBaseUrl = $env:VIZOR_UPDATE_RELEASE_BASE_URL,
+  [string]$CoinGeckoPriceBaseUrl = $env:VIZOR_COINGECKO_PRICE_BASE_URL,
   [string]$CodeSignParams = $env:VIZOR_WINDOWS_CODE_SIGN_PARAMS,
   [string]$CodeSignParallel = $env:VIZOR_WINDOWS_CODE_SIGN_PARALLEL,
   [string]$CodeSignExclude = $env:VIZOR_WINDOWS_CODE_SIGN_EXCLUDE,
@@ -19,6 +20,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($CoinGeckoPriceBaseUrl)) {
+  $CoinGeckoPriceBaseUrl = "https://api.coingecko.com/api/v3"
+}
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
@@ -347,7 +352,8 @@ $flutterBuildArgs = @(
   "windows",
   "--release",
   "--dart-define=ZCASH_DEFAULT_NETWORK=$NetworkDartDefine",
-  "--dart-define=VIZOR_RELEASE_VERSION=$Version"
+  "--dart-define=VIZOR_RELEASE_VERSION=$Version",
+  "--dart-define=VIZOR_COINGECKO_PRICE_BASE_URL=$CoinGeckoPriceBaseUrl"
 )
 
 $cmakeCache = Join-Path $repoRoot "build\windows\x64\CMakeCache.txt"

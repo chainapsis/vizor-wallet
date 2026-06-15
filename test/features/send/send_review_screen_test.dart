@@ -25,6 +25,7 @@ import 'package:zcash_wallet/src/features/send/widgets/send_review_content_view.
 import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 void main() {
@@ -61,6 +62,7 @@ void main() {
     expect(find.text('Review send'), findsOneWidget);
     expect(find.text('Amount'), findsOneWidget);
     expect(find.text('15.12 ZEC'), findsOneWidget);
+    expect(find.text(r'$1.06K'), findsOneWidget);
     expect(find.text('To'), findsOneWidget);
     expect(find.text(truncatedAddress(_longAddress)), findsOneWidget);
     expect(find.text('Shielded'), findsOneWidget);
@@ -529,6 +531,9 @@ Widget _harness(
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap()),
+      zecMarketDataSourceProvider.overrideWithValue(
+        const _FakeMarketDataSource(),
+      ),
       addressBookRepositoryProvider.overrideWithValue(
         addressBookRepository ?? _FakeAddressBookRepository(),
       ),
@@ -617,6 +622,15 @@ SendReviewArgs _reviewArgs({
     needsSaplingParams: false,
     memo: memo,
   );
+}
+
+class _FakeMarketDataSource implements ZecMarketDataSource {
+  const _FakeMarketDataSource();
+
+  @override
+  Future<ZecMarketData?> fetchMarketData() async {
+    return const ZecMarketData(usdPrice: 70);
+  }
 }
 
 const _longMemo =

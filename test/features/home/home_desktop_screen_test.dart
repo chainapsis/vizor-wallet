@@ -34,9 +34,7 @@ void main() {
         'assets/fonts/Geist-SemiBold.ttf',
         'assets/fonts/Geist-Bold.ttf',
       ],
-      'Young Serif': [
-        'assets/fonts/YoungSerif-Regular.ttf',
-      ],
+      'Young Serif': ['assets/fonts/YoungSerif-Regular.ttf'],
     };
     for (final entry in fonts.entries) {
       final loader = FontLoader(entry.key);
@@ -165,10 +163,7 @@ void main() {
     final changeText = tester.widget<Text>(
       find.byKey(const ValueKey('home_desktop_balance_price_change_text')),
     );
-    expect(
-      changeText.style?.color,
-      AppThemeData.light.colors.text.destructive,
-    );
+    expect(changeText.style?.color, AppThemeData.light.colors.text.destructive);
   });
 
   testWidgets('home desktop content tracks pane center on scaled screens', (
@@ -517,8 +512,8 @@ Widget _appHarness(
 }) {
   return ProviderScope(
     overrides: [
-      zecPriceChange24hSourceProvider.overrideWithValue(
-        _FakePriceChangeSource(priceChange24hPct),
+      zecMarketDataSourceProvider.overrideWithValue(
+        _FakeMarketDataSource(priceChange24hPct),
       ),
       appBootstrapProvider.overrideWithValue(
         _bootstrap(
@@ -575,13 +570,15 @@ final _syncedSyncState = SyncState(
   hasAccountScopedData: true,
 );
 
-class _FakePriceChangeSource implements ZecPriceChange24hSource {
-  const _FakePriceChangeSource(this.pct);
+class _FakeMarketDataSource implements ZecMarketDataSource {
+  const _FakeMarketDataSource(this.change24hPct);
 
-  final double? pct;
+  final double? change24hPct;
 
   @override
-  Future<double?> fetchChangePct() async => pct;
+  Future<ZecMarketData?> fetchMarketData() async {
+    return ZecMarketData(usdPrice: 70, change24hPct: change24hPct);
+  }
 }
 
 class _FakeSwapActivityStore implements SwapActivityStore {
