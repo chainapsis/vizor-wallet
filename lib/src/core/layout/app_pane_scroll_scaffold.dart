@@ -120,6 +120,73 @@ class _AppPaneScrollScaffoldState extends State<AppPaneScrollScaffold> {
   }
 }
 
+/// Shared desktop pane scaffold for screens that need sliver-based lazy
+/// rendering while preserving the pinned toolbar and overlay scrollbar model.
+class AppPaneSliverScrollScaffold extends StatelessWidget {
+  const AppPaneSliverScrollScaffold({
+    required this.toolbar,
+    required this.slivers,
+    this.controller,
+    this.padding,
+    super.key,
+  });
+
+  final Widget toolbar;
+  final List<Widget> slivers;
+  final ScrollController? controller;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final userPadding = (padding ?? EdgeInsets.zero).resolve(
+      Directionality.of(context),
+    );
+    final contentPadding =
+        const EdgeInsets.only(top: AppPaneScrollScaffold.toolbarHeight) +
+        userPadding;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        AppPaneScrollbar(
+          controller: controller,
+          scrollbarKey: AppPaneScrollScaffold.scrollbarKey,
+          builder: (context, controller) => CustomScrollView(
+            key: AppPaneScrollScaffold.scrollViewKey,
+            controller: controller,
+            slivers: [
+              if (contentPadding.top > 0)
+                SliverToBoxAdapter(child: SizedBox(height: contentPadding.top)),
+              for (final sliver in slivers)
+                if (contentPadding.horizontal > 0)
+                  SliverPadding(
+                    padding: EdgeInsets.only(
+                      left: contentPadding.left,
+                      right: contentPadding.right,
+                    ),
+                    sliver: sliver,
+                  )
+                else
+                  sliver,
+              if (contentPadding.bottom > 0)
+                SliverToBoxAdapter(
+                  child: SizedBox(height: contentPadding.bottom),
+                ),
+            ],
+          ),
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: AppPaneScrollScaffold.toolbarHeight,
+          child: toolbar,
+        ),
+      ],
+    );
+  }
+}
+
 /// The pane overlay scrollbar on its own, for panes that bring their own
 /// scroll view (e.g. the home backdrop pane's sliver scroll).
 ///

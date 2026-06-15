@@ -383,6 +383,28 @@ void main() {
     expect(find.byKey(const ValueKey('tx:received:received')), findsOneWidget);
     expect(find.byKey(const ValueKey('tx:sent:sent')), findsOneWidget);
   });
+
+  testWidgets('activity feed sliver lazily builds row items', (tester) async {
+    await _pumpActivityFeedSliver(
+      tester,
+      rows: [
+        for (var index = 0; index < 60; index++)
+          _row(title: 'Row $index', stableId: 'row-$index'),
+      ],
+    );
+
+    expect(find.byKey(const ValueKey('row-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('row-59')), findsNothing);
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('row-59')),
+      240,
+      scrollable: find.byType(Scrollable),
+      maxScrolls: 80,
+    );
+
+    expect(find.byKey(const ValueKey('row-59')), findsOneWidget);
+  });
 }
 
 Future<void> _pumpMappedTransactions(
@@ -431,6 +453,34 @@ Widget _feed(List<ActivityRowData> rows) {
       width: 420,
       child: ActivityFeed(
         sections: [ActivityFeedSectionData(title: 'This week', rows: rows)],
+      ),
+    ),
+  );
+}
+
+Future<void> _pumpActivityFeedSliver(
+  WidgetTester tester, {
+  required List<ActivityRowData> rows,
+}) {
+  return tester.pumpWidget(
+    MaterialApp(
+      home: AppTheme(
+        data: AppThemeData.light,
+        child: Center(
+          child: SizedBox(
+            width: 420,
+            height: 240,
+            child: CustomScrollView(
+              slivers: [
+                ActivityFeedSliver(
+                  sections: [
+                    ActivityFeedSectionData(title: 'This week', rows: rows),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     ),
   );

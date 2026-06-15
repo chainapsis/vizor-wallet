@@ -3889,7 +3889,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
-    final scrollView = tester.widget<SingleChildScrollView>(
+    final scrollView = tester.widget<CustomScrollView>(
       find.byKey(AppPaneScrollScaffold.scrollViewKey),
     );
     final controller = scrollView.controller!;
@@ -3973,6 +3973,13 @@ void main() {
         seedSwapActivityFixtures: false,
         sessionStore: _FakeSwapPersistenceStore(initialIntents: intents),
       ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('swap:swap-page-6')),
+      160,
+      scrollable: find.byType(Scrollable).first,
     );
     await tester.pumpAndSettle();
 

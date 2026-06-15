@@ -348,24 +348,20 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
-        child: AppPaneScrollScaffold(
+        child: AppPaneSliverScrollScaffold(
           toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
           padding: const EdgeInsets.only(top: AppSpacing.sm),
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: SizedBox(
-              width: 420,
-              child: ActivityFeed(
-                sections: sections,
-                rowKeyPrefix: 'activity_screen',
-                isLoading:
-                    _isLoading && !canRenderTransactions && sections.isEmpty,
-                errorText: sections.isEmpty && loadedTransactions == null
-                    ? _error
-                    : null,
-              ),
+          slivers: [
+            ActivityFeedSliver(
+              sections: sections,
+              rowKeyPrefix: 'activity_screen',
+              isLoading:
+                  _isLoading && !canRenderTransactions && sections.isEmpty,
+              errorText: sections.isEmpty && loadedTransactions == null
+                  ? _error
+                  : null,
             ),
-          ),
+          ],
         ),
       ),
     );
