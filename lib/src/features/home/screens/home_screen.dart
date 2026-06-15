@@ -26,7 +26,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/zec_price_change_provider.dart';
-import '../../../providers/zec_usd_price_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
@@ -324,7 +323,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         sync.orchardBalance +
         sync.saplingPendingBalance +
         sync.orchardPendingBalance;
-    final zecUsdUnitPrice = ref.watch(zecUsdUnitPriceProvider).asData?.value;
+    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final shieldedFiatBalanceText = _formatFiatBalance(
       shieldedBalance,
       zecUsdUnitPrice: zecUsdUnitPrice,
