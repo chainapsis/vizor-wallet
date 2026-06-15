@@ -1,14 +1,14 @@
 cargo:
-  # Required by the pinned Ironwood/NU7 Rust stack.
+  # Required by the pinned Ironwood / NU6.3 Rust stack.
   debug:
     extra_flags:
       - --config
-      - 'build.rustflags=["--cfg","zcash_unstable=\"nu7\""]'
+      - 'build.rustflags=["--cfg","zcash_unstable=\"nu6.3\""]'
   profile:
     extra_flags:
       - --config
-      - 'build.rustflags=["--cfg","zcash_unstable=\"nu7\""]'
+      - 'build.rustflags=["--cfg","zcash_unstable=\"nu6.3\""]'
   release:
     extra_flags:
       - --config
-      - 'build.rustflags=["--cfg","zcash_unstable=\"nu7\""]'
+      - 'build.rustflags=["--cfg","zcash_unstable=\"nu6.3\""]'

@@ -192,8 +192,8 @@ class AndroidEnvironment {
     rustFlags = '$rustFlags-L\x1f$workaroundDir';
     // Android uses CARGO_ENCODED_RUSTFLAGS for the NDK linker workaround.
     // That environment variable overrides Cargo's build.rustflags from
-    // rust/cargokit.yaml, so keep the NU7 cfg in the encoded list too.
-    rustFlags = '$rustFlags\x1f--cfg\x1fzcash_unstable="nu7"';
+    // rust/cargokit.yaml, so keep the NU6.3 cfg in the encoded list too.
+    rustFlags = '$rustFlags\x1f--cfg\x1fzcash_unstable="nu6.3"';
     return rustFlags;
   }
 }

@@ -56,12 +56,12 @@ fn status_to_network_error(label: &str, status: Status) -> SyncError {
     SyncError::net(format!("{label}: {status}"))
 }
 
-#[cfg(zcash_unstable = "nu7")]
+#[cfg(zcash_unstable = "nu6.3")]
 pub(super) fn ironwood_sync_enabled(network: WalletNetwork) -> bool {
     matches!(network, WalletNetwork::LocalIronwoodTestnet)
 }
 
-#[cfg(not(zcash_unstable = "nu7"))]
+#[cfg(not(zcash_unstable = "nu6.3"))]
 pub(super) fn ironwood_sync_enabled(_network: WalletNetwork) -> bool {
     false
 }
@@ -536,7 +536,7 @@ mod tests {
 
     #[test]
     fn explicit_ironwood_pool_requests_are_local_only() {
-        #[cfg(zcash_unstable = "nu7")]
+        #[cfg(zcash_unstable = "nu6.3")]
         assert_eq!(
             compact_block_pool_types(WalletNetwork::LocalIronwoodTestnet),
             vec![
@@ -545,7 +545,7 @@ mod tests {
                 service::PoolType::Ironwood as i32,
             ]
         );
-        #[cfg(not(zcash_unstable = "nu7"))]
+        #[cfg(not(zcash_unstable = "nu6.3"))]
         assert!(compact_block_pool_types(WalletNetwork::LocalIronwoodTestnet).is_empty());
 
         assert!(compact_block_pool_types(WalletNetwork::Main).is_empty());

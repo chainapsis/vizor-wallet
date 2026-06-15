@@ -3732,9 +3732,9 @@ fn make_orchard_split_builder(
     )
     .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
 
-    #[cfg(zcash_unstable = "nu7")]
+    #[cfg(zcash_unstable = "nu6.3")]
     if network.is_nu_active(
-        zcash_protocol::consensus::NetworkUpgrade::Nu7,
+        zcash_protocol::consensus::NetworkUpgrade::Nu6_3,
         BlockHeight::from(target_height),
     ) {
         builder
@@ -4118,7 +4118,7 @@ fn build_send_max_proposal(
         db,
         &network,
         account_id,
-        // NU7 Ironwood notes are selected through the Orchard protocol path as
+        // Ironwood / NU6.3 notes are selected through the Orchard protocol path as
         // v3 note rows; librustzcash does not expose a separate Ironwood
         // ShieldedProtocol selector. This is why balance prechecks can treat
         // spendable Ironwood value as available to ordinary sends.
@@ -4150,17 +4150,17 @@ fn proposed_tx_version_for_send(
     network: WalletNetwork,
     target_height: wallet::TargetHeight,
 ) -> Option<TxVersion> {
-    #[cfg(zcash_unstable = "nu7")]
+    #[cfg(zcash_unstable = "nu6.3")]
     {
         if network.is_nu_active(
-            consensus::NetworkUpgrade::Nu7,
+            consensus::NetworkUpgrade::Nu6_3,
             BlockHeight::from(target_height),
         ) {
             return Some(TxVersion::V6);
         }
     }
 
-    #[cfg(not(zcash_unstable = "nu7"))]
+    #[cfg(not(zcash_unstable = "nu6.3"))]
     let _ = (network, target_height);
 
     None
@@ -4257,12 +4257,12 @@ fn proposal_shielded_zatoshi(proposal: &Proposal<WalletFeeRule, Infallible>) -> 
         .sum()
 }
 
-#[cfg(zcash_unstable = "nu7")]
+#[cfg(zcash_unstable = "nu6.3")]
 fn ensure_transparent_shielding_pczt_targets_ironwood(pczt_bytes: &[u8]) -> Result<(), String> {
     let pczt = pczt::Pczt::parse(pczt_bytes)
         .map_err(|e| format!("Parse transparent shielding PCZT: {e:?}"))?;
     if *pczt.global().tx_version() != zcash_protocol::constants::V6_TX_VERSION {
-        return Err("Transparent shielding PCZT must use transaction v6 after NU7.".to_string());
+        return Err("Transparent shielding PCZT must use transaction v6 after NU6.3.".to_string());
     }
     if pczt.ironwood().actions().is_empty() {
         return Err("Transparent shielding PCZT did not target Ironwood.".to_string());
@@ -4276,9 +4276,9 @@ fn ensure_transparent_shielding_pczt_targets_ironwood(pczt_bytes: &[u8]) -> Resu
     Ok(())
 }
 
-#[cfg(not(zcash_unstable = "nu7"))]
+#[cfg(not(zcash_unstable = "nu6.3"))]
 fn ensure_transparent_shielding_pczt_targets_ironwood(_pczt_bytes: &[u8]) -> Result<(), String> {
-    Err("Keystone transparent shielding requires NU7/Ironwood support.".to_string())
+    Err("Keystone transparent shielding requires Ironwood / NU6.3 support.".to_string())
 }
 
 fn same_prepared_note_without_nullifier(
@@ -5156,7 +5156,7 @@ fn zip317_helper<DbT: InputSource>(
             Zatoshis::const_from_u64(1000_0000),
         ),
     );
-    #[cfg(zcash_unstable = "nu7")]
+    #[cfg(zcash_unstable = "nu6.3")]
     let change_strategy = if matches!(proposed_tx_version, Some(TxVersion::V5)) {
         change_strategy.with_legacy_orchard_change()
     } else {
@@ -5337,8 +5337,8 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu7")]
-    fn send_proposals_use_v6_after_nu7() {
+    #[cfg(zcash_unstable = "nu6.3")]
+    fn send_proposals_use_v6_after_nu6_3() {
         let network = WalletNetwork::LocalIronwoodTestnet;
 
         assert_eq!(
@@ -5394,7 +5394,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu7")]
+    #[cfg(zcash_unstable = "nu6.3")]
     fn keystone_transparent_shielding_pczt_targets_ironwood() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
@@ -5752,7 +5752,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu7")]
+    #[cfg(zcash_unstable = "nu6.3")]
     fn orchard_denomination_split_pczt_uses_v6_for_change_outputs() {
         let network = WalletNetwork::LocalIronwoodTestnet;
         let target_height = 120;

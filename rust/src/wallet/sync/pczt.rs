@@ -252,7 +252,7 @@ pub fn add_proofs_to_pczt(
             .map_err(|e| format!("Orchard proof: {e:?}"))?;
     }
 
-    #[cfg(zcash_unstable = "nu7")]
+    #[cfg(zcash_unstable = "nu6.3")]
     if prover.requires_ironwood_proof() {
         prover = prover
             .create_ironwood_proof(ironwood_orchard_proving_key())
@@ -298,7 +298,7 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
             });
         });
 
-    #[cfg(zcash_unstable = "nu7")]
+    #[cfg(zcash_unstable = "nu6.3")]
     {
         redactor = redactor.redact_ironwood_with(|mut r| {
             r.redact_actions(|mut ar| {
@@ -424,7 +424,7 @@ pub(crate) fn extract_transaction_from_pczt(
     let ironwood_vk = orchard::circuit::VerifyingKey::build(ironwood_orchard_circuit_version());
 
     let mut extractor = TransactionExtractor::new(finalized_pczt).with_orchard(&orchard_vk);
-    #[cfg(zcash_unstable = "nu7")]
+    #[cfg(zcash_unstable = "nu6.3")]
     {
         extractor = extractor.with_ironwood(&ironwood_vk);
     }

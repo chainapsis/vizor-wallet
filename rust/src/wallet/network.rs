@@ -31,7 +31,7 @@ fn local_ironwood_testnet_activation_height(nu: NetworkUpgrade) -> Option<BlockH
         NetworkUpgrade::Nu6 => 2,
         NetworkUpgrade::Nu6_1 => 3,
         NetworkUpgrade::Nu6_2 => 4,
-        NetworkUpgrade::Nu7 => 120,
+        NetworkUpgrade::Nu6_3 => 120,
     };
 
     Some(BlockHeight::from_u32(height))
@@ -61,7 +61,7 @@ impl Parameters for WalletNetwork {
                 | NetworkUpgrade::Nu6
                 | NetworkUpgrade::Nu6_1
                 | NetworkUpgrade::Nu6_2
-                | NetworkUpgrade::Nu7 => Some(BlockHeight::from_u32(1)),
+                | NetworkUpgrade::Nu6_3 => Some(BlockHeight::from_u32(1)),
             },
         }
     }
@@ -81,7 +81,7 @@ mod tests {
             Some(BlockHeight::from_u32(1))
         );
         assert_eq!(
-            network.activation_height(NetworkUpgrade::Nu7),
+            network.activation_height(NetworkUpgrade::Nu6_3),
             Some(BlockHeight::from_u32(120))
         );
     }
