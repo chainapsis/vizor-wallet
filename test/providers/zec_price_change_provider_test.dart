@@ -20,16 +20,11 @@ void main() {
   group('parseZecMarketData', () {
     test('reads ZEC price and 24h change from a CoinGecko response', () {
       final data = parseZecMarketData(
-        '{"zcash":{"usd":33.45,"usd_24h_change":-0.25852,'
-        '"last_updated_at":1779092258}}',
+        '{"zcash":{"usd":33.45,"usd_24h_change":-0.25852}}',
       );
 
       expect(data?.usdPrice, 33.45);
       expect(data?.change24hPct, -0.25852);
-      expect(
-        data?.lastUpdatedAt,
-        DateTime.fromMillisecondsSinceEpoch(1779092258 * 1000, isUtc: true),
-      );
     });
 
     test('allows a missing or null 24h change when price is usable', () {
@@ -65,7 +60,7 @@ void main() {
         uri.toString(),
         'https://api.coingecko.com/api/v3/simple/price?'
         'ids=zcash&names=Zcash&symbols=zec&vs_currencies=usd&'
-        'include_24hr_change=true&include_last_updated_at=true',
+        'include_24hr_change=true',
       );
     });
   });

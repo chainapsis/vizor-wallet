@@ -15,15 +15,10 @@ const kVizorCoinGeckoPriceBaseUrl = String.fromEnvironment(
 );
 
 class ZecMarketData {
-  const ZecMarketData({
-    required this.usdPrice,
-    this.change24hPct,
-    this.lastUpdatedAt,
-  });
+  const ZecMarketData({required this.usdPrice, this.change24hPct});
 
   final double usdPrice;
   final double? change24hPct;
-  final DateTime? lastUpdatedAt;
 }
 
 /// Home ZEC market data source. Swap keeps using its provider-specific pricing
@@ -76,7 +71,6 @@ Uri coinGeckoSimplePriceUri(Uri baseUri) {
       'symbols': 'zec',
       'vs_currencies': 'usd',
       'include_24hr_change': 'true',
-      'include_last_updated_at': 'true',
     },
   );
 }
@@ -100,19 +94,7 @@ ZecMarketData? parseZecMarketData(String body) {
         ? changeRaw.toDouble()
         : null;
 
-    final lastUpdatedRaw = zcash['last_updated_at'];
-    final lastUpdatedAt = lastUpdatedRaw is num && lastUpdatedRaw.isFinite
-        ? DateTime.fromMillisecondsSinceEpoch(
-            lastUpdatedRaw.toInt() * 1000,
-            isUtc: true,
-          )
-        : null;
-
-    return ZecMarketData(
-      usdPrice: usdPrice,
-      change24hPct: change24hPct,
-      lastUpdatedAt: lastUpdatedAt,
-    );
+    return ZecMarketData(usdPrice: usdPrice, change24hPct: change24hPct);
   } catch (_) {
     return null;
   }
