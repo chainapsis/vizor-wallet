@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/desktop_sidebar_spacing.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -171,7 +172,7 @@ class OnboardingSidebarChrome extends StatelessWidget {
         children: [
           Positioned.fill(child: illustration),
           Positioned.fill(
-            top: 40,
+            top: onboardingSidebarTopOffset(),
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.xs),
               child: OnboardingSidebarNav(steps: steps),
