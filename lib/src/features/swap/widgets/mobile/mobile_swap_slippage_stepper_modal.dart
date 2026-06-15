@@ -268,10 +268,16 @@ class _StepperButton extends StatelessWidget {
           child: Center(
             child: Text(
               label,
+              // "+"/"-" are centered on the math axis, so the default
+              // `proportional` leading (which biases toward the larger ascent)
+              // drops the glyph low. `even` splits the line leading equally so
+              // the glyph sits dead-center in the 44px pill.
               style: TextStyle(
                 fontFamily: 'Geist',
                 fontWeight: FontWeight.w500,
                 fontSize: 24,
+                height: 1,
+                leadingDistribution: TextLeadingDistribution.even,
                 color: enabled
                     ? colors.button.secondary.label
                     : colors.text.disabled,
