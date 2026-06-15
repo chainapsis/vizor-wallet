@@ -14,6 +14,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
+import '../../../../providers/zec_price_change_provider.dart';
 import '../../../activity/activity_row_mapper.dart'
     show formatActivityTimestamp;
 import '../../services/send_flow.dart';
@@ -164,6 +165,10 @@ class _MobileSendStatusScreenState
         ? _error ?? "Transaction couldn't be sent."
         : null;
     final txid = _protocolTxid;
+    final amountFiatText = fiatTextForZatoshi(
+      args.amountZatoshi,
+      zecUsdUnitPrice: ref.watch(zecHomeUsdUnitPriceProvider),
+    );
 
     return PopScope<void>(
       canPop: false,
@@ -207,6 +212,18 @@ class _MobileSendStatusScreenState
                                   args.amountZatoshi,
                                 ).activityDetail.toString(),
                                 leading: const _ZecCoinBadge(),
+                                bottom: amountFiatText == null
+                                    ? null
+                                    : Text(
+                                        amountFiatText,
+                                        key: const ValueKey(
+                                          'mobile_send_status_amount_fiat',
+                                        ),
+                                        style: AppTypography.labelMedium
+                                            .copyWith(
+                                              color: colors.text.secondary,
+                                            ),
+                                      ),
                               ),
                               const SizedBox(height: AppSpacing.xs),
                               const _FlowArrow(),

@@ -76,6 +76,7 @@ platform :android do
   desc "Build Android release AAB for Google Play"
   lane :build do
     metadata = android_release_metadata
+    coingecko_price_base_url = ENV.fetch("VIZOR_COINGECKO_PRICE_BASE_URL", "https://api.coingecko.com/api/v3")
 
     sh(
       [
@@ -85,6 +86,7 @@ platform :android do
         # Store builds must compile the mobile token set — release
         # builds have no form-factor guard (see AGENTS.md).
         "--dart-define=VIZOR_FORM_FACTOR=mobile",
+        "--dart-define=#{shell_escape("VIZOR_COINGECKO_PRICE_BASE_URL=#{coingecko_price_base_url}")}",
         "--build-name", shell_escape(metadata.fetch(:version)),
         "--build-number", shell_escape(metadata.fetch(:build_number))
       ].join(" ")

@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
@@ -26,6 +27,15 @@ class _FakePrivacyModeNotifier extends PrivacyModeNotifier {
   Future<void> set(bool enabled) async {
     state = enabled;
   }
+}
+
+class _FakeMarketDataSource implements ZecMarketDataSource {
+  const _FakeMarketDataSource(this.data);
+
+  final ZecMarketData? data;
+
+  @override
+  Future<ZecMarketData?> fetchMarketData() async => data;
 }
 
 const _accountState = AccountState(
@@ -54,7 +64,13 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-Widget _app(SyncState syncState) {
+Widget _app(
+  SyncState syncState, {
+  ZecMarketData? marketData = const ZecMarketData(
+    usdPrice: 70,
+    change24hPct: 13.12,
+  ),
+}) {
   final router = GoRouter(
     initialLocation: '/home',
     routes: [
@@ -73,6 +89,9 @@ Widget _app(SyncState syncState) {
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(() => FakeSyncNotifier(syncState)),
       privacyModeProvider.overrideWith(_FakePrivacyModeNotifier.new),
+      zecMarketDataSourceProvider.overrideWithValue(
+        _FakeMarketDataSource(marketData),
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -133,8 +152,11 @@ void main() {
       _app(_syncedState(orchardBalance: BigInt.from(14312000000))),
     );
     await tester.pump();
+    await tester.pump();
 
     expect(find.textContaining('143.12', findRichText: true), findsOneWidget);
+    expect(find.text(r'$10.02K'), findsOneWidget);
+    expect(find.text('+ 13.12% (24h)'), findsOneWidget);
     expect(find.text('Send'), findsOneWidget);
     expect(find.text('Receive'), findsOneWidget);
     expect(find.text('No activity, yet...'), findsOneWidget);
@@ -174,16 +196,18 @@ void main() {
       _app(_syncedState(orchardBalance: BigInt.from(14312000000))),
     );
     await tester.pump();
+    await tester.pump();
 
     await tester.tap(find.bySemanticsLabel('Hide balance'));
     await tester.pump();
 
     expect(
       find.textContaining(fixedPrivacyMask(), findRichText: true),
-      findsOneWidget,
+      findsAtLeastNWidgets(2),
     );
     expect(impactTypes, ['HapticFeedbackType.mediumImpact']);
     expect(find.textContaining('143.12', findRichText: true), findsNothing);
+    expect(find.text(r'$10.02K'), findsNothing);
   });
 
   testWidgets('shows up to ten recent activity rows', (tester) async {

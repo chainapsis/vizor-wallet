@@ -18,6 +18,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/sync_provider.dart';
+import '../../../../providers/zec_price_change_provider.dart';
 import '../../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../../../activity/activity_feed_sections.dart';
 import '../../../activity/activity_row_mapper.dart';
@@ -104,6 +105,16 @@ class _HomeContent extends ConsumerWidget {
         sync.saplingPendingBalance +
         sync.orchardPendingBalance;
     final hasBalance = shieldedBalance > BigInt.zero;
+    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
+    final fiatBalanceText = fiatTextForZatoshi(
+      shieldedBalance,
+      zecUsdUnitPrice: zecUsdUnitPrice,
+    );
+    final shieldedFiatBalanceText =
+        privacyModeEnabled && fiatBalanceText != null
+        ? fixedPrivacyMask()
+        : fiatBalanceText;
+    final priceChange24hPct = ref.watch(zecPriceChange24hPctProvider);
 
     final uuid = activeAccountUuid;
     final swapItems = uuid == null
@@ -166,6 +177,8 @@ class _HomeContent extends ConsumerWidget {
           balanceText: privacyModeEnabled
               ? fixedPrivacyMask()
               : ZecAmount.fromZatoshi(shieldedBalance).balance.amountText,
+          fiatBalanceText: shieldedFiatBalanceText,
+          priceChange24hPct: priceChange24hPct,
           privacyModeEnabled: privacyModeEnabled,
           onTogglePrivacyMode: onTogglePrivacyMode,
         ),
@@ -238,24 +251,32 @@ class _HomeContent extends ConsumerWidget {
 class _BalanceCard extends StatelessWidget {
   const _BalanceCard({
     required this.balanceText,
+    required this.fiatBalanceText,
+    required this.priceChange24hPct,
     required this.privacyModeEnabled,
     required this.onTogglePrivacyMode,
   });
 
   final String balanceText;
+  final String? fiatBalanceText;
+  final double? priceChange24hPct;
   final bool privacyModeEnabled;
   final VoidCallback onTogglePrivacyMode;
-
-  // TODO(pricing): live fiat value and 24h change need a price feed
-  // that desktop doesn't have yet either; design-literal placeholder
-  // until that lands as separate work.
-  static const _fiatPlaceholder = '\$1,200.12';
-  static const _changePlaceholder = ' + 13.12% (24h)';
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final cardText = colors.text.homeCard;
+    final roundedPriceChangePct = priceChange24hPct == null
+        ? null
+        : roundZecPriceChange24hPct(priceChange24hPct!);
+    final priceChangeColor = roundedPriceChangePct == null
+        ? null
+        : roundedPriceChangePct > 0
+        ? colors.text.positiveStrong
+        : roundedPriceChangePct < 0
+        ? colors.text.destructive
+        : cardText;
 
     return Container(
       height: 200,
@@ -291,27 +312,38 @@ class _BalanceCard extends StatelessWidget {
             ],
           ),
           const Spacer(),
-          Text.rich(
-            TextSpan(
+          if (fiatBalanceText != null) ...[
+            Row(
               children: [
-                TextSpan(
-                  text: _fiatPlaceholder,
-                  style: AppTypography.labelLarge.copyWith(
-                    fontWeight: FontWeight.w400,
-                    color: cardText.withValues(alpha: 0.8),
+                Flexible(
+                  child: Text(
+                    fiatBalanceText!,
+                    key: const ValueKey('mobile_home_balance_fiat_text'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      fontWeight: FontWeight.w400,
+                      color: cardText.withValues(alpha: 0.8),
+                    ),
                   ),
                 ),
-                TextSpan(
-                  text: _changePlaceholder,
-                  style: AppTypography.labelLarge.copyWith(
-                    fontWeight: FontWeight.w400,
-                    color: colors.text.positiveStrong,
+                if (priceChangeColor != null) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  Text(
+                    formatZecPriceChange24hPct(priceChange24hPct!),
+                    key: const ValueKey(
+                      'mobile_home_balance_price_change_text',
+                    ),
+                    style: AppTypography.labelLarge.copyWith(
+                      fontWeight: FontWeight.w400,
+                      color: priceChangeColor,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.xs),
+          ],
           Text.rich(
             key: const ValueKey('mobile_home_shielded_balance'),
             TextSpan(

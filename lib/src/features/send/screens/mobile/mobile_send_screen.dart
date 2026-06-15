@@ -22,6 +22,7 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
+import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
@@ -952,6 +953,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final amountText =
         ZecAmount.tryParse(_amountText)?.activityDetail.toString() ??
         '$_amountText ZEC';
+    final amountZatoshi = parseZecAmount(_amountText.trim());
+    final amountFiatText = amountZatoshi == null
+        ? null
+        : fiatTextForZatoshi(
+            amountZatoshi,
+            zecUsdUnitPrice: ref.watch(zecHomeUsdUnitPriceProvider),
+          );
     final feeText = _feeZatoshi == null
         ? '—'
         : ZecAmount.fromZatoshi(_feeZatoshi!).fee.toString();
@@ -1006,6 +1014,18 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                             color: colors.text.accent,
                           ),
                         ),
+                        if (amountFiatText != null) ...[
+                          const SizedBox(height: AppSpacing.xxs),
+                          Text(
+                            amountFiatText,
+                            key: const ValueKey(
+                              'mobile_send_review_amount_fiat',
+                            ),
+                            style: AppTypography.labelMedium.copyWith(
+                              color: colors.text.secondary,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

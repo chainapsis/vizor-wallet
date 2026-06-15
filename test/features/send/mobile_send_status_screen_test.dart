@@ -6,9 +6,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_status_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 const _address =
     'u1l8xunezsvhq8fgzfl7404m450nwnd76zshe7f5dxv5z3w4gthawuwukdn5aalh6g'
@@ -28,8 +30,23 @@ final _args = SendReviewArgs(
   memo: 'thanks!',
 );
 
+class _FakeMarketDataSource implements ZecMarketDataSource {
+  const _FakeMarketDataSource();
+
+  @override
+  Future<ZecMarketData?> fetchMarketData() async {
+    return const ZecMarketData(usdPrice: 70);
+  }
+}
+
 Widget _app({required MobileSendBroadcastRunner broadcastRunner}) {
   return ProviderScope(
+    overrides: [
+      swapFeatureEnabledProvider.overrideWithValue(true),
+      zecMarketDataSourceProvider.overrideWithValue(
+        const _FakeMarketDataSource(),
+      ),
+    ],
     child: MaterialApp(
       home: AppTheme(
         data: AppThemeData.light,
@@ -65,6 +82,7 @@ void main() {
     expect(find.text('Sending...'), findsOneWidget);
     expect(find.text('In progress'), findsOneWidget);
     expect(find.text('123.12 ZEC'), findsOneWidget);
+    expect(find.text(r'$8.62K'), findsOneWidget);
     expect(find.text('To'), findsOneWidget);
 
     broadcast.complete(
