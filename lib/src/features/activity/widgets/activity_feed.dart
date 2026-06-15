@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../models/activity_row_data.dart';
@@ -11,6 +12,28 @@ const _activityFeedActivationShortcuts = <ShortcutActivator, Intent>{
   SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
   SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
 };
+
+/// Vertical gap between a row's two stacked lines (title/subtitle and
+/// amount/timestamp). Mobile gets a touch more breathing room; desktop
+/// keeps the lines tight as before. Const so the dead branch is
+/// tree-shaken per form factor.
+const _activityRowInnerLineGap = kAppFormFactor == AppFormFactor.mobile
+    ? AppSpacing.xxs
+    : 0.0;
+
+/// Sub-line text style — the subtitle (Shielded / Transparent) and the
+/// supporting amount line (timestamp / status). Mobile bumps these to the
+/// 16px label token; desktop keeps the smaller label. Const-branched so
+/// the unused form factor is tree-shaken.
+const _activityRowSubLineStyle = kAppFormFactor == AppFormFactor.mobile
+    ? AppTypography.labelLarge
+    : AppTypography.labelMedium;
+
+/// Sub-line leading icon (the shielded / transparent badge). Mobile uses
+/// the 16px medium icon token; desktop keeps the previous 14px.
+const _activityRowSubtitleIconSize = kAppFormFactor == AppFormFactor.mobile
+    ? AppIconSize.medium
+    : 14.0;
 
 class ActivityFeedSectionData {
   const ActivityFeedSectionData({required this.title, required this.rows});
@@ -268,7 +291,7 @@ class _ActivityFeedCard extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.s),
               for (var index = 0; index < section.rows.length; index++) ...[
-                if (index > 0) const SizedBox(height: 12),
+                if (index > 0) const SizedBox(height: AppSpacing.s),
                 ActivityFeedRowGroup(
                   key: rowKeyBuilder?.call(),
                   row: section.rows[index],
@@ -484,11 +507,13 @@ class _ActivityRowTitle extends StatelessWidget {
             letterSpacing: 0,
           ),
         ),
-        if (row.subtitle != null)
+        if (row.subtitle != null) ...[
+          const SizedBox(height: _activityRowInnerLineGap),
           _ActivityRowSubtitle(
             text: row.subtitle!,
             iconName: row.subtitleIconName,
           ),
+        ],
       ],
     );
   }
@@ -509,7 +534,7 @@ class _ActivityRowSubtitle extends StatelessWidget {
         if (iconName != null) ...[
           AppIcon(
             iconName!,
-            size: 14,
+            size: _activityRowSubtitleIconSize,
             color: iconName == AppIcons.shieldKeyholeOutline
                 ? colors.icon.brandCrimson
                 : colors.icon.muted,
@@ -521,7 +546,7 @@ class _ActivityRowSubtitle extends StatelessWidget {
             text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelMedium.copyWith(
+            style: _activityRowSubLineStyle.copyWith(
               color: colors.text.secondary,
               letterSpacing: 0,
             ),
@@ -551,12 +576,14 @@ class _ActivityRowAmount extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           _ActivityAmountValue(row: row, color: amountColor),
-          if (supporting != null)
+          if (supporting != null) ...[
+            const SizedBox(height: _activityRowInnerLineGap),
             _ActivitySupportingAmountText(
               row: row,
               text: supporting,
               color: supportingColor,
             ),
+          ],
         ],
       ),
     );
@@ -640,7 +667,7 @@ class _ActivitySupportingAmountText extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       textAlign: TextAlign.end,
-      style: AppTypography.labelSmall.copyWith(color: color, letterSpacing: 0),
+      style: _activityRowSubLineStyle.copyWith(color: color, letterSpacing: 0),
     );
     if (iconName == null) return label;
     return Row(
@@ -657,8 +684,8 @@ class _ActivitySupportingAmountText extends StatelessWidget {
 class _ActivityRowIcon extends StatelessWidget {
   const _ActivityRowIcon({required this.row});
 
-  static const _avatarSize = 32.0;
-  static const _progressRingSize = 37.0;
+  static const _avatarSize = AppAssetSize.size;
+  static const _progressRingSize = AppAssetSize.size * (37.0 / 32.0);
 
   final ActivityRowData row;
 
@@ -678,7 +705,7 @@ class _ActivityRowIcon extends StatelessWidget {
               child: Center(
                 child: AppIcon(
                   row.leadingIconName,
-                  size: 16,
+                  size: AppAssetSize.icon,
                   color: row.leadingIconColor,
                   animated: row.leadingIconName == AppIcons.loader,
                 ),
@@ -711,7 +738,7 @@ class _ActivityIconFallback extends StatelessWidget {
       child: Center(
         child: AppIcon(
           row.leadingIconName,
-          size: 16,
+          size: AppAssetSize.icon,
           color: row.leadingIconColor,
           animated: row.leadingIconName == AppIcons.loader,
         ),
@@ -727,11 +754,14 @@ class _ActivityChildConnector extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       key: const ValueKey('activity_feed_child_connector'),
-      width: 32,
-      height: 32,
+      width: AppAssetSize.size,
+      height: AppAssetSize.size,
       child: Center(
         child: CustomPaint(
-          size: const Size(14, 14),
+          size: const Size(
+            AppAssetSize.size * (14 / 32),
+            AppAssetSize.size * (14 / 32),
+          ),
           painter: _ActivityChildConnectorPainter(
             color: context.colors.icon.disabled,
           ),

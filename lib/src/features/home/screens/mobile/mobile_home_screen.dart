@@ -118,6 +118,7 @@ class _HomeContent extends ConsumerWidget {
             context: context,
             transaction: tx,
             privacyModeEnabled: privacyModeEnabled,
+            dateOnlyTimestamp: true,
             onTap: () => context.push(
               Uri(
                 path: '/activity/tx/${tx.txidHex}',
@@ -138,6 +139,7 @@ class _HomeContent extends ConsumerWidget {
             context: context,
             item: item,
             privacyModeEnabled: privacyModeEnabled,
+            dateOnlyTimestamp: true,
             onTap: () => context.push(
               swapActivityDetailUri(
                 intentId: item.intentId,
@@ -207,15 +209,24 @@ class _HomeContent extends ConsumerWidget {
         const SizedBox(height: AppSpacing.md),
         if (recentRows.isEmpty)
           const _EmptyActivity()
-        else ...[
-          _RecentActivityHeader(onSeeAll: () => context.go('/activity')),
-          const SizedBox(height: AppSpacing.s),
-          for (var i = 0; i < recentRows.length; i++)
-            KeyedSubtree(
-              key: ValueKey('mobile_home_activity_row_$i'),
-              child: ActivityFeedRowGroup(row: recentRows[i]),
+        else
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _RecentActivityHeader(onSeeAll: () => context.go('/activity')),
+                const SizedBox(height: AppSpacing.md),
+                for (var i = 0; i < recentRows.length; i++) ...[
+                  if (i > 0) const SizedBox(height: AppSpacing.s),
+                  KeyedSubtree(
+                    key: ValueKey('mobile_home_activity_row_$i'),
+                    child: ActivityFeedRowGroup(row: recentRows[i]),
+                  ),
+                ],
+              ],
             ),
-        ],
+          ),
       ],
     );
   }

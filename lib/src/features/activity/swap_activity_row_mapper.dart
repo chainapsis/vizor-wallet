@@ -69,6 +69,7 @@ ActivityRowData buildSwapActivityRow({
   required BuildContext context,
   required SwapActivityRowItem item,
   bool privacyModeEnabled = false,
+  bool dateOnlyTimestamp = false,
   VoidCallback? onTap,
 }) {
   final colors = context.colors;
@@ -95,7 +96,7 @@ ActivityRowData buildSwapActivityRow({
     ),
     amountIconName: returnsFunds ? AppIcons.arrowBack : null,
     amountIconColor: returnsFunds ? colors.icon.regular : null,
-    amountColor: colors.text.primary,
+    amountColor: outgoingAmountColor(colors),
     amountSubtitle: timedOut
         ? 'Timeout'
         : returnsFunds
@@ -118,7 +119,10 @@ ActivityRowData buildSwapActivityRow({
         : incompleteDeposit
         ? colors.text.brandCrimson
         : colors.text.secondary,
-    timestampText: formatActivityTimestamp(item.activityTimestamp),
+    timestampText: formatActivityTimestamp(
+      item.activityTimestamp,
+      dateOnly: dateOnlyTimestamp,
+    ),
     childRows: failed || returnsFunds || !_swapActivityShowsReceiveLeg(item)
         ? const []
         : _swapActivityChildRows(
@@ -127,6 +131,7 @@ ActivityRowData buildSwapActivityRow({
             receiveAsset: receiveAsset,
             complete: complete,
             privacyModeEnabled: privacyModeEnabled,
+            dateOnlyTimestamp: dateOnlyTimestamp,
           ),
     onTap: onTap,
   );
@@ -138,6 +143,7 @@ List<ActivityRowData> _swapActivityChildRows({
   required SwapAsset? receiveAsset,
   required bool complete,
   required bool privacyModeEnabled,
+  required bool dateOnlyTimestamp,
 }) {
   final direction = item.direction;
   if (direction == null || receiveAsset == null) return const [];
@@ -161,11 +167,14 @@ List<ActivityRowData> _swapActivityChildRows({
         item,
         privacyModeEnabled: privacyModeEnabled,
       ),
-      amountColor: colors.text.primary,
+      amountColor: outgoingAmountColor(colors),
       statusText: active ? 'In progress' : 'Completed',
       statusIconName: active ? AppIcons.loader : null,
       statusColor: colors.text.secondary,
-      timestampText: _swapActivityChildTimestamp(item),
+      timestampText: _swapActivityChildTimestamp(
+        item,
+        dateOnly: dateOnlyTimestamp,
+      ),
     ),
   ];
 }
@@ -291,10 +300,14 @@ String _swapActivityChildTitle({
       : 'Depositing ${receiveAsset.symbol}...';
 }
 
-String _swapActivityChildTimestamp(SwapActivityRowItem item) {
+String _swapActivityChildTimestamp(
+  SwapActivityRowItem item, {
+  bool dateOnly = false,
+}) {
   final timestamp =
       item.completedAt ?? item.lastStatusCheckedAt ?? item.updatedAt;
   if (timestamp == null) return '--';
+  if (dateOnly) return formatActivityTimestamp(timestamp, dateOnly: true);
   return _relativeActivityTimestamp(timestamp) ??
       formatActivityTimestamp(timestamp);
 }

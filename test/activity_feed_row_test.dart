@@ -70,7 +70,10 @@ void main() {
     expect(rows[1].amountText, '-1 $ticker');
     expect(rows[2].amountText, '0.0001 $ticker');
     expect(rows[0].amountColor, AppThemeData.light.colors.text.positiveStrong);
-    expect(rows[1].amountColor, AppThemeData.light.colors.text.primary);
+    expect(
+      rows[1].amountColor,
+      outgoingAmountColor(AppThemeData.light.colors),
+    );
     expect(find.text('0.0001 $ticker'), findsOneWidget);
     expect(find.text('+1.2345 $ticker'), findsOneWidget);
     expect(find.text('-1 $ticker'), findsOneWidget);
@@ -333,6 +336,12 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  test('formatActivityTimestamp drops the clock time when dateOnly', () {
+    final dt = DateTime(2026, 5, 14, 17, 45);
+    expect(formatActivityTimestamp(dt), 'May 14, 17:45');
+    expect(formatActivityTimestamp(dt, dateOnly: true), 'May 14');
   });
 }
 

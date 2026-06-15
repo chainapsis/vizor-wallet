@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../core/formatting/zec_amount.dart';
+import '../../core/layout/app_form_factor.dart';
 import '../../core/privacy/privacy_mask.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
@@ -9,10 +10,20 @@ import 'models/activity_row_data.dart';
 
 const _activityAmountPrivacyMaskLength = 3;
 
+/// Color for the "outgoing"/neutral amount line (sent, swap). Mobile
+/// matches the transaction title (`text.accent`) so the amount reads as
+/// heavy as the type; desktop keeps the lighter `text.primary`. Inbound
+/// (green) and failed amounts keep their own semantic colors.
+Color outgoingAmountColor(AppColors colors) =>
+    kAppFormFactor == AppFormFactor.mobile
+    ? colors.text.accent
+    : colors.text.primary;
+
 ActivityRowData buildTransactionActivityRow({
   required BuildContext context,
   required rust_sync.TransactionInfo transaction,
   bool privacyModeEnabled = false,
+  bool dateOnlyTimestamp = false,
   VoidCallback? onTap,
 }) {
   final colors = context.colors;
@@ -56,7 +67,7 @@ ActivityRowData buildTransactionActivityRow({
         ? colors.text.accent
         : isInbound
         ? colors.text.positiveStrong
-        : colors.text.primary,
+        : outgoingAmountColor(colors),
     amountSubtitle: isFailed && amount != BigInt.zero ? 'Refunded' : null,
     statusText: isFailed
         ? 'Failed'
@@ -69,7 +80,10 @@ ActivityRowData buildTransactionActivityRow({
         ? AppIcons.loader
         : null,
     statusColor: isFailed ? colors.text.destructive : colors.text.secondary,
-    timestampText: formatActivityTimestamp(_txTimestamp(transaction)),
+    timestampText: formatActivityTimestamp(
+      _txTimestamp(transaction),
+      dateOnly: dateOnlyTimestamp,
+    ),
     onTap: onTap,
   );
 }
@@ -98,12 +112,14 @@ String _transactionAmountText({
 
 /// Absolute `May 29, 13:40`-style stamp — the Figma activity rows use
 /// the absolute form even for today's transactions.
-String formatActivityTimestamp(DateTime? timestamp) {
+String formatActivityTimestamp(DateTime? timestamp, {bool dateOnly = false}) {
   if (timestamp == null) return '--';
   final local = timestamp.toLocal();
+  final date = '${_monthName(local.month)} ${local.day}';
+  if (dateOnly) return date;
   final time =
       '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-  return '${_monthName(local.month)} ${local.day}, $time';
+  return '$date, $time';
 }
 
 String _txTitle(String kind, {required bool isPending}) {
