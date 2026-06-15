@@ -255,6 +255,7 @@ class _RustApiFake implements RustLibApi {
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
+    required bool legacyV5Pczt,
   }) async {
     return BigInt.from(10000);
   }

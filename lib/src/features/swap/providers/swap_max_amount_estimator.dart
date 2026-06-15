@@ -1,12 +1,13 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
-import '../../../providers/sync_provider.dart';
+import '../../../providers/account_provider.dart';
 import '../../../providers/receive_address_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../keystone/legacy_v5_pczt_mode.dart';
 
 final swapMaxAmountEstimatorProvider = Provider<SwapMaxAmountEstimator>((ref) {
   return RustSwapMaxAmountEstimator(ref);
@@ -32,60 +33,28 @@ class RustSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
     final estimateAddress = await _ref
         .read(receiveAddressServiceProvider)
         .loadTransparentAddress(accountUuid: accountUuid);
+    final legacyV5Pczt = shouldUseLegacyV5PcztForAccount(
+      accountUuid: accountUuid,
+      isHardwareAccount: _ref.read(accountProvider.notifier).isHardwareAccount,
+    );
 
     log(
       'SwapMaxAmount: estimate begin account=$accountUuid '
       'estimateAddress=${_shortSwapValue(estimateAddress)} '
-      'spendable=$spendableZatoshi',
+      'spendable=$spendableZatoshi legacyV5Pczt=$legacyV5Pczt',
     );
-    final amountZatoshi = await findMaxZecAmountByFeeProbe(
-      spendableZatoshi: spendableZatoshi,
-      canSend: (amountZatoshi) async {
-        try {
-          await rust_sync.estimateFee(
-            dbPath: dbPath,
-            network: endpoint.walletNetworkName,
-            accountUuid: accountUuid,
-            toAddress: estimateAddress,
-            amountZatoshi: amountZatoshi,
-            memo: null,
-          );
-          return true;
-        } catch (e) {
-          if (_isInsufficientFundsError(e)) return false;
-          rethrow;
-        }
-      },
+    final estimate = await rust_sync.estimateSendMax(
+      dbPath: dbPath,
+      network: endpoint.walletNetworkName,
+      accountUuid: accountUuid,
+      toAddress: estimateAddress,
+      memo: null,
+      legacyV5Pczt: legacyV5Pczt,
     );
+    final amountZatoshi = estimate.amountZatoshi;
     log('SwapMaxAmount: estimate complete amount=$amountZatoshi');
     return amountZatoshi;
   }
-}
-
-@visibleForTesting
-Future<BigInt> findMaxZecAmountByFeeProbe({
-  required BigInt spendableZatoshi,
-  required Future<bool> Function(BigInt amountZatoshi) canSend,
-}) async {
-  if (spendableZatoshi <= BigInt.zero) return BigInt.zero;
-
-  var low = BigInt.zero;
-  var high = spendableZatoshi;
-  while (low < high) {
-    final mid = (low + high + BigInt.one) ~/ BigInt.from(2);
-    if (await canSend(mid)) {
-      low = mid;
-    } else {
-      high = mid - BigInt.one;
-    }
-  }
-  return low;
-}
-
-bool _isInsufficientFundsError(Object error) {
-  final msg = error.toString().toLowerCase();
-  return msg.contains('insufficient balance') ||
-      msg.contains('insufficient funds');
 }
 
 String _shortSwapValue(String? value) {

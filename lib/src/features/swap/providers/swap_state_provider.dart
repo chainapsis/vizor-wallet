@@ -4,18 +4,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
+import '../../../providers/account_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
+import '../../../providers/sync_provider.dart';
+import '../../keystone/legacy_v5_pczt_mode.dart';
 import '../models/swap_amount_input_mapper.dart';
 import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
-import '../../../providers/account_provider.dart';
-import '../../../providers/rpc_endpoint_failover_provider.dart';
-import '../../../providers/sync_provider.dart';
 import 'swap_activity_tracker.dart';
+import 'swap_composer_preferences_store.dart';
 import 'swap_deposit_sender.dart';
 import 'swap_failure_policy.dart';
 import 'swap_max_amount_estimator.dart';
-import 'swap_composer_preferences_store.dart';
 import 'swap_provider_config.dart';
 import 'swap_zec_staging_address_service.dart';
 
@@ -481,9 +482,9 @@ class SwapNotifier extends Notifier<SwapState> {
     }
     final quoteExpiresAt = quote.quoteExpiresAt;
     if (quoteExpiresAt != null &&
-        !DateTime.now()
-            .toUtc()
-            .isBefore(quoteExpiresAt.subtract(const Duration(seconds: 5)))) {
+        !DateTime.now().toUtc().isBefore(
+          quoteExpiresAt.subtract(const Duration(seconds: 5)),
+        )) {
       log('Swap: start blocked; quote expired at $quoteExpiresAt');
       expireReviewQuote();
       return false;
@@ -526,11 +527,19 @@ class SwapNotifier extends Notifier<SwapState> {
     final activeAccountIsHardware = ref
         .read(accountProvider.notifier)
         .isActiveAccountHardware;
+    final legacyV5Pczt = shouldUseLegacyV5PcztForAccount(
+      accountUuid: accountUuid,
+      isHardwareAccount: ref.read(accountProvider.notifier).isHardwareAccount,
+    );
     if (quote.direction.sendsZec) {
       try {
         await ref
             .read(swapDepositSenderProvider)
-            .estimateZecDepositFee(accountUuid: accountUuid, quote: quote);
+            .estimateZecDepositFee(
+              accountUuid: accountUuid,
+              quote: quote,
+              legacyV5Pczt: legacyV5Pczt,
+            );
       } catch (e) {
         log(
           'Swap: live ZEC deposit preflight failed '
@@ -571,9 +580,7 @@ class SwapNotifier extends Notifier<SwapState> {
     );
     if (activeAccountIsHardware && quote.direction.sendsZec) {
       const nextAction = 'Sign and send the ZEC deposit with Keystone.';
-      intent = intent.copyWith(
-        nextAction: nextAction,
-      );
+      intent = intent.copyWith(nextAction: nextAction);
     }
     log(
       'Swap: start saved intent=${_shortSwapValue(intent.id)} '

@@ -738,6 +738,7 @@ pub fn propose_send(
     to_address: String,
     amount_zatoshi: u64,
     memo: Option<String>,
+    legacy_v5_pczt: bool,
 ) -> Result<ProposalResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -749,6 +750,7 @@ pub fn propose_send(
             &to_address,
             amount_zatoshi,
             memo.as_deref(),
+            legacy_v5_pczt,
         )?;
         Ok(ProposalResult {
             proposal_id: r.proposal_id,
@@ -810,6 +812,7 @@ pub fn estimate_fee(
     to_address: String,
     amount_zatoshi: u64,
     memo: Option<String>,
+    legacy_v5_pczt: bool,
 ) -> Result<u64, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -820,6 +823,7 @@ pub fn estimate_fee(
             &to_address,
             amount_zatoshi,
             memo.as_deref(),
+            legacy_v5_pczt,
         )
     })
 }
@@ -831,6 +835,7 @@ pub fn estimate_send_max(
     account_uuid: String,
     to_address: String,
     memo: Option<String>,
+    legacy_v5_pczt: bool,
 ) -> Result<SendMaxEstimateResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -840,6 +845,7 @@ pub fn estimate_send_max(
             &account_uuid,
             &to_address,
             memo.as_deref(),
+            legacy_v5_pczt,
         )?;
         Ok(SendMaxEstimateResult {
             amount_zatoshi: r.amount_zatoshi,
@@ -1318,7 +1324,7 @@ pub fn get_shield_transparent_status(
     })
 }
 
-/// Create a PCZT for shielding spendable transparent funds on a hardware account.
+/// Create an Ironwood transparent-shielding PCZT for hardware accounts.
 pub fn create_shield_transparent_pczt(
     db_path: String,
     network: String,
@@ -1337,8 +1343,7 @@ pub fn create_shield_transparent_pczt(
 }
 
 /// Shield spendable transparent funds into the account's shielded balance.
-/// Software-account only; hardware shielding uses `create_shield_transparent_pczt`
-/// followed by the PCZT QR signing flow.
+/// Software-account only.
 pub fn shield_transparent_balance(
     db_path: String,
     lightwalletd_url: String,

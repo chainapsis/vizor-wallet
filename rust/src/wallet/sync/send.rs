@@ -70,7 +70,6 @@ use zcash_client_backend::{
 };
 use zcash_client_sqlite::{wallet::commitment_tree, AccountUuid, ReceivedNoteId};
 use zcash_keys::keys::UnifiedSpendingKey;
-#[cfg(zcash_unstable = "nu7")]
 use zcash_primitives::transaction::TxVersion;
 use zcash_primitives::transaction::{
     builder::{BuildConfig, Builder},
@@ -268,6 +267,7 @@ pub fn propose_send(
     to_address: &str,
     amount_zatoshi: u64,
     memo_str: Option<&str>,
+    legacy_v5_pczt: bool,
 ) -> Result<ProposalResult, String> {
     use zcash_protocol::{PoolType, ShieldedProtocol as SP};
 
@@ -275,6 +275,7 @@ pub fn propose_send(
         return Err("Send flow id is required".to_string());
     }
 
+    let proposed_tx_version = legacy_v5_pczt.then_some(TxVersion::V5);
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
     let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
@@ -286,6 +287,7 @@ pub fn propose_send(
         request,
         &BTreeSet::new(),
         &migration_locks,
+        proposed_tx_version,
     )?;
 
     let needs_sapling = proposal
@@ -309,6 +311,7 @@ pub fn propose_send(
         id,
         StoredProposal {
             proposal,
+            proposed_tx_version,
             network,
             account_id,
             send_flow_id: send_flow_id.to_string(),
@@ -362,6 +365,7 @@ pub(crate) fn create_reserved_pczt_batch(
             transaction_request,
             &reserved,
             &migration_locks,
+            None,
         )
         .map_err(|e| format!("Proposal {} failed: {e}", request.id))?;
 
@@ -409,7 +413,9 @@ pub fn estimate_fee(
     to_address: &str,
     amount_zatoshi: u64,
     memo_str: Option<&str>,
+    legacy_v5_pczt: bool,
 ) -> Result<u64, String> {
+    let proposed_tx_version = legacy_v5_pczt.then_some(TxVersion::V5);
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
     let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
@@ -421,6 +427,7 @@ pub fn estimate_fee(
         request,
         &BTreeSet::new(),
         &migration_locks,
+        proposed_tx_version,
     )?;
 
     let fee: u64 = proposal
@@ -444,10 +451,19 @@ pub(crate) fn estimate_send_max(
     account_uuid: &str,
     to_address: &str,
     memo_str: Option<&str>,
+    legacy_v5_pczt: bool,
 ) -> Result<SendMaxEstimateResult, String> {
+    let proposed_tx_version = legacy_v5_pczt.then_some(TxVersion::V5);
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
-    let proposal = build_send_max_proposal(&mut db, network, account_id, to_address, memo_str)?;
+    let proposal = build_send_max_proposal(
+        &mut db,
+        network,
+        account_id,
+        to_address,
+        memo_str,
+        proposed_tx_version,
+    )?;
     summarize_send_max_proposal(&proposal)
 }
 
@@ -479,9 +495,7 @@ pub(crate) fn get_shield_transparent_status(
     }
 }
 
-/// Create a PCZT for shielding transparent funds on a hardware account.
-/// This mirrors `shield_transparent_balance` up to proposal creation, but
-/// stops before signing/broadcast and returns the base PCZT for Keystone.
+/// Create an Ironwood transparent-shielding PCZT for hardware accounts.
 pub(crate) fn create_shield_transparent_pczt(
     db_path: &str,
     network: WalletNetwork,
@@ -490,6 +504,7 @@ pub(crate) fn create_shield_transparent_pczt(
     use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
 
     let shielding_threshold = shielding_threshold()?;
+
     with_wallet_db_write_lock("send.create_shield_transparent_pczt", || {
         let mut db = open_wallet_db(db_path, network)?;
         let account_id = parse_account_uuid(account_uuid)?;
@@ -497,10 +512,6 @@ pub(crate) fn create_shield_transparent_pczt(
             build_shielding_proposal(&mut db, network, account_id, shielding_threshold)?;
         let fee_zatoshi = proposal_fee_zatoshi(&proposal);
         let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
-        let needs_sapling_params = proposal
-            .steps()
-            .iter()
-            .any(|step| step.involves(PoolType::Shielded(ShieldedProtocol::Sapling)));
 
         let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
             &mut db,
@@ -510,12 +521,14 @@ pub(crate) fn create_shield_transparent_pczt(
             &proposal,
         )
         .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
+        let pczt_bytes = pczt.serialize();
+        ensure_transparent_shielding_pczt_targets_ironwood(&pczt_bytes)?;
 
         Ok(ShieldTransparentPcztResult {
-            pczt_bytes: pczt.serialize(),
+            pczt_bytes,
             fee_zatoshi,
             shielded_zatoshi,
-            needs_sapling_params,
+            needs_sapling_params: false,
         })
     })
 }
@@ -2739,7 +2752,9 @@ fn predicted_note_from_split_action(
         .as_ref()
         .copied()
         .ok_or("Denomination split output rseed missing")?;
-    let rho = orchard::note::Rho::from_nf_old(*action.spend().nullifier());
+    let rho = orchard::note::Rho::from_bytes(&action.spend().nullifier().to_bytes())
+        .into_option()
+        .ok_or("Denomination split output rho is invalid")?;
     orchard::Note::from_parts(
         recipient,
         orchard::value::NoteValue::from_raw(value_zatoshi),
@@ -3769,7 +3784,7 @@ fn build_shielding_proposal(
         .map_err(|e| format!("Failed to get transparent balances: {e}"))?;
     let (from_addrs, selected_value) = select_shielding_sources(balances, shielding_threshold)?;
 
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
+    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None, None);
     let proposal = propose_shielding::<_, _, _, _, Infallible>(
         db,
         &network,
@@ -3817,6 +3832,7 @@ fn propose_send_with_reserved_notes(
     request: TransactionRequest,
     reserved: &BTreeSet<ReceivedNoteId>,
     migration_locks: &BTreeSet<(String, u32)>,
+    proposed_tx_version: Option<TxVersion>,
 ) -> Result<Proposal<WalletFeeRule, ReceivedNoteId>, String> {
     let confirmations_policy = ConfirmationsPolicy::default();
     let (target_height, anchor_height) = db
@@ -3828,7 +3844,8 @@ fn propose_send_with_reserved_notes(
         reserved,
         migration_locks,
     };
-    let (change_strategy, input_selector) = zip317_helper::<ReservedInputSource<'_>>(None);
+    let (change_strategy, input_selector) =
+        zip317_helper::<ReservedInputSource<'_>>(None, proposed_tx_version);
 
     input_selector
         .propose_transaction(
@@ -3840,7 +3857,7 @@ fn propose_send_with_reserved_notes(
             account_id,
             request,
             &change_strategy,
-            None,
+            proposed_tx_version,
         )
         .map_err(|e| format!("Propose failed: {e}"))
 }
@@ -3997,6 +4014,7 @@ fn build_send_max_proposal(
     account_id: AccountUuid,
     to_address: &str,
     memo_str: Option<&str>,
+    proposed_tx_version: Option<TxVersion>,
 ) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
     let to: zcash_address::ZcashAddress = to_address
         .parse()
@@ -4025,6 +4043,7 @@ fn build_send_max_proposal(
         memo_bytes,
         MaxSpendMode::MaxSpendable,
         ConfirmationsPolicy::default(),
+        proposed_tx_version,
     )
     .map_err(|e| format!("Propose max failed: {e}"))
 }
@@ -4118,6 +4137,30 @@ fn proposal_shielded_zatoshi(proposal: &Proposal<WalletFeeRule, Infallible>) -> 
         .flat_map(|step| step.balance().proposed_change().iter())
         .map(|change| u64::from(change.value()))
         .sum()
+}
+
+#[cfg(zcash_unstable = "nu7")]
+fn ensure_transparent_shielding_pczt_targets_ironwood(pczt_bytes: &[u8]) -> Result<(), String> {
+    let pczt = pczt::Pczt::parse(pczt_bytes)
+        .map_err(|e| format!("Parse transparent shielding PCZT: {e:?}"))?;
+    if *pczt.global().tx_version() != zcash_protocol::constants::V6_TX_VERSION {
+        return Err("Transparent shielding PCZT must use transaction v6 after NU7.".to_string());
+    }
+    if pczt.ironwood().actions().is_empty() {
+        return Err("Transparent shielding PCZT did not target Ironwood.".to_string());
+    }
+    if !pczt.orchard().actions().is_empty() {
+        return Err(
+            "Transparent shielding PCZT unexpectedly contains legacy Orchard actions.".to_string(),
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(not(zcash_unstable = "nu7"))]
+fn ensure_transparent_shielding_pczt_targets_ironwood(_pczt_bytes: &[u8]) -> Result<(), String> {
+    Err("Keystone transparent shielding requires NU7/Ironwood support.".to_string())
 }
 
 fn same_prepared_note_without_nullifier(
@@ -4980,23 +5023,29 @@ where
 /// place so the two entry points can't drift.
 fn zip317_helper<DbT: InputSource>(
     change_memo: Option<MemoBytes>,
+    proposed_tx_version: Option<TxVersion>,
 ) -> (
     MultiOutputChangeStrategy<WalletFeeRule, DbT>,
     GreedyInputSelector<DbT>,
 ) {
-    (
-        MultiOutputChangeStrategy::new(
-            ConservativeZip317FeeRule,
-            change_memo,
-            ShieldedProtocol::Orchard,
-            DustOutputPolicy::default(),
-            SplitPolicy::with_min_output_value(
-                NonZeroUsize::new(4).unwrap(),
-                Zatoshis::const_from_u64(1000_0000),
-            ),
+    let change_strategy = MultiOutputChangeStrategy::new(
+        ConservativeZip317FeeRule,
+        change_memo,
+        ShieldedProtocol::Orchard,
+        DustOutputPolicy::default(),
+        SplitPolicy::with_min_output_value(
+            NonZeroUsize::new(4).unwrap(),
+            Zatoshis::const_from_u64(1000_0000),
         ),
-        GreedyInputSelector::new(),
-    )
+    );
+    #[cfg(zcash_unstable = "nu7")]
+    let change_strategy = if matches!(proposed_tx_version, Some(TxVersion::V5)) {
+        change_strategy.with_legacy_orchard_change()
+    } else {
+        change_strategy
+    };
+
+    (change_strategy, GreedyInputSelector::new())
 }
 
 // ======================== No-op Sapling Provers ========================
@@ -5167,6 +5216,62 @@ mod tests {
         assert_eq!(result.message.as_deref(), Some("Broadcast could not start"));
         assert_eq!(result.fee_zatoshi, 10_000);
         assert_eq!(result.shielded_zatoshi, 90_000);
+    }
+
+    #[test]
+    #[cfg(zcash_unstable = "nu7")]
+    fn keystone_transparent_shielding_pczt_targets_ironwood() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let network = WalletNetwork::LocalIronwoodTestnet;
+        let mnemonic = crate::wallet::keys::generate_mnemonic();
+        let seed = crate::wallet::keys::mnemonic_to_seed(&mnemonic).unwrap();
+        let (account_uuid, _) = crate::wallet::keys::init_db_and_create_account(
+            db_path,
+            network,
+            &seed,
+            Some(1),
+            "shield",
+        )
+        .unwrap();
+        let account_id = parse_account_uuid(&account_uuid).unwrap();
+
+        let mut db = open_wallet_db(db_path, network).unwrap();
+        let tip = BlockHeight::from_u32(120);
+        db.update_chain_tip(tip).unwrap();
+
+        let ua_request = zcash_keys::keys::UnifiedAddressRequest::custom(
+            ReceiverRequirement::Require,
+            ReceiverRequirement::Require,
+            ReceiverRequirement::Require,
+        )
+        .unwrap();
+        let (ua, _) = db
+            .get_next_available_address(account_id, ua_request)
+            .unwrap()
+            .unwrap();
+        let taddr = *ua.transparent().unwrap();
+        let outpoint = OutPoint::new([42u8; 32], 0);
+        let txout = TxOut::new(Zatoshis::const_from_u64(1_000_000), taddr.script().into());
+        let utxo =
+            WalletTransparentOutput::from_parts(outpoint, txout, Some(tip), None, None, None)
+                .unwrap();
+        db.put_received_transparent_utxo(&utxo).unwrap();
+        drop(db);
+
+        let result = create_shield_transparent_pczt(db_path, network, &account_uuid).unwrap();
+        let pczt = pczt::Pczt::parse(&result.pczt_bytes).unwrap();
+
+        assert_eq!(
+            *pczt.global().tx_version(),
+            zcash_protocol::constants::V6_TX_VERSION
+        );
+        assert!(!pczt.ironwood().actions().is_empty());
+        assert!(pczt.orchard().actions().is_empty());
+        assert_eq!(result.needs_sapling_params, false);
+        assert!(result.fee_zatoshi > 0);
+        assert!(result.shielded_zatoshi > 0);
     }
 
     #[test]

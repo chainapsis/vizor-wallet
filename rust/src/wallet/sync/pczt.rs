@@ -122,13 +122,38 @@ pub(crate) struct ExtractedPcztTransaction {
     pub tx: Transaction,
 }
 
-fn orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
-    static ORCHARD_PROVING_KEY: OnceLock<orchard::circuit::ProvingKey> = OnceLock::new();
-    ORCHARD_PROVING_KEY
-        .get_or_init(|| orchard::circuit::ProvingKey::build(orchard_circuit_version()))
+const LEGACY_V5_TX_VERSION: u32 = 5;
+
+fn legacy_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
+    static LEGACY_ORCHARD_PROVING_KEY: OnceLock<orchard::circuit::ProvingKey> = OnceLock::new();
+    LEGACY_ORCHARD_PROVING_KEY.get_or_init(|| {
+        orchard::circuit::ProvingKey::build(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2)
+    })
 }
 
-fn orchard_circuit_version() -> orchard::circuit::OrchardCircuitVersion {
+fn ironwood_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
+    static IRONWOOD_ORCHARD_PROVING_KEY: OnceLock<orchard::circuit::ProvingKey> = OnceLock::new();
+    IRONWOOD_ORCHARD_PROVING_KEY
+        .get_or_init(|| orchard::circuit::ProvingKey::build(ironwood_orchard_circuit_version()))
+}
+
+fn orchard_proving_key_for_tx_version(tx_version: u32) -> &'static orchard::circuit::ProvingKey {
+    if tx_version == LEGACY_V5_TX_VERSION {
+        legacy_orchard_proving_key()
+    } else {
+        ironwood_orchard_proving_key()
+    }
+}
+
+fn orchard_verifying_key_for_tx_version(tx_version: u32) -> orchard::circuit::VerifyingKey {
+    orchard::circuit::VerifyingKey::build(if tx_version == LEGACY_V5_TX_VERSION {
+        orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2
+    } else {
+        ironwood_orchard_circuit_version()
+    })
+}
+
+fn ironwood_orchard_circuit_version() -> orchard::circuit::OrchardCircuitVersion {
     orchard::circuit::OrchardCircuitVersion::Ironwood
 }
 
@@ -148,7 +173,10 @@ pub fn create_pczt_from_proposal(
     proposal_id: u64,
     send_flow_id: &str,
 ) -> Result<Vec<u8>, String> {
-    use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
+    use zcash_client_backend::data_api::wallet::{
+        create_pczt_from_proposal as zcb_create_pczt,
+        create_pczt_from_proposal_with_tx_version as zcb_create_pczt_with_tx_version,
+    };
     use zcash_client_backend::wallet::OvkPolicy;
 
     // Consume the proposal up-front (matches execute_proposal), so
@@ -161,13 +189,24 @@ pub fn create_pczt_from_proposal(
 
     let pczt = with_wallet_db_write_lock("pczt.create_pczt_from_proposal", || {
         let mut db = open_wallet_db(db_path, network)?;
-        zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
-            &mut db,
-            &network,
-            stored.account_id,
-            OvkPolicy::Sender,
-            &stored.proposal,
-        )
+        if let Some(proposed_tx_version) = stored.proposed_tx_version {
+            zcb_create_pczt_with_tx_version::<_, _, Infallible, _, Infallible, _>(
+                &mut db,
+                &network,
+                stored.account_id,
+                OvkPolicy::Sender,
+                &stored.proposal,
+                proposed_tx_version,
+            )
+        } else {
+            zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+                &mut db,
+                &network,
+                stored.account_id,
+                OvkPolicy::Sender,
+                &stored.proposal,
+            )
+        }
         .map_err(|e| format!("Create PCZT failed: {e}"))
     })?;
 
@@ -203,19 +242,20 @@ pub fn add_proofs_to_pczt(
     use pczt::roles::prover::Prover;
 
     let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
+    let tx_version = *pczt.global().tx_version();
 
     let mut prover = Prover::new(pczt);
 
     if prover.requires_orchard_proof() {
         prover = prover
-            .create_orchard_proof(orchard_proving_key())
+            .create_orchard_proof(orchard_proving_key_for_tx_version(tx_version))
             .map_err(|e| format!("Orchard proof: {e:?}"))?;
     }
 
     #[cfg(zcash_unstable = "nu7")]
     if prover.requires_ironwood_proof() {
         prover = prover
-            .create_ironwood_proof(orchard_proving_key())
+            .create_ironwood_proof(ironwood_orchard_proving_key())
             .map_err(|e| format!("Ironwood proof: {e:?}"))?;
     }
 
@@ -282,7 +322,13 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
         })
         .finish();
 
-    Ok(redacted.serialize())
+    if *redacted.global().tx_version() == 5 {
+        redacted
+            .serialize_legacy_v1()
+            .map_err(|e| format!("Serialize legacy PCZT for signer: {e}"))
+    } else {
+        Ok(redacted.serialize())
+    }
 }
 
 pub(crate) fn set_orchard_anchor_and_witness(
@@ -355,7 +401,6 @@ pub(crate) fn extract_transaction_from_pczt(
     use pczt::roles::spend_finalizer::SpendFinalizer;
     use pczt::roles::tx_extractor::TransactionExtractor;
 
-    let orchard_vk = orchard::circuit::VerifyingKey::build(orchard_circuit_version());
     let sapling_vks: Option<(
         sapling_crypto::circuit::SpendVerifyingKey,
         sapling_crypto::circuit::OutputVerifyingKey,
@@ -374,10 +419,14 @@ pub(crate) fn extract_transaction_from_pczt(
     .finalize_spends()
     .map_err(|e| format!("Finalize transparent spends in PCZT: {e:?}"))?;
 
+    let tx_version = *finalized_pczt.global().tx_version();
+    let orchard_vk = orchard_verifying_key_for_tx_version(tx_version);
+    let ironwood_vk = orchard::circuit::VerifyingKey::build(ironwood_orchard_circuit_version());
+
     let mut extractor = TransactionExtractor::new(finalized_pczt).with_orchard(&orchard_vk);
     #[cfg(zcash_unstable = "nu7")]
     {
-        extractor = extractor.with_ironwood(&orchard_vk);
+        extractor = extractor.with_ironwood(&ironwood_vk);
     }
     if let Some((spend_vk, output_vk)) = sapling_vks.as_ref() {
         extractor = extractor.with_sapling(spend_vk, output_vk);
@@ -413,8 +462,6 @@ pub async fn extract_and_broadcast_pczt(
     use zcash_client_backend::data_api::wallet::{
         decrypt_and_store_transaction, extract_and_store_transaction_from_pczt,
     };
-
-    let orchard_vk = orchard::circuit::VerifyingKey::build(orchard_circuit_version());
 
     // Load Sapling verifying keys once if the caller supplied params.
     // The prover keeps the underlying params alive, and
@@ -456,9 +503,12 @@ pub async fn extract_and_broadcast_pczt(
             // rejects the extraction with `SaplingRequired` before we can
             // store anything.
             let sapling_vk_pair = sapling_vks.as_ref().map(|(s, o)| (s, o));
+            let combined_pczt = combine_pczts(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?;
+            let tx_version = *combined_pczt.global().tx_version();
+            let orchard_vk = orchard_verifying_key_for_tx_version(tx_version);
             match extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
                 &mut db,
-                combine_pczts(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?,
+                combined_pczt,
                 sapling_vk_pair,
                 Some(&orchard_vk),
             ) {

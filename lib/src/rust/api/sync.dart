@@ -215,6 +215,7 @@ Future<ProposalResult> proposeSend({
   required String toAddress,
   required BigInt amountZatoshi,
   String? memo,
+  required bool legacyV5Pczt,
 }) => RustLib.instance.api.crateApiSyncProposeSend(
   dbPath: dbPath,
   network: network,
@@ -223,6 +224,7 @@ Future<ProposalResult> proposeSend({
   toAddress: toAddress,
   amountZatoshi: amountZatoshi,
   memo: memo,
+  legacyV5Pczt: legacyV5Pczt,
 );
 
 /// Propose a PCZT batch while reserving selected shielded notes between messages.
@@ -250,6 +252,7 @@ Future<BigInt> estimateFee({
   required String toAddress,
   required BigInt amountZatoshi,
   String? memo,
+  required bool legacyV5Pczt,
 }) => RustLib.instance.api.crateApiSyncEstimateFee(
   dbPath: dbPath,
   network: network,
@@ -257,6 +260,7 @@ Future<BigInt> estimateFee({
   toAddress: toAddress,
   amountZatoshi: amountZatoshi,
   memo: memo,
+  legacyV5Pczt: legacyV5Pczt,
 );
 
 /// Estimate the maximum recipient amount for the current recipient and memo.
@@ -266,12 +270,14 @@ Future<SendMaxEstimateResult> estimateSendMax({
   required String accountUuid,
   required String toAddress,
   String? memo,
+  required bool legacyV5Pczt,
 }) => RustLib.instance.api.crateApiSyncEstimateSendMax(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
   toAddress: toAddress,
   memo: memo,
+  legacyV5Pczt: legacyV5Pczt,
 );
 
 /// Step 2: Execute a previously proposed transfer and broadcast to the network.
@@ -489,7 +495,7 @@ Future<ShieldTransparentStatus> getShieldTransparentStatus({
   accountUuid: accountUuid,
 );
 
-/// Create a PCZT for shielding spendable transparent funds on a hardware account.
+/// Create an Ironwood transparent-shielding PCZT for hardware accounts.
 Future<ShieldTransparentPcztResult> createShieldTransparentPczt({
   required String dbPath,
   required String network,
@@ -501,8 +507,7 @@ Future<ShieldTransparentPcztResult> createShieldTransparentPczt({
 );
 
 /// Shield spendable transparent funds into the account's shielded balance.
-/// Software-account only; hardware shielding uses `create_shield_transparent_pczt`
-/// followed by the PCZT QR signing flow.
+/// Software-account only.
 Future<ShieldTransparentResult> shieldTransparentBalance({
   required String dbPath,
   required String lightwalletdUrl,

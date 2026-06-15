@@ -30,6 +30,7 @@ import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
+import '../../keystone/legacy_v5_pczt_mode.dart';
 import '../../migration/providers/orchard_migration_status_provider.dart';
 import '../models/send_prefill_args.dart';
 import 'send_review_screen.dart';
@@ -386,6 +387,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         parseZecAmount(_amountController.text.trim()) == quote.amountZatoshi;
   }
 
+  bool get _useLegacyV5Pczt {
+    return shouldUseLegacyV5PcztForAccount(
+      accountUuid: widget.activeAccountUuid,
+      isHardwareAccount: ref.read(accountProvider.notifier).isHardwareAccount,
+    );
+  }
+
   int get _memoLength => utf8.encode(_memoController.text).length;
 
   String? get _memoError {
@@ -466,11 +474,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         accountUuid: accountUuid,
         toAddress: address,
         memo: memo.isNotEmpty ? memo : null,
+        legacyV5Pczt: _useLegacyV5Pczt,
       );
+      final amountZatoshi = estimate.amountZatoshi;
 
       if (!mounted || !_isMaxMode || seq != _maxSeq) return;
 
-      if (estimate.amountZatoshi <= BigInt.zero) {
+      if (amountZatoshi <= BigInt.zero) {
         setState(() {
           _isResolvingMax = false;
           _maxQuote = null;
@@ -480,7 +490,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       }
 
       final amountText = ZecAmount.fromZatoshi(
-        estimate.amountZatoshi,
+        amountZatoshi,
       ).pretty().amountText;
       _programmaticAmountEdit = true;
       _amountController.value = TextEditingValue(
@@ -496,7 +506,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
           accountUuid: accountUuid,
           address: address,
           memo: memo,
-          amountZatoshi: estimate.amountZatoshi,
+          amountZatoshi: amountZatoshi,
         );
       });
     } catch (e) {
@@ -566,6 +576,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         toAddress: address,
         amountZatoshi: zatoshi,
         memo: memo.isNotEmpty ? memo : null,
+        legacyV5Pczt: _useLegacyV5Pczt,
       );
 
       // Stale check — new input arrived while awaiting
@@ -701,6 +712,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         toAddress: address,
         amountZatoshi: amountZatoshi,
         memo: memo.isNotEmpty ? memo : null,
+        legacyV5Pczt: _useLegacyV5Pczt,
       );
       activeProposalId = proposal.proposalId;
 

@@ -12,9 +12,9 @@ import '../../../app_bootstrap.dart';
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/formatting/zec_amount.dart';
-import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
+import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
@@ -59,7 +59,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _canBackgroundSync = false;
   bool _isShieldingBalance = false;
-  bool _showKeystoneShieldSigning = false;
+  bool _showKeystoneShielding = false;
   String? _shieldBalanceError;
   String? _shieldBalanceErrorDetail;
 
@@ -108,8 +108,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     final accountNotifier = ref.read(accountProvider.notifier);
     if (accountNotifier.isHardwareAccount(accountUuid)) {
+      final sync = (ref.read(syncProvider).value ?? SyncState())
+          .scopedToAccount(accountUuid);
+      if (!sync.canShieldTransparentBalance) {
+        setState(() {
+          _shieldBalanceError =
+              'Transparent balance is too small to shield after fees.';
+          _shieldBalanceErrorDetail = null;
+        });
+        return;
+      }
+
       setState(() {
-        _showKeystoneShieldSigning = true;
+        _showKeystoneShielding = true;
         _shieldBalanceError = null;
         _shieldBalanceErrorDetail = null;
       });
@@ -267,9 +278,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return message.isEmpty ? null : message;
   }
 
-  void _closeKeystoneShieldSigning() {
+  void _closeKeystoneShielding() {
     setState(() {
-      _showKeystoneShieldSigning = false;
+      _showKeystoneShielding = false;
     });
   }
 
@@ -370,10 +381,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
             ),
-            if (_showKeystoneShieldSigning)
+            if (_showKeystoneShielding)
               KeystoneShieldSigningOverlay(
-                onCancel: _closeKeystoneShieldSigning,
-                onComplete: _closeKeystoneShieldSigning,
+                onCancel: _closeKeystoneShielding,
+                onComplete: _closeKeystoneShielding,
               ),
           ],
         ),

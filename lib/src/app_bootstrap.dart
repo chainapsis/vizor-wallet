@@ -7,8 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
 import '../main.dart' show log;
-import 'core/profile_pictures.dart';
 import 'core/config/rpc_endpoint_config.dart';
+import 'core/profile_pictures.dart';
 import 'core/storage/app_secure_store.dart';
 import 'core/storage/wallet_paths.dart';
 import 'providers/account_models.dart';
