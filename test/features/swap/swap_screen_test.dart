@@ -3976,8 +3976,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('activity_screen_row_5')), findsOneWidget);
-    expect(find.byKey(const ValueKey('activity_screen_row_6')), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap:swap-page-5')), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap:swap-page-6')), findsOneWidget);
     final filterLabel = tester.widget<Text>(
       find.byKey(const ValueKey('activity_screen_filter_label')),
     );

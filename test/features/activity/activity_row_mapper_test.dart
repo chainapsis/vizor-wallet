@@ -41,6 +41,25 @@ void main() {
     expect(row.statusText, 'In progress');
   });
 
+  testWidgets('transaction rows expose a stable identity', (tester) async {
+    final row = await mapRow(tester, _transaction(txKind: 'sent'));
+
+    expect(row.stableId, 'tx:ab12cd34:sent');
+  });
+
+  testWidgets('receive rows keep identity when pending rows are mined', (
+    tester,
+  ) async {
+    final pending = await mapRow(
+      tester,
+      _transaction(txKind: 'receiving', minedHeight: BigInt.zero),
+    );
+    final confirmed = await mapRow(tester, _transaction(txKind: 'received'));
+
+    expect(pending.stableId, 'tx:ab12cd34:received');
+    expect(confirmed.stableId, pending.stableId);
+  });
+
   testWidgets('unconfirmed receive renders as an in-flight loader row', (
     tester,
   ) async {

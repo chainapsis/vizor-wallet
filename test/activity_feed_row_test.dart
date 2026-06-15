@@ -368,6 +368,21 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('activity feed uses stable row ids when available', (
+    tester,
+  ) async {
+    await _pumpActivityFeed(
+      tester,
+      rows: [
+        _row(title: 'Received', stableId: 'tx:received:received'),
+        _row(title: 'Sent', stableId: 'tx:sent:sent'),
+      ],
+    );
+
+    expect(find.byKey(const ValueKey('tx:received:received')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tx:sent:sent')), findsOneWidget);
+  });
 }
 
 Future<void> _pumpMappedTransactions(
@@ -445,6 +460,7 @@ rust_sync.TransactionInfo _tx({
 
 ActivityRowData _row({
   required String title,
+  String? stableId,
   String leadingIconName = AppIcons.sync,
   String? subtitle,
   String? amountSubtitle,
@@ -454,6 +470,7 @@ ActivityRowData _row({
   VoidCallback? onTap,
 }) {
   return ActivityRowData(
+    stableId: stableId,
     title: title,
     leadingIconName: leadingIconName,
     leadingBackgroundColor: const Color(0xFFE1E1E1),

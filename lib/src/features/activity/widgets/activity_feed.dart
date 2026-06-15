@@ -181,6 +181,12 @@ class _ActivityFeedBody extends StatelessWidget {
   }
 }
 
+ValueKey<String>? _stableRowKey(ActivityRowData row) {
+  final stableId = row.stableId;
+  if (stableId == null || stableId.isEmpty) return null;
+  return ValueKey(stableId);
+}
+
 class _ActivityFeedMessageCard extends StatelessWidget {
   const _ActivityFeedMessageCard({required this.text, this.isError = false});
 
@@ -243,7 +249,9 @@ class _ActivityFeedCard extends StatelessWidget {
               for (var index = 0; index < section.rows.length; index++) ...[
                 if (index > 0) const SizedBox(height: 12),
                 ActivityFeedRowGroup(
-                  key: rowKeyBuilder?.call(),
+                  key:
+                      _stableRowKey(section.rows[index]) ??
+                      rowKeyBuilder?.call(),
                   row: section.rows[index],
                 ),
               ],
@@ -294,7 +302,9 @@ class ActivityFeedRowGroup extends StatelessWidget {
             children: [
               for (final childRow in row.childRows)
                 TweenAnimationBuilder<double>(
-                  key: ValueKey('activity_child_${childRow.title}'),
+                  key: ValueKey(
+                    'activity_child_${childRow.stableId ?? childRow.title}',
+                  ),
                   tween: Tween(begin: 0, end: 1),
                   duration: const Duration(milliseconds: 280),
                   curve: Curves.easeOutCubic,

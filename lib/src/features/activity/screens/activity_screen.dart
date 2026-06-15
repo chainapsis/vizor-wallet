@@ -40,6 +40,8 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   bool _isLoading = true;
   String? _error;
   String? _activeAccountUuid;
+  int _transactionLoadGeneration = 0;
+  bool _pendingTransactionRefresh = false;
   Timer? _swapActivityRefreshTimer;
   String? _swapActivityRefreshAccountUuid;
 
@@ -47,7 +49,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   void initState() {
     super.initState();
     _activeAccountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    _loadTransactions(showLoading: true);
+    _loadTransactions(showLoading: true, clearExisting: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
@@ -63,18 +65,20 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
 
   Future<void> _loadTransactions({
     bool showLoading = false,
-    bool resetPage = false,
+    bool clearExisting = false,
   }) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    final generation = ++_transactionLoadGeneration;
+    _pendingTransactionRefresh = false;
     _activeAccountUuid = accountUuid;
 
-    if ((showLoading || resetPage) && mounted) {
+    if ((showLoading || clearExisting) && mounted) {
       setState(() {
         if (showLoading) {
           _isLoading = true;
           _error = null;
         }
-        if (resetPage) {
+        if (clearExisting) {
           _transactions = null;
           _transactionsAccountUuid = accountUuid;
         }
@@ -100,8 +104,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         network: endpoint.networkName,
         accountUuid: accountUuid,
       );
-      if (!mounted) return;
-      if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+      if (!_isCurrentTransactionLoad(generation, accountUuid)) {
         return;
       }
       setState(() {
@@ -110,18 +113,54 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         _isLoading = false;
         _error = null;
       });
+      _runPendingTransactionRefreshIfNeeded(generation, accountUuid);
     } catch (e, st) {
       log('Activity: transaction load failed: $e\n$st');
-      if (!mounted) return;
-      if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+      if (!_isCurrentTransactionLoad(generation, accountUuid)) {
         return;
       }
+      final hasExistingTransactions =
+          _transactionsAccountUuid == accountUuid && _transactions != null;
+      if (hasExistingTransactions && !clearExisting) return;
       setState(() {
         _transactionsAccountUuid = accountUuid;
         _error = 'Activity could not be loaded.';
         _isLoading = false;
       });
+      _runPendingTransactionRefreshIfNeeded(generation, accountUuid);
     }
+  }
+
+  bool _isCurrentTransactionLoad(int generation, String? accountUuid) {
+    return mounted &&
+        generation == _transactionLoadGeneration &&
+        accountUuid == ref.read(accountProvider).value?.activeAccountUuid;
+  }
+
+  void _runPendingTransactionRefreshIfNeeded(
+    int generation,
+    String accountUuid,
+  ) {
+    if (!_pendingTransactionRefresh) return;
+    if (!_isCurrentTransactionLoad(generation, accountUuid)) return;
+    _pendingTransactionRefresh = false;
+    unawaited(_loadTransactions());
+  }
+
+  void _refreshTransactionsAfterSyncChange() {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+    final hasLoadedTransactions =
+        _transactionsAccountUuid == accountUuid && _transactions != null;
+    if (hasLoadedTransactions) {
+      unawaited(_loadTransactions());
+      return;
+    }
+    if (_isLoading) {
+      _pendingTransactionRefresh = true;
+      return;
+    }
+    unawaited(_loadTransactions(showLoading: true, clearExisting: true));
   }
 
   void _openTransactionStatus(rust_sync.TransactionInfo transaction) {
@@ -235,7 +274,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     ref.listen<AsyncValue<AccountState>>(accountProvider, (previous, next) {
       final nextUuid = next.value?.activeAccountUuid;
       if (nextUuid != _activeAccountUuid) {
-        unawaited(_loadTransactions(showLoading: true, resetPage: true));
+        unawaited(_loadTransactions(showLoading: true, clearExisting: true));
         _syncSwapActivityStatusRefresh();
       }
     });
@@ -243,27 +282,19 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       final prevSig = _recentSignature(previous?.value);
       final nextSig = _recentSignature(next.value);
       if (prevSig != nextSig) {
-        unawaited(_loadTransactions(resetPage: true));
+        _refreshTransactionsAfterSyncChange();
       }
     });
 
-    final syncState = ref.watch(syncProvider).value;
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
-    final sync = (syncState ?? SyncState()).scopedToAccount(accountUuid);
-    final hasSyncForActiveAccount =
-        syncState?.hasDataForAccount(accountUuid) ?? false;
     final loadedTransactions = _transactionsAccountUuid == accountUuid
         ? _transactions
         : null;
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final transactions =
-        loadedTransactions ??
-        (hasSyncForActiveAccount
-            ? sync.recentTransactions
-            : const <rust_sync.TransactionInfo>[]);
+        loadedTransactions ?? const <rust_sync.TransactionInfo>[];
     final canRenderTransactions =
-        accountUuid != null &&
-        (loadedTransactions != null || hasSyncForActiveAccount);
+        accountUuid != null && loadedTransactions != null;
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final swapItems = accountUuid == null || !swapFeatureEnabled
         ? const <SwapActivityRowItem>[]

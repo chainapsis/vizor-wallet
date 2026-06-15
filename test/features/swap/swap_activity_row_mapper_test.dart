@@ -45,6 +45,7 @@ void main() {
     );
 
     expect(row!.title, 'Swapping...');
+    expect(row!.stableId, 'swap:swap-1');
     expect(row!.subtitle, 'ZEC Zcash');
     expect(row!.subtitleIconName, isNull);
     expect(row!.amountText, '-0.0030 ZEC');
@@ -179,6 +180,7 @@ void main() {
     expect(row!.statusText, 'Completed');
     expect(row!.leadingProgressValue, isNull);
     expect(row!.childRows, hasLength(1));
+    expect(row!.childRows.single.stableId, 'swap:swap-private:deposited');
     expect(row!.childRows.single.amountText, isNot(contains('0.21')));
     expect(row!.childRows.single.amountText, contains('***'));
   });
@@ -380,6 +382,7 @@ void main() {
       expect(row!.title, 'Swapped');
       expect(row!.childRows, hasLength(1));
       final child = row!.childRows.single;
+      expect(child.stableId, 'swap:swap-receive:received');
       expect(child.title, 'Received ZEC');
       // The absorbed on-chain receive carries the real settled amount, which
       // wins over the quote estimate ('+4.12 ZEC').

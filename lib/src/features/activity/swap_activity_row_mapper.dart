@@ -99,6 +99,7 @@ ActivityRowData buildSwapActivityRow({
   final progress = _swapActivityProgress(item);
 
   return ActivityRowData(
+    stableId: 'swap:${item.intentId}',
     title: _swapActivityTitle(item.status),
     leadingIconName: AppIcons.swapArrows,
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
@@ -173,6 +174,8 @@ List<ActivityRowData> _swapActivityChildRows({
         );
   return [
     ActivityRowData(
+      stableId:
+          'swap:${item.intentId}:${receivesZec ? 'received' : 'deposited'}',
       title: receivesZec
           ? 'Received ${receiveAsset.symbol}'
           : 'Deposited ${receiveAsset.symbol}',
