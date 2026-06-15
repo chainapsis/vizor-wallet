@@ -20,7 +20,6 @@ import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/zcash/transparent_shielding_policy.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
@@ -36,6 +35,7 @@ import '../../activity/swap_activity_row_mapper.dart';
 import '../../activity/widgets/activity_table.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
+import '../widgets/keystone_shield_signing_overlay.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
@@ -59,6 +59,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _canBackgroundSync = false;
   bool _isShieldingBalance = false;
+  bool _showKeystoneShielding = false;
   String? _shieldBalanceError;
   String? _shieldBalanceErrorDetail;
 
@@ -107,8 +108,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     final accountNotifier = ref.read(accountProvider.notifier);
     if (accountNotifier.isHardwareAccount(accountUuid)) {
+      final sync = (ref.read(syncProvider).value ?? SyncState())
+          .scopedToAccount(accountUuid);
+      if (!sync.canShieldTransparentBalance) {
+        setState(() {
+          _shieldBalanceError =
+              'Transparent balance is too small to shield after fees.';
+          _shieldBalanceErrorDetail = null;
+        });
+        return;
+      }
+
       setState(() {
-        _shieldBalanceError = kKeystoneTransparentShieldingUnavailableMessage;
+        _showKeystoneShielding = true;
+        _shieldBalanceError = null;
         _shieldBalanceErrorDetail = null;
       });
       return;
@@ -265,6 +278,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return message.isEmpty ? null : message;
   }
 
+  void _closeKeystoneShielding() {
+    setState(() {
+      _showKeystoneShielding = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final walletAsync = ref.watch(walletProvider);
@@ -299,16 +318,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         sync.ironwoodPendingBalance;
     final transparentBalance =
         sync.transparentBalance + sync.transparentPendingBalance;
-    final activeAccountIsHardware = ref.watch(
-      accountProvider.select(
-        (value) => value.value?.activeAccount?.isHardware ?? false,
-      ),
-    );
-    final canShieldTransparentBalance =
-        sync.canShieldTransparentBalance &&
-        transparentShieldingAvailableForAccount(
-          isHardwareAccount: activeAccountIsHardware,
-        );
+    final canShieldTransparentBalance = sync.canShieldTransparentBalance;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -371,6 +381,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
             ),
+            if (_showKeystoneShielding)
+              KeystoneShieldSigningOverlay(
+                onCancel: _closeKeystoneShielding,
+                onComplete: _closeKeystoneShielding,
+              ),
           ],
         ),
       ),

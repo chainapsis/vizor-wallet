@@ -495,13 +495,42 @@ pub(crate) fn get_shield_transparent_status(
     }
 }
 
-/// Hardware transparent shielding is disabled until it can shield to Ironwood.
+/// Create an Ironwood transparent-shielding PCZT for hardware accounts.
 pub(crate) fn create_shield_transparent_pczt(
-    _db_path: &str,
-    _network: WalletNetwork,
-    _account_uuid: &str,
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
 ) -> Result<ShieldTransparentPcztResult, String> {
-    Err("Keystone transparent shielding is not available after NU7 yet.".to_string())
+    use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
+
+    let shielding_threshold = shielding_threshold()?;
+
+    with_wallet_db_write_lock("send.create_shield_transparent_pczt", || {
+        let mut db = open_wallet_db(db_path, network)?;
+        let account_id = parse_account_uuid(account_uuid)?;
+        let (proposal, _) =
+            build_shielding_proposal(&mut db, network, account_id, shielding_threshold)?;
+        let fee_zatoshi = proposal_fee_zatoshi(&proposal);
+        let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
+
+        let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+            &mut db,
+            &network,
+            account_id,
+            OvkPolicy::Sender,
+            &proposal,
+        )
+        .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
+        let pczt_bytes = pczt.serialize();
+        ensure_transparent_shielding_pczt_targets_ironwood(&pczt_bytes)?;
+
+        Ok(ShieldTransparentPcztResult {
+            pczt_bytes,
+            fee_zatoshi,
+            shielded_zatoshi,
+            needs_sapling_params: false,
+        })
+    })
 }
 
 /// Shield spendable transparent funds for a software account to its
@@ -4110,6 +4139,30 @@ fn proposal_shielded_zatoshi(proposal: &Proposal<WalletFeeRule, Infallible>) -> 
         .sum()
 }
 
+#[cfg(zcash_unstable = "nu7")]
+fn ensure_transparent_shielding_pczt_targets_ironwood(pczt_bytes: &[u8]) -> Result<(), String> {
+    let pczt = pczt::Pczt::parse(pczt_bytes)
+        .map_err(|e| format!("Parse transparent shielding PCZT: {e:?}"))?;
+    if *pczt.global().tx_version() != zcash_protocol::constants::V6_TX_VERSION {
+        return Err("Transparent shielding PCZT must use transaction v6 after NU7.".to_string());
+    }
+    if pczt.ironwood().actions().is_empty() {
+        return Err("Transparent shielding PCZT did not target Ironwood.".to_string());
+    }
+    if !pczt.orchard().actions().is_empty() {
+        return Err(
+            "Transparent shielding PCZT unexpectedly contains legacy Orchard actions.".to_string(),
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(not(zcash_unstable = "nu7"))]
+fn ensure_transparent_shielding_pczt_targets_ironwood(_pczt_bytes: &[u8]) -> Result<(), String> {
+    Err("Keystone transparent shielding requires NU7/Ironwood support.".to_string())
+}
+
 fn same_prepared_note_without_nullifier(
     lhs: &super::migration::PreparedOrchardNoteRef,
     rhs: &super::migration::PreparedOrchardNoteRef,
@@ -5163,6 +5216,62 @@ mod tests {
         assert_eq!(result.message.as_deref(), Some("Broadcast could not start"));
         assert_eq!(result.fee_zatoshi, 10_000);
         assert_eq!(result.shielded_zatoshi, 90_000);
+    }
+
+    #[test]
+    #[cfg(zcash_unstable = "nu7")]
+    fn keystone_transparent_shielding_pczt_targets_ironwood() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let network = WalletNetwork::LocalIronwoodTestnet;
+        let mnemonic = crate::wallet::keys::generate_mnemonic();
+        let seed = crate::wallet::keys::mnemonic_to_seed(&mnemonic).unwrap();
+        let (account_uuid, _) = crate::wallet::keys::init_db_and_create_account(
+            db_path,
+            network,
+            &seed,
+            Some(1),
+            "shield",
+        )
+        .unwrap();
+        let account_id = parse_account_uuid(&account_uuid).unwrap();
+
+        let mut db = open_wallet_db(db_path, network).unwrap();
+        let tip = BlockHeight::from_u32(120);
+        db.update_chain_tip(tip).unwrap();
+
+        let ua_request = zcash_keys::keys::UnifiedAddressRequest::custom(
+            ReceiverRequirement::Require,
+            ReceiverRequirement::Require,
+            ReceiverRequirement::Require,
+        )
+        .unwrap();
+        let (ua, _) = db
+            .get_next_available_address(account_id, ua_request)
+            .unwrap()
+            .unwrap();
+        let taddr = *ua.transparent().unwrap();
+        let outpoint = OutPoint::new([42u8; 32], 0);
+        let txout = TxOut::new(Zatoshis::const_from_u64(1_000_000), taddr.script().into());
+        let utxo =
+            WalletTransparentOutput::from_parts(outpoint, txout, Some(tip), None, None, None)
+                .unwrap();
+        db.put_received_transparent_utxo(&utxo).unwrap();
+        drop(db);
+
+        let result = create_shield_transparent_pczt(db_path, network, &account_uuid).unwrap();
+        let pczt = pczt::Pczt::parse(&result.pczt_bytes).unwrap();
+
+        assert_eq!(
+            *pczt.global().tx_version(),
+            zcash_protocol::constants::V6_TX_VERSION
+        );
+        assert!(!pczt.ironwood().actions().is_empty());
+        assert!(pczt.orchard().actions().is_empty());
+        assert_eq!(result.needs_sapling_params, false);
+        assert!(result.fee_zatoshi > 0);
+        assert!(result.shielded_zatoshi > 0);
     }
 
     #[test]

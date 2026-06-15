@@ -8,7 +8,6 @@ import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/config/rpc_endpoint_config.dart';
 import '../core/storage/wallet_paths.dart';
-import '../core/zcash/transparent_shielding_policy.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import '../services/background_sync_delegate.dart';
 import 'account_provider.dart';
@@ -1701,13 +1700,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     required BigInt transparentBalance,
   }) async {
     if (transparentBalance <= BigInt.zero) {
-      return (canShield: false, fee: BigInt.zero, amount: BigInt.zero);
-    }
-    if (!transparentShieldingAvailableForAccount(
-      isHardwareAccount: ref
-          .read(accountProvider.notifier)
-          .isHardwareAccount(accountUuid),
-    )) {
       return (canShield: false, fee: BigInt.zero, amount: BigInt.zero);
     }
 

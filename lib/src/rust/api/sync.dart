@@ -495,7 +495,7 @@ Future<ShieldTransparentStatus> getShieldTransparentStatus({
   accountUuid: accountUuid,
 );
 
-/// Hardware transparent shielding is disabled until it can shield to Ironwood.
+/// Create an Ironwood transparent-shielding PCZT for hardware accounts.
 Future<ShieldTransparentPcztResult> createShieldTransparentPczt({
   required String dbPath,
   required String network,

@@ -1324,7 +1324,7 @@ pub fn get_shield_transparent_status(
     })
 }
 
-/// Hardware transparent shielding is disabled until it can shield to Ironwood.
+/// Create an Ironwood transparent-shielding PCZT for hardware accounts.
 pub fn create_shield_transparent_pczt(
     db_path: String,
     network: String,

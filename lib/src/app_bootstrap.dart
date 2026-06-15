@@ -11,7 +11,6 @@ import 'core/config/rpc_endpoint_config.dart';
 import 'core/profile_pictures.dart';
 import 'core/storage/app_secure_store.dart';
 import 'core/storage/wallet_paths.dart';
-import 'core/zcash/transparent_shielding_policy.dart';
 import 'providers/account_models.dart';
 import 'rust/api/sync.dart' as rust_sync;
 import 'rust/api/wallet.dart' as rust_wallet;
@@ -302,15 +301,6 @@ Future<AppBootstrapState> loadAppBootstrap() async {
 
     final accounts = rustAccounts.isNotEmpty ? rustAccounts : storedAccounts;
     final activeAccountUuid = _resolveActiveUuid(storedActiveUuid, accounts);
-    AccountInfo? activeAccount;
-    if (activeAccountUuid != null) {
-      for (final account in accounts) {
-        if (account.uuid == activeAccountUuid) {
-          activeAccount = account;
-          break;
-        }
-      }
-    }
     final activeAddress = !isUnlocked || activeAccountUuid == null
         ? null
         : rustAddressesByUuid[activeAccountUuid];
@@ -322,7 +312,6 @@ Future<AppBootstrapState> loadAppBootstrap() async {
         dbPath: dbPath,
         network: walletNetwork,
         accountUuid: activeAccountUuid,
-        isHardwareAccount: activeAccount?.isHardware ?? false,
       );
     }
 
@@ -541,7 +530,6 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
   required String dbPath,
   required String network,
   required String accountUuid,
-  required bool isHardwareAccount,
 }) async {
   try {
     final syncStatus = await rust_sync.getSyncStatus(
@@ -562,10 +550,7 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
     var canShieldTransparentBalance = false;
     var shieldTransparentFee = BigInt.zero;
     var shieldTransparentAmount = BigInt.zero;
-    if (balance.transparent > BigInt.zero &&
-        transparentShieldingAvailableForAccount(
-          isHardwareAccount: isHardwareAccount,
-        )) {
+    if (balance.transparent > BigInt.zero) {
       try {
         final shieldStatus = await rust_sync.getShieldTransparentStatus(
           dbPath: dbPath,
