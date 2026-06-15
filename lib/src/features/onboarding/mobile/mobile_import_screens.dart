@@ -6,15 +6,13 @@ import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/app_toast.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import 'mobile_onboarding_scaffold.dart';
 
-/// Mnemonic lengths the wallet accepts. The Figma frames show a fixed
-/// 24-slot card; shorter standard phrases are accepted anyway and the
-/// counter simply stops early (WIP-design gap filled deliberately).
+/// Mnemonic lengths the wallet accepts from clipboard or manual entry.
 const kMnemonicWordCounts = [12, 15, 18, 21, 24];
 const kMnemonicMaxWords = 24;
+const _kImportSeedCardWidth = 361.0;
 
 /// Words ready for review, carried between the import steps.
 class MobileImportReviewArgs {
@@ -42,10 +40,11 @@ String? validateImportedMnemonic(List<String> words) {
   return null;
 }
 
-/// Import entry — Figma `Import — Secret Passprhase Paste` /
-/// `Clipboard Errors` (4575:108577 / 4575:108752): the empty numbered
-/// slots with a paste action, clipboard problems surfaced as toasts,
-/// and an Enter Manually link into the word-by-word wizard.
+enum _ImportPastePhase { idle, reading, error }
+
+/// Import entry — Figma `Import — Secret Passprhase Paste`
+/// (4575:108577 / 4746:82920 / 4746:22880): a clipboard-reading card
+/// with idle, loading, and error states, plus a manual-entry link.
 class MobileImportScreen extends StatefulWidget {
   const MobileImportScreen({super.key});
 
@@ -54,254 +53,227 @@ class MobileImportScreen extends StatefulWidget {
 }
 
 class _MobileImportScreenState extends State<MobileImportScreen> {
-  List<String> _words = const [];
-  String? _error;
+  _ImportPastePhase _phase = _ImportPastePhase.idle;
 
   Future<void> _paste() async {
+    if (_phase == _ImportPastePhase.reading) return;
+    setState(() => _phase = _ImportPastePhase.reading);
+
     String? text;
     try {
       text = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
     } catch (e) {
       log('MobileImport: ERROR reading clipboard: $e');
-      if (mounted) {
-        showAppToast(
-          context,
-          "Can't read clipboard data",
-          iconName: AppIcons.cross,
-        );
-      }
+      if (mounted) setState(() => _phase = _ImportPastePhase.error);
       return;
     }
+    if (!mounted) return;
+
     final words = (text ?? '')
         .split(RegExp(r'\s+'))
         .where((w) => w.isNotEmpty)
         .map((w) => w.toLowerCase())
         .toList();
     if (words.isEmpty) {
-      if (!mounted) return;
-      setState(() {
-        _words = const [];
-        _error = null;
-      });
-      showAppToast(context, 'Clipboard is empty', iconName: AppIcons.cross);
+      setState(() => _phase = _ImportPastePhase.error);
       return;
     }
     final error = validateImportedMnemonic(words);
-    setState(() {
-      _words = words;
-      _error = error;
-    });
-  }
-
-  void _clear() {
-    setState(() {
-      _words = const [];
-      _error = null;
-    });
-  }
-
-  void _confirm() {
-    context.push(
+    if (error != null) {
+      log('MobileImport: rejected clipboard mnemonic: $error');
+      setState(() => _phase = _ImportPastePhase.error);
+      return;
+    }
+    setState(() => _phase = _ImportPastePhase.idle);
+    if (!mounted) return;
+    await context.push(
       '/import/review',
-      extra: MobileImportReviewArgs(words: _words),
+      extra: MobileImportReviewArgs(words: words),
     );
   }
 
-  bool get _filled => _words.isNotEmpty && _error == null;
-
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     return MobileOnboardingStepScaffold(
       progress: 0.2,
       onBack: () => Navigator.of(context).maybePop(),
-      title: 'Import Your Wallet',
+      title: 'Import Wallet',
       // Line break matches the Figma subtitle wrap.
-      subtitle: 'Paste your Secret Passphrase or\nenter it manually word by word.',
-      bottomArea: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      subtitle:
+          'Paste your Secret Passphrase or\nenter it manually word by word.',
+      child: Column(
         children: [
-          if (_error != null) ...[
-            Text(
-              _error!,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.destructive,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          if (_filled) ...[
-            // Pasted state — Figma fills the slots in place and swaps
-            // the actions for confirm / clear.
-            AppButton(
-              key: const ValueKey('mobile_import_confirm'),
-              expand: true,
-              onPressed: _confirm,
-              trailing: const AppIcon(AppIcons.chevronForward),
-              child: const Text('Confirm & import'),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Semantics(
-              button: true,
-              child: GestureDetector(
-                key: const ValueKey('mobile_import_clear'),
-                behavior: HitTestBehavior.opaque,
-                onTap: _clear,
-                child: SizedBox(
-                  height: 44,
-                  child: Center(
-                    child: Text(
-                      'Clear secret phrase',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.primary,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ] else ...[
-            AppButton(
-              key: const ValueKey('mobile_import_paste'),
-              expand: true,
-              onPressed: _paste,
-              // No explicit icon color: AppButton's IconTheme tints it
-              // with the label color (white on the primary fill).
-              leading: const AppIcon(AppIcons.copy),
-              child: const Text('Paste secret phrase'),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Semantics(
-              button: true,
-              child: GestureDetector(
-                key: const ValueKey('mobile_import_enter_manually'),
-                behavior: HitTestBehavior.opaque,
-                onTap: () => context.push('/import/manual'),
-                child: SizedBox(
-                  height: 44,
-                  child: Center(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        AppIcon(
-                          AppIcons.edit,
-                          size: AppIconSize.medium,
-                          color: colors.text.primary,
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Text(
-                          'Enter manually',
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
+          const SizedBox(height: AppSpacing.xs),
+          _ImportPasteCard(phase: _phase, onPaste: _paste),
+          const SizedBox(height: AppSpacing.base),
+          _ManualImportLink(onTap: () => context.push('/import/manual')),
         ],
       ),
-      // VZR-71: users instinctively tap the slot grid expecting to
-      // type — route the tap into the manual wizard, same as the Enter
-      // manually link. Once a valid phrase fills the card it is a
-      // review surface and the tap is disabled.
-      child: _filled
-          ? ImportSlotsCard(words: _words)
-          : Semantics(
-              button: true,
-              label: 'Enter secret phrase manually',
-              child: GestureDetector(
-                key: const ValueKey('mobile_import_slots'),
-                behavior: HitTestBehavior.opaque,
-                onTap: () => context.push('/import/manual'),
-                child: ImportSlotsCard(words: _words),
-              ),
-            ),
     );
   }
 }
 
-/// The dark numbered-slot card from the clipboard frame: empty
-/// underlined slots that fill as words arrive.
-class ImportSlotsCard extends StatelessWidget {
-  const ImportSlotsCard({required this.words, super.key});
+class _ImportPasteCard extends StatelessWidget {
+  const _ImportPasteCard({required this.phase, required this.onPaste});
 
-  final List<String> words;
+  final _ImportPastePhase phase;
+  final VoidCallback onPaste;
+
+  bool get _isError => phase == _ImportPastePhase.error;
+  bool get _isReading => phase == _ImportPastePhase.reading;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final slotCount = words.length > kMnemonicMaxWords
-        ? words.length
-        : kMnemonicMaxWords;
-    final rows = (slotCount / 3).ceil();
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.lg,
-      ),
-      decoration: BoxDecoration(
-        color: colors.background.homeCard,
-        borderRadius: BorderRadius.circular(AppRadii.xLarge),
-      ),
-      child: Column(
-        children: [
-          for (var row = 0; row < rows; row++) ...[
-            // 8 px between rows puts the underlines on the 37 px pitch
-            // of the Figma slot grid.
-            if (row > 0) const SizedBox(height: AppSpacing.xs),
-            Row(
+    final cardHeight = phase == _ImportPastePhase.idle ? 370.0 : 390.0;
+    final verticalPadding = phase == _ImportPastePhase.idle
+        ? AppSpacing.lg
+        : AppSpacing.base;
+    final contentGap = phase == _ImportPastePhase.idle
+        ? AppSpacing.lg - 3
+        : AppSpacing.base - 1;
+    final iconColor = _isError
+        ? colors.text.destructive
+        : colors.text.homeCard.withValues(alpha: 0.5);
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: _kImportSeedCardWidth),
+      child: SizedBox(
+        width: double.infinity,
+        height: cardHeight,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.background.homeCard,
+            borderRadius: BorderRadius.circular(AppRadii.xLarge),
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: verticalPadding,
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                for (var col = 0; col < 3; col++) ...[
-                  if (col > 0) const SizedBox(width: AppSpacing.s),
-                  Expanded(child: _slot(context, row * 3 + col)),
-                ],
+                AppIcon(AppIcons.importWallet, size: 33, color: iconColor),
+                SizedBox(height: contentGap),
+                _ImportPasteCardText(isError: _isError),
+                SizedBox(height: contentGap),
+                IgnorePointer(
+                  ignoring: _isReading,
+                  child: AppButton(
+                    key: const ValueKey('mobile_import_paste'),
+                    onPressed: onPaste,
+                    variant: AppButtonVariant.secondary,
+                    size: AppButtonSize.medium,
+                    height: 36,
+                    minWidth: 96,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.s,
+                    ),
+                    leading: AppIcon(
+                      _isError
+                          ? AppIcons.renew
+                          : _isReading
+                          ? AppIcons.loader
+                          : AppIcons.copy,
+                    ),
+                    child: Text(
+                      _isError
+                          ? 'Try again'
+                          : _isReading
+                          ? 'Reading...'
+                          : 'Paste',
+                    ),
+                  ),
+                ),
               ],
             ),
-          ],
-        ],
+          ),
+        ),
       ),
     );
   }
+}
 
-  Widget _slot(BuildContext context, int index) {
+class _ImportPasteCardText extends StatelessWidget {
+  const _ImportPasteCardText({required this.isError});
+
+  final bool isError;
+
+  @override
+  Widget build(BuildContext context) {
     final colors = context.colors;
-    final word = index < words.length ? words[index] : null;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text(
-              '${index + 1}'.padLeft(2, '0'),
-              style: AppTypography.codeSmall.copyWith(
-                color: colors.text.homeCard.withValues(alpha: 0.45),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.xxs),
-            Expanded(
-              child: Text(
-                word ?? '',
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.homeCard,
-                ),
-              ),
-            ),
-          ],
+        Text(
+          isError ? "Can’t read clipboard data" : 'Paste from clipboard',
+          textAlign: TextAlign.center,
+          style: AppTypography.bodyLarge.copyWith(
+            color: isError ? colors.text.destructive : colors.text.homeCard,
+            fontWeight: FontWeight.w600,
+          ),
         ),
-        const SizedBox(height: 2),
-        Container(
-          height: 1,
-          color: colors.text.homeCard.withValues(alpha: 0.25),
+        const SizedBox(height: AppSpacing.s),
+        Text(
+          'Accept 12, 15, 18, 21 or 24-\nword Secret Passphrases',
+          textAlign: TextAlign.center,
+          softWrap: false,
+          overflow: TextOverflow.visible,
+          style: AppTypography.bodyMediumStrong.copyWith(
+            color: colors.text.homeCard.withValues(alpha: 0.5),
+          ),
         ),
       ],
+    );
+  }
+}
+
+class _ManualImportLink extends StatelessWidget {
+  const _ManualImportLink({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: _kImportSeedCardWidth),
+      child: Semantics(
+        button: true,
+        child: GestureDetector(
+          key: const ValueKey('mobile_import_enter_manually'),
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: SizedBox(
+            height: 50,
+            width: double.infinity,
+            child: Center(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AppIcon(
+                    AppIcons.edit,
+                    size: 20,
+                    color: colors.button.ghost.label,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Flexible(
+                    fit: FlexFit.loose,
+                    child: Text(
+                      'Enter Secret Passphrase manually',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.button.ghost.label,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

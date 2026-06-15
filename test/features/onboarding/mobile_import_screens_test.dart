@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,11 +25,18 @@ Widget _app(String initialLocation) {
   );
 }
 
-void _mockClipboard(WidgetTester tester, String? text) {
+void _mockClipboard(
+  WidgetTester tester,
+  String? text, {
+  Completer<void>? gate,
+}) {
   tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
     SystemChannels.platform,
     (call) async {
-      if (call.method == 'Clipboard.getData') return {'text': text};
+      if (call.method == 'Clipboard.getData') {
+        if (gate != null) await gate.future;
+        return {'text': text};
+      }
       return null;
     },
   );
@@ -53,8 +62,11 @@ void main() {
     await tester.pumpWidget(_app('/import'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Import Your Wallet'), findsOneWidget);
+    expect(find.text('Import Wallet'), findsOneWidget);
     expect(find.byType(MobileImportScreen), findsOneWidget);
+    expect(find.text('Paste from clipboard'), findsOneWidget);
+    expect(find.text('Paste'), findsOneWidget);
+    expect(find.text('Enter Secret Passphrase manually'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey('mobile_import_enter_manually')),
@@ -63,16 +75,25 @@ void main() {
     expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
   });
 
-  testWidgets('tapping the slot grid opens the manual wizard', (tester) async {
+  testWidgets('paste shows a reading state while clipboard data resolves', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    _mockClipboard(tester, '   ', gate: gate);
     await tester.pumpWidget(_app('/import'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('mobile_import_slots')));
+    await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
+    await tester.pump();
+
+    expect(find.text('Reading...'), findsOneWidget);
+    expect(find.text('Paste from clipboard'), findsOneWidget);
+
+    gate.complete();
     await tester.pumpAndSettle();
-    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
   });
 
-  testWidgets('the slot grid stays tappable after a rejected paste', (
+  testWidgets('word-count validation shows the inline error card', (
     tester,
   ) async {
     _mockClipboard(tester, 'one two three');
@@ -82,34 +103,20 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('mobile_import_slots')));
-    await tester.pumpAndSettle();
-    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
+    expect(find.text("Can’t read clipboard data"), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(find.text('one'), findsNothing);
   });
 
-  testWidgets('word-count validation rejects a short paste', (tester) async {
-    _mockClipboard(tester, 'one two three');
-    await tester.pumpWidget(_app('/import'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining('found 3'), findsOneWidget);
-    // The pasted words still render into the slot card for inspection.
-    expect(find.text('one'), findsOneWidget);
-  });
-
-  testWidgets('an empty clipboard surfaces a toast', (tester) async {
+  testWidgets('an empty clipboard shows the inline error card', (tester) async {
     _mockClipboard(tester, '   ');
     await tester.pumpWidget(_app('/import'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(find.text('Clipboard is empty'), findsOneWidget);
-    await tester.pump(const Duration(seconds: 3));
-    expect(find.text('Clipboard is empty'), findsNothing);
+    expect(find.text("Can’t read clipboard data"), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
   });
 }

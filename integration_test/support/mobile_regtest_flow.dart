@@ -307,8 +307,7 @@ Future<void> importWalletViaPaste(
   await tapWidget(tester, const ValueKey('mobile_welcome_import'));
   await Clipboard.setData(ClipboardData(text: mnemonic));
   await tapAppButton(tester, const ValueKey('mobile_import_paste'));
-  // Paste fills the slots in place; confirm moves to the review screen.
-  await tapAppButton(tester, const ValueKey('mobile_import_confirm'));
+  // A valid paste now opens the review screen directly.
   await tapAppButton(tester, const ValueKey('mobile_import_review_continue'));
   // Block height is a real text field on the system keyboard.
   await tapWidget(

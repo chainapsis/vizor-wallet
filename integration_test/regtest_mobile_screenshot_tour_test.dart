@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -71,6 +73,30 @@ void main() {
       // ── Import flow (funded wallet) ────────────────────────────────
       await tapWidget(tester, const ValueKey('mobile_welcome_import'));
       await shot('02_import_entry');
+      final clipboardGate = Completer<void>();
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.getData') {
+            await clipboardGate.future;
+            return {'text': 'one two three'};
+          }
+          return null;
+        },
+      );
+      await tapAppButton(tester, const ValueKey('mobile_import_paste'));
+      await shot('02a_import_clipboard_reading');
+      clipboardGate.complete();
+      await pumpUntil(
+        tester,
+        () => tester.any(find.text("Can’t read clipboard data")),
+        description: 'import clipboard error',
+      );
+      await shot('02b_import_clipboard_error');
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
       await tapWidget(
         tester,
         const ValueKey('mobile_import_enter_manually'),
@@ -92,14 +118,6 @@ void main() {
       );
       await Clipboard.setData(const ClipboardData(text: _mnemonic));
       await tapAppButton(tester, const ValueKey('mobile_import_paste'));
-      await pumpUntil(
-        tester,
-        () =>
-            tester.any(find.byKey(const ValueKey('mobile_import_confirm'))),
-        description: 'import slots filled',
-      );
-      await shot('02b_import_entry_filled');
-      await tapAppButton(tester, const ValueKey('mobile_import_confirm'));
       await pumpUntil(
         tester,
         () => tester.any(
