@@ -236,4 +236,37 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets('recent activity section uses the Figma inner inset', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1400));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+        ).copyWith(recentTransactions: [_tx(1)]),
+      ),
+    );
+    await tester.pump();
+
+    final sendRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_send')),
+    );
+    final receiveRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_receive')),
+    );
+    final rowRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_activity_row_0')),
+    );
+    final headerRect = tester.getRect(find.text('Recent activity'));
+
+    expect(rowRect.left, sendRect.left + AppSpacing.xs);
+    expect(rowRect.right, receiveRect.right - AppSpacing.xs);
+    expect(headerRect.left, rowRect.left);
+  });
 }

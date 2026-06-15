@@ -224,7 +224,10 @@ class _HomeContent extends ConsumerWidget {
           const _EmptyActivity()
         else
           Padding(
-            padding: const EdgeInsets.all(AppSpacing.sm),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xs,
+              vertical: AppSpacing.s,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -425,40 +428,35 @@ class _RecentActivityHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              'Recent activity',
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.accent,
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            'Recent activity',
+            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+          ),
+        ),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onSeeAll,
+          child: Row(
+            children: [
+              Text(
+                'See all',
+                style: AppTypography.labelMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
               ),
-            ),
+              const SizedBox(width: AppSpacing.xxs),
+              AppIcon(
+                AppIcons.chevronForward,
+                size: AppIconSize.medium,
+                color: colors.icon.muted,
+              ),
+            ],
           ),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onSeeAll,
-            child: Row(
-              children: [
-                Text(
-                  'See all',
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                AppIcon(
-                  AppIcons.chevronForward,
-                  size: AppIconSize.medium,
-                  color: colors.icon.muted,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
