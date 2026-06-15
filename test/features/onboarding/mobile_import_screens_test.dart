@@ -136,7 +136,7 @@ void main() {
   testWidgets('shrinks the paste card before the manual link leaves view', (
     tester,
   ) async {
-    setViewport(const Size(520, 700));
+    setViewport(const Size(520, 820));
     await tester.pumpWidget(_pasteApp());
     await tester.pumpAndSettle();
 
@@ -149,7 +149,7 @@ void main() {
 
     expect(cardHeight, lessThan(370));
     expect(cardHeight, greaterThanOrEqualTo(320));
-    expect(manualBottom, lessThanOrEqualTo(700));
+    expect(manualBottom, lessThanOrEqualTo(820 - 80));
   });
 
   testWidgets('uses scrolling instead of shrinking the paste card too far', (

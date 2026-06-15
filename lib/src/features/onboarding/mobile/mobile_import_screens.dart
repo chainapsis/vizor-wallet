@@ -19,6 +19,7 @@ const _kImportPasteCardMinHeight = 320.0;
 const _kImportManualLinkHeight = 50.0;
 const _kImportContentTopGap = AppSpacing.xs;
 const _kImportContentGap = AppSpacing.base;
+const _kImportContentBottomReserve = 90.0;
 const _kClipboardReadError = "Can’t read clipboard data";
 const _kClipboardEmptyError = "Clipboard doesn’t contain a Secret Passphrase";
 const _kMnemonicWordCountError =
@@ -194,7 +195,8 @@ class _ImportPasteContent extends StatelessWidget {
         final fixedHeight =
             _kImportContentTopGap +
             _kImportContentGap +
-            _kImportManualLinkHeight;
+            _kImportManualLinkHeight +
+            _kImportContentBottomReserve;
 
         final availableCardHeight = constraints.hasBoundedHeight
             ? constraints.maxHeight - fixedHeight
@@ -219,6 +221,7 @@ class _ImportPasteContent extends StatelessWidget {
             ),
             const SizedBox(height: _kImportContentGap),
             _ManualImportLink(onTap: onEnterManually),
+            const SizedBox(height: _kImportContentBottomReserve),
           ],
         );
 
