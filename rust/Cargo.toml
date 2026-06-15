@@ -118,7 +118,7 @@ features = ["orchard", "transparent-inputs", "unstable", "serde"]
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
 [dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting"
-rev = "85d88c81745116c6971a59f4cb19eae9e859b9f2"
+rev = "60e7fc2674cbad1ad2328f883287c1005185bf74"
 package = "zcash_voting"
 
 # Must match versions used by zcash_client_sqlite to avoid type conflicts
@@ -154,7 +154,7 @@ hex = "0.4"
 
 [dev-dependencies.vote-commitment-tree]
 git = "https://github.com/valargroup/zcash_voting"
-rev = "85d88c81745116c6971a59f4cb19eae9e859b9f2"
+rev = "60e7fc2674cbad1ad2328f883287c1005185bf74"
 package = "vote-commitment-tree"
 
 [lints.rust]
