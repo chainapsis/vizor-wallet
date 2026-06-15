@@ -13,6 +13,15 @@ import 'mobile_onboarding_scaffold.dart';
 const kMnemonicWordCounts = [12, 15, 18, 21, 24];
 const kMnemonicMaxWords = 24;
 const _kImportSeedCardWidth = 361.0;
+const _kClipboardReadError = "Can’t read clipboard data";
+const _kClipboardEmptyError = "Clipboard doesn’t contain a Secret Passphrase";
+const _kMnemonicWordCountError =
+    'Secret Passphrase must be 12, 15, 18, 21, or 24 words';
+const _kMnemonicUnknownWordsError =
+    "Some words aren’t in the passphrase word list";
+const _kMnemonicInvalidError = "That Secret Passphrase isn’t valid";
+const _kMnemonicValidationUnavailableError =
+    "That passphrase couldn't be checked. Try again.";
 
 /// Words ready for review, carried between the import steps.
 class MobileImportReviewArgs {
@@ -23,19 +32,40 @@ class MobileImportReviewArgs {
   String get mnemonic => words.join(' ');
 }
 
+/// Normalises pasted mnemonic-like text into candidate BIP-39 words.
+///
+/// English BIP-39 words are lowercase ASCII letters, so numbers,
+/// punctuation, commas, and copied list prefixes like `1.` are separators.
+List<String> parseMnemonicWords(String raw) => raw
+    .toLowerCase()
+    .split(RegExp(r'[^a-z]+'))
+    .where((word) => word.isNotEmpty)
+    .toList();
+
 /// Validates a candidate phrase; returns an error message or null.
-String? validateImportedMnemonic(List<String> words) {
+String? validateImportedMnemonic(
+  List<String> words, {
+  Set<String>? wordList,
+  bool Function(String mnemonic)? validateMnemonic,
+}) {
+  if (words.isEmpty) return _kClipboardEmptyError;
   if (!kMnemonicWordCounts.contains(words.length)) {
-    return 'A secret passphrase has 12, 15, 18, 21, or 24 words — '
-        'found ${words.length}.';
+    return _kMnemonicWordCountError;
+  }
+  if (wordList != null && words.any((word) => !wordList.contains(word))) {
+    return _kMnemonicUnknownWordsError;
   }
   try {
-    if (!rust_wallet.validateMnemonic(mnemonic: words.join(' '))) {
-      return "That passphrase isn't valid. Check the words and try again.";
+    final mnemonic = words.join(' ');
+    final isValid =
+        validateMnemonic?.call(mnemonic) ??
+        rust_wallet.validateMnemonic(mnemonic: mnemonic);
+    if (!isValid) {
+      return _kMnemonicInvalidError;
     }
   } catch (e) {
     log('validateImportedMnemonic: ERROR: $e');
-    return "That passphrase couldn't be checked. Try again.";
+    return _kMnemonicValidationUnavailableError;
   }
   return null;
 }
@@ -46,7 +76,14 @@ enum _ImportPastePhase { idle, reading, error }
 /// (4575:108577 / 4746:82920 / 4746:22880): a clipboard-reading card
 /// with idle, loading, and error states, plus a manual-entry link.
 class MobileImportScreen extends StatefulWidget {
-  const MobileImportScreen({super.key});
+  const MobileImportScreen({
+    this.mnemonicWordListOverride,
+    this.validateMnemonicOverride,
+    super.key,
+  });
+
+  final List<String>? mnemonicWordListOverride;
+  final bool Function(String mnemonic)? validateMnemonicOverride;
 
   @override
   State<MobileImportScreen> createState() => _MobileImportScreenState();
@@ -54,6 +91,25 @@ class MobileImportScreen extends StatefulWidget {
 
 class _MobileImportScreenState extends State<MobileImportScreen> {
   _ImportPastePhase _phase = _ImportPastePhase.idle;
+  String _errorTitle = _kClipboardReadError;
+
+  Set<String>? _wordList() {
+    final override = widget.mnemonicWordListOverride;
+    if (override != null) return override.toSet();
+    try {
+      return rust_wallet.mnemonicWordList().toSet();
+    } catch (e) {
+      log('MobileImport: ERROR loading mnemonic word list: $e');
+      return null;
+    }
+  }
+
+  void _showError(String title) {
+    setState(() {
+      _phase = _ImportPastePhase.error;
+      _errorTitle = title;
+    });
+  }
 
   Future<void> _paste() async {
     if (_phase == _ImportPastePhase.reading) return;
@@ -64,24 +120,20 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       text = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
     } catch (e) {
       log('MobileImport: ERROR reading clipboard: $e');
-      if (mounted) setState(() => _phase = _ImportPastePhase.error);
+      if (mounted) _showError(_kClipboardReadError);
       return;
     }
     if (!mounted) return;
 
-    final words = (text ?? '')
-        .split(RegExp(r'\s+'))
-        .where((w) => w.isNotEmpty)
-        .map((w) => w.toLowerCase())
-        .toList();
-    if (words.isEmpty) {
-      setState(() => _phase = _ImportPastePhase.error);
-      return;
-    }
-    final error = validateImportedMnemonic(words);
+    final words = parseMnemonicWords(text ?? '');
+    final error = validateImportedMnemonic(
+      words,
+      wordList: kMnemonicWordCounts.contains(words.length) ? _wordList() : null,
+      validateMnemonic: widget.validateMnemonicOverride,
+    );
     if (error != null) {
       log('MobileImport: rejected clipboard mnemonic: $error');
-      setState(() => _phase = _ImportPastePhase.error);
+      _showError(error);
       return;
     }
     setState(() => _phase = _ImportPastePhase.idle);
@@ -104,7 +156,11 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       child: Column(
         children: [
           const SizedBox(height: AppSpacing.xs),
-          _ImportPasteCard(phase: _phase, onPaste: _paste),
+          _ImportPasteCard(
+            phase: _phase,
+            errorTitle: _errorTitle,
+            onPaste: _paste,
+          ),
           const SizedBox(height: AppSpacing.base),
           _ManualImportLink(onTap: () => context.push('/import/manual')),
         ],
@@ -114,9 +170,14 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
 }
 
 class _ImportPasteCard extends StatelessWidget {
-  const _ImportPasteCard({required this.phase, required this.onPaste});
+  const _ImportPasteCard({
+    required this.phase,
+    required this.errorTitle,
+    required this.onPaste,
+  });
 
   final _ImportPastePhase phase;
+  final String errorTitle;
   final VoidCallback onPaste;
 
   bool get _isError => phase == _ImportPastePhase.error;
@@ -156,7 +217,7 @@ class _ImportPasteCard extends StatelessWidget {
               children: [
                 AppIcon(AppIcons.importWallet, size: 33, color: iconColor),
                 SizedBox(height: contentGap),
-                _ImportPasteCardText(isError: _isError),
+                _ImportPasteCardText(isError: _isError, errorTitle: errorTitle),
                 SizedBox(height: contentGap),
                 IgnorePointer(
                   ignoring: _isReading,
@@ -196,9 +257,10 @@ class _ImportPasteCard extends StatelessWidget {
 }
 
 class _ImportPasteCardText extends StatelessWidget {
-  const _ImportPasteCardText({required this.isError});
+  const _ImportPasteCardText({required this.isError, required this.errorTitle});
 
   final bool isError;
+  final String errorTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -206,7 +268,7 @@ class _ImportPasteCardText extends StatelessWidget {
     return Column(
       children: [
         Text(
-          isError ? "Can’t read clipboard data" : 'Paste from clipboard',
+          isError ? errorTitle : 'Paste from clipboard',
           textAlign: TextAlign.center,
           style: AppTypography.bodyLarge.copyWith(
             color: isError ? colors.text.destructive : colors.text.homeCard,

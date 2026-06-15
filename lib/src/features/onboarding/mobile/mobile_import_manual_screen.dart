@@ -105,8 +105,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
   /// are pure lowercase a–z, so anything else (spaces, commas, numbered
   /// "1." prefixes, punctuation) is treated as a separator — a phrase
   /// copied in almost any shape tokenises cleanly.
-  List<String> _tokenize(String raw) =>
-      raw.toLowerCase().split(RegExp(r'[^a-z]+')).where((t) => t.isNotEmpty).toList();
+  List<String> _tokenize(String raw) => parseMnemonicWords(raw);
 
   void _onChanged(String value) {
     final tokens = _tokenize(value);

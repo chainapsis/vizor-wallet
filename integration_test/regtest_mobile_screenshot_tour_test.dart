@@ -89,7 +89,9 @@ void main() {
       clipboardGate.complete();
       await pumpUntil(
         tester,
-        () => tester.any(find.text("Can’t read clipboard data")),
+        () => tester.any(
+          find.text('Secret Passphrase must be 12, 15, 18, 21, or 24 words'),
+        ),
         description: 'import clipboard error',
       );
       await shot('02b_import_clipboard_error');
