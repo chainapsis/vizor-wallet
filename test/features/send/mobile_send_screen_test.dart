@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
@@ -58,6 +59,14 @@ class _RustApiFake implements RustLibApi {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _FakeMarketDataSource implements ZecMarketDataSource {
+  const _FakeMarketDataSource();
+
+  @override
+  Future<ZecMarketData?> fetchMarketData() async {
+    return const ZecMarketData(usdPrice: 70);
+  }
+}
 
 AppBootstrapState _bootstrap() => AppBootstrapState(
   initialLocation: '/send',
@@ -115,6 +124,9 @@ Widget _app({List<AddressBookContact> contacts = const []}) {
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
+      zecMarketDataSourceProvider.overrideWithValue(
+        const _FakeMarketDataSource(),
+      ),
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(contacts),
       ),
@@ -225,9 +237,7 @@ void main() {
     expect(find.text('Alice'), findsOneWidget);
   });
 
-  testWidgets('the amount step enforces the spendable balance', (
-    tester,
-  ) async {
+  testWidgets('the amount step enforces the spendable balance', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
     await _toAmountStep(tester, _shieldedAddress);
@@ -279,6 +289,7 @@ void main() {
     await _toReviewStep(tester);
 
     expect(find.text('Review Send'), findsOneWidget);
+    expect(find.text(r'$105.00'), findsOneWidget);
     expect(find.text('Add short encrypted message'), findsOneWidget);
     expect(find.text('Tx fee'), findsOneWidget);
     expect(find.text('Confirm & Send'), findsOneWidget);
