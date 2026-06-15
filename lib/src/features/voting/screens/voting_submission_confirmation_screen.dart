@@ -19,6 +19,7 @@ import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
+import '../widgets/voting_pane_scroll_area.dart';
 
 class VotingSubmissionConfirmationScreen extends ConsumerStatefulWidget {
   const VotingSubmissionConfirmationScreen({
@@ -85,7 +86,7 @@ class _VotingSubmissionConfirmationScreenState
         padding: EdgeInsets.zero,
         child: session.when(
           skipLoadingOnRefresh: false,
-          loading: () => const Center(child: CircularProgressIndicator()),
+          loading: () => const VotingPaneStateView(child: VotingPaneLoading()),
           error: (error, _) {
             final cachedState = _lastSubmissionState;
             if (cachedState != null) {
@@ -99,7 +100,8 @@ class _VotingSubmissionConfirmationScreenState
               confirmed: false,
               title: 'Submission not complete',
               pollTitle: 'Token holder voting',
-              message: "Couldn't load submission details: $error",
+              message:
+                  "Couldn't load submission details: ${friendlyVotingErrorMessage(error)}",
               votingPower: 'Not available',
             );
           },

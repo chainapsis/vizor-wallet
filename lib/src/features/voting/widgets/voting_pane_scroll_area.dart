@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 
 class VotingPaneListView extends StatefulWidget {
@@ -125,6 +126,50 @@ class _VotingPaneCenteredScrollViewState
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Standard full-pane voting loading indicator: a centered
+/// [CircularProgressIndicator] filling the content area. Use this for every
+/// full-pane async-loading branch in the voting feature so the spinner
+/// treatment (and any future skeleton/token the redesign specifies) lives in
+/// one place. The toolbar band, where a screen keeps one present during
+/// loading, is rendered by the calling screen — this widget is just the
+/// content-area spinner. Intentionally not used for the inline indicators
+/// (voting-power meta, step-row progress bubble), whose size/stroke differ.
+class VotingPaneLoading extends StatelessWidget {
+  const VotingPaneLoading({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(child: CircularProgressIndicator());
+  }
+}
+
+/// Renders a non-data pane state ([child] — a loading spinner, error, or
+/// empty message) below the standard 48px [AppPaneToolbar] band, so every
+/// voting pane screen keeps a back affordance and anchors its loading/error
+/// content to the same region the data state occupies. The data branches keep
+/// rendering their own toolbar; use this only for the toolbar-less states.
+class VotingPaneStateView extends StatelessWidget {
+  const VotingPaneStateView({
+    required this.child,
+    this.backLinkMinWidth = 0,
+    super.key,
+  });
+
+  final Widget child;
+  final double backLinkMinWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppPaneToolbar(backLinkMinWidth: backLinkMinWidth),
+        Expanded(child: child),
+      ],
     );
   }
 }

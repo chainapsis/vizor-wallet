@@ -64,15 +64,26 @@ class _VotingProposalDetailScreenState
         padding: EdgeInsets.zero,
         child: session.when(
           skipLoadingOnRefresh: false,
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) =>
-              _Message(title: "Couldn't load voting round", message: '$error'),
+          loading: () => const VotingPaneStateView(
+            backLinkMinWidth: 60,
+            child: VotingPaneLoading(),
+          ),
+          error: (error, _) => VotingPaneStateView(
+            backLinkMinWidth: 60,
+            child: _Message(
+              title: "Couldn't load voting round",
+              message: friendlyVotingErrorMessage(error),
+            ),
+          ),
           data: (state) {
             final round = state.round;
             if (round == null) {
-              return const _Message(
-                title: 'Voting round unavailable',
-                message: 'The selected voting round could not be loaded.',
+              return const VotingPaneStateView(
+                backLinkMinWidth: 60,
+                child: _Message(
+                  title: 'Voting round unavailable',
+                  message: 'The selected voting round could not be loaded.',
+                ),
               );
             }
             if (shouldPreSyncVotingTree(round.status)) {
@@ -141,7 +152,10 @@ class _VotingProposalDetailScreenState
                     VotingPollListStatus.active &&
                 !hasBlockingRecovery) {
               _redirectToResults(round.roundId);
-              return const Center(child: CircularProgressIndicator());
+              return const VotingPaneStateView(
+                backLinkMinWidth: 60,
+                child: VotingPaneLoading(),
+              );
             }
             final draftKey = accountUuid == null
                 ? null

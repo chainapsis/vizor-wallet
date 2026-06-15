@@ -133,15 +133,26 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
         padding: EdgeInsets.zero,
         child: session.when(
           skipLoadingOnRefresh: false,
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => _Message("Couldn't load review: $error"),
+          loading: () => const VotingPaneStateView(
+            backLinkMinWidth: 60,
+            child: VotingPaneLoading(),
+          ),
+          error: (error, _) => VotingPaneStateView(
+            backLinkMinWidth: 60,
+            child: _Message(
+              "Couldn't load review: ${friendlyVotingErrorMessage(error)}",
+            ),
+          ),
           data: (state) {
             final round = state.round;
             if (round != null &&
                 votingPollListStatus(round.status) !=
                     VotingPollListStatus.active) {
               _redirectToResults(round.roundId);
-              return const Center(child: CircularProgressIndicator());
+              return const VotingPaneStateView(
+                backLinkMinWidth: 60,
+                child: VotingPaneLoading(),
+              );
             }
             _maybePrepareVotingPower(state);
             _maybePrecomputeDelegationPir(state);

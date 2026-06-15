@@ -15,6 +15,7 @@ import '../../../providers/voting/voting_state.dart';
 import '../../../services/voting/voting_models.dart';
 import '../../../services/voting/resolved_voting_config_extensions.dart';
 import '../voting_choice_style.dart';
+import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_poll_ordering.dart';
 import '../widgets/voting_metadata_widgets.dart';
@@ -77,7 +78,7 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
             Expanded(
               child: tally.when(
                 skipLoadingOnRefresh: false,
-                loading: () => const Center(child: CircularProgressIndicator()),
+                loading: () => const VotingPaneLoading(),
                 error: (error, _) {
                   final round = session.value?.round;
                   if (round != null &&
@@ -86,7 +87,9 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
                     return _pendingResults();
                   }
                   _clearPendingTallyRefresh();
-                  return _Message("Couldn't load results: $error");
+                  return _Message(
+                    "Couldn't load results: ${friendlyVotingErrorMessage(error)}",
+                  );
                 },
                 data: (result) {
                   final round = session.value?.round;
@@ -94,10 +97,11 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
                     _clearPendingTallyRefresh();
                     if (session.hasError) {
                       return _Message(
-                        "Couldn't load voting round details: ${session.error}",
+                        "Couldn't load voting round details: "
+                        "${friendlyVotingErrorMessage(session.error!)}",
                       );
                     }
-                    return const Center(child: CircularProgressIndicator());
+                    return const VotingPaneLoading();
                   }
                   final proposals = proposalsFromRound(round);
                   if (_isTallying(result.rawJson)) {
