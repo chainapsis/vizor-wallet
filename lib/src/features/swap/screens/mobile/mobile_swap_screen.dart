@@ -19,7 +19,9 @@ import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../../../address_scan/domain/address_scan_payload.dart';
-import '../../../address_scan/widgets/mobile_address_scan_view.dart';
+import '../../../address_scan/widgets/mobile_address_scan_card.dart';
+import '../../../address_scan/widgets/mobile_address_scan_view.dart'
+    show MobileScanOutcome;
 import '../../models/swap_address_book_helpers.dart';
 import '../../models/swap_models.dart';
 import '../../providers/swap_state_provider.dart';
@@ -121,27 +123,6 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
           builder: (context, ref, _) {
             final swapState = ref.watch(swapStateProvider);
             final swapNotifier = ref.read(swapStateProvider.notifier);
-            // The address scanner is a full-bleed camera surface (Figma
-            // `Address QR` 4697:106096) — the same chrome as the send
-            // recipient scan — so it bypasses the bottom-anchored card.
-            if (surface == _SwapModalSurface.addressScanner) {
-              return MobileAddressScanView(
-                resolve: (raw) async {
-                  final address = normalizeAddressScanPayload(raw);
-                  if (address == null || address.isEmpty) {
-                    return const MobileScanOutcome.rejected(
-                      'QR code did not include an address.',
-                    );
-                  }
-                  return MobileScanOutcome.accepted(address);
-                },
-                onScanned: (value) {
-                  swapNotifier.updateDestination(value);
-                  _closeSwapModal();
-                },
-                onClose: _closeSwapModal,
-              );
-            }
             final surfaceContent = switch (surface) {
               _SwapModalSurface.assetSelector => MobileSwapAssetSelectorModal(
                 assets: swapState.supportedExternalAssets,
@@ -166,8 +147,25 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                     _openModal(_SwapModalSurface.contactPicker),
                 onCancel: _closeSwapModal,
               ),
-              // Handled full-bleed above, before this switch.
-              _SwapModalSurface.addressScanner => const SizedBox.shrink(),
+              // The address scanner is a bottom-sheet camera card (Figma
+              // `Address QR` 4697:106096); it shares the same MobileModalCard
+              // surface as the other swap modals.
+              _SwapModalSurface.addressScanner => MobileAddressScanCard(
+                resolve: (raw) async {
+                  final address = normalizeAddressScanPayload(raw);
+                  if (address == null || address.isEmpty) {
+                    return const MobileScanOutcome.rejected(
+                      'QR code did not include an address.',
+                    );
+                  }
+                  return MobileScanOutcome.accepted(address);
+                },
+                onScanned: (value) {
+                  swapNotifier.updateDestination(value);
+                  _closeSwapModal();
+                },
+                onClose: _closeSwapModal,
+              ),
               _SwapModalSurface.contactPicker => AddressBookContactPickerModal(
                 title: swapContactPickerTitle(swapState),
                 networks: swapContactPickerNetworks(swapState),

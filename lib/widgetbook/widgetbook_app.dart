@@ -218,6 +218,22 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildSwapAddressScanModalLoadingUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Mobile address scan - Requesting',
+                      builder: buildMobileSwapAddressScanRequestingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile address scan - Denied',
+                      builder: buildMobileSwapAddressScanDeniedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile address scan - Active',
+                      builder: buildMobileSwapAddressScanActiveUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile address scan - Loading',
+                      builder: buildMobileSwapAddressScanLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Slippage modal',
                       builder: buildSwapSlippageModalUseCase,
                     ),

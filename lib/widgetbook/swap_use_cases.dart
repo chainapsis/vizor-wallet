@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../src/core/layout/app_desktop_shell.dart';
+import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_back_link.dart';
 import '../src/core/widgets/app_button.dart';
@@ -13,6 +14,7 @@ import '../src/core/widgets/app_pane_modal_overlay.dart';
 import '../src/features/swap/models/swap_fiat_amount.dart';
 import '../src/features/swap/models/swap_models.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
+import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import '../src/features/swap/widgets/swap_address_edit_modal.dart';
 import '../src/features/swap/widgets/swap_asset_selector_modal.dart';
 import '../src/features/swap/widgets/swap_composer_panel.dart';
@@ -129,6 +131,54 @@ Widget buildSwapAddressScanModalLoadingUseCase(BuildContext context) {
     ),
   );
 }
+
+Widget buildMobileSwapAddressScanRequestingUseCase(BuildContext context) {
+  return const _MobileScanCardFrame(
+    child: MobileAddressScanCardContent(
+      status: AddressQrCameraStatus.requesting,
+      onTorch: _noop,
+      onClose: _noop,
+      onRetry: _noop,
+    ),
+  );
+}
+
+Widget buildMobileSwapAddressScanDeniedUseCase(BuildContext context) {
+  return const _MobileScanCardFrame(
+    child: MobileAddressScanCardContent(
+      status: AddressQrCameraStatus.denied,
+      onTorch: _noop,
+      onClose: _noop,
+      onRetry: _noop,
+    ),
+  );
+}
+
+Widget buildMobileSwapAddressScanActiveUseCase(BuildContext context) {
+  return const _MobileScanCardFrame(
+    child: MobileAddressScanCardContent(
+      status: AddressQrCameraStatus.active,
+      cameraView: _MobileScanCameraPreview(),
+      onTorch: _noop,
+      onClose: _noop,
+      onRetry: _noop,
+    ),
+  );
+}
+
+Widget buildMobileSwapAddressScanLoadingUseCase(BuildContext context) {
+  return const _MobileScanCardFrame(
+    child: MobileAddressScanCardContent(
+      status: AddressQrCameraStatus.loading,
+      cameraView: _MobileScanCameraPreview(),
+      onTorch: _noop,
+      onClose: _noop,
+      onRetry: _noop,
+    ),
+  );
+}
+
+void _noop() {}
 
 Widget buildSwapSlippageModalUseCase(BuildContext context) {
   return _SwapPageModalFrame(
@@ -1328,6 +1378,46 @@ class _SwapPageFrame extends StatelessWidget {
   }
 }
 
+/// Phone-sized scrim frame that bottom-anchors the scan card in the shared
+/// [MobileModalCard], mirroring the live swap dialog so the camera card fills
+/// the rounded surface and the permission card hugs its height. Scaled to fit
+/// the widgetbook viewport.
+class _MobileScanCardFrame extends StatelessWidget {
+  const _MobileScanCardFrame({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: SizedBox(
+          width: 393,
+          height: 852,
+          child: MediaQuery(
+            data: const MediaQueryData(size: Size(393, 852)),
+            child: ColoredBox(
+              color: colors.background.neutralScrim,
+              child: SafeArea(
+                bottom: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Spacer(),
+                    MobileModalCard(child: child),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SwapPageModalFrame extends StatelessWidget {
   const _SwapPageModalFrame({required this.child});
 
@@ -1817,6 +1907,38 @@ class _AddressQrCameraPreview extends StatelessWidget {
           ),
           DecoratedBox(decoration: BoxDecoration(color: overlayColor)),
         ],
+      ),
+    );
+  }
+}
+
+/// Stand-in for the live camera feed in the mobile scan-card use cases
+/// (widgetbook has no camera): just a Zcash QR on a dark surface for the
+/// card's viewfinder to frame — no caption (the card owns its own caption).
+class _MobileScanCameraPreview extends StatelessWidget {
+  const _MobileScanCameraPreview();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(color: Color(0xFF2E3232)),
+      child: Center(
+        child: Container(
+          width: 200,
+          height: 200,
+          padding: const EdgeInsets.all(10),
+          color: const Color(0xFFFFFFFF),
+          child: PrettyQrView.data(
+            data: 'zcash:u1examplezcashaddressforpreviewonly',
+            decoration: const PrettyQrDecoration(
+              quietZone: PrettyQrQuietZone.zero,
+              shape: PrettyQrSmoothSymbol(
+                roundFactor: 0,
+                color: Color(0xFF141818),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
