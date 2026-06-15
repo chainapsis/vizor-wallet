@@ -87,7 +87,7 @@ void main() {
         );
         await _expectActivityRow(
           tester,
-          const ValueKey('home_activity_row_0'),
+          const ValueKey('home_desktop_activity_row_0'),
           title: 'Receiving',
           amount: '+0.25 $_currencyTicker',
           status: 'In progress',
@@ -97,7 +97,7 @@ void main() {
         await _mineRegtestBlocks(10);
         await _expectActivityRow(
           tester,
-          const ValueKey('home_activity_row_0'),
+          const ValueKey('home_desktop_activity_row_0'),
           title: 'Received',
           amount: '+0.25 $_currencyTicker',
           status: 'Completed',
@@ -105,7 +105,7 @@ void main() {
         );
         _expectNoActivityRow(
           tester,
-          rowKeyPrefix: 'home_activity',
+          rowKeyPrefix: 'home_desktop_activity',
           title: 'Receiving',
           amount: '+0.25 $_currencyTicker',
           status: 'In progress',
@@ -166,7 +166,7 @@ void main() {
         );
         await _expectActivityRow(
           tester,
-          const ValueKey('home_activity_row_0'),
+          const ValueKey('home_desktop_activity_row_0'),
           title: 'Receiving',
           amount: '+0.25 $_currencyTicker',
           status: 'In progress',
@@ -176,7 +176,7 @@ void main() {
         await _waitForForegroundSyncToFinish(tester);
         await _expectActivityRow(
           tester,
-          const ValueKey('home_activity_row_0'),
+          const ValueKey('home_desktop_activity_row_0'),
           title: 'Receiving',
           amount: '+0.25 $_currencyTicker',
           status: 'In progress',
@@ -186,7 +186,7 @@ void main() {
         await _mineRegtestBlocks(10);
         await _expectActivityRow(
           tester,
-          const ValueKey('home_activity_row_0'),
+          const ValueKey('home_desktop_activity_row_0'),
           title: 'Received',
           amount: '+0.25 $_currencyTicker',
           status: 'Completed',
@@ -194,7 +194,7 @@ void main() {
         );
         _expectNoActivityRow(
           tester,
-          rowKeyPrefix: 'home_activity',
+          rowKeyPrefix: 'home_desktop_activity',
           title: 'Receiving',
           amount: '+0.25 $_currencyTicker',
           status: 'In progress',
@@ -248,7 +248,7 @@ void main() {
         );
         await _expectActivityRow(
           tester,
-          const ValueKey('home_activity_row_0'),
+          const ValueKey('home_desktop_activity_row_0'),
           title: 'Receiving',
           amount: '+0.25 $_currencyTicker',
           status: 'In progress',
@@ -271,7 +271,7 @@ void main() {
         );
         await _expectAnyActivityRow(
           tester,
-          rowKeyPrefix: 'home_activity',
+          rowKeyPrefix: 'home_desktop_activity',
           title: 'Received',
           amount: '0.25 $_currencyTicker',
           status: 'Failed',
@@ -279,7 +279,7 @@ void main() {
         );
         _expectNoActivityRow(
           tester,
-          rowKeyPrefix: 'home_activity',
+          rowKeyPrefix: 'home_desktop_activity',
           title: 'Receiving',
           amount: '+0.25 $_currencyTicker',
           status: 'In progress',
@@ -337,7 +337,7 @@ Future<void> _importFirstWallet(WidgetTester tester) async {
 }
 
 Future<String> _copyActiveShieldedAddress(WidgetTester tester) async {
-  await _tapWidget(tester, const ValueKey('home_receive_button'));
+  await _tapReceiveButton(tester);
   await _pumpUntil(
     tester,
     () => tester.any(
@@ -471,7 +471,7 @@ Future<void> _openActivity(WidgetTester tester) async {
 Future<void> _waitForHome(WidgetTester tester) async {
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('home_shielded_balance_text'))),
+    () => tester.any(find.byKey(const ValueKey('home_desktop_balance_amount_text'))),
     description: 'home balance card to render',
     timeout: const Duration(minutes: 1),
   );
@@ -746,16 +746,44 @@ Future<void> _expectActivityRow(
 }) async {
   await _pumpUntil(
     tester,
-    () {
-      final texts = _textSetIn(tester, find.byKey(key));
-      return texts.contains(title) &&
-          texts.contains(amount) &&
-          texts.contains(status);
-    },
+    () => _activityRowMatches(
+      _textSetIn(tester, find.byKey(key)),
+      title,
+      amount,
+      status,
+    ),
     description: '$key activity row to show $title $amount $status',
     timeout: timeout,
   );
   _log('activity row matched: $title $amount $status');
+}
+
+/// The redesigned activity rows append an ellipsis to the action title while a
+/// transaction is in progress and convey that state via the title + a loader
+/// icon rather than a separate status label on the compact home rows. Match
+/// defensively: amount exact, title may carry the pending ellipsis, and the
+/// status is satisfied by its own text or by the pending ellipsis title.
+bool _activityRowMatches(
+  Set<String> texts,
+  String title,
+  String amount,
+  String status,
+) {
+  if (!texts.contains(amount)) return false;
+  // Pending rows append an ellipsis to the action title ("Sending ...",
+  // "Receiving ..."); completed/other rows use the plain title. Accept either
+  // form and let the status check below disambiguate on rows that render a
+  // status label. Callers pass the pending-form title (e.g. 'Sending') for
+  // in-progress assertions so the ellipsis word disambiguates from completed.
+  final titleOk = texts.contains(title) || texts.contains('$title ...');
+  if (!titleOk) return false;
+  // Compact home rows convey status via the title ellipsis + icon and omit the
+  // status label; the full activity screen rows render it. The title already
+  // disambiguates pending "X ..." from completed "X", so enforce the status
+  // text only when the row actually shows one.
+  const knownStatuses = {'In progress', 'Completed', 'Failed', 'Refunded'};
+  final rendered = texts.where(knownStatuses.contains);
+  return rendered.isEmpty || rendered.contains(status);
 }
 
 Future<void> _expectAnyActivityRow(
@@ -774,9 +802,7 @@ Future<void> _expectAnyActivityRow(
           tester,
           find.byKey(ValueKey('${rowKeyPrefix}_row_$i')),
         );
-        if (texts.contains(title) &&
-            texts.contains(amount) &&
-            texts.contains(status)) {
+        if (_activityRowMatches(texts, title, amount, status)) {
           return true;
         }
       }
@@ -798,9 +824,7 @@ void _expectNoActivityRow(
   for (var i = 0; i < 10; i++) {
     final key = ValueKey('${rowKeyPrefix}_row_$i');
     final texts = _textSetIn(tester, find.byKey(key));
-    if (texts.contains(title) &&
-        texts.contains(amount) &&
-        texts.contains(status)) {
+    if (_activityRowMatches(texts, title, amount, status)) {
       fail('Unexpected stale activity row $key: $title $amount $status');
     }
   }
@@ -887,6 +911,23 @@ Future<void> _tapWidget(
   await tester.tap(finder);
   await tester.pump(const Duration(milliseconds: 250));
   _log('tapped $key');
+}
+
+/// Taps the home receive action. The redesigned home shows
+/// `home_desktop_receive_first_button` while the wallet is empty and
+/// `home_desktop_receive_button` once it has a balance.
+Future<void> _tapReceiveButton(WidgetTester tester) async {
+  const regular = ValueKey('home_desktop_receive_button');
+  const first = ValueKey('home_desktop_receive_first_button');
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.byKey(regular)) || tester.any(find.byKey(first)),
+    description: 'a home receive button to render',
+  );
+  await _tapWidget(
+    tester,
+    tester.any(find.byKey(regular)) ? regular : first,
+  );
 }
 
 Future<void> _enterText(WidgetTester tester, Key key, String text) async {

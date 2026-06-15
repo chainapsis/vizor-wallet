@@ -315,6 +315,37 @@ void main() {
         );
       });
 
+      test('accepts TEX addresses for the active Zcash network', () {
+        const mainnetTex = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
+        const testnetTex = 'textest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy';
+        const regtestTex = 'texregtest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy';
+
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.zcash,
+            mainnetTex,
+            zcashNetwork: ZcashNetwork.mainnet,
+          ),
+          isNull,
+        );
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.zcash,
+            testnetTex,
+            zcashNetwork: ZcashNetwork.testnet,
+          ),
+          isNull,
+        );
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.zcash,
+            regtestTex,
+            zcashNetwork: ZcashNetwork.regtest,
+          ),
+          isNull,
+        );
+      });
+
       test('rejects an EVM address tagged as Zcash', () {
         expect(
           addressFormatIssue(
@@ -345,6 +376,14 @@ void main() {
           addressFormatIssue(
             AddressBookNetwork.zcash,
             'tm9iNYCVAhLLa4rJtfqqHauR5xL1REdpiDs',
+            zcashNetwork: ZcashNetwork.mainnet,
+          ),
+          isNotNull,
+        );
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.zcash,
+            'textest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy',
             zcashNetwork: ZcashNetwork.mainnet,
           ),
           isNotNull,

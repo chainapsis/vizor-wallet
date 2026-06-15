@@ -16,7 +16,6 @@ const _mnemonic =
     'better used';
 const _password = 'Vizor123!';
 final _currencyTicker = kZcashDefaultCurrencyTicker;
-final _currencyTickerLower = _currencyTicker.toLowerCase();
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -71,24 +70,24 @@ void main() {
       await _pumpUntil(
         tester,
         () => tester.any(
-          find.byKey(const ValueKey('home_shielded_balance_text')),
+          find.byKey(const ValueKey('home_desktop_balance_amount_text')),
         ),
         description: 'home balance card to render',
         timeout: const Duration(minutes: 1),
       );
       _log(
         'home rendered with shielded='
-        '${_textForKey(tester, const ValueKey('home_shielded_balance_text'))}',
+        '${_textForKey(tester, const ValueKey('home_desktop_balance_amount_text'))}',
       );
 
       await _pumpUntil(
         tester,
         () => _keyedTextEquals(
           tester,
-          const ValueKey('home_shielded_balance_text'),
-          '1.25 $_currencyTickerLower',
+          const ValueKey('home_desktop_balance_amount_text'),
+          '1.25',
         ),
-        description: 'shielded balance to show 1.25 $_currencyTickerLower',
+        description: 'shielded balance to show 1.25',
         timeout: const Duration(minutes: 4),
       );
       _log('shielded balance matched');
@@ -98,7 +97,7 @@ void main() {
         () => _keyedTextEquals(
           tester,
           const ValueKey('home_transparent_balance_text'),
-          'Transparent balance: 0.75 $_currencyTicker',
+          'Transparent: 0.75 $_currencyTicker',
         ),
         description: 'transparent balance to show 0.75 $_currencyTicker',
         timeout: const Duration(minutes: 1),

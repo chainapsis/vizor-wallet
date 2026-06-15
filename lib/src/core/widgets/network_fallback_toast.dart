@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../layout/content_overlay_inset.dart';
 import '../theme/app_theme.dart';
 
 class NetworkFallbackToast extends StatelessWidget {
@@ -117,10 +118,19 @@ class _NetworkFallbackToastHostState extends State<NetworkFallbackToastHost> {
         fit: StackFit.expand,
         children: [
           widget.child,
-          Positioned(
-            top: AppSpacing.base,
-            left: 0,
-            right: 0,
+          // Align with the content pane: a mounted sidebar shell publishes its
+          // left inset, so the toast clears the sidebar; with no sidebar the
+          // inset is 0 and the toast centers over the full window.
+          ValueListenableBuilder<double>(
+            valueListenable: contentOverlayLeftInset,
+            builder: (context, leftInset, child) {
+              return Positioned(
+                top: AppSpacing.base,
+                left: leftInset,
+                right: 0,
+                child: child!,
+              );
+            },
             child: IgnorePointer(
               child: Center(
                 child: AnimatedSwitcher(

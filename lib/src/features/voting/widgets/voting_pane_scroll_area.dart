@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/layout/app_layout.dart';
+import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 
 class VotingPaneListView extends StatefulWidget {
   const VotingPaneListView.separated({
@@ -23,14 +24,6 @@ class VotingPaneListView extends StatefulWidget {
 }
 
 class _VotingPaneListViewState extends State<VotingPaneListView> {
-  final ScrollController _controller = ScrollController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final padding = widget.padding;
@@ -38,10 +31,10 @@ class _VotingPaneListViewState extends State<VotingPaneListView> {
       left: padding.left,
       right: padding.right,
     );
-    return _VotingPaneScrollbar(
-      controller: _controller,
-      child: ListView.separated(
-        controller: _controller,
+    // Shared pane overlay scrollbar (6px capsule, surface.scrollbarThumb).
+    return AppPaneScrollbar(
+      builder: (context, controller) => ListView.separated(
+        controller: controller,
         primary: false,
         padding: EdgeInsets.only(top: padding.top, bottom: padding.bottom),
         itemCount: widget.itemCount,
@@ -79,20 +72,11 @@ class VotingPaneScrollView extends StatefulWidget {
 }
 
 class _VotingPaneScrollViewState extends State<VotingPaneScrollView> {
-  final ScrollController _controller = ScrollController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
-    return _VotingPaneScrollbar(
-      controller: _controller,
-      child: SingleChildScrollView(
-        controller: _controller,
+    return AppPaneScrollbar(
+      builder: (context, controller) => SingleChildScrollView(
+        controller: controller,
         primary: false,
         padding: widget.scrollPadding,
         child: _centeredTrack(
@@ -126,20 +110,11 @@ class VotingPaneCenteredScrollView extends StatefulWidget {
 
 class _VotingPaneCenteredScrollViewState
     extends State<VotingPaneCenteredScrollView> {
-  final ScrollController _controller = ScrollController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
-    return _VotingPaneScrollbar(
-      controller: _controller,
-      child: SingleChildScrollView(
-        controller: _controller,
+    return AppPaneScrollbar(
+      builder: (context, controller) => SingleChildScrollView(
+        controller: controller,
         primary: false,
         child: ConstrainedBox(
           constraints: BoxConstraints(minHeight: widget.minHeight),
@@ -151,6 +126,50 @@ class _VotingPaneCenteredScrollViewState
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Standard full-pane voting loading indicator: a centered
+/// [CircularProgressIndicator] filling the content area. Use this for every
+/// full-pane async-loading branch in the voting feature so the spinner
+/// treatment (and any future skeleton/token the redesign specifies) lives in
+/// one place. The toolbar band, where a screen keeps one present during
+/// loading, is rendered by the calling screen — this widget is just the
+/// content-area spinner. Intentionally not used for the inline indicators
+/// (voting-power meta, step-row progress bubble), whose size/stroke differ.
+class VotingPaneLoading extends StatelessWidget {
+  const VotingPaneLoading({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(child: CircularProgressIndicator());
+  }
+}
+
+/// Renders a non-data pane state ([child] — a loading spinner, error, or
+/// empty message) below the standard 48px [AppPaneToolbar] band, so every
+/// voting pane screen keeps a back affordance and anchors its loading/error
+/// content to the same region the data state occupies. The data branches keep
+/// rendering their own toolbar; use this only for the toolbar-less states.
+class VotingPaneStateView extends StatelessWidget {
+  const VotingPaneStateView({
+    required this.child,
+    this.backLinkMinWidth = 0,
+    super.key,
+  });
+
+  final Widget child;
+  final double backLinkMinWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppPaneToolbar(backLinkMinWidth: backLinkMinWidth),
+        Expanded(child: child),
+      ],
     );
   }
 }
@@ -167,74 +186,4 @@ Widget _centeredTrack({
       child: Padding(padding: padding, child: child),
     ),
   );
-}
-
-class _VotingPaneScrollbar extends StatefulWidget {
-  const _VotingPaneScrollbar({required this.controller, required this.child});
-
-  final ScrollController controller;
-  final Widget child;
-
-  @override
-  State<_VotingPaneScrollbar> createState() => _VotingPaneScrollbarState();
-}
-
-class _VotingPaneScrollbarState extends State<_VotingPaneScrollbar> {
-  bool _isHovered = false;
-  bool _canScroll = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _scheduleCanScrollUpdate();
-  }
-
-  @override
-  void didUpdateWidget(covariant _VotingPaneScrollbar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _scheduleCanScrollUpdate();
-  }
-
-  void _scheduleCanScrollUpdate() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _updateCanScroll();
-    });
-  }
-
-  void _updateCanScroll() {
-    final canScroll =
-        widget.controller.hasClients &&
-        widget.controller.position.maxScrollExtent > 0;
-    if (canScroll == _canScroll) return;
-    setState(() {
-      _canScroll = canScroll;
-    });
-  }
-
-  void _setHovered(bool hovered) {
-    if (_isHovered == hovered) return;
-    setState(() {
-      _isHovered = hovered;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return NotificationListener<ScrollMetricsNotification>(
-      onNotification: (_) {
-        _scheduleCanScrollUpdate();
-        return false;
-      },
-      child: MouseRegion(
-        onEnter: (_) => _setHovered(true),
-        onExit: (_) => _setHovered(false),
-        child: Scrollbar(
-          controller: widget.controller,
-          thumbVisibility: isDesktopLayoutPlatform && _isHovered && _canScroll,
-          child: widget.child,
-        ),
-      ),
-    );
-  }
 }

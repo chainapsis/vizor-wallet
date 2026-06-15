@@ -8,7 +8,6 @@ import 'package:go_router/go_router.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/voting/voting_config_provider.dart';
@@ -20,6 +19,7 @@ import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
+import '../widgets/voting_pane_scroll_area.dart';
 
 class VotingSubmissionConfirmationScreen extends ConsumerStatefulWidget {
   const VotingSubmissionConfirmationScreen({
@@ -86,7 +86,7 @@ class _VotingSubmissionConfirmationScreenState
         padding: EdgeInsets.zero,
         child: session.when(
           skipLoadingOnRefresh: false,
-          loading: () => const Center(child: CircularProgressIndicator()),
+          loading: () => const VotingPaneStateView(child: VotingPaneLoading()),
           error: (error, _) {
             final cachedState = _lastSubmissionState;
             if (cachedState != null) {
@@ -100,7 +100,8 @@ class _VotingSubmissionConfirmationScreenState
               confirmed: false,
               title: 'Submission not complete',
               pollTitle: 'Token holder voting',
-              message: "Couldn't load submission details: $error",
+              message:
+                  "Couldn't load submission details: ${friendlyVotingErrorMessage(error)}",
               votingPower: 'Not available',
             );
           },
@@ -411,20 +412,7 @@ class _ConfirmationScaffold extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Padding(
-              // Design: back chevron sits 16px into the pane on every toolbar
-              // (4px pane padding + AppBackLink's 12px internal inset).
-              padding: EdgeInsets.fromLTRB(
-                AppSpacing.xxs,
-                AppSpacing.md,
-                AppSpacing.md,
-                0,
-              ),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: AppRouteBackLink(),
-              ),
-            ),
+            const AppPaneToolbar(),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(

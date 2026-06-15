@@ -16,10 +16,12 @@ class ImportBirthdayArgs {
   const ImportBirthdayArgs({
     required this.mnemonic,
     this.initialBirthdayHeight,
+    this.selectedAdditionalAccountIndices = const [],
   });
 
   final String mnemonic;
   final int? initialBirthdayHeight;
+  final List<int> selectedAdditionalAccountIndices;
 }
 
 class SetPasswordScreenArgs {
@@ -27,6 +29,7 @@ class SetPasswordScreenArgs {
     required this.flow,
     this.mnemonic,
     this.birthdayHeight,
+    this.selectedAdditionalAccountIndices = const [],
     this.keystoneAccountName,
     this.keystoneUfvk,
     this.keystoneSeedFingerprint,
@@ -39,10 +42,12 @@ class SetPasswordScreenArgs {
   const SetPasswordScreenArgs.importWallet({
     required String mnemonic,
     required int birthdayHeight,
+    List<int> selectedAdditionalAccountIndices = const [],
   }) : this._(
          flow: SetPasswordFlow.importWallet,
          mnemonic: mnemonic,
          birthdayHeight: birthdayHeight,
+         selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
        );
 
   const SetPasswordScreenArgs.importKeystone({
@@ -63,6 +68,7 @@ class SetPasswordScreenArgs {
   final SetPasswordFlow flow;
   final String? mnemonic;
   final int? birthdayHeight;
+  final List<int> selectedAdditionalAccountIndices;
   final String? keystoneAccountName;
   final String? keystoneUfvk;
   final List<int>? keystoneSeedFingerprint;
@@ -91,6 +97,7 @@ class SetPasswordScreenArgs {
     SetPasswordFlow.importWallet => ImportBirthdayArgs(
       mnemonic: requiredMnemonic,
       initialBirthdayHeight: importBirthdayHeight,
+      selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
     ),
     SetPasswordFlow.importKeystone => this,
   };

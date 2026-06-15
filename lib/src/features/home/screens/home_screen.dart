@@ -757,7 +757,7 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
     required this.isShieldingBalance,
     required this.privacyModeEnabled,
     required this.shieldBalanceContentColor,
-    required this.shieldBalanceChevronColor,
+    required this.shieldBalanceHovered,
     required this.onShieldBalancePressed,
     required this.onShieldBalanceHoverChanged,
     super.key,
@@ -768,11 +768,9 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
   final bool isShieldingBalance;
   final bool privacyModeEnabled;
   final Color shieldBalanceContentColor;
-  final Color shieldBalanceChevronColor;
+  final bool shieldBalanceHovered;
   final VoidCallback onShieldBalancePressed;
   final ValueChanged<bool> onShieldBalanceHoverChanged;
-
-  static const _itemGap = 10.0;
 
   @override
   Widget build(BuildContext context) {
@@ -783,41 +781,44 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
     );
     final canHoverShieldBalance = canShieldBalance && !isShieldingBalance;
 
+    // Figma "Home Shield Balance" (4731:64262/64704): a 46px tray exposed on
+    // the card's ground shelf — 16/8 padding, muted primary text on the left,
+    // space-between to the shield action.
     return SizedBox(
-      height: 56,
+      height: 46,
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.s),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
         child: Row(
           children: [
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.xxs),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AppIcon(
-                      AppIcons.transparentBalance,
-                      size: 16,
-                      color: colors.text.homeCard,
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
-                    Flexible(
-                      child: Text(
-                        'Transparent balance: $displayedBalance',
-                        key: const ValueKey('home_transparent_balance_text'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.homeCard,
-                        ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppIcon(
+                    AppIcons.transparentBalance,
+                    size: 20,
+                    color: colors.text.primary,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Flexible(
+                    child: Text(
+                      'Transparent: $displayedBalance',
+                      key: const ValueKey('home_transparent_balance_text'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.primary,
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
             if (canShieldBalance || isShieldingBalance) ...[
-              const SizedBox(width: _itemGap),
               MouseRegion(
                 cursor: canHoverShieldBalance
                     ? SystemMouseCursors.click
@@ -832,7 +833,7 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
                   enabled: canShieldBalance,
                   isLoading: isShieldingBalance,
                   contentColor: shieldBalanceContentColor,
-                  chevronColor: shieldBalanceChevronColor,
+                  hovered: shieldBalanceHovered,
                   onPressed: onShieldBalancePressed,
                 ),
               ),
@@ -849,18 +850,19 @@ class _HomeShieldBalanceButton extends StatelessWidget {
     required this.enabled,
     required this.isLoading,
     required this.contentColor,
-    required this.chevronColor,
+    required this.hovered,
     required this.onPressed,
   });
 
   final bool enabled;
   final bool isLoading;
   final Color contentColor;
-  final Color chevronColor;
+  final bool hovered;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final isInteractive = enabled && !isLoading;
 
     return Semantics(
@@ -874,31 +876,41 @@ class _HomeShieldBalanceButton extends StatelessWidget {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: isInteractive ? onPressed : null,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 96, minHeight: 32),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xxs,
-                    ),
-                    child: Text(
-                      isLoading ? 'Shielding...' : 'Shield balance',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: contentColor,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              // Standard ghost-button hover fill; the design draws no hover
+              // state for the tray action.
+              color: hovered && isInteractive
+                  ? colors.button.ghost.bgHover
+                  : const Color(0x00000000),
+              borderRadius: BorderRadius.circular(AppRadii.full),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 30),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xxs,
+                      ),
+                      child: Text(
+                        isLoading ? 'Shielding...' : 'Shield now',
+                        style: AppTypography.labelLarge.copyWith(
+                          color: contentColor,
+                        ),
                       ),
                     ),
-                  ),
-                  AppIcon(
-                    isLoading ? AppIcons.loader : AppIcons.chevronForward,
-                    size: 16,
-                    color: isLoading ? contentColor : chevronColor,
-                  ),
-                ],
+                    AppIcon(
+                      isLoading ? AppIcons.loader : AppIcons.chevronForward,
+                      size: 16,
+                      color: contentColor,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1353,14 +1365,14 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
         widget.canShieldBalance &&
         !widget.isShieldingBalance &&
         _isShieldBalanceHovered;
-    final shieldBalanceContentColor = isShieldBalanceHoverActive
-        ? colors.button.primary.label
-        : widget.isShieldingBalance || widget.canShieldBalance
-        ? colors.text.homeCard
+    // The tray sits on the card's ground shelf (Figma 4731:64262/64704), so
+    // the action rests on the accent text token. The design draws no hover
+    // state; hover uses the standard ghost-button fill instead of inventing
+    // a color (the old gold chevron borrowed a background utility token).
+    final shieldBalanceContentColor =
+        widget.isShieldingBalance || widget.canShieldBalance
+        ? colors.text.accent
         : colors.text.secondary.withValues(alpha: 0.64);
-    final shieldBalanceChevronColor = isShieldBalanceHoverActive
-        ? colors.background.utilitySuccessStrong
-        : shieldBalanceContentColor;
     final roundedPriceChangePct = widget.priceChange24hPct == null
         ? null
         : roundZecPriceChange24hPct(widget.priceChange24hPct!);
@@ -1374,12 +1386,6 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
         ? colors.text.destructive
         : colors.text.homeCard;
     final cardRadius = BorderRadius.circular(AppRadii.large);
-    final shieldedCardRadius = widget.hasTransparentBalance
-        ? const BorderRadius.vertical(
-            top: Radius.circular(AppRadii.large),
-            bottom: Radius.circular(AppRadii.medium),
-          )
-        : cardRadius;
 
     return SizedBox(
       width: 396,
@@ -1390,7 +1396,10 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
             borderRadius: cardRadius,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: colors.background.homeCard,
+                // Figma: the outer card is a ground shelf; only the balance
+                // block itself carries the dark homeCard fill, leaving the
+                // shield tray exposed on the bright surface.
+                color: colors.background.ground,
                 borderRadius: cardRadius,
               ),
               child: Column(
@@ -1402,7 +1411,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                     padding: const EdgeInsets.all(AppSpacing.sm),
                     decoration: BoxDecoration(
                       color: colors.background.homeCard,
-                      borderRadius: shieldedCardRadius,
+                      borderRadius: cardRadius,
                       border: Border.all(
                         color: const Color(0xFFFFFFFF).withValues(alpha: 0.07),
                         width: 1.5,
@@ -1424,7 +1433,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                             const SizedBox(width: AppSpacing.xs),
                             Text(
                               'Shielded balance',
-                              style: AppTypography.labelMedium.copyWith(
+                              style: AppTypography.labelLarge.copyWith(
                                 color: colors.text.homeCard,
                                 fontWeight: FontWeight.w400,
                               ),
@@ -1521,7 +1530,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                       isShieldingBalance: widget.isShieldingBalance,
                       privacyModeEnabled: widget.privacyModeEnabled,
                       shieldBalanceContentColor: shieldBalanceContentColor,
-                      shieldBalanceChevronColor: shieldBalanceChevronColor,
+                      shieldBalanceHovered: isShieldBalanceHoverActive,
                       onShieldBalancePressed: widget.onShieldBalancePressed,
                       onShieldBalanceHoverChanged:
                           _handleShieldBalanceHoverChanged,

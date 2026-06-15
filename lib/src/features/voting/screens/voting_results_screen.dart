@@ -8,7 +8,6 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
 import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_service_providers.dart';
 import '../../../providers/voting/voting_session_provider.dart';
@@ -16,6 +15,7 @@ import '../../../providers/voting/voting_state.dart';
 import '../../../services/voting/voting_models.dart';
 import '../../../services/voting/resolved_voting_config_extensions.dart';
 import '../voting_choice_style.dart';
+import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_poll_ordering.dart';
 import '../widgets/voting_metadata_widgets.dart';
@@ -74,23 +74,11 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(
-                AppSpacing.xxs,
-                AppSpacing.md,
-                AppSpacing.md,
-                0,
-              ),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: AppRouteBackLink(),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.s),
+            const AppPaneToolbar(),
             Expanded(
               child: tally.when(
                 skipLoadingOnRefresh: false,
-                loading: () => const Center(child: CircularProgressIndicator()),
+                loading: () => const VotingPaneLoading(),
                 error: (error, _) {
                   final round = session.value?.round;
                   if (round != null &&
@@ -99,7 +87,9 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
                     return _pendingResults();
                   }
                   _clearPendingTallyRefresh();
-                  return _Message("Couldn't load results: $error");
+                  return _Message(
+                    "Couldn't load results: ${friendlyVotingErrorMessage(error)}",
+                  );
                 },
                 data: (result) {
                   final round = session.value?.round;
@@ -107,10 +97,11 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
                     _clearPendingTallyRefresh();
                     if (session.hasError) {
                       return _Message(
-                        "Couldn't load voting round details: ${session.error}",
+                        "Couldn't load voting round details: "
+                        "${friendlyVotingErrorMessage(session.error!)}",
                       );
                     }
-                    return const Center(child: CircularProgressIndicator());
+                    return const VotingPaneLoading();
                   }
                   final proposals = proposalsFromRound(round);
                   if (_isTallying(result.rawJson)) {

@@ -423,6 +423,13 @@ class _SwapActivityFlowContent extends StatelessWidget {
       intent,
     );
     final statusError = intent.statusError ?? state.statusError;
+    // The expired/failed layouts already tell the failure story; a stale
+    // refresh error persisted by an earlier poll (e.g. "service temporarily
+    // unavailable") only muddies it, so the warning panel stays hidden there.
+    final showStatusError =
+        statusError != null &&
+        intent.status != SwapIntentStatus.expired &&
+        intent.status != SwapIntentStatus.failed;
     final showExternalDepositPage = swapActivityShowsExternalDepositPage(
       intent,
     );
@@ -464,7 +471,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         primaryContent,
-        if (statusError != null) ...[
+        if (showStatusError) ...[
           const SizedBox(height: AppSpacing.md),
           SizedBox(
             width: 400,

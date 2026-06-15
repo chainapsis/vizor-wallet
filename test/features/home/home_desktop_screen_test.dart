@@ -372,12 +372,12 @@ void main() {
       find.byKey(const ValueKey('home_desktop_transparent_balance_strip')),
       findsOneWidget,
     );
-    expect(find.text('Transparent balance: 2.42 ZEC'), findsOneWidget);
+    expect(find.text('Transparent: 2.42 ZEC'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('home_shield_balance_button')),
       findsOneWidget,
     );
-    expect(find.text('Shield balance'), findsOneWidget);
+    expect(find.text('Shield now'), findsOneWidget);
   });
 
   testWidgets('home desktop keeps recovery notice visible', (tester) async {

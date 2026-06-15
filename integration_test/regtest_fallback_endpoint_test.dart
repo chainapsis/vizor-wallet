@@ -20,7 +20,6 @@ const _password = 'Vizor123!';
 const _primaryProxyUrl = 'http://127.0.0.1:19068';
 const _fallbackToast =
     'Selected endpoint is unstable. Switched to fallback endpoint.';
-final _currencyTickerLower = kZcashDefaultCurrencyTicker.toLowerCase();
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -93,8 +92,8 @@ void main() {
         tester,
         () => _keyedTextEquals(
           tester,
-          const ValueKey('home_shielded_balance_text'),
-          '1.25 $_currencyTickerLower',
+          const ValueKey('home_desktop_balance_amount_text'),
+          '1.25',
         ),
         description: 'shielded balance to sync through fallback',
         timeout: const Duration(minutes: 4),
