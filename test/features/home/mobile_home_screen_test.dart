@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -152,6 +153,23 @@ void main() {
   });
 
   testWidgets('privacy eye masks the balance', (tester) async {
+    final impactTypes = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          impactTypes.add(call.arguments);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
     await tester.pumpWidget(
       _app(_syncedState(orchardBalance: BigInt.from(14312000000))),
     );
@@ -164,6 +182,7 @@ void main() {
       find.textContaining(fixedPrivacyMask(), findRichText: true),
       findsOneWidget,
     );
+    expect(impactTypes, ['HapticFeedbackType.mediumImpact']);
     expect(find.textContaining('143.12', findRichText: true), findsNothing);
   });
 

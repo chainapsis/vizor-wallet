@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/formatting/sync_status_label.dart';
 import '../../../../core/config/network_config.dart';
 import '../../../../core/formatting/zec_amount.dart';
@@ -334,7 +337,10 @@ class _PrivacyEyeButton extends StatelessWidget {
       button: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
+        onTap: () {
+          unawaited(AppHaptics.privacyToggle());
+          onTap();
+        },
         child: Container(
           // 40 px disc, a step lighter than the card (#393C3C on
           // #2E3232), per the Figma privacy toggle.

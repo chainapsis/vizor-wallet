@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 
-/// Haptic vocabulary for the passcode surfaces and the mobile tab bar.
+/// Haptic vocabulary for passcode surfaces, mobile navigation, and
+/// privacy controls.
 ///
 /// All methods are fire-and-forget safe — call them unawaited so a slow
 /// platform round trip never delays input handling.
@@ -15,6 +16,10 @@ abstract final class AppHaptics {
   /// subtle selection tick (iOS UISelectionFeedbackGenerator), one step
   /// softer than the digits.
   static Future<void> auxiliaryKey() => HapticFeedback.selectionClick();
+
+  /// Privacy visibility toggles — a more deliberate medium tap (iOS
+  /// UIImpactFeedbackGenerator(.medium)).
+  static Future<void> privacyToggle() => HapticFeedback.mediumImpact();
 
   /// A rejected passcode. Native notification-error where the platform
   /// has one (iOS UINotificationFeedbackGenerator(.error), Android
