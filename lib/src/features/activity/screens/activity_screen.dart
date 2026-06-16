@@ -311,22 +311,31 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         : SwapActivityLegAbsorption.empty;
     final swapReceiveTxByIntent = absorption.receiveTxByIntent;
 
-    final entries = <_ActivityEntry>[
-      if (canRenderTransactions)
-        for (final tx in transactions)
-          if (!absorption.absorbs(tx))
-            _ActivityEntry(
-              timestamp: _transactionActivityTimestamp(tx),
-              row: buildTransactionActivityRow(
-                context: context,
-                transaction: tx,
-                privacyModeEnabled: privacyModeEnabled,
-                onTap: () => _openTransactionStatus(tx),
-              ),
+    final entries = <_ActivityEntry>[];
+    var sourceOrder = 0;
+    if (canRenderTransactions) {
+      for (final tx in transactions) {
+        if (absorption.absorbs(tx)) continue;
+        entries.add(
+          _ActivityEntry(
+            sortKey: activitySortKeyForTransaction(
+              tx,
+              sourceOrder: sourceOrder++,
             ),
-      for (final item in swapItems)
+            row: buildTransactionActivityRow(
+              context: context,
+              transaction: tx,
+              privacyModeEnabled: privacyModeEnabled,
+              onTap: () => _openTransactionStatus(tx),
+            ),
+          ),
+        );
+      }
+    }
+    for (final item in swapItems) {
+      entries.add(
         _ActivityEntry(
-          timestamp: item.activityTimestamp,
+          sortKey: activitySortKeyForSwapItem(item, sourceOrder: sourceOrder++),
           row: buildSwapActivityRow(
             context: context,
             item: item,
@@ -341,7 +350,9 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
             },
           ),
         ),
-    ]..sort(_compareActivityEntries);
+      );
+    }
+    entries.sort(_compareActivityEntries);
     final sections = _activityFeedSections(entries);
 
     return AppDesktopShell(
@@ -369,15 +380,78 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
 }
 
 class _ActivityEntry {
-  const _ActivityEntry({required this.timestamp, required this.row});
+  const _ActivityEntry({required this.sortKey, required this.row});
 
-  final DateTime? timestamp;
+  final ActivityEntrySortKey sortKey;
   final ActivityRowData row;
 }
 
 int _compareActivityEntries(_ActivityEntry a, _ActivityEntry b) {
+  return compareActivityEntrySortKeys(a.sortKey, b.sortKey);
+}
+
+@visibleForTesting
+class ActivityEntrySortKey {
+  const ActivityEntrySortKey({
+    required this.timestamp,
+    required this.isPendingTransaction,
+    required this.sourceOrder,
+  });
+
+  final DateTime? timestamp;
+  final bool isPendingTransaction;
+  final int sourceOrder;
+}
+
+@visibleForTesting
+ActivityEntrySortKey activitySortKeyForTransaction(
+  rust_sync.TransactionInfo tx, {
+  required int sourceOrder,
+}) {
+  return ActivityEntrySortKey(
+    timestamp: _transactionActivityTimestamp(tx),
+    isPendingTransaction: isPendingActivityTransaction(tx),
+    sourceOrder: sourceOrder,
+  );
+}
+
+@visibleForTesting
+ActivityEntrySortKey activitySortKeyForSwapItem(
+  SwapActivityRowItem item, {
+  required int sourceOrder,
+}) {
+  return ActivityEntrySortKey(
+    timestamp: item.activityTimestamp,
+    isPendingTransaction: false,
+    sourceOrder: sourceOrder,
+  );
+}
+
+@visibleForTesting
+bool isPendingActivityTransaction(rust_sync.TransactionInfo tx) {
+  return tx.minedHeight == BigInt.zero && !tx.expiredUnmined;
+}
+
+@visibleForTesting
+int compareActivityEntrySortKeys(
+  ActivityEntrySortKey a,
+  ActivityEntrySortKey b,
+) {
+  final aMissingTimestampPending =
+      a.isPendingTransaction && a.timestamp == null;
+  final bMissingTimestampPending =
+      b.isPendingTransaction && b.timestamp == null;
+  if (aMissingTimestampPending != bMissingTimestampPending) {
+    return aMissingTimestampPending ? -1 : 1;
+  }
   final aTime = a.timestamp;
   final bTime = b.timestamp;
+  final timeComparison = _compareActivityTimestamps(aTime, bTime);
+  if (timeComparison != 0) return timeComparison;
+  return a.sourceOrder.compareTo(b.sourceOrder);
+}
+
+int _compareActivityTimestamps(DateTime? aTime, DateTime? bTime) {
   if (aTime == null && bTime == null) return 0;
   if (aTime == null) return 1;
   if (bTime == null) return -1;
@@ -398,7 +472,7 @@ List<ActivityFeedSectionData> _activityFeedSections(
   String? currentTitle;
 
   for (final entry in entries) {
-    final title = _activitySectionTitle(entry.timestamp);
+    final title = activitySectionTitleForSortKey(entry.sortKey);
     if (title != currentTitle) {
       currentTitle = title;
       currentRows = <ActivityRowData>[];
@@ -410,12 +484,24 @@ List<ActivityFeedSectionData> _activityFeedSections(
   return sections;
 }
 
-String _activitySectionTitle(DateTime? timestamp) {
+@visibleForTesting
+String activitySectionTitleForSortKey(
+  ActivityEntrySortKey sortKey, {
+  DateTime? now,
+}) {
+  if (sortKey.isPendingTransaction && sortKey.timestamp == null) {
+    return 'This week';
+  }
+  return activitySectionTitleForTimestamp(sortKey.timestamp, now: now);
+}
+
+@visibleForTesting
+String activitySectionTitleForTimestamp(DateTime? timestamp, {DateTime? now}) {
   if (timestamp == null) return 'Earlier';
 
   final local = timestamp.toLocal();
-  final now = DateTime.now();
-  final weekStart = _startOfWeek(now);
+  final reference = now ?? DateTime.now();
+  final weekStart = _startOfWeek(reference);
   final nextWeekStart = weekStart.add(const Duration(days: 7));
   if (!local.isBefore(weekStart) && local.isBefore(nextWeekStart)) {
     return 'This week';
