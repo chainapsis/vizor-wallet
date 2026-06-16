@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/storage/app_secure_store.dart';
 import '../../../../core/feedback/app_haptics.dart';
@@ -13,6 +14,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/router_refresh_provider.dart';
+import '../../../onboarding/mobile/forgot_passcode_sheet.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
@@ -211,6 +213,38 @@ class _MobileChangePasscodeScreenState
     _error = error;
   }
 
+  Future<void> _showForgotPasscodeSheet() async {
+    final confirmed = await showAppMobileSheet<bool>(
+      context: context,
+      builder: (sheetContext) => const ForgotPasscodeSheet(),
+    );
+    if (confirmed != true || !mounted) return;
+    final lastWarningConfirmed = await showAppMobileSheet<bool>(
+      context: context,
+      builder: (sheetContext) => const ForgotPasscodeLastWarningSheet(),
+    );
+    if (lastWarningConfirmed != true || !mounted) return;
+    await _resetWallet();
+  }
+
+  Future<void> _resetWallet() async {
+    setState(() => _submitting = true);
+    final router = GoRouter.of(context);
+    try {
+      await resetWalletForForgottenPasscode(ref);
+    } catch (e, st) {
+      log('MobileChangePasscode._resetWallet: ERROR: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _entry = '';
+        _error = "Couldn't reset the app. Please try again.";
+      });
+      return;
+    }
+    router.go('/welcome');
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -258,9 +292,9 @@ class _MobileChangePasscodeScreenState
               onDigit: _onDigit,
               onBackspace: _onBackspace,
               canDelete: _entry.isNotEmpty,
-              // No help/reset affordance here: reaching settings means the
-              // user is already authenticated, so the forgot-passcode reset
-              // path lives only on the app-entry unlock screen.
+              onHelp: _phase == _Phase.verify && !_submitting
+                  ? _showForgotPasscodeSheet
+                  : null,
               enabled: !_submitting,
             ),
             const SizedBox(height: AppSpacing.md),
