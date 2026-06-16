@@ -54,8 +54,8 @@ class WidgetbookApp extends StatelessWidget {
             WidgetbookTheme(name: 'Dark', data: AppThemeData.dark),
             WidgetbookTheme(name: 'Light', data: AppThemeData.light),
           ],
-          themeBuilder: (context, theme, child) =>
-              AppTheme(data: theme, child: child),
+          themeBuilder:
+              (context, theme, child) => AppTheme(data: theme, child: child),
           initialTheme: const WidgetbookTheme(
             name: 'Dark',
             data: AppThemeData.dark,
@@ -157,6 +157,27 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Transparent modal',
                       builder: buildReceiveDesktopTransparentModalUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Shielded',
+                      builder: buildReceiveMobileShieldedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent',
+                      builder: buildReceiveMobileTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Shielded sheet',
+                      builder: buildReceiveMobileShieldedSheetUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent sheet',
+                      builder: buildReceiveMobileTransparentSheetUseCase,
                     ),
                   ],
                 ),
