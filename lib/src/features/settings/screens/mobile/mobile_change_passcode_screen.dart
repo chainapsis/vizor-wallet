@@ -21,9 +21,9 @@ import '../../../onboarding/mobile/passcode_widgets.dart';
 
 enum _Phase { verify, create, confirm }
 
-/// Mobile passcode change — Figma `Enter Passcode` / `Update Passcode` /
-/// `Confirm Passcode` (4494:91005 / 91073 / 91141). Three numpad phases:
-/// verify the current passcode (with the Forgot Passcode reset sheet
+/// Mobile passcode change — Figma `Enter Passcode` / `Set New Passcode` /
+/// `Confirm Passcode` (4885:24611 / 4885:24699 / 4885:24770). Three numpad
+/// phases: verify the current passcode (with the Forgot Passcode reset sheet
 /// behind the help key), enter the new one, confirm it. The change goes
 /// through the same `appSecurityProvider.changePassword` rotation as the
 /// desktop flow. Pops `true` after a successful change.
@@ -249,9 +249,9 @@ class _MobileChangePasscodeScreenState
   Widget build(BuildContext context) {
     final colors = context.colors;
     final (title, subtitle) = switch (_phase) {
-      _Phase.verify => ('Enter Passcode', 'Enter your passcode'),
-      _Phase.create => ('Update Passcode', 'Enter your new passcode'),
-      _Phase.confirm => ('Confirm Passcode', 'Confirm new passcode'),
+      _Phase.verify => ('Enter Passcode', 'Confirm your access'),
+      _Phase.create => ('Set New Passcode', '6 digits length'),
+      _Phase.confirm => ('Confirm Passcode', '6 digits length'),
     };
 
     return Scaffold(
@@ -263,41 +263,62 @@ class _MobileChangePasscodeScreenState
               title: '',
               onBack: _submitting ? null : () => context.pop(),
             ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              // Headline M serif per the Update Passcode frames.
-              style: AppTypography.headlineMedium.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-            // Dots + error centred in the space above the keypad.
             Expanded(
-              child: PasscodePromptField(
-                length: kMobilePasscodeLength,
-                filled: _entry.length,
-                error: _error,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: AppSpacing.md,
+                ),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              textAlign: TextAlign.center,
+                              style: AppTypography.displayLarge.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.s),
+                            Text(
+                              subtitle,
+                              textAlign: TextAlign.center,
+                              style: AppTypography.bodyMediumStrong.copyWith(
+                                color: colors.text.primary,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            SizedBox(
+                              height: kPasscodePromptDigitsHeight,
+                              child: PasscodePromptField(
+                                length: kMobilePasscodeLength,
+                                filled: _entry.length,
+                                error: _error,
+                                minGap: 0,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    PasscodeNumpad(
+                      onDigit: _onDigit,
+                      onBackspace: _onBackspace,
+                      canDelete: _entry.isNotEmpty,
+                      onHelp: _phase == _Phase.verify && !_submitting
+                          ? _showForgotPasscodeSheet
+                          : null,
+                      enabled: !_submitting,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
+                ),
               ),
             ),
-            PasscodeNumpad(
-              onDigit: _onDigit,
-              onBackspace: _onBackspace,
-              canDelete: _entry.isNotEmpty,
-              onHelp: _phase == _Phase.verify && !_submitting
-                  ? _showForgotPasscodeSheet
-                  : null,
-              enabled: !_submitting,
-            ),
-            const SizedBox(height: AppSpacing.md),
           ],
         ),
       ),

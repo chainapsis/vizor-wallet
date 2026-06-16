@@ -13,8 +13,10 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/theme_mode_provider.dart';
+import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -53,12 +55,25 @@ class _FakeThemeModeNotifier extends ThemeModeNotifier {
   }
 }
 
-Widget _app() {
+class _FakeBiometricNotifier extends BiometricUnlockNotifier {
+  _FakeBiometricNotifier(this.initialState);
+
+  final BiometricUnlockState initialState;
+
+  @override
+  Future<BiometricUnlockState> build() async => initialState;
+}
+
+Widget _app({BiometricUnlockState? biometric}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
       themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
+      if (biometric != null)
+        biometricUnlockProvider.overrideWith(
+          () => _FakeBiometricNotifier(biometric),
+        ),
     ],
     child: MaterialApp(
       builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
@@ -203,6 +218,61 @@ void main() {
         reason: '$label should be enabled',
       );
     }
+  });
+
+  testWidgets('labels Face ID hardware by brand', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        biometric: const BiometricUnlockState(
+          availability: BiometricAvailability(
+            supported: true,
+            enrolled: true,
+            kind: BiometricKind.face,
+          ),
+          enabled: true,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('mobile_settings_biometric_row'));
+    expect(row, findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.text('Face ID')),
+      findsOneWidget,
+    );
+    expect(find.descendant(of: row, matching: find.text('On')), findsOneWidget);
+  });
+
+  testWidgets('labels non-face biometric hardware generically', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        biometric: const BiometricUnlockState(
+          availability: BiometricAvailability(
+            supported: true,
+            enrolled: true,
+            kind: BiometricKind.fingerprint,
+          ),
+          enabled: false,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('mobile_settings_biometric_row'));
+    expect(row, findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.text('Biometrics')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: row, matching: find.text('Fingerprint')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: row, matching: find.text('Off')),
+      findsOneWidget,
+    );
   });
 }
 

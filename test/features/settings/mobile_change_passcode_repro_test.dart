@@ -96,7 +96,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Enter Passcode'), findsOneWidget);
       await enterPasscode(current);
-      expect(find.text('Update Passcode'), findsOneWidget);
+      expect(find.text('Set New Passcode'), findsOneWidget);
       await enterPasscode(next);
       expect(find.text('Confirm Passcode'), findsOneWidget);
       await enterPasscode(next);

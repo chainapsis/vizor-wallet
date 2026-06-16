@@ -7,9 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_screen.dart';
+import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -17,7 +20,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import '../../fakes/fake_sync_notifier.dart';
 
 const _shielded = 'u1tvg2412a23kshieldedaddressk64123hhq6d';
-const _transparent = 't1transparentaddress12345678901234';
+const _transparent = 't1aWwWwqk3jYGkZc7nLGuTvuM8hDywMZCo';
 
 const _accountState = AccountState(
   accounts: [
@@ -119,6 +122,41 @@ void main() {
       find.textContaining(_shielded.substring(0, 13), findRichText: true),
       findsOneWidget,
     );
+    expect(tester.getSize(find.byType(MobileTopNav)), const Size(520, 74));
+    final shieldedTab = tester.widget<Text>(find.text('Shielded'));
+    expect(shieldedTab.style?.fontSize, 16);
+    expect(shieldedTab.style?.height, 17 / 16);
+    expect(shieldedTab.style?.fontWeight, FontWeight.w500);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('receive_address_type_tabs'))),
+      const Size(320, 44),
+    );
+    expect(
+      tester.getSize(
+        find.descendant(
+          of: find.byKey(const ValueKey('mobile_receive_qr_shielded')),
+          matching: find.byType(ReceiveQrSurface),
+        ),
+      ),
+      const Size(292, 308),
+    );
+    expect(tester.getSize(find.byType(ReceiveRenewButton)), const Size(48, 48));
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_receive_copy'))),
+      const Size(300, 44),
+    );
+    final helpIcon = tester.widget<AppIcon>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_receive_address_summary')),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is AppIcon &&
+              widget.name == AppIcons.help &&
+              widget.semanticLabel == 'About this address type',
+        ),
+      ),
+    );
+    expect(helpIcon.color, AppThemeData.dark.colors.icon.muted);
   });
 
   testWidgets('switching to transparent swaps labels and address', (
@@ -135,6 +173,56 @@ void main() {
       find.textContaining(_transparent.substring(0, 13), findRichText: true),
       findsOneWidget,
     );
+    expect(
+      tester
+          .widget<ReceiveAddressLine>(
+            find.byKey(
+              const ValueKey('mobile_receive_address_line_transparent'),
+            ),
+          )
+          .scaleToFit,
+      isTrue,
+    );
+    final shareIcon = tester.widget<AppIcon>(
+      find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.share,
+      ),
+    );
+    expect(shareIcon.size, 20);
+    final copyIcon = tester.widget<AppIcon>(
+      find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.copy,
+      ),
+    );
+    expect(copyIcon.size, 20);
+    final copyLabel = tester.widget<Text>(
+      find.text('Copy transparent address'),
+    );
+    expect(copyLabel.style?.fontSize, AppTypography.labelMedium.fontSize);
+  });
+
+  testWidgets('swipes between shielded and transparent receive codes', (
+    tester,
+  ) async {
+    await _pumpReceive(tester, _FakeReceiveAddressService());
+
+    await tester.drag(
+      find.byKey(const ValueKey('mobile_receive_qr_pager')),
+      const Offset(-320, 0),
+    );
+    await _settle(tester);
+
+    expect(find.text('Share transparent address'), findsOneWidget);
+    expect(find.text('Copy transparent address'), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const ValueKey('mobile_receive_qr_pager')),
+      const Offset(320, 0),
+    );
+    await _settle(tester);
+
+    expect(find.text('Share shielded address'), findsOneWidget);
+    expect(find.text('Copy shielded address'), findsOneWidget);
   });
 
   testWidgets('renew requests a fresh shielded address', (tester) async {
@@ -185,7 +273,12 @@ void main() {
   ) async {
     await _pumpReceive(tester, _FakeReceiveAddressService());
 
-    await tester.tap(find.bySemanticsLabel('About this address type'));
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_receive_address_summary')),
+        matching: find.bySemanticsLabel('About this address type'),
+      ),
+    );
     await _settle(tester);
     expect(find.text('Shielded address'), findsOneWidget);
     expect(find.text('Strong privacy by default.'), findsOneWidget);
@@ -201,12 +294,24 @@ void main() {
 
     await tester.tap(find.text('Transparent'));
     await _settle(tester);
-    await tester.tap(find.bySemanticsLabel('About this address type'));
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_receive_address_summary')),
+        matching: find.bySemanticsLabel('About this address type'),
+      ),
+    );
     await _settle(tester);
     expect(find.text('Transparent address'), findsOneWidget);
     expect(find.text('Publicly visible'), findsOneWidget);
     expect(
       find.textContaining('publicly visible on-chain', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is AppIcon && widget.name == AppIcons.shieldKeyholeOutline,
+      ),
       findsOneWidget,
     );
   });

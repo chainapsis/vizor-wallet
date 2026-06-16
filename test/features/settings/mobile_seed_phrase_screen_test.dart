@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -57,16 +58,56 @@ class _FakeBiometricUnlock extends BiometricUnlock {
       BiometricAvailability.unavailable;
 }
 
+class _FakeBiometricController {
+  _FakeBiometricController({required this.initialState});
+
+  BiometricUnlockState initialState;
+  String? passcode;
+  var reads = 0;
+  String? lastReason;
+}
+
+class _FakeBiometricNotifier extends BiometricUnlockNotifier {
+  _FakeBiometricNotifier(this.controller);
+
+  final _FakeBiometricController controller;
+
+  @override
+  Future<BiometricUnlockState> build() async => controller.initialState;
+
+  @override
+  Future<String?> readPasscode({required String reason}) async {
+    controller.reads += 1;
+    controller.lastReason = reason;
+    return controller.passcode;
+  }
+}
+
+const _faceBiometricState = BiometricUnlockState(
+  availability: BiometricAvailability(
+    supported: true,
+    enrolled: true,
+    kind: BiometricKind.face,
+  ),
+  enabled: true,
+);
+
 Widget _app({
   Stream<void>? screenshotStream,
   SensitivePrivacyOverlayController? privacyOverlayController,
+  _FakeBiometricController? biometric,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       accountProvider.overrideWith(_FakeAccountNotifier.new),
       appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
-      biometricUnlockServiceProvider.overrideWithValue(_FakeBiometricUnlock()),
+      if (biometric == null)
+        biometricUnlockServiceProvider.overrideWithValue(_FakeBiometricUnlock())
+      else
+        biometricUnlockProvider.overrideWith(
+          () => _FakeBiometricNotifier(biometric),
+        ),
     ],
     child: MaterialApp(
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
@@ -93,6 +134,51 @@ void main() {
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
+  });
+
+  testWidgets('confirm gate uses the shared passcode layout', (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Confirm Access'), findsNothing);
+    expect(find.text('Enter Passcode'), findsOneWidget);
+    expect(find.text('Confirm your access'), findsOneWidget);
+    final title = tester.widget<Text>(find.text('Enter Passcode'));
+    expect(title.style?.fontSize, AppTypography.displayLarge.fontSize);
+    expect(find.byType(PasscodeNumpad), findsOneWidget);
+    expect(find.bySemanticsLabel('Passcode help'), findsOneWidget);
+
+    await tester.tap(find.bySemanticsLabel('Passcode help'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Forgot Passcode?'), findsOneWidget);
+    expect(find.text('Continue to reset Vizor'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Forgot Passcode?'), findsNothing);
+  });
+
+  testWidgets('confirm gate keeps biometric retry after prompt cancel', (
+    tester,
+  ) async {
+    final biometric = _FakeBiometricController(
+      initialState: _faceBiometricState,
+    );
+    await tester.pumpWidget(_app(biometric: biometric));
+    await tester.pumpAndSettle();
+
+    expect(biometric.reads, 1);
+    expect(find.text('Enter Passcode'), findsOneWidget);
+    expect(find.bySemanticsLabel('Sign in with Face ID'), findsOneWidget);
+
+    biometric.passcode = '111111';
+    await tester.tap(find.bySemanticsLabel('Sign in with Face ID'));
+    await tester.pumpAndSettle();
+
+    expect(biometric.reads, 2);
+    expect(biometric.lastReason, 'Confirm access to your secret passphrase');
+    expect(find.text('abandon'), findsOneWidget);
   });
 
   testWidgets('shows the screenshot warning after the phrase is revealed', (

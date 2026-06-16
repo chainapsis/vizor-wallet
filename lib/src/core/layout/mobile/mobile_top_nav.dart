@@ -38,6 +38,7 @@ class MobileTopNav extends StatelessWidget {
   }) : _variant = _MobileTopNavVariant.account,
        title = '',
        titleStyle = null,
+       height = kMobileTopNavHeight,
        progress = 0,
        onBack = null,
        trailing = null,
@@ -56,6 +57,7 @@ class MobileTopNav extends StatelessWidget {
       onAccountTap = null,
       title = '',
       titleStyle = null,
+      height = kMobileTopNavHeight,
       trailing = null,
       backIcon = AppIcons.chevronBackward;
 
@@ -65,6 +67,7 @@ class MobileTopNav extends StatelessWidget {
     this.trailing,
     this.backIcon = AppIcons.chevronBackward,
     this.titleStyle,
+    this.height = kMobileTopNavHeight,
     super.key,
   }) : _variant = _MobileTopNavVariant.back,
        accountName = '',
@@ -110,6 +113,7 @@ class MobileTopNav extends StatelessWidget {
   /// Back variant: centered serif title.
   final String title;
   final TextStyle? titleStyle;
+  final double height;
 
   /// Back variant: right-aligned widget (e.g. the swap composer's
   /// "Powered by NEAR Intents" lockup — Figma 4686:102067).
@@ -131,7 +135,7 @@ class MobileTopNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: kMobileTopNavHeight,
+      height: height,
       child: switch (_variant) {
         _MobileTopNavVariant.account => _buildAccount(context),
         _MobileTopNavVariant.steps => _buildSteps(context),
@@ -183,9 +187,7 @@ class MobileTopNav extends StatelessWidget {
     return Row(
       children: [
         const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Align(alignment: Alignment.centerLeft, child: account),
-        ),
+        Expanded(child: Align(alignment: Alignment.centerLeft, child: account)),
         if (syncLabel != null)
           _SyncStatus(
             label: syncLabel!,

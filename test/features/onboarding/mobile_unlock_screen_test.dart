@@ -2,6 +2,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -36,6 +37,7 @@ class FakeBiometricUnlock extends BiometricUnlock {
   BiometricAvailability avail;
   String? escrow;
   BiometricUnlockErrorKind? readError;
+  Completer<String>? readCompleter;
   var reads = 0;
 
   @override
@@ -52,6 +54,8 @@ class FakeBiometricUnlock extends BiometricUnlock {
     reads += 1;
     final error = readError;
     if (error != null) throw BiometricUnlockException(error);
+    final completer = readCompleter;
+    if (completer != null) return completer.future;
     final value = escrow;
     if (value == null) {
       throw const BiometricUnlockException(
@@ -119,6 +123,14 @@ void main() {
 
     await tester.tap(find.bySemanticsLabel('Digit 1'));
     await tester.pump();
+    expect(
+      tester.getSize(find.byKey(const ValueKey('passcode_backspace_slot'))),
+      const Size(30, 32),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('passcode_backspace_glyph'))),
+      const Size(26.25, 23.15),
+    );
     await tester.tap(find.bySemanticsLabel('Digit 2'));
     await tester.pump();
 
@@ -230,6 +242,44 @@ void main() {
       expect(find.text('Incorrect Passcode'), findsOneWidget);
     });
 
+    testWidgets('auto-prompt shows the biometric sign-in screen first', (
+      tester,
+    ) async {
+      await AppSecureStore.instance.configurePassword('123456');
+      AppSecureStore.instance.clearSessionPassword();
+      await AppSecureStore.instance.writePlain(
+        kBiometricUnlockEnabledKey,
+        'true',
+      );
+      final pendingRead = Completer<String>();
+      final biometric = FakeBiometricUnlock(
+        avail: faceAvailability,
+        escrow: '999999',
+      )..readCompleter = pendingRead;
+
+      await tester.pumpWidget(_app(biometric: biometric));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(MobileBiometricSignInView), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('mobile_biometric_sign_in_background')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile_biometric_sign_in_badge')),
+        findsOneWidget,
+      );
+      expect(find.byType(PasscodeNumpad), findsNothing);
+      expect(biometric.reads, 1);
+
+      pendingRead.complete('999999');
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MobileBiometricSignInView), findsNothing);
+      expect(find.text('Incorrect Passcode'), findsOneWidget);
+    });
+
     testWidgets('cancel falls back to the numpad with a retry key', (
       tester,
     ) async {
@@ -237,20 +287,21 @@ void main() {
         kBiometricUnlockEnabledKey,
         'true',
       );
-      final biometric =
-          FakeBiometricUnlock(avail: faceAvailability, escrow: '123456')
-            ..readError = BiometricUnlockErrorKind.cancelled;
+      final biometric = FakeBiometricUnlock(
+        avail: faceAvailability,
+        escrow: '123456',
+      )..readError = BiometricUnlockErrorKind.cancelled;
 
       await tester.pumpWidget(_app(biometric: biometric));
       await tester.pumpAndSettle();
 
       expect(biometric.reads, 1);
       expect(find.text('Incorrect Passcode'), findsNothing);
-      expect(find.bySemanticsLabel('Biometric unlock'), findsOneWidget);
+      expect(find.bySemanticsLabel('Sign in with Face ID'), findsOneWidget);
 
       // Manual retry triggers another prompt.
       biometric.readError = BiometricUnlockErrorKind.cancelled;
-      await tester.tap(find.bySemanticsLabel('Biometric unlock'));
+      await tester.tap(find.bySemanticsLabel('Sign in with Face ID'));
       await tester.pumpAndSettle();
       expect(biometric.reads, 2);
     });
@@ -262,9 +313,8 @@ void main() {
         kBiometricUnlockEnabledKey,
         'true',
       );
-      final biometric =
-          FakeBiometricUnlock(avail: faceAvailability)
-            ..readError = BiometricUnlockErrorKind.invalidated;
+      final biometric = FakeBiometricUnlock(avail: faceAvailability)
+        ..readError = BiometricUnlockErrorKind.invalidated;
 
       await tester.pumpWidget(_app(biometric: biometric));
       await tester.pumpAndSettle();
@@ -274,7 +324,7 @@ void main() {
         findsOneWidget,
       );
       // The retry key disappears with the flag.
-      expect(find.bySemanticsLabel('Biometric unlock'), findsNothing);
+      expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
       expect(
         await AppSecureStore.instance.readPlain(kBiometricUnlockEnabledKey),
         'false',
