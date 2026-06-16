@@ -76,9 +76,18 @@ class _MobileSeedPhraseScreenState
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
 
+  // Owned in production (the test seam injects its own) so the biometric gate
+  // can suppress the privacy shield for the duration of the prompt.
+  late final bool _ownsPrivacyController;
+  late final SensitivePrivacyOverlayController _privacyController;
+
   @override
   void initState() {
     super.initState();
+    _ownsPrivacyController = widget.privacyOverlayController == null;
+    _privacyController =
+        widget.privacyOverlayController ??
+        SensitivePrivacyEnvironmentController();
     _screenshotSub = (widget.screenshotStream ?? screenshotEvents()).listen(
       (_) => _onScreenshot(),
     );
@@ -92,6 +101,7 @@ class _MobileSeedPhraseScreenState
   @override
   void dispose() {
     _screenshotSub?.cancel();
+    if (_ownsPrivacyController) _privacyController.dispose();
     _mnemonic = null;
     super.dispose();
   }
@@ -103,10 +113,21 @@ class _MobileSeedPhraseScreenState
     final biometric = await ref.read(biometricUnlockProvider.future);
     if (!mounted || !biometric.usable) return;
     final wasEnabled = biometric.enabled;
-    final passcode = await ref
-        .read(biometricUnlockProvider.notifier)
-        .readPasscode(reason: 'Confirm access to your secret passphrase');
+    // The biometric sheet pushes the app to `inactive`; suppress the privacy
+    // shield for its duration so the phrase revealed on success doesn't flash
+    // the blur cover during the inactive→resumed transition. The environment
+    // controller releases the suppression on resume.
+    _privacyController.beginAuthPrompt();
+    String? readResult;
+    try {
+      readResult = await ref
+          .read(biometricUnlockProvider.notifier)
+          .readPasscode(reason: 'Confirm access to your secret passphrase');
+    } finally {
+      _privacyController.endAuthPrompt();
+    }
     if (!mounted) return;
+    final passcode = readResult;
     if (passcode == null) {
       final now = ref.read(biometricUnlockProvider).value;
       if (wasEnabled && now != null && !now.enabled) {
@@ -322,7 +343,7 @@ class _MobileSeedPhraseScreenState
         child: SensitivePrivacyOverlay(
           sensitiveContentVisible:
               _stage == _SeedStage.reveal && _mnemonic != null,
-          controller: widget.privacyOverlayController,
+          controller: _privacyController,
           child: SafeArea(
             child: Column(
               children: [
