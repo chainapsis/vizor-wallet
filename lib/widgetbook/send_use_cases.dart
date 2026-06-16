@@ -70,14 +70,13 @@ Widget buildSendTransparentUseCase(BuildContext context) {
   );
 }
 
-/// A contact was picked: the "Send to" link reflects the contact name
-/// ("Mike ›") instead of "Contacts ›".
+/// A contact-backed address is filled, but the picker affordance stays as
+/// `Contacts ›`.
 Widget buildSendContactSelectedUseCase(BuildContext context) {
   return const _SendPageFrame(
     child: SendComposeView(
       recipientText: _sampleUnifiedAddress,
       route: SendPoolRoute.shieldedToShielded,
-      contactName: 'Mike',
       amountText: '125.12',
       amountFocused: true,
       memoMode: SendMemoMode.expanded,

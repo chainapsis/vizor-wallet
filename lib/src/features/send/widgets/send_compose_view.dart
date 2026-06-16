@@ -48,7 +48,6 @@ class SendComposeView extends StatelessWidget {
     this.recipientText = '',
     this.recipientHint = 'Zcash address',
     this.route = SendPoolRoute.unknown,
-    this.contactName,
     this.amountText = '',
     this.amountHint = '0.00',
     this.maxLabel = 'Max: 150 ZEC',
@@ -76,10 +75,6 @@ class SendComposeView extends StatelessWidget {
   final String recipientText;
   final String recipientHint;
   final SendPoolRoute route;
-
-  /// When non-null, the right-hand link shows the selected contact's name
-  /// (e.g. `Mike`) instead of the default `Contacts` affordance.
-  final String? contactName;
 
   // Amount field.
   final String amountText;
@@ -223,10 +218,7 @@ class SendComposeView extends StatelessWidget {
     return AppTextField(
       key: const ValueKey('send_address_field'),
       label: 'Send to',
-      rightSlot: _SendRecipientLink(
-        label: contactName ?? 'Contacts',
-        onTap: onContactsPressed,
-      ),
+      rightSlot: _SendRecipientLink(onTap: onContactsPressed),
       initialValue: recipientText,
       hintText: recipientHint,
       leading: AppIcon(leadingName, size: 20, color: leadingColor),
@@ -306,12 +298,10 @@ class SendComposeView extends StatelessWidget {
   static void _noop() {}
 }
 
-/// Right-hand "Send to" affordance: shows `Contacts ›` by default, or the
-/// selected contact's name once one is picked.
+/// Right-hand "Send to" affordance for opening the contact picker.
 class _SendRecipientLink extends StatelessWidget {
-  const _SendRecipientLink({required this.label, this.onTap});
+  const _SendRecipientLink({this.onTap});
 
-  final String label;
   final VoidCallback? onTap;
 
   @override
@@ -323,7 +313,7 @@ class _SendRecipientLink extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            label,
+            'Contacts',
             style: AppTypography.labelMedium.copyWith(
               color: colors.text.secondary,
             ),

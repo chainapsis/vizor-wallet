@@ -160,10 +160,11 @@ void main() {
       findsNothing,
     );
     expect(_fieldText(tester, 'send_address_field'), _shieldedAddress);
-    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('Alice'), findsNothing);
+    expect(find.text('Contacts'), findsOneWidget);
   });
 
-  testWidgets('detects the contact name for prefilled and cleared addresses', (
+  testWidgets('keeps contacts label for prefilled and cleared addresses', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -188,13 +189,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // The Send ZEC prefill path resolves the contact label on the contacts
-    // button without going through the picker.
     expect(_fieldText(tester, 'send_address_field'), _shieldedAddress);
-    expect(find.text('Alice'), findsOneWidget);
-    expect(find.text('Contacts'), findsNothing);
+    expect(find.text('Alice'), findsNothing);
+    expect(find.text('Contacts'), findsOneWidget);
 
-    // Clearing the address falls back to the plain picker affordance.
     await tester.enterText(
       find.byKey(const ValueKey('send_address_field')),
       '',

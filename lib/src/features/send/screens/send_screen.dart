@@ -28,8 +28,6 @@ import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
-import '../../address_book/models/address_book_label_lookup.dart';
-import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../models/send_prefill_args.dart';
 import 'send_review_screen.dart';
@@ -810,17 +808,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _ => null,
     };
     final addressHasText = _addressController.text.trim().isNotEmpty;
-    // The contacts button doubles as the detected-contact display: any path
-    // that puts a known Zcash address in the field (picker, Send ZEC prefill,
-    // paste, typing) resolves to the contact's label automatically.
-    final addressBookContacts =
-        ref.watch(addressBookProvider).value?.contacts ??
-        const <AddressBookContact>[];
-    final contactLabel = addressBookLabelFor(
-      contacts: addressBookContacts,
-      network: AddressBookNetwork.zcash,
-      address: _addressController.text,
-    );
     final addressLeadingIcon = switch (_addressType) {
       'unified' || 'sapling' => AppIcons.shieldKeyhole,
       'transparent' || 'tex' => AppIcons.transparentBalance,
@@ -898,7 +885,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                             key: const ValueKey('send_address_field'),
                             label: 'Send to',
                             rightSlot: _SendContactsLabelButton(
-                              label: contactLabel ?? 'Contacts',
+                              label: 'Contacts',
                               onTap: _openContactPicker,
                             ),
                             tone: addressTone,

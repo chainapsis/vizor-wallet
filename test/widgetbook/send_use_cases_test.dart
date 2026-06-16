@@ -40,33 +40,30 @@ void main() {
     expect(find.text('Review'), findsOneWidget);
   });
 
-  testWidgets(
-    'send filled use cases render recipient and selected contact states',
-    (tester) async {
-      await _pumpSendUseCase(tester, buildSendShieldedFilledUseCase);
+  testWidgets('send filled use cases keep the contacts picker label stable', (
+    tester,
+  ) async {
+    await _pumpSendUseCase(tester, buildSendShieldedFilledUseCase);
 
-      expect(tester.takeException(), isNull);
-      expect(find.text('Shielded → Shielded'), findsNothing);
-      expect(find.text('Shielded → Transparent'), findsNothing);
-      expect(find.text('125.12'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    expect(find.text('Shielded → Shielded'), findsNothing);
+    expect(find.text('Shielded → Transparent'), findsNothing);
+    expect(find.text('125.12'), findsOneWidget);
 
-      await _pumpSendUseCase(tester, buildSendTransparentUseCase);
+    await _pumpSendUseCase(tester, buildSendTransparentUseCase);
 
-      expect(tester.takeException(), isNull);
-      expect(find.text('Shielded → Shielded'), findsNothing);
-      expect(find.text('Shielded → Transparent'), findsNothing);
-      expect(find.text('Add a memo'), findsNothing);
-      expect(
-        find.text('Encrypted, for shielded addresses only.'),
-        findsNothing,
-      );
+    expect(tester.takeException(), isNull);
+    expect(find.text('Shielded → Shielded'), findsNothing);
+    expect(find.text('Shielded → Transparent'), findsNothing);
+    expect(find.text('Add a memo'), findsNothing);
+    expect(find.text('Encrypted, for shielded addresses only.'), findsNothing);
 
-      await _pumpSendUseCase(tester, buildSendContactSelectedUseCase);
+    await _pumpSendUseCase(tester, buildSendContactSelectedUseCase);
 
-      expect(tester.takeException(), isNull);
-      expect(find.text('Mike'), findsOneWidget);
-    },
-  );
+    expect(tester.takeException(), isNull);
+    expect(find.text('Mike'), findsNothing);
+    expect(find.text('Contacts'), findsOneWidget);
+  });
 }
 
 Future<void> _pumpSendUseCase(
