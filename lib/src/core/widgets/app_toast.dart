@@ -72,6 +72,7 @@ class AppToastHost extends StatefulWidget {
 
 class _AppToastHostState extends State<AppToastHost> {
   static final List<_AppToastHostState> _activeStates = [];
+  static OverlayEntry? _fallbackOverlayEntry;
 
   String? _message;
   String _iconName = AppIcons.checkCircle;
@@ -156,16 +157,131 @@ void showAppToast(
   final element = context
       .getElementForInheritedWidgetOfExactType<_AppToastScope>();
   final scope = element?.widget as _AppToastScope?;
-  final state =
-      scope?.state ??
-      (_AppToastHostState._activeStates.isEmpty
-          ? null
-          : _AppToastHostState._activeStates.last);
+  final state = scope?.state;
+  if (state != null) {
+    state.show(message, duration: duration, iconName: iconName);
+    return;
+  }
+
+  final overlay = Overlay.maybeOf(context, rootOverlay: true);
+  if (overlay != null) {
+    _showOverlayToast(overlay, message, duration: duration, iconName: iconName);
+    return;
+  }
+
+  final fallbackState = _AppToastHostState._activeStates.isEmpty
+      ? null
+      : _AppToastHostState._activeStates.last;
   assert(
-    state != null,
+    fallbackState != null,
     'showAppToast called without an AppToastHost ancestor.',
   );
-  state?.show(message, duration: duration, iconName: iconName);
+  fallbackState?.show(message, duration: duration, iconName: iconName);
+}
+
+void _showOverlayToast(
+  OverlayState overlay,
+  String message, {
+  required Duration duration,
+  required String iconName,
+}) {
+  final previousEntry = _AppToastHostState._fallbackOverlayEntry;
+  if (previousEntry?.mounted ?? false) {
+    previousEntry?.remove();
+  }
+  _AppToastHostState._fallbackOverlayEntry = null;
+
+  late final OverlayEntry entry;
+  entry = OverlayEntry(
+    builder: (_) => _OverlayAppToast(
+      message: message,
+      iconName: iconName,
+      duration: duration,
+      onDismiss: () {
+        if (_AppToastHostState._fallbackOverlayEntry == entry) {
+          _AppToastHostState._fallbackOverlayEntry = null;
+        }
+        if (entry.mounted) {
+          entry.remove();
+        }
+      },
+      onDisposed: () {
+        if (_AppToastHostState._fallbackOverlayEntry == entry) {
+          _AppToastHostState._fallbackOverlayEntry = null;
+        }
+      },
+    ),
+  );
+
+  _AppToastHostState._fallbackOverlayEntry = entry;
+  overlay.insert(entry);
+}
+
+class _OverlayAppToast extends StatefulWidget {
+  const _OverlayAppToast({
+    required this.message,
+    required this.iconName,
+    required this.duration,
+    required this.onDismiss,
+    required this.onDisposed,
+  });
+
+  final String message;
+  final String iconName;
+  final Duration duration;
+  final VoidCallback onDismiss;
+  final VoidCallback onDisposed;
+
+  @override
+  State<_OverlayAppToast> createState() => _OverlayAppToastState();
+}
+
+class _OverlayAppToastState extends State<_OverlayAppToast> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(widget.duration, widget.onDismiss);
+  }
+
+  @override
+  void didUpdateWidget(_OverlayAppToast oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.duration != widget.duration ||
+        oldWidget.onDismiss != widget.onDismiss) {
+      _timer?.cancel();
+      _timer = Timer(widget.duration, widget.onDismiss);
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    widget.onDisposed();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final topInset = math.max(
+      AppSpacing.base,
+      MediaQuery.paddingOf(context).top + AppSpacing.xs,
+    );
+    return Positioned(
+      top: topInset,
+      left: 0,
+      right: 0,
+      child: IgnorePointer(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            child: AppToast(message: widget.message, iconName: widget.iconName),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _AppToastScope extends InheritedWidget {

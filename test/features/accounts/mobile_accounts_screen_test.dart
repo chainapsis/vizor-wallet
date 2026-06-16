@@ -289,6 +289,13 @@ void main() {
     expect(tester.getSize(find.byType(MobileTextField)).height, 60);
     expect(
       tester
+          .getSize(find.byKey(const ValueKey('mobile_account_edit_save')))
+          .height,
+      50,
+    );
+    expect(tester.getSize(find.byType(MobileSheetCancel)).height, 50);
+    expect(
+      tester
               .getTopLeft(
                 find.byKey(const ValueKey('mobile_account_edit_save')),
               )

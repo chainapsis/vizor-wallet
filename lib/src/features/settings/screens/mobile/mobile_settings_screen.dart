@@ -50,6 +50,7 @@ class MobileSettingsScreen extends ConsumerWidget {
     );
     final settingsValueColor = context.colors.text.accent;
     final settingsChevronColor = context.colors.icon.accent;
+    final seedPhraseEnabled = account != null && !account.isHardware;
 
     return SafeArea(
       bottom: false,
@@ -80,7 +81,10 @@ class MobileSettingsScreen extends ConsumerWidget {
                       textStyle: settingsRowStyle,
                       chevronColor: settingsChevronColor,
                       showChevron: true,
-                      onTap: () => context.push('/settings/seed-phrase'),
+                      enabled: seedPhraseEnabled,
+                      onTap: seedPhraseEnabled
+                          ? () => context.push('/settings/seed-phrase')
+                          : null,
                     ),
                     MobileListRow(
                       leading: _RowIcon(AppIcons.lock),

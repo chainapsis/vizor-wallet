@@ -36,8 +36,54 @@ class MobileAccountsSheet extends ConsumerStatefulWidget {
       _MobileAccountsSheetState();
 }
 
+const _accountsSheetLabelMStyle = TextStyle(
+  fontFamily: 'Geist',
+  fontWeight: FontWeight.w500,
+  fontSize: 14,
+  height: 16 / 14,
+  letterSpacing: -0.06,
+);
+
+const _accountsSheetCurrentNameStyle = TextStyle(
+  fontFamily: 'Geist',
+  fontWeight: FontWeight.w500,
+  fontSize: 16,
+  height: 20 / 16,
+  letterSpacing: 0,
+);
+
+const _accountsSheetListMaxHeight = 216.0;
+const _accountsSheetRowHeight = 48.0;
+const _accountsSheetRowGap = 8.0;
+const _accountsSheetScrollbarGutter = 18.0;
+const _accountsSheetScrollbarThickness = 6.0;
+const _accountsSheetCurrentToTitleGap = AppSpacing.md; // 24
+const _accountsSheetTitleToListGap = AppSpacing.s + AppSpacing.xs; // 20
+
+double _accountsSheetListHeight(int rowCount) {
+  if (rowCount <= 0) return 0;
+  final visibleRows = rowCount > 4 ? 4 : rowCount;
+  final height = _accountsSheetContentHeight(visibleRows);
+  return height > _accountsSheetListMaxHeight
+      ? _accountsSheetListMaxHeight
+      : height;
+}
+
+double _accountsSheetContentHeight(int rowCount) {
+  if (rowCount <= 0) return 0;
+  return rowCount * _accountsSheetRowHeight +
+      (rowCount - 1) * _accountsSheetRowGap;
+}
+
 class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
   bool _isCopyingAddress = false;
+  late final ScrollController _accountsScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _accountsScrollController.dispose();
+    super.dispose();
+  }
 
   Future<void> _switchAccount(String uuid) async {
     final activeAccountUuid = ref
@@ -112,6 +158,8 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
       for (final account in accounts)
         if (account.uuid != active?.uuid) account,
     ];
+    final accountsListHeight = _accountsSheetListHeight(others.length);
+    final showAccountsScrollbar = others.length > 4;
 
     return MobileModalScaffold(
       title: '',
@@ -137,39 +185,74 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
           Text(
             active?.name ?? '',
             textAlign: TextAlign.center,
-            style: AppTypography.bodyLarge.copyWith(color: colors.text.accent),
+            style: _accountsSheetCurrentNameStyle.copyWith(
+              color: colors.text.accent,
+            ),
           ),
-          const SizedBox(height: AppSpacing.s),
+          const SizedBox(height: _accountsSheetCurrentToTitleGap),
           if (others.isNotEmpty) ...[
             Text(
               'Other accounts',
-              style: AppTypography.labelLarge.copyWith(
-                fontWeight: FontWeight.w500,
+              style: _accountsSheetLabelMStyle.copyWith(
                 color: colors.text.accent,
               ),
             ),
-            const SizedBox(height: AppSpacing.xs),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 216),
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final account in others)
-                    MobileListRow(
-                      key: ValueKey('account_row_${account.uuid}'),
-                      minRowHeight: 48,
-                      leading: MobileAccountAvatar(
-                        profilePictureId: account.profilePictureId,
-                        size: AppProfilePictureSize.navLarge,
-                        isHardware: account.isHardware,
-                      ),
-                      label: account.name,
-                      trailing: _CopyAddressButton(
-                        onTap: () => unawaited(_copyShieldedAddress(account)),
-                      ),
-                      onTap: () => unawaited(_switchAccount(account.uuid)),
+            const SizedBox(height: _accountsSheetTitleToListGap),
+            SizedBox(
+              key: const ValueKey('mobile_accounts_sheet_list'),
+              height: accountsListHeight,
+              child: RawScrollbar(
+                key: const ValueKey('mobile_accounts_sheet_scrollbar'),
+                controller: _accountsScrollController,
+                thumbVisibility: showAccountsScrollbar,
+                interactive: true,
+                radius: const Radius.circular(AppRadii.full),
+                thickness: _accountsSheetScrollbarThickness,
+                mainAxisMargin: 0,
+                padding: EdgeInsets.zero,
+                crossAxisMargin:
+                    (_accountsSheetScrollbarGutter -
+                        _accountsSheetScrollbarThickness) /
+                    2,
+                thumbColor: colors.background.overlay,
+                child: Padding(
+                  key: const ValueKey('mobile_accounts_sheet_list_gutter'),
+                  padding: const EdgeInsets.only(
+                    right: _accountsSheetScrollbarGutter,
+                  ),
+                  child: ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(
+                      context,
+                    ).copyWith(scrollbars: false),
+                    child: ListView.separated(
+                      controller: _accountsScrollController,
+                      physics: const ClampingScrollPhysics(),
+                      padding: EdgeInsets.zero,
+                      itemCount: others.length,
+                      separatorBuilder: (_, _) =>
+                          const SizedBox(height: _accountsSheetRowGap),
+                      itemBuilder: (context, index) {
+                        final account = others[index];
+                        return MobileListRow(
+                          key: ValueKey('account_row_${account.uuid}'),
+                          minRowHeight: _accountsSheetRowHeight,
+                          textStyle: _accountsSheetLabelMStyle,
+                          leading: MobileAccountAvatar(
+                            profilePictureId: account.profilePictureId,
+                            size: AppProfilePictureSize.navLarge,
+                            isHardware: account.isHardware,
+                          ),
+                          label: account.name,
+                          trailing: _CopyAddressButton(
+                            onTap: () =>
+                                unawaited(_copyShieldedAddress(account)),
+                          ),
+                          onTap: () => unawaited(_switchAccount(account.uuid)),
+                        );
+                      },
                     ),
-                ],
+                  ),
+                ),
               ),
             ),
           ],
@@ -178,6 +261,7 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
             children: [
               Expanded(
                 child: AppButton(
+                  key: const ValueKey('mobile_accounts_manage'),
                   variant: AppButtonVariant.secondary,
                   expand: true,
                   constrainContent: true,
@@ -185,8 +269,10 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
                     Navigator.of(context).pop();
                     context.push('/accounts');
                   },
+                  height: AppButtonSizing.largeHeight,
                   child: const Text(
                     'Manage accounts',
+                    style: _accountsSheetLabelMStyle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

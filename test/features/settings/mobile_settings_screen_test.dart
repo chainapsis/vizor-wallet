@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
@@ -33,18 +34,33 @@ const _accountState = AccountState(
   activeAddress: 'u1settingsaddress',
 );
 
-AppBootstrapState _bootstrap() => AppBootstrapState(
-  initialLocation: '/settings',
-  initialAccountState: _accountState,
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.dark,
-  privacyModeEnabled: false,
-  isPasswordConfigured: true,
-  isUnlocked: true,
-  passwordRotationRecoveryFailed: false,
+const _hardwareAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'account-1',
+      name: 'Keystone',
+      order: 0,
+      profilePictureId: kDefaultProfilePictureId,
+      isHardware: true,
+    ),
+  ],
+  activeAccountUuid: 'account-1',
+  activeAddress: 'u1settingsaddress',
 );
+
+AppBootstrapState _bootstrap([AccountState accountState = _accountState]) =>
+    AppBootstrapState(
+      initialLocation: '/settings',
+      initialAccountState: accountState,
+      initialSyncSnapshot: AppSyncSnapshot.empty,
+      network: 'main',
+      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+      themeMode: ThemeMode.dark,
+      privacyModeEnabled: false,
+      isPasswordConfigured: true,
+      isUnlocked: true,
+      passwordRotationRecoveryFailed: false,
+    );
 
 /// Skips the secure-storage write so theme selection works without a
 /// platform channel in widget tests.
@@ -64,10 +80,13 @@ class _FakeBiometricNotifier extends BiometricUnlockNotifier {
   Future<BiometricUnlockState> build() async => initialState;
 }
 
-Widget _app({BiometricUnlockState? biometric}) {
+Widget _app({
+  AccountState accountState = _accountState,
+  BiometricUnlockState? biometric,
+}) {
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(_bootstrap(accountState)),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
       themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
       if (biometric != null)
@@ -218,6 +237,26 @@ void main() {
         reason: '$label should be enabled',
       );
     }
+  });
+
+  testWidgets('hardware accounts disable the secret passphrase row', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(accountState: _hardwareAccountState));
+    await tester.pump();
+
+    final rowFinder = find.byKey(const ValueKey('mobile_settings_seed_row'));
+    final row = tester.widget<MobileListRow>(rowFinder);
+    final label = tester.widget<Text>(find.text('Secret Passphrase'));
+    final chevron = _chevronIn(
+      tester,
+      const ValueKey('mobile_settings_seed_row'),
+    );
+
+    expect(row.enabled, isFalse);
+    expect(row.onTap, isNull);
+    expect(label.style?.color, AppThemeData.dark.colors.text.disabled);
+    expect(chevron.color, AppThemeData.dark.colors.icon.disabled);
   });
 
   testWidgets('labels Face ID hardware by brand', (tester) async {

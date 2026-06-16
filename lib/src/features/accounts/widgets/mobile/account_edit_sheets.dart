@@ -544,7 +544,7 @@ class MobileSheetCancel extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: SizedBox(
-          height: 44,
+          height: AppButtonSizing.largeHeight,
           child: Center(
             child: Text(
               'Cancel',
