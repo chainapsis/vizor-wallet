@@ -3,15 +3,14 @@ import 'package:flutter/widgets.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
-import '../../../../core/widgets/app_profile_picture.dart';
+import '../../../../core/widgets/app_tooltip.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/models/address_book_label_lookup.dart';
 import '../../domain/swap_address_plan.dart';
 import '../../domain/swap_contract.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_detail_tooltips.dart';
-import '../swap_review_page_content.dart'
-    show swapReviewSlippageToleranceText;
+import '../swap_review_page_content.dart' show swapReviewSlippageToleranceText;
 import '../swap_amount_text.dart' show compactSwapAmountText;
 import 'mobile_swap_review_header.dart';
 
@@ -69,14 +68,18 @@ class MobileSwapReviewContent extends StatelessWidget {
 
     final payRow = MobileSwapReviewHeaderRow(
       label: "You're paying",
-      amountText: trimSwapAmountText(compactSwapAmountText(quote.sellAmountText)),
+      amountText: trimSwapAmountText(
+        compactSwapAmountText(quote.sellAmountText),
+      ),
       asset: quote.sellAsset,
       bottomText: sendsZec ? payFiatTextOverride : externalBottom,
       fullAddress: sendsZec ? null : externalAddress,
     );
     final receiveRow = MobileSwapReviewHeaderRow(
       label: "You're receiving",
-      amountText: trimSwapAmountText(compactSwapAmountText(quote.receiveEstimateText)),
+      amountText: trimSwapAmountText(
+        compactSwapAmountText(quote.receiveEstimateText),
+      ),
       asset: quote.receiveAsset,
       bottomText: sendsZec ? externalBottom : receiveFiatTextOverride,
       fullAddress: sendsZec ? externalAddress : null,
@@ -88,13 +91,7 @@ class MobileSwapReviewContent extends StatelessWidget {
       children: [
         MobileSwapReviewHeader(pay: payRow, receive: receiveRow),
         const SizedBox(height: AppSpacing.sm),
-        _ReviewCard(
-          quote: quote,
-          sendsZec: sendsZec,
-          accountLabel: accountLabel,
-          accountProfilePictureId: accountProfilePictureId,
-          addressBookLabel: addressBookLabel,
-        ),
+        _ReviewCard(quote: quote, addressBookLabel: addressBookLabel),
         if (amountWarning != null) ...[
           const SizedBox(height: AppSpacing.s),
           _MobileReviewNotice(
@@ -123,18 +120,9 @@ class MobileSwapReviewContent extends StatelessWidget {
 
 /// The rounded details card — Figma `Review Wrap` (4731:85565).
 class _ReviewCard extends StatelessWidget {
-  const _ReviewCard({
-    required this.quote,
-    required this.sendsZec,
-    required this.accountLabel,
-    required this.accountProfilePictureId,
-    required this.addressBookLabel,
-  });
+  const _ReviewCard({required this.quote, required this.addressBookLabel});
 
   final SwapQuote quote;
-  final bool sendsZec;
-  final String? accountLabel;
-  final String accountProfilePictureId;
   final String? addressBookLabel;
 
   @override
@@ -152,17 +140,6 @@ class _ReviewCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Funding/receiving account — not in the Figma frame, but the
-          // desktop review names the wallet account; the header only
-          // names the external side (see design_suggestion).
-          _ReviewRow(
-            label: sendsZec ? 'From' : 'To',
-            value: accountLabel ?? 'Current account',
-            leading: AppProfilePicture(
-              profilePictureId: accountProfilePictureId,
-              size: AppProfilePictureSize.medium,
-            ),
-          ),
           if (addressBookLabel != null)
             _ReviewRow(
               label: 'Saved recipient',
@@ -174,12 +151,7 @@ class _ReviewCard extends StatelessWidget {
             value: swapReviewSlippageToleranceText(quote),
           ),
           _ReviewRow(
-            label: 'Price protection',
-            value: compactSwapAmountText(quote.priceProtectionText),
-            helpTooltip: swapPriceProtectionTooltip,
-          ),
-          _ReviewRow(
-            label: 'Minimum receive',
+            label: 'Guaranteed minimum',
             value: compactSwapAmountText(quote.minimumReceiveText),
             helpTooltip: swapMinimumReceiveTooltip(quote.receiveAsset.symbol),
           ),
@@ -188,7 +160,7 @@ class _ReviewCard extends StatelessWidget {
           Container(height: 1, color: colors.border.regular),
           const SizedBox(height: AppSpacing.sm),
           _ReviewRow(
-            label: 'Tx fee',
+            label: 'Swap fee',
             value: quote.feeLabel,
             helpTooltip: swapFeeTooltip,
           ),
@@ -202,14 +174,12 @@ class _ReviewRow extends StatelessWidget {
   const _ReviewRow({
     required this.label,
     required this.value,
-    this.leading,
     this.leadingIconName,
     this.helpTooltip,
   });
 
   final String label;
   final String value;
-  final Widget? leading;
   final String? leadingIconName;
   final String? helpTooltip;
 
@@ -241,10 +211,7 @@ class _ReviewRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  if (leading != null) ...[
-                    leading!,
-                    const SizedBox(width: AppSpacing.xxs),
-                  ] else if (leadingIconName != null) ...[
+                  if (leadingIconName != null) ...[
                     AppIcon(
                       leadingIconName!,
                       size: 14,
@@ -265,10 +232,14 @@ class _ReviewRow extends StatelessWidget {
                   ),
                   if (helpTooltip != null) ...[
                     const SizedBox(width: AppSpacing.xxs),
-                    AppIcon(
-                      AppIcons.help,
-                      size: 20,
-                      color: colors.icon.accent,
+                    AppTooltip(
+                      message: helpTooltip!,
+                      tapToShow: true,
+                      child: AppIcon(
+                        AppIcons.help,
+                        size: 20,
+                        color: colors.icon.accent,
+                      ),
                     ),
                   ],
                 ],
@@ -393,4 +364,3 @@ class MobileSwapReviewActions extends StatelessWidget {
     );
   }
 }
-
