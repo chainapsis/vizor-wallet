@@ -50,6 +50,7 @@ class SendReviewInfoSection extends StatelessWidget {
     required this.amountText,
     required this.recipient,
     this.isShieldedRecipient = true,
+    this.recipientAddressType,
     this.fiatText,
     this.connectorIconName = AppIcons.arrowDown,
     this.recipientStruckThrough = false,
@@ -66,6 +67,12 @@ class SendReviewInfoSection extends StatelessWidget {
   /// truncated-address sub-line shown in Figma instead of a pool badge.
   final bool isShieldedRecipient;
 
+  /// Full protocol address type from validation when available.
+  ///
+  /// This keeps TEX distinguishable from ordinary transparent recipients while
+  /// preserving the existing shielded/transparent fallback for static previews.
+  final String? recipientAddressType;
+
   /// Optional fiat sub-label under the amount; hidden when null.
   final String? fiatText;
 
@@ -77,6 +84,32 @@ class SendReviewInfoSection extends StatelessWidget {
   final bool recipientStruckThrough;
 
   final VoidCallback? onShowFullAddress;
+
+  String? get _normalizedRecipientAddressType =>
+      recipientAddressType?.trim().toLowerCase();
+
+  bool get _recipientBadgeIsShielded =>
+      switch (_normalizedRecipientAddressType) {
+        'unified' || 'sapling' => true,
+        'transparent' || 'tex' => false,
+        _ => isShieldedRecipient,
+      };
+
+  String get _recipientBadgeText => _normalizedRecipientAddressType == 'tex'
+      ? 'TEX'
+      : _recipientBadgeIsShielded
+      ? 'Shielded'
+      : 'Transparent';
+
+  bool get _recipientBadgeIsTex => _normalizedRecipientAddressType == 'tex';
+
+  String? get _contactRecipientBottomLeftIconName =>
+      _recipientBadgeIsTex ? AppIcons.transparentBalance : null;
+
+  String _contactRecipientBottomLeftText(String address) {
+    final displayAddress = truncatedAddress(address);
+    return _recipientBadgeIsTex ? 'TEX - $displayAddress' : displayAddress;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -105,13 +138,13 @@ class SendReviewInfoSection extends StatelessWidget {
         value: truncatedAddress(address),
         leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
         struckThrough: recipientStruckThrough,
-        bottomLeftIconName: isShieldedRecipient
+        bottomLeftIconName: _recipientBadgeIsShielded
             ? AppIcons.shieldKeyhole
             : AppIcons.transparentBalance,
-        bottomLeftIconColor: isShieldedRecipient
+        bottomLeftIconColor: _recipientBadgeIsShielded
             ? context.colors.text.brandCrimson
             : null,
-        bottomLeftText: isShieldedRecipient ? 'Shielded' : 'Transparent',
+        bottomLeftText: _recipientBadgeText,
         trailingActionLabel: 'Show full address',
         onTrailingAction: onShowFullAddress,
       ),
@@ -128,7 +161,8 @@ class SendReviewInfoSection extends StatelessWidget {
             size: AppProfilePictureSize.large,
           ),
           struckThrough: recipientStruckThrough,
-          bottomLeftText: truncatedAddress(address),
+          bottomLeftIconName: _contactRecipientBottomLeftIconName,
+          bottomLeftText: _contactRecipientBottomLeftText(address),
           trailingActionLabel: 'Show full address',
           onTrailingAction: onShowFullAddress,
         ),

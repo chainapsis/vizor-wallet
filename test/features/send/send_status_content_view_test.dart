@@ -5,6 +5,7 @@ import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/theme/primitives.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/review_buttons_stack.dart';
 import 'package:zcash_wallet/src/core/widgets/review_wrap_card.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_review_layout.dart';
@@ -15,6 +16,8 @@ const _address =
     '73d57f73c6dc05121591a83861cd190591';
 
 const _transparentAddress = 't1PV7nyJ3J6pZBh6sCrd5dSDd6uhXGVSpEX';
+
+const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 
 const _memo = 'Zcash is a privacy-focused ...';
 
@@ -86,6 +89,53 @@ void main() {
 
     expect(find.text(truncatedAddress(_transparentAddress)), findsOneWidget);
     expect(find.text('Transparent'), findsOneWidget);
+    expect(find.text('Shielded'), findsNothing);
+  });
+
+  testWidgets('TEX raw recipient keeps a TEX badge', (tester) async {
+    await _pump(
+      tester,
+      SendStatusContentView(
+        phase: SendStatusPhase.completed,
+        amountText: '123.12 ZEC',
+        recipient: const SendReviewAddressRecipient(address: _texAddress),
+        isShieldedRecipient: false,
+        recipientAddressType: 'tex',
+        timestampText: '25 May, 13:30',
+        txIdText: '0123123124512512',
+        feeText: '0.012 ZEC',
+      ),
+    );
+
+    expect(find.text(truncatedAddress(_texAddress)), findsOneWidget);
+    expect(find.text('TEX'), findsOneWidget);
+    expect(find.text('Transparent'), findsNothing);
+    expect(find.text('Shielded'), findsNothing);
+  });
+
+  testWidgets('TEX contact recipient keeps a TEX label', (tester) async {
+    await _pump(
+      tester,
+      SendStatusContentView(
+        phase: SendStatusPhase.completed,
+        amountText: '123.12 ZEC',
+        recipient: const SendReviewContactRecipient(
+          address: _texAddress,
+          name: 'Mike',
+          profilePictureId: 'pfp-02',
+        ),
+        isShieldedRecipient: false,
+        recipientAddressType: 'tex',
+        timestampText: '25 May, 13:30',
+        txIdText: '0123123124512512',
+        feeText: '0.012 ZEC',
+      ),
+    );
+
+    expect(find.text('Mike'), findsOneWidget);
+    expect(find.byType(AppProfilePicture), findsOneWidget);
+    expect(find.text('TEX - ${truncatedAddress(_texAddress)}'), findsOneWidget);
+    expect(find.text('Transparent'), findsNothing);
     expect(find.text('Shielded'), findsNothing);
   });
 

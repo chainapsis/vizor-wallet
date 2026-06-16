@@ -364,6 +364,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                 recipient: recipient,
                 feeText: _formatFee(widget.args.feeZatoshi),
                 isShieldedRecipient: widget.args.isShielded,
+                recipientAddressType: widget.args.addressType,
                 memoText: hasMemo ? memo : null,
                 memoExpanded: _messageExpanded,
                 confirmLabel: isHardware

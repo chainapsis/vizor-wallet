@@ -104,6 +104,22 @@ void main() {
     expect(launchedUrls, [expected]);
   });
 
+  testWidgets('TEX recipient stays distinct on status screens', (tester) async {
+    rustApi.executeResult = _executeResult(status: 'broadcasted');
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(_reviewArgs(address: _texAddress, addressType: 'tex')),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(find.text(truncatedAddress(_texAddress)), findsOneWidget);
+    expect(find.text('TEX'), findsOneWidget);
+    expect(find.text('Transparent'), findsNothing);
+    expect(find.text('Shielded'), findsNothing);
+  });
+
   testWidgets('pending broadcast keeps in-progress visuals with the notice', (
     tester,
   ) async {
@@ -208,6 +224,8 @@ const _txid =
 
 const _address =
     'u1tvg4akwn3gk64h6dfe0000000000000000005j3eds7qfhzek6scgcn8fh5';
+
+const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 
 Future<void> _setDesktopViewport(WidgetTester tester) async {
   await tester.binding.setSurfaceSize(const Size(1080, 720));
@@ -326,13 +344,17 @@ AppBootstrapState _bootstrap(bool isHardware) {
   );
 }
 
-SendReviewArgs _reviewArgs({String? memo}) {
+SendReviewArgs _reviewArgs({
+  String address = _address,
+  String addressType = 'unified',
+  String? memo,
+}) {
   return SendReviewArgs(
     proposalId: BigInt.one,
     sendFlowId: 'test-send-flow',
     proposalAccountUuid: 'test-account',
-    address: _address,
-    addressType: 'unified',
+    address: address,
+    addressType: addressType,
     amountZatoshi: BigInt.from(1512000000),
     feeZatoshi: BigInt.from(12000),
     needsSaplingParams: false,

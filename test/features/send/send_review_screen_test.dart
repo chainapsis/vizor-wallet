@@ -224,6 +224,23 @@ void main() {
     expect(find.text('Unknown shielded address'), findsNothing);
   });
 
+  testWidgets('review marks a TEX recipient distinctly from transparent', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'tex', address: _texAddress),
+        addressBookRepository: _FakeAddressBookRepository(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('TEX'), findsOneWidget);
+    expect(find.text('Transparent'), findsNothing);
+    expect(find.text('Shielded'), findsNothing);
+  });
+
   testWidgets('verify modal shows the contact header for a saved address', (
     tester,
   ) async {
@@ -641,6 +658,8 @@ const _longAddress =
     'u1tvg4akwn3gk64h6dfe0000000000000000005j3eds7qfhzek6scgcn8fh5';
 
 const _transparentAddress = 't1PV7nyJ3J6pZBh6sCrd5dSDd6uhXGVSpEX';
+
+const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 
 const _veryLongMemo =
     'Zcash is a privacy-focused cryptocurrency which features an encrypted '

@@ -17,6 +17,8 @@ const _address =
 
 const _transparentAddress = 't1PV7nyJ3J6pZBh6sCrd5dSDd6uhXGVSpEX';
 
+const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
+
 const _memo = 'Zcash is a privacy-focused ...';
 
 void main() {
@@ -79,6 +81,26 @@ void main() {
 
     expect(find.text(truncatedAddress(_transparentAddress)), findsOneWidget);
     expect(find.text('Transparent'), findsOneWidget);
+    expect(find.text('Shielded'), findsNothing);
+  });
+
+  testWidgets('address variant can render the TEX badge', (tester) async {
+    await _pump(
+      tester,
+      SendReviewContentView(
+        amountText: '123.12 ZEC',
+        recipient: const SendReviewAddressRecipient(address: _texAddress),
+        isShieldedRecipient: false,
+        recipientAddressType: 'tex',
+        feeText: '0.012 ZEC',
+        onConfirm: () {},
+        onCancel: () {},
+      ),
+    );
+
+    expect(find.text(truncatedAddress(_texAddress)), findsOneWidget);
+    expect(find.text('TEX'), findsOneWidget);
+    expect(find.text('Transparent'), findsNothing);
     expect(find.text('Shielded'), findsNothing);
   });
 
@@ -157,6 +179,32 @@ void main() {
     expect(find.text('Shielded'), findsNothing);
     expect(find.byType(ReviewInfoIconCircle), findsNothing);
     expect(find.text('Show full address'), findsOneWidget);
+  });
+
+  testWidgets('TEX contact recipient keeps a TEX label', (tester) async {
+    await _pump(
+      tester,
+      SendReviewContentView(
+        amountText: '123.12 ZEC',
+        recipient: const SendReviewContactRecipient(
+          address: _texAddress,
+          name: 'Mike',
+          profilePictureId: 'pfp-02',
+        ),
+        isShieldedRecipient: false,
+        recipientAddressType: 'tex',
+        feeText: '0.012 ZEC',
+        onConfirm: () {},
+        onCancel: () {},
+      ),
+    );
+
+    expect(find.text('Mike'), findsOneWidget);
+    expect(find.byType(AppProfilePicture), findsOneWidget);
+    expect(find.text('TEX - ${truncatedAddress(_texAddress)}'), findsOneWidget);
+    expect(find.text('Transparent'), findsNothing);
+    expect(find.text('Shielded'), findsNothing);
+    expect(find.byType(ReviewInfoIconCircle), findsNothing);
   });
 
   testWidgets('hides the fiat sub-label and memo row when null', (

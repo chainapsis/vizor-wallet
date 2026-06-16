@@ -528,12 +528,18 @@ class _ActivityTransactionStatusScreenState
       isShieldedRecipient:
           zcashAddressDisplayKind(recipientAddress) ==
           ZcashAddressDisplayKind.shielded,
+      recipientAddressType: _recipientAddressTypeForDisplay(recipientAddress),
       memoText: hasMemo ? memo : null,
       memoExpanded: _messageExpanded,
       onShowFullAddress: () => _showVerifyAddress(recipientAddress),
       onExpandMemo: hasMemo ? _toggleMessageExpanded : null,
       onOpenExplorer: () => unawaited(_openTransactionExplorer()),
     );
+  }
+
+  String? _recipientAddressTypeForDisplay(String address) {
+    final lower = address.trim().toLowerCase();
+    return lower.startsWith('tex') ? 'tex' : null;
   }
 
   Widget _shieldedContent(

@@ -548,6 +548,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                         txIdText: _txid,
                         feeText: _formatFee(widget.args.feeZatoshi),
                         isShieldedRecipient: widget.args.isShielded,
+                        recipientAddressType: widget.args.addressType,
                         memoText: hasMemo ? memo : null,
                         memoExpanded: _messageExpanded,
                         noticeText: _phase == _SendStatusPhase.failed

@@ -24,6 +24,7 @@ class SendReviewContentView extends StatelessWidget {
     required this.recipient,
     required this.feeText,
     this.isShieldedRecipient = true,
+    this.recipientAddressType,
     this.fiatText,
     this.memoText,
     this.memoExpanded = false,
@@ -44,6 +45,9 @@ class SendReviewContentView extends StatelessWidget {
 
   /// Pool badge for raw-address recipients.
   final bool isShieldedRecipient;
+
+  /// Full protocol address type from validation when available.
+  final String? recipientAddressType;
 
   /// Formatted fee ("0.012 ZEC").
   final String feeText;
@@ -84,6 +88,7 @@ class SendReviewContentView extends StatelessWidget {
           fiatText: fiatText,
           recipient: recipient,
           isShieldedRecipient: isShieldedRecipient,
+          recipientAddressType: recipientAddressType,
           onShowFullAddress: onShowFullAddress,
         ),
         ReviewWrapCard(

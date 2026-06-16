@@ -30,6 +30,7 @@ class SendStatusContentView extends StatelessWidget {
     required this.txIdText,
     required this.feeText,
     this.isShieldedRecipient = true,
+    this.recipientAddressType,
     this.fiatText,
     this.memoText,
     this.memoExpanded = false,
@@ -50,6 +51,9 @@ class SendStatusContentView extends StatelessWidget {
 
   /// Pool badge for raw-address recipients.
   final bool isShieldedRecipient;
+
+  /// Full protocol address type from validation when available.
+  final String? recipientAddressType;
 
   /// Formatted timestamp ("25 May, 13:30").
   final String timestampText;
@@ -95,6 +99,7 @@ class SendStatusContentView extends StatelessWidget {
           fiatText: fiatText,
           recipient: recipient,
           isShieldedRecipient: isShieldedRecipient,
+          recipientAddressType: recipientAddressType,
           connectorIconName: _failed ? AppIcons.uturnUp : AppIcons.arrowDown,
           recipientStruckThrough: _failed,
           onShowFullAddress: onShowFullAddress,
