@@ -99,7 +99,7 @@ List<RouteBase> buildMobileRoutes({
         child: const MobileEndpointScreen(),
       ),
     ),
-    // The Update Passcode frames also drop the tab bar — same
+    // The Set New Passcode frames also drop the tab bar — same
     // full-screen push pattern.
     GoRoute(
       path: '/settings/change-password',

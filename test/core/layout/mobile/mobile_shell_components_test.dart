@@ -261,6 +261,27 @@ void main() {
     expect(find.text('Sheet content'), findsNothing);
   });
 
+  testWidgets('MobileModalScaffold preserves tall leading affordances', (
+    tester,
+  ) async {
+    const leadingKey = ValueKey('modal_leading_affordance');
+    await tester.pumpWidget(
+      _harness(
+        SizedBox(
+          width: 361,
+          child: MobileModalScaffold(
+            title: 'Verify address',
+            onClose: () {},
+            leading: const SizedBox(key: leadingKey, width: 32, height: 32),
+            child: const SizedBox(height: 24),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.getSize(find.byKey(leadingKey)), const Size(32, 32));
+  });
+
   testWidgets('MobileModalCard uses the Figma modal base in both themes', (
     tester,
   ) async {

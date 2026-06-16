@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/navigation/mobile_tab_history.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -38,15 +39,27 @@ class MobileSettingsScreen extends ConsumerWidget {
     final account = ref.watch(accountProvider).value?.activeAccount;
     final endpoint = ref.watch(rpcEndpointProvider).hostPort;
     final themeMode = ref.watch(themeModeProvider);
+    final profilePictureId =
+        account?.profilePictureId ?? kDefaultProfilePictureId;
+    final profilePictureLabel = _profilePictureDisplayLabel(profilePictureId);
     final biometric =
         ref.watch(biometricUnlockProvider).value ??
         BiometricUnlockState.initial;
+    final settingsRowStyle = AppTypography.labelLarge.copyWith(
+      fontWeight: FontWeight.w400,
+    );
+    final settingsValueColor = context.colors.text.accent;
+    final settingsChevronColor = context.colors.icon.accent;
 
     return SafeArea(
       bottom: false,
       child: Column(
         children: [
-          const MobileTopNav.back(title: 'Settings'),
+          MobileTopNav.back(
+            title: 'Settings',
+            onBack: () =>
+                context.go(ref.read(mobilePreviousTabPathProvider) ?? '/home'),
+          ),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(
@@ -63,12 +76,18 @@ class MobileSettingsScreen extends ConsumerWidget {
                       key: const ValueKey('mobile_settings_seed_row'),
                       leading: _RowIcon(AppIcons.key),
                       label: 'Secret Passphrase',
+                      minRowHeight: _settingsRowHeight,
+                      textStyle: settingsRowStyle,
+                      chevronColor: settingsChevronColor,
                       showChevron: true,
                       onTap: () => context.push('/settings/seed-phrase'),
                     ),
                     MobileListRow(
                       leading: _RowIcon(AppIcons.lock),
                       label: 'Password',
+                      minRowHeight: _settingsRowHeight,
+                      textStyle: settingsRowStyle,
+                      chevronColor: settingsChevronColor,
                       showChevron: true,
                       onTap: () => _openChangePasscode(context),
                     ),
@@ -76,23 +95,36 @@ class MobileSettingsScreen extends ConsumerWidget {
                       key: const ValueKey('mobile_settings_pfp_row'),
                       leading: _RowIcon(AppIcons.user),
                       label: 'Profile Picture',
-                      // Just the avatar thumbnail → chevron. The "Profile
-                      // picture N" label was redundant with the thumbnail
-                      // and only ate horizontal space.
+                      minRowHeight: _settingsRowHeight,
+                      textStyle: settingsRowStyle,
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           AppProfilePicture(
-                            profilePictureId:
-                                account?.profilePictureId ??
-                                kDefaultProfilePictureId,
+                            profilePictureId: profilePictureId,
                             size: AppProfilePictureSize.medium,
                           ),
-                          const SizedBox(width: AppSpacing.xs),
+                          const SizedBox(width: AppSpacing.xxs),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 128),
+                            child: Text(
+                              profilePictureLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: settingsRowStyle.copyWith(
+                                color: account == null
+                                    ? context.colors.text.disabled
+                                    : settingsValueColor,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xxs),
                           AppIcon(
                             AppIcons.chevronForward,
                             size: AppIconSize.medium,
-                            color: context.colors.icon.muted,
+                            color: account == null
+                                ? context.colors.icon.disabled
+                                : settingsChevronColor,
                           ),
                         ],
                       ),
@@ -106,6 +138,13 @@ class MobileSettingsScreen extends ConsumerWidget {
                       leading: _RowIcon(AppIcons.scroll),
                       label: 'Account Name',
                       value: account?.name ?? '',
+                      minRowHeight: _settingsRowHeight,
+                      textStyle: settingsRowStyle,
+                      valueTextStyle: settingsRowStyle,
+                      valueColor: account == null
+                          ? context.colors.text.disabled
+                          : settingsValueColor,
+                      chevronColor: settingsChevronColor,
                       showChevron: true,
                       enabled: account != null,
                       onTap: account == null
@@ -116,12 +155,15 @@ class MobileSettingsScreen extends ConsumerWidget {
                       key: const ValueKey('mobile_settings_address_book_row'),
                       leading: _RowIcon(AppIcons.users),
                       label: 'Address Book',
+                      minRowHeight: _settingsRowHeight,
+                      textStyle: settingsRowStyle,
+                      chevronColor: settingsChevronColor,
                       showChevron: true,
                       onTap: () => context.push('/settings/address-book'),
                     ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: AppSpacing.md),
                 _SettingsGroup(
                   title: 'System',
                   rows: [
@@ -130,6 +172,11 @@ class MobileSettingsScreen extends ConsumerWidget {
                       leading: _RowIcon(AppIcons.endpoint),
                       label: 'Endpoint',
                       value: endpoint,
+                      minRowHeight: _settingsRowHeight,
+                      textStyle: settingsRowStyle,
+                      valueTextStyle: settingsRowStyle,
+                      valueColor: settingsValueColor,
+                      chevronColor: settingsChevronColor,
                       showChevron: true,
                       onTap: () => context.push('/settings/endpoint'),
                     ),
@@ -138,6 +185,11 @@ class MobileSettingsScreen extends ConsumerWidget {
                       leading: _RowIcon(AppIcons.theme),
                       label: 'Theme',
                       value: _themeLabel(themeMode),
+                      minRowHeight: _settingsRowHeight,
+                      textStyle: settingsRowStyle,
+                      valueTextStyle: settingsRowStyle,
+                      valueColor: settingsValueColor,
+                      chevronColor: settingsChevronColor,
                       showChevron: true,
                       onTap: () => _showThemeSheet(context, ref, themeMode),
                     ),
@@ -150,8 +202,13 @@ class MobileSettingsScreen extends ConsumerWidget {
                         leading: _RowIcon(AppIcons.lock),
                         label: biometric.availability.kind == BiometricKind.face
                             ? 'Face ID'
-                            : 'Fingerprint',
+                            : 'Biometrics',
                         value: biometric.enabled ? 'On' : 'Off',
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        valueTextStyle: settingsRowStyle,
+                        valueColor: settingsValueColor,
+                        chevronColor: settingsChevronColor,
                         showChevron: true,
                         onTap: () => unawaited(_toggleBiometric(context, ref)),
                       ),
@@ -226,6 +283,17 @@ class MobileSettingsScreen extends ConsumerWidget {
     ThemeMode.dark => 'Dark',
   };
 
+  static String _profilePictureDisplayLabel(String id) {
+    final option = resolveProfilePictureOption(id);
+    return switch (option.id) {
+      'pfp-01' => 'Knight',
+      'pfp-02' => 'Viking',
+      'pfp-03' => 'Samurai',
+      'pfp-11' => 'Wizard',
+      _ => option.label,
+    };
+  }
+
   Future<void> _toggleBiometric(BuildContext context, WidgetRef ref) async {
     final notifier = ref.read(biometricUnlockProvider.notifier);
     final state = await ref.read(biometricUnlockProvider.future);
@@ -278,6 +346,13 @@ class _SettingsGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MobileSurfaceCard(
+      cornerRadius: AppRadii.large,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.base,
+        AppSpacing.sm,
+        AppSpacing.base,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -288,7 +363,8 @@ class _SettingsGroup extends StatelessWidget {
             ),
             child: Text(
               title,
-              style: AppTypography.labelMedium.copyWith(
+              style: AppTypography.labelLarge.copyWith(
+                fontWeight: FontWeight.w400,
                 color: context.colors.text.secondary,
               ),
             ),
@@ -299,6 +375,8 @@ class _SettingsGroup extends StatelessWidget {
     );
   }
 }
+
+const _settingsRowHeight = 44.0;
 
 class _RowIcon extends StatelessWidget {
   const _RowIcon(this.iconName);
@@ -336,51 +414,15 @@ class _ThemeSheetState extends State<_ThemeSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.sm),
+    return MobileModalScaffold(
+      title: 'Theme',
+      onClose: () => Navigator.of(context).pop(),
+      bodyGap: AppSpacing.md,
+      bottomPadding: AppSpacing.base,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Theme',
-                  style: AppTypography.headlineSmall.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ),
-              Semantics(
-                label: 'Close',
-                button: true,
-                excludeSemantics: true,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => Navigator.of(context).pop(),
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: colors.background.raised,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: AppIcon(
-                        AppIcons.cross,
-                        size: AppIconSize.medium,
-                        color: colors.icon.accent,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
           for (final (mode, iconName, label) in _options) ...[
             _ThemeOptionCard(
               key: ValueKey('mobile_theme_option_${mode.name}'),
@@ -391,7 +433,7 @@ class _ThemeSheetState extends State<_ThemeSheet> {
             ),
             const SizedBox(height: AppSpacing.xs),
           ],
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.sm),
           AppButton(
             key: const ValueKey('mobile_theme_update'),
             expand: true,
@@ -399,24 +441,7 @@ class _ThemeSheetState extends State<_ThemeSheet> {
             child: const Text('Update'),
           ),
           const SizedBox(height: AppSpacing.xs),
-          Semantics(
-            button: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => Navigator.of(context).pop(),
-              child: SizedBox(
-                height: 44,
-                child: Center(
-                  child: Text(
-                    'Cancel',
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.primary,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
+          MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
         ],
       ),
     );
@@ -449,7 +474,7 @@ class _ThemeOptionCard extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
-          height: 56,
+          height: 64,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           decoration: BoxDecoration(
             color: colors.background.ground,
@@ -461,7 +486,10 @@ class _ThemeOptionCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              AppIcon(iconName, size: 20, color: colors.icon.accent),
+              Opacity(
+                opacity: selected ? 1 : 0.5,
+                child: AppIcon(iconName, size: 20, color: colors.icon.accent),
+              ),
               const SizedBox(width: AppSpacing.s),
               Expanded(
                 child: Text(

@@ -29,6 +29,13 @@ class MobileTextField extends StatefulWidget {
     this.inputFormatters,
     this.leading,
     this.trailing,
+    this.backgroundColor,
+    this.restingBorderColor,
+    this.focusedBorderColor,
+    this.textStyle,
+    this.hintStyle,
+    this.height,
+    this.radius,
     super.key,
   });
 
@@ -50,6 +57,28 @@ class MobileTextField extends StatefulWidget {
   /// Rendered after the text (e.g. a clear button or contacts/scan icons).
   /// Owns its own padding/sizing.
   final Widget? trailing;
+
+  /// Optional per-surface fill override for one-off Figma variants.
+  final Color? backgroundColor;
+
+  /// Optional border shown when the field is not focused. Defaults to
+  /// transparent for the canonical mobile input.
+  final Color? restingBorderColor;
+
+  /// Optional border shown when focused. Defaults to the inverse focus ring.
+  final Color? focusedBorderColor;
+
+  /// Optional text style override. Color is not injected automatically.
+  final TextStyle? textStyle;
+
+  /// Optional placeholder style override.
+  final TextStyle? hintStyle;
+
+  /// Optional height override for one-off embedded field variants.
+  final double? height;
+
+  /// Optional radius override for one-off embedded field variants.
+  final double? radius;
 
   @override
   State<MobileTextField> createState() => _MobileTextFieldState();
@@ -86,17 +115,30 @@ class _MobileTextFieldState extends State<MobileTextField> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final focused = widget.focusNode.hasFocus;
+    final textStyle =
+        widget.textStyle ??
+        AppTypography.labelMedium.copyWith(
+          fontWeight: FontWeight.w500,
+          color: colors.text.accent,
+        );
+    final hintStyle =
+        widget.hintStyle ??
+        AppTypography.labelMedium.copyWith(color: colors.text.muted);
     return Container(
       // Mobile input metrics (AppInputSizing → 60px tall, radius 16); desktop
       // resolves these to 46 / 12. The surface fill, the focus-only inverse
       // outline and the layered surface shadow mirror the canonical
       // AppTextField shell.
-      height: AppInputSizing.height,
+      height: widget.height ?? AppInputSizing.height,
       decoration: BoxDecoration(
-        color: colors.surface.input,
-        borderRadius: BorderRadius.circular(AppInputSizing.radius),
+        color: widget.backgroundColor ?? colors.surface.input,
+        borderRadius: BorderRadius.circular(
+          widget.radius ?? AppInputSizing.radius,
+        ),
         border: Border.all(
-          color: focused ? colors.background.inverse : const Color(0x00000000),
+          color: focused
+              ? widget.focusedBorderColor ?? colors.background.inverse
+              : widget.restingBorderColor ?? const Color(0x00000000),
           width: 1.5,
           strokeAlign: BorderSide.strokeAlignInside,
         ),
@@ -130,16 +172,11 @@ class _MobileTextFieldState extends State<MobileTextField> {
                 textInputAction: widget.textInputAction,
                 keyboardType: widget.keyboardType,
                 inputFormatters: widget.inputFormatters,
-                style: AppTypography.labelMedium.copyWith(
-                  fontWeight: FontWeight.w500,
-                  color: colors.text.accent,
-                ),
+                style: textStyle,
                 cursorColor: colors.text.accent,
                 decoration: InputDecoration.collapsed(
                   hintText: widget.hintText,
-                  hintStyle: AppTypography.labelMedium.copyWith(
-                    color: colors.text.muted,
-                  ),
+                  hintStyle: hintStyle,
                 ),
               ),
             ),

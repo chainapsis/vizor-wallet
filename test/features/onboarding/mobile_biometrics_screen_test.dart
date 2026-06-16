@@ -72,6 +72,9 @@ void main() {
     await tester.pumpWidget(_app(biometric));
     await tester.pumpAndSettle();
 
+    expect(find.text('Unlock your wallet\nwith Face ID'), findsOneWidget);
+    expect(find.text('Enable Face ID'), findsOneWidget);
+
     await tester.tap(find.byKey(const ValueKey('mobile_biometrics_enable')));
     await tester.pumpAndSettle();
 
@@ -115,6 +118,9 @@ void main() {
     );
     await tester.pumpWidget(_app(biometric));
     await tester.pumpAndSettle();
+
+    expect(find.text('Unlock your wallet\nwith biometrics'), findsOneWidget);
+    expect(find.text('Enable biometrics'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('mobile_biometrics_not_now')));
     await tester.pumpAndSettle();

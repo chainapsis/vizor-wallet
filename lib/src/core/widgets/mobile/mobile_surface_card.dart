@@ -9,22 +9,24 @@ class MobileSurfaceCard extends StatelessWidget {
   const MobileSurfaceCard({
     required this.child,
     this.padding = const EdgeInsets.all(AppSpacing.sm),
+    this.cornerRadius = defaultRadius,
     super.key,
   });
 
   /// Corner radius measured from the Figma mobile surfaces (not
   /// tokenized as a variable yet).
-  static const radius = 20.0;
+  static const defaultRadius = 20.0;
 
   final Widget child;
   final EdgeInsetsGeometry padding;
+  final double cornerRadius;
 
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: context.colors.background.ground,
-        borderRadius: BorderRadius.circular(radius),
+        borderRadius: BorderRadius.circular(cornerRadius),
       ),
       child: Padding(padding: padding, child: child),
     );

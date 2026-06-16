@@ -141,6 +141,7 @@ operating-system chrome and presentation-only background layers.
   states, page titles. Only capitalize the first word and proper nouns. Keep
   proper-noun acronyms in their canonical form (`ZEC`, `USDC`, `USDT`, `NEAR`,
   `Vizor`, `Keystone`, `Zcash`, `Ethereum`).
+- Figma-authored display headings may keep title case.
 - This applies to interpolated labels too: `'$symbol deposit tx'`, not
   `'$symbol Deposit tx'`. The asset symbol carries its own casing; the rest of
   the label is sentence case.

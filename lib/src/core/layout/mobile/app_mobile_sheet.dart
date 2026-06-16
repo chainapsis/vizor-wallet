@@ -181,12 +181,12 @@ const List<BoxShadow> _modalShadow = [
 /// way.
 ///
 /// - Padding: top 32 ([AppSpacing.base]) / bottom 24 ([AppSpacing.md]) /
-///   horizontal 16 ([AppSpacing.sm]); a 16px gap between the title and the
-///   body. The body ([child]) owns its own internal spacing.
+///   horizontal 16 ([AppSpacing.sm]); a 16px gap between the title line and
+///   the body. The body ([child]) owns its own internal spacing.
 /// - Title: Body L SemiBold in `text.accent`, kept clear of the close button.
 /// - Close: absolutely pinned to the top-right (right 16, top 15.5) so it sits
-///   slightly above the title baseline, exactly as the Figma component does —
-///   not vertically centered in the title row.
+///   above the title line, exactly as the Figma component does — not vertically
+///   centered in the title row.
 class MobileModalScaffold extends StatelessWidget {
   const MobileModalScaffold({
     required this.title,
@@ -230,8 +230,8 @@ class MobileModalScaffold extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(
-                height: 44,
+              ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 26),
                 child: Padding(
                   // Clear the absolute 32px close (+ an 8px gap) so a long title
                   // ellipsizes instead of sliding under it.
@@ -323,7 +323,7 @@ class _ModalCloseButtonState extends State<_ModalCloseButton> {
             child: Center(
               child: AppIcon(
                 AppIcons.cross,
-                size: AppIconSize.medium,
+                size: 20,
                 color: colors.icon.accent,
               ),
             ),

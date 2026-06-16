@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/storage/app_secure_store.dart';
 import '../../../../core/feedback/app_haptics.dart';
@@ -13,15 +14,16 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/router_refresh_provider.dart';
+import '../../../onboarding/mobile/forgot_passcode_sheet.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
 
 enum _Phase { verify, create, confirm }
 
-/// Mobile passcode change — Figma `Enter Passcode` / `Update Passcode` /
-/// `Confirm Passcode` (4494:91005 / 91073 / 91141). Three numpad phases:
-/// verify the current passcode (with the Forgot Passcode reset sheet
+/// Mobile passcode change — Figma `Enter Passcode` / `Set New Passcode` /
+/// `Confirm Passcode` (4885:24611 / 4885:24699 / 4885:24770). Three numpad
+/// phases: verify the current passcode (with the Forgot Passcode reset sheet
 /// behind the help key), enter the new one, confirm it. The change goes
 /// through the same `appSecurityProvider.changePassword` rotation as the
 /// desktop flow. Pops `true` after a successful change.
@@ -211,13 +213,45 @@ class _MobileChangePasscodeScreenState
     _error = error;
   }
 
+  Future<void> _showForgotPasscodeSheet() async {
+    final confirmed = await showAppMobileSheet<bool>(
+      context: context,
+      builder: (sheetContext) => const ForgotPasscodeSheet(),
+    );
+    if (confirmed != true || !mounted) return;
+    final lastWarningConfirmed = await showAppMobileSheet<bool>(
+      context: context,
+      builder: (sheetContext) => const ForgotPasscodeLastWarningSheet(),
+    );
+    if (lastWarningConfirmed != true || !mounted) return;
+    await _resetWallet();
+  }
+
+  Future<void> _resetWallet() async {
+    setState(() => _submitting = true);
+    final router = GoRouter.of(context);
+    try {
+      await resetWalletForForgottenPasscode(ref);
+    } catch (e, st) {
+      log('MobileChangePasscode._resetWallet: ERROR: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _entry = '';
+        _error = "Couldn't reset the app. Please try again.";
+      });
+      return;
+    }
+    router.go('/welcome');
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final (title, subtitle) = switch (_phase) {
-      _Phase.verify => ('Enter Passcode', 'Enter your passcode'),
-      _Phase.create => ('Update Passcode', 'Enter your new passcode'),
-      _Phase.confirm => ('Confirm Passcode', 'Confirm new passcode'),
+      _Phase.verify => ('Enter Passcode', 'Confirm your access'),
+      _Phase.create => ('Set New Passcode', '6 digits length'),
+      _Phase.confirm => ('Confirm Passcode', '6 digits length'),
     };
 
     return Scaffold(
@@ -229,41 +263,62 @@ class _MobileChangePasscodeScreenState
               title: '',
               onBack: _submitting ? null : () => context.pop(),
             ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              // Headline M serif per the Update Passcode frames.
-              style: AppTypography.headlineMedium.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-            // Dots + error centred in the space above the keypad.
             Expanded(
-              child: PasscodePromptField(
-                length: kMobilePasscodeLength,
-                filled: _entry.length,
-                error: _error,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: AppSpacing.md,
+                ),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              textAlign: TextAlign.center,
+                              style: AppTypography.displayLarge.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.s),
+                            Text(
+                              subtitle,
+                              textAlign: TextAlign.center,
+                              style: AppTypography.bodyMediumStrong.copyWith(
+                                color: colors.text.primary,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            SizedBox(
+                              height: kPasscodePromptDigitsHeight,
+                              child: PasscodePromptField(
+                                length: kMobilePasscodeLength,
+                                filled: _entry.length,
+                                error: _error,
+                                minGap: 0,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    PasscodeNumpad(
+                      onDigit: _onDigit,
+                      onBackspace: _onBackspace,
+                      canDelete: _entry.isNotEmpty,
+                      onHelp: _phase == _Phase.verify && !_submitting
+                          ? _showForgotPasscodeSheet
+                          : null,
+                      enabled: !_submitting,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
+                ),
               ),
             ),
-            PasscodeNumpad(
-              onDigit: _onDigit,
-              onBackspace: _onBackspace,
-              canDelete: _entry.isNotEmpty,
-              // No help/reset affordance here: reaching settings means the
-              // user is already authenticated, so the forgot-passcode reset
-              // path lives only on the app-entry unlock screen.
-              enabled: !_submitting,
-            ),
-            const SizedBox(height: AppSpacing.md),
           ],
         ),
       ),

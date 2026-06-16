@@ -17,6 +17,11 @@ class MobileListRow extends StatelessWidget {
     this.onTap,
     this.enabled = true,
     this.labelColor,
+    this.valueColor,
+    this.chevronColor,
+    this.minRowHeight = minHeight,
+    this.textStyle,
+    this.valueTextStyle,
     super.key,
   });
 
@@ -28,8 +33,25 @@ class MobileListRow extends StatelessWidget {
   /// Overrides the default label color (e.g. destructive menu rows).
   final Color? labelColor;
 
+  /// Overrides the default value color.
+  final Color? valueColor;
+
+  /// Overrides the default chevron color for screen-specific Figma variants.
+  final Color? chevronColor;
+
+  /// Minimum row height. The default is the generic touch row; dense Figma
+  /// lists can opt into their own pitch without changing every consumer.
+  final double minRowHeight;
+
+  /// Base text style for the label. Color is applied by [labelColor] /
+  /// disabled state.
+  final TextStyle? textStyle;
+
   /// Right-aligned secondary value (e.g. current setting).
   final String? value;
+
+  /// Base text style for [value]. Color is applied by enabled state.
+  final TextStyle? valueTextStyle;
 
   /// Custom trailing widget; rendered after [value] and instead of the
   /// chevron when provided.
@@ -47,10 +69,14 @@ class MobileListRow extends StatelessWidget {
     final labelColor =
         this.labelColor ??
         (enabled ? colors.text.accent : colors.text.disabled);
-    final valueColor = enabled ? colors.text.secondary : colors.text.disabled;
+    final valueColor =
+        this.valueColor ??
+        (enabled ? colors.text.secondary : colors.text.disabled);
+    final labelTextStyle = textStyle ?? AppTypography.bodyMedium;
+    final valueTextStyle = this.valueTextStyle ?? AppTypography.bodyMedium;
 
     final row = ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: minHeight),
+      constraints: BoxConstraints(minHeight: minRowHeight),
       child: Row(
         children: [
           if (leading != null) ...[
@@ -64,17 +90,14 @@ class MobileListRow extends StatelessWidget {
           // Rows with a value keep static labels; the label only gets
           // the truncating Expanded when it is the sole text.
           if (value != null) ...[
-            Text(
-              label,
-              style: AppTypography.bodyMedium.copyWith(color: labelColor),
-            ),
+            Text(label, style: labelTextStyle.copyWith(color: labelColor)),
             const SizedBox(width: AppSpacing.xs),
             Expanded(
               child: Text(
                 value!,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.right,
-                style: AppTypography.bodyMedium.copyWith(color: valueColor),
+                style: valueTextStyle.copyWith(color: valueColor),
               ),
             ),
           ] else
@@ -82,7 +105,7 @@ class MobileListRow extends StatelessWidget {
               child: Text(
                 label,
                 overflow: TextOverflow.ellipsis,
-                style: AppTypography.bodyMedium.copyWith(color: labelColor),
+                style: labelTextStyle.copyWith(color: labelColor),
               ),
             ),
           if (trailing != null) ...[
@@ -93,7 +116,9 @@ class MobileListRow extends StatelessWidget {
             AppIcon(
               AppIcons.chevronForward,
               size: AppIconSize.medium,
-              color: enabled ? colors.icon.muted : colors.icon.disabled,
+              color: enabled
+                  ? chevronColor ?? colors.icon.muted
+                  : colors.icon.disabled,
             ),
           ],
         ],
