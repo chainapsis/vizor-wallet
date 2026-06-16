@@ -151,34 +151,38 @@ class MobileTopNav extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onAccountTap,
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: MainAxisSize.max,
         children: [
           avatar ?? _AvatarPlaceholder(size: _avatarSize),
           const SizedBox(width: AppSpacing.s),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                accountName,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colors.text.accent,
-                ),
-              ),
-              if (balanceLabel != null) ...[
-                const SizedBox(height: AppSpacing.xxs),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  balanceLabel!,
+                  accountName,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelLarge.copyWith(
-                    fontWeight: FontWeight.w400,
-                    color: colors.text.secondary,
+                    fontWeight: FontWeight.w600,
+                    color: colors.text.accent,
                   ),
                 ),
+                if (balanceLabel != null) ...[
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    balanceLabel!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      fontWeight: FontWeight.w400,
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ],
       ),

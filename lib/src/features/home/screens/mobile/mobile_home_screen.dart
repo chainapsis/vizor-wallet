@@ -53,31 +53,63 @@ class MobileHomeScreen extends ConsumerWidget {
         sync.failure == null;
 
     return SwapActivityStatusAutoRefresh(
-      child: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            Builder(
-              builder: (context) => MobileTopNavAccount(
-                onAccountTap: () => showMobileAccountsSheet(context),
-              ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (isImporting) const _ImportingBackground(),
+          SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                Builder(
+                  builder: (context) => MobileTopNavAccount(
+                    showSyncStatus: !isImporting,
+                    onAccountTap: () => showMobileAccountsSheet(context),
+                  ),
+                ),
+                Expanded(
+                  // VZR-74: dissolve scrolled content under the top nav
+                  // with a soft eased fade instead of a hard clip line.
+                  child: MobileTopScrollFade(
+                    child: isImporting
+                        ? _ImportingView(progress: sync.displayPercentage)
+                        : _HomeContent(
+                            sync: sync,
+                            activeAccountUuid: activeAccountUuid,
+                            privacyModeEnabled: privacyModeEnabled,
+                            onTogglePrivacyMode: () =>
+                                ref.read(privacyModeProvider.notifier).toggle(),
+                          ),
+                  ),
+                ),
+              ],
             ),
-            Expanded(
-              // VZR-74: dissolve scrolled content under the top nav
-              // with a soft eased fade instead of a hard clip line.
-              child: MobileTopScrollFade(
-                child: isImporting
-                    ? _ImportingView(progress: sync.displayPercentage)
-                    : _HomeContent(
-                        sync: sync,
-                        activeAccountUuid: activeAccountUuid,
-                        privacyModeEnabled: privacyModeEnabled,
-                        onTogglePrivacyMode: () =>
-                            ref.read(privacyModeProvider.notifier).toggle(),
-                      ),
-              ),
-            ),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImportingBackground extends StatelessWidget {
+  const _ImportingBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.appTheme == AppThemeData.dark;
+    final assetName = isDark
+        ? 'assets/illustrations/home_importing_background_dark.png'
+        : 'assets/illustrations/home_importing_background_light.png';
+
+    return Positioned.fill(
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Image.asset(
+          assetName,
+          key: const ValueKey('mobile_home_importing_background'),
+          width: 1080,
+          height: 720,
+          fit: BoxFit.fill,
         ),
       ),
     );
@@ -214,10 +246,14 @@ class _HomeContent extends ConsumerWidget {
             // the two renders at a time.
             key: const ValueKey('mobile_home_receive'),
             expand: true,
-            variant: AppButtonVariant.secondary,
+            constrainContent: true,
             onPressed: () => context.push('/receive'),
             leading: const _ButtonIcon(AppIcons.addNew),
-            child: const Text('Receive your first ZEC'),
+            child: const Text(
+              'Receive your first ZEC',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         const SizedBox(height: AppSpacing.md),
         if (recentRows.isEmpty)
@@ -388,13 +424,13 @@ class _PrivacyEyeButton extends StatelessWidget {
           onTap();
         },
         child: Container(
-          // 40 px disc, a step lighter than the card (#393C3C on
-          // #2E3232), per the Figma privacy toggle.
+          // Figma uses a 40 x 32 pill here, not the circular icon
+          // treatment used in the desktop card.
           width: 40,
-          height: 40,
+          height: 32,
           decoration: BoxDecoration(
-            color: const Color(0xFFFFFFFF).withValues(alpha: 0.06),
-            shape: BoxShape.circle,
+            color: const Color(0xFFFFFFFF).withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(AppRadii.full),
           ),
           child: Center(
             child: AppIcon(
@@ -482,14 +518,14 @@ class _EmptyActivity extends StatelessWidget {
     final colors = context.colors;
     return Column(
       children: [
-        const SizedBox(height: AppSpacing.base),
+        const SizedBox(height: AppSpacing.sm),
         Text(
           'No activity, yet...',
           style: AppTypography.headlineSmall.copyWith(
             color: colors.text.accent,
           ),
         ),
-        const SizedBox(height: AppSpacing.xs),
+        const SizedBox(height: AppSpacing.xxs),
         Text(
           'How about running your\nfirst ZEC tx?',
           textAlign: TextAlign.center,
@@ -500,7 +536,7 @@ class _EmptyActivity extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         Image.asset(
           'assets/illustrations/home_rest_character.png',
-          width: 280,
+          width: 340,
           fit: BoxFit.contain,
         ),
       ],
@@ -545,10 +581,14 @@ class _ImportingView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          Image.asset(
-            'assets/illustrations/home_rest_character.png',
-            width: 240,
-            fit: BoxFit.contain,
+          Flexible(
+            child: SizedBox(
+              width: 340,
+              child: Image.asset(
+                'assets/illustrations/home_rest_character.png',
+                fit: BoxFit.contain,
+              ),
+            ),
           ),
           const Spacer(),
           const SizedBox(height: kMobileTabBarHeight),

@@ -15,9 +15,14 @@ import 'mobile_top_nav.dart';
 /// label/edge indicator from [syncProvider] (same derivation as the
 /// desktop sidebar status row).
 class MobileTopNavAccount extends ConsumerWidget {
-  const MobileTopNavAccount({this.onAccountTap, super.key});
+  const MobileTopNavAccount({
+    this.onAccountTap,
+    this.showSyncStatus = true,
+    super.key,
+  });
 
   final VoidCallback? onAccountTap;
+  final bool showSyncStatus;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -60,10 +65,10 @@ class MobileTopNavAccount extends ConsumerWidget {
         isHardware: account?.isHardware ?? false,
         badgeRingColor: colors.background.window,
       ),
-      syncLabel: status.label,
+      syncLabel: showSyncStatus ? status.label : null,
       syncLabelColor: labelColor,
       syncIndicatorColor: indicatorColor,
-      syncAnimated: isSyncing,
+      syncAnimated: showSyncStatus && isSyncing,
       syncHighlightColor: highlightColor,
       onAccountTap: onAccountTap,
     );
