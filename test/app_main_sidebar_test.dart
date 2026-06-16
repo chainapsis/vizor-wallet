@@ -45,10 +45,7 @@ void main() {
     );
     expect(find.byKey(const ValueKey('sidebar_home_button')), findsOneWidget);
     expect(find.byKey(const ValueKey('sidebar_swap_button')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('sidebar_voting_button')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('sidebar_voting_button')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('sidebar_activity_button')),
       findsOneWidget,
@@ -366,6 +363,32 @@ void main() {
     );
   });
 
+  testWidgets('sidebar shimmers the syncing label with animations on', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(isSyncing: true, displayPercentage: 0.34),
+        disableAnimations: false,
+      ),
+    );
+    // The syncing animation repeats forever, so advance frames manually rather
+    // than using pumpAndSettle.
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('sidebar_sync_text')),
+        matching: find.byType(ShaderMask),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('sidebar shows synced state after sync completes', (
     tester,
   ) async {
@@ -526,6 +549,7 @@ Widget _sidebarHarness(
   bool swapEnabled = true,
   AccountState? accountState,
   String initialLocation = '/home',
+  bool disableAnimations = true,
 }) {
   final bootstrap = _bootstrapFor(accountState ?? _singleAccountState);
   final router = GoRouter(
@@ -577,7 +601,15 @@ Widget _sidebarHarness(
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: themeData, child: child!),
+      builder: (context, child) => MediaQuery(
+        // The syncing sidebar's shimmer and glow animate forever. Tests default
+        // to reduced motion so pumpAndSettle can settle; animation-specific
+        // tests opt back in with disableAnimations: false.
+        data: MediaQuery.of(
+          context,
+        ).copyWith(disableAnimations: disableAnimations),
+        child: AppTheme(data: themeData, child: child!),
+      ),
     ),
   );
 }
