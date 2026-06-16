@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show Scaffold;
+import 'package:flutter/material.dart' show Icon, Icons, Scaffold;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,6 +24,8 @@ import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
+import '../../../../services/biometric_unlock.dart';
+import '../../../onboarding/mobile/forgot_passcode_sheet.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
@@ -100,10 +102,21 @@ class _MobileSeedPhraseScreenState
     if (_checking || _stage != _SeedStage.confirmAccess) return;
     final biometric = await ref.read(biometricUnlockProvider.future);
     if (!mounted || !biometric.usable) return;
+    final wasEnabled = biometric.enabled;
     final passcode = await ref
         .read(biometricUnlockProvider.notifier)
         .readPasscode(reason: 'Confirm access to your secret passphrase');
-    if (!mounted || passcode == null) return;
+    if (!mounted) return;
+    if (passcode == null) {
+      final now = ref.read(biometricUnlockProvider).value;
+      if (wasEnabled && now != null && !now.enabled) {
+        setState(() {
+          _entry = '';
+          _gateError = 'Biometrics changed. Enter your passcode.';
+        });
+      }
+      return;
+    }
     setState(() {
       _entry = passcode;
       _gateError = null;
@@ -153,6 +166,38 @@ class _MobileSeedPhraseScreenState
         _gateError = "Couldn't verify the passcode. Try again.";
       });
     }
+  }
+
+  Future<void> _showForgotPasscodeSheet() async {
+    final confirmed = await showAppMobileSheet<bool>(
+      context: context,
+      builder: (sheetContext) => const ForgotPasscodeSheet(),
+    );
+    if (confirmed != true || !mounted) return;
+    final lastWarningConfirmed = await showAppMobileSheet<bool>(
+      context: context,
+      builder: (sheetContext) => const ForgotPasscodeLastWarningSheet(),
+    );
+    if (lastWarningConfirmed != true || !mounted) return;
+    await _resetWallet();
+  }
+
+  Future<void> _resetWallet() async {
+    setState(() => _checking = true);
+    final router = GoRouter.of(context);
+    try {
+      await resetWalletForForgottenPasscode(ref);
+    } catch (e, st) {
+      log('MobileSeedPhrase._resetWallet: ERROR: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _checking = false;
+        _entry = '';
+        _gateError = "Couldn't reset the app. Please try again.";
+      });
+      return;
+    }
+    router.go('/welcome');
   }
 
   // ── Reveal ─────────────────────────────────────────────────────────
@@ -283,7 +328,7 @@ class _MobileSeedPhraseScreenState
               children: [
                 MobileTopNav.back(
                   title: _stage == _SeedStage.confirmAccess
-                      ? 'Confirm Access'
+                      ? ''
                       : 'Secret Passphrase',
                   onBack: () => context.pop(),
                 ),
@@ -302,31 +347,72 @@ class _MobileSeedPhraseScreenState
   }
 
   Widget _buildGate(AppColors colors) {
+    final biometric =
+        ref.watch(biometricUnlockProvider).value ??
+        BiometricUnlockState.initial;
+    final showBiometric = !_checking && biometric.usable;
     return Column(
       children: [
-        const SizedBox(height: AppSpacing.s),
-        Text(
-          'Enter your passcode',
-          textAlign: TextAlign.center,
-          style: AppTypography.bodyMedium.copyWith(
-            color: colors.text.secondary,
-          ),
-        ),
-        // Dots + error centred in the space above the keypad.
         Expanded(
-          child: PasscodePromptField(
-            length: kMobilePasscodeLength,
-            filled: _entry.length,
-            error: _gateError,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Enter Passcode',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.displayLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.s),
+                Text(
+                  'Confirm your access',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.primary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                SizedBox(
+                  height: kPasscodePromptDigitsHeight,
+                  child: PasscodePromptField(
+                    length: kMobilePasscodeLength,
+                    filled: _entry.length,
+                    error: _gateError,
+                    minGap: 0,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         PasscodeNumpad(
           onDigit: _onDigit,
           onBackspace: _onBackspace,
           canDelete: _entry.isNotEmpty,
+          onHelp: _checking ? null : _showForgotPasscodeSheet,
           enabled: !_checking,
         ),
-        const SizedBox(height: AppSpacing.md),
+        if (showBiometric) ...[
+          const SizedBox(height: AppSpacing.md),
+          SizedBox(
+            key: const ValueKey('mobile_seed_phrase_biometric_footer'),
+            height: 36,
+            child: Center(
+              child: PasscodeBiometricButton(
+                label: biometric.availability.kind == BiometricKind.face
+                    ? 'Sign in with Face ID'
+                    : 'Sign in with biometrics',
+                icon: biometric.availability.kind == BiometricKind.face
+                    ? const Center(child: AppIcon(AppIcons.faceId, size: 13.5))
+                    : const Icon(Icons.fingerprint, size: 16),
+                onPressed: () => unawaited(_tryBiometricGate()),
+              ),
+            ),
+          ),
+        ],
+        if (!showBiometric) const SizedBox(height: AppSpacing.md),
       ],
     );
   }

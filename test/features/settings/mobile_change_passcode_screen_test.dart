@@ -11,6 +11,8 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_change_passcode_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
+import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 /// Intercepts the two security calls the screen makes so no secure
 /// storage is touched.
@@ -37,6 +39,51 @@ class _FakeSecurityNotifier extends AppSecurityNotifier {
   }
 }
 
+class _FakeBiometricController {
+  _FakeBiometricController({required this.initialState});
+
+  BiometricUnlockState initialState;
+  String? enabledWith;
+  var disabled = false;
+}
+
+class _FakeBiometricNotifier extends BiometricUnlockNotifier {
+  _FakeBiometricNotifier(this.controller);
+
+  final _FakeBiometricController controller;
+
+  @override
+  Future<BiometricUnlockState> build() async => controller.initialState;
+
+  @override
+  Future<String?> readPasscode({required String reason}) async {
+    throw StateError('Change-passcode gate must not read biometrics.');
+  }
+
+  @override
+  Future<void> enable(String passcode) async {
+    controller.enabledWith = passcode;
+    controller.initialState = controller.initialState.copyWith(enabled: true);
+    state = AsyncData(controller.initialState);
+  }
+
+  @override
+  Future<void> disable() async {
+    controller.disabled = true;
+    controller.initialState = controller.initialState.copyWith(enabled: false);
+    state = AsyncData(controller.initialState);
+  }
+}
+
+const _faceBiometricState = BiometricUnlockState(
+  availability: BiometricAvailability(
+    supported: true,
+    enrolled: true,
+    kind: BiometricKind.face,
+  ),
+  enabled: true,
+);
+
 AppBootstrapState _bootstrap() => AppBootstrapState(
   initialLocation: '/settings',
   initialAccountState: const AccountState(accounts: []),
@@ -52,7 +99,11 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
 
 /// Hosts the screen behind a go_router push (the screen pops via
 /// `context.pop`) so pop-with-result is observable.
-Widget _app(_FakeSecurityNotifier security, {required List<bool?> popResult}) {
+Widget _app(
+  _FakeSecurityNotifier security, {
+  required List<bool?> popResult,
+  _FakeBiometricController? biometric,
+}) {
   final router = GoRouter(
     initialLocation: '/host',
     routes: [
@@ -77,6 +128,10 @@ Widget _app(_FakeSecurityNotifier security, {required List<bool?> popResult}) {
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       appSecurityProvider.overrideWith(() => security),
+      if (biometric != null)
+        biometricUnlockProvider.overrideWith(
+          () => _FakeBiometricNotifier(biometric),
+        ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -114,6 +169,9 @@ void main() {
     await open(tester);
 
     expect(find.text('Enter Passcode'), findsOneWidget);
+    expect(find.text('Confirm your access'), findsOneWidget);
+    final verifyTitle = tester.widget<Text>(find.text('Enter Passcode'));
+    expect(verifyTitle.style?.fontSize, AppTypography.displayLarge.fontSize);
     expect(find.bySemanticsLabel('Passcode help'), findsOneWidget);
 
     await tester.tap(find.bySemanticsLabel('Passcode help'));
@@ -137,11 +195,14 @@ void main() {
 
     expect(find.bySemanticsLabel('Passcode help'), findsOneWidget);
     await _enterPasscode(tester, '111111');
-    expect(find.text('Update Passcode'), findsOneWidget);
+    expect(find.text('Set New Passcode'), findsOneWidget);
+    expect(find.text('6 digits length'), findsOneWidget);
     expect(find.bySemanticsLabel('Passcode help'), findsNothing);
+    expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
 
     await _enterPasscode(tester, '222222');
     expect(find.text('Confirm Passcode'), findsOneWidget);
+    expect(find.text('6 digits length'), findsOneWidget);
 
     await _enterPasscode(tester, '222222');
     expect(security.changedWith, (current: '111111', next: '222222'));
@@ -160,7 +221,7 @@ void main() {
     await _enterPasscode(tester, '222222');
     await _enterPasscode(tester, '333333');
 
-    expect(find.text('Update Passcode'), findsOneWidget);
+    expect(find.text('Set New Passcode'), findsOneWidget);
     expect(find.text("Passcodes didn't match. Try again."), findsOneWidget);
     expect(security.changedWith, isNull);
   });
@@ -175,8 +236,33 @@ void main() {
     await _enterPasscode(tester, '111111');
     await _enterPasscode(tester, '111111');
 
-    expect(find.text('Update Passcode'), findsOneWidget);
+    expect(find.text('Set New Passcode'), findsOneWidget);
     expect(find.text('Your new passcode must be different.'), findsOneWidget);
     expect(security.changedWith, isNull);
+  });
+
+  testWidgets('current-passcode phase does not offer biometric verification', (
+    tester,
+  ) async {
+    final security = _FakeSecurityNotifier();
+    final biometric = _FakeBiometricController(
+      initialState: _faceBiometricState,
+    );
+    await tester.pumpWidget(
+      _app(security, popResult: [], biometric: biometric),
+    );
+    await open(tester);
+
+    expect(find.text('Enter Passcode'), findsOneWidget);
+    expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_change_passcode_biometric_footer')),
+      findsNothing,
+    );
+
+    await _enterPasscode(tester, '111111');
+
+    expect(security.confirmedWith, ['111111']);
+    expect(find.text('Set New Passcode'), findsOneWidget);
   });
 }

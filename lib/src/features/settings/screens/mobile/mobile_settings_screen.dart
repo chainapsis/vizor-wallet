@@ -202,7 +202,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                         leading: _RowIcon(AppIcons.lock),
                         label: biometric.availability.kind == BiometricKind.face
                             ? 'Face ID'
-                            : 'Fingerprint',
+                            : 'Biometrics',
                         value: biometric.enabled ? 'On' : 'Off',
                         minRowHeight: _settingsRowHeight,
                         textStyle: settingsRowStyle,

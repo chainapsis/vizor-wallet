@@ -54,8 +54,8 @@ class WidgetbookApp extends StatelessWidget {
             WidgetbookTheme(name: 'Dark', data: AppThemeData.dark),
             WidgetbookTheme(name: 'Light', data: AppThemeData.light),
           ],
-          themeBuilder:
-              (context, theme, child) => AppTheme(data: theme, child: child),
+          themeBuilder: (context, theme, child) =>
+              AppTheme(data: theme, child: child),
           initialTheme: const WidgetbookTheme(
             name: 'Dark',
             data: AppThemeData.dark,
@@ -84,6 +84,35 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Login',
                       builder: buildUnlockLoginUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile lock',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Passcode only',
+                      builder: buildMobileUnlockPasscodeUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Face ID',
+                      builder: buildMobileUnlockFaceIdUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Biometric sign-in backdrop',
+                      builder: buildMobileUnlockBiometricBackdropUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Biometrics',
+                      builder: buildMobileUnlockBiometricsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Forgot passcode',
+                      builder: buildMobileForgotPasscodeSheetUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Last warning',
+                      builder: buildMobileForgotPasscodeLastWarningUseCase,
                     ),
                   ],
                 ),

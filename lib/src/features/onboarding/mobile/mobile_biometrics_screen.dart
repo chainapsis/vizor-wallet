@@ -12,10 +12,11 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
+import '../../../services/biometric_unlock.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 /// Biometric unlock opt-in — Figma `Biometrics FaceID` /
-/// `Biometrics Fingerprint` (4394:83068 / 4394:83378). Enabling writes
+/// `Biometrics` (4394:83068 / 4394:83378). Enabling writes
 /// the passcode escrow behind the device's biometric set; the passcode
 /// remains the credential either way. Devices without biometric
 /// hardware skip straight home; an un-enrolled set keeps the screen
@@ -52,23 +53,30 @@ class _MobileBiometricsScreenState
     context.go('/home');
   }
 
-  static String get _methodLabel {
+  static String _methodLabel(BiometricKind kind) {
+    return switch (kind) {
+      BiometricKind.face => 'Face ID',
+      BiometricKind.fingerprint => 'biometrics',
+      BiometricKind.none => 'biometrics',
+    };
+  }
+
+  static String _fallbackMethodLabel() {
     if (kIsWeb) return 'biometrics';
-    return Platform.isIOS ? 'Face ID' : 'fingerprint';
+    return Platform.isIOS ? 'Face ID' : 'biometrics';
   }
 
   Future<void> _enable() async {
     if (_enabling) return;
     setState(() => _enabling = true);
+    var method = _fallbackMethodLabel();
     try {
       final state = await ref.read(biometricUnlockProvider.future);
+      method = _methodLabel(state.availability.kind);
       if (!state.availability.usable) {
         if (!mounted) return;
         setState(() => _enabling = false);
-        showAppToast(
-          context,
-          'Set up $_methodLabel in your device settings first.',
-        );
+        showAppToast(context, 'Set up $method in your device settings first.');
         return;
       }
       final passcode = ref
@@ -83,7 +91,7 @@ class _MobileBiometricsScreenState
       setState(() => _enabling = false);
       showAppToast(
         context,
-        "Couldn't enable $_methodLabel. You can try again in settings.",
+        "Couldn't enable $method. You can try again in settings.",
       );
     }
   }
@@ -91,7 +99,10 @@ class _MobileBiometricsScreenState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final method = _methodLabel;
+    final biometric = ref.watch(biometricUnlockProvider).value;
+    final method = biometric == null
+        ? _fallbackMethodLabel()
+        : _methodLabel(biometric.availability.kind);
 
     return MobileOnboardingStepScaffold(
       progress: 1,
