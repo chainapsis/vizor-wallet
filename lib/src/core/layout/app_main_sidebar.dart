@@ -95,6 +95,11 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     context.go('/activity');
   }
 
+  void _openSettings() {
+    if (_matchedLocation == '/settings') return;
+    context.go('/settings');
+  }
+
   void _toggleAccountMenu({
     required List<AccountInfo> accounts,
     required String? activeAccountUuid,
@@ -421,7 +426,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       label: 'Settings',
                       iconName: AppIcons.cog,
                       active: _matches('/settings'),
-                      onTap: () => _navigateTo('/settings'),
+                      onTap: _openSettings,
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(

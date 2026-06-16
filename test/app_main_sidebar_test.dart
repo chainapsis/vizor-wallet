@@ -325,6 +325,26 @@ void main() {
     expect(find.text('settings'), findsOneWidget);
   });
 
+  testWidgets('sidebar Settings item returns detail routes to the root', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(_syncedSyncState, initialLocation: '/settings/endpoint'),
+    );
+    await tester.pump();
+
+    final item = _sidebarItemWithLabel(tester, 'Settings');
+    expect(item.active, isTrue);
+    expect(item.onTap, isNotNull);
+    expect(find.text('settings endpoint'), findsOneWidget);
+
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('settings'), findsOneWidget);
+    expect(find.text('settings endpoint'), findsNothing);
+  });
+
   testWidgets('sidebar keeps primary navigation item spacing consistent', (
     tester,
   ) async {
@@ -689,6 +709,13 @@ Widget _sidebarHarness(
         builder: (_, _) => const AppDesktopShell(
           sidebar: AppMainSidebar(),
           pane: AppDesktopPane(child: Text('settings')),
+        ),
+      ),
+      GoRoute(
+        path: '/settings/endpoint',
+        builder: (_, _) => const AppDesktopShell(
+          sidebar: AppMainSidebar(),
+          pane: AppDesktopPane(child: Text('settings endpoint')),
         ),
       ),
       GoRoute(
