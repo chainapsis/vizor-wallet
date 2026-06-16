@@ -1597,9 +1597,6 @@ class _HomeDesktopActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final fg = primary
-        ? colors.button.primary.label
-        : colors.button.secondary.label;
     return _HomeDesktopInteractiveTarget(
       semanticsLabel: label,
       onTap: onTap,
@@ -1616,6 +1613,11 @@ class _HomeDesktopActionButton extends StatelessWidget {
                   ? colors.button.primary.bgHover
                   : colors.button.primary.bg
             : colors.state.focusRing;
+        final fg = primary
+            ? hovered
+                  ? colors.button.primary.labelHover
+                  : colors.button.primary.label
+            : colors.button.secondary.label;
 
         return SizedBox(
           height: 44,

@@ -1,3 +1,5 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -231,6 +233,43 @@ void main() {
     await _pumpUntilPresent(tester, find.byType(SendScreen));
 
     expect(find.byType(SendScreen), findsOneWidget);
+  });
+
+  testWidgets('home desktop send hover uses dark primary label hover color', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        themeMode: ThemeMode.dark,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(14_312_000_000),
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final sendButton = find.byKey(const ValueKey('home_desktop_send_button'));
+    final sendText = find.descendant(
+      of: sendButton,
+      matching: find.text('Send'),
+    );
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(sendButton));
+    await tester.pump();
+
+    final textWidget = tester.widget<Text>(sendText);
+    expect(
+      textWidget.style?.color,
+      AppThemeData.dark.colors.button.primary.labelHover,
+    );
   });
 
   testWidgets('home desktop receive action opens receive screen', (
@@ -509,6 +548,7 @@ Widget _appHarness(
   double? priceChange24hPct,
   SyncState? syncState,
   SwapActivityStore? swapActivityStore,
+  ThemeMode themeMode = ThemeMode.system,
 }) {
   return ProviderScope(
     overrides: [
@@ -520,6 +560,7 @@ Widget _appHarness(
           initialLocation,
           privacyModeEnabled: privacyModeEnabled,
           passwordRotationRecoveryFailed: passwordRotationRecoveryFailed,
+          themeMode: themeMode,
         ),
       ),
       syncProvider.overrideWith(
@@ -546,6 +587,7 @@ AppBootstrapState _bootstrap(
   String initialLocation, {
   required bool privacyModeEnabled,
   required bool passwordRotationRecoveryFailed,
+  required ThemeMode themeMode,
 }) {
   return AppBootstrapState(
     initialLocation: initialLocation,
@@ -557,7 +599,7 @@ AppBootstrapState _bootstrap(
     initialSyncSnapshot: AppSyncSnapshot.empty,
     network: 'main',
     rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-    themeMode: ThemeMode.system,
+    themeMode: themeMode,
     privacyModeEnabled: privacyModeEnabled,
     isPasswordConfigured: true,
     isUnlocked: true,
