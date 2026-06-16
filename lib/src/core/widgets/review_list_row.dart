@@ -34,6 +34,7 @@ class ReviewListRow extends StatelessWidget {
     this.trailingIconTooltip,
     this.copyText,
     this.onPressed,
+    this.scaleValueToFit = false,
     super.key,
   });
 
@@ -71,6 +72,10 @@ class ReviewListRow extends StatelessWidget {
   /// Tap handler for the value cluster (expand memo, open explorer, show
   /// fee help). The pill stays inert when null.
   final VoidCallback? onPressed;
+
+  /// Scales the value down instead of applying a second ellipsis. Use this when
+  /// callers already passed a deliberately compacted display value.
+  final bool scaleValueToFit;
 
   /// Row height pinned by the Figma `List Item` component.
   static const height = 32.0;
@@ -112,11 +117,9 @@ class ReviewListRow extends StatelessWidget {
             const SizedBox(width: AppSpacing.xxs),
           ],
           Flexible(
-            child: Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
+            child: _ReviewListRowValueText(
+              value: value,
+              scaleToFit: scaleValueToFit,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: resolvedValueColor,
               ),
@@ -174,6 +177,36 @@ class ReviewListRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ReviewListRowValueText extends StatelessWidget {
+  const _ReviewListRowValueText({
+    required this.value,
+    required this.scaleToFit,
+    required this.style,
+  });
+
+  final String value;
+  final bool scaleToFit;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Text(
+      value,
+      maxLines: 1,
+      softWrap: false,
+      overflow: scaleToFit ? TextOverflow.visible : TextOverflow.ellipsis,
+      textAlign: TextAlign.right,
+      style: style,
+    );
+    if (!scaleToFit) return text;
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerRight,
+      child: text,
     );
   }
 }

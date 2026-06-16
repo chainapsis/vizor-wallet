@@ -23,6 +23,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/features/address_book/contact_label_generator.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
@@ -379,6 +380,75 @@ void main() {
     expect(expiryLabel(), 'Deposit within 1hr');
 
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('deposit tokens copies numeric amount and fits compact address', (
+    tester,
+  ) async {
+    final clipboardWrites = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          final args = call.arguments as Map<Object?, Object?>;
+          clipboardWrites.add(args['text']! as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+
+    const depositAddress =
+        '0x1111111111111111111111111111111111111111111111111111111111111111';
+    const compactDepositAddress = '0x1111111 ... 1111111';
+
+    await tester.pumpWidget(
+      _themeHarness(
+        AppToastHost(
+          child: SwapDepositTokensPageContent(
+            asset: SwapAsset.usdc,
+            amountText: '999.99 USDC',
+            depositAddress: depositAddress,
+            expiresInLabel: '16mins',
+            onDeposited: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_deposit_details')),
+        matching: find.text(compactDepositAddress),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: find.text(compactDepositAddress),
+        matching: find.byType(FittedBox),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<Text>(find.text(compactDepositAddress)).overflow,
+      TextOverflow.visible,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('swap_copy_deposit_amount')));
+    await tester.pump();
+
+    expect(clipboardWrites.last, '999.99');
+
+    await tester.tap(find.byKey(const ValueKey('swap_copy_deposit_address')));
+    await tester.pump();
+
+    expect(clipboardWrites.last, depositAddress);
   });
 
   testWidgets('deposit timeout uses theme-specific failure illustration', (
@@ -1038,6 +1108,87 @@ void main() {
     );
     expect(find.text('eth account'), findsOneWidget);
     expect(find.text('Slippage tolerance'), findsOneWidget);
+  });
+
+  testWidgets('status details fit compact copyable rows without re-ellipsis', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    const fullAddress =
+        '0x1111111111111111111111111111111111111111111111111111111111111111';
+    const compactAddress = '0x1111111 ... 1111111';
+
+    await tester.pumpWidget(
+      _themeHarnessWithOverlay(
+        _statusTestPage(
+          activeTab: SwapStatusTab.details,
+          details: const [
+            SwapStatusDetailRowData(label: 'Account', value: 'John'),
+            SwapStatusDetailRowData(
+              label: 'Deposit USDC to',
+              value: compactAddress,
+              copyable: true,
+              copyText: fullAddress,
+            ),
+            SwapStatusDetailRowData(
+              label: 'Swap fee',
+              value: 'Included in shown rate',
+              help: true,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final addressText = find.text(compactAddress);
+    expect(addressText, findsOneWidget);
+    expect(tester.widget<Text>(addressText).overflow, TextOverflow.visible);
+    expect(
+      find.ancestor(of: addressText, matching: find.byType(FittedBox)),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('status details fit compact explorer rows without re-ellipsis', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    const fullTxHash =
+        '0x2222222222222222222222222222222222222222222222222222222222222222';
+    const compactTxHash = '0x2222222 ... 2222222';
+
+    await tester.pumpWidget(
+      _themeHarnessWithOverlay(
+        _statusTestPage(
+          title: 'Swap completed',
+          statusLabel: 'Completed',
+          badgeKind: SwapStatusBadgeKind.completed,
+          showTabs: false,
+          details: [
+            SwapStatusDetailRowData(
+              label: 'USDC deposit tx',
+              value: compactTxHash,
+              copyable: true,
+              copyText: fullTxHash,
+              linkUri: Uri.parse('https://example.com/tx/$fullTxHash'),
+            ),
+            const SwapStatusDetailRowData(
+              label: 'Total fees',
+              value: 'Included',
+              help: true,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final txText = find.text(compactTxHash);
+    expect(txText, findsOneWidget);
+    expect(tester.widget<Text>(txText).overflow, TextOverflow.visible);
+    expect(
+      find.ancestor(of: txText, matching: find.byType(FittedBox)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('swap tab renders composer and privacy check', (tester) async {

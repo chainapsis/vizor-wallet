@@ -712,6 +712,7 @@ class _DetailRow extends StatelessWidget {
         value: row.value,
         trailingIconName: AppIcons.arrowTopRight,
         trailingIconColor: colors.icon.muted,
+        scaleValueToFit: _shouldScaleDetailValue(row),
         onPressed: () =>
             unawaited(launchUrl(linkUri, mode: LaunchMode.externalApplication)),
       );
@@ -732,6 +733,7 @@ class _DetailRow extends StatelessWidget {
       label: row.label,
       value: row.value,
       copyText: row.copyable ? (row.copyText ?? row.value) : null,
+      scaleValueToFit: _shouldScaleDetailValue(row),
     );
   }
 
@@ -837,6 +839,19 @@ class _DetailRow extends StatelessWidget {
       ),
     );
   }
+}
+
+bool _shouldScaleDetailValue(SwapStatusDetailRowData row) {
+  final source = row.copyText?.trim();
+  if (source == null || source.isEmpty || source.length <= 18) return false;
+
+  final label = row.label.toLowerCase();
+  return label.contains('address') ||
+      label.contains('recipient') ||
+      label.contains('refund') ||
+      label == 'tx id' ||
+      label.contains(' tx') ||
+      (label.startsWith('deposit ') && label.endsWith(' to'));
 }
 
 class _StatusDetailActionIcon extends StatelessWidget {
