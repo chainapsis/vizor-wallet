@@ -27,6 +27,7 @@ import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import '../src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import '../src/features/onboarding/unlock_screen.dart';
 import '../src/features/onboarding/welcome.dart';
+import '../src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/biometric_unlock_provider.dart';
 import '../src/providers/privacy_mode_provider.dart';
@@ -126,6 +127,13 @@ Widget buildMobileForgotPasscodeLastWarningUseCase(BuildContext context) {
   return _buildMobileUnlockModalUseCase(
     context,
     const ForgotPasscodeLastWarningSheet(),
+  );
+}
+
+Widget buildMobileSeedScreenshotWarningSheetUseCase(BuildContext context) {
+  return _buildMobileModalSnapshotUseCase(
+    context,
+    const MobileSeedScreenshotWarningSheet(),
   );
 }
 
@@ -736,6 +744,30 @@ Widget _buildMobileUnlockModalUseCase(BuildContext context, Widget sheet) {
             ),
           ),
         ],
+      ),
+    ),
+  );
+}
+
+Widget _buildMobileModalSnapshotUseCase(BuildContext context, Widget sheet) {
+  return Center(
+    child: SizedBox.fromSize(
+      size: const Size(393, 435),
+      child: ClipRect(
+        child: ColoredBox(
+          color: AppTheme.of(context).colors.background.neutralScrim,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                size: const Size(393, 435),
+                padding: EdgeInsets.zero,
+                viewPadding: EdgeInsets.zero,
+              ),
+              child: MobileModalCard(child: sheet),
+            ),
+          ),
+        ),
       ),
     ),
   );

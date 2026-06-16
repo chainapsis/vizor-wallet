@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart' show Icon, Icons, Scaffold;
 import 'package:flutter/services.dart';
@@ -305,7 +306,7 @@ class _MobileSeedPhraseScreenState
     try {
       await showAppMobileSheet<void>(
         context: context,
-        builder: (_) => const _ScreenshotWarningSheet(),
+        builder: (_) => const MobileSeedScreenshotWarningSheet(),
       );
     } finally {
       _screenshotSheetShowing = false;
@@ -702,60 +703,105 @@ class _BirthdayRow extends StatelessWidget {
   }
 }
 
-/// Screenshot warning — Figma `If they try to screenshot` (4494:91643).
-class _ScreenshotWarningSheet extends StatelessWidget {
-  const _ScreenshotWarningSheet();
+/// Screenshot warning — Figma `If they try to screenshot` (4494:92098).
+class MobileSeedScreenshotWarningSheet extends StatelessWidget {
+  const MobileSeedScreenshotWarningSheet({super.key});
+
+  static const _iconSize = 30.0;
+  static const _titleMaxWidth = 253.0;
+  static const _textHeightBehavior = TextHeightBehavior(
+    applyHeightToFirstAscent: false,
+    applyHeightToLastDescent: false,
+  );
+
+  static const _titleStyle = TextStyle(
+    fontFamily: 'Young Serif',
+    fontWeight: FontWeight.w500,
+    fontSize: 24,
+    height: 28 / 24,
+    letterSpacing: -0.4,
+    fontFeatures: [FontFeature.enable('case')],
+  );
+
+  static const _buttonLabelStyle = AppTypography.labelLarge;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.base,
-        AppSpacing.sm,
-        AppSpacing.base,
-      ),
+    return MobileModalScaffold(
+      key: const ValueKey('mobile_seed_screenshot_sheet'),
+      title: '',
+      onClose: () => Navigator.of(context).pop(),
+      showTitle: false,
+      showClose: false,
+      bottomPadding: AppSpacing.base,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AppIcon(AppIcons.eyeClosed, size: 28, color: colors.text.destructive),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            "Don't take screenshots of\nyour Secret Passphrase",
-            textAlign: TextAlign.center,
-            style: AppTypography.displaySmall.copyWith(
-              color: colors.text.destructive,
-            ),
+          Column(
+            children: [
+              AppIcon(
+                key: const ValueKey('mobile_seed_screenshot_icon'),
+                AppIcons.eyeClosed,
+                size: _iconSize,
+                color: colors.text.destructive,
+              ),
+              const SizedBox(height: AppSpacing.s),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final titleWidth = constraints.maxWidth.isFinite
+                      ? math.min(_titleMaxWidth, constraints.maxWidth)
+                      : _titleMaxWidth;
+                  return SizedBox(
+                    width: titleWidth,
+                    child: Text(
+                      key: const ValueKey('mobile_seed_screenshot_title'),
+                      'Don’t take screenshots of your Secret Passphrase',
+                      textAlign: TextAlign.center,
+                      softWrap: true,
+                      textHeightBehavior: _textHeightBehavior,
+                      style: _titleStyle.copyWith(
+                        color: colors.text.destructive,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.md),
           Text.rich(
+            key: const ValueKey('mobile_seed_screenshot_body'),
             TextSpan(
               style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.primary,
+                color: colors.text.accent,
               ),
               children: const [
                 TextSpan(
-                  text: 'Screenshots are not reliable. ',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+                  text: 'Screenshots are not reliable',
+                  style: AppTypography.bodyMediumStrong,
                 ),
                 TextSpan(
                   text:
-                      'Anyone who has access to your phone or your photo '
+                      '. Anyone who has access to your phone or your photo '
                       'library will be able to see your Secret Passphrase. '
-                      'Write down your Phrase on a piece of paper instead.',
+                      'Write down your Phrase on a '
+                      'piece of paper instead.',
                 ),
               ],
             ),
             textAlign: TextAlign.center,
+            softWrap: true,
+            textHeightBehavior: _textHeightBehavior,
           ),
           const SizedBox(height: AppSpacing.md),
           AppButton(
             key: const ValueKey('mobile_seed_screenshot_ack'),
             expand: true,
+            height: AppButtonSizing.largeHeight,
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('I understand'),
+            child: const Text('I understand', style: _buttonLabelStyle),
           ),
         ],
       ),

@@ -114,6 +114,10 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Last warning',
                       builder: buildMobileForgotPasscodeLastWarningUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Screenshot warning',
+                      builder: buildMobileSeedScreenshotWarningSheetUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(

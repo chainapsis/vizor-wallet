@@ -8,9 +8,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -195,11 +197,64 @@ void main() {
     screenshots.add(null);
     await tester.pumpAndSettle();
 
-    expect(find.textContaining("Don't take screenshots"), findsOneWidget);
+    expect(find.textContaining('Don’t take screenshots'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_seed_screenshot_ack')),
       findsOneWidget,
     );
+    final sheetFinder = find.byKey(
+      const ValueKey('mobile_seed_screenshot_sheet'),
+    );
+    final buttonFinder = find.byKey(
+      const ValueKey('mobile_seed_screenshot_ack'),
+    );
+    expect(tester.widget(sheetFinder), isA<MobileModalScaffold>());
+    final eye = tester.widget<AppIcon>(
+      find.byKey(const ValueKey('mobile_seed_screenshot_icon')),
+    );
+    final title = tester.widget<Text>(
+      find.byKey(const ValueKey('mobile_seed_screenshot_title')),
+    );
+    final titleSize = tester.getSize(
+      find.byKey(const ValueKey('mobile_seed_screenshot_title')),
+    );
+    final body = tester.widget<Text>(
+      find.byKey(const ValueKey('mobile_seed_screenshot_body')),
+    );
+    final buttonLabel = tester.widget<Text>(find.text('I understand'));
+
+    expect(eye.size, 30);
+    expect(title.data, 'Don’t take screenshots of your Secret Passphrase');
+    expect(title.maxLines, isNull);
+    expect(title.overflow, isNull);
+    expect(title.style?.fontFamily, 'Young Serif');
+    expect(title.style?.fontSize, 24);
+    expect(title.style?.height, 28 / 24);
+    expect(title.style?.fontWeight, FontWeight.w500);
+    expect(title.style?.letterSpacing, -0.4);
+    expect(titleSize.width, 253);
+    expect(body.textAlign, TextAlign.center);
+    expect(body.maxLines, isNull);
+    expect(body.overflow, isNull);
+    final bodySpan = body.textSpan! as TextSpan;
+    expect(
+      bodySpan.toPlainText(),
+      'Screenshots are not reliable. Anyone who has access to your phone '
+      'or your photo library will be able to see your Secret Passphrase. '
+      'Write down your Phrase on a piece of paper instead.',
+    );
+    expect(
+      bodySpan.style,
+      AppTypography.bodyMedium.copyWith(
+        color: AppThemeData.light.colors.text.accent,
+      ),
+    );
+    expect(
+      (bodySpan.children!.first as TextSpan).style,
+      AppTypography.bodyMediumStrong,
+    );
+    expect(buttonLabel.style, AppTypography.labelLarge);
+    expect(tester.getSize(buttonFinder).height, 50);
   });
 
   testWidgets(

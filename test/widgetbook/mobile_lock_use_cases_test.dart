@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart' show MaterialApp;
+import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -13,6 +14,8 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dar
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 
 void main() {
+  setUpAll(_loadAppFonts);
+
   testWidgets('mobile lock use cases render biometric variants', (
     tester,
   ) async {
@@ -188,6 +191,35 @@ void main() {
     );
   });
 
+  testWidgets('mobile lock modal use cases render screenshot warning', (
+    tester,
+  ) async {
+    await _pumpMobileLockUseCase(
+      tester,
+      buildMobileSeedScreenshotWarningSheetUseCase,
+    );
+    expect(tester.takeException(), isNull);
+    expect(
+      find.text('Don’t take screenshots of your Secret Passphrase'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Screenshots are not reliable', findRichText: true),
+      findsOneWidget,
+    );
+    expect(find.text('I understand'), findsOneWidget);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('mobile_seed_screenshot_title')))
+          .width,
+      253,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_seed_screenshot_ack'))),
+      const Size(329, AppButtonSizing.largeHeight),
+    );
+  });
+
   testWidgets('last-warning reset arms after the desktop countdown', (
     tester,
   ) async {
@@ -242,4 +274,14 @@ Future<void> _pumpMobileLockUseCase(
     ),
   );
   await tester.pumpAndSettle();
+}
+
+Future<void> _loadAppFonts() async {
+  final geist = FontLoader('Geist')
+    ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
+    ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
+  final youngSerif = FontLoader('Young Serif')
+    ..addFont(rootBundle.load('assets/fonts/YoungSerif-Regular.ttf'));
+
+  await Future.wait([geist.load(), youngSerif.load()]);
 }

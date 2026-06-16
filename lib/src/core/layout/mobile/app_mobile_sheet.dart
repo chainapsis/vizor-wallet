@@ -217,6 +217,7 @@ class MobileModalScaffold extends StatelessWidget {
     this.leading,
     this.titleStyle,
     this.showTitle = true,
+    this.showClose = true,
     this.bodyGap = AppSpacing.sm,
     this.bottomPadding = AppSpacing.md,
     super.key,
@@ -228,6 +229,7 @@ class MobileModalScaffold extends StatelessWidget {
   final Widget? leading;
   final TextStyle? titleStyle;
   final bool showTitle;
+  final bool showClose;
 
   /// Gap between the title and the body. Defaults to 16; the asset picker
   /// (whose body is a fixed-height scrolling list filling to the card edge)
@@ -291,11 +293,12 @@ class MobileModalScaffold extends StatelessWidget {
             ],
           ),
         ),
-        Positioned(
-          top: 15.5,
-          right: AppSpacing.sm,
-          child: _ModalCloseButton(onTap: onClose),
-        ),
+        if (showClose)
+          Positioned(
+            top: 15.5,
+            right: AppSpacing.sm,
+            child: _ModalCloseButton(onTap: onClose),
+          ),
       ],
     );
   }
