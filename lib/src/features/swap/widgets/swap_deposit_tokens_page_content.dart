@@ -150,6 +150,7 @@ class _SwapDepositPageShell extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.lg),
           _DepositDetailsList(
+            asset: asset,
             amountText: amountText,
             depositAddress: depositAddress,
             memo: memo,
@@ -681,11 +682,13 @@ class _DepositQrNetworkLogoFallback extends StatelessWidget {
 
 class _DepositDetailsList extends StatelessWidget {
   const _DepositDetailsList({
+    required this.asset,
     required this.amountText,
     required this.depositAddress,
     this.memo,
   });
 
+  final SwapAsset asset;
   final String amountText;
   final String depositAddress;
   final String? memo;
@@ -701,7 +704,7 @@ class _DepositDetailsList extends StatelessWidget {
           _DepositDetailRow(
             label: 'Amount',
             value: amountText,
-            copyText: amountText,
+            copyText: _depositAmountCopyText(amountText, asset),
             toastMessage: 'Amount Copied',
             copyKey: const ValueKey('swap_copy_deposit_amount'),
           ),
@@ -711,6 +714,7 @@ class _DepositDetailsList extends StatelessWidget {
             copyText: depositAddress,
             toastMessage: 'Address copied',
             copyKey: const ValueKey('swap_copy_deposit_address'),
+            scaleValueToFit: true,
           ),
           if (memo?.trim().isNotEmpty ?? false)
             _DepositDetailRow(
@@ -733,6 +737,7 @@ class _DepositDetailRow extends StatelessWidget {
     required this.copyText,
     required this.toastMessage,
     required this.copyKey,
+    this.scaleValueToFit = false,
   });
 
   final String label;
@@ -740,6 +745,7 @@ class _DepositDetailRow extends StatelessWidget {
   final String copyText;
   final String toastMessage;
   final Key copyKey;
+  final bool scaleValueToFit;
 
   @override
   Widget build(BuildContext context) {
@@ -766,11 +772,9 @@ class _DepositDetailRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Flexible(
-                    child: Text(
+                    child: _DepositDetailValueText(
                       value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.end,
+                      scaleToFit: scaleValueToFit,
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                       ),
@@ -806,6 +810,36 @@ class _DepositDetailRow extends StatelessWidget {
   }
 }
 
+class _DepositDetailValueText extends StatelessWidget {
+  const _DepositDetailValueText(
+    this.value, {
+    required this.scaleToFit,
+    required this.style,
+  });
+
+  final String value;
+  final bool scaleToFit;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Text(
+      value,
+      maxLines: 1,
+      softWrap: false,
+      overflow: scaleToFit ? TextOverflow.visible : TextOverflow.ellipsis,
+      textAlign: TextAlign.end,
+      style: style,
+    );
+    if (!scaleToFit) return text;
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerRight,
+      child: text,
+    );
+  }
+}
+
 String _formatCountdown(Duration remaining) {
   final totalSeconds = remaining.inSeconds <= 0 ? 0 : remaining.inSeconds;
   final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
@@ -828,4 +862,14 @@ String _formatHourLabel(int hours) {
 
 String _formatMinuteLabel(int minutes) {
   return minutes == 1 ? '1min' : '${minutes}mins';
+}
+
+String _depositAmountCopyText(String amountText, SwapAsset asset) {
+  final trimmed = amountText.trim();
+  final symbol = asset.symbol.trim();
+  if (symbol.isEmpty) return trimmed;
+
+  final symbolSuffix = ' $symbol';
+  if (!trimmed.endsWith(symbolSuffix)) return trimmed;
+  return trimmed.substring(0, trimmed.length - symbolSuffix.length).trimRight();
 }
