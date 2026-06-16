@@ -6,6 +6,9 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../receive_address_widgets.dart';
 
+const _closeButtonHeight = AppButtonSizing.largeHeight;
+const _modalCloseIconSize = 20.0;
+
 /// Opens the address-type explainer sheet — Figma `Shielded Address` /
 /// `Transparent Address` modals (4562:97619 / 4562:100793).
 Future<void> showReceiveAddressInfoSheet(
@@ -90,11 +93,12 @@ class ReceiveAddressInfoSheet extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.md),
               SizedBox(
-                height: AppButtonSizing.largeHeight,
+                height: _closeButtonHeight,
                 child: AppButton(
                   key: const ValueKey('receive_address_info_close'),
                   variant: AppButtonVariant.secondary,
                   expand: true,
+                  height: _closeButtonHeight,
                   onPressed: () => Navigator.of(context).pop(),
                   child: const Text('Close'),
                 ),
@@ -113,6 +117,7 @@ class ReceiveAddressInfoSheet extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               onTap: () => Navigator.of(context).pop(),
               child: Container(
+                key: const ValueKey('receive_address_info_modal_close'),
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
@@ -121,8 +126,11 @@ class ReceiveAddressInfoSheet extends StatelessWidget {
                 ),
                 child: Center(
                   child: AppIcon(
+                    key: const ValueKey(
+                      'receive_address_info_modal_close_icon',
+                    ),
                     AppIcons.cross,
-                    size: AppIconSize.medium,
+                    size: _modalCloseIconSize,
                     color: colors.icon.accent,
                   ),
                 ),
