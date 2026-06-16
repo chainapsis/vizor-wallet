@@ -32,10 +32,7 @@ void main() {
     final backLabelStyle = tester.widget<Text>(backLabelFinder).style;
     expect(backLabelStyle?.fontSize, 14);
     expect(backLabelStyle?.height, 16 / 14);
-    expect(
-      backLabelStyle?.color,
-      AppThemeData.light.colors.button.ghost.label,
-    );
+    expect(backLabelStyle?.color, AppThemeData.light.colors.button.ghost.label);
     expect(
       tester.getTopLeft(backLabelFinder).dx,
       moreOrLessEquals(316, epsilon: 0.1),
@@ -44,18 +41,20 @@ void main() {
   });
 
   testWidgets(
-    'send filled use cases render route and selected contact states',
+    'send filled use cases render recipient and selected contact states',
     (tester) async {
       await _pumpSendUseCase(tester, buildSendShieldedFilledUseCase);
 
       expect(tester.takeException(), isNull);
-      expect(find.text('Shielded → Shielded'), findsOneWidget);
+      expect(find.text('Shielded → Shielded'), findsNothing);
+      expect(find.text('Shielded → Transparent'), findsNothing);
       expect(find.text('125.12'), findsOneWidget);
 
       await _pumpSendUseCase(tester, buildSendTransparentUseCase);
 
       expect(tester.takeException(), isNull);
-      expect(find.text('Shielded → Transparent'), findsOneWidget);
+      expect(find.text('Shielded → Shielded'), findsNothing);
+      expect(find.text('Shielded → Transparent'), findsNothing);
       expect(find.text('Add a memo'), findsNothing);
       expect(
         find.text('Encrypted, for shielded addresses only.'),

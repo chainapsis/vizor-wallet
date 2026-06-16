@@ -5,21 +5,18 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 
-/// Source→destination shielding route for the recipient indicator shown
-/// beneath the address field.
+/// Recipient address type used to choose the leading icon.
 ///
 /// The wallet always spends from the shielded pool (sapling + orchard), so
-/// the source side is always "Shielded"; only the destination varies with
-/// the recipient address type.
+/// the spend source does not need a separate field-level caption.
 enum SendPoolRoute {
-  /// No address entered yet — no route caption shown.
+  /// No address entered yet.
   unknown,
 
-  /// Recipient is a unified/sapling (shielded) address. Crimson caption.
+  /// Recipient is a unified/sapling (shielded) address.
   shieldedToShielded,
 
-  /// Recipient is a transparent address. Neutral/grey caption; memo is
-  /// unavailable.
+  /// Recipient is a transparent address; memo is unavailable.
   shieldedToTransparent,
 }
 
@@ -42,13 +39,8 @@ enum SendMemoMode {
 /// validated in Widgetbook before it is wired into `send_screen.dart`.
 /// Callbacks are optional and default to no-ops in previews.
 ///
-/// The recipient pool indicator and the memo over-limit error both ride on
-/// [AppTextField.messageText] + [AppTextField.tone]:
-/// * crimson `Shielded → Shielded` uses a custom [AppTextField.messageStyle]
-///   over the neutral tone (no leading caption icon),
-/// * grey `Shielded → Transparent` uses the neutral secondary color,
-/// * the memo `Message is too long` error uses [AppTextFieldTone.destructive]
-///   (warning icon + destructive text).
+/// Validation and memo over-limit errors ride on [AppTextField.messageText] +
+/// [AppTextField.tone].
 class SendComposeView extends StatelessWidget {
   const SendComposeView({
     super.key,
@@ -116,10 +108,9 @@ class SendComposeView extends StatelessWidget {
   final double contentWidth;
   final double reviewButtonWidth;
 
-  // Reserved space for the caption overlay that AppTextField paints just
-  // below each field (pool indicator / validation error). Mirrors the
-  // current send screen's spacing so the compose layout stays vertically
-  // balanced.
+  // Reserved space for the message overlay that AppTextField paints just below
+  // each field. Mirrors the current send screen's spacing so the compose
+  // layout stays vertically balanced.
   static const _overlayReserve = 20.0;
   static const _fieldGap = AppSpacing.xs;
   static const _multilineOverlayReserve = 24.0;
@@ -229,18 +220,6 @@ class SendComposeView extends StatelessWidget {
       SendPoolRoute.shieldedToShielded => colors.icon.brandCrimson,
       SendPoolRoute.shieldedToTransparent => colors.icon.muted,
     };
-    final (String? caption, Color? captionColor) = switch (route) {
-      SendPoolRoute.unknown => (null, null),
-      SendPoolRoute.shieldedToShielded => (
-        'Shielded → Shielded',
-        colors.text.brandCrimson,
-      ),
-      SendPoolRoute.shieldedToTransparent => (
-        'Shielded → Transparent',
-        colors.text.secondary,
-      ),
-    };
-
     return AppTextField(
       key: const ValueKey('send_address_field'),
       label: 'Send to',
@@ -251,10 +230,6 @@ class SendComposeView extends StatelessWidget {
       initialValue: recipientText,
       hintText: recipientHint,
       leading: AppIcon(leadingName, size: 20, color: leadingColor),
-      messageText: caption,
-      messageStyle: caption == null
-          ? null
-          : AppTypography.labelMedium.copyWith(color: captionColor),
       showClearButton: true,
       keyboardType: TextInputType.text,
     );

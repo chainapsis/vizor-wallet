@@ -797,8 +797,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _ => AppTextFieldTone.neutral,
     };
     final addressMessage = switch (_addressType) {
-      'unified' || 'sapling' => 'Shielded → Shielded',
-      'transparent' || 'tex' => 'Shielded → Transparent',
       'invalid' => 'Invalid address',
       'error' => 'Address validation failed',
       _ => null,
@@ -808,15 +806,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         AppIcons.warning,
         size: 16,
         color: colors.text.destructive,
-      ),
-      _ => null,
-    };
-    final addressMessageStyle = switch (_addressType) {
-      'unified' || 'sapling' => AppTypography.labelMedium.copyWith(
-        color: colors.text.brandCrimson,
-      ),
-      'transparent' || 'tex' => AppTypography.labelMedium.copyWith(
-        color: colors.text.secondary,
       ),
       _ => null,
     };
@@ -923,7 +912,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                             ),
                             messageText: addressMessage,
                             messageIcon: addressMessageIcon,
-                            messageStyle: addressMessageStyle,
                             onChanged: (_) => _handleAddressChanged(),
                             keyboardType: TextInputType.text,
                             showClearButton: true,
