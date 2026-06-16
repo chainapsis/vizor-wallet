@@ -61,9 +61,8 @@ void main() {
     expect(find.text('About Vizor Wallet'), findsOneWidget);
     expect(find.text('Version: 0.0.0 Public Beta'), findsOneWidget);
     expect(find.text('Built by the Keplr team'), findsOneWidget);
-    // The Figma About frame uses this heading on both the second and third
-    // paragraphs; the body copy mirrors the design verbatim.
-    expect(find.text('Designed for shielded Zcash'), findsNWidgets(2));
+    expect(find.text('Designed for shielded Zcash'), findsOneWidget);
+    expect(find.text('Open source, self-custodied'), findsOneWidget);
     expect(find.text('Github'), findsOneWidget);
     expect(find.text('Website'), findsOneWidget);
   });

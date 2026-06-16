@@ -23,25 +23,22 @@ const _utilityContentWidth = 420.0;
 const _vizorGithubUrl = 'https://github.com/chainapsis/vizor-wallet/';
 const _vizorWebsiteUrl = 'https://vizor.cash';
 
-// Body copy mirrors the Figma About frame (4086:478836) verbatim, including
-// the duplicated third heading and the unterminated first two sentences —
-// fix the design file first if those change.
 const _aboutParagraphs = [
   _UtilityParagraphData(
     heading: 'Built by the Keplr team',
     body:
         'We built Keplr, the wallet used by millions across Cosmos, Ethereum, '
-        'and Bitcoin. Vizor is our take on what a Zcash wallet should feel',
+        'and Bitcoin. Vizor is our take on what a Zcash wallet should feel like.',
   ),
   _UtilityParagraphData(
     heading: 'Designed for shielded Zcash',
     body:
         'Vizor is built around shielded transactions, where the sender, '
         'recipient, and amount stay private. Transparent Zcash works too, but '
-        'private is the default',
+        'private is the default.',
   ),
   _UtilityParagraphData(
-    heading: 'Designed for shielded Zcash',
+    heading: 'Open source, self-custodied',
     body:
         'Vizor is Apache licensed. Your keys stay on your device.\n'
         "We don't see your balances or your transactions.",

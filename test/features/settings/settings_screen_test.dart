@@ -80,6 +80,17 @@ void main() {
     }
   });
 
+  testWidgets('settings hides legal links while keeping About Vizor', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_settingsHarness());
+    await tester.pump();
+
+    expect(find.text('About Vizor'), findsOneWidget);
+    expect(find.text('Privacy policy'), findsNothing);
+    expect(find.text('Terms of usage'), findsNothing);
+  });
+
   testWidgets('uninstall setting is shown on macOS and Linux', (tester) async {
     try {
       for (final platform in [TargetPlatform.macOS, TargetPlatform.linux]) {

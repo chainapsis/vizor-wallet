@@ -187,8 +187,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ? null
                     : () => _showModal(_SettingsModalType.updates),
                 onAbout: () => context.push('/about'),
-                onPrivacy: () => context.push('/privacy'),
-                onTerms: () => context.push('/terms'),
                 onUninstall: showUninstall
                     ? () => context.push('/settings/uninstall')
                     : null,
@@ -293,8 +291,6 @@ class _SettingsPane extends StatelessWidget {
     required this.onTheme,
     required this.onUpdates,
     required this.onAbout,
-    required this.onPrivacy,
-    required this.onTerms,
     required this.onUninstall,
   });
 
@@ -314,8 +310,6 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback onTheme;
   final VoidCallback? onUpdates;
   final VoidCallback onAbout;
-  final VoidCallback onPrivacy;
-  final VoidCallback onTerms;
   final VoidCallback? onUninstall;
 
   @override
@@ -358,8 +352,6 @@ class _SettingsPane extends StatelessWidget {
                 onTheme: onTheme,
                 onUpdates: onUpdates,
                 onAbout: onAbout,
-                onPrivacy: onPrivacy,
-                onTerms: onTerms,
                 onUninstall: onUninstall,
               ),
               const SizedBox(height: AppSpacing.sm),
@@ -389,8 +381,6 @@ class _SettingsList extends StatelessWidget {
     required this.onTheme,
     required this.onUpdates,
     required this.onAbout,
-    required this.onPrivacy,
-    required this.onTerms,
     required this.onUninstall,
   });
 
@@ -410,8 +400,6 @@ class _SettingsList extends StatelessWidget {
   final VoidCallback onTheme;
   final VoidCallback? onUpdates;
   final VoidCallback onAbout;
-  final VoidCallback onPrivacy;
-  final VoidCallback onTerms;
   final VoidCallback? onUninstall;
 
   @override
@@ -488,16 +476,6 @@ class _SettingsList extends StatelessWidget {
               iconName: AppIcons.vizor,
               label: 'About Vizor',
               onTap: onAbout,
-            ),
-            _SettingsRow(
-              iconName: AppIcons.user,
-              label: 'Privacy policy',
-              onTap: onPrivacy,
-            ),
-            _SettingsRow(
-              iconName: AppIcons.cog,
-              label: 'Terms of usage',
-              onTap: onTerms,
             ),
           ],
         ),
