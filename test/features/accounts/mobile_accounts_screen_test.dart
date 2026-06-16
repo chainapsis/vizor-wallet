@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_tab_bar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
@@ -65,6 +66,34 @@ Widget _app(AccountState accounts) {
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+    ),
+  );
+}
+
+Widget _nestedShellApp(AccountState accounts, ValueNotifier<int> tabTaps) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap(accounts)),
+      syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
+    ],
+    child: MaterialApp(
+      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      home: AppMobileShell(
+        body: Navigator(
+          onGenerateRoute: (_) => MaterialPageRoute<void>(
+            builder: (_) => const MobileAccountsScreen(),
+          ),
+        ),
+        tabBar: GestureDetector(
+          key: const ValueKey('test_mobile_tab_bar'),
+          behavior: HitTestBehavior.opaque,
+          onTap: () => tabTaps.value += 1,
+          child: const SizedBox(
+            height: kMobileTabBarHeight,
+            child: Center(child: Text('tab')),
+          ),
+        ),
+      ),
     ),
   );
 }
@@ -222,6 +251,43 @@ void main() {
     expect(
       menuRect.bottom,
       lessThanOrEqualTo(852 - (kMobileTabBarHeight + AppSpacing.lg)),
+    );
+  });
+
+  testWidgets('row menu barrier dismisses before the floating tab bar', (
+    tester,
+  ) async {
+    final tabTaps = ValueNotifier(0);
+    addTearDown(tabTaps.dispose);
+
+    await tester.pumpWidget(
+      _nestedShellApp(
+        AccountState(
+          accounts: [
+            _account('a', 'Knight', isSeedAnchor: true),
+            _account('b', 'Viking'),
+          ],
+          activeAccountUuid: 'a',
+        ),
+        tabTaps,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_account_menu_card')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('test_mobile_tab_bar')));
+    await tester.pumpAndSettle();
+
+    expect(tabTaps.value, 0);
+    expect(
+      find.byKey(const ValueKey('mobile_account_menu_card')),
+      findsNothing,
     );
   });
 

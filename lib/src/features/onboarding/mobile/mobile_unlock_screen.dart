@@ -232,7 +232,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     // paints on the first frame instead of flashing the numpad before Face ID.
     final enabledHint = ref.watch(biometricUnlockEnabledHintProvider);
     final likelyUsable =
-        biometric.usable || (!biometricAsync.hasValue && enabledHint);
+        biometric.usable || (biometricAsync.isLoading && enabledHint);
     final showBiometricSignIn =
         _biometricUnlocking ||
         (widget.autoPromptBiometric &&

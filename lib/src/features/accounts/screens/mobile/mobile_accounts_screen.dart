@@ -108,7 +108,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     final accounts = ref.read(accountProvider).value?.accounts ?? const [];
     final canRemove = _canRemove(account, accounts);
 
-    final overlay = Overlay.of(context);
+    final overlay = Overlay.of(context, rootOverlay: true);
     final overlayRenderObject = overlay.context.findRenderObject();
     final anchorRenderObject = anchorContext.findRenderObject();
     if (overlayRenderObject is! RenderBox || anchorRenderObject is! RenderBox) {

@@ -85,6 +85,13 @@ class _PendingBiometricNotifier extends BiometricUnlockNotifier {
   Future<BiometricUnlockState> build() => _completer.future;
 }
 
+class _FailingBiometricNotifier extends BiometricUnlockNotifier {
+  @override
+  Future<BiometricUnlockState> build() async {
+    throw StateError('biometric probe failed');
+  }
+}
+
 AppBootstrapState _bootstrap({required bool biometricEnabled}) =>
     AppBootstrapState(
       initialLocation: '/unlock',
@@ -281,6 +288,22 @@ void main() {
           biometricNotifier: _PendingBiometricNotifier.new,
         ),
       );
+      await tester.pump();
+
+      expect(find.byType(MobileBiometricSignInView), findsNothing);
+      expect(find.byType(PasscodeNumpad), findsOneWidget);
+    });
+
+    testWidgets('probe errors fall back to the numpad even with the hint', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          bootstrap: _bootstrap(biometricEnabled: true),
+          biometricNotifier: _FailingBiometricNotifier.new,
+        ),
+      );
+      await tester.pump();
       await tester.pump();
 
       expect(find.byType(MobileBiometricSignInView), findsNothing);
