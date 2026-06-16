@@ -44,6 +44,7 @@ abstract final class AppIcons {
   static const doubleArrowVertical = 'double_arrow_vertical';
   static const dragon = 'dragon';
   static const edit = 'edit';
+  static const editFilled = 'edit_filled';
   static const endpoint = 'endpoint';
   static const eye = 'eye';
   static const eyeClosed = 'eye_closed';
