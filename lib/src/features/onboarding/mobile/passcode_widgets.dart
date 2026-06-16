@@ -245,31 +245,38 @@ class PasscodeNumpad extends StatelessWidget {
           )
         : keySlot(const SizedBox.shrink());
 
-    // Figma keypad is a 320px-wide wrap. Each row's three 80px keys are
-    // centred inside that track with 16px gaps.
+    // Figma keypad is a 320px-wide wrap, capped by the caller's width so
+    // narrow phone layouts with horizontal padding do not overflow.
     return Center(
-      child: SizedBox(
-        width: kPasscodeKeypadWidth,
-        child: Wrap(
-          alignment: WrapAlignment.center,
-          runAlignment: WrapAlignment.center,
-          spacing: AppSpacing.sm,
-          runSpacing: AppSpacing.sm,
-          children: [
-            digitKey(1),
-            digitKey(2),
-            digitKey(3),
-            digitKey(4),
-            digitKey(5),
-            digitKey(6),
-            digitKey(7),
-            digitKey(8),
-            digitKey(9),
-            helpKey,
-            digitKey(0),
-            deleteKey,
-          ],
-        ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxWidth = constraints.maxWidth.isFinite
+              ? constraints.maxWidth
+              : kPasscodeKeypadWidth;
+          return SizedBox(
+            width: math.min(kPasscodeKeypadWidth, maxWidth),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              runAlignment: WrapAlignment.center,
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: [
+                digitKey(1),
+                digitKey(2),
+                digitKey(3),
+                digitKey(4),
+                digitKey(5),
+                digitKey(6),
+                digitKey(7),
+                digitKey(8),
+                digitKey(9),
+                helpKey,
+                digitKey(0),
+                deleteKey,
+              ],
+            ),
+          );
+        },
       ),
     );
   }

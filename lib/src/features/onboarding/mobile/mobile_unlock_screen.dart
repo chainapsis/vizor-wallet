@@ -20,12 +20,13 @@ import 'forgot_passcode_sheet.dart';
 import 'mobile_passcode_screen.dart' show kMobilePasscodeLength;
 import 'passcode_widgets.dart';
 
+const mobileBiometricSignInBackgroundAsset =
+    'assets/illustrations/mobile_onboarding_auth_background.png';
+
 /// Backdrop assets shared by [MobileBiometricSignInView] and the unlock
 /// screen's precache, so the warmed [ImageCache] entries match the providers
-/// painted behind the Face ID sheet (same key → cache hit, no blank frame).
-const _authBackgroundImage = AssetImage(
-  'assets/illustrations/onboarding_auth_background.png',
-);
+/// painted behind the Face ID sheet (same key -> cache hit, no blank frame).
+const _authBackgroundImage = AssetImage(mobileBiometricSignInBackgroundAsset);
 const _welcomeBadgeImage = AssetImage('assets/illustrations/welcome_badge.png');
 
 /// Mobile unlock — Figma `Sign In Passcode` (4885:23041): "Welcome Back",
