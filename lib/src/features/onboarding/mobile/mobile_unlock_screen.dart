@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show Icons, Scaffold;
+import 'package:flutter/material.dart' show Icon, Icons, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +9,7 @@ import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
@@ -19,12 +20,16 @@ import 'forgot_passcode_sheet.dart';
 import 'mobile_passcode_screen.dart' show kMobilePasscodeLength;
 import 'passcode_widgets.dart';
 
-/// Mobile unlock — Figma `Sign In Passcode` (4596:50000): badge,
-/// "Welcome Back", crimson-filling dots, the plum incorrect-passcode
-/// message, and the numpad's help action opening the Forgot Passcode
-/// reset sheet (4596:50252).
+/// Mobile unlock — Figma `Sign In Passcode` (4885:23041): "Welcome Back",
+/// crimson-filling dots, round numpad keys, a bottom biometric retry action,
+/// and the numpad's help action opening the Forgot Passcode reset sheet.
 class MobileUnlockScreen extends ConsumerStatefulWidget {
-  const MobileUnlockScreen({super.key});
+  const MobileUnlockScreen({this.autoPromptBiometric = true, super.key});
+
+  /// Production unlock auto-prompts biometric escrow once on entry. Widgetbook
+  /// disables this so Face ID / biometric states can be inspected without
+  /// invoking platform APIs or immediately submitting the preview passcode.
+  final bool autoPromptBiometric;
 
   @override
   ConsumerState<MobileUnlockScreen> createState() => _MobileUnlockScreenState();
@@ -34,24 +39,17 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
   var _entry = '';
   var _submitting = false;
   var _biometricPromptShown = false;
+  var _biometricFallback = false;
   String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    // Auto-prompt once on entry; cancel/failure leaves the numpad as
-    // the fallback and the numpad slot offers a manual retry.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _biometricPromptShown) return;
-      _biometricPromptShown = true;
-      unawaited(_tryBiometricUnlock());
-    });
-  }
 
   Future<void> _tryBiometricUnlock() async {
     if (_submitting) return;
     final biometric = await ref.read(biometricUnlockProvider.future);
-    if (!mounted || !biometric.usable) return;
+    if (!mounted) return;
+    if (!biometric.usable) {
+      setState(() => _biometricFallback = true);
+      return;
+    }
 
     final wasEnabled = biometric.enabled;
     final passcode = await ref
@@ -60,20 +58,40 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     if (!mounted) return;
     if (passcode == null) {
       final now = ref.read(biometricUnlockProvider).value;
+      var nextError = _error;
       if (wasEnabled && now != null && !now.enabled) {
         // The escrow was invalidated (biometrics re-enrolled) — explain
         // why the prompt stopped appearing.
-        setState(() {
-          _error = 'Biometrics changed. Enter your passcode.';
-        });
+        nextError = 'Biometrics changed. Enter your passcode.';
       }
+      setState(() {
+        _biometricFallback = true;
+        _error = nextError;
+      });
       return;
     }
     setState(() {
+      _biometricFallback = true;
       _entry = passcode;
       _error = null;
     });
     await _submit();
+  }
+
+  void _scheduleBiometricPrompt(BiometricUnlockState biometric) {
+    if (!widget.autoPromptBiometric ||
+        _biometricPromptShown ||
+        _biometricFallback ||
+        _submitting ||
+        _entry.isNotEmpty ||
+        !biometric.usable) {
+      return;
+    }
+    _biometricPromptShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_tryBiometricUnlock());
+    });
   }
 
   void _onDigit(int digit) {
@@ -174,71 +192,159 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final biometric =
+        ref.watch(biometricUnlockProvider).value ??
+        BiometricUnlockState.initial;
+    final showBiometricSignIn =
+        widget.autoPromptBiometric &&
+        !_biometricFallback &&
+        !_submitting &&
+        _entry.isEmpty &&
+        biometric.usable;
+    if (showBiometricSignIn) {
+      _scheduleBiometricPrompt(biometric);
+    }
     return Scaffold(
       backgroundColor: colors.background.window,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Figma `Sign In Passcode` (4596:50000) top-anchors the badge
-            // ~52 px below the safe area rather than vertically centring.
-            const SizedBox(height: AppSpacing.lg),
-            Image.asset(
+      body: showBiometricSignIn
+          ? const MobileBiometricSignInView()
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: AppSpacing.md,
+                ),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Welcome Back',
+                              textAlign: TextAlign.center,
+                              style: AppTypography.displayLarge.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.s),
+                            Text(
+                              _submitting
+                                  ? 'Opening your wallet...'
+                                  : 'Enter your passcode to open Vizor',
+                              textAlign: TextAlign.center,
+                              style: AppTypography.bodyMediumStrong.copyWith(
+                                color: colors.text.primary,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            SizedBox(
+                              height: kPasscodePromptDigitsHeight,
+                              child: PasscodePromptField(
+                                length: kMobilePasscodeLength,
+                                filled: _entry.length,
+                                error: _error,
+                                minGap: 0,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    PasscodeNumpad(
+                      onDigit: _onDigit,
+                      onBackspace: _onBackspace,
+                      canDelete: _entry.isNotEmpty,
+                      onHelp: _submitting ? null : _showForgotPasscodeSheet,
+                      enabled: !_submitting,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    SizedBox(
+                      key: const ValueKey('mobile_unlock_biometric_footer'),
+                      height: 36,
+                      child: Center(
+                        child: Builder(
+                          builder: (context) {
+                            if (!biometric.usable) {
+                              return const SizedBox.shrink();
+                            }
+                            return PasscodeBiometricButton(
+                              label:
+                                  biometric.availability.kind ==
+                                      BiometricKind.face
+                                  ? 'Sign in with Face ID'
+                                  : 'Sign in with biometrics',
+                              icon:
+                                  biometric.availability.kind ==
+                                      BiometricKind.face
+                                  ? const Center(
+                                      child: AppIcon(
+                                        AppIcons.faceId,
+                                        size: 13.5,
+                                      ),
+                                    )
+                                  : const Icon(Icons.fingerprint, size: 16),
+                              onPressed: _submitting
+                                  ? null
+                                  : () => unawaited(_tryBiometricUnlock()),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+/// Biometric sign-in backdrop shown behind the native biometric prompt.
+/// Figma `Sign In Face ID` (4596:50062 / 4596:50202) also shows iOS chrome and
+/// the system prompt layer; those are not app-rendered content.
+class MobileBiometricSignInView extends StatelessWidget {
+  const MobileBiometricSignInView({super.key});
+
+  static const _figmaFrameWidth = 393.0;
+  static const _backgroundWidth = 392.0;
+  static const _backgroundHeight = 720.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return ColoredBox(
+      color: colors.background.window,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final scale = constraints.maxWidth / _figmaFrameWidth;
+              return Align(
+                alignment: Alignment.topRight,
+                child: SizedBox(
+                  width: _backgroundWidth * scale,
+                  height: _backgroundHeight * scale,
+                  child: Image.asset(
+                    'assets/illustrations/onboarding_auth_background.png',
+                    key: const ValueKey('mobile_biometric_sign_in_background'),
+                    fit: BoxFit.fill,
+                  ),
+                ),
+              );
+            },
+          ),
+          Center(
+            child: Image.asset(
               'assets/illustrations/welcome_badge.png',
-              width: 50,
-              height: 50,
+              key: const ValueKey('mobile_biometric_sign_in_badge'),
+              width: 130,
+              height: 130,
             ),
-            const SizedBox(height: AppSpacing.base),
-            Text(
-              'Welcome Back',
-              textAlign: TextAlign.center,
-              style: AppTypography.displayLarge.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            Text(
-              _submitting
-                  ? 'Opening your wallet...'
-                  : 'Enter your passcode to open Vizor',
-              textAlign: TextAlign.center,
-              // Figma: Body M Medium on text/primary.
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.primary,
-              ),
-            ),
-            // Dots + error centred in the space above the keypad rather
-            // than pinned under the subtitle.
-            Expanded(
-              child: PasscodePromptField(
-                length: kMobilePasscodeLength,
-                filled: _entry.length,
-                error: _error,
-              ),
-            ),
-            Builder(
-              builder: (context) {
-                final biometric =
-                    ref.watch(biometricUnlockProvider).value ??
-                    BiometricUnlockState.initial;
-                return PasscodeNumpad(
-                  onDigit: _onDigit,
-                  onBackspace: _onBackspace,
-                  canDelete: _entry.isNotEmpty,
-                  onHelp: _submitting ? null : _showForgotPasscodeSheet,
-                  onBiometric: biometric.usable && !_submitting
-                      ? () => unawaited(_tryBiometricUnlock())
-                      : null,
-                  biometricIcon:
-                      biometric.availability.kind == BiometricKind.face
-                      ? Icons.face
-                      : Icons.fingerprint,
-                  enabled: !_submitting,
-                );
-              },
-            ),
-            const SizedBox(height: AppSpacing.md),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
