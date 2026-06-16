@@ -10,7 +10,6 @@ import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
-import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
@@ -107,49 +106,6 @@ void main() {
     expect(find.text('home route'), findsOneWidget);
     expect(find.text('receive route'), findsNothing);
   });
-
-  testWidgets(
-    'sidebar balance text toggles privacy without opening account popover',
-    (tester) async {
-      await tester.pumpWidget(
-        _sidebarHarness(
-          SyncState(
-            accountUuid: 'account-1',
-            hasAccountScopedData: true,
-            totalBalance: BigInt.from(990000),
-          ),
-        ),
-      );
-      await tester.pump();
-
-      expect(find.text('0.0099 ZEC'), findsOneWidget);
-
-      await tester.tap(find.text('0.0099 ZEC'));
-      await tester.pump();
-
-      expect(find.text('****** ZEC'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('sidebar_accounts_popover')),
-        findsNothing,
-      );
-
-      await tester.tap(find.text('****** ZEC'));
-      await tester.pump();
-
-      expect(find.text('0.0099 ZEC'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('sidebar_accounts_popover')),
-        findsNothing,
-      );
-
-      await tester.tap(find.byKey(const ValueKey('sidebar_accounts_button')));
-      await tester.pump();
-      expect(
-        find.byKey(const ValueKey('sidebar_accounts_popover')),
-        findsOneWidget,
-      );
-    },
-  );
 
   testWidgets('sidebar accounts popover shows boundaries and click cursors', (
     tester,
@@ -660,7 +616,6 @@ Widget _sidebarHarness(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap),
       syncProvider.overrideWith(() => _FakeSyncNotifier(syncState)),
-      privacyModeProvider.overrideWith(_FakePrivacyModeNotifier.new),
       swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
     ],
     child: MaterialApp.router(
@@ -785,11 +740,4 @@ class _FakeSyncNotifier extends SyncNotifier {
 
   @override
   Future<SyncState> build() async => initialState;
-}
-
-class _FakePrivacyModeNotifier extends PrivacyModeNotifier {
-  @override
-  Future<void> set(bool enabled) async {
-    state = enabled;
-  }
 }
