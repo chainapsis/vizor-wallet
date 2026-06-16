@@ -161,6 +161,7 @@ class _SwapDepositPageShell extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.lg),
         _DepositDetailsList(
+          asset: asset,
           amountText: amountText,
           depositAddress: depositAddress,
           memo: memo,
@@ -201,6 +202,7 @@ class _SwapDepositPageShell extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           _DepositDetailsList(
+            asset: asset,
             amountText: amountText,
             depositAddress: depositAddress,
             memo: memo,
@@ -900,12 +902,14 @@ class _DepositQrNetworkLogoFallback extends StatelessWidget {
 
 class _DepositDetailsList extends StatelessWidget {
   const _DepositDetailsList({
+    required this.asset,
     required this.amountText,
     required this.depositAddress,
     this.memo,
     this.mobile = false,
   });
 
+  final SwapAsset asset;
   final String amountText;
   final String depositAddress;
   final String? memo;
@@ -924,7 +928,7 @@ class _DepositDetailsList extends StatelessWidget {
           _DepositDetailRow(
             label: 'Amount to deposit',
             value: amountText,
-            copyText: amountText,
+            copyText: _depositAmountCopyText(amountText, asset),
             toastMessage: 'Amount copied',
             copyKey: const ValueKey('swap_copy_deposit_amount'),
             rightKey: const ValueKey('swap_deposit_amount_right_item'),
@@ -1088,4 +1092,14 @@ String _formatHourLabel(int hours) {
 
 String _formatMinuteLabel(int minutes) {
   return minutes == 1 ? '1min' : '${minutes}mins';
+}
+
+String _depositAmountCopyText(String amountText, SwapAsset asset) {
+  final trimmed = amountText.trim();
+  final symbol = asset.symbol.trim();
+  if (symbol.isEmpty) return trimmed;
+
+  final symbolSuffix = ' $symbol';
+  if (!trimmed.endsWith(symbolSuffix)) return trimmed;
+  return trimmed.substring(0, trimmed.length - symbolSuffix.length).trimRight();
 }
