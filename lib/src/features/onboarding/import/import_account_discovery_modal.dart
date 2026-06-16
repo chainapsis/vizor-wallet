@@ -3,9 +3,10 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 
@@ -162,17 +163,10 @@ class _ImportAccountDiscoveryModalState
     final canConfirm = selectedCount > 0 || widget.allowEmptySelection;
 
     return AppPaneModalOverlay(
+      borderRadius: BorderRadius.circular(AppDesktopSidebarSurface.glassRadius),
       onDismiss: widget.onCancel,
-      child: Container(
+      child: AppModalCard(
         width: _modalWidth,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
-          vertical: AppSpacing.md,
-        ),
-        decoration: BoxDecoration(
-          color: colors.background.ground,
-          borderRadius: BorderRadius.circular(AppRadii.large),
-        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -220,63 +214,61 @@ class _ImportAccountDiscoveryModalState
             ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: _maxListHeight),
               child: RawScrollbar(
+                key: const ValueKey('import_account_discovery_scrollbar'),
                 controller: _scrollController,
                 thumbVisibility: widget.accounts.length > 3,
-                child: ListView.separated(
-                  controller: _scrollController,
-                  shrinkWrap: true,
-                  padding: EdgeInsets.zero,
-                  itemCount: widget.accounts.length,
-                  separatorBuilder: (_, _) =>
-                      const SizedBox(height: AppSpacing.xs),
-                  itemBuilder: (context, index) {
-                    final account = widget.accounts[index];
-                    final selected = _selectedAccountIndices.contains(
-                      account.zip32AccountIndex,
-                    );
-                    return _DiscoveredAccountRow(
-                      account: account,
-                      selected: selected,
-                      bip44CoinType: widget.bip44CoinType,
-                      transparentBalanceState:
-                          _transparentBalanceStates[account
-                              .zip32AccountIndex] ??
-                          const _TransparentBalanceState.loading(),
-                      onTap: () => _toggle(account.zip32AccountIndex),
-                    );
-                  },
+                radius: const Radius.circular(AppRadii.full),
+                thickness: 6,
+                mainAxisMargin: 6,
+                crossAxisMargin: 6,
+                thumbColor: colors.background.overlay,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    right: widget.accounts.length > 3 ? 18 : 0,
+                  ),
+                  child: ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(
+                      context,
+                    ).copyWith(scrollbars: false),
+                    child: ListView.separated(
+                      controller: _scrollController,
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
+                      itemCount: widget.accounts.length,
+                      separatorBuilder: (_, _) =>
+                          const SizedBox(height: AppSpacing.xs),
+                      itemBuilder: (context, index) {
+                        final account = widget.accounts[index];
+                        final selected = _selectedAccountIndices.contains(
+                          account.zip32AccountIndex,
+                        );
+                        return _DiscoveredAccountRow(
+                          account: account,
+                          selected: selected,
+                          bip44CoinType: widget.bip44CoinType,
+                          transparentBalanceState:
+                              _transparentBalanceStates[account
+                                  .zip32AccountIndex] ??
+                              const _TransparentBalanceState.loading(),
+                          onTap: () => _toggle(account.zip32AccountIndex),
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final buttonWidth = (constraints.maxWidth - AppSpacing.xs) / 2;
-                return Row(
-                  children: [
-                    AppButton(
-                      key: const ValueKey(
-                        'import_account_discovery_cancel_button',
-                      ),
-                      onPressed: widget.onCancel,
-                      variant: AppButtonVariant.ghost,
-                      minWidth: buttonWidth,
-                      child: const Text('Cancel'),
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    AppButton(
-                      key: const ValueKey(
-                        'import_account_discovery_confirm_button',
-                      ),
-                      onPressed: canConfirm ? _confirm : null,
-                      variant: AppButtonVariant.primary,
-                      minWidth: buttonWidth,
-                      trailing: const AppIcon(AppIcons.chevronForward),
-                      child: const Text('Import'),
-                    ),
-                  ],
-                );
-              },
+            AppModalActions(
+              cancelKey: const ValueKey(
+                'import_account_discovery_cancel_button',
+              ),
+              actionKey: const ValueKey(
+                'import_account_discovery_confirm_button',
+              ),
+              onCancel: widget.onCancel,
+              actionLabel: 'Import',
+              onAction: canConfirm ? _confirm : null,
             ),
           ],
         ),
@@ -285,7 +277,7 @@ class _ImportAccountDiscoveryModalState
   }
 }
 
-class _DiscoveredAccountRow extends StatelessWidget {
+class _DiscoveredAccountRow extends StatefulWidget {
   const _DiscoveredAccountRow({
     required this.account,
     required this.selected,
@@ -301,24 +293,46 @@ class _DiscoveredAccountRow extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_DiscoveredAccountRow> createState() => _DiscoveredAccountRowState();
+}
+
+class _DiscoveredAccountRowState extends State<_DiscoveredAccountRow> {
+  bool _hovered = false;
+
+  void _setHovered(bool value) {
+    if (_hovered != value) setState(() => _hovered = value);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final borderColor = selected ? colors.border.strong : colors.border.regular;
+    final borderColor = widget.selected
+        ? colors.border.strong
+        : colors.border.regular;
     final accountPath = _accountPathLabel();
+    final rowColor = widget.selected
+        ? colors.background.ground
+        : _hovered
+        ? colors.background.neutralSubtleOpacity
+        : colors.background.base;
 
     return Semantics(
       button: true,
-      selected: selected,
+      selected: widget.selected,
       label: accountPath,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
+        onEnter: (_) => _setHovered(true),
+        onExit: (_) => _setHovered(false),
         child: GestureDetector(
           key: ValueKey(
-            'import_account_discovery_row_${account.zip32AccountIndex}',
+            'import_account_discovery_row_${widget.account.zip32AccountIndex}',
           ),
           behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: Container(
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOut,
             height: 68,
             padding: const EdgeInsets.only(
               left: AppSpacing.xs,
@@ -327,8 +341,12 @@ class _DiscoveredAccountRow extends StatelessWidget {
               bottom: AppSpacing.xxs,
             ),
             decoration: BoxDecoration(
-              border: Border.all(color: borderColor, width: selected ? 2 : 1.5),
-              borderRadius: BorderRadius.circular(AppRadii.medium),
+              color: rowColor,
+              border: Border.all(
+                color: borderColor,
+                width: widget.selected ? 2 : 1.5,
+              ),
+              borderRadius: BorderRadius.circular(AppRadii.small),
             ),
             child: Row(
               children: [
@@ -352,7 +370,7 @@ class _DiscoveredAccountRow extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        _shortAddress(account.firstTransparentAddress),
+                        _shortAddress(widget.account.firstTransparentAddress),
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.codeSmall.copyWith(
                           color: colors.text.secondary,
@@ -365,13 +383,13 @@ class _DiscoveredAccountRow extends StatelessWidget {
                 SizedBox(
                   width: 112,
                   child: _TransparentBalancePreviewLabel(
-                    state: transparentBalanceState,
+                    state: widget.transparentBalanceState,
                   ),
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 _AccountToggle(
-                  selected: selected,
-                  accountIndex: account.zip32AccountIndex,
+                  selected: widget.selected,
+                  accountIndex: widget.account.zip32AccountIndex,
                 ),
               ],
             ),
@@ -382,7 +400,7 @@ class _DiscoveredAccountRow extends StatelessWidget {
   }
 
   String _accountPathLabel() {
-    return "m/44'/$bip44CoinType'/${account.zip32AccountIndex}'/...";
+    return "m/44'/${widget.bip44CoinType}'/${widget.account.zip32AccountIndex}'/...";
   }
 
   String _shortAddress(String address) {
