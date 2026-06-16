@@ -21,6 +21,8 @@ const _receivedFeeHelpTooltip =
 /// send-specific refund copy or dark-card treatment.
 enum ReceivedReceiptStatus { inProgress, completed, failed }
 
+enum ReceivedReceiptUnknownFromKind { shieldedSender, unknownSender }
+
 /// Static content of the redesigned received-transaction receipt: status
 /// title, optional From row joined to the Amount Review Info row by an
 /// arrow-down connector, and the Review Wrap detail card.
@@ -37,7 +39,7 @@ class ReceivedReceiptView extends StatelessWidget {
     required this.txIdText,
     this.status = ReceivedReceiptStatus.completed,
     this.fromRecipient,
-    this.unknownFromPool,
+    this.unknownFromKind,
     this.isShieldedSource = false,
     this.feeText,
     this.receivingAddress,
@@ -64,11 +66,11 @@ class ReceivedReceiptView extends StatelessWidget {
   final ReceivedReceiptStatus status;
 
   /// Sender display data. The From row (and its arrow connector) is omitted
-  /// when null unless [unknownFromPool] is present.
+  /// when null unless [unknownFromKind] is present.
   final SendReviewRecipient? fromRecipient;
 
-  /// Sender pool when the exact source address is unavailable.
-  final String? unknownFromPool;
+  /// Why the exact source address is unavailable.
+  final ReceivedReceiptUnknownFromKind? unknownFromKind;
 
   /// Pool badge under the From row: shielded (shield keyhole + "Shielded")
   /// vs transparent (transparent-balance glyph + "Transparent").
@@ -109,11 +111,7 @@ class ReceivedReceiptView extends StatelessWidget {
     final colors = context.colors;
     final memo = memoText?.trim();
     final fromRecipient = this.fromRecipient;
-    final unknownFromPool = this.unknownFromPool?.trim().toLowerCase();
-    final hasUnknownFrom =
-        fromRecipient == null &&
-        unknownFromPool != null &&
-        unknownFromPool.isNotEmpty;
+    final unknownFromKind = fromRecipient == null ? this.unknownFromKind : null;
     final title = switch (status) {
       ReceivedReceiptStatus.inProgress => 'Receive in progress...',
       ReceivedReceiptStatus.completed => 'Received successfully',
@@ -156,11 +154,11 @@ class ReceivedReceiptView extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (fromRecipient != null || hasUnknownFrom) ...[
+              if (fromRecipient != null || unknownFromKind != null) ...[
                 if (fromRecipient != null)
                   _fromRow(context, fromRecipient)
                 else
-                  _unknownFromRow(context, unknownFromPool!),
+                  _unknownFromRow(context, unknownFromKind!),
                 const _ReceivedArrowSeparator(),
               ],
               ReviewInfoRow(
@@ -271,21 +269,22 @@ class ReceivedReceiptView extends StatelessWidget {
     };
   }
 
-  Widget _unknownFromRow(BuildContext context, String pool) {
-    final isKnownPool = pool == 'shielded' || pool == 'transparent';
-    final isShielded = pool == 'shielded';
+  Widget _unknownFromRow(
+    BuildContext context,
+    ReceivedReceiptUnknownFromKind kind,
+  ) {
+    final isShieldedSender =
+        kind == ReceivedReceiptUnknownFromKind.shieldedSender;
 
     return ReviewInfoRow(
       label: 'From',
-      value: 'Unknown sender',
+      value: isShieldedSender ? 'Shielded sender' : 'Unknown sender',
       leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
-      bottomLeftIconName: isKnownPool ? _poolIconName(isShielded) : null,
-      bottomLeftIconColor: isKnownPool
-          ? _poolIconColor(context, isShielded)
+      bottomLeftIconName: isShieldedSender ? _poolIconName(true) : null,
+      bottomLeftIconColor: isShieldedSender
+          ? _poolIconColor(context, true)
           : null,
-      bottomLeftText: isKnownPool
-          ? (isShielded ? 'Shielded' : 'Transparent')
-          : null,
+      bottomLeftText: isShieldedSender ? 'Shielded' : null,
     );
   }
 }

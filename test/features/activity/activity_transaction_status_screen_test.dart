@@ -74,6 +74,36 @@ void main() {
     expect(find.text('Network fee'), findsNothing);
   });
 
+  testWidgets('labels shielded-source receives as shielded sender', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'received',
+        initialTransaction: _transaction(txKind: 'received'),
+        initialDetail: _detail(
+          txKind: 'received',
+          sourcePool: 'shielded',
+          outputs: [
+            rust_sync.TransactionDetailOutput(
+              address: _recipientAddress,
+              amountZatoshi: BigInt.from(12000000000),
+              pool: 'shielded',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.byType(ReceivedReceiptView), findsOneWidget);
+    expect(find.text('Shielded sender'), findsOneWidget);
+    expect(find.text('Unknown sender'), findsNothing);
+    expect(find.text('Shielded'), findsOneWidget);
+    expect(find.text('Show full address'), findsNothing);
+  });
+
   testWidgets('shows the fee row for a receive with a known fee', (
     tester,
   ) async {
