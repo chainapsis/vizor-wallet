@@ -90,6 +90,11 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     context.go('/add-account');
   }
 
+  void _openActivity() {
+    if (_matchedLocation == '/activity') return;
+    context.go('/activity');
+  }
+
   void _toggleAccountMenu({
     required List<AccountInfo> accounts,
     required String? activeAccountUuid,
@@ -379,9 +384,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       iconName: isImporting ? AppIcons.loader : AppIcons.home,
                       iconAnimated: !isImporting,
                       active: _homeShouldBeActive,
-                      onTap: isImporting || _isHomeRoute
-                          ? null
-                          : () => _navigateTo('/home'),
+                      onTap: isImporting ? null : () => _navigateTo('/home'),
                     ),
                     if (swapFeatureEnabled) ...[
                       const SizedBox(height: AppSpacing.xs),
@@ -390,9 +393,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         label: 'Swap',
                         iconName: AppIcons.swapArrows,
                         active: _matches('/swap'),
-                        onTap: isImporting || _matches('/swap')
-                            ? null
-                            : () => _navigateTo('/swap'),
+                        onTap: isImporting ? null : () => _navigateTo('/swap'),
                       ),
                     ],
                     const SizedBox(height: AppSpacing.xs),
@@ -413,18 +414,14 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       active: _matches('/activity'),
                       // Stays tappable on detail subroutes (tx/swap status)
                       // as a way back to the main activity feed.
-                      onTap: isImporting || _matchedLocation == '/activity'
-                          ? null
-                          : () => context.go('/activity'),
+                      onTap: isImporting ? null : _openActivity,
                     ),
                     const Spacer(),
                     AppSidebarItem(
                       label: 'Settings',
                       iconName: AppIcons.cog,
                       active: _matches('/settings'),
-                      onTap: _matches('/settings')
-                          ? null
-                          : () => _navigateTo('/settings'),
+                      onTap: () => _navigateTo('/settings'),
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(

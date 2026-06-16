@@ -107,6 +107,34 @@ void main() {
     expect(find.text('receive route'), findsNothing);
   });
 
+  testWidgets('sidebar keeps exact active navigation items clickable', (
+    tester,
+  ) async {
+    final cases = [
+      (route: '/home', label: 'Home'),
+      (route: '/swap', label: 'Swap'),
+      (route: '/voting', label: 'Vote'),
+      (route: '/activity', label: 'Activity'),
+      (route: '/settings', label: 'Settings'),
+    ];
+
+    for (final entry in cases) {
+      await tester.pumpWidget(
+        _sidebarHarness(_syncedSyncState, initialLocation: entry.route),
+      );
+      await tester.pump();
+
+      final item = _sidebarItemWithLabel(tester, entry.label);
+      expect(item.active, isTrue, reason: entry.label);
+      expect(item.onTap, isNotNull, reason: entry.label);
+      expect(_cursorForText(tester, entry.label), SystemMouseCursors.click);
+
+      await tester.tap(find.text(entry.label));
+      await tester.pumpAndSettle();
+      expect(find.text(entry.label), findsOneWidget);
+    }
+  });
+
   testWidgets('sidebar accounts popover shows boundaries and click cursors', (
     tester,
   ) async {
@@ -263,6 +291,28 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('activity'), findsOneWidget);
+  });
+
+  testWidgets('sidebar Activity item returns detail routes to the feed', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(_syncedSyncState, initialLocation: '/activity/detail'),
+    );
+    await tester.pump();
+
+    final item = tester.widget<AppSidebarItem>(
+      find.byKey(const ValueKey('sidebar_activity_button')),
+    );
+    expect(item.active, isTrue);
+    expect(item.onTap, isNotNull);
+    expect(find.text('activity detail'), findsOneWidget);
+
+    await tester.tap(find.text('Activity'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('activity'), findsOneWidget);
+    expect(find.text('activity detail'), findsNothing);
   });
 
   testWidgets('sidebar Settings item opens the settings route', (tester) async {
@@ -539,6 +589,12 @@ BoxDecoration _boxDecorationByKey(WidgetTester tester, Key key) {
   return container.decoration! as BoxDecoration;
 }
 
+AppSidebarItem _sidebarItemWithLabel(WidgetTester tester, String label) {
+  return tester
+      .widgetList<AppSidebarItem>(find.byType(AppSidebarItem))
+      .singleWhere((item) => item.label == label);
+}
+
 MouseCursor _cursorForText(WidgetTester tester, String text) {
   final mouseRegion = tester.widget<MouseRegion>(
     find
@@ -596,14 +652,45 @@ Widget _sidebarHarness(
           pane: AppDesktopPane(child: Text('receive route')),
         ),
       ),
-      GoRoute(path: '/swap', builder: (_, _) => const Text('swap')),
-      GoRoute(path: '/voting', builder: (_, _) => const Text('voting')),
+      GoRoute(
+        path: '/swap',
+        builder: (_, _) => const AppDesktopShell(
+          sidebar: AppMainSidebar(),
+          pane: AppDesktopPane(child: Text('swap')),
+        ),
+      ),
+      GoRoute(
+        path: '/voting',
+        builder: (_, _) => const AppDesktopShell(
+          sidebar: AppMainSidebar(),
+          pane: AppDesktopPane(child: Text('voting')),
+        ),
+      ),
       GoRoute(
         path: '/address-book',
         builder: (_, _) => const Text('address book'),
       ),
-      GoRoute(path: '/activity', builder: (_, _) => const Text('activity')),
-      GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
+      GoRoute(
+        path: '/activity',
+        builder: (_, _) => const AppDesktopShell(
+          sidebar: AppMainSidebar(),
+          pane: AppDesktopPane(child: Text('activity')),
+        ),
+      ),
+      GoRoute(
+        path: '/activity/detail',
+        builder: (_, _) => const AppDesktopShell(
+          sidebar: AppMainSidebar(),
+          pane: AppDesktopPane(child: Text('activity detail')),
+        ),
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (_, _) => const AppDesktopShell(
+          sidebar: AppMainSidebar(),
+          pane: AppDesktopPane(child: Text('settings')),
+        ),
+      ),
       GoRoute(
         path: '/add-account',
         builder: (_, _) => const Text('add account'),

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -11,7 +12,10 @@ import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_cale
 import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_estimator.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_wallet_birthday_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 void main() {
@@ -91,6 +95,42 @@ void main() {
       AppThemeData.light.colors.border.utilityDestructive,
     );
     expect(textWidget.style?.fontWeight, FontWeight.w400);
+  });
+
+  testWidgets('block height submit failure is shown above the CTA', (
+    tester,
+  ) async {
+    await _setDesktopSurface(tester);
+    await tester.pumpWidget(
+      _birthdayRouterHarness(
+        args: const ImportBirthdayArgs(
+          mnemonic: 'test mnemonic',
+          initialBirthdayHeight: 1000000,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('import_birthday_submit_button')),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    const message = 'This account is already in your wallet.';
+    final errorText = find.text(message);
+    expect(errorText, findsOneWidget);
+
+    final textWidget = tester.widget<Text>(errorText);
+    expect(textWidget.maxLines, isNull);
+    expect(textWidget.textAlign, TextAlign.center);
+
+    final errorTop = tester.getTopLeft(errorText).dy;
+    final buttonTop = tester
+        .getTopLeft(find.byKey(const ValueKey('import_birthday_submit_button')))
+        .dy;
+    expect(errorTop, lessThan(buttonTop));
   });
 
   testWidgets('account discovery modal imports all candidates by default', (
@@ -256,6 +296,49 @@ Widget _birthdayHarness({
   );
 }
 
+Widget _birthdayRouterHarness({required ImportBirthdayArgs args}) {
+  final router = GoRouter(
+    initialLocation: '/import/birthday',
+    routes: [
+      GoRoute(
+        path: '/import/birthday',
+        builder: (_, _) => ImportWalletBirthdayScreen(args: args),
+      ),
+      GoRoute(path: '/import', builder: (_, _) => const SizedBox.shrink()),
+      GoRoute(
+        path: '/import/set-password',
+        builder: (_, _) => const SizedBox.shrink(),
+      ),
+      GoRoute(path: '/home', builder: (_, _) => const Text('Home')),
+    ],
+  );
+
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      appSecurityProvider.overrideWith(_ConfiguredAppSecurityNotifier.new),
+      accountProvider.overrideWith(_FailingImportAccountNotifier.new),
+      syncProvider.overrideWith(_NoopSyncNotifier.new),
+      rpcEndpointFailoverProvider.overrideWith(
+        _FakeRpcEndpointFailoverNotifier.new,
+      ),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, child) => MediaQuery(
+        data: const MediaQueryData(textScaler: TextScaler.linear(0.5)),
+        child: Material(
+          type: MaterialType.transparency,
+          child: AppTheme(
+            data: AppThemeData.light,
+            child: child ?? const SizedBox.shrink(),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 Widget _modalHarness({
   bool allowEmptySelection = true,
   int bip44CoinType = 133,
@@ -372,4 +455,48 @@ class _PendingMetadataRpcEndpointFailoverNotifier
     }
     return action(state.current);
   }
+}
+
+class _ConfiguredAppSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() {
+    return const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+  }
+}
+
+class _FailingImportAccountNotifier extends AccountNotifier {
+  @override
+  FutureOr<AccountState> build() {
+    return const AccountState();
+  }
+
+  @override
+  Future<rust_wallet.SoftwareWalletImportDiscoveryResult>
+  discoverAdditionalSoftwareAccounts({
+    required String mnemonic,
+    int? birthdayHeight,
+  }) async {
+    return const rust_wallet.SoftwareWalletImportDiscoveryResult(
+      primaryAccountAlreadyExists: false,
+      accounts: [],
+    );
+  }
+
+  @override
+  Future<void> importAccount({
+    required String mnemonic,
+    int? birthdayHeight,
+    String? name,
+    List<int> additionalAccountIndices = const [],
+  }) async {
+    throw Exception('This account is already in your wallet.');
+  }
+}
+
+class _NoopSyncNotifier extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState();
+
+  @override
+  bool needsPauseForWalletMutation() => false;
 }

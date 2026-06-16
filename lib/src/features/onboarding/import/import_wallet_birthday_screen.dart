@@ -460,7 +460,6 @@ class _ImportWalletBirthdayScreenState
   }
 
   String? get _dateMessage {
-    if (_submitError != null && _submitError!.isNotEmpty) return _submitError;
     if (_metadataError != null) return _metadataError;
     return null;
   }
@@ -611,10 +610,15 @@ class _ImportWalletBirthdayScreenState
                 ),
                 const SizedBox(height: AppSpacing.md),
                 SizedBox(
-                  width: _buttonWidth,
+                  width: _widgetWidth,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (_submitError != null &&
+                          _submitError!.trim().isNotEmpty) ...[
+                        _InlineMessage(text: _submitError, centered: true),
+                        const SizedBox(height: AppSpacing.s),
+                      ],
                       AppButton(
                         key: const ValueKey('import_birthday_submit_button'),
                         onPressed: _isSubmitEnabled ? _submit : null,
@@ -890,9 +894,10 @@ class _BlockHeightField extends StatelessWidget {
 }
 
 class _InlineMessage extends StatelessWidget {
-  const _InlineMessage({required this.text});
+  const _InlineMessage({required this.text, this.centered = false});
 
   final String? text;
+  final bool centered;
 
   @override
   Widget build(BuildContext context) {
@@ -901,19 +906,26 @@ class _InlineMessage extends StatelessWidget {
     }
     final colors = context.colors;
     final errorColor = colors.border.utilityDestructive;
+    final messageText = Text(
+      text!,
+      textAlign: centered ? TextAlign.center : null,
+      style: AppTypography.labelLarge.copyWith(
+        color: errorColor,
+        fontWeight: FontWeight.w400,
+      ),
+    );
     return Row(
+      mainAxisAlignment: centered
+          ? MainAxisAlignment.center
+          : MainAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         AppIcon(AppIcons.warning, size: 16, color: errorColor),
         const SizedBox(width: AppSpacing.xxs),
-        Expanded(
-          child: Text(
-            text!,
-            style: AppTypography.labelLarge.copyWith(
-              color: errorColor,
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-        ),
+        if (centered)
+          Flexible(child: messageText)
+        else
+          Expanded(child: messageText),
       ],
     );
   }
