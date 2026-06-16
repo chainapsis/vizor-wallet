@@ -1,5 +1,7 @@
 import 'dart:ui' show PointerDeviceKind;
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,12 +10,27 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
+import 'package:zcash_wallet/src/features/settings/settings_platform.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
+  test('uninstall setting is supported only on macOS and Linux', () {
+    expect(settingsUninstallSupported(platform: TargetPlatform.macOS), isTrue);
+    expect(settingsUninstallSupported(platform: TargetPlatform.linux), isTrue);
+    expect(
+      settingsUninstallSupported(platform: TargetPlatform.windows),
+      isFalse,
+    );
+    expect(settingsUninstallSupported(platform: TargetPlatform.iOS), isFalse);
+    expect(
+      settingsUninstallSupported(platform: TargetPlatform.android),
+      isFalse,
+    );
+  });
+
   testWidgets('settings rows show hover and focus states', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
     addTearDown(() async {
@@ -48,6 +65,44 @@ void main() {
 
     expect(_hasFocusRing(tester), isTrue);
   });
+
+  testWidgets('uninstall setting is hidden on Windows', (tester) async {
+    _overridePlatform(TargetPlatform.windows);
+
+    try {
+      await tester.pumpWidget(_settingsHarness());
+      await tester.pump();
+
+      expect(find.text('Danger zone'), findsNothing);
+      expect(find.text('Uninstall Vizor'), findsNothing);
+    } finally {
+      _resetPlatformOverride();
+    }
+  });
+
+  testWidgets('uninstall setting is shown on macOS and Linux', (tester) async {
+    try {
+      for (final platform in [TargetPlatform.macOS, TargetPlatform.linux]) {
+        _overridePlatform(platform);
+
+        await tester.pumpWidget(_settingsHarness());
+        await tester.pump();
+
+        expect(find.text('Danger zone'), findsOneWidget);
+        expect(find.text('Uninstall Vizor'), findsOneWidget);
+      }
+    } finally {
+      _resetPlatformOverride();
+    }
+  });
+}
+
+void _overridePlatform(TargetPlatform platform) {
+  debugDefaultTargetPlatformOverride = platform;
+}
+
+void _resetPlatformOverride() {
+  debugDefaultTargetPlatformOverride = null;
 }
 
 Widget _settingsHarness() {

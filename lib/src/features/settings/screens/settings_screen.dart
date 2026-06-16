@@ -22,6 +22,7 @@ import '../../../providers/windows_update_provider.dart';
 import '../../accounts/widgets/account_modal_card.dart';
 import '../../accounts/widgets/account_edit_modal.dart';
 import '../../accounts/widgets/account_profile_picture_modal.dart';
+import '../settings_platform.dart';
 
 const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
   SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
@@ -143,6 +144,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final updateState = Platform.isWindows
         ? ref.watch(windowsUpdateProvider)
         : null;
+    final showUninstall = settingsUninstallSupported();
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -187,7 +189,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onAbout: () => context.push('/about'),
                 onPrivacy: () => context.push('/privacy'),
                 onTerms: () => context.push('/terms'),
-                onUninstall: () => context.push('/settings/uninstall'),
+                onUninstall: showUninstall
+                    ? () => context.push('/settings/uninstall')
+                    : null,
               ),
             ),
             if (_activeModal != null)
@@ -312,7 +316,7 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback onAbout;
   final VoidCallback onPrivacy;
   final VoidCallback onTerms;
-  final VoidCallback onUninstall;
+  final VoidCallback? onUninstall;
 
   @override
   Widget build(BuildContext context) {
@@ -408,7 +412,7 @@ class _SettingsList extends StatelessWidget {
   final VoidCallback onAbout;
   final VoidCallback onPrivacy;
   final VoidCallback onTerms;
-  final VoidCallback onUninstall;
+  final VoidCallback? onUninstall;
 
   @override
   Widget build(BuildContext context) {
@@ -497,18 +501,20 @@ class _SettingsList extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: AppSpacing.md),
-        _SettingsBlock(
-          title: 'Danger zone',
-          rows: [
-            _SettingsRow(
-              iconName: AppIcons.trash,
-              label: 'Uninstall Vizor',
-              destructive: true,
-              onTap: onUninstall,
-            ),
-          ],
-        ),
+        if (onUninstall != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          _SettingsBlock(
+            title: 'Danger zone',
+            rows: [
+              _SettingsRow(
+                iconName: AppIcons.trash,
+                label: 'Uninstall Vizor',
+                destructive: true,
+                onTap: onUninstall!,
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }

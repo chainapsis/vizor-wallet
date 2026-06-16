@@ -56,6 +56,7 @@ import 'src/features/settings/screens/settings_change_password_screen.dart';
 import 'src/features/settings/screens/settings_endpoint_screen.dart';
 import 'src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'src/features/settings/screens/settings_uninstall_screen.dart';
+import 'src/features/settings/settings_platform.dart';
 import 'src/features/swap/models/swap_activity_navigation.dart';
 import 'src/features/swap/screens/swap_review_screen.dart';
 import 'src/features/swap/screens/swap_screen.dart';
@@ -684,6 +685,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/settings/uninstall',
+        redirect: (_, _) => settingsUninstallSupported() ? null : '/settings',
         builder: (_, _) => const SettingsUninstallScreen(),
       ),
       GoRoute(
