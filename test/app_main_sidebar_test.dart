@@ -361,6 +361,8 @@ void main() {
       textLeft - indicatorLeft,
       moreOrLessEquals(AppSpacing.sm + AppSpacing.xs, epsilon: 0.1),
     );
+    expect(_syncIndicatorColor(tester), AppThemeData.light.colors.text.muted);
+    _expectSyncIndicatorGlow(tester, blurRadius: 12);
   });
 
   testWidgets('sidebar shimmers the syncing label with animations on', (
@@ -385,6 +387,8 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(_syncIndicatorColor(tester), AppThemeData.light.colors.text.muted);
+    _expectSyncIndicatorGlow(tester);
 
     await tester.pumpWidget(const SizedBox());
   });
@@ -405,6 +409,7 @@ void main() {
       _syncIndicatorColor(tester),
       AppThemeData.light.colors.sync.lightSuccess,
     );
+    _expectSyncIndicatorGlow(tester, blurRadius: 12);
   });
 
   testWidgets('sidebar treats complete background progress as synced', (
@@ -452,6 +457,7 @@ void main() {
       _syncIndicatorColor(tester),
       AppThemeData.light.colors.sync.lightError,
     );
+    _expectSyncIndicatorGlow(tester, blurRadius: 12);
   });
 
   testWidgets('sidebar uses dark success sync indicator color from Figma', (
@@ -508,11 +514,24 @@ void main() {
 }
 
 Color? _syncIndicatorColor(WidgetTester tester) {
+  return _syncIndicatorDecoration(tester).color;
+}
+
+BoxDecoration _syncIndicatorDecoration(WidgetTester tester) {
   final indicator = find.byKey(const ValueKey('sidebar_sync_indicator'));
   final decoratedBox = tester.widget<DecoratedBox>(
     find.ancestor(of: indicator, matching: find.byType(DecoratedBox)).first,
   );
-  return (decoratedBox.decoration as BoxDecoration).color;
+  return decoratedBox.decoration as BoxDecoration;
+}
+
+void _expectSyncIndicatorGlow(WidgetTester tester, {double? blurRadius}) {
+  final shadows = _syncIndicatorDecoration(tester).boxShadow;
+  expect(shadows, isNotNull);
+  expect(shadows, hasLength(1));
+  if (blurRadius != null) {
+    expect(shadows!.single.blurRadius, blurRadius);
+  }
 }
 
 BoxDecoration _boxDecorationByKey(WidgetTester tester, Key key) {

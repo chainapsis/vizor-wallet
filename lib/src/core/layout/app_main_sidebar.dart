@@ -1086,8 +1086,9 @@ class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
       _SidebarSyncStatusKind.synced => colors.sync.text,
     };
     final indicatorColor = switch (status.kind) {
+      _SidebarSyncStatusKind.syncing => colors.text.muted,
       _SidebarSyncStatusKind.failed => colors.sync.lightError,
-      _ => colors.sync.lightSuccess,
+      _SidebarSyncStatusKind.synced => colors.sync.lightSuccess,
     };
 
     final Widget body = _shouldAnimate
@@ -1110,7 +1111,7 @@ class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
           )
         : _row(
             indicatorColor: indicatorColor,
-            glow: null,
+            glow: _SidebarSyncMotion.staticGlow,
             text: Text(
               status.label,
               key: const ValueKey('sidebar_sync_text'),
@@ -1190,6 +1191,9 @@ abstract final class _SidebarSyncMotion {
   static const _maxGlowBlur = 13.0;
   static const _minGlowAlpha = 0.2;
   static const _maxGlowAlpha = 0.45;
+
+  /// Static indicator glow used for synced, failed, and reduced-motion states.
+  static const staticGlow = (blur: 12.0, alpha: 0.6);
 
   /// 0 to 1 to 0 once per [period].
   static double _breath(double t) => (1 - math.cos(2 * math.pi * t)) / 2;
