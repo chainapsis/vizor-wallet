@@ -58,7 +58,7 @@ class SwapDepositTokensPageContent extends StatelessWidget {
       actionArea: _DepositConfirmActionArea(
         checking: checking,
         warning: checkWarning,
-        buttonLabel: "I've deposited tokens",
+        buttonLabel: 'I’ve deposited tokens',
         onDeposited: onDeposited,
         mobile: mobile,
       ),
@@ -159,11 +159,12 @@ class _SwapDepositPageShell extends StatelessWidget {
             now: now,
           ),
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.lg),
         _DepositDetailsList(
           amountText: amountText,
           depositAddress: depositAddress,
           memo: memo,
+          mobile: true,
         ),
         actionArea,
       ],
@@ -224,6 +225,14 @@ class _MobileDepositQrCard extends StatelessWidget {
     required this.now,
   });
 
+  static const _width = 337.0;
+  static const _height = 452.0;
+  static const _radius = 48.0;
+  static const _padding = AppSpacing.s;
+  static const _qrSize = 313.0;
+  static const _qrPadding = AppSpacing.sm;
+  static const _qrLogoSize = 57.0;
+
   final SwapAsset asset;
   final String qrData;
   final String amountText;
@@ -234,49 +243,56 @@ class _MobileDepositQrCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Container(
-      key: const ValueKey('swap_deposit_qr_card'),
-      padding: const EdgeInsets.all(AppSpacing.xs),
-      decoration: BoxDecoration(
-        color: colors.background.homeCard,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) => Center(
-              child: _DepositQrCode(
-                data: qrData,
-                asset: asset,
-                size: constraints.maxWidth,
+    return Center(
+      child: Container(
+        key: const ValueKey('swap_deposit_qr_card'),
+        width: _width,
+        height: _height,
+        padding: const EdgeInsets.all(_padding),
+        decoration: BoxDecoration(
+          color: colors.background.homeCard,
+          borderRadius: BorderRadius.circular(_radius),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            _DepositQrCode(
+              data: qrData,
+              asset: asset,
+              size: _qrSize,
+              padding: _qrPadding,
+              radius: AppRadii.xLarge,
+              logoSize: _qrLogoSize,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            SizedBox(
+              height: 99,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                child: Column(
+                  children: [
+                    Text(
+                      amountText,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.headlineLarge.copyWith(
+                        color: colors.text.homeCard,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.s),
+                    _DepositExpiryLine(
+                      expiresInLabel: expiresInLabel,
+                      expiresAt: expiresAt,
+                      now: now,
+                      centered: true,
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.s),
-            child: Column(
-              children: [
-                Text(
-                  amountText,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.headlineMedium.copyWith(
-                    color: colors.text.homeCard,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                _DepositExpiryLine(
-                  expiresInLabel: expiresInLabel,
-                  expiresAt: expiresAt,
-                  now: now,
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -321,7 +337,7 @@ class _DepositConfirmActionArea extends StatelessWidget {
             variant: AppButtonVariant.primary,
             size: AppButtonSize.large,
             expand: true,
-            trailing: checking ? null : const AppIcon(AppIcons.arrowForwardIos),
+            constrainContent: true,
             child: _DepositConfirmButtonLabel(
               checking: checking,
               buttonLabel: buttonLabel,
@@ -379,17 +395,18 @@ class _DepositConfirmButtonLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!checking) {
+      return Text(buttonLabel, maxLines: 1, overflow: TextOverflow.ellipsis);
+    }
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(checking ? 'Checking' : buttonLabel, maxLines: 1),
-        if (checking) ...[
-          const SizedBox(width: AppSpacing.xxs),
-          const AppIcon(
-            AppIcons.loader,
-            key: ValueKey('swap_deposit_confirm_loader'),
-          ),
-        ],
+        const Text('Checking', maxLines: 1, overflow: TextOverflow.ellipsis),
+        const SizedBox(width: AppSpacing.xxs),
+        const AppIcon(
+          AppIcons.loader,
+          key: ValueKey('swap_deposit_confirm_loader'),
+        ),
       ],
     );
   }
@@ -607,11 +624,13 @@ class _DepositExpiryLine extends StatefulWidget {
     required this.expiresInLabel,
     required this.expiresAt,
     required this.now,
+    this.centered = false,
   });
 
   final String expiresInLabel;
   final DateTime? expiresAt;
   final DateTime Function()? now;
+  final bool centered;
 
   @override
   State<_DepositExpiryLine> createState() => _DepositExpiryLineState();
@@ -663,9 +682,10 @@ class _DepositExpiryLineState extends State<_DepositExpiryLine> {
     final secondsToNextMinuteLabel = remaining.inSeconds.remainder(60) + 1;
     final secondsUntilCountdown =
         remaining.inSeconds - _countdownThreshold.inSeconds + 1;
-    final delaySeconds = secondsToNextMinuteLabel < secondsUntilCountdown
-        ? secondsToNextMinuteLabel
-        : secondsUntilCountdown;
+    final delaySeconds =
+        secondsToNextMinuteLabel < secondsUntilCountdown
+            ? secondsToNextMinuteLabel
+            : secondsUntilCountdown;
     _timer = Timer(Duration(seconds: delaySeconds), _tick);
   }
 
@@ -700,22 +720,60 @@ class _DepositExpiryLineState extends State<_DepositExpiryLine> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return RichText(
-      key: const ValueKey('swap_deposit_expiry_label'),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      text: TextSpan(
-        style: AppTypography.labelLarge.copyWith(color: colors.text.homeCard),
+    final textStyle = AppTypography.labelLarge.copyWith(
+      color: colors.text.homeCard,
+    );
+    if (widget.centered) {
+      return Row(
+        key: const ValueKey('swap_deposit_expiry_label'),
+        mainAxisSize: MainAxisSize.min,
         children: [
-          TextSpan(
-            text: 'Deposit within ',
-            style: TextStyle(
-              color: colors.text.homeCard.withValues(alpha: 0.72),
+          Text(
+            'Deposit within',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: textStyle,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xxs,
+              vertical: 2,
+            ),
+            child: Text(
+              _expiresInLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: textStyle,
             ),
           ),
-          TextSpan(text: _expiresInLabel),
         ],
-      ),
+      );
+    }
+    return Row(
+      key: const ValueKey('swap_deposit_expiry_label'),
+      mainAxisSize: MainAxisSize.max,
+      children: [
+        Flexible(
+          child: Text(
+            'Deposit within',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: textStyle,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xxs,
+            vertical: 2,
+          ),
+          child: Text(
+            _expiresInLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: textStyle,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -725,28 +783,31 @@ class _DepositQrCode extends StatelessWidget {
     required this.data,
     required this.asset,
     this.size = 194,
+    this.padding = AppSpacing.s,
+    this.radius = AppRadii.small,
+    this.logoSize = 34,
   });
 
   final String data;
   final SwapAsset asset;
 
-  /// Outer side length. Desktop pins 194; the mobile deposit card fills
-  /// the card width so the QR scans easily on a phone.
+  /// Outer side length. Desktop pins 194; mobile uses Figma's 313px QR wrap.
   final double size;
+  final double padding;
+  final double radius;
+  final double logoSize;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    // Keep the inner padding + centre logo proportional to the 194 spec.
-    final logoSize = size * 34 / 194;
     return Container(
       key: const ValueKey('swap_deposit_tokens_qr_code'),
       width: size,
       height: size,
-      padding: EdgeInsets.all(size * AppSpacing.s / 194),
+      padding: EdgeInsets.all(padding),
       decoration: BoxDecoration(
         color: colors.surface.qrCode,
-        borderRadius: BorderRadius.circular(AppRadii.small),
+        borderRadius: BorderRadius.circular(radius),
       ),
       child: Stack(
         alignment: Alignment.center,
@@ -789,13 +850,13 @@ class _DepositQrNetworkLogo extends StatelessWidget {
           asset.chainIconAsset,
           fit: BoxFit.cover,
           semanticLabel: asset.chainLabel,
-          errorBuilder: (context, _, _) =>
-              _DepositQrNetworkLogoFallback(asset: asset),
+          errorBuilder:
+              (context, _, _) => _DepositQrNetworkLogoFallback(asset: asset),
         ),
       ),
     );
     if (Overlay.maybeOf(context) == null) return logo;
-    return AppTooltip(message: asset.chainLabel, child: logo);
+    return AppTooltip(message: asset.chainLabel, tapToShow: true, child: logo);
   }
 }
 
@@ -807,9 +868,8 @@ class _DepositQrNetworkLogoFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final label = asset.chainLabel.trim().isEmpty
-        ? asset.chainTicker
-        : asset.chainLabel;
+    final label =
+        asset.chainLabel.trim().isEmpty ? asset.chainTicker : asset.chainLabel;
     return Container(
       alignment: Alignment.center,
       decoration: BoxDecoration(
@@ -830,17 +890,21 @@ class _DepositDetailsList extends StatelessWidget {
     required this.amountText,
     required this.depositAddress,
     this.memo,
+    this.mobile = false,
   });
 
   final String amountText;
   final String depositAddress;
   final String? memo;
+  final bool mobile;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       key: const ValueKey('swap_deposit_details'),
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      padding: EdgeInsets.symmetric(
+        horizontal: mobile ? AppSpacing.s : AppSpacing.sm,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -850,6 +914,8 @@ class _DepositDetailsList extends StatelessWidget {
             copyText: amountText,
             toastMessage: 'Amount copied',
             copyKey: const ValueKey('swap_copy_deposit_amount'),
+            rightKey: const ValueKey('swap_deposit_amount_right_item'),
+            mobile: mobile,
           ),
           _DepositDetailRow(
             label: 'One-time address',
@@ -857,6 +923,8 @@ class _DepositDetailsList extends StatelessWidget {
             copyText: depositAddress,
             toastMessage: 'Address copied',
             copyKey: const ValueKey('swap_copy_deposit_address'),
+            rightKey: const ValueKey('swap_deposit_address_right_item'),
+            mobile: mobile,
           ),
           if (memo?.trim().isNotEmpty ?? false)
             _DepositDetailRow(
@@ -865,6 +933,8 @@ class _DepositDetailsList extends StatelessWidget {
               copyText: memo!.trim(),
               toastMessage: 'Memo copied',
               copyKey: const ValueKey('swap_copy_deposit_memo'),
+              rightKey: const ValueKey('swap_deposit_memo_right_item'),
+              mobile: mobile,
             ),
         ],
       ),
@@ -879,48 +949,76 @@ class _DepositDetailRow extends StatelessWidget {
     required this.copyText,
     required this.toastMessage,
     required this.copyKey,
+    required this.rightKey,
+    this.mobile = false,
   });
+
+  static const _mobileLabelMaxWidth = 134.0;
 
   final String label;
   final String value;
   final String copyText;
   final String toastMessage;
   final Key copyKey;
+  final Key rightKey;
+  final bool mobile;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final labelText = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTypography.labelLarge.copyWith(color: colors.text.secondary),
+      ),
+    );
+    final valueTextStyle = AppTypography.labelLarge.copyWith(
+      color: colors.text.accent,
+    );
+    final valueText = Text(
+      value,
+      maxLines: 1,
+      softWrap: false,
+      overflow: mobile ? TextOverflow.visible : TextOverflow.ellipsis,
+      textAlign: TextAlign.end,
+      style: valueTextStyle,
+    );
     return SizedBox(
       height: 32,
       child: Row(
         children: [
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-          ),
+          if (mobile)
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: _mobileLabelMaxWidth),
+              child: labelText,
+            )
+          else
+            Flexible(fit: FlexFit.loose, child: labelText),
           const SizedBox(width: AppSpacing.s),
           Expanded(
-            child: Align(
-              alignment: Alignment.centerRight,
+            child: Padding(
+              key: rightKey,
+              padding: EdgeInsets.fromLTRB(
+                mobile ? AppSpacing.xs : 0,
+                mobile ? AppSpacing.xxs : 0,
+                AppSpacing.xxs,
+                mobile ? AppSpacing.xxs : 0,
+              ),
               child: Row(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Flexible(
-                    child: Text(
-                      value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.end,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
+                    child:
+                        mobile
+                            ? FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: valueText,
+                            )
+                            : valueText,
                   ),
                   const SizedBox(width: AppSpacing.xxs),
                   MouseRegion(
@@ -935,10 +1033,13 @@ class _DepositDetailRow extends StatelessWidget {
                           toastMessage: toastMessage,
                         );
                       },
-                      child: AppIcon(
-                        AppIcons.copy,
-                        size: AppIconSize.medium,
-                        color: colors.icon.regular.withValues(alpha: 0.72),
+                      child: SizedBox.square(
+                        dimension: 20,
+                        child: AppIcon(
+                          AppIcons.copy,
+                          size: 20,
+                          color: colors.icon.regular.withValues(alpha: 0.72),
+                        ),
                       ),
                     ),
                   ),

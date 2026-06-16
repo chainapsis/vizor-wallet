@@ -337,12 +337,7 @@ void main() {
     );
 
     String expiryLabel() {
-      return tester
-          .widget<RichText>(
-            find.byKey(const ValueKey('swap_deposit_expiry_label')),
-          )
-          .text
-          .toPlainText();
+      return _depositExpiryLabelPlainText(tester);
     }
 
     expect(expiryLabel(), 'Deposit within 16mins');
@@ -383,12 +378,7 @@ void main() {
     );
 
     String expiryLabel() {
-      return tester
-          .widget<RichText>(
-            find.byKey(const ValueKey('swap_deposit_expiry_label')),
-          )
-          .text
-          .toPlainText();
+      return _depositExpiryLabelPlainText(tester);
     }
 
     expect(expiryLabel(), 'Deposit within 2hrs');
@@ -6315,7 +6305,7 @@ void main() {
           ),
         ),
       );
-      expect(copyIcon.size, AppIconSize.medium);
+      expect(copyIcon.size, 20);
       expect(
         tester.getSize(find.byKey(const ValueKey('swap_deposit_qr_logo'))),
         const Size(34, 34),
@@ -8055,6 +8045,18 @@ Future<void> _enterDestinationText(WidgetTester tester, String value) async {
   await tester.enterText(field, value);
   await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
   await tester.pumpAndSettle();
+}
+
+String _depositExpiryLabelPlainText(WidgetTester tester) {
+  final expiry = find.byKey(const ValueKey('swap_deposit_expiry_label'));
+  final parts = tester
+      .widgetList<Text>(
+        find.descendant(of: expiry, matching: find.byType(Text)),
+      )
+      .map((text) => text.data ?? text.textSpan?.toPlainText() ?? '')
+      .where((text) => text.isNotEmpty)
+      .toList();
+  return parts.join(' ');
 }
 
 String _destinationSummaryText(WidgetTester tester) {
