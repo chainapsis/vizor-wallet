@@ -9,13 +9,11 @@ import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
-import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../../providers/rpc_endpoint_latency_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
-import '../../widgets/custom_endpoint_settings_panel.dart'
-    show CurrentEndpointText;
 
 enum _EndpointTab { list, custom }
 
@@ -32,7 +30,10 @@ class MobileEndpointScreen extends ConsumerStatefulWidget {
 }
 
 class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
+  static const _floatingCtaClearance = AppSpacing.xl2 + AppSpacing.md;
+
   final _customController = TextEditingController();
+  final _customFocusNode = FocusNode();
   _EndpointTab _activeTab = _EndpointTab.list;
   String? _selectedPresetId;
   bool _isSubmitting = false;
@@ -59,6 +60,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
   @override
   void dispose() {
     _customController.dispose();
+    _customFocusNode.dispose();
     super.dispose();
   }
 
@@ -181,25 +183,34 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                 onBack: _isSubmitting ? null : () => context.pop(),
               ),
               const SizedBox(height: AppSpacing.xs),
-              CurrentEndpointText(current: current, latencyState: latencyState),
+              _MobileCurrentEndpointText(
+                current: current,
+                latencyState: latencyState,
+              ),
               const SizedBox(height: AppSpacing.sm),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _ModeTab(
-                    key: const ValueKey('mobile_endpoint_tab_list'),
-                    iconName: AppIcons.endpoint,
-                    label: 'Select from the list',
-                    selected: _activeTab == _EndpointTab.list,
-                    onTap: () => _selectTab(_EndpointTab.list),
+                  Expanded(
+                    child: _ModeTab(
+                      key: const ValueKey('mobile_endpoint_tab_list'),
+                      iconName: AppIcons.endpoint,
+                      label: 'Select from the list',
+                      selected: _activeTab == _EndpointTab.list,
+                      alignment: Alignment.centerRight,
+                      onTap: () => _selectTab(_EndpointTab.list),
+                    ),
                   ),
-                  const SizedBox(width: AppSpacing.md),
-                  _ModeTab(
-                    key: const ValueKey('mobile_endpoint_tab_custom'),
-                    iconName: AppIcons.edit,
-                    label: 'Custom endpoint',
-                    selected: _activeTab == _EndpointTab.custom,
-                    onTap: () => _selectTab(_EndpointTab.custom),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: _ModeTab(
+                      key: const ValueKey('mobile_endpoint_tab_custom'),
+                      iconName: AppIcons.edit,
+                      label: 'Custom endpoint',
+                      selected: _activeTab == _EndpointTab.custom,
+                      alignment: Alignment.centerLeft,
+                      onTap: () => _selectTab(_EndpointTab.custom),
+                    ),
                   ),
                 ],
               ),
@@ -221,32 +232,49 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
               ],
               Expanded(
                 child: switch (_activeTab) {
-                  _EndpointTab.list => _buildPresetList(current, latencyState),
-                  _EndpointTab.custom => _buildCustomForm(colors),
-                },
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
-                  AppSpacing.xs,
-                  AppSpacing.sm,
-                  AppSpacing.s,
-                ),
-                // Intrinsic centered pill, hovering above the tab bar
-                // like the Figma `Update Endpoint` button.
-                child: Center(
-                  child: AppButton(
-                    key: const ValueKey('mobile_endpoint_update'),
-                    onPressed: _canUpdate(current) ? _submit : null,
-                    child: Text(
-                      _isSubmitting
-                          ? 'Updating...'
-                          : _activeTab == _EndpointTab.list
-                          ? 'Update endpoint'
-                          : 'Customise endpoint',
-                    ),
+                  _EndpointTab.list => Stack(
+                    children: [
+                      Positioned.fill(
+                        child: _buildPresetList(current, latencyState),
+                      ),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: 112,
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  colors.background.window.withValues(alpha: 0),
+                                  colors.background.window,
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: AppSpacing.sm,
+                        right: AppSpacing.sm,
+                        bottom: AppSpacing.s,
+                        child: Center(
+                          child: AppButton(
+                            key: const ValueKey('mobile_endpoint_update'),
+                            onPressed: _canUpdate(current) ? _submit : null,
+                            child: Text(
+                              _isSubmitting ? 'Updating...' : 'Update endpoint',
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                  _EndpointTab.custom => _buildCustomForm(colors, current),
+                },
               ),
             ],
           ),
@@ -270,7 +298,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
         AppSpacing.sm,
         AppSpacing.xs,
         AppSpacing.sm,
-        AppSpacing.md,
+        _floatingCtaClearance,
       ),
       children: [
         for (final entry in groups.entries) ...[
@@ -299,94 +327,153 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                       _submitError = null;
                     }),
             ),
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.s),
           ],
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.s),
         ],
       ],
     );
   }
 
-  Widget _buildCustomForm(AppColors colors) {
+  Widget _buildCustomForm(AppColors colors, RpcEndpointConfig current) {
+    final customMessage = _customMessageText();
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
         AppSpacing.xs,
         AppSpacing.sm,
-        AppSpacing.md,
+        AppSpacing.lg,
       ),
       children: [
         // Dark hero card with the host:port field — Figma `Custom
         // endpoint` card (4083:457541): 200 high with the faded
         // castle-library line art along the bottom edge.
         Container(
-          constraints: const BoxConstraints(minHeight: 200),
-          padding: const EdgeInsets.all(AppSpacing.sm),
+          key: const ValueKey('mobile_endpoint_custom_card'),
+          height: 200,
           decoration: BoxDecoration(
             color: colors.background.homeCard,
             borderRadius: BorderRadius.circular(AppRadii.large),
+            border: Border.all(color: colors.border.subtleOpacity, width: 1.5),
             image: const DecorationImage(
-              image: AssetImage(
-                'assets/illustrations/endpoint_custom_bg.png',
-              ),
+              image: AssetImage('assets/illustrations/endpoint_custom_bg.png'),
               fit: BoxFit.cover,
               alignment: Alignment.bottomCenter,
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Stack(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.sm,
+                  AppSpacing.sm,
+                  AppSpacing.sm,
+                  AppSpacing.xs,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
                       'Custom endpoint',
                       style: AppTypography.displaySmall.copyWith(
                         color: colors.text.homeCard,
                       ),
                     ),
-                  ),
-                  AppIcon(
-                    AppIcons.endpoint,
-                    size: 20,
-                    color: colors.text.homeCard.withValues(alpha: 0.7),
-                  ),
-                ],
+                    const Spacer(),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        MobileTextField(
+                          key: const ValueKey(
+                            'mobile_endpoint_custom_field_shell',
+                          ),
+                          fieldKey: const ValueKey(
+                            'mobile_endpoint_custom_field',
+                          ),
+                          hintText: '<hostname>:<port>',
+                          controller: _customController,
+                          focusNode: _customFocusNode,
+                          backgroundColor: colors.background.ground,
+                          restingBorderColor: colors.border.subtle,
+                          textStyle: AppTypography.labelMedium.copyWith(
+                            fontWeight: FontWeight.w400,
+                            color: colors.text.accent,
+                          ),
+                          hintStyle: AppTypography.labelMedium.copyWith(
+                            fontWeight: FontWeight.w400,
+                            color: colors.text.muted,
+                          ),
+                          onChanged: (_) => setState(() => _submitError = null),
+                          keyboardType: TextInputType.url,
+                        ),
+                        const SizedBox(height: AppSpacing.xxs),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: AppSpacing.md),
-              AppTextField(
-                key: const ValueKey('mobile_endpoint_custom_field'),
-                label: 'Custom endpoint',
-                showLabel: false,
-                hintText: '<hostname>:<port>',
-                controller: _customController,
-                messageText: _customMessageText(),
-                tone: _customMessageText() == null
-                    ? AppTextFieldTone.neutral
-                    : AppTextFieldTone.destructive,
-                onChanged: (_) => setState(() => _submitError = null),
-                keyboardType: TextInputType.url,
+              Positioned(
+                top: AppSpacing.sm,
+                right: AppSpacing.sm,
+                child: Opacity(
+                  opacity: 0.5,
+                  child: AppIcon(
+                    AppIcons.endpoint,
+                    size: 32,
+                    color: colors.text.homeCard,
+                  ),
+                ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.md),
-        AppIcon(AppIcons.book, size: 20, color: colors.icon.accent),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          "If the endpoint is configured wrong, your wallet won't be able "
-          'to sync with the Zcash blockchain.',
-          style: AppTypography.bodyMediumStrong.copyWith(
-            color: colors.text.accent,
+        if (customMessage != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            customMessage,
+            style: AppTypography.bodySmall.copyWith(
+              color: colors.text.destructive,
+            ),
+          ),
+        ],
+        const SizedBox(height: AppSpacing.xxs),
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.md,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppIcon(AppIcons.book, size: 20, color: colors.icon.accent),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                "If the endpoint is configured wrong, your wallet won't be able "
+                'to sync with the Zcash blockchain.',
+                style: AppTypography.bodyMediumStrong.copyWith(
+                  color: colors.text.accent,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'The wallet will show the balance from the last time it was '
+                "successfully connected. It won't show any ZEC you recently "
+                'received.',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          'The wallet will show the balance from the last time it was '
-          "successfully connected. It won't show any ZEC you recently "
-          'received.',
-          style: AppTypography.bodyMedium.copyWith(
-            color: colors.text.secondary,
+        const SizedBox(height: AppSpacing.xxs),
+        Center(
+          child: AppButton(
+            key: const ValueKey('mobile_endpoint_update'),
+            minWidth: 226,
+            onPressed: _canUpdate(current) ? _submit : null,
+            child: Text(_isSubmitting ? 'Updating...' : 'Customise endpoint'),
           ),
         ),
       ],
@@ -402,6 +489,7 @@ class _ModeTab extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.alignment = Alignment.center,
     super.key,
   });
 
@@ -409,11 +497,14 @@ class _ModeTab extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final Alignment alignment;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final color = selected ? colors.text.accent : colors.text.muted;
+    final color = selected
+        ? colors.text.accent
+        : colors.text.accent.withValues(alpha: 0.5);
     return Semantics(
       button: true,
       selected: selected,
@@ -421,25 +512,92 @@ class _ModeTab extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: SizedBox(
-          height: 44,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppIcon(iconName, size: AppIconSize.medium, color: color),
-              const SizedBox(width: AppSpacing.xxs),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelMedium.copyWith(color: color),
-                ),
+        child: Align(
+          alignment: alignment,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xxs,
+              vertical: 2,
+            ),
+            child: SizedBox(
+              height: 28,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppIcon(iconName, size: AppIconSize.medium, color: color),
+                  const SizedBox(width: AppSpacing.xxs),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          (selected
+                                  ? AppTypography.bodyMediumStrong
+                                  : AppTypography.bodyMedium)
+                              .copyWith(color: color),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _MobileCurrentEndpointText extends StatelessWidget {
+  const _MobileCurrentEndpointText({
+    required this.current,
+    required this.latencyState,
+  });
+
+  final RpcEndpointConfig current;
+  final RpcEndpointLatencyState latencyState;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final preset = findRpcEndpointPresetByUrl(
+      current.normalizedLightwalletdUrl,
+      networkName: current.networkName,
+    );
+    final latency = latencyState.sampleForUrl(
+      current.normalizedLightwalletdUrl,
+    );
+    final suffix = [
+      if (latency != null) latency.label,
+      if (preset?.isDefault ?? false) '(Default)',
+    ].join(' ');
+
+    return Text.rich(
+      TextSpan(
+        text: 'Current: ',
+        style: AppTypography.labelMedium.copyWith(
+          fontWeight: FontWeight.w500,
+          color: colors.text.primary,
+        ),
+        children: [
+          TextSpan(
+            text: current.hostPort,
+            style: AppTypography.labelMedium.copyWith(
+              fontWeight: FontWeight.w400,
+              color: colors.text.accent,
+            ),
+          ),
+          if (suffix.isNotEmpty)
+            TextSpan(
+              text: ' $suffix',
+              style: AppTypography.labelMedium.copyWith(
+                fontWeight: FontWeight.w500,
+                color: colors.text.primary,
+              ),
+            ),
+        ],
+      ),
+      textAlign: TextAlign.center,
     );
   }
 }
@@ -462,6 +620,14 @@ class _PresetCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final titleStyle = AppTypography.labelMedium.copyWith(
+      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+      color: colors.text.accent,
+    );
+    final detailStyle = AppTypography.labelMedium.copyWith(
+      fontWeight: FontWeight.w400,
+      color: selected ? colors.text.accent : colors.text.secondary,
+    );
     return Semantics(
       button: true,
       selected: selected,
@@ -471,41 +637,63 @@ class _PresetCard extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
-          height: 60,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          constraints: const BoxConstraints(minHeight: 64),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xs,
+            AppSpacing.xxs,
+            AppSpacing.s,
+            AppSpacing.xxs,
+          ),
           decoration: BoxDecoration(
             color: colors.background.ground,
             borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: Border.all(
-              color: selected ? colors.border.strong : colors.border.subtle,
-              width: selected ? 1.5 : 1,
-            ),
+            border: selected
+                ? Border.all(color: colors.border.strong, width: 2)
+                : null,
           ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              AppIcon(AppIcons.endpoint, size: 20, color: colors.icon.accent),
-              const SizedBox(width: AppSpacing.s),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      preset.hostPort,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: colors.text.accent,
-                      ),
+              SizedBox(
+                width: 32,
+                height: 32,
+                child: Center(
+                  child: Opacity(
+                    opacity: selected ? 1 : 0.5,
+                    child: AppIcon(
+                      AppIcons.endpoint,
+                      size: 20,
+                      color: colors.icon.accent,
                     ),
-                    if (latencyLabel != null)
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.xs,
+                    vertical: AppSpacing.xxs,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        latencyLabel!,
+                        preset.hostPort,
                         overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelMedium.copyWith(
-                          color: colors.text.secondary,
-                        ),
+                        style: titleStyle,
                       ),
-                  ],
+                      if (latencyLabel != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          latencyLabel!,
+                          overflow: TextOverflow.ellipsis,
+                          style: detailStyle,
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
