@@ -13,6 +13,9 @@ class MobileAccountAvatar extends StatelessWidget {
     required this.size,
     this.isHardware = false,
     this.badgeRingColor,
+    this.badgeBorderWidth = 2,
+    this.badgeRight = -4,
+    this.badgeBottom = -2,
     super.key,
   });
 
@@ -23,6 +26,10 @@ class MobileAccountAvatar extends StatelessWidget {
   /// Ring color around the badge — pass the surface the avatar sits on.
   /// Defaults to the card/sheet ground surface.
   final Color? badgeRingColor;
+
+  final double badgeBorderWidth;
+  final double badgeRight;
+  final double badgeBottom;
 
   @override
   Widget build(BuildContext context) {
@@ -36,8 +43,8 @@ class MobileAccountAvatar extends StatelessWidget {
           AppProfilePicture(profilePictureId: profilePictureId, size: size),
           if (isHardware)
             Positioned(
-              right: -4,
-              bottom: -2,
+              right: badgeRight,
+              bottom: badgeBottom,
               child: Container(
                 width: 20,
                 height: 20,
@@ -46,7 +53,7 @@ class MobileAccountAvatar extends StatelessWidget {
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
                     color: badgeRingColor ?? colors.background.ground,
-                    width: 2,
+                    width: badgeBorderWidth,
                   ),
                 ),
                 child: Center(
