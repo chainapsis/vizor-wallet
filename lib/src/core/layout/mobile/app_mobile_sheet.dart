@@ -230,8 +230,8 @@ class MobileModalScaffold extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(
-                height: 26,
+              ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 26),
                 child: Padding(
                   // Clear the absolute 32px close (+ an 8px gap) so a long title
                   // ellipsizes instead of sliding under it.

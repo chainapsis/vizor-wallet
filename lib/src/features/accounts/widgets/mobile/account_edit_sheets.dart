@@ -321,6 +321,7 @@ class _ProfilePictureSheetState extends State<_ProfilePictureSheet> {
               AppButton(
                 key: const ValueKey('mobile_account_pfp_update'),
                 expand: true,
+                constrainContent: true,
                 onPressed: () => Navigator.of(context).pop(_selected),
                 child: const Text('Update picture'),
               ),
@@ -345,6 +346,9 @@ class _ProfilePictureGrid extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelected;
 
+  static const _maxColumns = 5;
+  static const _minGap = AppSpacing.xs;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -352,14 +356,21 @@ class _ProfilePictureGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final gridWidth = constraints.maxWidth;
-        final rows = <Widget>[];
-        for (var start = 0; start < kProfilePictureOptions.length; start += 5) {
-          final options = kProfilePictureOptions.skip(start).take(5).toList();
-          rows.add(
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        final columns = ((gridWidth + _minGap) / (itemSize.dimension + _minGap))
+            .floor()
+            .clamp(1, _maxColumns)
+            .toInt();
+        final gap = columns <= 1
+            ? 0.0
+            : (gridWidth - columns * itemSize.dimension) / (columns - 1);
+        return Center(
+          child: SizedBox(
+            width: gridWidth,
+            child: Wrap(
+              spacing: gap,
+              runSpacing: AppSpacing.sm,
               children: [
-                for (final option in options)
+                for (final option in kProfilePictureOptions)
                   SizedBox(
                     width: itemSize.dimension,
                     height: itemSize.dimension,
@@ -413,15 +424,6 @@ class _ProfilePictureGrid extends StatelessWidget {
                   ),
               ],
             ),
-          );
-          if (start + 5 < kProfilePictureOptions.length) {
-            rows.add(const SizedBox(height: AppSpacing.sm));
-          }
-        }
-        return Center(
-          child: SizedBox(
-            width: gridWidth,
-            child: Column(mainAxisSize: MainAxisSize.min, children: rows),
           ),
         );
       },

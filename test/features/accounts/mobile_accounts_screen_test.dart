@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
+import 'package:zcash_wallet/src/features/accounts/widgets/mobile/account_edit_sheets.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
@@ -61,6 +62,21 @@ Widget _app(AccountState accounts) {
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+    ),
+  );
+}
+
+Widget _profilePictureSheetHarness() {
+  return MaterialApp(
+    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+    home: Builder(
+      builder: (context) => GestureDetector(
+        onTap: () => showProfilePictureSheet(
+          context,
+          selectedId: kDefaultProfilePictureId,
+        ),
+        child: const Text('open pfp'),
+      ),
     ),
   );
 }
@@ -313,6 +329,45 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_account_edit_save')));
     await tester.pump();
     expect(find.text('Account label'), findsOneWidget);
+  });
+
+  testWidgets('profile picture sheet wraps the grid on narrow phones', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(320, 852)
+      ..devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_profilePictureSheetHarness());
+    await tester.tap(find.text('open pfp'));
+    await tester.pumpAndSettle();
+
+    final firstRowTop = tester
+        .getTopLeft(
+          find.byKey(const ValueKey('mobile_account_pfp_option_pfp-01')),
+        )
+        .dy;
+    for (final suffix in ['02', '03', '04']) {
+      expect(
+        tester
+            .getTopLeft(
+              find.byKey(ValueKey('mobile_account_pfp_option_pfp-$suffix')),
+            )
+            .dy,
+        moreOrLessEquals(firstRowTop),
+      );
+    }
+    expect(
+      tester
+          .getTopLeft(
+            find.byKey(const ValueKey('mobile_account_pfp_option_pfp-05')),
+          )
+          .dy,
+      moreOrLessEquals(firstRowTop + 72),
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('add account routes to the add-account flow', (tester) async {
