@@ -63,7 +63,7 @@ bool get isDesktopLayoutPlatform {
 /// to imply [AppLayoutMode.large]; below it it's "portrait enough" to
 /// imply [AppLayoutMode.small].
 const double _largeRatioThreshold = (1080.0 / 720.0 + (50.0 * 1.3) / 133.0) / 2;
-const double _macOSWindowedTitlebarInset = 32.0;
+const double _windowsContentTopInset = 0.0;
 
 /// Initialize the OS window for desktop at startup.
 ///
@@ -211,7 +211,9 @@ Future<void> _applyWindowsClientAreaLayout(
   await DesktopWindowBootstrap.applyWindowsClientAreaLayout(
     windowSize: mode.defaultSize,
     minimumWindowSize: mode.minimumSize,
-    contentTopInset: _macOSWindowedTitlebarInset,
+    // Windows targets the redesigned content area directly. Its native frame is
+    // added by the plugin after the Flutter client-area size is selected.
+    contentTopInset: _windowsContentTopInset,
     resize: resize,
     center: center,
   );
