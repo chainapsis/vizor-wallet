@@ -132,6 +132,40 @@ class WidgetbookApp extends StatelessWidget {
               ],
             ),
             WidgetbookFolder(
+              name: 'Home',
+              children: [
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Default',
+                      builder: buildMobileHomeDefaultUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No activity',
+                      builder: buildMobileHomeNoActivityUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No balance',
+                      builder: buildMobileHomeNoBalanceUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No balance keystone',
+                      builder: buildMobileHomeNoBalanceKeystoneUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Importing',
+                      builder: buildMobileHomeImportingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Accounts modal',
+                      builder: buildMobileHomeAccountsModalUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
               name: 'Accounts',
               children: [
                 WidgetbookComponent(
@@ -160,6 +194,27 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Many accounts',
                       builder: buildAccountsManyUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Screen',
+                      builder: buildMobileAccountsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Edit account',
+                      builder: buildMobileAccountsEditAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Remove account',
+                      builder: buildMobileAccountsRemoveAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Many accounts',
+                      builder: buildMobileAccountsManyUseCase,
                     ),
                   ],
                 ),
