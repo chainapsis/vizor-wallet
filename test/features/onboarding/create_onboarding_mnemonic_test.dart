@@ -1,7 +1,7 @@
 import 'dart:ui' show Size;
 
 import 'package:flutter/material.dart' show MaterialApp;
-import 'package:flutter/widgets.dart' show Widget;
+import 'package:flutter/widgets.dart' show Text, ValueKey, Widget;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -32,6 +32,35 @@ void main() {
     expect(find.text('alpha'), findsOneWidget);
     expect(find.text('xray'), findsOneWidget);
     expect(container.read(createOnboardingMnemonicProvider), _mnemonic);
+  });
+
+  testWidgets('secret passphrase chips expand for long mnemonic words', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final container = _providerContainer();
+    addTearDown(container.dispose);
+    container
+        .read(createOnboardingMnemonicProvider.notifier)
+        .setMnemonic(_longWordMnemonic);
+    container
+        .read(onboardingSecretPassphraseRevealedProvider.notifier)
+        .setRevealed(true);
+
+    await tester.pumpWidget(
+      _harness(container, const SecretPassphraseScreen()),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('acknowledge'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('seed_phrase_word_1'))).width,
+      greaterThan(90),
+    );
+
+    final longWord = tester.widget<Text>(find.text('acknowledge'));
+    expect(longWord.overflow, isNull);
   });
 
   testWidgets('intro clears pending create mnemonic', (tester) async {
@@ -97,3 +126,8 @@ const _mnemonic =
     'alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima '
     'mike november oscar papa quebec romeo sierra tango uniform victor whiskey '
     'xray';
+
+const _longWordMnemonic =
+    'acknowledge bravo charlie delta echo foxtrot golf hotel india juliet kilo '
+    'lima mike november oscar papa quebec romeo sierra tango uniform victor '
+    'whiskey xray';

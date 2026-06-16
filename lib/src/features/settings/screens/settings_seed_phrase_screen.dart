@@ -580,7 +580,9 @@ class _SeedWordsCard extends StatelessWidget {
                   children: [
                     for (var i = 0; i < words.length; i++)
                       AppChip(
-                        width: 90,
+                        key: ValueKey('settings_seed_phrase_word_${i + 1}'),
+                        minWidth: 90,
+                        labelOverflow: TextOverflow.visible,
                         leadingText: '${i + 1}'.padLeft(2, '0'),
                         label: words[i],
                       ),

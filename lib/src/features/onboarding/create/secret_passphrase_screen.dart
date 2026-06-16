@@ -445,36 +445,41 @@ class _SeedPhraseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final height = revealed ? 340.0 : 258.0;
+    final card = DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.background.homeCard,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+      ),
+      child: switch ((isLoading, error != null, mnemonic)) {
+        (true, _, _) => const Center(child: CircularProgressIndicator()),
+        (_, true, _) => _ErrorState(message: error!),
+        (_, _, String value) =>
+          revealed
+              ? _SeedPhraseRevealContent(
+                  mnemonic: value,
+                  copied: copied,
+                  onCopyPressed: onCopyPressed,
+                )
+              : const Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.base,
+                  ),
+                  child: Center(child: _HiddenWarning()),
+                ),
+        _ => const SizedBox.shrink(),
+      },
+    );
 
     return SizedBox(
       width: double.infinity,
-      height: height,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colors.background.homeCard,
-          borderRadius: BorderRadius.circular(AppRadii.large),
-        ),
-        child: switch ((isLoading, error != null, mnemonic)) {
-          (true, _, _) => const Center(child: CircularProgressIndicator()),
-          (_, true, _) => _ErrorState(message: error!),
-          (_, _, String value) =>
-            revealed
-                ? _SeedPhraseRevealContent(
-                    mnemonic: value,
-                    copied: copied,
-                    onCopyPressed: onCopyPressed,
-                  )
-                : const Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: AppSpacing.md,
-                      vertical: AppSpacing.base,
-                    ),
-                    child: Center(child: _HiddenWarning()),
-                  ),
-          _ => const SizedBox.shrink(),
-        },
-      ),
+      height: revealed ? null : 258,
+      child: revealed
+          ? ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 340),
+              child: card,
+            )
+          : card,
     );
   }
 }
@@ -549,14 +554,12 @@ class _SeedPhraseRevealContent extends StatelessWidget {
     final textColor = colors.text.homeCard;
     return Stack(
       children: [
-        Positioned.fill(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.base,
-            ),
-            child: _SeedGrid(mnemonic: mnemonic, textColor: textColor),
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.base,
           ),
+          child: _SeedGrid(mnemonic: mnemonic, textColor: textColor),
         ),
         Positioned(
           top: AppSpacing.s,
@@ -578,6 +581,7 @@ class _SeedGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final words = mnemonic.split(' ');
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
@@ -622,35 +626,31 @@ class _SeedPhraseChip extends StatelessWidget {
   final String word;
   final Color textColor;
 
-  static const double _width = 90;
+  static const double _minWidth = 90;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: _width,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 25),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xxs),
-          child: Row(
-            children: [
-              Text(
-                index.toString().padLeft(2, '0'),
-                style: AppTypography.codeSmall.copyWith(
-                  color: textColor.withValues(alpha: 0.5),
-                ),
+    return ConstrainedBox(
+      key: ValueKey('seed_phrase_word_$index'),
+      constraints: const BoxConstraints(minWidth: _minWidth, minHeight: 25),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xxs),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              index.toString().padLeft(2, '0'),
+              style: AppTypography.codeSmall.copyWith(
+                color: textColor.withValues(alpha: 0.5),
               ),
-              const SizedBox(width: AppSpacing.xxs),
-              Flexible(
-                child: Text(
-                  word,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelLarge.copyWith(color: textColor),
-                ),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: AppSpacing.xxs),
+            Text(
+              word,
+              maxLines: 1,
+              style: AppTypography.labelLarge.copyWith(color: textColor),
+            ),
+          ],
         ),
       ),
     );
