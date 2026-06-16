@@ -25,7 +25,7 @@ Widget buildSendEmptyUseCase(BuildContext context) {
   return const _SendPageFrame(child: SendComposeView());
 }
 
-/// Shielded → Shielded, amount entered, memo expanded, Review enabled.
+/// Shielded recipient, amount entered, memo expanded, Review enabled.
 Widget buildSendShieldedFilledUseCase(BuildContext context) {
   return const _SendPageFrame(
     child: SendComposeView(
@@ -39,8 +39,8 @@ Widget buildSendShieldedFilledUseCase(BuildContext context) {
   );
 }
 
-/// Shielded → Shielded with a memo over the 512-byte limit: destructive
-/// tone, "Message is too long", Review disabled.
+/// Shielded recipient with a memo over the 512-byte limit: destructive tone,
+/// "Message is too long", Review disabled.
 Widget buildSendMemoTooLongUseCase(BuildContext context) {
   return const _SendPageFrame(
     child: SendComposeView(
@@ -56,8 +56,7 @@ Widget buildSendMemoTooLongUseCase(BuildContext context) {
   );
 }
 
-/// Transparent recipient: grey "Shielded → Transparent" route, memo hidden,
-/// Review enabled.
+/// Transparent recipient: memo hidden, Review enabled.
 Widget buildSendTransparentUseCase(BuildContext context) {
   return const _SendPageFrame(
     child: SendComposeView(
@@ -71,14 +70,13 @@ Widget buildSendTransparentUseCase(BuildContext context) {
   );
 }
 
-/// A contact was picked: the "Send to" link reflects the contact name
-/// ("Mike ›") instead of "Contacts ›".
+/// A contact-backed address is filled, but the picker affordance stays as
+/// `Contacts ›`.
 Widget buildSendContactSelectedUseCase(BuildContext context) {
   return const _SendPageFrame(
     child: SendComposeView(
       recipientText: _sampleUnifiedAddress,
       route: SendPoolRoute.shieldedToShielded,
-      contactName: 'Mike',
       amountText: '125.12',
       amountFocused: true,
       memoMode: SendMemoMode.expanded,

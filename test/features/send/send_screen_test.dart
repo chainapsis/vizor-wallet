@@ -160,10 +160,11 @@ void main() {
       findsNothing,
     );
     expect(_fieldText(tester, 'send_address_field'), _shieldedAddress);
-    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('Alice'), findsNothing);
+    expect(find.text('Contacts'), findsOneWidget);
   });
 
-  testWidgets('detects the contact name for prefilled and cleared addresses', (
+  testWidgets('keeps contacts label for prefilled and cleared addresses', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -188,13 +189,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // The Send ZEC prefill path resolves the contact label on the contacts
-    // button without going through the picker.
     expect(_fieldText(tester, 'send_address_field'), _shieldedAddress);
-    expect(find.text('Alice'), findsOneWidget);
-    expect(find.text('Contacts'), findsNothing);
+    expect(find.text('Alice'), findsNothing);
+    expect(find.text('Contacts'), findsOneWidget);
 
-    // Clearing the address falls back to the plain picker affordance.
     await tester.enterText(
       find.byKey(const ValueKey('send_address_field')),
       '',
@@ -263,7 +261,8 @@ void main() {
     await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
     await tester.pumpAndSettle();
 
-    expect(find.text('Shielded → Shielded'), findsOneWidget);
+    expect(find.text('Shielded → Shielded'), findsNothing);
+    expect(find.text('Shielded → Transparent'), findsNothing);
     expect(find.text('Add a memo'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('send_add_memo_card'))),
@@ -293,7 +292,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Shielded → Transparent'), findsOneWidget);
+    expect(find.text('Shielded → Shielded'), findsNothing);
+    expect(find.text('Shielded → Transparent'), findsNothing);
     expect(find.text('Transparent memo'), findsNothing);
     expect(find.text('Add a memo'), findsNothing);
     expect(find.text('Encrypted, for shielded addresses only.'), findsNothing);
@@ -321,7 +321,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
 
-    expect(find.text('Shielded → Transparent'), findsOneWidget);
+    expect(find.text('Shielded → Shielded'), findsNothing);
+    expect(find.text('Shielded → Transparent'), findsNothing);
     expect(find.text('TEX memo'), findsNothing);
     expect(find.text('Add a message'), findsNothing);
     expect(find.text('Encrypted, for Shielded Addresses only.'), findsNothing);
@@ -452,7 +453,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('send_cta_warning')), findsOneWidget);
-    expect(find.text('Shielded → Transparent'), findsOneWidget);
+    expect(find.text('Shielded → Shielded'), findsNothing);
+    expect(find.text('Shielded → Transparent'), findsNothing);
     expect(rustApi.proposeSendCalls, 0);
   });
 }
