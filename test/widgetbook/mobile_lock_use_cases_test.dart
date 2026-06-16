@@ -123,6 +123,33 @@ void main() {
     expect(find.byType(PasscodeNumpad), findsNothing);
   });
 
+  testWidgets('passcode numpad fits a narrow padded phone width', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Center(
+            child: SizedBox(
+              width: 288,
+              child: PasscodeNumpad(
+                onDigit: (_) {},
+                onBackspace: () {},
+                canDelete: true,
+                onHelp: () {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(tester.getSize(find.byType(PasscodeNumpad)).width, 288);
+  });
+
   testWidgets('keeps desktop and mobile auth backgrounds separate', (
     tester,
   ) async {
