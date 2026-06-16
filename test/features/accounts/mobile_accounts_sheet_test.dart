@@ -184,6 +184,6 @@ void main() {
 
     expect(service.requested, ['account-2']);
     expect(copied, ['u1otheraddress']);
-    expect(find.text('Shielded address copied'), findsOneWidget);
+    expect(find.text('Address copied'), findsOneWidget);
   });
 }
