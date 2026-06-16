@@ -7,22 +7,26 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/navigation/mobile_tab_history.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/sync_provider.dart';
+import '../../../address_book/contact_label_generator.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../../../address_scan/domain/address_scan_payload.dart';
-import '../../../address_scan/widgets/mobile_address_scan_view.dart';
+import '../../../address_scan/widgets/mobile_address_scan_card.dart';
+import '../../../address_scan/widgets/mobile_address_scan_view.dart'
+    show MobileScanOutcome;
 import '../../models/swap_address_book_helpers.dart';
 import '../../models/swap_models.dart';
 import '../../providers/swap_state_provider.dart';
-import '../../widgets/swap_address_edit_modal.dart';
-import '../../widgets/swap_asset_selector_modal.dart';
+import '../../widgets/mobile/mobile_swap_address_edit_modal.dart';
+import '../../widgets/mobile/mobile_swap_asset_selector_modal.dart';
 import '../../widgets/swap_near_intents_attribution.dart';
 import '../../widgets/mobile/mobile_swap_composer_ticket.dart';
 import '../../widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
@@ -119,11 +123,34 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
           builder: (context, ref, _) {
             final swapState = ref.watch(swapStateProvider);
             final swapNotifier = ref.read(swapStateProvider.notifier);
-            // The address scanner is a full-bleed camera surface (Figma
-            // `Address QR` 4697:106096) — the same chrome as the send
-            // recipient scan — so it bypasses the bottom-anchored card.
-            if (surface == _SwapModalSurface.addressScanner) {
-              return MobileAddressScanView(
+            final surfaceContent = switch (surface) {
+              _SwapModalSurface.assetSelector => MobileSwapAssetSelectorModal(
+                assets: swapState.supportedExternalAssets,
+                selected: swapState.externalAsset,
+                onSelected: (asset) {
+                  swapNotifier.selectExternalAsset(asset);
+                  _closeSwapModal();
+                },
+                onClose: _closeSwapModal,
+              ),
+              _SwapModalSurface.addressEditor => MobileSwapAddressEditModal(
+                state: swapState,
+                onSubmitted: (value, remember) {
+                  if (remember) {
+                    unawaited(_rememberSwapAddress(value, swapState));
+                  }
+                  swapNotifier.updateDestination(value);
+                  _closeSwapModal();
+                },
+                onScan: () => _openModal(_SwapModalSurface.addressScanner),
+                onOpenContacts: () =>
+                    _openModal(_SwapModalSurface.contactPicker),
+                onCancel: _closeSwapModal,
+              ),
+              // The address scanner is a bottom-sheet camera card (Figma
+              // `Address QR` 4697:106096); it shares the same MobileModalCard
+              // surface as the other swap modals.
+              _SwapModalSurface.addressScanner => MobileAddressScanCard(
                 resolve: (raw) async {
                   final address = normalizeAddressScanPayload(raw);
                   if (address == null || address.isEmpty) {
@@ -138,40 +165,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                   _closeSwapModal();
                 },
                 onClose: _closeSwapModal,
-              );
-            }
-            final surfaceContent = switch (surface) {
-              _SwapModalSurface.assetSelector => SwapAssetSelectorModal(
-                assets: swapState.supportedExternalAssets,
-                selected: swapState.externalAsset,
-                onSelected: (asset) {
-                  swapNotifier.selectExternalAsset(asset);
-                  _closeSwapModal();
-                },
               ),
-              _SwapModalSurface.addressEditor => SwapAddressEditModal(
-                state: swapState,
-                onSubmitted: (value, remember, nickname, profilePictureId) {
-                  if (remember) {
-                    unawaited(
-                      _rememberSwapAddress(
-                        value,
-                        swapState,
-                        nickname,
-                        profilePictureId,
-                      ),
-                    );
-                  }
-                  swapNotifier.updateDestination(value);
-                  _closeSwapModal();
-                },
-                onScan: () => _openModal(_SwapModalSurface.addressScanner),
-                onOpenContacts: () =>
-                    _openModal(_SwapModalSurface.contactPicker),
-                onCancel: _closeSwapModal,
-              ),
-              // Handled full-bleed above, before this switch.
-              _SwapModalSurface.addressScanner => const SizedBox.shrink(),
               _SwapModalSurface.contactPicker => AddressBookContactPickerModal(
                 title: swapContactPickerTitle(swapState),
                 networks: swapContactPickerNetworks(swapState),
@@ -209,22 +203,13 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     );
   }
 
-  /// Same convenience save as the desktop swap screen.
-  Future<void> _rememberSwapAddress(
-    String value,
-    SwapState swapState,
-    String? nickname,
-    String profilePictureId,
-  ) async {
+  /// Mobile convenience save: remembered swap addresses are saved hands-free
+  /// with an auto-assigned persona label and a random avatar.
+  Future<void> _rememberSwapAddress(String value, SwapState swapState) async {
     final address = value.trim();
     if (address.isEmpty) return;
     final network = addressBookNetworkForSwapDestination(swapState);
     if (network == null) return;
-
-    final trimmedNickname = nickname?.trim() ?? '';
-    final label = trimmedNickname.isEmpty
-        ? swapAddressBookLabel(swapState)
-        : trimmedNickname;
 
     try {
       final current =
@@ -245,13 +230,19 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
         return;
       }
 
+      // Remembered mobile swap addresses use a deduped persona label and a
+      // random avatar, without opening the full desktop nickname/avatar form.
       await ref
           .read(addressBookProvider.notifier)
           .addContact(
-            label: label,
+            label: generateContactLabel(
+              existingLabels: [
+                for (final contact in current.contacts) contact.label,
+              ],
+            ),
             network: network,
             address: address,
-            profilePictureId: profilePictureId,
+            profilePictureId: randomContactProfilePictureId(),
           );
     } catch (_) {
       // Saving a convenience contact must not block the swap form update.
@@ -297,15 +288,32 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     final quoteError =
         swapState.quoteAmountPrecisionError ?? swapState.quoteError;
 
+    // While the amount number-pad is open, the leading nav button becomes a
+    // close (X) that dismisses the keyboard instead of a back chevron.
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+
     return SafeArea(
       bottom: false,
       child: Stack(
         children: [
           Column(
             children: [
-              const MobileTopNav.back(
+              MobileTopNav.back(
                 title: 'Swap',
-                trailing: SwapNearIntentsAttribution(),
+                // With the number-pad open the leading button is a close (X)
+                // that dismisses the keyboard; otherwise it's a back chevron
+                // that returns to the tab the user came from (the Swap tab is
+                // an indexedStack root with no navigator history, Home on a
+                // cold start). Figma 4686:101421 / filled frames.
+                backIcon: keyboardOpen
+                    ? AppIcons.cross
+                    : AppIcons.chevronBackward,
+                onBack: keyboardOpen
+                    ? () => FocusManager.instance.primaryFocus?.unfocus()
+                    : () => context.go(
+                        ref.read(mobilePreviousTabPathProvider) ?? '/home',
+                      ),
+                trailing: const SwapNearIntentsAttribution(alignEnd: true),
               ),
               Expanded(
                 child: SingleChildScrollView(
@@ -343,8 +351,11 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                           AppButton(
                             key: const ValueKey('swap_settings_button'),
                             variant: AppButtonVariant.secondary,
-                            onPressed: () =>
-                                _openModal(_SwapModalSurface.slippageSettings),
+                            onPressed: swapState.quoteLoading
+                                ? null
+                                : () => _openModal(
+                                    _SwapModalSurface.slippageSettings,
+                                  ),
                             trailing: const AppIcon(AppIcons.cog),
                             child: Text(
                               formatSwapSlippage(swapState.slippageBps),
@@ -448,11 +459,41 @@ class _MobileSwapReviewButton extends StatelessWidget {
         vertical: AppSpacing.xs,
       ),
       onPressed: onPressed,
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        textAlign: TextAlign.center,
+      child: _MobileSwapReviewButtonLabel(
+        label: label,
+        loading: state.quoteLoading && !needsDestinationAddress,
+      ),
+    );
+  }
+}
+
+class _MobileSwapReviewButtonLabel extends StatelessWidget {
+  const _MobileSwapReviewButtonLabel({
+    required this.label,
+    required this.loading,
+  });
+
+  final String label;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+          if (loading) ...[
+            const SizedBox(width: 4),
+            const AppIcon(AppIcons.loader),
+          ],
+        ],
       ),
     );
   }

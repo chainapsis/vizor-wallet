@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show Scaffold;
+import 'package:flutter/material.dart' show Icon, Icons, Scaffold;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +10,7 @@ import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/platform/screenshot_observer.dart';
+import '../../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -23,6 +24,8 @@ import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
+import '../../../../services/biometric_unlock.dart';
+import '../../../onboarding/mobile/forgot_passcode_sheet.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
@@ -35,11 +38,22 @@ enum _SeedStage { confirmAccess, reveal }
 /// re-confirmation gates the reveal, the mnemonic stays only in screen
 /// state, and the wallet birthday loads best-effort alongside it.
 class MobileSeedPhraseScreen extends ConsumerStatefulWidget {
-  const MobileSeedPhraseScreen({this.screenshotStream, super.key});
+  const MobileSeedPhraseScreen({
+    this.screenshotStream,
+    this.privacyOverlayController,
+    this.loadBirthday = true,
+    super.key,
+  });
 
   /// Test seam — production listens to the platform screenshot events.
   @visibleForTesting
   final Stream<void>? screenshotStream;
+
+  @visibleForTesting
+  final SensitivePrivacyOverlayController? privacyOverlayController;
+
+  @visibleForTesting
+  final bool loadBirthday;
 
   @override
   ConsumerState<MobileSeedPhraseScreen> createState() =>
@@ -88,10 +102,21 @@ class _MobileSeedPhraseScreenState
     if (_checking || _stage != _SeedStage.confirmAccess) return;
     final biometric = await ref.read(biometricUnlockProvider.future);
     if (!mounted || !biometric.usable) return;
+    final wasEnabled = biometric.enabled;
     final passcode = await ref
         .read(biometricUnlockProvider.notifier)
         .readPasscode(reason: 'Confirm access to your secret passphrase');
-    if (!mounted || passcode == null) return;
+    if (!mounted) return;
+    if (passcode == null) {
+      final now = ref.read(biometricUnlockProvider).value;
+      if (wasEnabled && now != null && !now.enabled) {
+        setState(() {
+          _entry = '';
+          _gateError = 'Biometrics changed. Enter your passcode.';
+        });
+      }
+      return;
+    }
     setState(() {
       _entry = passcode;
       _gateError = null;
@@ -143,6 +168,38 @@ class _MobileSeedPhraseScreenState
     }
   }
 
+  Future<void> _showForgotPasscodeSheet() async {
+    final confirmed = await showAppMobileSheet<bool>(
+      context: context,
+      builder: (sheetContext) => const ForgotPasscodeSheet(),
+    );
+    if (confirmed != true || !mounted) return;
+    final lastWarningConfirmed = await showAppMobileSheet<bool>(
+      context: context,
+      builder: (sheetContext) => const ForgotPasscodeLastWarningSheet(),
+    );
+    if (lastWarningConfirmed != true || !mounted) return;
+    await _resetWallet();
+  }
+
+  Future<void> _resetWallet() async {
+    setState(() => _checking = true);
+    final router = GoRouter.of(context);
+    try {
+      await resetWalletForForgottenPasscode(ref);
+    } catch (e, st) {
+      log('MobileSeedPhrase._resetWallet: ERROR: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _checking = false;
+        _entry = '';
+        _gateError = "Couldn't reset the app. Please try again.";
+      });
+      return;
+    }
+    router.go('/welcome');
+  }
+
   // ── Reveal ─────────────────────────────────────────────────────────
 
   Future<void> _reveal() async {
@@ -169,7 +226,7 @@ class _MobileSeedPhraseScreenState
       _checking = false;
       _birthdayLoading = mnemonic != null;
     });
-    if (mnemonic != null && account != null) {
+    if (mnemonic != null && account != null && widget.loadBirthday) {
       unawaited(_loadBirthday(account.uuid));
     }
   }
@@ -262,22 +319,27 @@ class _MobileSeedPhraseScreenState
     return Scaffold(
       backgroundColor: colors.background.window,
       body: AppToastHost(
-        child: SafeArea(
-          child: Column(
-            children: [
-              MobileTopNav.back(
-                title: _stage == _SeedStage.confirmAccess
-                    ? 'Confirm Access'
-                    : 'Secret Passphrase',
-                onBack: () => context.pop(),
-              ),
-              Expanded(
-                child: switch (_stage) {
-                  _SeedStage.confirmAccess => _buildGate(colors),
-                  _SeedStage.reveal => _buildReveal(colors),
-                },
-              ),
-            ],
+        child: SensitivePrivacyOverlay(
+          sensitiveContentVisible:
+              _stage == _SeedStage.reveal && _mnemonic != null,
+          controller: widget.privacyOverlayController,
+          child: SafeArea(
+            child: Column(
+              children: [
+                MobileTopNav.back(
+                  title: _stage == _SeedStage.confirmAccess
+                      ? ''
+                      : 'Secret Passphrase',
+                  onBack: () => context.pop(),
+                ),
+                Expanded(
+                  child: switch (_stage) {
+                    _SeedStage.confirmAccess => _buildGate(colors),
+                    _SeedStage.reveal => _buildReveal(colors),
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -285,31 +347,72 @@ class _MobileSeedPhraseScreenState
   }
 
   Widget _buildGate(AppColors colors) {
+    final biometric =
+        ref.watch(biometricUnlockProvider).value ??
+        BiometricUnlockState.initial;
+    final showBiometric = !_checking && biometric.usable;
     return Column(
       children: [
-        const SizedBox(height: AppSpacing.s),
-        Text(
-          'Enter your passcode',
-          textAlign: TextAlign.center,
-          style: AppTypography.bodyMedium.copyWith(
-            color: colors.text.secondary,
-          ),
-        ),
-        // Dots + error centred in the space above the keypad.
         Expanded(
-          child: PasscodePromptField(
-            length: kMobilePasscodeLength,
-            filled: _entry.length,
-            error: _gateError,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Enter Passcode',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.displayLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.s),
+                Text(
+                  'Confirm your access',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.primary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                SizedBox(
+                  height: kPasscodePromptDigitsHeight,
+                  child: PasscodePromptField(
+                    length: kMobilePasscodeLength,
+                    filled: _entry.length,
+                    error: _gateError,
+                    minGap: 0,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         PasscodeNumpad(
           onDigit: _onDigit,
           onBackspace: _onBackspace,
           canDelete: _entry.isNotEmpty,
+          onHelp: _checking ? null : _showForgotPasscodeSheet,
           enabled: !_checking,
         ),
-        const SizedBox(height: AppSpacing.md),
+        if (showBiometric) ...[
+          const SizedBox(height: AppSpacing.md),
+          SizedBox(
+            key: const ValueKey('mobile_seed_phrase_biometric_footer'),
+            height: 36,
+            child: Center(
+              child: PasscodeBiometricButton(
+                label: biometric.availability.kind == BiometricKind.face
+                    ? 'Sign in with Face ID'
+                    : 'Sign in with biometrics',
+                icon: biometric.availability.kind == BiometricKind.face
+                    ? const Center(child: AppIcon(AppIcons.faceId, size: 13.5))
+                    : const Icon(Icons.fingerprint, size: 16),
+                onPressed: () => unawaited(_tryBiometricGate()),
+              ),
+            ),
+          ),
+        ],
+        if (!showBiometric) const SizedBox(height: AppSpacing.md),
       ],
     );
   }
@@ -335,33 +438,53 @@ class _MobileSeedPhraseScreenState
           )
         else ...[
           MobileSurfaceCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            cornerRadius: AppRadii.xLarge,
+            padding: EdgeInsets.zero,
+            child: Stack(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.sm,
+                    AppSpacing.base,
+                    AppSpacing.sm,
+                    AppSpacing.base,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
                         'Secret Passphrase',
-                        style: AppTypography.headlineSmall.copyWith(
+                        style: AppTypography.bodyMediumStrong.copyWith(
+                          fontWeight: FontWeight.w600,
                           color: colors.text.accent,
                         ),
                       ),
-                    ),
-                    _CopyChip(
-                      key: const ValueKey('mobile_seed_copy'),
-                      label: 'Copy',
-                      onTap: () => _copy(_mnemonic, 'Secret passphrase copied'),
-                    ),
-                  ],
+                      const SizedBox(height: AppSpacing.md),
+                      _LightWordGrid(words: words),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: AppSpacing.md),
-                _LightWordGrid(words: words),
+                Positioned(
+                  top: AppSpacing.s,
+                  right: AppSpacing.s,
+                  child: _CopyChip(
+                    key: const ValueKey('mobile_seed_copy'),
+                    label: 'Copy',
+                    onTap: () => _copy(_mnemonic, 'Secret passphrase copied'),
+                  ),
+                ),
               ],
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
           MobileSurfaceCard(
+            cornerRadius: AppRadii.large,
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.sm,
+              AppSpacing.base,
+              AppSpacing.sm,
+              AppSpacing.base,
+            ),
             child: Column(
               children: [
                 _BirthdayRow(
@@ -378,6 +501,7 @@ class _MobileSeedPhraseScreenState
                           'Birthday date copied',
                         ),
                 ),
+                const SizedBox(height: AppSpacing.xs),
                 _BirthdayRow(
                   label: 'Birthday block height',
                   value:
@@ -414,31 +538,35 @@ class _CopyChip extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s,
-            vertical: AppSpacing.xxs,
-          ),
-          decoration: ShapeDecoration(
-            color: colors.background.inverse,
-            shape: const StadiumBorder(),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: AppTypography.labelMedium.copyWith(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 96, minHeight: 36),
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s,
+              vertical: AppSpacing.xs,
+            ),
+            decoration: ShapeDecoration(
+              color: colors.background.inverse,
+              shape: const StadiumBorder(),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.text.inverse,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                AppIcon(
+                  AppIcons.copy,
+                  size: AppIconSize.medium,
                   color: colors.text.inverse,
                 ),
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              AppIcon(
-                AppIcons.copy,
-                size: AppIconSize.medium,
-                color: colors.text.inverse,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -446,7 +574,7 @@ class _CopyChip extends StatelessWidget {
   }
 }
 
-/// 3-column numbered word grid on the light surface card (unlike the
+/// Fixed 3-column numbered word grid on the light surface card (unlike the
 /// onboarding SeedCard's dark treatment).
 class _LightWordGrid extends StatelessWidget {
   const _LightWordGrid({required this.words});
@@ -456,41 +584,36 @@ class _LightWordGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final rows = (words.length / 3).ceil();
-    return Column(
+    return Wrap(
+      spacing: AppSpacing.xxs,
+      runSpacing: AppSpacing.xxs,
       children: [
-        for (var row = 0; row < rows; row++) ...[
-          if (row > 0) const SizedBox(height: AppSpacing.sm),
-          Row(
-            children: [
-              for (var col = 0; col < 3; col++)
-                Expanded(
-                  child: row * 3 + col < words.length
-                      ? Row(
-                          children: [
-                            Text(
-                              (row * 3 + col + 1).toString().padLeft(2, '0'),
-                              style: AppTypography.codeSmall.copyWith(
-                                color: colors.text.muted,
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.xxs),
-                            Expanded(
-                              child: Text(
-                                words[row * 3 + col],
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTypography.bodyMedium.copyWith(
-                                  color: colors.text.accent,
-                                ),
-                              ),
-                            ),
-                          ],
-                        )
-                      : const SizedBox.shrink(),
+        for (var i = 0; i < words.length; i++)
+          SizedBox(
+            width: 90,
+            height: 32,
+            child: Row(
+              children: [
+                Text(
+                  (i + 1).toString().padLeft(2, '0'),
+                  style: AppTypography.codeSmall.copyWith(
+                    color: colors.text.muted,
+                  ),
                 ),
-            ],
+                const SizedBox(width: AppSpacing.xxs),
+                Expanded(
+                  child: Text(
+                    words[i],
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelMedium.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: colors.text.accent,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
       ],
     );
   }
@@ -511,23 +634,26 @@ class _BirthdayRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
-      height: 44,
+      height: 36,
       child: Row(
         children: [
           Expanded(
             child: Text(
               label,
-              style: AppTypography.bodyMedium.copyWith(
+              style: AppTypography.labelMedium.copyWith(
+                fontWeight: FontWeight.w500,
                 color: colors.text.accent,
               ),
             ),
           ),
           Text(
             value,
-            style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
+            style: AppTypography.labelMedium.copyWith(
+              fontWeight: FontWeight.w400,
+              color: colors.text.accent,
+            ),
           ),
           if (onCopy != null) ...[
-            const SizedBox(width: AppSpacing.xs),
             Semantics(
               button: true,
               label: 'Copy $label',
@@ -536,8 +662,8 @@ class _BirthdayRow extends StatelessWidget {
                 behavior: HitTestBehavior.opaque,
                 onTap: onCopy,
                 child: SizedBox(
-                  width: 28,
-                  height: 44,
+                  width: 24,
+                  height: 36,
                   child: Center(
                     child: AppIcon(
                       AppIcons.copy,

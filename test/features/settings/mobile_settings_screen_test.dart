@@ -6,12 +6,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/theme_mode_provider.dart';
+import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -50,12 +55,25 @@ class _FakeThemeModeNotifier extends ThemeModeNotifier {
   }
 }
 
-Widget _app() {
+class _FakeBiometricNotifier extends BiometricUnlockNotifier {
+  _FakeBiometricNotifier(this.initialState);
+
+  final BiometricUnlockState initialState;
+
+  @override
+  Future<BiometricUnlockState> build() async => initialState;
+}
+
+Widget _app({BiometricUnlockState? biometric}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
       themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
+      if (biometric != null)
+        biometricUnlockProvider.overrideWith(
+          () => _FakeBiometricNotifier(biometric),
+        ),
     ],
     child: MaterialApp(
       builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
@@ -81,6 +99,24 @@ void main() {
     expect(find.text('Account'), findsOneWidget);
     expect(find.text('System'), findsOneWidget);
     expect(find.text('John'), findsOneWidget);
+    expect(find.text('Knight'), findsOneWidget);
+    final pfpRow = find.byKey(const ValueKey('mobile_settings_pfp_row'));
+    final pfp = find.descendant(
+      of: pfpRow,
+      matching: find.byType(AppProfilePicture),
+    );
+    expect(
+      tester.getTopLeft(pfp).dx,
+      lessThan(tester.getTopLeft(find.text('Knight')).dx),
+    );
+    expect(
+      _chevronIn(tester, const ValueKey('mobile_settings_seed_row')).color,
+      AppThemeData.dark.colors.icon.accent,
+    );
+    expect(
+      _chevronIn(tester, const ValueKey('mobile_settings_pfp_row')).color,
+      AppThemeData.dark.colors.icon.accent,
+    );
     expect(find.text('Theme'), findsOneWidget);
     expect(find.text('Dark'), findsOneWidget);
     // The About entry stays hidden until the legal documents are ready.
@@ -102,6 +138,54 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('System (Auto)'), findsOneWidget);
+    final modal = find.byType(MobileModalScaffold);
+    final modalTitle = find.descendant(of: modal, matching: find.text('Theme'));
+    final closeIcon = find.descendant(
+      of: modal,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.cross,
+      ),
+    );
+    final titleCenterY = tester.getCenter(modalTitle).dy;
+    final closeCenterY = tester.getCenter(closeIcon).dy;
+    expect(titleCenterY, greaterThan(closeCenterY));
+    expect(titleCenterY - closeCenterY, lessThanOrEqualTo(16));
+    expect(tester.widget<AppIcon>(closeIcon).size, 20);
+    expect(
+      _leadingIconOpacityIn(
+        tester,
+        const ValueKey('mobile_theme_option_light'),
+      ),
+      0.5,
+    );
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('mobile_theme_option_system')))
+          .height,
+      64,
+    );
+    expect(
+      tester
+              .getTopLeft(
+                find.byKey(const ValueKey('mobile_theme_option_light')),
+              )
+              .dy -
+          tester
+              .getBottomLeft(
+                find.byKey(const ValueKey('mobile_theme_option_system')),
+              )
+              .dy,
+      AppSpacing.xs,
+    );
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('mobile_theme_update'))).dy -
+          tester
+              .getBottomLeft(
+                find.byKey(const ValueKey('mobile_theme_option_dark')),
+              )
+              .dy,
+      AppSpacing.md,
+    );
     expect(
       find.byKey(const ValueKey('mobile_theme_option_light')),
       findsOneWidget,
@@ -135,4 +219,78 @@ void main() {
       );
     }
   });
+
+  testWidgets('labels Face ID hardware by brand', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        biometric: const BiometricUnlockState(
+          availability: BiometricAvailability(
+            supported: true,
+            enrolled: true,
+            kind: BiometricKind.face,
+          ),
+          enabled: true,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('mobile_settings_biometric_row'));
+    expect(row, findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.text('Face ID')),
+      findsOneWidget,
+    );
+    expect(find.descendant(of: row, matching: find.text('On')), findsOneWidget);
+  });
+
+  testWidgets('labels non-face biometric hardware generically', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        biometric: const BiometricUnlockState(
+          availability: BiometricAvailability(
+            supported: true,
+            enrolled: true,
+            kind: BiometricKind.fingerprint,
+          ),
+          enabled: false,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('mobile_settings_biometric_row'));
+    expect(row, findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.text('Biometrics')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: row, matching: find.text('Fingerprint')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: row, matching: find.text('Off')),
+      findsOneWidget,
+    );
+  });
+}
+
+AppIcon _chevronIn(WidgetTester tester, ValueKey<String> rowKey) {
+  return tester.widget<AppIcon>(
+    find.descendant(
+      of: find.byKey(rowKey),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.chevronForward,
+      ),
+    ),
+  );
+}
+
+double _leadingIconOpacityIn(WidgetTester tester, ValueKey<String> rowKey) {
+  return tester
+      .widget<Opacity>(
+        find.descendant(of: find.byKey(rowKey), matching: find.byType(Opacity)),
+      )
+      .opacity;
 }

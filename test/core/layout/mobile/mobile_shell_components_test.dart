@@ -121,6 +121,23 @@ void main() {
     expect(backs, 1);
   });
 
+  testWidgets('MobileTopNav.back accepts a title style override', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        const MobileTopNav.back(
+          title: 'Swap in progress...',
+          titleStyle: AppTypography.headlineLarge,
+        ),
+      ),
+    );
+
+    final title = tester.widget<Text>(find.text('Swap in progress...'));
+    expect(title.style?.fontFamily, AppTypography.headlineLarge.fontFamily);
+    expect(title.style?.fontSize, AppTypography.headlineLarge.fontSize);
+  });
+
   testWidgets('MobileTopNav.steps clamps and renders progress', (tester) async {
     await tester.pumpWidget(_harness(const MobileTopNav.steps(progress: 0.5)));
 
@@ -242,6 +259,27 @@ void main() {
     await tester.tapAt(const Offset(200, 50));
     await tester.pumpAndSettle();
     expect(find.text('Sheet content'), findsNothing);
+  });
+
+  testWidgets('MobileModalScaffold preserves tall leading affordances', (
+    tester,
+  ) async {
+    const leadingKey = ValueKey('modal_leading_affordance');
+    await tester.pumpWidget(
+      _harness(
+        SizedBox(
+          width: 361,
+          child: MobileModalScaffold(
+            title: 'Verify address',
+            onClose: () {},
+            leading: const SizedBox(key: leadingKey, width: 32, height: 32),
+            child: const SizedBox(height: 24),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.getSize(find.byKey(leadingKey)), const Size(32, 32));
   });
 
   testWidgets('MobileModalCard uses the Figma modal base in both themes', (

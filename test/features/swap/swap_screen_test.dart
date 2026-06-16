@@ -337,12 +337,7 @@ void main() {
     );
 
     String expiryLabel() {
-      return tester
-          .widget<RichText>(
-            find.byKey(const ValueKey('swap_deposit_expiry_label')),
-          )
-          .text
-          .toPlainText();
+      return _depositExpiryLabelPlainText(tester);
     }
 
     expect(expiryLabel(), 'Deposit within 16mins');
@@ -383,12 +378,7 @@ void main() {
     );
 
     String expiryLabel() {
-      return tester
-          .widget<RichText>(
-            find.byKey(const ValueKey('swap_deposit_expiry_label')),
-          )
-          .text
-          .toPlainText();
+      return _depositExpiryLabelPlainText(tester);
     }
 
     expect(expiryLabel(), 'Deposit within 2hrs');
@@ -3398,7 +3388,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('swap_status_title')), findsOneWidget);
-    expect(find.text('Swapping ...'), findsOneWidget);
+    expect(find.text('Swap in progress...'), findsOneWidget);
     expect(find.text('Swap Progress'), findsOneWidget);
     expect(find.text('Transaction details'), findsOneWidget);
     expect(find.text('Activity detail'), findsNothing);
@@ -4002,7 +3992,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Swapping ...'), findsOneWidget);
+    expect(find.text('Swap in progress...'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('swap_status_page_content')),
       findsOneWidget,
@@ -5524,6 +5514,17 @@ void main() {
       ),
     );
     expect(buttonLoaderRect.left - gettingQuoteRect.right, closeTo(4, 1));
+    expect(
+      tester
+          .widget<GestureDetector>(
+            find.byKey(const ValueKey('swap_settings_button')),
+          )
+          .onTap,
+      isNull,
+    );
+    await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('swap_slippage_modal')), findsNothing);
 
     swapProvider.completeQuote();
     await tester.pumpAndSettle();
@@ -6315,7 +6316,7 @@ void main() {
           ),
         ),
       );
-      expect(copyIcon.size, AppIconSize.medium);
+      expect(copyIcon.size, 20);
       expect(
         tester.getSize(find.byKey(const ValueKey('swap_deposit_qr_logo'))),
         const Size(34, 34),
@@ -7702,7 +7703,7 @@ Widget _reviewTestPage({
 }
 
 Widget _statusTestPage({
-  String title = 'Swapping ...',
+  String title = 'Swap in progress...',
   SwapAsset payAsset = SwapAsset.usdc,
   SwapAsset receiveAsset = SwapAsset.zec,
   String payFiatText = r'$110.24',
@@ -8055,6 +8056,18 @@ Future<void> _enterDestinationText(WidgetTester tester, String value) async {
   await tester.enterText(field, value);
   await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
   await tester.pumpAndSettle();
+}
+
+String _depositExpiryLabelPlainText(WidgetTester tester) {
+  final expiry = find.byKey(const ValueKey('swap_deposit_expiry_label'));
+  final parts = tester
+      .widgetList<Text>(
+        find.descendant(of: expiry, matching: find.byType(Text)),
+      )
+      .map((text) => text.data ?? text.textSpan?.toPlainText() ?? '')
+      .where((text) => text.isNotEmpty)
+      .toList();
+  return parts.join(' ');
 }
 
 String _destinationSummaryText(WidgetTester tester) {

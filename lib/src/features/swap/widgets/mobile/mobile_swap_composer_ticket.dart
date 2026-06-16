@@ -146,14 +146,19 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
             state.quoteMode == SwapQuoteMode.exactInput);
     final receiveActive = !payActive;
 
-    final payEmpty = _payInputText(state).trim().isEmpty;
-    final receiveEmpty = _receiveInputText(state).trim().isEmpty;
-
     final payCard = _SwapCard(
-      filled: true,
-      showTitle: payEmpty,
+      // The active input's card carries the base tint; the other falls back
+      // to the wrapper — mirrors the desktop composer's active-card
+      // highlight that follows which side drives the quote.
+      filled: payActive,
+      // Always show the "You pay" / "You receive" labels (and MAX) instead of
+      // collapsing them on the first keystroke: it reads better, holds the
+      // card height steady (no switch-button hop), and removes the title-row
+      // relayout entirely. A deliberate product step away from the Figma
+      // filled frames, which hide the labels once a value is entered.
+      showTitle: true,
       title: 'You pay',
-      titleTrailing: sendsZec && payEmpty
+      titleTrailing: sendsZec
           ? _MaxAmountTrigger(
               availableText: widget.zecAvailableText,
               loading: state.maxAmountLoading,
@@ -204,8 +209,8 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
     );
 
     final receiveCard = _SwapCard(
-      filled: false,
-      showTitle: receiveEmpty,
+      filled: receiveActive,
+      showTitle: true,
       title: 'You receive',
       amount: _SwapAmountInput(
         key: const ValueKey('swap_receive_amount_field'),
@@ -249,7 +254,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
           : null,
     );
 
-    final payCardHeight = _cardHeight(showTitle: payEmpty);
+    final payCardHeight = _cardHeight(showTitle: true);
     final switchButtonTop =
         payCardHeight + _cardGap / 2 - _switchButtonSize / 2;
 
@@ -299,8 +304,8 @@ class _SwapCard extends StatelessWidget {
     this.addressChip,
   });
 
-  /// Pay card carries the base fill; the receive card stays on the
-  /// wrapper's white.
+  /// When true — the active input's side — the card carries the base tint;
+  /// otherwise it falls back to the wrapper surface. The switch animates.
   final bool filled;
   final bool showTitle;
   final String title;
@@ -313,7 +318,9 @@ class _SwapCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Container(
+    return AnimatedContainer(
+      // Mirrors the desktop composer's 140ms active-card highlight.
+      duration: const Duration(milliseconds: 140),
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.s,
         vertical: _MobileSwapComposerTicketState._cardVerticalPadding,
@@ -327,6 +334,16 @@ class _SwapCard extends StatelessWidget {
         children: [
           if (showTitle)
             SizedBox(
+              // Keyed so adding/removing the title row across an empty↔filled
+              // transition does not positionally re-slot the amount/bottom
+              // rows below — without keys the Column matches the unkeyed
+              // SizedBoxes by index, rebuilding (recreating) the amount
+              // field's EditableText into the old title's element. The
+              // logical FocusNode (owned by this State) survives that, but on
+              // a real device recreating the EditableText tears down and
+              // reopens the platform text-input connection, which dismisses
+              // the keyboard mid-entry.
+              key: const ValueKey('swap_card_title'),
               height: _MobileSwapComposerTicketState._titleRowHeight,
               child: Row(
                 children: [
@@ -348,6 +365,10 @@ class _SwapCard extends StatelessWidget {
               ),
             ),
           SizedBox(
+            // Keyed (with the title + bottom rows) so the focused amount
+            // TextField keeps its element across the empty↔filled title-row
+            // toggle — preserving the live platform keyboard connection.
+            key: const ValueKey('swap_card_amount'),
             height: _MobileSwapComposerTicketState._amountRowHeight,
             child: Row(
               children: [
@@ -358,13 +379,19 @@ class _SwapCard extends StatelessWidget {
             ),
           ),
           SizedBox(
+            key: const ValueKey('swap_card_bottom'),
             height: _MobileSwapComposerTicketState._bottomRowHeight,
             child: Row(
               children: [
-                Expanded(child: fiat),
+                // Fiat meta takes only its (short) content width so the
+                // address chip gets the rest of the row — otherwise the
+                // greedy fiat squeezes "Add refund address..." down to
+                // "Add refund a...". Figma 4700:121914 keeps the fiat
+                // left and the address chip right-aligned.
+                IntrinsicWidth(child: fiat),
                 if (addressChip != null) ...[
                   const SizedBox(width: AppSpacing.xs),
-                  Flexible(
+                  Expanded(
                     child: Align(
                       alignment: Alignment.centerRight,
                       child: addressChip!,
@@ -424,10 +451,11 @@ class _SwapAmountInput extends StatelessWidget {
             cursorWidth: 2,
             cursorRadius: const Radius.circular(AppRadii.full),
             decoration: InputDecoration.collapsed(
-              // The empty card renders a solid "0", not a greyed
-              // placeholder — Figma 4686:101443.
+              // Muted "0" so an empty field reads as a placeholder rather
+              // than an entered zero — matches the desktop composer, which
+              // recolours the hint to text.disabled over the same serif.
               hintText: '0',
-              hintStyle: valueStyle,
+              hintStyle: valueStyle.copyWith(color: colors.text.disabled),
             ),
           ),
         ),
@@ -459,7 +487,11 @@ class _CurrencyPicker extends StatelessWidget {
         SwapAssetIcon(
           asset: asset,
           selected: true,
-          size: 32,
+          // Mobile composer uses a 40px asset (Figma) with a 0.5/0.1 badge
+          // so the chain circle stays the same 20px as desktop's 32px asset.
+          size: 40,
+          badgeScale: 0.5,
+          overhangScale: 0.1,
           showChainBadge: showChainBadge,
         ),
         const SizedBox(width: AppSpacing.s),

@@ -88,6 +88,35 @@ class WidgetbookApp extends StatelessWidget {
                   ],
                 ),
                 WidgetbookComponent(
+                  name: 'Mobile lock',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Passcode only',
+                      builder: buildMobileUnlockPasscodeUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Face ID',
+                      builder: buildMobileUnlockFaceIdUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Biometric sign-in backdrop',
+                      builder: buildMobileUnlockBiometricBackdropUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Biometrics',
+                      builder: buildMobileUnlockBiometricsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Forgot passcode',
+                      builder: buildMobileForgotPasscodeSheetUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Last warning',
+                      builder: buildMobileForgotPasscodeLastWarningUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
                   name: 'Lost Password',
                   useCases: [
                     WidgetbookUseCase(
@@ -160,6 +189,27 @@ class WidgetbookApp extends StatelessWidget {
                     ),
                   ],
                 ),
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Shielded',
+                      builder: buildReceiveMobileShieldedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent',
+                      builder: buildReceiveMobileTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Shielded sheet',
+                      builder: buildReceiveMobileShieldedSheetUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent sheet',
+                      builder: buildReceiveMobileTransparentSheetUseCase,
+                    ),
+                  ],
+                ),
               ],
             ),
             WidgetbookFolder(
@@ -216,6 +266,22 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Address scan - Loading',
                       builder: buildSwapAddressScanModalLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile address scan - Requesting',
+                      builder: buildMobileSwapAddressScanRequestingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile address scan - Denied',
+                      builder: buildMobileSwapAddressScanDeniedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile address scan - Active',
+                      builder: buildMobileSwapAddressScanActiveUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile address scan - Loading',
+                      builder: buildMobileSwapAddressScanLoadingUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Slippage modal',

@@ -140,7 +140,7 @@ class SensitivePrivacyEnvironmentController
   SensitivePrivacyEnvironmentController({
     Stream<MacOSPrivacyExposureEvent>? macOSExposureEvents,
   }) {
-    if (_supportsPlatformPrivacySignals) {
+    if (!kIsWeb) {
       _lifecycleListener = AppLifecycleListener(
         onResume: () => _setLifecycleSafe(true),
         onShow: () => _setLifecycleSafe(true),
@@ -150,6 +150,9 @@ class SensitivePrivacyEnvironmentController
         onHide: () => _setLifecycleSafe(false),
         onPause: () => _setLifecycleSafe(false),
       );
+    }
+
+    if (_supportsPlatformPrivacySignals) {
       windowManager.addListener(this);
       windowManager
           .isFocused()

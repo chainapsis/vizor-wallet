@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_toast.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/models/swap_activity_status_mapper.dart';
 import '../../../swap/models/swap_models.dart';
@@ -50,31 +51,33 @@ class MobileSwapActivityDetailScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: colors.background.window,
-      body: SafeArea(
-        child: Column(
-          children: [
-            MobileTopNav.back(
-              title: _titleFor(state, intent),
-              // Pushed from activity rows -> pop; arrived via go()
-              // from the review start -> fall back to the return
-              // target (pop would be a no-op there).
-              onBack: () {
-                if (Navigator.of(context).canPop()) {
-                  context.pop();
-                } else {
-                  context.go(returnTarget.path);
-                }
-              },
-            ),
-            Expanded(
-              child: SwapActivityDetailSurface(
-                intentId: swapIntentId,
-                returnTarget: returnTarget,
-                autoSignZecDeposit: autoSignZecDeposit,
-                layout: SwapActivityDetailLayout.mobile,
+      body: AppToastHost(
+        child: SafeArea(
+          child: Column(
+            children: [
+              MobileTopNav.back(
+                title: _titleFor(state, intent),
+                // Pushed from activity rows -> pop; arrived via go()
+                // from the review start -> fall back to the return
+                // target (pop would be a no-op there).
+                onBack: () {
+                  if (Navigator.of(context).canPop()) {
+                    context.pop();
+                  } else {
+                    context.go(returnTarget.path);
+                  }
+                },
               ),
-            ),
-          ],
+              Expanded(
+                child: SwapActivityDetailSurface(
+                  intentId: swapIntentId,
+                  returnTarget: returnTarget,
+                  autoSignZecDeposit: autoSignZecDeposit,
+                  layout: SwapActivityDetailLayout.mobile,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show Tooltip;
+import 'package:flutter/material.dart' show Tooltip, TooltipTriggerMode;
 import 'package:flutter/widgets.dart';
 
 import '../theme/app_theme.dart';
@@ -9,6 +9,7 @@ class AppTooltip extends StatelessWidget {
     this.message,
     this.richMessage,
     this.preferBelow = false,
+    this.tapToShow = false,
     super.key,
   }) : assert(
          (message == null) != (richMessage == null),
@@ -18,6 +19,7 @@ class AppTooltip extends StatelessWidget {
   final String? message;
   final InlineSpan? richMessage;
   final bool preferBelow;
+  final bool tapToShow;
   final Widget child;
 
   @override
@@ -37,6 +39,7 @@ class AppTooltip extends StatelessWidget {
       textStyle: textStyle,
       waitDuration: const Duration(milliseconds: 350),
       showDuration: const Duration(seconds: 8),
+      triggerMode: tapToShow ? TooltipTriggerMode.tap : null,
       preferBelow: preferBelow,
       constraints: const BoxConstraints(maxWidth: 340),
       padding: const EdgeInsets.symmetric(

@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// What the device offers for the escrow prompt; drives copy ("Face ID"
-/// vs "fingerprint") and whether the opt-in surfaces render at all.
+/// vs generic "biometrics") and whether the opt-in surfaces render at all.
 enum BiometricKind { face, fingerprint, none }
 
 class BiometricAvailability {
@@ -70,7 +70,8 @@ class BiometricUnlock {
 
   final MethodChannel _channel;
 
-  bool get _platformSupported => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
+  bool get _platformSupported =>
+      !kIsWeb && (Platform.isIOS || Platform.isAndroid);
 
   Future<BiometricAvailability> availability() async {
     if (!_platformSupported) return BiometricAvailability.unavailable;

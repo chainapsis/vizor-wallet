@@ -375,37 +375,65 @@ class MobileScanCameraErrorOverlay extends StatelessWidget {
   }
 }
 
-/// Corner-bracket viewfinder overlay shared by every mobile scan flow.
+/// Corner-bracket viewfinder overlay shared by every mobile scan flow. The
+/// bracket geometry is tunable — the full-bleed send scanner keeps the compact
+/// default, the swap card passes longer arms / a larger radius to match its
+/// Figma `Camera Pointer`.
 class MobileScanViewfinderCorners extends StatelessWidget {
-  const MobileScanViewfinderCorners({super.key});
+  const MobileScanViewfinderCorners({
+    this.cornerLength = 28,
+    this.cornerRadius = 24,
+    this.strokeWidth = 3,
+    super.key,
+  });
+
+  /// Extent of each bracket along the window edge (from the corner).
+  final double cornerLength;
+
+  /// Radius of the rounded bend — match the viewfinder window's corner radius.
+  final double cornerRadius;
+  final double strokeWidth;
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(painter: _ViewfinderCornersPainter());
+    return CustomPaint(
+      painter: _ViewfinderCornersPainter(
+        cornerLength: cornerLength,
+        cornerRadius: cornerRadius,
+        strokeWidth: strokeWidth,
+      ),
+    );
   }
 }
 
 class _ViewfinderCornersPainter extends CustomPainter {
-  static const _cornerLength = 28.0;
-  static const _cornerRadius = 24.0;
+  _ViewfinderCornersPainter({
+    required this.cornerLength,
+    required this.cornerRadius,
+    required this.strokeWidth,
+  });
+
+  final double cornerLength;
+  final double cornerRadius;
+  final double strokeWidth;
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = const Color(0xFFFFFFFF)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
+      ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
 
     Path corner(double rotationQuarter) {
       final path = Path()
-        ..moveTo(0, _cornerLength)
-        ..lineTo(0, _cornerRadius)
+        ..moveTo(0, cornerLength)
+        ..lineTo(0, cornerRadius)
         ..arcToPoint(
-          const Offset(_cornerRadius, 0),
-          radius: const Radius.circular(_cornerRadius),
+          Offset(cornerRadius, 0),
+          radius: Radius.circular(cornerRadius),
         )
-        ..lineTo(_cornerLength, 0);
+        ..lineTo(cornerLength, 0);
       final matrix = Matrix4.identity()
         ..translateByDouble(size.width / 2, size.height / 2, 0, 1)
         ..rotateZ(rotationQuarter * 3.1415926535 / 2)
@@ -419,5 +447,8 @@ class _ViewfinderCornersPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _ViewfinderCornersPainter oldDelegate) =>
+      oldDelegate.cornerLength != cornerLength ||
+      oldDelegate.cornerRadius != cornerRadius ||
+      oldDelegate.strokeWidth != strokeWidth;
 }

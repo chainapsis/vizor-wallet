@@ -37,9 +37,12 @@ class MobileTopNav extends StatelessWidget {
     super.key,
   }) : _variant = _MobileTopNavVariant.account,
        title = '',
+       titleStyle = null,
+       height = kMobileTopNavHeight,
        progress = 0,
        onBack = null,
-       trailing = null;
+       trailing = null,
+       backIcon = AppIcons.chevronBackward;
 
   const MobileTopNav.steps({required this.progress, this.onBack, super.key})
     : _variant = _MobileTopNavVariant.steps,
@@ -53,12 +56,18 @@ class MobileTopNav extends StatelessWidget {
       avatar = null,
       onAccountTap = null,
       title = '',
-      trailing = null;
+      titleStyle = null,
+      height = kMobileTopNavHeight,
+      trailing = null,
+      backIcon = AppIcons.chevronBackward;
 
   const MobileTopNav.back({
     required this.title,
     this.onBack,
     this.trailing,
+    this.backIcon = AppIcons.chevronBackward,
+    this.titleStyle,
+    this.height = kMobileTopNavHeight,
     super.key,
   }) : _variant = _MobileTopNavVariant.back,
        accountName = '',
@@ -103,12 +112,19 @@ class MobileTopNav extends StatelessWidget {
 
   /// Back variant: centered serif title.
   final String title;
+  final TextStyle? titleStyle;
+  final double height;
 
   /// Back variant: right-aligned widget (e.g. the swap composer's
   /// "Powered by NEAR Intents" lockup — Figma 4686:102067).
   final Widget? trailing;
 
   final VoidCallback? onBack;
+
+  /// Back-variant leading icon. Defaults to the chevron; the swap composer
+  /// swaps it to a cross while its number-pad keyboard is open so the leading
+  /// button dismisses the keyboard instead of leaving the tab.
+  final String backIcon;
 
   static const _avatarSize = 40.0;
   static const _backButtonSize = 44.0;
@@ -119,7 +135,7 @@ class MobileTopNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: kMobileTopNavHeight,
+      height: height,
       child: switch (_variant) {
         _MobileTopNavVariant.account => _buildAccount(context),
         _MobileTopNavVariant.steps => _buildSteps(context),
@@ -171,9 +187,7 @@ class MobileTopNav extends StatelessWidget {
     return Row(
       children: [
         const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Align(alignment: Alignment.centerLeft, child: account),
-        ),
+        Expanded(child: Align(alignment: Alignment.centerLeft, child: account)),
         if (syncLabel != null)
           _SyncStatus(
             label: syncLabel!,
@@ -245,7 +259,7 @@ class MobileTopNav extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
-              style: AppTypography.headlineMedium.copyWith(
+              style: (titleStyle ?? AppTypography.headlineMedium).copyWith(
                 color: colors.text.accent,
               ),
             ),
@@ -254,7 +268,11 @@ class MobileTopNav extends StatelessWidget {
         if (onBack != null)
           Positioned(
             left: AppSpacing.s,
-            child: _BackButton(size: _backButtonSize, onTap: onBack),
+            child: _BackButton(
+              size: _backButtonSize,
+              onTap: onBack,
+              iconName: backIcon,
+            ),
           ),
         if (trailing != null) Positioned(right: AppSpacing.s, child: trailing!),
       ],
@@ -265,15 +283,20 @@ class MobileTopNav extends StatelessWidget {
 enum _MobileTopNavVariant { account, steps, back }
 
 class _BackButton extends StatelessWidget {
-  const _BackButton({required this.size, this.onTap});
+  const _BackButton({
+    required this.size,
+    this.onTap,
+    this.iconName = AppIcons.chevronBackward,
+  });
 
   final double size;
   final VoidCallback? onTap;
+  final String iconName;
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'Back',
+      label: iconName == AppIcons.cross ? 'Close' : 'Back',
       button: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -283,7 +306,7 @@ class _BackButton extends StatelessWidget {
           height: size,
           child: Center(
             child: AppIcon(
-              AppIcons.chevronBackward,
+              iconName,
               size: 24,
               color: context.colors.icon.accent,
             ),

@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart' show Icons, Icon;
 import 'package:flutter/widgets.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/theme/app_theme.dart';
@@ -12,6 +12,22 @@ import '../../../core/widgets/app_icon.dart';
 /// matching the Figma index). [PasscodePromptField] uses it to centre the
 /// dots, so keep the two in sync.
 const double kPasscodeDotSize = 14;
+const double kPasscodePromptDigitsHeight = 81;
+const double kPasscodeKeySize = 80;
+const double kPasscodeKeypadWidth = 320;
+const double _kPasscodeBackspaceSlotWidth = 30;
+const double _kPasscodeBackspaceSlotHeight = 32;
+const double _kPasscodeBackspaceGlyphWidth = 26.25;
+const double _kPasscodeBackspaceGlyphHeight = 23.15;
+const double _kPasscodeBiometricButtonHeight = 36;
+const double _kPasscodeBiometricButtonMinWidth = 96;
+const double _kPasscodeBiometricIconSize = 16;
+const EdgeInsets _kPasscodeBackspaceInsets = EdgeInsets.fromLTRB(
+  2.5,
+  4.42,
+  1.25,
+  4.43,
+);
 
 /// Diamond progress dots for passcode entry — Figma `Passcode 1/2`
 /// (4394:82593 / 4394:82878): six rotated squares that fill crimson as
@@ -40,7 +56,7 @@ class PasscodeDots extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: i < filled
                       ? colors.icon.brandCrimson
-                      : colors.background.overlay,
+                      : colors.background.neutralSubtleOpacity,
                   borderRadius: BorderRadius.circular(3),
                 ),
               ),
@@ -101,7 +117,7 @@ class PasscodePromptField extends StatelessWidget {
                 ),
                 if (error != null)
                   Positioned(
-                    // Figma `Passcode Digits` (4596:50019) sets the message
+                    // Figma `Passcode Digits` (4885:23059) sets the message
                     // ~36 px below the dots' centre (8 px under the 57-tall
                     // dots field) — keep that gap with the dots centred.
                     top: centerY + 36,
@@ -131,7 +147,7 @@ class PasscodePromptField extends StatelessWidget {
 }
 
 /// Serif numpad — Figma `Passcode 1/2` and `Sign In Passcode`
-/// (4596:50000). The bottom row carries an optional help action on the
+/// (4885:23167). The bottom row carries an optional help action on the
 /// left and a delete key on the right that only appears once at least
 /// one digit is entered.
 class PasscodeNumpad extends StatelessWidget {
@@ -140,8 +156,6 @@ class PasscodeNumpad extends StatelessWidget {
     required this.onBackspace,
     this.canDelete = false,
     this.onHelp,
-    this.onBiometric,
-    this.biometricIcon,
     this.enabled = true,
     super.key,
   });
@@ -155,42 +169,46 @@ class PasscodeNumpad extends StatelessWidget {
   /// Shows the (?) action bottom-left when provided (sign-in screens).
   final VoidCallback? onHelp;
 
-  /// Manual biometric retry in the bottom-right slot while it is not
-  /// occupied by the delete key (i.e. before any digit is typed).
-  final VoidCallback? onBiometric;
-
-  /// Glyph for [onBiometric] (Face ID vs fingerprint).
-  final IconData? biometricIcon;
-
   final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-    Widget key(Widget child, {VoidCallback? onTap, String? label}) => Expanded(
-      child: Semantics(
-        button: onTap != null,
+    Widget keySlot(Widget child, {VoidCallback? onTap, String? label}) {
+      final effectiveTap = enabled ? onTap : null;
+      return Semantics(
+        button: effectiveTap != null,
         label: label,
         excludeSemantics: true,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: enabled ? onTap : null,
-          child: SizedBox(height: 104, child: Center(child: child)),
+          onTap: effectiveTap,
+          child: SizedBox.square(
+            dimension: kPasscodeKeySize,
+            child: Center(child: child),
+          ),
         ),
-      ),
-    );
+      );
+    }
 
-    Widget digitKey(int digit) => key(
-      Text(
-        '$digit',
-        // One-off 48px serif: the Figma numpad digits render 34 px
-        // tall, between Display L and Headline XL, so not a shared
-        // typography token.
-        style: AppTypography.displayLarge.copyWith(
-          fontSize: 48,
-          height: 1,
-          color: enabled ? colors.text.accent : colors.text.disabled,
+    Widget digitKey(int digit) => keySlot(
+      DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.background.neutralSubtleOpacity,
+          shape: BoxShape.circle,
+        ),
+        child: Center(
+          child: Text(
+            '$digit',
+            // Figma `_Passcode Button`: Young Serif 40 / 33 inside
+            // an 80px circular neutral-alpha key.
+            style: AppTypography.headlineLarge.copyWith(
+              fontSize: 40,
+              height: 33 / 40,
+              color: enabled ? colors.text.accent : colors.text.disabled,
+            ),
+          ),
         ),
       ),
       onTap: () {
@@ -201,29 +219,23 @@ class PasscodeNumpad extends StatelessWidget {
     );
 
     final helpKey = onHelp == null
-        ? key(const SizedBox.shrink())
-        : key(
-            // Figma `Help` (4596:50240): a single ~25px "?-in-circle" in
-            // icon/muted. help.svg already draws the ring, so there is no
-            // bordered container — wrapping it in one produced a double
-            // circle (ring inside ring).
+        ? keySlot(const SizedBox.shrink())
+        : keySlot(
+            // Figma `Help` (4885:21762): a 32px icon-only auxiliary key
+            // in the transparent bottom-left slot.
             AppIcon(
               AppIcons.help,
-              size: 25,
-              color: colors.icon.muted,
+              size: 32,
+              color: enabled ? colors.icon.muted : colors.icon.disabled,
             ),
             onTap: onHelp,
             label: 'Passcode help',
           );
 
     final deleteKey = canDelete
-        ? key(
-            // TODO(mobile-passcode): swap for the design-system delete
-            // glyph once it is exported to assets/icons.
-            Icon(
-              Icons.backspace_outlined,
-              size: 26,
-              color: enabled ? colors.icon.accent : colors.icon.disabled,
+        ? keySlot(
+            _PasscodeBackspaceIcon(
+              color: enabled ? colors.icon.muted : colors.icon.disabled,
             ),
             onTap: () {
               unawaited(AppHaptics.auxiliaryKey());
@@ -231,36 +243,171 @@ class PasscodeNumpad extends StatelessWidget {
             },
             label: 'Delete digit',
           )
-        : onBiometric != null
-        ? key(
-            // TODO(mobile-passcode): swap for the design-system Face ID
-            // glyph once it is exported to assets/icons.
-            Icon(
-              biometricIcon ?? Icons.fingerprint,
-              size: 28,
-              color: enabled ? colors.icon.accent : colors.icon.disabled,
-            ),
-            onTap: () {
-              unawaited(AppHaptics.auxiliaryKey());
-              onBiometric?.call();
-            },
-            label: 'Biometric unlock',
-          )
-        : key(const SizedBox.shrink());
+        : keySlot(const SizedBox.shrink());
 
-    // Figma keypad is a fixed 320-wide block centred in the screen, not
-    // full-bleed; ConstrainedBox keeps it from spreading on wide phones.
+    // Figma keypad is a 320px-wide wrap, capped by the caller's width so
+    // narrow phone layouts with horizontal padding do not overflow.
     return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 320),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(children: [digitKey(1), digitKey(2), digitKey(3)]),
-            Row(children: [digitKey(4), digitKey(5), digitKey(6)]),
-            Row(children: [digitKey(7), digitKey(8), digitKey(9)]),
-            Row(children: [helpKey, digitKey(0), deleteKey]),
-          ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxWidth = constraints.maxWidth.isFinite
+              ? constraints.maxWidth
+              : kPasscodeKeypadWidth;
+          return SizedBox(
+            width: math.min(kPasscodeKeypadWidth, maxWidth),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              runAlignment: WrapAlignment.center,
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: [
+                digitKey(1),
+                digitKey(2),
+                digitKey(3),
+                digitKey(4),
+                digitKey(5),
+                digitKey(6),
+                digitKey(7),
+                digitKey(8),
+                digitKey(9),
+                helpKey,
+                digitKey(0),
+                deleteKey,
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Bottom Face ID / biometric retry action for the sign-in screen.
+/// Figma places it below the keypad as a 36px ghost pill, not inside the
+/// keypad's bottom-right auxiliary slot.
+class PasscodeBiometricButton extends StatelessWidget {
+  const PasscodeBiometricButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    super.key,
+  });
+
+  final String label;
+  final Widget icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final enabled = onPressed != null;
+    final labelColor = enabled
+        ? colors.button.ghost.label
+        : colors.text.disabled;
+    final labelStyle = AppTypography.labelLarge.copyWith(color: labelColor);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textPainter = TextPainter(
+          text: TextSpan(text: label, style: labelStyle),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          maxLines: 1,
+        )..layout();
+        final contentWidth =
+            AppSpacing.s * 2 +
+            _kPasscodeBiometricIconSize +
+            AppSpacing.xxs * 2 +
+            textPainter.width;
+        final idealWidth = math.max(
+          _kPasscodeBiometricButtonMinWidth,
+          contentWidth,
+        );
+        final maxWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : idealWidth;
+        final width = math.min(idealWidth, maxWidth);
+
+        return Center(
+          child: Semantics(
+            button: enabled,
+            label: label,
+            excludeSemantics: true,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onPressed == null
+                  ? null
+                  : () {
+                      unawaited(AppHaptics.auxiliaryKey());
+                      onPressed?.call();
+                    },
+              child: SizedBox(
+                key: const ValueKey('passcode_biometric_button'),
+                width: width,
+                height: _kPasscodeBiometricButtonHeight,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.max,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconTheme.merge(
+                        data: IconThemeData(
+                          color: labelColor,
+                          size: _kPasscodeBiometricIconSize,
+                        ),
+                        child: SizedBox.square(
+                          dimension: _kPasscodeBiometricIconSize,
+                          child: icon,
+                        ),
+                      ),
+                      Flexible(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xxs,
+                          ),
+                          child: Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: labelStyle,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PasscodeBackspaceIcon extends StatelessWidget {
+  const _PasscodeBackspaceIcon({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      key: const ValueKey('passcode_backspace_slot'),
+      width: _kPasscodeBackspaceSlotWidth,
+      height: _kPasscodeBackspaceSlotHeight,
+      child: Padding(
+        padding: _kPasscodeBackspaceInsets,
+        child: SizedBox(
+          key: const ValueKey('passcode_backspace_glyph'),
+          width: _kPasscodeBackspaceGlyphWidth,
+          height: _kPasscodeBackspaceGlyphHeight,
+          child: SvgPicture.asset(
+            'assets/icons/${AppIcons.backspace}.svg',
+            width: _kPasscodeBackspaceGlyphWidth,
+            height: _kPasscodeBackspaceGlyphHeight,
+            colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+          ),
         ),
       ),
     );

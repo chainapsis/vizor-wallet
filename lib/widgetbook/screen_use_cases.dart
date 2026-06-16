@@ -11,13 +11,19 @@ import 'package:go_router/go_router.dart';
 import '../src/app_bootstrap.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/layout/app_layout.dart';
+import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/profile_pictures.dart';
+import '../src/core/theme/app_theme.dart';
 import '../src/features/accounts/screens/accounts_screen.dart';
+import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
+import '../src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/onboarding/unlock_screen.dart';
 import '../src/features/onboarding/welcome.dart';
 import '../src/providers/account_provider.dart';
+import '../src/providers/biometric_unlock_provider.dart';
 import '../src/providers/sync_provider.dart';
+import '../src/services/biometric_unlock.dart';
 
 /// Welcome screen in its large-layout form. Wrapped in a `ProviderScope`
 /// with `appLayoutProvider` overridden to a no-op so the dev window does
@@ -64,6 +70,51 @@ Widget buildLostPasswordEnabledUseCase(BuildContext context) {
         onReset: () async {},
       ),
     ),
+  );
+}
+
+Widget buildMobileUnlockPasscodeUseCase(BuildContext context) {
+  return _buildMobileUnlockUseCase(BiometricUnlockState.initial);
+}
+
+Widget buildMobileUnlockFaceIdUseCase(BuildContext context) {
+  return _buildMobileUnlockUseCase(
+    const BiometricUnlockState(
+      availability: BiometricAvailability(
+        supported: true,
+        enrolled: true,
+        kind: BiometricKind.face,
+      ),
+      enabled: true,
+    ),
+  );
+}
+
+Widget buildMobileUnlockBiometricBackdropUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(child: MobileBiometricSignInView());
+}
+
+Widget buildMobileUnlockBiometricsUseCase(BuildContext context) {
+  return _buildMobileUnlockUseCase(
+    const BiometricUnlockState(
+      availability: BiometricAvailability(
+        supported: true,
+        enrolled: true,
+        kind: BiometricKind.fingerprint,
+      ),
+      enabled: true,
+    ),
+  );
+}
+
+Widget buildMobileForgotPasscodeSheetUseCase(BuildContext context) {
+  return _buildMobileUnlockModalUseCase(context, const ForgotPasscodeSheet());
+}
+
+Widget buildMobileForgotPasscodeLastWarningUseCase(BuildContext context) {
+  return _buildMobileUnlockModalUseCase(
+    context,
+    const ForgotPasscodeLastWarningSheet(),
   );
 }
 
@@ -313,6 +364,107 @@ class _UnlockHarnessState extends State<_UnlockHarness> {
   Widget build(BuildContext context) {
     return Router.withConfig(config: _router);
   }
+}
+
+Widget _buildMobileUnlockUseCase(BiometricUnlockState biometricState) {
+  return ProviderScope(
+    overrides: [
+      biometricUnlockProvider.overrideWith(
+        () => _PreviewBiometricUnlockNotifier(biometricState),
+      ),
+    ],
+    child: _MobilePreviewFrame(
+      child: IgnorePointer(
+        child: MobileUnlockScreen(autoPromptBiometric: false),
+      ),
+    ),
+  );
+}
+
+Widget _buildMobileUnlockModalUseCase(BuildContext context, Widget sheet) {
+  return ProviderScope(
+    overrides: [
+      biometricUnlockProvider.overrideWith(
+        () => _PreviewBiometricUnlockNotifier(
+          const BiometricUnlockState(
+            availability: BiometricAvailability(
+              supported: true,
+              enrolled: true,
+              kind: BiometricKind.face,
+            ),
+            enabled: true,
+          ),
+        ),
+      ),
+    ],
+    child: _MobilePreviewFrame(
+      child: Stack(
+        children: [
+          const IgnorePointer(
+            child: MobileUnlockScreen(autoPromptBiometric: false),
+          ),
+          Positioned.fill(
+            child: ColoredBox(
+              color: AppTheme.of(context).colors.background.neutralScrim,
+            ),
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: IgnorePointer(
+              child: MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  padding: EdgeInsets.zero,
+                  viewPadding: EdgeInsets.zero,
+                ),
+                child: MobileModalCard(child: sheet),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _MobilePreviewFrame extends StatelessWidget {
+  const _MobilePreviewFrame({required this.child});
+
+  final Widget child;
+
+  static const size = Size(393, 852);
+  static const safeAreaPadding = EdgeInsets.only(top: 55, bottom: 24);
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    return Center(
+      child: SizedBox.fromSize(
+        size: size,
+        child: ClipRect(
+          child: MediaQuery(
+            data: mediaQuery.copyWith(
+              size: size,
+              padding: safeAreaPadding,
+              viewPadding: safeAreaPadding,
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PreviewBiometricUnlockNotifier extends BiometricUnlockNotifier {
+  _PreviewBiometricUnlockNotifier(this.initialState);
+
+  final BiometricUnlockState initialState;
+
+  @override
+  Future<BiometricUnlockState> build() async => initialState;
+
+  @override
+  Future<String?> readPasscode({required String reason}) async => null;
 }
 
 class _PreviewRoutePlaceholder extends StatelessWidget {
