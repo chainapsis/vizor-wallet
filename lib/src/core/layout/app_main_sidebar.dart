@@ -505,26 +505,10 @@ class _SidebarAccountHeader extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: AppSpacing.xxs),
-                  Row(
-                    children: [
-                      Flexible(
-                        fit: FlexFit.loose,
-                        child: Text(
-                          balanceLabel,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.secondary,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.xxs),
-                      _SidebarHideBalanceButton(
-                        enabled: true,
-                        privacyModeEnabled: privacyModeEnabled,
-                        onTap: onTogglePrivacyMode,
-                      ),
-                    ],
+                  _SidebarBalancePrivacyButton(
+                    balanceLabel: balanceLabel,
+                    privacyModeEnabled: privacyModeEnabled,
+                    onTap: onTogglePrivacyMode,
                   ),
                 ],
               ),
@@ -602,14 +586,14 @@ class _SidebarAccountAvatar extends StatelessWidget {
   }
 }
 
-class _SidebarHideBalanceButton extends StatelessWidget {
-  const _SidebarHideBalanceButton({
-    required this.enabled,
+class _SidebarBalancePrivacyButton extends StatelessWidget {
+  const _SidebarBalancePrivacyButton({
+    required this.balanceLabel,
     required this.privacyModeEnabled,
     required this.onTap,
   });
 
-  final bool enabled;
+  final String balanceLabel;
   final bool privacyModeEnabled;
   final VoidCallback onTap;
 
@@ -618,25 +602,35 @@ class _SidebarHideBalanceButton extends StatelessWidget {
     final colors = context.colors;
     return Semantics(
       button: true,
-      enabled: enabled,
+      enabled: true,
       label: privacyModeEnabled ? 'Show balance' : 'Hide balance',
       child: MouseRegion(
-        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        cursor: SystemMouseCursors.click,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: enabled ? onTap : null,
-          child: SizedBox(
-            width: 16,
-            height: 16,
-            child: Center(
-              child: AppIcon(
-                privacyModeEnabled ? AppIcons.eyeClosed : AppIcons.eye,
-                size: 16,
-                color: colors.icon.regular.withValues(
-                  alpha: enabled ? 0.72 : 0.38,
+          onTap: onTap,
+          child: Row(
+            key: const ValueKey('sidebar_balance_privacy_button'),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                fit: FlexFit.loose,
+                child: Text(
+                  balanceLabel,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.secondary,
+                    fontWeight: FontWeight.w400,
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(width: AppSpacing.xxs),
+              AppIcon(
+                privacyModeEnabled ? AppIcons.eyeClosed : AppIcons.eye,
+                size: 16,
+                color: colors.icon.regular.withValues(alpha: 0.72),
+              ),
+            ],
           ),
         ),
       ),
