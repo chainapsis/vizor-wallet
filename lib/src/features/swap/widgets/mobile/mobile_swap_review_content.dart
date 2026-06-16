@@ -320,7 +320,7 @@ class MobileSwapReviewActions extends StatelessWidget {
             behavior: HitTestBehavior.opaque,
             onTap: onCancelReview,
             child: SizedBox(
-              height: 44,
+              height: AppButtonSizing.largeHeight,
               child: Center(
                 child: Text(
                   'Cancel',
