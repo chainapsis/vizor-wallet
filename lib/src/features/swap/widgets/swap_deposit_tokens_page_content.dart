@@ -243,57 +243,70 @@ class _MobileDepositQrCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Center(
-      child: Container(
-        key: const ValueKey('swap_deposit_qr_card'),
-        width: _width,
-        height: _height,
-        padding: const EdgeInsets.all(_padding),
-        decoration: BoxDecoration(
-          color: colors.background.homeCard,
-          borderRadius: BorderRadius.circular(_radius),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            _DepositQrCode(
-              data: qrData,
-              asset: asset,
-              size: _qrSize,
-              padding: _qrPadding,
-              radius: AppRadii.xLarge,
-              logoSize: _qrLogoSize,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = constraints.hasBoundedWidth
+            ? constraints.maxWidth.clamp(0.0, _width).toDouble()
+            : _width;
+        final qrSize = (cardWidth - _padding * 2)
+            .clamp(0.0, _qrSize)
+            .toDouble();
+        final qrScale = _qrSize == 0 ? 1.0 : qrSize / _qrSize;
+        return Center(
+          child: Container(
+            key: const ValueKey('swap_deposit_qr_card'),
+            width: cardWidth,
+            height: _height,
+            padding: const EdgeInsets.all(_padding),
+            decoration: BoxDecoration(
+              color: colors.background.homeCard,
+              borderRadius: BorderRadius.circular(_radius),
             ),
-            const SizedBox(height: AppSpacing.sm),
-            SizedBox(
-              height: 99,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                child: Column(
-                  children: [
-                    Text(
-                      amountText,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.headlineLarge.copyWith(
-                        color: colors.text.homeCard,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.s),
-                    _DepositExpiryLine(
-                      expiresInLabel: expiresInLabel,
-                      expiresAt: expiresAt,
-                      now: now,
-                      centered: true,
-                    ),
-                  ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _DepositQrCode(
+                  data: qrData,
+                  asset: asset,
+                  size: qrSize,
+                  padding: _qrPadding,
+                  radius: AppRadii.xLarge,
+                  logoSize: _qrLogoSize * qrScale,
                 ),
-              ),
+                const SizedBox(height: AppSpacing.sm),
+                SizedBox(
+                  height: 99,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.sm,
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          amountText,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.headlineLarge.copyWith(
+                            color: colors.text.homeCard,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.s),
+                        _DepositExpiryLine(
+                          expiresInLabel: expiresInLabel,
+                          expiresAt: expiresAt,
+                          now: now,
+                          centered: true,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

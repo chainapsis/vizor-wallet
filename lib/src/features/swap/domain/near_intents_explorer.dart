@@ -27,14 +27,14 @@ Uri? nearIntentsExplorerUri({
     return nearIntentsExplorerTransactionUri(address);
   }
 
-  final txHash = depositTxHash?.trim();
-  if (txHash != null && txHash.isNotEmpty) {
-    return nearIntentsExplorerSearchUri(txHash);
-  }
-
   final intentHash = nearIntentHash?.trim();
   if (intentHash != null && intentHash.isNotEmpty) {
     return nearIntentsExplorerSearchUri(intentHash);
+  }
+
+  final txHash = depositTxHash?.trim();
+  if (txHash != null && txHash.isNotEmpty) {
+    return nearIntentsExplorerSearchUri(txHash);
   }
 
   return null;

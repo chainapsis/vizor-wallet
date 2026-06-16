@@ -5,7 +5,6 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_tooltip.dart';
 import '../../../address_book/models/address_book_contact.dart';
-import '../../../address_book/models/address_book_label_lookup.dart';
 import '../../domain/swap_address_plan.dart';
 import '../../domain/swap_contract.dart';
 import '../../models/swap_address_formatting.dart';
@@ -51,16 +50,6 @@ class MobileSwapReviewContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final sendsZec = quote.direction.sendsZec;
     final externalAddress = addressPlan.userExternalAddress.trim();
-    final addressNetwork = AddressBookNetwork.tryFromChainTicker(
-      addressPlan.externalAsset.chainTicker,
-    );
-    final addressBookLabel = addressNetwork == null
-        ? null
-        : addressBookLabelFor(
-            contacts: addressBookContacts,
-            network: addressNetwork,
-            address: externalAddress,
-          );
     final externalLabel = sendsZec ? 'To' : 'From';
     final externalBottom =
         '$externalLabel: '
@@ -91,7 +80,7 @@ class MobileSwapReviewContent extends StatelessWidget {
       children: [
         MobileSwapReviewHeader(pay: payRow, receive: receiveRow),
         const SizedBox(height: AppSpacing.sm),
-        _ReviewCard(quote: quote, addressBookLabel: addressBookLabel),
+        _ReviewCard(quote: quote),
         if (amountWarning != null) ...[
           const SizedBox(height: AppSpacing.s),
           _MobileReviewNotice(
@@ -120,10 +109,9 @@ class MobileSwapReviewContent extends StatelessWidget {
 
 /// The rounded details card — Figma `Review Wrap` (4731:85565).
 class _ReviewCard extends StatelessWidget {
-  const _ReviewCard({required this.quote, required this.addressBookLabel});
+  const _ReviewCard({required this.quote});
 
   final SwapQuote quote;
-  final String? addressBookLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -140,12 +128,6 @@ class _ReviewCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (addressBookLabel != null)
-            _ReviewRow(
-              label: 'Saved recipient',
-              value: addressBookLabel!,
-              leadingIconName: AppIcons.user,
-            ),
           _ReviewRow(
             label: 'Slippage tolerance',
             value: swapReviewSlippageToleranceText(quote),
@@ -174,13 +156,11 @@ class _ReviewRow extends StatelessWidget {
   const _ReviewRow({
     required this.label,
     required this.value,
-    this.leadingIconName,
     this.helpTooltip,
   });
 
   final String label;
   final String value;
-  final String? leadingIconName;
   final String? helpTooltip;
 
   @override
@@ -194,7 +174,7 @@ class _ReviewRow extends StatelessWidget {
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
               label,
-              style: AppTypography.labelMedium.copyWith(
+              style: AppTypography.labelLarge.copyWith(
                 color: colors.text.secondary,
               ),
             ),
@@ -211,14 +191,6 @@ class _ReviewRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  if (leadingIconName != null) ...[
-                    AppIcon(
-                      leadingIconName!,
-                      size: 14,
-                      color: colors.icon.brandCrimson,
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
-                  ],
                   Flexible(
                     child: Text(
                       value,
@@ -238,7 +210,7 @@ class _ReviewRow extends StatelessWidget {
                       child: AppIcon(
                         AppIcons.help,
                         size: 20,
-                        color: colors.icon.accent,
+                        color: colors.icon.regular.withValues(alpha: 0.72),
                       ),
                     ),
                   ],

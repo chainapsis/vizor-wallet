@@ -178,7 +178,9 @@ class _SwapActivityDetailSurfaceState
     unawaited(
       launchNearIntentsExplorer(
         nearIntentHash: intent.nearIntentHash,
-        depositTxHash: intent.depositTxHash,
+        depositTxHash: intent.depositTxHash?.trim().isNotEmpty == true
+            ? intent.depositTxHash
+            : intent.originChainTxHash,
         depositAddress: intent.depositAddress ?? intent.id,
       ),
     );

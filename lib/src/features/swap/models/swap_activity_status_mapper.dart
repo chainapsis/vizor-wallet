@@ -378,7 +378,11 @@ SwapStatusDetailRowData? _swapActivityTxIdRow({
   required String? depositTxHash,
   required String? depositAddress,
 }) {
-  final txId = _firstNonEmpty([intent.nearIntentHash?.trim(), depositTxHash]);
+  final txId = _firstNonEmpty([
+    depositAddress,
+    intent.nearIntentHash?.trim(),
+    depositTxHash,
+  ]);
   if (txId == null || txId.isEmpty) return null;
 
   final linkUri = nearIntentsExplorerUri(

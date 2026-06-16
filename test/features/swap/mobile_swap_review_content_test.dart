@@ -6,6 +6,7 @@ import 'package:flutter/material.dart'
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_address_plan.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_contract.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_address_formatting.dart';
@@ -15,8 +16,8 @@ import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review
 
 Widget _harness(Widget child) {
   return MaterialApp(
-    builder:
-        (_, navigator) => AppTheme(data: AppThemeData.light, child: navigator!),
+    builder: (_, navigator) =>
+        AppTheme(data: AppThemeData.light, child: navigator!),
     home: Directionality(
       textDirection: TextDirection.ltr,
       child: MediaQuery(
@@ -27,7 +28,9 @@ Widget _harness(Widget child) {
   );
 }
 
-MobileSwapReviewContent _content() {
+MobileSwapReviewContent _content({
+  Iterable<AddressBookContact> addressBookContacts = const [],
+}) {
   const externalAddress = '0x9aDFd236b6ccD57bd571ca3C538dbB55FE4819E2';
   const walletAddress =
       'u1q6g2k3r4s5t6u7v8w9x0yzaabbccddeeff00112233445566778899';
@@ -48,6 +51,7 @@ MobileSwapReviewContent _content() {
     addressPlan: addressPlan,
     accountLabel: 'Main account',
     accountProfilePictureId: 'default',
+    addressBookContacts: addressBookContacts,
     expired: false,
     amountWarning: null,
     startError: null,
@@ -71,6 +75,30 @@ void main() {
       expect(find.text('Swap fee'), findsOneWidget);
     },
   );
+
+  testWidgets('review card omits saved address book identity', (tester) async {
+    await tester.pumpWidget(
+      _harness(
+        _content(
+          addressBookContacts: const [
+            AddressBookContact(
+              id: 'treasury',
+              label: 'Treasury',
+              network: AddressBookNetwork.ethereum,
+              address: '0x9aDFd236b6ccD57bd571ca3C538dbB55FE4819E2',
+              profilePictureId: 'default',
+              createdAtMs: 0,
+              updatedAtMs: 0,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.text('Saved recipient'), findsNothing);
+    expect(find.text('Treasury'), findsNothing);
+    expect(find.text('Slippage tolerance'), findsOneWidget);
+  });
 
   testWidgets('review detail help icons use desktop tooltip copy', (
     tester,

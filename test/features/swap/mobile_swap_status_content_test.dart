@@ -19,8 +19,8 @@ import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart'
 
 Widget _harness(Widget child) {
   return MaterialApp(
-    builder:
-        (_, navigator) => AppTheme(data: AppThemeData.light, child: navigator!),
+    builder: (_, navigator) =>
+        AppTheme(data: AppThemeData.light, child: navigator!),
     home: Directionality(
       textDirection: TextDirection.ltr,
       child: MediaQuery(
@@ -99,14 +99,15 @@ SwapIntent _intent({
 }) {
   return SwapIntent(
     id: 'status-intent',
-    pair:
-        direction == SwapDirection.externalToZec
-            ? 'USDC -> ZEC'
-            : 'ZEC -> USDC',
-    sellAmount:
-        direction == SwapDirection.externalToZec ? '100.00 USDC' : '1.00 ZEC',
-    receiveEstimate:
-        direction == SwapDirection.externalToZec ? '1.00 ZEC' : '100.00 USDC',
+    pair: direction == SwapDirection.externalToZec
+        ? 'USDC -> ZEC'
+        : 'ZEC -> USDC',
+    sellAmount: direction == SwapDirection.externalToZec
+        ? '100.00 USDC'
+        : '1.00 ZEC',
+    receiveEstimate: direction == SwapDirection.externalToZec
+        ? '1.00 ZEC'
+        : '100.00 USDC',
     provider: 'NEAR Intents',
     status: SwapIntentStatus.processing,
     nextAction: 'Swap in progress',
@@ -114,10 +115,9 @@ SwapIntent _intent({
     externalAsset: SwapAsset.usdc,
     depositAddress: 'deposit-address',
     oneClickRecipient: recipient,
-    oneClickRefundTo:
-        direction == SwapDirection.externalToZec
-            ? '0xrefund-address'
-            : 'u1refund-address',
+    oneClickRefundTo: direction == SwapDirection.externalToZec
+        ? '0xrefund-address'
+        : 'u1refund-address',
   );
 }
 
@@ -278,7 +278,7 @@ void main() {
             activeTab: SwapStatusTab.details,
             details: const [
               SwapStatusDetailRowData(
-                label: 'USDC recipient',
+                label: 'Deposit USDC to',
                 value: '0x9aDFd23 ... E4819E2',
                 copyable: true,
                 copyText: fullAddress,
@@ -291,100 +291,192 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('USDC recipient'), findsOneWidget);
+    expect(find.text('Deposit USDC to'), findsOneWidget);
     expect(find.text('0x9aDF…819E2'), findsOneWidget);
     expect(find.text('0x9aDFd23 ... E4819E2'), findsNothing);
   });
 
-  testWidgets(
-    'details tab shows full mobile rows without collapsed affordance',
-    (tester) async {
-      await tester.pumpWidget(
-        _harness(
-          SingleChildScrollView(
-            child: _content(
-              showTabs: true,
-              activeTab: SwapStatusTab.details,
-              details: [
-                const SwapStatusDetailRowData(
-                  label: 'Account',
-                  value: 'Main account',
+  testWidgets('details tab keeps only the compact mobile transaction rows', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        SingleChildScrollView(
+          child: _content(
+            showTabs: true,
+            activeTab: SwapStatusTab.details,
+            details: [
+              const SwapStatusDetailRowData(
+                label: 'Account',
+                value: 'Main account',
+              ),
+              const SwapStatusDetailRowData(
+                label: 'Price protection',
+                value: '0.04 ZEC (5.0%)',
+              ),
+              const SwapStatusDetailRowData(
+                label: 'USDC recipient',
+                value: '0x9aDF…Ef064',
+              ),
+              const SwapStatusDetailRowData(
+                label: 'USDC refund address',
+                value: '0xrefund…ddress',
+              ),
+              const SwapStatusDetailRowData(
+                label: 'Deposit USDC to',
+                value: '0xdeposit…ddress',
+                copyable: true,
+                copyText: '0xdeposit-address',
+              ),
+              const SwapStatusDetailRowData(label: 'Memo', value: '123456'),
+              const SwapStatusDetailRowData(
+                label: 'Missing deposit',
+                value: '40 USDC',
+              ),
+              const SwapStatusDetailRowData(
+                label: 'Required deposit',
+                value: '100 USDC',
+              ),
+              const SwapStatusDetailRowData(
+                label: 'Detected deposit',
+                value: '60 USDC',
+              ),
+              const SwapStatusDetailRowData(
+                label: 'Deposit deadline',
+                value: 'May 20',
+              ),
+              const SwapStatusDetailRowData(
+                label: 'Refund fee',
+                value: '0.25 USDC',
+              ),
+              const SwapStatusDetailRowData(
+                label: 'Slippage tolerance',
+                value: '0.25 USDC (0.5%)',
+              ),
+              const SwapStatusDetailRowData(
+                label: 'Guaranteed minimum',
+                value: '0.249 ZEC',
+              ),
+              const SwapStatusDetailRowData(
+                label: 'Timestamp',
+                value: 'May 20',
+              ),
+              SwapStatusDetailRowData(
+                label: 'Tx ID',
+                value: '012312…4512',
+                linkUri: Uri.parse(
+                  'https://explorer.near-intents.org/?search=012312',
                 ),
-                const SwapStatusDetailRowData(
-                  label: 'Price protection',
-                  value: '0.04 ZEC (5.0%)',
-                ),
-                const SwapStatusDetailRowData(
-                  label: 'Slippage tolerance',
-                  value: '0.25 USDC (0.5%)',
-                ),
-                const SwapStatusDetailRowData(
-                  label: 'Guaranteed minimum',
-                  value: '0.249 ZEC',
-                ),
-                const SwapStatusDetailRowData(
-                  label: 'Timestamp',
-                  value: 'May 20',
-                ),
-                SwapStatusDetailRowData(
-                  label: 'Tx ID',
-                  value: '012312…4512',
-                  linkUri: Uri.parse(
-                    'https://explorer.near-intents.org/?search=012312',
-                  ),
-                ),
-                const SwapStatusDetailRowData(
-                  label: 'Swap fee',
-                  value: 'Included',
-                ),
-              ],
-            ),
+              ),
+              const SwapStatusDetailRowData(
+                label: 'Swap fee',
+                value: 'Included',
+              ),
+            ],
           ),
         ),
-      );
-      await tester.pump();
+      ),
+    );
+    await tester.pump();
 
-      expect(find.text('More details'), findsNothing);
-      expect(find.text('Less details'), findsNothing);
-      expect(find.text('Account'), findsNothing);
-      expect(find.text('Price protection'), findsNothing);
-      expect(find.text('Slippage tolerance'), findsOneWidget);
-      expect(find.text('Guaranteed minimum'), findsOneWidget);
-      expect(find.text('Tx ID'), findsOneWidget);
-      expect(find.text('Tx fee'), findsOneWidget);
-      expect(
-        find.byWidgetPredicate(
-          (widget) =>
-              widget is AppIcon && widget.name == AppIcons.arrowTopRight,
-        ),
-        findsOneWidget,
-      );
+    expect(find.text('More details'), findsNothing);
+    expect(find.text('Less details'), findsNothing);
+    expect(find.text('Account'), findsNothing);
+    expect(find.text('Price protection'), findsNothing);
+    expect(find.text('USDC recipient'), findsNothing);
+    expect(find.text('USDC refund address'), findsNothing);
+    expect(find.text('Swap fee'), findsNothing);
+    expect(find.text('Deposit USDC to'), findsOneWidget);
+    expect(find.text('Slippage tolerance'), findsOneWidget);
+    expect(find.text('Guaranteed minimum'), findsOneWidget);
+    expect(find.text('Memo'), findsOneWidget);
+    expect(find.text('Missing deposit'), findsOneWidget);
+    expect(find.text('Required deposit'), findsOneWidget);
+    expect(find.text('Detected deposit'), findsOneWidget);
+    expect(find.text('Deposit deadline'), findsOneWidget);
+    expect(find.text('Refund fee'), findsOneWidget);
+    expect(find.text('Timestamp'), findsOneWidget);
+    expect(find.text('Tx ID'), findsOneWidget);
+    expect(find.text('Tx fee'), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.arrowTopRight,
+      ),
+      findsOneWidget,
+    );
 
-      final detailsRect = tester.getRect(
-        find.byKey(const ValueKey('mobile_swap_transaction_details')),
-      );
-      final card = tester.widget<Container>(
-        find
-            .descendant(
-              of: find.byKey(const ValueKey('mobile_swap_status_card')),
-              matching: find.byType(Container),
-            )
-            .first,
-      );
-      expect(
-        card.padding,
-        const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
-          vertical: AppSpacing.base,
+    final detailsRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_swap_transaction_details')),
+    );
+    final card = tester.widget<Container>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('mobile_swap_status_card')),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    expect(
+      card.padding,
+      const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.base,
+      ),
+    );
+    final labelRect = tester.getRect(find.text('Slippage tolerance'));
+    final valueRect = tester.getRect(find.text('0.25 USDC (0.5%)'));
+    expect(labelRect.left, moreOrLessEquals(detailsRect.left));
+    expect(valueRect.left, greaterThan(labelRect.right));
+    expect(valueRect.right, greaterThan(detailsRect.right - 120));
+  });
+
+  testWidgets('completed details hide recipient and deposit address rows', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        SingleChildScrollView(
+          child: _content(
+            showTabs: false,
+            badgeKind: SwapStatusBadgeKind.completed,
+            details: [
+              const SwapStatusDetailRowData(
+                label: 'USDC recipient',
+                value: '0x9aDF…Ef064',
+                copyable: true,
+                copyText: '0x9aDFd2310B3FA54A8718445c82Eb2ef1c19Ef064',
+              ),
+              const SwapStatusDetailRowData(
+                label: 'ZEC deposit to',
+                value: 't1WXCS…vy16c',
+                copyable: true,
+                copyText: 't1WXCSFXY2bSBydHrSFADJd4igsttkvy16c',
+              ),
+              const SwapStatusDetailRowData(
+                label: 'Total fees',
+                value: 'Included',
+              ),
+              SwapStatusDetailRowData(
+                label: 'Tx ID',
+                value: '0x9aDF…Ef064',
+                linkUri: Uri.parse(
+                  'https://explorer.near-intents.org/transactions/'
+                  '0x9aDFd2310B3FA54A8718445c82Eb2ef1c19Ef064',
+                ),
+              ),
+            ],
+          ),
         ),
-      );
-      final labelRect = tester.getRect(find.text('Slippage tolerance'));
-      final valueRect = tester.getRect(find.text('0.25 USDC (0.5%)'));
-      expect(labelRect.left, moreOrLessEquals(detailsRect.left));
-      expect(valueRect.left, greaterThan(labelRect.right));
-      expect(valueRect.right, greaterThan(detailsRect.right - 120));
-    },
-  );
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('USDC recipient'), findsNothing);
+    expect(find.text('ZEC deposit to'), findsNothing);
+    expect(find.text('Tx ID'), findsOneWidget);
+    expect(find.text('Swap fee'), findsOneWidget);
+    expect(find.text('Tx fee'), findsNothing);
+  });
 }
 
 Finder _tooltipWithMessage(String message) {

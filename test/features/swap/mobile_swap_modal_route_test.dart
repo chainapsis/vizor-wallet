@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,9 +13,13 @@ import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_routes.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/swap/domain/swap_contract.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_address_edit_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -46,15 +52,18 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-Widget _app() => ProviderScope(
+Widget _app({_MobileDelayedQuoteSwapProvider? swapProvider}) => ProviderScope(
   overrides: [
     appBootstrapProvider.overrideWithValue(_bootstrap()),
+    if (swapProvider != null)
+      swapIntentProvider.overrideWithValue(swapProvider),
     syncProvider.overrideWith(
       () => FakeSyncNotifier(
         SyncState(
           accountUuid: 'account-1',
           hasAccountScopedData: true,
           orchardBalance: BigInt.from(100000000),
+          spendableBalance: BigInt.from(100000000),
         ),
       ),
     ),
@@ -207,6 +216,63 @@ void main() {
     expect(stateAfter.widget.focusNode.hasFocus, isTrue);
   });
 
+  testWidgets(
+    'review quote loading shows loader and disables slippage settings',
+    (tester) async {
+      final swapProvider = _MobileDelayedQuoteSwapProvider();
+      await tester.pumpWidget(_app(swapProvider: swapProvider));
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('Swap').last);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '0.5',
+      );
+      await tester.tap(find.text('Add recipient address'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_destination_field')),
+        '0x52908400098527886e0f7030069857d2e4169ee7',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('swap_address_update_button')),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('mobile_swap_review_button')));
+      await tester.pump();
+
+      expect(find.text('Getting quote'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('mobile_swap_review_button')),
+          matching: find.byWidgetPredicate(
+            (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('swap_settings_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
+      await tester.pump();
+      expect(find.byType(MobileSwapSlippageStepperModal), findsNothing);
+
+      swapProvider.completeQuote();
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+    },
+  );
+
   testWidgets('address editor remember toggle has no nickname or avatar form', (
     tester,
   ) async {
@@ -267,4 +333,67 @@ Future<void> _setNarrowMobileViewport(WidgetTester tester) async {
   addTearDown(() async {
     await tester.binding.setSurfaceSize(null);
   });
+}
+
+class _MobileDelayedQuoteSwapProvider implements SwapProvider {
+  final _quoteGate = Completer<void>();
+
+  void completeQuote() {
+    if (!_quoteGate.isCompleted) _quoteGate.complete();
+  }
+
+  @override
+  String get providerLabel => 'NEAR Intents';
+
+  @override
+  Future<List<SwapAsset>> listSupportedExternalAssets() async =>
+      swapExternalAssets;
+
+  @override
+  Future<SwapQuote> quote(SwapQuoteRequest request) async {
+    await _quoteGate.future;
+    return SwapQuote.estimate(
+      direction: request.direction,
+      externalAsset: request.externalAsset,
+      mode: request.mode,
+      amount: request.amount,
+      providerLabel: providerLabel,
+      slippageBps: request.slippageBps ?? 50,
+    );
+  }
+
+  @override
+  Future<SwapIntentSnapshot> startSwap(SwapQuote quote) async {
+    return SwapIntentSnapshot.fromQuote(quote);
+  }
+
+  @override
+  Future<SwapIntentSnapshot> getStatus(
+    String intentId, {
+    String? depositMemo,
+  }) async {
+    final quote = SwapQuote.estimate(
+      direction: SwapDirection.zecToExternal,
+      externalAsset: SwapAsset.usdc,
+      sellAmount: 1,
+      providerLabel: providerLabel,
+    );
+    return SwapIntentSnapshot.fromQuote(quote, id: intentId);
+  }
+
+  @override
+  Future<SwapIntentSnapshot> submitDepositTransaction({
+    required String depositAddress,
+    required String txHash,
+    String? depositMemo,
+    String? nearSenderAccount,
+  }) async {
+    final quote = SwapQuote.estimate(
+      direction: SwapDirection.zecToExternal,
+      externalAsset: SwapAsset.usdc,
+      sellAmount: 1,
+      providerLabel: providerLabel,
+    );
+    return SwapIntentSnapshot.fromQuote(quote, id: depositAddress);
+  }
 }

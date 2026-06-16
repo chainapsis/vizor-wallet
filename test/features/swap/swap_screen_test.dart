@@ -5514,6 +5514,17 @@ void main() {
       ),
     );
     expect(buttonLoaderRect.left - gettingQuoteRect.right, closeTo(4, 1));
+    expect(
+      tester
+          .widget<GestureDetector>(
+            find.byKey(const ValueKey('swap_settings_button')),
+          )
+          .onTap,
+      isNull,
+    );
+    await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('swap_slippage_modal')), findsNothing);
 
     swapProvider.completeQuote();
     await tester.pumpAndSettle();

@@ -288,6 +288,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
               rateText: rateText,
               slippageBps: state.slippageBps,
               settingsOpen: widget.slippageSettingsOpen,
+              settingsEnabled: !state.quoteLoading,
               onSettingsTap: widget.onOpenSlippageSettings,
             ),
             if (quoteError != null) ...[
@@ -306,12 +307,14 @@ class _SwapTicketFooter extends StatelessWidget {
     required this.rateText,
     required this.slippageBps,
     required this.settingsOpen,
+    required this.settingsEnabled,
     required this.onSettingsTap,
   });
 
   final String rateText;
   final int slippageBps;
   final bool settingsOpen;
+  final bool settingsEnabled;
   final VoidCallback onSettingsTap;
 
   @override
@@ -327,6 +330,7 @@ class _SwapTicketFooter extends StatelessWidget {
           _SlippageControl(
             label: formatSwapSlippage(slippageBps),
             selected: settingsOpen,
+            enabled: settingsEnabled,
             onTap: onSettingsTap,
           ),
         ],
@@ -944,22 +948,24 @@ class _SlippageControl extends StatelessWidget {
   const _SlippageControl({
     required this.label,
     required this.selected,
+    required this.enabled,
     required this.onTap,
   });
 
   final String label;
   final bool selected;
+  final bool enabled;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MouseRegion(
-      cursor: SystemMouseCursors.click,
+      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       child: GestureDetector(
         key: const ValueKey('swap_settings_button'),
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
+        onTap: enabled ? onTap : null,
         child: Container(
           height: 28,
           alignment: Alignment.center,
@@ -976,11 +982,17 @@ class _SlippageControl extends StatelessWidget {
               Text(
                 label,
                 style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.secondary,
+                  color: colors.text.secondary.withValues(
+                    alpha: enabled ? 1 : 0.45,
+                  ),
                 ),
               ),
               const SizedBox(width: 2),
-              AppIcon(AppIcons.cog, size: 16, color: colors.icon.muted),
+              AppIcon(
+                AppIcons.cog,
+                size: 16,
+                color: colors.icon.muted.withValues(alpha: enabled ? 1 : 0.45),
+              ),
             ],
           ),
         ),

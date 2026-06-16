@@ -76,7 +76,11 @@ class MobileSwapStatusContent extends StatelessWidget {
               children: [
                 _MobileStatusChipRow(badgeKind: presentation.badgeKind),
                 const SizedBox(height: AppSpacing.sm),
-                _MobileFinalDetails(rows: presentation.details),
+                _MobileFinalDetails(
+                  rows: presentation.details,
+                  hideSuccessAddressRows:
+                      presentation.badgeKind == SwapStatusBadgeKind.completed,
+                ),
               ],
             ),
           ),
@@ -267,30 +271,49 @@ class _MobileTransactionDetails extends StatelessWidget {
     return _MobileDetailRows(
       key: const ValueKey('mobile_swap_transaction_details'),
       rows: rows,
+      compactTransactionDetails: true,
     );
   }
 }
 
 class _MobileFinalDetails extends StatelessWidget {
-  const _MobileFinalDetails({required this.rows});
+  const _MobileFinalDetails({
+    required this.rows,
+    required this.hideSuccessAddressRows,
+  });
 
   final List<SwapStatusDetailRowData> rows;
+  final bool hideSuccessAddressRows;
 
   @override
   Widget build(BuildContext context) {
-    return _MobileDetailRows(rows: rows);
+    return _MobileDetailRows(
+      rows: rows,
+      hideSuccessAddressRows: hideSuccessAddressRows,
+    );
   }
 }
 
 class _MobileDetailRows extends StatelessWidget {
-  const _MobileDetailRows({required this.rows, super.key});
+  const _MobileDetailRows({
+    required this.rows,
+    this.hideSuccessAddressRows = false,
+    this.compactTransactionDetails = false,
+    super.key,
+  });
 
   final List<SwapStatusDetailRowData> rows;
+  final bool hideSuccessAddressRows;
+  final bool compactTransactionDetails;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final visibleRows = _mobileVisibleDetailRows(rows);
+    final visibleRows = _mobileVisibleDetailRows(
+      rows,
+      hideSuccessAddressRows: hideSuccessAddressRows,
+      compactTransactionDetails: compactTransactionDetails,
+    );
     final firstFeeIndex = visibleRows.indexWhere(_isMobileFeeDetailRow);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -312,11 +335,19 @@ class _MobileDetailRows extends StatelessWidget {
 }
 
 List<SwapStatusDetailRowData> _mobileVisibleDetailRows(
-  List<SwapStatusDetailRowData> rows,
-) {
+  List<SwapStatusDetailRowData> rows, {
+  bool hideSuccessAddressRows = false,
+  bool compactTransactionDetails = false,
+}) {
   final visible = rows
       .where((row) {
-        return row.label != 'Price protection' && row.label != 'Account';
+        if (compactTransactionDetails &&
+            !_isMobileProgressTransactionDetailRow(row)) {
+          return false;
+        }
+        return row.label != 'Price protection' &&
+            row.label != 'Account' &&
+            (!hideSuccessAddressRows || !_isMobileSuccessAddressDetailRow(row));
       })
       .toList(growable: false);
   final nonFeeRows = visible
@@ -324,6 +355,32 @@ List<SwapStatusDetailRowData> _mobileVisibleDetailRows(
       .toList(growable: false);
   final feeRows = visible.where(_isMobileFeeDetailRow).toList(growable: false);
   return [...nonFeeRows, ...feeRows];
+}
+
+bool _isMobileProgressTransactionDetailRow(SwapStatusDetailRowData row) {
+  final label = row.label.toLowerCase();
+  return _isMobileDepositAddressDetailRow(row) ||
+      label == 'slippage tolerance' ||
+      label == 'guaranteed minimum' ||
+      label == 'memo' ||
+      label == 'missing deposit' ||
+      label == 'required deposit' ||
+      label == 'detected deposit' ||
+      label == 'deposit deadline' ||
+      label == 'refund fee' ||
+      label == 'timestamp' ||
+      label == 'tx id';
+}
+
+bool _isMobileDepositAddressDetailRow(SwapStatusDetailRowData row) {
+  final label = row.label.toLowerCase();
+  return label.contains(' deposit to') ||
+      (label.startsWith('deposit ') && label.endsWith(' to'));
+}
+
+bool _isMobileSuccessAddressDetailRow(SwapStatusDetailRowData row) {
+  final label = row.label.toLowerCase();
+  return label.contains('recipient') || _isMobileDepositAddressDetailRow(row);
 }
 
 bool _isMobileFeeDetailRow(SwapStatusDetailRowData row) {
@@ -453,7 +510,7 @@ Future<void> _launchExternalUri(Uri uri) async {
 
 String _mobileStatusDetailLabel(SwapStatusDetailRowData row) {
   final label = row.label;
-  if (label == 'Swap fee' || label == 'Total fees') return 'Tx fee';
+  if (label == 'Total fees') return 'Swap fee';
   return label;
 }
 
@@ -518,7 +575,7 @@ class _MobileStatusDetailActionIcon extends StatelessWidget {
 
 String _mobileStatusHelpTooltip(String label) {
   return switch (label) {
-    'Swap fee' || 'Tx fee' => swapFeeTooltip,
+    'Swap fee' => swapFeeTooltip,
     'Guaranteed minimum' => swapGenericMinimumReceiveTooltip,
     'Total fees' => swapTotalFeesTooltip,
     _ => swapStatusDetailTooltip,

@@ -12,16 +12,20 @@ import 'package:zcash_wallet/src/features/swap/domain/swap_asset.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_timeout_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_deposit_tokens_page_content.dart';
 
-Widget _harness(Widget child) {
+Widget _harness(
+  Widget child, {
+  Size mediaSize = const Size(393, 852),
+  double width = 361,
+}) {
   return MaterialApp(
-    builder:
-        (_, navigator) => AppTheme(data: AppThemeData.dark, child: navigator!),
+    builder: (_, navigator) =>
+        AppTheme(data: AppThemeData.dark, child: navigator!),
     home: MediaQuery(
-      data: const MediaQueryData(size: Size(393, 852)),
+      data: MediaQueryData(size: mediaSize),
       child: SingleChildScrollView(
         child: Align(
           alignment: Alignment.topCenter,
-          child: SizedBox(width: 361, child: child),
+          child: SizedBox(width: width, child: child),
         ),
       ),
     ),
@@ -99,6 +103,28 @@ void main() {
     final shape = decoration.shape;
     expect(shape, isA<PrettyQrSmoothSymbol>());
     expect((shape as PrettyQrSmoothSymbol).roundFactor, 0.75);
+  });
+
+  testWidgets('mobile deposit QR card fits a 360dp Android viewport', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(_content(), mediaSize: const Size(360, 800), width: 328),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('swap_deposit_qr_card'))).width,
+      328,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('swap_deposit_tokens_qr_code'))),
+      const Size(304, 304),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('swap_deposit_qr_logo'))).width,
+      lessThanOrEqualTo(57),
+    );
   });
 
   testWidgets('mobile deposit copy icons match the Figma size', (tester) async {

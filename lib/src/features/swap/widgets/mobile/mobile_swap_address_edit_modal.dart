@@ -18,10 +18,10 @@ import '../swap_modal_controls.dart';
 /// description, the remember toggle, and a separate Buttons Stack (full-width
 /// `Update` + `Cancel`).
 ///
-/// Like the desktop editor, "Remember this address" saves hands-free: the
-/// screen auto-names the saved contact with a persona label and assigns a
-/// random avatar, so there is deliberately no nickname/avatar form here — the
-/// toggle is the whole remember UI.
+/// On mobile, "Remember this address" saves hands-free: the screen auto-names
+/// the saved contact with a persona label and assigns a random avatar, so there
+/// is deliberately no nickname/avatar form here — the toggle is the whole
+/// remember UI.
 class MobileSwapAddressEditModal extends StatefulWidget {
   const MobileSwapAddressEditModal({
     required this.state,

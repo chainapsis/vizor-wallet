@@ -203,9 +203,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     );
   }
 
-  /// Same convenience save as the desktop swap screen: remembered swap
-  /// addresses are saved hands-free with an auto-assigned persona label and a
-  /// random avatar (no nickname/picture form on the modal).
+  /// Mobile convenience save: remembered swap addresses are saved hands-free
+  /// with an auto-assigned persona label and a random avatar.
   Future<void> _rememberSwapAddress(String value, SwapState swapState) async {
     final address = value.trim();
     if (address.isEmpty) return;
@@ -231,9 +230,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
         return;
       }
 
-      // Remembered addresses are saved hands-free: a persona label from the
-      // keep-themed pool (deduped against existing labels) and a random
-      // avatar, matching the desktop swap editor.
+      // Remembered mobile swap addresses use a deduped persona label and a
+      // random avatar, without opening the full desktop nickname/avatar form.
       await ref
           .read(addressBookProvider.notifier)
           .addContact(
@@ -353,8 +351,11 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                           AppButton(
                             key: const ValueKey('swap_settings_button'),
                             variant: AppButtonVariant.secondary,
-                            onPressed: () =>
-                                _openModal(_SwapModalSurface.slippageSettings),
+                            onPressed: swapState.quoteLoading
+                                ? null
+                                : () => _openModal(
+                                    _SwapModalSurface.slippageSettings,
+                                  ),
                             trailing: const AppIcon(AppIcons.cog),
                             child: Text(
                               formatSwapSlippage(swapState.slippageBps),
@@ -458,11 +459,41 @@ class _MobileSwapReviewButton extends StatelessWidget {
         vertical: AppSpacing.xs,
       ),
       onPressed: onPressed,
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        textAlign: TextAlign.center,
+      child: _MobileSwapReviewButtonLabel(
+        label: label,
+        loading: state.quoteLoading && !needsDestinationAddress,
+      ),
+    );
+  }
+}
+
+class _MobileSwapReviewButtonLabel extends StatelessWidget {
+  const _MobileSwapReviewButtonLabel({
+    required this.label,
+    required this.loading,
+  });
+
+  final String label;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+          if (loading) ...[
+            const SizedBox(width: 4),
+            const AppIcon(AppIcons.loader),
+          ],
+        ],
       ),
     );
   }

@@ -84,7 +84,7 @@ void main() {
     );
 
     final txId = _detailRow(presentation.details, 'Tx ID');
-    expect(txId.value, 'intent-hash-123');
+    expect(txId.value, 't1provider-deposit');
     expect(
       txId.linkUri.toString(),
       'https://explorer.near-intents.org/transactions/t1provider-deposit',
