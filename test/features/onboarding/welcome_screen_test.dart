@@ -32,6 +32,22 @@ void main() {
     );
   });
 
+  testWidgets('hides legal links while preserving footer space', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_welcomeScreen());
+
+    expect(find.text('Terms'), findsNothing);
+    expect(find.text('Privacy'), findsNothing);
+
+    final footerSpace = find.byKey(
+      const ValueKey('welcome_legal_footer_space'),
+    );
+    expect(footerSpace, findsOneWidget);
+    expect(tester.getSize(footerSpace), const Size(154, 36));
+  });
+
   testWidgets('opens endpoint settings modal from welcome', (tester) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(_welcomeScreen());

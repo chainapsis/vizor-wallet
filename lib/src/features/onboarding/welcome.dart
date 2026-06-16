@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart' show TapGestureRecognizer;
 import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,6 +16,8 @@ const double _welcomeCanvasHeight = 720;
 const double _welcomePaneWidth = 420;
 const double _welcomeActionWidth = 196;
 const double _welcomeBackButtonTop = AppSpacing.base + AppSpacing.xs;
+const double _welcomeLegalFooterWidth = 154;
+const double _welcomeLegalFooterHeight = 36;
 
 /// Onboarding entry point — Figma `_Welcome` at node 4034:62997
 /// (light) / 4363:117257 (dark).
@@ -375,7 +376,7 @@ class _Content extends StatelessWidget {
             alignment: Alignment.bottomCenter,
             child: Padding(
               padding: EdgeInsets.only(bottom: 13),
-              child: _LegalFooter(),
+              child: _LegalFooterSpace(),
             ),
           ),
         ],
@@ -384,59 +385,15 @@ class _Content extends StatelessWidget {
   }
 }
 
-class _LegalFooter extends StatefulWidget {
-  const _LegalFooter();
-
-  @override
-  State<_LegalFooter> createState() => _LegalFooterState();
-}
-
-class _LegalFooterState extends State<_LegalFooter> {
-  // `from=onboarding` keeps the legal pages on the bare full pane (no
-  // sidebar) even when a wallet exists (the /add-account variant).
-  late final TapGestureRecognizer _termsRecognizer = TapGestureRecognizer()
-    ..onTap = () => context.push('/terms?from=onboarding');
-  late final TapGestureRecognizer _privacyRecognizer = TapGestureRecognizer()
-    ..onTap = () => context.push('/privacy?from=onboarding');
-
-  @override
-  void dispose() {
-    _termsRecognizer.dispose();
-    _privacyRecognizer.dispose();
-    super.dispose();
-  }
+class _LegalFooterSpace extends StatelessWidget {
+  const _LegalFooterSpace();
 
   @override
   Widget build(BuildContext context) {
-    final style = AppTypography.bodySmall.copyWith(
-      color: context.colors.text.muted,
-    );
-    final linkStyle = style.copyWith(
-      decoration: TextDecoration.underline,
-      decorationColor: context.colors.text.muted,
-    );
-    return SizedBox(
-      width: 154,
-      child: Text.rich(
-        TextSpan(
-          style: style,
-          children: [
-            const TextSpan(text: 'By using Vizor you agree to our '),
-            TextSpan(
-              text: 'Terms',
-              style: linkStyle,
-              recognizer: _termsRecognizer,
-            ),
-            const TextSpan(text: ' and '),
-            TextSpan(
-              text: 'Privacy',
-              style: linkStyle,
-              recognizer: _privacyRecognizer,
-            ),
-          ],
-        ),
-        textAlign: TextAlign.center,
-      ),
+    return const SizedBox(
+      key: ValueKey('welcome_legal_footer_space'),
+      width: _welcomeLegalFooterWidth,
+      height: _welcomeLegalFooterHeight,
     );
   }
 }
