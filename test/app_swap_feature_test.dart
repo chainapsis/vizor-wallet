@@ -118,7 +118,7 @@ void main() {
       find.byKey(const ValueKey('swap_activity_detail_page')),
       findsOneWidget,
     );
-    expect(find.text('Swapping ...'), findsOneWidget);
+    expect(find.text('Swap in progress...'), findsOneWidget);
 
     await tester.tap(find.bySemanticsLabel('Back to Home'));
     await _pumpUntilAbsent(tester, find.byType(SwapActivityDetailScreen));

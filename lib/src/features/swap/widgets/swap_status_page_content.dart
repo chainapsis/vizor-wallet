@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -784,7 +785,8 @@ class _ProgressStep extends StatelessWidget {
     final complete = step.state == SwapStatusStepState.complete;
     final active = step.state == SwapStatusStepState.active;
     final isLast = index == count - 1;
-    final height = active ? 84.0 : (isLast ? 24.0 : 37.0);
+    const isMobile = kAppFormFactor == AppFormFactor.mobile;
+    final height = active ? (isMobile ? 112.0 : 84.0) : (isLast ? 24.0 : 37.0);
     final title = step.titleForState(step.state);
     return SizedBox(
       key: ValueKey('swap_activity_route_step_${index}_${step.state.name}'),
@@ -843,7 +845,9 @@ class _ProgressStep extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (active && step.lastCheckedLabel != null) ...[
+                      if (!isMobile &&
+                          active &&
+                          step.lastCheckedLabel != null) ...[
                         const SizedBox(width: AppSpacing.s),
                         Text(
                           step.lastCheckedLabel!,
@@ -855,19 +859,36 @@ class _ProgressStep extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (active && step.description != null) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  SizedBox(
-                    width: 256,
-                    child: Text(
-                      step.description!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.secondary,
-                      ),
+                if (isMobile && active && step.lastCheckedLabel != null) ...[
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    step.lastCheckedLabel!,
+                    style: AppTypography.labelMedium.copyWith(
+                      color: colors.text.secondary,
                     ),
                   ),
+                ],
+                if (active && step.description != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  if (isMobile)
+                    Text(
+                      step.description!,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    )
+                  else
+                    SizedBox(
+                      width: 256,
+                      child: Text(
+                        step.description!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                    ),
                 ],
               ],
             ),
@@ -904,7 +925,7 @@ class _ProgressStepIcon extends StatelessWidget {
           ? AppIcon(
               AppIcons.loader,
               key: const ValueKey('swap_status_active_step_loader'),
-              size: 16,
+              size: 20,
               color: colors.icon.inverse,
               animated: animateLoader,
             )
@@ -937,8 +958,7 @@ class SwapTransactionDetails extends StatefulWidget {
   final VoidCallback? onToggleExpanded;
 
   @override
-  State<SwapTransactionDetails> createState() =>
-      SwapTransactionDetailsState();
+  State<SwapTransactionDetails> createState() => SwapTransactionDetailsState();
 }
 
 class SwapTransactionDetailsState extends State<SwapTransactionDetails> {

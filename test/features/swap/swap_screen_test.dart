@@ -3388,7 +3388,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('swap_status_title')), findsOneWidget);
-    expect(find.text('Swapping ...'), findsOneWidget);
+    expect(find.text('Swap in progress...'), findsOneWidget);
     expect(find.text('Swap Progress'), findsOneWidget);
     expect(find.text('Transaction details'), findsOneWidget);
     expect(find.text('Activity detail'), findsNothing);
@@ -3992,7 +3992,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Swapping ...'), findsOneWidget);
+    expect(find.text('Swap in progress...'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('swap_status_page_content')),
       findsOneWidget,
@@ -7692,7 +7692,7 @@ Widget _reviewTestPage({
 }
 
 Widget _statusTestPage({
-  String title = 'Swapping ...',
+  String title = 'Swap in progress...',
   SwapAsset payAsset = SwapAsset.usdc,
   SwapAsset receiveAsset = SwapAsset.zec,
   String payFiatText = r'$110.24',

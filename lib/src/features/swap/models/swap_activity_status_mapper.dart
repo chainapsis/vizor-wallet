@@ -1,5 +1,6 @@
 import '../../../core/profile_pictures.dart';
 import '../../address_book/models/address_book_contact.dart';
+import '../domain/near_intents_explorer.dart';
 import 'swap_address_formatting.dart';
 import 'swap_detail_tooltips.dart';
 import 'swap_fiat_value_formatting.dart';
@@ -108,7 +109,7 @@ String _swapActivityStatusTitle(SwapIntent intent) {
     SwapIntentStatus.complete => 'Swap completed',
     SwapIntentStatus.incompleteDeposit => 'Incomplete deposit',
     SwapIntentStatus.failed || SwapIntentStatus.refunded => 'Swap failed',
-    _ => 'Swapping ...',
+    _ => 'Swap in progress...',
   };
 }
 
@@ -214,6 +215,11 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
   final timestamp = _swapActivityTimestampLabel(
     intent.completedAt ?? intent.updatedAt ?? intent.createdAt,
   );
+  final txIdRow = _swapActivityTxIdRow(
+    intent: intent,
+    depositTxHash: depositTxHash,
+    depositAddress: depositAddress,
+  );
   final terminal = intent.status.isTerminal;
   final failed =
       _swapActivityStatusBadgeKind(intent.status) == SwapStatusBadgeKind.failed;
@@ -263,6 +269,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         ),
       if (timestamp != null)
         SwapStatusDetailRowData(label: 'Timestamp', value: timestamp),
+      ?txIdRow,
     ];
   }
 
@@ -332,6 +339,9 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       help: true,
       helpTooltip: swapMinimumReceiveTooltip(receiveSymbol),
     ),
+    if (timestamp != null)
+      SwapStatusDetailRowData(label: 'Timestamp', value: timestamp),
+    ?txIdRow,
     if (sendsZec && refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
         label: '$sourceSymbol refund address',
@@ -361,6 +371,28 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         copyText: destinationChainTxHash,
       ),
   ];
+}
+
+SwapStatusDetailRowData? _swapActivityTxIdRow({
+  required SwapIntent intent,
+  required String? depositTxHash,
+  required String? depositAddress,
+}) {
+  final txId = _firstNonEmpty([intent.nearIntentHash?.trim(), depositTxHash]);
+  if (txId == null || txId.isEmpty) return null;
+
+  final linkUri = nearIntentsExplorerUri(
+    nearIntentHash: intent.nearIntentHash,
+    depositTxHash: depositTxHash,
+    depositAddress: depositAddress,
+  );
+  if (linkUri == null) return null;
+
+  return SwapStatusDetailRowData(
+    label: 'Tx ID',
+    value: compactSwapAddress(txId),
+    linkUri: linkUri,
+  );
 }
 
 List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
