@@ -49,7 +49,8 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(ReceivedReceiptView), findsOneWidget);
     expect(find.text('Message'), findsNothing);
-    expect(find.text('Unknown sender'), findsOneWidget);
+    expect(find.text('Shielded sender'), findsOneWidget);
+    expect(find.text('Unknown sender'), findsNothing);
     expect(find.text('Shielded'), findsOneWidget);
     expect(find.text('Completed'), findsOneWidget);
   });

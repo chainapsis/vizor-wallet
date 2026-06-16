@@ -74,7 +74,7 @@ Widget buildReceivedReceiptTransparentToShieldedUseCase(BuildContext context) {
 Widget buildReceivedReceiptShieldedToShieldedUseCase(BuildContext context) {
   return _ReceivedReceiptFrame(
     child: ReceivedReceiptView(
-      unknownFromPool: 'shielded',
+      unknownFromKind: ReceivedReceiptUnknownFromKind.shieldedSender,
       isShieldedSource: true,
       amountText: '120 ZEC',
       receivingAddress: _shieldedReceivingAddress,
@@ -119,7 +119,7 @@ Widget buildReceivedReceiptInProgressUseCase(BuildContext context) {
   return _ReceivedReceiptFrame(
     child: ReceivedReceiptView(
       status: ReceivedReceiptStatus.inProgress,
-      unknownFromPool: 'unknown',
+      unknownFromKind: ReceivedReceiptUnknownFromKind.unknownSender,
       amountText: '120 ZEC',
       receivingAddress: _transparentReceivingAddress,
       timestampText: '25 May, 13:30',

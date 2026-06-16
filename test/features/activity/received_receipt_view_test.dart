@@ -127,7 +127,7 @@ void main() {
     await _pump(
       tester,
       ReceivedReceiptView(
-        unknownFromPool: 'shielded',
+        unknownFromKind: ReceivedReceiptUnknownFromKind.shieldedSender,
         isShieldedSource: true,
         amountText: '120 ZEC',
         receivingAddress: _shieldedReceivingAddress,
@@ -139,17 +139,20 @@ void main() {
     );
 
     expect(find.text('Message'), findsNothing);
-    expect(find.text('Unknown sender'), findsOneWidget);
+    expect(find.text('Shielded sender'), findsOneWidget);
+    expect(find.text('Unknown sender'), findsNothing);
     expect(find.text('Shielded'), findsOneWidget);
     expect(find.text('Transparent'), findsNothing);
     expect(find.textContaining(' ... '), findsOneWidget);
   });
 
-  testWidgets('renders an unknown transparent source row', (tester) async {
+  testWidgets('renders an unknown source row without a pool badge', (
+    tester,
+  ) async {
     await _pump(
       tester,
       const ReceivedReceiptView(
-        unknownFromPool: 'transparent',
+        unknownFromKind: ReceivedReceiptUnknownFromKind.unknownSender,
         amountText: '120 ZEC',
         receivingAddress: _transparentReceivingAddress,
         timestampText: '25 May, 13:30',
@@ -159,7 +162,8 @@ void main() {
 
     expect(find.text('From'), findsOneWidget);
     expect(find.text('Unknown sender'), findsOneWidget);
-    expect(find.text('Transparent'), findsOneWidget);
+    expect(find.text('Transparent'), findsNothing);
+    expect(find.text('Shielded'), findsNothing);
     expect(find.text('Show full address'), findsNothing);
     expect(
       find.byWidgetPredicate(

@@ -478,7 +478,9 @@ class _ActivityTransactionStatusScreenState
         timestampText: _timestampText(tx),
         txIdText: tx.txidHex,
         fromRecipient: fromRecipient,
-        unknownFromPool: hasFromAddress ? null : fromPool,
+        unknownFromKind: hasFromAddress
+            ? null
+            : _unknownFromKindForSourcePool(fromPool),
         isShieldedSource:
             fromPool == 'shielded' ||
             (hasFromAddress && _isShieldedZcashAddress(fromAddress)),
@@ -498,6 +500,13 @@ class _ActivityTransactionStatusScreenState
         onTxIdPressed: () => unawaited(_openTransactionExplorer()),
       ),
     );
+  }
+
+  ReceivedReceiptUnknownFromKind? _unknownFromKindForSourcePool(String? pool) {
+    if (pool == null || pool.isEmpty) return null;
+    return pool == 'shielded'
+        ? ReceivedReceiptUnknownFromKind.shieldedSender
+        : ReceivedReceiptUnknownFromKind.unknownSender;
   }
 
   Widget _sentContent(
