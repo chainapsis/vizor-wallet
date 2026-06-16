@@ -7,9 +7,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_tab_bar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile/mobile_account_avatar.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import 'package:zcash_wallet/src/features/accounts/widgets/mobile/account_edit_sheets.dart';
@@ -108,6 +111,34 @@ void main() {
     expect(find.text('Other'), findsOneWidget);
     expect(find.text('Knight'), findsOneWidget);
     expect(find.text('Viking'), findsOneWidget);
+    final title = tester.widget<Text>(find.text('Accounts'));
+    expect(title.style?.fontSize, AppTypography.headlineLarge.fontSize);
+    expect(title.style?.height, AppTypography.headlineLarge.height);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_accounts_row_a'))),
+      const Size(456, 44),
+    );
+    expect(
+      tester.getSize(
+        find.descendant(
+          of: find.byKey(const ValueKey('mobile_accounts_row_a')),
+          matching: find.byType(MobileAccountAvatar),
+        ),
+      ),
+      const Size(40, 40),
+    );
+    final list = tester.widget<ListView>(find.byType(ListView));
+    expect(
+      list.padding,
+      const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.s,
+        AppSpacing.sm,
+        kMobileTabBarHeight + AppSpacing.lg,
+      ),
+    );
+    final safeArea = tester.widget<SafeArea>(find.byType(SafeArea).first);
+    expect(safeArea.bottom, isFalse);
   });
 
   testWidgets('imported accounts offer removal; the last seed anchor does '
@@ -130,6 +161,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
+    final openMenuButton = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('mobile_accounts_menu_button_b')),
+    );
+    expect(
+      (openMenuButton.decoration as BoxDecoration).color,
+      AppThemeData.light.colors.state.hover,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_account_menu_card'))),
+      const Size(173, 173),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_account_menu_copy'))),
+      const Size(165, 26),
+    );
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
 
@@ -138,6 +184,45 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsNothing);
+  });
+
+  testWidgets('row menu stays above the floating tab bar clearance', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(393, 852)
+      ..devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _app(
+        AccountState(
+          accounts: [
+            _account('a', 'Knight', isSeedAnchor: true),
+            for (var i = 0; i < 12; i++) _account('other-$i', 'Other $i'),
+          ],
+          activeAccountUuid: 'a',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_accounts_menu_other-11')),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+
+    final menuRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_account_menu_card')),
+    );
+    expect(
+      menuRect.bottom,
+      lessThanOrEqualTo(852 - (kMobileTabBarHeight + AppSpacing.lg)),
+    );
   });
 
   testWidgets('the edit sheet shows the avatar picker and validates the '
@@ -162,12 +247,12 @@ void main() {
     await tester.tap(find.text('Edit account'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Account label'), findsOneWidget);
+    expect(find.text('Account name'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_account_edit_name_clear')),
       findsOneWidget,
     );
-    final accountLabel = tester.widget<Text>(find.text('Account label'));
+    final accountLabel = tester.widget<Text>(find.text('Account name'));
     expect(accountLabel.style?.fontWeight, FontWeight.w400);
     expect(accountLabel.style?.fontSize, AppTypography.labelLarge.fontSize);
     expect(accountLabel.style?.height, AppTypography.labelLarge.height);
@@ -305,7 +390,7 @@ void main() {
     final selectedBadgeRect = tester.getRect(
       find.byKey(const ValueKey('mobile_account_pfp_selected_badge_pfp-01')),
     );
-    expect(selectedBadgeRect.size, const Size(20, 20));
+    expect(selectedBadgeRect.size, const Size(24, 20));
     expect(selectedBadgeRect.right - firstPfpRect.right, moreOrLessEquals(4));
     expect(selectedBadgeRect.bottom - firstPfpRect.bottom, moreOrLessEquals(4));
     expect(
@@ -328,7 +413,7 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('mobile_account_edit_save')));
     await tester.pump();
-    expect(find.text('Account label'), findsOneWidget);
+    expect(find.text('Account name'), findsOneWidget);
   });
 
   testWidgets('profile picture sheet wraps the grid on narrow phones', (
@@ -370,7 +455,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('add account routes to the add-account flow', (tester) async {
+  testWidgets('does not show a page-level add account action', (tester) async {
     await tester.pumpWidget(
       _app(
         AccountState(
@@ -381,13 +466,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final button = find.byKey(const ValueKey('mobile_accounts_add_account'));
-    expect(button, findsOneWidget);
-    expect(find.text('Add account'), findsOneWidget);
-
-    await tester.tap(button);
-    await tester.pumpAndSettle();
-    expect(find.text('add account route'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_accounts_add_account')),
+      findsNothing,
+    );
+    expect(find.text('Add account'), findsNothing);
   });
 
   testWidgets('remove asks for confirmation with the design copy', (
@@ -411,8 +494,25 @@ void main() {
     await tester.tap(find.text('Remove account'));
     await tester.pumpAndSettle();
 
+    expect(find.byType(MobileModalScaffold), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
     expect(find.textContaining("can't be reverted"), findsOneWidget);
+    final title = tester.widget<Text>(find.text('Remove account'));
+    expect(title.style?.fontSize, 16);
+    expect(title.style?.height, 24 / 16);
+    expect(title.style?.fontWeight, FontWeight.w600);
+    final body = tester.widget<Text>(find.textContaining("can't be reverted"));
+    expect(body.style?.fontSize, 14);
+    expect(body.style?.height, 21 / 14);
+    expect(body.style?.fontWeight, FontWeight.w400);
+    final remove = tester.widget<Text>(find.text('Remove'));
+    expect(remove.style?.fontSize, 14);
+    expect(remove.style?.height, 16 / 14);
+    expect(remove.style?.fontWeight, FontWeight.w500);
+    final cancel = tester.widget<Text>(find.text('Cancel'));
+    expect(cancel.style?.fontSize, 14);
+    expect(cancel.style?.height, 16 / 14);
+    expect(cancel.style?.fontWeight, FontWeight.w500);
 
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
