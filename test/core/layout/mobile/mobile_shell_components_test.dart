@@ -121,6 +121,23 @@ void main() {
     expect(backs, 1);
   });
 
+  testWidgets('MobileTopNav.back accepts a title style override', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        const MobileTopNav.back(
+          title: 'Swap in progress...',
+          titleStyle: AppTypography.headlineLarge,
+        ),
+      ),
+    );
+
+    final title = tester.widget<Text>(find.text('Swap in progress...'));
+    expect(title.style?.fontFamily, AppTypography.headlineLarge.fontFamily);
+    expect(title.style?.fontSize, AppTypography.headlineLarge.fontSize);
+  });
+
   testWidgets('MobileTopNav.steps clamps and renders progress', (tester) async {
     await tester.pumpWidget(_harness(const MobileTopNav.steps(progress: 0.5)));
 

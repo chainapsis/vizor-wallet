@@ -37,6 +37,7 @@ class MobileTopNav extends StatelessWidget {
     super.key,
   }) : _variant = _MobileTopNavVariant.account,
        title = '',
+       titleStyle = null,
        progress = 0,
        onBack = null,
        trailing = null,
@@ -54,6 +55,7 @@ class MobileTopNav extends StatelessWidget {
       avatar = null,
       onAccountTap = null,
       title = '',
+      titleStyle = null,
       trailing = null,
       backIcon = AppIcons.chevronBackward;
 
@@ -62,6 +64,7 @@ class MobileTopNav extends StatelessWidget {
     this.onBack,
     this.trailing,
     this.backIcon = AppIcons.chevronBackward,
+    this.titleStyle,
     super.key,
   }) : _variant = _MobileTopNavVariant.back,
        accountName = '',
@@ -106,6 +109,7 @@ class MobileTopNav extends StatelessWidget {
 
   /// Back variant: centered serif title.
   final String title;
+  final TextStyle? titleStyle;
 
   /// Back variant: right-aligned widget (e.g. the swap composer's
   /// "Powered by NEAR Intents" lockup — Figma 4686:102067).
@@ -253,7 +257,7 @@ class MobileTopNav extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
-              style: AppTypography.headlineMedium.copyWith(
+              style: (titleStyle ?? AppTypography.headlineMedium).copyWith(
                 color: colors.text.accent,
               ),
             ),

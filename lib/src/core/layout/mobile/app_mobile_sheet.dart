@@ -192,6 +192,8 @@ class MobileModalScaffold extends StatelessWidget {
     required this.title,
     required this.onClose,
     required this.child,
+    this.leading,
+    this.titleStyle,
     this.bodyGap = AppSpacing.sm,
     this.bottomPadding = AppSpacing.md,
     super.key,
@@ -200,6 +202,8 @@ class MobileModalScaffold extends StatelessWidget {
   final String title;
   final VoidCallback onClose;
   final Widget child;
+  final Widget? leading;
+  final TextStyle? titleStyle;
 
   /// Gap between the title and the body. Defaults to 16; the asset picker
   /// (whose body is a fixed-height scrolling list filling to the card edge)
@@ -226,17 +230,32 @@ class MobileModalScaffold extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Padding(
-                // Clear the absolute 32px close (+ an 8px gap) so a long title
-                // ellipsizes instead of sliding under it.
-                padding: const EdgeInsets.only(right: 40),
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodyLarge.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: colors.text.accent,
+              SizedBox(
+                height: 44,
+                child: Padding(
+                  // Clear the absolute 32px close (+ an 8px gap) so a long title
+                  // ellipsizes instead of sliding under it.
+                  padding: const EdgeInsets.only(right: 40),
+                  child: Row(
+                    children: [
+                      if (leading != null) ...[
+                        leading!,
+                        const SizedBox(width: AppSpacing.s),
+                      ],
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              titleStyle ??
+                              AppTypography.bodyLarge.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: colors.text.accent,
+                              ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
