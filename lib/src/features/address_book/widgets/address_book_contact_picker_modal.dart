@@ -62,6 +62,15 @@ class _AddressBookContactPickerModalState
     super.dispose();
   }
 
+  /// Whether the address book has any contacts in the picker's networks
+  /// (ignoring the search query) — drives hiding the search field when there
+  /// is nothing to search.
+  bool _hasContactsForNetworks(AddressBookState state) {
+    final networks = widget.networks.toSet();
+    if (networks.isEmpty) return false;
+    return state.contacts.any((c) => networks.contains(c.network));
+  }
+
   List<AddressBookContact> _filteredContacts(AddressBookState state) {
     final networks = widget.networks.toSet();
     if (networks.isEmpty) return const [];
@@ -78,29 +87,41 @@ class _AddressBookContactPickerModalState
     ];
   }
 
+  Widget _buildContactsList(List<AddressBookContact> contacts) {
+    // Both the desktop card and the mobile sheet give the list a bounded
+    // height (Expanded), so it fills and scrolls internally.
+    return _ContactPickerList(
+      contacts: contacts,
+      showNetwork: widget.networks.length > 1,
+      onSelected: widget.onSelected,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final contactsAsync = ref.watch(addressBookProvider);
 
-    // On mobile the swap modal route wraps this in the shared
-    // MobileModalCard (base surface, radius 32, bottom-anchored), so the
-    // surface is full-width, draws no card, and the list scrolls within a
-    // bounded height that the card hugs. Desktop keeps the fixed card.
+    // On mobile this is hosted in a fill-body MobileSheetScaffold which
+    // supplies the grabber, title and close button, so the mobile branch is
+    // chromeless and full-width and fills the sheet body (centering the empty
+    // message, scrolling a populated list). Desktop keeps the fixed centered
+    // card with its own header.
     final isMobile = kAppFormFactor == AppFormFactor.mobile;
 
     return Container(
       key: const ValueKey('address_book_contact_picker_modal'),
       width: isMobile ? double.infinity : 312,
       height: isMobile ? null : 440,
-      // Container requires a decoration to clip; the mobile card (with no
-      // decoration here) is clipped by the MobileModalCard surface.
+      // Container requires a decoration to clip; the mobile sheet (with no
+      // decoration here) is clipped by the sheet surface.
       clipBehavior: isMobile ? Clip.none : Clip.antiAlias,
-      // Desktop fills to the card edge (bottom 0); mobile hugs, so the
-      // content needs its own bottom breathing room.
+      // The mobile sheet header is supplied by the scaffold, so no top inset
+      // there; mobile hugs, so the content needs its own bottom breathing
+      // room. Desktop fills to the card edge (bottom 0).
       padding: EdgeInsets.fromLTRB(
         AppSpacing.sm,
-        AppSpacing.md,
+        isMobile ? 0 : AppSpacing.md,
         AppSpacing.sm,
         isMobile ? AppSpacing.md : 0,
       ),
@@ -112,98 +133,91 @@ class _AddressBookContactPickerModalState
               boxShadow: _modalSurfaceShadows,
             ),
       child: Column(
-        mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
+        mainAxisSize: MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  widget.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodyLarge.copyWith(
-                    color: colors.text.accent,
-                    fontWeight: FontWeight.w600,
+          if (!isMobile)
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.bodyLarge.copyWith(
+                      color: colors.text.accent,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
+                const SizedBox(width: AppSpacing.xs),
+                _ContactPickerIconButton(
+                  semanticLabel: 'Close contacts',
+                  iconName: AppIcons.cross,
+                  onTap: widget.onCancel,
+                ),
+              ],
+            ),
+          Expanded(
+            child: contactsAsync.when(
+              loading: () => const Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: AppIcon(AppIcons.loader, size: 18),
+                ),
               ),
-              const SizedBox(width: AppSpacing.xs),
-              _ContactPickerIconButton(
-                semanticLabel: 'Close contacts',
-                iconName: AppIcons.cross,
-                onTap: widget.onCancel,
+              error: (_, _) => const _ContactPickerEmptyResult(
+                title: "Couldn't load contacts. Try again.",
               ),
-            ],
-          ),
-          _pickerExpandOrBound(
-            isMobile,
-            child: Padding(
-              padding: const EdgeInsets.only(top: AppSpacing.sm),
-              child: Column(
-                mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: AppSpacing.xs),
-                    child: AppTextField(
-                      key: const ValueKey('address_book_contact_picker_search'),
-                      label: 'Search',
-                      showLabel: false,
-                      controller: _queryController,
-                      focusNode: _queryFocusNode,
-                      hintText: widget.searchHint,
-                      leading: const AppIcon(AppIcons.search),
-                      leadingSlotWidth: AppInputSizing.iconWrapWidth,
-                      trailingSlotWidth: 40,
-                      inputHorizontalPadding: AppSpacing.s,
-                      showClearButton: true,
-                      onChanged: (_) => setState(() {}),
-                      onClear: () => setState(() {}),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _pickerExpandOrBound(
-                    isMobile,
-                    child: contactsAsync.when(
-                      loading: () => const Center(
-                        child: SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: AppIcon(AppIcons.loader, size: 18),
+              data: (state) {
+                // No saved contacts for these networks → just the empty
+                // message (centered in the filled body); a search field would
+                // have nothing to search.
+                if (!_hasContactsForNetworks(state)) {
+                  return _ContactPickerEmptyResult(title: widget.emptyTitle);
+                }
+                final contacts = _filteredContacts(state);
+                return Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.sm),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.max,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: AppSpacing.xs),
+                        child: AppTextField(
+                          key: const ValueKey(
+                            'address_book_contact_picker_search',
+                          ),
+                          label: 'Search',
+                          showLabel: false,
+                          controller: _queryController,
+                          focusNode: _queryFocusNode,
+                          hintText: widget.searchHint,
+                          leading: const AppIcon(AppIcons.search),
+                          leadingSlotWidth: AppInputSizing.iconWrapWidth,
+                          trailingSlotWidth: 40,
+                          inputHorizontalPadding: AppSpacing.s,
+                          showClearButton: true,
+                          onChanged: (_) => setState(() {}),
+                          onClear: () => setState(() {}),
                         ),
                       ),
-                      error: (_, _) => const _ContactPickerEmptyResult(
-                        title: "Couldn't load contacts. Try again.",
-                      ),
-                      data: (state) {
-                        final contacts = _filteredContacts(state);
-                        if (contacts.isEmpty) {
-                          return _ContactPickerEmptyResult(
-                            title: widget.emptyTitle,
-                          );
-                        }
-                        final list = _ContactPickerList(
-                          contacts: contacts,
-                          showNetwork: widget.networks.length > 1,
-                          shrinkWrap: isMobile,
-                          onSelected: widget.onSelected,
-                        );
-                        // Mobile hugs the card to the list within a bound;
-                        // desktop fills the fixed-height card.
-                        return isMobile
-                            ? ConstrainedBox(
-                                constraints: const BoxConstraints(
-                                  maxHeight: 420,
-                                ),
-                                child: list,
+                      const SizedBox(height: AppSpacing.md),
+                      // Search yielded nothing but contacts exist → keep the
+                      // field so the query can be cleared.
+                      Expanded(
+                        child: contacts.isEmpty
+                            ? _ContactPickerEmptyResult(
+                                title: widget.emptyTitle,
                               )
-                            : list;
-                      },
-                    ),
+                            : _buildContactsList(contacts),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                );
+              },
             ),
           ),
         ],
@@ -212,27 +226,16 @@ class _AddressBookContactPickerModalState
   }
 }
 
-/// Desktop fills the fixed-height card ([Expanded]); mobile lets the
-/// search/list area flow so the card hugs its content (the populated list
-/// bounds its own height separately).
-Widget _pickerExpandOrBound(bool mobile, {required Widget child}) =>
-    mobile ? child : Expanded(child: child);
-
 class _ContactPickerList extends StatefulWidget {
   const _ContactPickerList({
     required this.contacts,
     required this.showNetwork,
     required this.onSelected,
-    this.shrinkWrap = false,
   });
 
   final List<AddressBookContact> contacts;
   final bool showNetwork;
   final ValueChanged<AddressBookContact> onSelected;
-
-  /// Mobile hugs the list to its content within a bounded height; desktop
-  /// fills the fixed-height card.
-  final bool shrinkWrap;
 
   @override
   State<_ContactPickerList> createState() => _ContactPickerListState();
@@ -273,7 +276,7 @@ class _ContactPickerListState extends State<_ContactPickerList> {
           child: ListView.separated(
             controller: _scrollController,
             padding: EdgeInsets.zero,
-            shrinkWrap: widget.shrinkWrap,
+            shrinkWrap: false,
             itemCount: widget.contacts.length,
             separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
             itemBuilder: (context, index) {

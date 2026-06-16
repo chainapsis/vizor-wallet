@@ -53,6 +53,7 @@ class SwapState {
     this.receiveFiatText = '',
     this.slippageBps = defaultSwapSlippageBps,
     this.supportedExternalAssets = swapExternalAssets,
+    this.externalAssetsLoading = true,
     this.indicativeExternalPerZec = const {},
     this.indicativeUsdPrices = const {},
     this.reviewQuote,
@@ -85,6 +86,11 @@ class SwapState {
   final String receiveFiatText;
   final int slippageBps;
   final List<SwapAsset> supportedExternalAssets;
+
+  /// True until the live (multi-chain) external asset list has been fetched
+  /// for the first time. While true the asset picker shows skeleton rows
+  /// instead of the static fallback list.
+  final bool externalAssetsLoading;
   final Map<SwapAsset, double> indicativeExternalPerZec;
   final Map<SwapAsset, double> indicativeUsdPrices;
   final SwapQuote? reviewQuote;
@@ -257,6 +263,7 @@ class SwapState {
     String? receiveFiatText,
     int? slippageBps,
     List<SwapAsset>? supportedExternalAssets,
+    bool? externalAssetsLoading,
     Map<SwapAsset, double>? indicativeExternalPerZec,
     Map<SwapAsset, double>? indicativeUsdPrices,
     SwapQuote? reviewQuote,
@@ -296,6 +303,8 @@ class SwapState {
       slippageBps: slippageBps ?? this.slippageBps,
       supportedExternalAssets:
           supportedExternalAssets ?? this.supportedExternalAssets,
+      externalAssetsLoading:
+          externalAssetsLoading ?? this.externalAssetsLoading,
       indicativeExternalPerZec:
           indicativeExternalPerZec ?? this.indicativeExternalPerZec,
       indicativeUsdPrices: indicativeUsdPrices ?? this.indicativeUsdPrices,

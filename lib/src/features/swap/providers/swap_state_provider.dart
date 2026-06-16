@@ -368,12 +368,16 @@ class SwapNotifier extends Notifier<SwapState> {
         for (final asset in liveAssets)
           if (asset != SwapAsset.zec) asset,
       ];
-      if (supported.isEmpty) return;
+      if (supported.isEmpty) {
+        state = state.copyWith(externalAssetsLoading: false);
+        return;
+      }
       final selected =
           _supportedAssetFor(state.externalAsset, supported) ?? supported.first;
       final selectedChanged = selected != state.externalAsset;
       var nextState = state.copyWith(
         supportedExternalAssets: supported,
+        externalAssetsLoading: false,
         indicativeExternalPerZec:
             pricing?.externalPerZec ?? state.indicativeExternalPerZec,
         indicativeUsdPrices: pricing?.usdPrices ?? state.indicativeUsdPrices,
@@ -395,6 +399,7 @@ class SwapNotifier extends Notifier<SwapState> {
       );
     } catch (_) {
       // Keep the static fallback so the swap flow remains usable offline.
+      state = state.copyWith(externalAssetsLoading: false);
     }
   }
 

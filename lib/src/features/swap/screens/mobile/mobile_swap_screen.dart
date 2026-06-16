@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/formatting/zec_amount.dart';
-import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -13,7 +13,6 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/sync_provider.dart';
-import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../../../address_scan/domain/address_scan_payload.dart';
@@ -26,14 +25,6 @@ import '../../widgets/swap_asset_selector_modal.dart';
 import '../../widgets/swap_near_intents_attribution.dart';
 import '../../widgets/mobile/mobile_swap_composer_ticket.dart';
 import '../../widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
-
-enum _SwapModalSurface {
-  assetSelector,
-  addressEditor,
-  addressScanner,
-  contactPicker,
-  slippageSettings,
-}
 
 /// Mobile swap composer — Figma `Swap` / `Swap v1` (4691:102452,
 /// 4686:101421): the same NEAR-intents composer as the desktop pane,
@@ -51,161 +42,70 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     debugLabel: 'mobile_swap_toast_overlay_context',
   );
 
-  /// A ValueNotifier (rather than plain setState state) because the
-  /// modal route lives on the root navigator and doesn't rebuild with
-  /// this screen — its content listens to this directly.
-  final ValueNotifier<_SwapModalSurface?> _swapModal =
-      ValueNotifier<_SwapModalSurface?>(null);
-  bool _modalRouteOpen = false;
-
-  @override
-  void dispose() {
-    _swapModal.dispose();
-    super.dispose();
-  }
-
-  void _openModal(_SwapModalSurface surface) {
-    setState(() => _swapModal.value = surface);
-    if (_modalRouteOpen) return;
-    _modalRouteOpen = true;
-    // One root-navigator dialog hosts every surface: the scrim must
-    // cover the status bar and the floating tab bar (the shell paints
-    // the bar above this screen, so an inline overlay can't reach it —
-    // same convention as showAppMobileSheet). Surface switches (editor
-    // → scanner → contacts → editor) swap content inside the open
-    // route instead of re-navigating.
+  /// The asset selector on the standard full-screen sheet
+  /// ([showMobileSheet] + [MobileSheetScaffold]). A Consumer keeps the
+  /// list in sync with swap state while the sheet is open.
+  void _openAssetSelector() {
     unawaited(
-      showGeneralDialog<void>(
+      showMobileSheet<void>(
         context: context,
-        useRootNavigator: true,
-        barrierDismissible: true,
-        barrierLabel: 'Dismiss',
-        barrierColor: context.colors.background.neutralScrim,
-        transitionDuration: Duration.zero,
-        pageBuilder: (_, _, _) => _buildSwapModal(),
-      ).whenComplete(() {
-        _modalRouteOpen = false;
-        if (mounted) setState(() => _swapModal.value = null);
-      }),
-    );
-  }
-
-  void _closeSwapModal() {
-    if (_modalRouteOpen) {
-      // State resets in the route's whenComplete.
-      Navigator.of(context, rootNavigator: true).pop();
-      return;
-    }
-    if (_swapModal.value != null) {
-      setState(() => _swapModal.value = null);
-    }
-  }
-
-  void _selectAddressBookContact(AddressBookContact contact) {
-    ref.read(swapStateProvider.notifier).updateDestination(contact.address);
-    _closeSwapModal();
-  }
-
-  /// Content of the root modal route: re-renders on surface switches
-  /// via [_swapModal] and on swap state changes via its own Consumer
-  /// (the route doesn't rebuild with the screen). Empty space around
-  /// the card falls through to the dialog barrier, which dismisses.
-  Widget _buildSwapModal() {
-    return ValueListenableBuilder<_SwapModalSurface?>(
-      valueListenable: _swapModal,
-      builder: (context, surface, _) {
-        if (surface == null) return const SizedBox.shrink();
-        return Consumer(
+        builder: (sheetContext) => Consumer(
           builder: (context, ref, _) {
             final swapState = ref.watch(swapStateProvider);
-            final swapNotifier = ref.read(swapStateProvider.notifier);
-            // The address scanner is a full-bleed camera surface (Figma
-            // `Address QR` 4697:106096) — the same chrome as the send
-            // recipient scan — so it bypasses the bottom-anchored card.
-            if (surface == _SwapModalSurface.addressScanner) {
-              return MobileAddressScanView(
-                resolve: (raw) async {
-                  final address = normalizeAddressScanPayload(raw);
-                  if (address == null || address.isEmpty) {
-                    return const MobileScanOutcome.rejected(
-                      'QR code did not include an address.',
-                    );
-                  }
-                  return MobileScanOutcome.accepted(address);
-                },
-                onScanned: (value) {
-                  swapNotifier.updateDestination(value);
-                  _closeSwapModal();
-                },
-                onClose: _closeSwapModal,
-              );
-            }
-            final surfaceContent = switch (surface) {
-              _SwapModalSurface.assetSelector => SwapAssetSelectorModal(
+            return MobileSheetScaffold(
+              title: 'Select asset',
+              expand: true,
+              child: SwapAssetSelectorModal(
                 assets: swapState.supportedExternalAssets,
                 selected: swapState.externalAsset,
+                loading: swapState.externalAssetsLoading,
                 onSelected: (asset) {
-                  swapNotifier.selectExternalAsset(asset);
-                  _closeSwapModal();
+                  ref
+                      .read(swapStateProvider.notifier)
+                      .selectExternalAsset(asset);
+                  Navigator.of(sheetContext).pop();
                 },
-              ),
-              _SwapModalSurface.addressEditor => SwapAddressEditModal(
-                state: swapState,
-                onSubmitted: (value, remember, nickname, profilePictureId) {
-                  if (remember) {
-                    unawaited(
-                      _rememberSwapAddress(
-                        value,
-                        swapState,
-                        nickname,
-                        profilePictureId,
-                      ),
-                    );
-                  }
-                  swapNotifier.updateDestination(value);
-                  _closeSwapModal();
-                },
-                onScan: () => _openModal(_SwapModalSurface.addressScanner),
-                onOpenContacts: () =>
-                    _openModal(_SwapModalSurface.contactPicker),
-                onCancel: _closeSwapModal,
-              ),
-              // Handled full-bleed above, before this switch.
-              _SwapModalSurface.addressScanner => const SizedBox.shrink(),
-              _SwapModalSurface.contactPicker => AddressBookContactPickerModal(
-                title: swapContactPickerTitle(swapState),
-                networks: swapContactPickerNetworks(swapState),
-                emptyTitle: swapContactPickerEmptyTitle(swapState),
-                onSelected: _selectAddressBookContact,
-                onCancel: () => _openModal(_SwapModalSurface.addressEditor),
-              ),
-              _SwapModalSurface.slippageSettings =>
-                MobileSwapSlippageStepperModal(
-                  slippageBps: swapState.slippageBps,
-                  onSubmitted: (value) {
-                    swapNotifier.updateSlippageBps(value);
-                    _closeSwapModal();
-                  },
-                  onCancel: _closeSwapModal,
-                ),
-            };
-            // The shared base card provides the ground surface, radius,
-            // side margins, bottom gap and keyboard avoidance — the same
-            // chrome as showAppMobileSheet — so the swap modals match the
-            // other mobile modals. Bottom-anchored and full-width.
-            return SafeArea(
-              bottom: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Spacer(),
-                  MobileModalCard(child: surfaceContent),
-                ],
               ),
             );
           },
-        );
-      },
+        ),
+      ),
+    );
+  }
+
+  /// Slippage editor on a content-sized standard sheet (hugs its form).
+  void _openSlippage() {
+    final swapState = ref.read(swapStateProvider);
+    final swapNotifier = ref.read(swapStateProvider.notifier);
+    unawaited(
+      showMobileSheet<void>(
+        context: context,
+        builder: (sheetContext) => MobileSheetScaffold(
+          title: 'Slippage',
+          formBody: true,
+          child: MobileSwapSlippageStepperModal(
+            slippageBps: swapState.slippageBps,
+            onSubmitted: (value) {
+              swapNotifier.updateSlippageBps(value);
+              Navigator.of(sheetContext).pop();
+            },
+            onCancel: () => Navigator.of(sheetContext).pop(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// One sheet for the recipient/refund flow: the editor, with the contacts
+  /// picker shown as a 2nd-level view inside the same sheet (back chevron),
+  /// and the QR scanner pushed full-screen over it. See [_SwapAddressSheet].
+  void _openAddressEditor() {
+    unawaited(
+      showMobileSheet<void>(
+        context: context,
+        builder: (_) =>
+            _SwapAddressSheet(onRememberAddress: _rememberSwapAddress),
+      ),
     );
   }
 
@@ -260,13 +160,6 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<String?>(
-      accountProvider.select((value) => value.value?.activeAccountUuid),
-      (previous, next) {
-        if (previous == next || !mounted) return;
-        _closeSwapModal();
-      },
-    );
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
     final accountState = ref.watch(accountProvider).value;
@@ -330,10 +223,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                             swapNotifier.updateReceiveAmountFiat,
                         onToggleFiatInputMode: swapNotifier.toggleFiatInputMode,
                         onToggleDirection: swapNotifier.toggleDirection,
-                        onOpenExternalAssetPicker: () =>
-                            _openModal(_SwapModalSurface.assetSelector),
-                        onOpenDestinationAddress: () =>
-                            _openModal(_SwapModalSurface.addressEditor),
+                        onOpenExternalAssetPicker: _openAssetSelector,
+                        onOpenDestinationAddress: _openAddressEditor,
                         onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
                         zecAvailableText: zecAvailableText,
                       ),
@@ -343,8 +234,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                           AppButton(
                             key: const ValueKey('swap_settings_button'),
                             variant: AppButtonVariant.secondary,
-                            onPressed: () =>
-                                _openModal(_SwapModalSurface.slippageSettings),
+                            onPressed: _openSlippage,
                             trailing: const AppIcon(AppIcons.cog),
                             child: Text(
                               formatSwapSlippage(swapState.slippageBps),
@@ -355,8 +245,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                             child: _MobileSwapReviewButton(
                               state: swapState,
                               zecAvailableZatoshi: sync.spendableBalance,
-                              onOpenDestinationAddress: () =>
-                                  _openModal(_SwapModalSurface.addressEditor),
+                              onOpenDestinationAddress: _openAddressEditor,
                               onReviewQuote: openReview,
                             ),
                           ),
@@ -390,6 +279,115 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+enum _AddressSheetView { editor, contacts }
+
+/// The recipient/refund flow in a single content-sized sheet. The editor is
+/// the base view; tapping contacts swaps the sheet content to the picker
+/// (a back chevron returns to the editor), and the QR scanner is pushed
+/// full-screen over the sheet. Watching swap state means an address chosen
+/// via scan/contacts flows into the editor's field.
+class _SwapAddressSheet extends ConsumerStatefulWidget {
+  const _SwapAddressSheet({required this.onRememberAddress});
+
+  final Future<void> Function(
+    String value,
+    SwapState swapState,
+    String? nickname,
+    String profilePictureId,
+  )
+  onRememberAddress;
+
+  @override
+  ConsumerState<_SwapAddressSheet> createState() => _SwapAddressSheetState();
+}
+
+class _SwapAddressSheetState extends ConsumerState<_SwapAddressSheet> {
+  _AddressSheetView _view = _AddressSheetView.editor;
+
+  void _showEditor() => setState(() => _view = _AddressSheetView.editor);
+  void _showContacts() => setState(() => _view = _AddressSheetView.contacts);
+
+  void _openScanner() {
+    unawaited(
+      Navigator.of(context, rootNavigator: true).push<void>(
+        PageRouteBuilder<void>(
+          opaque: true,
+          pageBuilder: (routeContext, _, _) => MobileAddressScanView(
+            resolve: (raw) async {
+              final address = normalizeAddressScanPayload(raw);
+              if (address == null || address.isEmpty) {
+                return const MobileScanOutcome.rejected(
+                  'QR code did not include an address.',
+                );
+              }
+              return MobileScanOutcome.accepted(address);
+            },
+            onScanned: (value) {
+              ref.read(swapStateProvider.notifier).updateDestination(value);
+              Navigator.of(routeContext).pop();
+            },
+            onClose: () => Navigator.of(routeContext).pop(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final swapState = ref.watch(swapStateProvider);
+    final notifier = ref.read(swapStateProvider.notifier);
+
+    if (_view == _AddressSheetView.contacts) {
+      final title = swapContactPickerTitle(swapState);
+      return MobileSheetScaffold(
+        title: title,
+        onBack: _showEditor,
+        fillBody: true,
+        child: AddressBookContactPickerModal(
+          title: title,
+          networks: swapContactPickerNetworks(swapState),
+          emptyTitle: swapContactPickerEmptyTitle(swapState),
+          onSelected: (contact) {
+            notifier.updateDestination(contact.address);
+            _showEditor();
+          },
+          onCancel: _showEditor,
+        ),
+      );
+    }
+
+    final asset = swapState.externalAsset;
+    final title = swapState.direction.sendsZec
+        ? '${asset.symbol} recipient address'
+        : '${asset.symbol} refund address';
+    return MobileSheetScaffold(
+      title: title,
+      formBody: true,
+      child: SwapAddressEditModal(
+        state: swapState,
+        onSubmitted: (value, remember, nickname, profilePictureId) {
+          if (remember) {
+            unawaited(
+              widget.onRememberAddress(
+                value,
+                swapState,
+                nickname,
+                profilePictureId,
+              ),
+            );
+          }
+          notifier.updateDestination(value);
+          Navigator.of(context).pop();
+        },
+        onScan: _openScanner,
+        onOpenContacts: _showContacts,
+        onCancel: () => Navigator.of(context).pop(),
       ),
     );
   }

@@ -2,9 +2,9 @@ import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/layout/mobile/mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
 
 /// Mobile slippage editor — Figma `Slippage` (4700:121854 / 4700:123165 /
@@ -93,157 +93,126 @@ class _MobileSwapSlippageStepperModalState
     // Out-of-range turns the value and message the destructive magenta
     // tone (Figma 4700:123470); in-range stays the primary serif colour.
     final valueColor = invalid ? colors.text.destructive : colors.text.primary;
-    // Content only — the swap modal route wraps this in the shared
-    // MobileModalCard (base surface, radius 32, bottom-anchored).
+    // The slippage value reuses the largest display token (40px); the unit
+    // suffix sits one step down so it stays proportional.
+    final valueStyle = AppTypography.displayLarge.copyWith(color: valueColor);
+    final unitStyle = AppTypography.headlineLarge.copyWith(
+      color: colors.text.secondary,
+    );
+    // Content only — hosted in a content-sized MobileSheetScaffold which
+    // supplies the grabber, "Slippage" title and close button.
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
-        AppSpacing.md,
+        AppSpacing.s,
         AppSpacing.sm,
         AppSpacing.md,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Slippage',
-                  style: AppTypography.headlineSmall.copyWith(
-                    color: colors.text.accent,
-                  ),
+      child: MobileSheetFormBody(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                _StepperButton(
+                  key: const ValueKey('mobile_swap_slippage_minus'),
+                  label: '-',
+                  enabled: (_bps ?? _minBps) > _minBps,
+                  onTap: () => _step(-1),
                 ),
-              ),
-              Semantics(
-                label: 'Close',
-                button: true,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: widget.onCancel,
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: colors.background.raised,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: AppIcon(
-                        AppIcons.cross,
-                        size: AppIconSize.medium,
-                        color: colors.icon.accent,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              _StepperButton(
-                key: const ValueKey('mobile_swap_slippage_minus'),
-                label: '-',
-                enabled: (_bps ?? _minBps) > _minBps,
-                onTap: () => _step(-1),
-              ),
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: IntrinsicWidth(
-                        child: TextField(
-                          key: const ValueKey('mobile_swap_slippage_value'),
-                          controller: _controller,
-                          focusNode: _focusNode,
-                          autofocus: true,
-                          onChanged: _onChanged,
-                          textAlign: TextAlign.center,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          inputFormatters: [
-                            // The decimal-pad key follows the device
-                            // locale; normalise a comma to the period the
-                            // filter keeps.
-                            const CommaToDotInputFormatter(),
-                            FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9.]'),
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: IntrinsicWidth(
+                          child: TextField(
+                            key: const ValueKey('mobile_swap_slippage_value'),
+                            controller: _controller,
+                            focusNode: _focusNode,
+                            onChanged: _onChanged,
+                            textAlign: TextAlign.center,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
                             ),
-                          ],
-                          style: AppTypography.headlineLarge.copyWith(
-                            color: valueColor,
-                          ),
-                          cursorColor: colors.text.accent,
-                          cursorWidth: 2,
-                          cursorRadius: const Radius.circular(AppRadii.full),
-                          decoration: const InputDecoration.collapsed(
-                            hintText: '0',
+                            inputFormatters: [
+                              // The decimal-pad key follows the device
+                              // locale; normalise a comma to the period the
+                              // filter keeps.
+                              const CommaToDotInputFormatter(),
+                              FilteringTextInputFormatter.allow(
+                                RegExp(r'[0-9.]'),
+                              ),
+                            ],
+                            style: valueStyle,
+                            cursorColor: colors.text.accent,
+                            cursorWidth: 2,
+                            cursorRadius: const Radius.circular(AppRadii.full),
+                            decoration: const InputDecoration.collapsed(
+                              hintText: '0',
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    Text(
-                      ' %',
-                      style: AppTypography.headlineMedium.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ],
+                      Text(' %', style: unitStyle),
+                    ],
+                  ),
+                ),
+                _StepperButton(
+                  key: const ValueKey('mobile_swap_slippage_plus'),
+                  label: '+',
+                  enabled: (_bps ?? _maxBps) < _maxBps,
+                  onTap: () => _step(1),
+                ),
+              ],
+            ),
+            if (invalid) ...[
+              const SizedBox(height: AppSpacing.s),
+              Text(
+                'Slippage must be 0.1 - 5%',
+                key: const ValueKey('mobile_swap_slippage_error'),
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: colors.text.destructive,
                 ),
               ),
-              _StepperButton(
-                key: const ValueKey('mobile_swap_slippage_plus'),
-                label: '+',
-                enabled: (_bps ?? _maxBps) < _maxBps,
-                onTap: () => _step(1),
-              ),
             ],
-          ),
-          if (invalid) ...[
-            const SizedBox(height: AppSpacing.s),
-            Text(
-              'Slippage must be 0.1 - 5%',
-              key: const ValueKey('mobile_swap_slippage_error'),
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.destructive,
-              ),
-            ),
           ],
-          const SizedBox(height: AppSpacing.md),
-          AppButton(
-            key: const ValueKey('swap_slippage_update_button'),
-            expand: true,
-            onPressed: _canUpdate ? () => widget.onSubmitted(_bps!) : null,
-            child: const Text('Update'),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          Semantics(
-            button: true,
-            child: GestureDetector(
-              key: const ValueKey('swap_slippage_cancel_button'),
-              behavior: HitTestBehavior.opaque,
-              onTap: widget.onCancel,
-              child: SizedBox(
-                height: 44,
-                child: Center(
-                  child: Text(
-                    'Cancel',
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.primary,
+        ),
+        actions: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppButton(
+              key: const ValueKey('swap_slippage_update_button'),
+              expand: true,
+              onPressed: _canUpdate ? () => widget.onSubmitted(_bps!) : null,
+              child: const Text('Update'),
+            ),
+            const SizedBox(height: AppSpacing.s),
+            Semantics(
+              button: true,
+              child: GestureDetector(
+                key: const ValueKey('swap_slippage_cancel_button'),
+                behavior: HitTestBehavior.opaque,
+                onTap: widget.onCancel,
+                child: SizedBox(
+                  height: 44,
+                  child: Center(
+                    child: Text(
+                      'Cancel',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.primary,
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

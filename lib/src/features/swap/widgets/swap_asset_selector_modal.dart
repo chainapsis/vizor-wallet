@@ -15,6 +15,7 @@ class SwapAssetSelectorModal extends StatefulWidget {
     required this.selected,
     required this.onSelected,
     this.initialQuery = '',
+    this.loading = false,
     super.key,
   });
 
@@ -22,6 +23,10 @@ class SwapAssetSelectorModal extends StatefulWidget {
   final SwapAsset selected;
   final ValueChanged<SwapAsset> onSelected;
   final String initialQuery;
+
+  /// While true the list shows skeleton rows instead of assets — used on
+  /// mobile during the first live (multi-chain) asset fetch.
+  final bool loading;
 
   @override
   State<SwapAssetSelectorModal> createState() => _SwapAssetSelectorModalState();
@@ -45,10 +50,15 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
     _focusNode = FocusNode(debugLabel: 'SwapAssetSelectorSearch');
     _scrollController = ScrollController();
     _focusNode.addListener(_handleFocusChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _focusNode.requestFocus();
-    });
+    // Desktop opens straight into the search field (compact fixed card).
+    // The mobile full-screen sheet opens at full height showing the most
+    // assets; the keyboard is summoned only when the user taps search.
+    if (kAppFormFactor != AppFormFactor.mobile) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _focusNode.requestFocus();
+      });
+    }
   }
 
   @override
@@ -89,32 +99,157 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
     final searchBorderColor = _focusNode.hasFocus || hasQuery
         ? colors.border.medium
         : colors.border.regular;
-
-    // On mobile the swap modal route wraps this in the shared
-    // MobileModalCard (base surface, radius 32, bottom-anchored), so the
-    // surface is full-width, draws no card, and the list scrolls within a
-    // bounded height that the card hugs. Desktop keeps the fixed card.
     final isMobile = kAppFormFactor == AppFormFactor.mobile;
+    // The full-screen sheet body reaches the screen bottom, so the list
+    // pads its scroll content by the home-indicator inset (read from the
+    // raw view — the modal zeroes MediaQuery padding) instead of leaving a
+    // visible gap that crops the last row.
+    final listBottomInset = isMobile
+        ? MediaQueryData.fromView(View.of(context)).padding.bottom
+        : 0.0;
 
+    final searchField = Container(
+      height: 46,
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        border: Border.all(color: searchBorderColor, width: 1.5),
+        borderRadius: BorderRadius.circular(AppRadii.small),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 32,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: AppIcon(
+                AppIcons.search,
+                size: 20,
+                color: colors.icon.accent,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: TextField(
+                key: const ValueKey('swap_asset_search_field'),
+                controller: _queryController,
+                focusNode: _focusNode,
+                onChanged: (_) => setState(() {}),
+                textInputAction: TextInputAction.search,
+                style: AppTypography.labelLarge.copyWith(
+                  color: colors.text.accent,
+                ),
+                cursorColor: colors.text.accent,
+                decoration: InputDecoration.collapsed(
+                  hintText: 'Search token or chain',
+                  hintStyle: AppTypography.labelLarge.copyWith(
+                    color: colors.text.muted,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (hasQuery)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: SwapInlineIconButton(
+                key: const ValueKey('swap_asset_search_clear_button'),
+                iconName: AppIcons.cross,
+                onTap: _clearQuery,
+              ),
+            ),
+        ],
+      ),
+    );
+
+    final Widget listChild = widget.loading
+        ? const _AssetSelectorSkeleton()
+        : assets.isEmpty
+        ? Center(
+            child: SizedBox(
+              width: 112,
+              child: Text(
+                'No tokens or chains found',
+                textAlign: TextAlign.center,
+                style: AppTypography.labelLarge.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+            ),
+          )
+        : RawScrollbar(
+            key: const ValueKey('swap_asset_selector_scrollbar'),
+            controller: _scrollController,
+            thumbVisibility: assets.length > 5,
+            radius: const Radius.circular(AppRadii.full),
+            thickness: 6,
+            mainAxisMargin: 3,
+            crossAxisMargin: 3,
+            thumbColor: colors.background.overlay,
+            child: Padding(
+              key: const ValueKey('swap_asset_selector_list_gutter'),
+              padding: const EdgeInsets.only(right: AppSpacing.sm),
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(
+                  context,
+                ).copyWith(scrollbars: false),
+                child: ListView.separated(
+                  controller: _scrollController,
+                  padding: EdgeInsets.only(bottom: listBottomInset),
+                  itemCount: assets.length,
+                  separatorBuilder: (_, _) =>
+                      const SizedBox(height: AppSpacing.xxs),
+                  itemBuilder: (context, index) {
+                    final asset = assets[index];
+                    return _AssetMenuRow(
+                      asset: asset,
+                      selected: widget.selected == asset,
+                      onTap: () => widget.onSelected(asset),
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+
+    if (isMobile) {
+      // Chromeless body for the full-screen MobileSheetScaffold: the sheet
+      // provides the grabber, "Select asset" title and close button, so
+      // this fills the sheet with the search field and a list that expands
+      // to the available height.
+      return Padding(
+        key: const ValueKey('swap_external_asset_menu'),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.sm,
+          AppSpacing.s,
+          AppSpacing.sm,
+          0,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            searchField,
+            const SizedBox(height: AppSpacing.s),
+            Expanded(child: listChild),
+          ],
+        ),
+      );
+    }
+
+    // Desktop: fixed card with its own header, surface and shadow.
     return Container(
       key: const ValueKey('swap_external_asset_menu'),
-      width: isMobile ? double.infinity : 312,
-      height: isMobile ? null : 440,
-      // Container requires a decoration to clip; the mobile card (with no
-      // decoration here) is clipped by the MobileModalCard surface.
-      clipBehavior: isMobile ? Clip.none : Clip.antiAlias,
-      // Desktop fills to the card edge (bottom 0); mobile hugs, so the
-      // content needs its own bottom breathing room.
-      padding: EdgeInsets.fromLTRB(16, 24, 16, isMobile ? AppSpacing.md : 0),
-      decoration: isMobile
-          ? null
-          : BoxDecoration(
-              color: colors.background.base,
-              borderRadius: BorderRadius.circular(AppRadii.large),
-              boxShadow: _modalSurfaceShadows,
-            ),
+      width: 312,
+      height: 440,
+      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+      decoration: BoxDecoration(
+        color: colors.background.base,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: _modalSurfaceShadows,
+      ),
       child: Column(
-        mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
@@ -136,112 +271,88 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
             ],
           ),
           const SizedBox(height: 16),
-          Container(
-            height: 46,
-            decoration: BoxDecoration(
-              color: colors.background.ground,
-              border: Border.all(color: searchBorderColor, width: 1.5),
-              borderRadius: BorderRadius.circular(AppRadii.small),
-            ),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 32,
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: AppIcon(
-                      AppIcons.search,
-                      size: 20,
-                      color: colors.icon.accent,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: TextField(
-                      key: const ValueKey('swap_asset_search_field'),
-                      controller: _queryController,
-                      focusNode: _focusNode,
-                      onChanged: (_) => setState(() {}),
-                      textInputAction: TextInputAction.search,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
-                      cursorColor: colors.text.accent,
-                      decoration: InputDecoration.collapsed(
-                        hintText: 'Search token or chain',
-                        hintStyle: AppTypography.labelLarge.copyWith(
-                          color: colors.text.muted,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                if (hasQuery)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: SwapInlineIconButton(
-                      key: const ValueKey('swap_asset_search_clear_button'),
-                      iconName: AppIcons.cross,
-                      onTap: _clearQuery,
-                    ),
-                  ),
-              ],
-            ),
-          ),
+          searchField,
           const SizedBox(height: 8),
-          _swapAssetListArea(
-            isMobile,
-            bounded: assets.isNotEmpty,
-            child: assets.isEmpty
-                ? Center(
-                    child: SizedBox(
-                      width: 112,
-                      child: Text(
-                        'No tokens or chains found',
-                        textAlign: TextAlign.center,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.secondary,
-                        ),
-                      ),
-                    ),
-                  )
-                : RawScrollbar(
-                    key: const ValueKey('swap_asset_selector_scrollbar'),
-                    controller: _scrollController,
-                    thumbVisibility: assets.length > 5,
-                    radius: const Radius.circular(AppRadii.full),
-                    thickness: 6,
-                    mainAxisMargin: 3,
-                    crossAxisMargin: 3,
-                    thumbColor: colors.background.overlay,
-                    child: Padding(
-                      key: const ValueKey('swap_asset_selector_list_gutter'),
-                      padding: const EdgeInsets.only(right: AppSpacing.sm),
-                      child: ScrollConfiguration(
-                        behavior: ScrollConfiguration.of(
-                          context,
-                        ).copyWith(scrollbars: false),
-                        child: ListView.separated(
-                          controller: _scrollController,
-                          padding: EdgeInsets.zero,
-                          shrinkWrap: isMobile,
-                          itemCount: assets.length,
-                          separatorBuilder: (_, _) =>
-                              const SizedBox(height: AppSpacing.xxs),
-                          itemBuilder: (context, index) {
-                            final asset = assets[index];
-                            return _AssetMenuRow(
-                              asset: asset,
-                              selected: widget.selected == asset,
-                              onTap: () => widget.onSelected(asset),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
+          Expanded(child: listChild),
+        ],
+      ),
+    );
+  }
+}
+
+/// Placeholder rows shown while the live asset list is being fetched. A
+/// gentle opacity pulse signals loading without a third-party shimmer dep.
+class _AssetSelectorSkeleton extends StatefulWidget {
+  const _AssetSelectorSkeleton();
+
+  @override
+  State<_AssetSelectorSkeleton> createState() => _AssetSelectorSkeletonState();
+}
+
+class _AssetSelectorSkeletonState extends State<_AssetSelectorSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      key: const ValueKey('swap_asset_selector_skeleton'),
+      opacity: Tween<double>(begin: 0.45, end: 1.0).animate(
+        CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+      ),
+      // Lazily fills the available height: the list only builds the rows
+      // that fit the viewport and clips the rest, so there's no blank gap
+      // below and no overflow on short viewports.
+      child: ListView.separated(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
+        itemCount: 20,
+        separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xxs),
+        itemBuilder: (_, _) => const _AssetSkeletonRow(),
+      ),
+    );
+  }
+}
+
+class _AssetSkeletonRow extends StatelessWidget {
+  const _AssetSkeletonRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final block = context.colors.background.neutralSubtleOpacity;
+    return SizedBox(
+      height: 44,
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(color: block, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SkeletonBar(color: block, width: 84, height: 12),
+              const SizedBox(height: 6),
+              _SkeletonBar(color: block, width: 120, height: 10),
+            ],
           ),
         ],
       ),
@@ -249,24 +360,28 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
   }
 }
 
-/// Desktop fills the fixed-height card with the list ([Expanded]); mobile
-/// lets the card hug its content, so a populated list scrolls within a
-/// bounded height ([ConstrainedBox] + a shrink-wrapped list), matching the
-/// other mobile list sheets. The empty state ([bounded] false) hugs its
-/// text instead of reserving the full bound.
-Widget _swapAssetListArea(
-  bool mobile, {
-  bool bounded = true,
-  required Widget child,
-}) {
-  if (!mobile) return Expanded(child: child);
-  if (bounded) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 420),
-      child: child,
+class _SkeletonBar extends StatelessWidget {
+  const _SkeletonBar({
+    required this.color,
+    required this.width,
+    required this.height,
+  });
+
+  final Color color;
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(AppRadii.full),
+      ),
     );
   }
-  return child;
 }
 
 class _AssetMenuRow extends StatelessWidget {

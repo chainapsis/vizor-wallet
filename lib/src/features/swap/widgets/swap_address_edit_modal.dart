@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/layout/app_form_factor.dart';
+import '../../../core/layout/mobile/mobile_sheet.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -158,195 +159,202 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
         ? null
         : _nicknameError;
 
-    // On mobile the swap modal route wraps this in the shared
-    // MobileModalCard (base surface, radius 32, 16px side margins,
-    // bottom-anchored), so the surface is full-width and draws no card of
-    // its own. Desktop keeps the fixed centered card.
+    // On mobile this is hosted in a content-sized MobileSheetScaffold which
+    // supplies the grabber, title and close button, so the mobile branch is
+    // chromeless and full-width. Desktop keeps the fixed centered card with
+    // its own header.
     final isMobile = kAppFormFactor == AppFormFactor.mobile;
+
+    // The form fields and the pinned Save/Cancel actions are shared between
+    // the desktop card and the mobile sheet; only the surrounding chrome and
+    // layout differ (desktop hugs inside a fixed card with its own header;
+    // mobile fills a content-sized sheet, scrolling the form when it is too
+    // tall while keeping the actions pinned at the bottom).
+    final form = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            fieldLabel,
+            style: AppTypography.labelMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            height: 46,
+            decoration: BoxDecoration(
+              color: colors.background.base,
+              border: Border.all(color: colors.border.subtle, width: 1.5),
+              borderRadius: BorderRadius.circular(AppRadii.small),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: TextField(
+                      key: const ValueKey('swap_destination_field'),
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _submit(),
+                      onChanged: (_) => setState(() {}),
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.accent,
+                      ),
+                      cursorColor: colors.text.accent,
+                      decoration: InputDecoration.collapsed(
+                        hintText: hint,
+                        hintStyle: AppTypography.labelLarge.copyWith(
+                          color: colors.text.muted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SwapInlineIconButton(
+                        key: const ValueKey('swap_address_scan_button'),
+                        iconName: AppIcons.qr,
+                        onTap: widget.onScan,
+                      ),
+                      const SizedBox(width: 4),
+                      SwapInlineIconButton(
+                        key: const ValueKey('swap_address_contacts_button'),
+                        iconName: AppIcons.users,
+                        onTap: widget.onOpenContacts,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (formatError != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              formatError,
+              key: const ValueKey('swap_destination_format_error'),
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.destructive,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Text(
+            description,
+            style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
+          ),
+          const SizedBox(height: 16),
+          _AddressRememberToggle(
+            selected: _rememberAddress,
+            label: rememberLabel,
+            onTap: _toggleRemember,
+          ),
+          if (_rememberAddress) ...[
+            const SizedBox(height: 20),
+            Text(
+              'Address label',
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _AddressAvatarButton(
+                  profilePictureId: _selectedProfilePictureId,
+                  onTap: () => setState(() => _pickingAvatar = !_pickingAvatar),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _NicknameInputBox(
+                    controller: _nicknameController,
+                    focusNode: _nicknameFocusNode,
+                    onChanged: (_) => setState(() {}),
+                    onSubmitted: (_) => _submit(),
+                  ),
+                ),
+              ],
+            ),
+            if (nicknameError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                nicknameError,
+                key: const ValueKey('swap_address_nickname_error'),
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.destructive,
+                ),
+              ),
+            ],
+            if (_pickingAvatar) ...[
+              const SizedBox(height: 12),
+              _AvatarPickerStrip(
+                selectedId: _selectedProfilePictureId,
+                onSelected: _selectAvatar,
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+
+    final actions = SwapModalButtons(
+      primaryKey: const ValueKey('swap_address_update_button'),
+      cancelKey: const ValueKey('swap_address_cancel_button'),
+      primaryLabel: 'Save',
+      onPrimary: _submit,
+      onCancel: widget.onCancel,
+      primaryEnabled: _canSubmit,
+    );
+
     return Container(
       key: const ValueKey('swap_address_modal'),
       width: isMobile ? double.infinity : 312,
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+      padding: EdgeInsets.fromLTRB(16, isMobile ? 0 : 24, 16, 16),
       decoration: isMobile
           ? null
           : BoxDecoration(
               color: colors.background.ground,
               borderRadius: BorderRadius.circular(AppRadii.large),
             ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              SwapModalIconBadge(
-                iconName: AppIcons.wallet,
-                iconColor: colors.icon.regular,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodyLarge.copyWith(
-                    fontWeight: FontWeight.w500,
-                    color: colors.text.accent,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-            child: Column(
+      child: isMobile
+          ? MobileSheetFormBody(content: form, actions: actions)
+          : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  fieldLabel,
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: colors.background.base,
-                    border: Border.all(color: colors.border.subtle, width: 1.5),
-                    borderRadius: BorderRadius.circular(AppRadii.small),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: TextField(
-                            key: const ValueKey('swap_destination_field'),
-                            controller: _controller,
-                            focusNode: _focusNode,
-                            textInputAction: TextInputAction.done,
-                            onSubmitted: (_) => _submit(),
-                            onChanged: (_) => setState(() {}),
-                            style: AppTypography.labelLarge.copyWith(
-                              color: colors.text.accent,
-                            ),
-                            cursorColor: colors.text.accent,
-                            decoration: InputDecoration.collapsed(
-                              hintText: hint,
-                              hintStyle: AppTypography.labelLarge.copyWith(
-                                color: colors.text.muted,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SwapInlineIconButton(
-                              key: const ValueKey('swap_address_scan_button'),
-                              iconName: AppIcons.qr,
-                              onTap: widget.onScan,
-                            ),
-                            const SizedBox(width: 4),
-                            SwapInlineIconButton(
-                              key: const ValueKey(
-                                'swap_address_contacts_button',
-                              ),
-                              iconName: AppIcons.users,
-                              onTap: widget.onOpenContacts,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (formatError != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    formatError,
-                    key: const ValueKey('swap_destination_format_error'),
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.destructive,
+                Row(
+                  children: [
+                    SwapModalIconBadge(
+                      iconName: AppIcons.wallet,
+                      iconColor: colors.icon.regular,
                     ),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                Text(
-                  description,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.accent,
-                  ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodyLarge.copyWith(
+                          fontWeight: FontWeight.w500,
+                          color: colors.text.accent,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
-                _AddressRememberToggle(
-                  selected: _rememberAddress,
-                  label: rememberLabel,
-                  onTap: _toggleRemember,
-                ),
-                if (_rememberAddress) ...[
-                  const SizedBox(height: 20),
-                  Text(
-                    'Address label',
-                    style: AppTypography.labelMedium.copyWith(
-                      color: colors.text.secondary,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      _AddressAvatarButton(
-                        profilePictureId: _selectedProfilePictureId,
-                        onTap: () =>
-                            setState(() => _pickingAvatar = !_pickingAvatar),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _NicknameInputBox(
-                          controller: _nicknameController,
-                          focusNode: _nicknameFocusNode,
-                          onChanged: (_) => setState(() {}),
-                          onSubmitted: (_) => _submit(),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (nicknameError != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      nicknameError,
-                      key: const ValueKey('swap_address_nickname_error'),
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.destructive,
-                      ),
-                    ),
-                  ],
-                  if (_pickingAvatar) ...[
-                    const SizedBox(height: 12),
-                    _AvatarPickerStrip(
-                      selectedId: _selectedProfilePictureId,
-                      onSelected: _selectAvatar,
-                    ),
-                  ],
-                ],
+                form,
+                actions,
               ],
             ),
-          ),
-          SwapModalButtons(
-            primaryKey: const ValueKey('swap_address_update_button'),
-            cancelKey: const ValueKey('swap_address_cancel_button'),
-            primaryLabel: 'Save',
-            onPrimary: _submit,
-            onCancel: widget.onCancel,
-            primaryEnabled: _canSubmit,
-          ),
-        ],
-      ),
     );
   }
 }

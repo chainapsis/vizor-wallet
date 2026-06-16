@@ -90,8 +90,8 @@ void main() {
     expect(button.right, lessThanOrEqualTo(screen.right - AppSpacing.sm));
   });
 
-  testWidgets('swap modal rides the root navigator and covers the whole '
-      'screen, tab bar included', (tester) async {
+  testWidgets('swap address sheet rides the root navigator and dismisses '
+      'from the scrim above it', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
 
@@ -103,28 +103,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(SwapAddressEditModal), findsOneWidget);
 
-    // The dialog barrier spans the full screen — including the status
-    // bar strip at the very top and the floating tab bar at the bottom
-    // (neither was covered by the old inline overlay).
+    // The sheet rides the root navigator, so its scrim spans the whole
+    // screen — including the status-bar strip at the very top that the old
+    // inline overlay left uncovered.
     final screen = tester.getRect(find.byType(MaterialApp));
     final barrier = tester.getRect(find.byType(ModalBarrier).last);
     expect(barrier, screen);
 
-    // A tap in the top strip — which the old inline overlay left
-    // uncovered — now hits the barrier and dismisses the modal.
+    // The sheet stops below a top gap; a tap in that gap hits the scrim and
+    // dismisses it.
     await tester.tapAt(const Offset(10, 10));
-    await tester.pumpAndSettle();
-    expect(find.byType(SwapAddressEditModal), findsNothing);
-    expect(find.byType(MobileSwapScreen), findsOneWidget);
-
-    // The bottom strip — where the floating tab bar sits — is under the
-    // barrier too. The modal card is bottom-anchored with a gap beneath
-    // it, so a tap in that gap hits the barrier and dismisses the modal
-    // instead of reaching the tab bar to switch branches.
-    await tester.tap(find.text('Add recipient address'));
-    await tester.pumpAndSettle();
-    expect(find.byType(SwapAddressEditModal), findsOneWidget);
-    await tester.tapAt(Offset(screen.center.dx, screen.bottom - 4));
     await tester.pumpAndSettle();
     expect(find.byType(SwapAddressEditModal), findsNothing);
     expect(find.byType(MobileSwapScreen), findsOneWidget);
@@ -147,6 +135,43 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(SwapAddressEditModal), findsNothing);
     expect(find.byType(MobileSwapScreen), findsOneWidget);
+  });
+
+  testWidgets('contacts is a back-navigable view inside the same sheet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add recipient address'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SwapAddressEditModal), findsOneWidget);
+    // No back chevron on the base (editor) view.
+    expect(find.byKey(const ValueKey('mobile_sheet_back_button')), findsNothing);
+
+    // Open contacts → the same sheet swaps content: the editor is replaced
+    // and a back chevron appears (no second overlapping sheet). The picker
+    // watches the address book (which stays loading in-test), so pump a few
+    // frames rather than settling.
+    await tester.tap(
+      find.byKey(const ValueKey('swap_address_contacts_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.byType(SwapAddressEditModal), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_sheet_back_button')),
+      findsOneWidget,
+    );
+
+    // Back chevron returns to the editor in the same sheet.
+    await tester.tap(find.byKey(const ValueKey('mobile_sheet_back_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.byType(SwapAddressEditModal), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile_sheet_back_button')), findsNothing);
   });
 }
 
