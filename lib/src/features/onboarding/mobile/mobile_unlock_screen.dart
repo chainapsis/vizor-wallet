@@ -20,6 +20,9 @@ import 'forgot_passcode_sheet.dart';
 import 'mobile_passcode_screen.dart' show kMobilePasscodeLength;
 import 'passcode_widgets.dart';
 
+const mobileBiometricSignInBackgroundAsset =
+    'assets/illustrations/mobile_onboarding_auth_background.png';
+
 /// Mobile unlock — Figma `Sign In Passcode` (4885:23041): "Welcome Back",
 /// crimson-filling dots, round numpad keys, a bottom biometric retry action,
 /// and the numpad's help action opening the Forgot Passcode reset sheet.
@@ -328,7 +331,7 @@ class MobileBiometricSignInView extends StatelessWidget {
                   width: _backgroundWidth * scale,
                   height: _backgroundHeight * scale,
                   child: Image.asset(
-                    'assets/illustrations/onboarding_auth_background.png',
+                    mobileBiometricSignInBackgroundAsset,
                     key: const ValueKey('mobile_biometric_sign_in_background'),
                     fit: BoxFit.fill,
                   ),

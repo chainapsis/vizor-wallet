@@ -1,6 +1,9 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +13,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_auth_shell.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 
 void main() {
@@ -90,6 +94,13 @@ void main() {
       find.byKey(const ValueKey('mobile_biometric_sign_in_background')),
       findsOneWidget,
     );
+    final backgroundImage = tester.widget<Image>(
+      find.byKey(const ValueKey('mobile_biometric_sign_in_background')),
+    );
+    expect(
+      (backgroundImage.image as AssetImage).assetName,
+      mobileBiometricSignInBackgroundAsset,
+    );
     final backgroundSize = tester.getSize(
       find.byKey(const ValueKey('mobile_biometric_sign_in_background')),
     );
@@ -110,6 +121,16 @@ void main() {
       findsNothing,
     );
     expect(find.byType(PasscodeNumpad), findsNothing);
+  });
+
+  testWidgets('keeps desktop and mobile auth backgrounds separate', (
+    tester,
+  ) async {
+    expect(_pngSize(onboardingAuthBackgroundAsset), const Size(1344, 720));
+    expect(
+      _pngSize(mobileBiometricSignInBackgroundAsset),
+      const Size(392, 720),
+    );
   });
 
   testWidgets('mobile lock modal use cases render forgot-passcode states', (
@@ -220,6 +241,15 @@ void main() {
     expect(find.text('Reset Vizor'), findsOneWidget);
     expect(resetButton().onPressed, isNotNull);
   });
+}
+
+Size _pngSize(String assetPath) {
+  final bytes = File(assetPath).readAsBytesSync();
+  final data = ByteData.sublistView(Uint8List.fromList(bytes));
+  return Size(
+    data.getUint32(16, Endian.big).toDouble(),
+    data.getUint32(20, Endian.big).toDouble(),
+  );
 }
 
 Future<void> _pumpMobileLockUseCase(
