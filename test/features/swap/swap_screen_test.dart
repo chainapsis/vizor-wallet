@@ -3889,7 +3889,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
-    final scrollView = tester.widget<SingleChildScrollView>(
+    final scrollView = tester.widget<CustomScrollView>(
       find.byKey(AppPaneScrollScaffold.scrollViewKey),
     );
     final controller = scrollView.controller!;
@@ -3976,8 +3976,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('activity_screen_row_5')), findsOneWidget);
-    expect(find.byKey(const ValueKey('activity_screen_row_6')), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('swap:swap-page-6')),
+      160,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('swap:swap-page-5')), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap:swap-page-6')), findsOneWidget);
     final filterLabel = tester.widget<Text>(
       find.byKey(const ValueKey('activity_screen_filter_label')),
     );

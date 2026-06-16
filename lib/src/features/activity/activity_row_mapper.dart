@@ -37,6 +37,7 @@ ActivityRowData buildTransactionActivityRow({
   final isInFlight = isPending && (isInbound || isSent);
 
   return ActivityRowData(
+    stableId: 'tx:${transaction.txidHex}:${_stableTransactionRole(kind)}',
     title: isFailed && isSent
         ? 'Send failed'
         : isInFlight
@@ -81,6 +82,13 @@ ActivityRowData buildTransactionActivityRow({
     timestampText: formatActivityTimestamp(_txTimestamp(transaction)),
     onTap: onTap,
   );
+}
+
+String _stableTransactionRole(String kind) {
+  return switch (kind) {
+    'receiving' => 'received',
+    _ => kind,
+  };
 }
 
 String _transactionAmountText({

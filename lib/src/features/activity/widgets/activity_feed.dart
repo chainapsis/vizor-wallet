@@ -60,6 +60,417 @@ class ActivityFeed extends StatelessWidget {
   }
 }
 
+class ActivityFeedSliver extends StatelessWidget {
+  const ActivityFeedSliver({
+    required this.sections,
+    this.isLoading = false,
+    this.errorText,
+    this.emptyText = 'No activity yet',
+    this.rowKeyPrefix,
+    super.key,
+  });
+
+  final List<ActivityFeedSectionData> sections;
+  final bool isLoading;
+  final String? errorText;
+  final String emptyText;
+  final String? rowKeyPrefix;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = _activityFeedSliverItems(
+      sections: sections,
+      isLoading: isLoading,
+      errorText: errorText,
+      emptyText: emptyText,
+      rowKeyPrefix: rowKeyPrefix,
+    );
+    final childIndexByKey = <Key, int>{
+      for (var index = 0; index < items.length; index++)
+        if (items[index].rowKey != null) items[index].rowKey!: index,
+    };
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          final item = items[index];
+          return _ActivityFeedSliverItemView(key: item.rowKey, item: item);
+        },
+        childCount: items.length,
+        findChildIndexCallback: (key) => childIndexByKey[key],
+      ),
+    );
+  }
+}
+
+List<_ActivityFeedSliverItem> _activityFeedSliverItems({
+  required List<ActivityFeedSectionData> sections,
+  required bool isLoading,
+  required String? errorText,
+  required String emptyText,
+  required String? rowKeyPrefix,
+}) {
+  final message = errorText ?? (isLoading ? 'Loading activity...' : null);
+  final items = <_ActivityFeedSliverItem>[
+    _ActivityFeedSliverItem.title(),
+    _ActivityFeedSliverItem.gap(AppSpacing.base),
+  ];
+
+  if (message != null && sections.isEmpty) {
+    items.add(
+      _ActivityFeedSliverItem.message(message, isError: errorText != null),
+    );
+    return items;
+  }
+  if (sections.isEmpty) {
+    items.add(_ActivityFeedSliverItem.message(emptyText));
+    return items;
+  }
+
+  var rowIndex = 0;
+  for (var sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+    final section = sections[sectionIndex];
+    final rows = section.rows;
+    if (sectionIndex > 0) {
+      items.add(_ActivityFeedSliverItem.gap(AppSpacing.md));
+    }
+    items.add(
+      _ActivityFeedSliverItem.sectionHeader(
+        section.title,
+        segmentPosition: rows.isEmpty
+            ? _ActivityFeedCardSegmentPosition.single
+            : _ActivityFeedCardSegmentPosition.first,
+        hasRows: rows.isNotEmpty,
+      ),
+    );
+    for (var index = 0; index < rows.length; index++) {
+      final row = rows[index];
+      final stableKey = _stableRowKey(row);
+      final rowKey = stableKey ?? _fallbackRowKey(rowKeyPrefix, rowIndex);
+      if (stableKey == null && rowKeyPrefix != null) {
+        rowIndex += 1;
+      }
+      items.add(
+        _ActivityFeedSliverItem.row(
+          row,
+          rowKey: rowKey,
+          segmentPosition: index == rows.length - 1
+              ? _ActivityFeedCardSegmentPosition.last
+              : _ActivityFeedCardSegmentPosition.middle,
+          hasTopGap: index > 0,
+        ),
+      );
+    }
+  }
+  items.add(_ActivityFeedSliverItem.gap(AppSpacing.base));
+  return items;
+}
+
+ValueKey<String>? _fallbackRowKey(String? rowKeyPrefix, int rowIndex) {
+  if (rowKeyPrefix == null) return null;
+  return ValueKey('${rowKeyPrefix}_row_$rowIndex');
+}
+
+enum _ActivityFeedSliverItemType { title, gap, message, sectionHeader, row }
+
+enum _ActivityFeedCardSegmentPosition { single, first, middle, last }
+
+class _ActivityFeedSliverItem {
+  const _ActivityFeedSliverItem._({
+    required this.type,
+    this.height,
+    this.text,
+    this.isError = false,
+    this.row,
+    this.rowKey,
+    this.segmentPosition,
+    this.hasRows = false,
+    this.hasTopGap = false,
+  });
+
+  factory _ActivityFeedSliverItem.title() {
+    return const _ActivityFeedSliverItem._(
+      type: _ActivityFeedSliverItemType.title,
+    );
+  }
+
+  factory _ActivityFeedSliverItem.gap(double height) {
+    return _ActivityFeedSliverItem._(
+      type: _ActivityFeedSliverItemType.gap,
+      height: height,
+    );
+  }
+
+  factory _ActivityFeedSliverItem.message(String text, {bool isError = false}) {
+    return _ActivityFeedSliverItem._(
+      type: _ActivityFeedSliverItemType.message,
+      text: text,
+      isError: isError,
+    );
+  }
+
+  factory _ActivityFeedSliverItem.sectionHeader(
+    String title, {
+    required _ActivityFeedCardSegmentPosition segmentPosition,
+    required bool hasRows,
+  }) {
+    return _ActivityFeedSliverItem._(
+      type: _ActivityFeedSliverItemType.sectionHeader,
+      text: title,
+      segmentPosition: segmentPosition,
+      hasRows: hasRows,
+    );
+  }
+
+  factory _ActivityFeedSliverItem.row(
+    ActivityRowData row, {
+    required _ActivityFeedCardSegmentPosition segmentPosition,
+    required bool hasTopGap,
+    ValueKey<String>? rowKey,
+  }) {
+    return _ActivityFeedSliverItem._(
+      type: _ActivityFeedSliverItemType.row,
+      row: row,
+      rowKey: rowKey,
+      segmentPosition: segmentPosition,
+      hasTopGap: hasTopGap,
+    );
+  }
+
+  final _ActivityFeedSliverItemType type;
+  final double? height;
+  final String? text;
+  final bool isError;
+  final ActivityRowData? row;
+  final ValueKey<String>? rowKey;
+  final _ActivityFeedCardSegmentPosition? segmentPosition;
+  final bool hasRows;
+  final bool hasTopGap;
+}
+
+class _ActivityFeedSliverItemView extends StatelessWidget {
+  const _ActivityFeedSliverItemView({required this.item, super.key});
+
+  final _ActivityFeedSliverItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (item.type) {
+      _ActivityFeedSliverItemType.title => const _ActivityFeedCentered(
+        width: 420,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: AppSpacing.s),
+          child: _ActivityFeedTitleRow(),
+        ),
+      ),
+      _ActivityFeedSliverItemType.gap => SizedBox(height: item.height),
+      _ActivityFeedSliverItemType.message => _ActivityFeedCentered(
+        width: 396,
+        child: _ActivityFeedMessageCard(
+          text: item.text!,
+          isError: item.isError,
+        ),
+      ),
+      _ActivityFeedSliverItemType.sectionHeader =>
+        _ActivityFeedSectionHeaderSegment(
+          title: item.text!,
+          position: item.segmentPosition!,
+          hasRows: item.hasRows,
+        ),
+      _ActivityFeedSliverItemType.row => _ActivityFeedRowSegment(
+        row: item.row!,
+        position: item.segmentPosition!,
+        hasTopGap: item.hasTopGap,
+      ),
+    };
+  }
+}
+
+class _ActivityFeedCentered extends StatelessWidget {
+  const _ActivityFeedCentered({required this.width, required this.child});
+
+  final double width;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: SizedBox(width: width, child: child),
+    );
+  }
+}
+
+class _ActivityFeedSectionHeaderSegment extends StatelessWidget {
+  const _ActivityFeedSectionHeaderSegment({
+    required this.title,
+    required this.position,
+    required this.hasRows,
+  });
+
+  final String title;
+  final _ActivityFeedCardSegmentPosition position;
+  final bool hasRows;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return _ActivityFeedCardSegment(
+      position: position,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 24, 16, hasRows ? AppSpacing.s : 24),
+        child: SizedBox(
+          height: 24,
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.xxs),
+            child: Text(
+              title,
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.secondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActivityFeedRowSegment extends StatelessWidget {
+  const _ActivityFeedRowSegment({
+    required this.row,
+    required this.position,
+    required this.hasTopGap,
+  });
+
+  final ActivityRowData row;
+  final _ActivityFeedCardSegmentPosition position;
+  final bool hasTopGap;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ActivityFeedCardSegment(
+      position: position,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          hasTopGap ? 12 : 0,
+          16,
+          position == _ActivityFeedCardSegmentPosition.last ? 24 : 0,
+        ),
+        child: ActivityFeedRowGroup(row: row),
+      ),
+    );
+  }
+}
+
+class _ActivityFeedCardSegment extends StatelessWidget {
+  const _ActivityFeedCardSegment({required this.position, required this.child});
+
+  final _ActivityFeedCardSegmentPosition position;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return _ActivityFeedCentered(
+      width: 396,
+      child: CustomPaint(
+        painter: _ActivityFeedCardSegmentShadowPainter(
+          position: position,
+          shadows: appSurfaceShadow(colors),
+        ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.background.ground,
+            borderRadius: _activityFeedSegmentRadius(position),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+class _ActivityFeedCardSegmentShadowPainter extends CustomPainter {
+  const _ActivityFeedCardSegmentShadowPainter({
+    required this.position,
+    required this.shadows,
+  });
+
+  static const _shadowPaintExtent = 24.0;
+
+  final _ActivityFeedCardSegmentPosition position;
+  final List<BoxShadow> shadows;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (shadows.isEmpty) return;
+    final clipPath = _shadowClipPath(size);
+    canvas.save();
+    canvas.clipPath(clipPath);
+    final radius = _activityFeedSegmentRadius(position);
+    final baseRect = Offset.zero & size;
+    for (final shadow in shadows) {
+      final rect = baseRect.inflate(shadow.spreadRadius).shift(shadow.offset);
+      canvas.drawRRect(radius.toRRect(rect), shadow.toPaint());
+    }
+    canvas.restore();
+  }
+
+  Path _shadowClipPath(Size size) {
+    const extent = _shadowPaintExtent;
+    final width = size.width;
+    final height = size.height;
+    final path = Path();
+    switch (position) {
+      case _ActivityFeedCardSegmentPosition.single:
+        path.addRect(
+          Rect.fromLTRB(-extent, -extent, width + extent, height + extent),
+        );
+      case _ActivityFeedCardSegmentPosition.first:
+        path.addRect(Rect.fromLTRB(-extent, -extent, width + extent, height));
+      case _ActivityFeedCardSegmentPosition.middle:
+        path
+          ..addRect(Rect.fromLTRB(-extent, 0, 0, height))
+          ..addRect(Rect.fromLTRB(width, 0, width + extent, height));
+      case _ActivityFeedCardSegmentPosition.last:
+        path.addRect(
+          Rect.fromLTRB(-extent, 0, width + extent, height + extent),
+        );
+    }
+    return path;
+  }
+
+  @override
+  bool shouldRepaint(
+    covariant _ActivityFeedCardSegmentShadowPainter oldDelegate,
+  ) {
+    if (oldDelegate.position != position) return true;
+    if (oldDelegate.shadows.length != shadows.length) return true;
+    for (var index = 0; index < shadows.length; index++) {
+      if (oldDelegate.shadows[index] != shadows[index]) return true;
+    }
+    return false;
+  }
+}
+
+BorderRadius _activityFeedSegmentRadius(
+  _ActivityFeedCardSegmentPosition position,
+) {
+  const radius = Radius.circular(AppRadii.large);
+  return switch (position) {
+    _ActivityFeedCardSegmentPosition.single => const BorderRadius.all(radius),
+    _ActivityFeedCardSegmentPosition.first => const BorderRadius.vertical(
+      top: radius,
+    ),
+    _ActivityFeedCardSegmentPosition.middle => BorderRadius.zero,
+    _ActivityFeedCardSegmentPosition.last => const BorderRadius.vertical(
+      bottom: radius,
+    ),
+  };
+}
+
 class _ActivityFeedTitleRow extends StatelessWidget {
   const _ActivityFeedTitleRow();
 
@@ -181,6 +592,12 @@ class _ActivityFeedBody extends StatelessWidget {
   }
 }
 
+ValueKey<String>? _stableRowKey(ActivityRowData row) {
+  final stableId = row.stableId;
+  if (stableId == null || stableId.isEmpty) return null;
+  return ValueKey(stableId);
+}
+
 class _ActivityFeedMessageCard extends StatelessWidget {
   const _ActivityFeedMessageCard({required this.text, this.isError = false});
 
@@ -243,7 +660,9 @@ class _ActivityFeedCard extends StatelessWidget {
               for (var index = 0; index < section.rows.length; index++) ...[
                 if (index > 0) const SizedBox(height: 12),
                 ActivityFeedRowGroup(
-                  key: rowKeyBuilder?.call(),
+                  key:
+                      _stableRowKey(section.rows[index]) ??
+                      rowKeyBuilder?.call(),
                   row: section.rows[index],
                 ),
               ],
@@ -294,7 +713,9 @@ class ActivityFeedRowGroup extends StatelessWidget {
             children: [
               for (final childRow in row.childRows)
                 TweenAnimationBuilder<double>(
-                  key: ValueKey('activity_child_${childRow.title}'),
+                  key: ValueKey(
+                    'activity_child_${childRow.stableId ?? childRow.title}',
+                  ),
                   tween: Tween(begin: 0, end: 1),
                   duration: const Duration(milliseconds: 280),
                   curve: Curves.easeOutCubic,

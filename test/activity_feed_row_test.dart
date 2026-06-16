@@ -368,6 +368,43 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('activity feed uses stable row ids when available', (
+    tester,
+  ) async {
+    await _pumpActivityFeed(
+      tester,
+      rows: [
+        _row(title: 'Received', stableId: 'tx:received:received'),
+        _row(title: 'Sent', stableId: 'tx:sent:sent'),
+      ],
+    );
+
+    expect(find.byKey(const ValueKey('tx:received:received')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tx:sent:sent')), findsOneWidget);
+  });
+
+  testWidgets('activity feed sliver lazily builds row items', (tester) async {
+    await _pumpActivityFeedSliver(
+      tester,
+      rows: [
+        for (var index = 0; index < 60; index++)
+          _row(title: 'Row $index', stableId: 'row-$index'),
+      ],
+    );
+
+    expect(find.byKey(const ValueKey('row-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('row-59')), findsNothing);
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('row-59')),
+      240,
+      scrollable: find.byType(Scrollable),
+      maxScrolls: 80,
+    );
+
+    expect(find.byKey(const ValueKey('row-59')), findsOneWidget);
+  });
 }
 
 Future<void> _pumpMappedTransactions(
@@ -421,6 +458,34 @@ Widget _feed(List<ActivityRowData> rows) {
   );
 }
 
+Future<void> _pumpActivityFeedSliver(
+  WidgetTester tester, {
+  required List<ActivityRowData> rows,
+}) {
+  return tester.pumpWidget(
+    MaterialApp(
+      home: AppTheme(
+        data: AppThemeData.light,
+        child: Center(
+          child: SizedBox(
+            width: 420,
+            height: 240,
+            child: CustomScrollView(
+              slivers: [
+                ActivityFeedSliver(
+                  sections: [
+                    ActivityFeedSectionData(title: 'This week', rows: rows),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 rust_sync.TransactionInfo _tx({
   required String txidHex,
   required String kind,
@@ -445,6 +510,7 @@ rust_sync.TransactionInfo _tx({
 
 ActivityRowData _row({
   required String title,
+  String? stableId,
   String leadingIconName = AppIcons.sync,
   String? subtitle,
   String? amountSubtitle,
@@ -454,6 +520,7 @@ ActivityRowData _row({
   VoidCallback? onTap,
 }) {
   return ActivityRowData(
+    stableId: stableId,
     title: title,
     leadingIconName: leadingIconName,
     leadingBackgroundColor: const Color(0xFFE1E1E1),

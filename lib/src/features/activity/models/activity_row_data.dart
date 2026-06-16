@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 class ActivityRowData {
   const ActivityRowData({
+    this.stableId,
     required this.title,
     required this.leadingIconName,
     required this.leadingBackgroundColor,
@@ -26,6 +27,7 @@ class ActivityRowData {
     this.onTap,
   });
 
+  final String? stableId;
   final String title;
   final String leadingIconName;
   final Color leadingBackgroundColor;
