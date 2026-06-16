@@ -491,51 +491,6 @@ class _ActivityFeedTitleRow extends StatelessWidget {
               ),
             ),
           ),
-          const Positioned(right: 0, top: 8, child: _ActivityFilterButton()),
-        ],
-      ),
-    );
-  }
-}
-
-class _ActivityFilterButton extends StatelessWidget {
-  const _ActivityFilterButton();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      key: const ValueKey('activity_screen_filter_button'),
-      width: 62,
-      height: 24,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          SizedBox(
-            width: 42,
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerRight,
-                child: Text(
-                  key: const ValueKey('activity_screen_filter_label'),
-                  'Filter',
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.text.disabled,
-                    letterSpacing: 0,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.xxs),
-          AppIcon(
-            AppIcons.filter,
-            key: const ValueKey('activity_screen_filter_icon'),
-            size: 16,
-            color: colors.icon.disabled,
-          ),
         ],
       ),
     );

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
 import 'package:zcash_wallet/widgetbook/activity_use_cases.dart';
 
@@ -15,19 +14,19 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.byType(ActivityFeed), findsOneWidget);
       expect(find.text('Activity'), findsWidgets);
-      expect(find.text('Filter'), findsOneWidget);
-
-      final filterLabel = tester.widget<Text>(
+      expect(find.text('Filter'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('activity_screen_filter_button')),
+        findsNothing,
+      );
+      expect(
         find.byKey(const ValueKey('activity_screen_filter_label')),
+        findsNothing,
       );
-      expect(filterLabel.style?.color, AppThemeData.light.colors.text.disabled);
-
-      final filterIcon = tester.widget<AppIcon>(
+      expect(
         find.byKey(const ValueKey('activity_screen_filter_icon')),
+        findsNothing,
       );
-      expect(filterIcon.name, AppIcons.filter);
-      expect(filterIcon.size, 16);
-      expect(filterIcon.color, AppThemeData.light.colors.icon.disabled);
 
       final paneBackground = tester.widget<ColoredBox>(
         find.byKey(const ValueKey('activity_page_pane_background')),

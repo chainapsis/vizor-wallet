@@ -3985,15 +3985,18 @@ void main() {
 
     expect(find.byKey(const ValueKey('swap:swap-page-5')), findsOneWidget);
     expect(find.byKey(const ValueKey('swap:swap-page-6')), findsOneWidget);
-    final filterLabel = tester.widget<Text>(
+    expect(
+      find.byKey(const ValueKey('activity_screen_filter_button')),
+      findsNothing,
+    );
+    expect(
       find.byKey(const ValueKey('activity_screen_filter_label')),
+      findsNothing,
     );
-    expect(filterLabel.style?.color, AppThemeData.light.colors.text.disabled);
-    final filterIcon = tester.widget<AppIcon>(
+    expect(
       find.byKey(const ValueKey('activity_screen_filter_icon')),
+      findsNothing,
     );
-    expect(filterIcon.name, AppIcons.filter);
-    expect(filterIcon.color, AppThemeData.light.colors.icon.disabled);
   });
 
   testWidgets('activity progress detail fits without scrollbar chrome', (
