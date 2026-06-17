@@ -61,8 +61,7 @@ class MobileSwapReviewContent extends StatelessWidget {
         compactSwapAmountText(quote.sellAmountText),
       ),
       asset: quote.sellAsset,
-      bottomText: sendsZec ? payFiatTextOverride : externalBottom,
-      fullAddress: sendsZec ? null : externalAddress,
+      bottomText: sendsZec ? payFiatTextOverride : null,
     );
     final receiveRow = MobileSwapReviewHeaderRow(
       label: "You're receiving",
