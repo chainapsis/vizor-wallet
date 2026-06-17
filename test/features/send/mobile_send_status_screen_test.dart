@@ -59,7 +59,19 @@ Widget _app({required MobileSendBroadcastRunner broadcastRunner}) {
   );
 }
 
+bool _statusRouteCanPop(WidgetTester tester) {
+  final popScope = tester.widget<PopScope<void>>(find.byType(PopScope<void>));
+  return popScope.canPop;
+}
+
 void main() {
+  setUp(() {
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    binding.platformDispatcher.views.first
+      ..physicalSize = const Size(520, 1100)
+      ..devicePixelRatio = 1.0;
+  });
+
   testWidgets('broadcast success updates the integrated send status screen', (
     tester,
   ) async {
@@ -79,6 +91,7 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const ValueKey('mobile_send_status_sending')), findsOne);
+    expect(_statusRouteCanPop(tester), isFalse);
     expect(find.text('Sending...'), findsOneWidget);
     expect(find.text('In progress'), findsOneWidget);
     expect(find.text('123.12 ZEC'), findsOneWidget);
@@ -100,8 +113,44 @@ void main() {
       findsOne,
     );
     expect(find.text('Sent successfully'), findsOneWidget);
+    expect(_statusRouteCanPop(tester), isTrue);
     expect(find.text('Completed'), findsOneWidget);
     expect(find.byKey(const ValueKey('mobile_send_status_txid')), findsOne);
     expect(find.text('0.00015 ZEC'), findsOneWidget);
+  });
+
+  testWidgets('failed status allows route pop after broadcast finishes', (
+    tester,
+  ) async {
+    final broadcast = Completer<SendBroadcastOutcome>();
+    await tester.pumpWidget(
+      _app(
+        broadcastRunner:
+            ({
+              required ref,
+              required args,
+              keystone,
+              required confirmSaplingParamsDownload,
+              shouldAbort,
+            }) => broadcast.future,
+      ),
+    );
+    await tester.pump();
+
+    expect(_statusRouteCanPop(tester), isFalse);
+
+    broadcast.complete(
+      const SendBroadcastOutcome(
+        phase: SendBroadcastPhase.failed,
+        proposalConsumed: true,
+        error: 'failed',
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('mobile_send_status_failed')), findsOne);
+    expect(find.text('Send failed'), findsOneWidget);
+    expect(_statusRouteCanPop(tester), isTrue);
   });
 }

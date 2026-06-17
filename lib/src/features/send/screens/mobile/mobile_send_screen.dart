@@ -624,12 +624,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         return;
       }
       if (!mounted) return;
-      context.go('/send/status', extra: keystone);
+      context.pushReplacement('/send/status', extra: keystone);
       return;
     }
 
     if (!mounted) return;
-    context.go('/send/status', extra: args);
+    context.pushReplacement('/send/status', extra: args);
   }
 
   // ── Navigation ─────────────────────────────────────────────────────

@@ -24,6 +24,8 @@ const _shieldedAddress =
 const _transparentAddress = 't1transparentdestination0000000000000000000';
 const _invalidAddress = 'not-an-address';
 
+var _proposeSendSucceeds = false;
+
 class _RustApiFake implements RustLibApi {
   @override
   Future<AddressValidationResult> crateApiSyncValidateAddress({
@@ -55,6 +57,26 @@ class _RustApiFake implements RustLibApi {
     // assert Continue stays blocked until the estimate lands.
     await Future<void>.delayed(const Duration(milliseconds: 50));
     return BigInt.from(10000);
+  }
+
+  @override
+  Future<ProposalResult> crateApiSyncProposeSend({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String sendFlowId,
+    required String toAddress,
+    required BigInt amountZatoshi,
+    String? memo,
+  }) async {
+    if (!_proposeSendSucceeds) {
+      throw StateError('proposal failed');
+    }
+    return ProposalResult(
+      proposalId: BigInt.from(1),
+      needsSaplingParams: false,
+      feeZatoshi: BigInt.from(10000),
+    );
   }
 
   @override
@@ -160,6 +182,56 @@ Widget _app({
   );
 }
 
+Widget _sendFlowRouterApp() {
+  final router = GoRouter(
+    initialLocation: '/home',
+    routes: [
+      GoRoute(
+        path: '/home',
+        builder: (context, _) => TextButton(
+          key: const ValueKey('mobile_send_open_from_home'),
+          onPressed: () => context.push('/send'),
+          child: const Text('home'),
+        ),
+      ),
+      GoRoute(
+        path: '/send',
+        builder: (_, _) => MobileSendScreen(
+          loadWalletDbPath: () async => '/tmp/zcash-test',
+          openScanner: (_) async => null,
+        ),
+      ),
+      GoRoute(
+        path: '/send/status',
+        builder: (context, _) => TextButton(
+          key: const ValueKey('mobile_send_status_pop'),
+          onPressed: context.canPop() ? () => context.pop() : null,
+          child: Text(
+            context.canPop() ? 'status can pop' : 'status cannot pop',
+          ),
+        ),
+      ),
+    ],
+  );
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      syncProvider.overrideWith(_FakeSyncNotifier.new),
+      zecMarketDataSourceProvider.overrideWithValue(
+        const _FakeMarketDataSource(),
+      ),
+      addressBookRepositoryProvider.overrideWithValue(
+        _FakeAddressBookRepository(const []),
+      ),
+      ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (context, c) => AppTheme(data: AppThemeData.light, child: c!),
+    ),
+  );
+}
+
 Future<void> _enterAddress(WidgetTester tester, String address) async {
   await tester.enterText(
     find.descendant(
@@ -208,6 +280,7 @@ void main() {
   tearDownAll(RustLib.dispose);
 
   setUp(() {
+    _proposeSendSucceeds = false;
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1100)
@@ -234,6 +307,32 @@ void main() {
     expect(find.text('Review Send'), findsOneWidget);
     expect(_sendRouteCanPop(tester), isFalse);
   });
+
+  testWidgets(
+    'send status replaces the send route so completed status can pop',
+    (tester) async {
+      _proposeSendSucceeds = true;
+
+      await tester.pumpWidget(_sendFlowRouterApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_send_open_from_home')),
+      );
+      await tester.pumpAndSettle();
+
+      await _toReviewStep(tester);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('status can pop'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_status_pop')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('home'), findsOneWidget);
+      expect(find.text('Review Send'), findsNothing);
+    },
+  );
 
   testWidgets('recipient step gates Continue on a valid address', (
     tester,

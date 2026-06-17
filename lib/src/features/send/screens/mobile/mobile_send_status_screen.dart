@@ -138,8 +138,14 @@ class _MobileSendStatusScreenState
 
   void _handleBack() {
     if (_phase == _MobileSendStatusPhase.sending) return;
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
     context.go('/home');
   }
+
+  bool get _routePopAllowed => _phase != _MobileSendStatusPhase.sending;
 
   Future<void> _openExplorer() async {
     final txid = _displayTxid;
@@ -171,7 +177,7 @@ class _MobileSendStatusScreenState
     );
 
     return PopScope<void>(
-      canPop: false,
+      canPop: _routePopAllowed,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _handleBack();
       },
@@ -675,11 +681,15 @@ class _StatusChip extends StatelessWidget {
         children: [
           AppIcon(iconName, size: 20, color: color),
           const SizedBox(width: AppSpacing.xxs),
-          Text(
-            text,
-            style: AppTypography.labelLarge.copyWith(
-              fontWeight: FontWeight.w600,
-              color: color,
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.labelLarge.copyWith(
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
             ),
           ),
         ],
