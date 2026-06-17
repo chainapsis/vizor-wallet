@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../swap/models/swap_models.dart';
+import 'activity_amount_text.dart';
 import 'activity_row_mapper.dart';
 import 'models/activity_row_data.dart';
 
@@ -109,10 +110,12 @@ ActivityRowData buildSwapActivityRow({
     subtitle: returnsFunds
         ? '${sellAsset?.symbol ?? 'ZEC'} Refunded'
         : _swapActivityAssetSubtitle(sellAsset) ?? item.providerLabel,
-    amountText: _swapActivityAmountText(
-      item,
-      includeSign: !(returnsFunds || timedOut),
-      privacyModeEnabled: privacyModeEnabled,
+    amountText: activityAmountTextForFormFactor(
+      _swapActivityAmountText(
+        item,
+        includeSign: !(returnsFunds || timedOut),
+        privacyModeEnabled: privacyModeEnabled,
+      ),
     ),
     amountIconName: returnsFunds ? AppIcons.uturnUp : null,
     amountIconColor: returnsFunds ? colors.icon.regular : null,
@@ -188,7 +191,7 @@ List<ActivityRowData> _swapActivityChildRows({
       leadingIconName: AppIcons.swapArrows,
       leadingBackgroundColor: colors.background.neutralSubtleOpacity,
       leadingIconColor: colors.icon.regular,
-      amountText: amountText,
+      amountText: activityAmountTextForFormFactor(amountText),
       amountColor: outgoingAmountColor(colors),
       statusText: '',
       timestampText: dateOnlyTimestamp

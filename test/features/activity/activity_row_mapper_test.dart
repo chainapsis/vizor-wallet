@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/activity/activity_amount_text.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -97,12 +98,26 @@ void main() {
     expect(row.title, 'Send failed');
     expect(row.leadingIconName, isNot(AppIcons.loader));
   });
+
+  testWidgets('transaction rows route the amount through the form-factor gate', (
+    tester,
+  ) async {
+    final row = await mapRow(
+      tester,
+      _transaction(txKind: 'sent', displayAmount: BigInt.from(1234567890000)),
+    );
+
+    // Lane-agnostic: desktop keeps the full amount, mobile compacts it. Both
+    // are exactly what activityAmountTextForFormFactor yields for this raw text.
+    expect(row.amountText, activityAmountTextForFormFactor('-12345.6789 ZEC'));
+  });
 }
 
 rust_sync.TransactionInfo _transaction({
   required String txKind,
   BigInt? minedHeight,
   bool expiredUnmined = false,
+  BigInt? displayAmount,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: 'ab12cd34',
@@ -113,7 +128,7 @@ rust_sync.TransactionInfo _transaction({
     blockTime: BigInt.from(1750000000),
     isTransparent: false,
     txKind: txKind,
-    displayAmount: BigInt.from(12000000000),
+    displayAmount: displayAmount ?? BigInt.from(12000000000),
     displayPool: 'shielded',
     createdTime: BigInt.from(1750000000),
   );

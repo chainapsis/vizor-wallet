@@ -81,6 +81,26 @@ void main() {
     expect(subtitle.style?.fontSize, AppTypographyMobile.labelLarge.fontSize);
   });
 
+  testWidgets('mobile activity card surface has no drop shadow', (
+    tester,
+  ) async {
+    await _pumpActivityFeed(tester, rows: [_row(title: 'Sent')]);
+
+    final card = tester.widget<DecoratedBox>(
+      find.byWidgetPredicate((widget) {
+        if (widget is! DecoratedBox || widget.decoration is! BoxDecoration) {
+          return false;
+        }
+        final decoration = widget.decoration as BoxDecoration;
+        return decoration.color ==
+                AppThemeData.light.colors.background.ground &&
+            decoration.borderRadius == BorderRadius.circular(AppRadii.large);
+      }).first,
+    );
+    final decoration = card.decoration as BoxDecoration;
+    expect(decoration.boxShadow ?? const <BoxShadow>[], isEmpty);
+  });
+
   test('mobile outgoing amount color matches the title accent', () {
     final colors = AppThemeData.light.colors;
     expect(outgoingAmountColor(colors), colors.text.accent);

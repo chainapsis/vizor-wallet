@@ -6,6 +6,7 @@ import '../../core/privacy/privacy_mask.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../rust/api/sync.dart' as rust_sync;
+import 'activity_amount_text.dart';
 import 'models/activity_row_data.dart';
 
 const _activityAmountPrivacyMaskLength = 3;
@@ -59,13 +60,15 @@ ActivityRowData buildTransactionActivityRow({
     leadingIconColor: colors.icon.regular,
     subtitle: subtitle,
     subtitleIconName: _poolIcon(transaction.displayPool),
-    amountText: _transactionAmountText(
-      amount: amount,
-      signedAmount: signedAmount,
-      isFailed: isFailed,
-      isShielded: isShielded,
-      kind: kind,
-      privacyModeEnabled: privacyModeEnabled,
+    amountText: activityAmountTextForFormFactor(
+      _transactionAmountText(
+        amount: amount,
+        signedAmount: signedAmount,
+        isFailed: isFailed,
+        isShielded: isShielded,
+        kind: kind,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
     ),
     amountIconName: isFailed && amount != BigInt.zero
         ? AppIcons.arrowBack

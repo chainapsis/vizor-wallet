@@ -412,7 +412,7 @@ class _ActivityFeedCardSegment extends StatelessWidget {
       child: CustomPaint(
         painter: _ActivityFeedCardSegmentShadowPainter(
           position: position,
-          shadows: appSurfaceShadow(colors),
+          shadows: _activityFeedCardShadow(colors),
         ),
         child: DecoratedBox(
           decoration: BoxDecoration(
@@ -689,12 +689,21 @@ class _ActivityFeedCardShell extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: appSurfaceShadow(colors),
+        boxShadow: _activityFeedCardShadow(colors),
       ),
       child: child,
     );
   }
 }
+
+/// Activity cards drop their drop shadow on mobile (flat full-width cards on a
+/// tinted background) and keep the surface shadow on desktop. Form-factor
+/// branching is the compile-time [kAppFormFactor] const so the unused branch is
+/// tree-shaken.
+List<BoxShadow> _activityFeedCardShadow(AppColors colors) =>
+    kAppFormFactor == AppFormFactor.mobile
+    ? const <BoxShadow>[]
+    : appSurfaceShadow(colors);
 
 class ActivityFeedRowGroup extends StatelessWidget {
   const ActivityFeedRowGroup({required this.row, super.key});
