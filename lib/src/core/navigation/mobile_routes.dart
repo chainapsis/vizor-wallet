@@ -45,8 +45,10 @@ List<RouteBase> buildMobileRoutes({
   return [
     ...entryRoutes,
     StatefulShellRoute.indexedStack(
-      builder: (context, state, navigationShell) =>
-          _MobileTabShell(navigationShell: navigationShell, tabs: tabs),
+      pageBuilder: (context, state, navigationShell) => CupertinoPage(
+        key: state.pageKey,
+        child: _MobileTabShell(navigationShell: navigationShell, tabs: tabs),
+      ),
       branches: [
         for (final tab in tabs)
           StatefulShellBranch(

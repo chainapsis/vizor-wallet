@@ -8,11 +8,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_routes.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
+import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -83,6 +85,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(MobileHomeScreen), findsOneWidget);
+    final shellRoute = ModalRoute.of(
+      tester.element(find.byType(AppMobileShell)),
+    );
+    expect(shellRoute, isA<CupertinoRouteTransitionMixin<dynamic>>());
     for (final label in ['Home', 'Swap', 'Activity', 'Settings']) {
       expect(find.bySemanticsLabel(label), findsWidgets);
     }
@@ -125,6 +131,27 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pumpAndSettle();
     expect(find.byType(MobileSendScreen), findsNothing);
+    expect(find.byType(MobileHomeScreen), findsOneWidget);
+  });
+
+  testWidgets('receive pushes over a Cupertino shell page', (tester) async {
+    await tester.pumpWidget(_app(_router()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Receive'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(find.byType(MobileReceiveScreen), findsOneWidget);
+    final route = ModalRoute.of(
+      tester.element(find.byType(MobileReceiveScreen)),
+    );
+    expect(route, isA<CupertinoRouteTransitionMixin<dynamic>>());
+
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byType(MobileReceiveScreen), findsNothing);
     expect(find.byType(MobileHomeScreen), findsOneWidget);
   });
 }
