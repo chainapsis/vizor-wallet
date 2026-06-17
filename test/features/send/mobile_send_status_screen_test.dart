@@ -19,6 +19,14 @@ const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 const _displayTxid =
     '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f';
 
+String _displayOrderToProtocolTxid(String txid) {
+  final bytes = <String>[
+    for (var index = 0; index < txid.length; index += 2)
+      txid.substring(index, index + 2),
+  ];
+  return bytes.reversed.join();
+}
+
 final _args = SendReviewArgs(
   proposalId: BigInt.from(1),
   sendFlowId: 'flow-1',
@@ -120,6 +128,15 @@ void main() {
     expect(_statusRouteCanPop(tester), isTrue);
     expect(find.text('Completed'), findsOneWidget);
     expect(find.byKey(const ValueKey('mobile_send_status_txid')), findsOne);
+    final protocolTxid = _displayOrderToProtocolTxid(_displayTxid);
+    final truncatedTxid =
+        '${protocolTxid.substring(0, 8)}...'
+        '${protocolTxid.substring(protocolTxid.length - 8)}';
+    expect(find.text(protocolTxid), findsNothing);
+    expect(find.text(truncatedTxid), findsOneWidget);
+    final txidText = tester.widget<Text>(find.text(truncatedTxid));
+    expect(txidText.maxLines, 1);
+    expect(txidText.overflow, TextOverflow.ellipsis);
     expect(find.text('0.00015 ZEC'), findsOneWidget);
   });
 

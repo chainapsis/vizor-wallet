@@ -596,8 +596,9 @@ class _ListRow extends StatelessWidget {
               ),
             ),
           ),
-          const Spacer(),
-          Flexible(child: value),
+          Expanded(
+            child: Align(alignment: Alignment.centerRight, child: value),
+          ),
         ],
       ),
     );
