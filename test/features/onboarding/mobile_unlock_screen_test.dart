@@ -9,10 +9,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
@@ -72,15 +75,61 @@ const faceAvailability = BiometricAvailability(
   kind: BiometricKind.face,
 );
 
-Widget _app({FakeBiometricUnlock? biometric}) {
+const fingerprintAvailability = BiometricAvailability(
+  supported: true,
+  enrolled: true,
+  kind: BiometricKind.fingerprint,
+);
+
+/// Never resolves, so the screen stays in the biometric provider's loading
+/// state — isolating the bootstrap "enabled" hint as the only signal that can
+/// paint the backdrop on the first frame.
+class _PendingBiometricNotifier extends BiometricUnlockNotifier {
+  final _completer = Completer<BiometricUnlockState>();
+
+  @override
+  Future<BiometricUnlockState> build() => _completer.future;
+}
+
+class _FailingBiometricNotifier extends BiometricUnlockNotifier {
+  @override
+  Future<BiometricUnlockState> build() async {
+    throw StateError('biometric probe failed');
+  }
+}
+
+AppBootstrapState _bootstrap({required bool biometricEnabled}) =>
+    AppBootstrapState(
+      initialLocation: '/unlock',
+      initialAccountState: AccountState(),
+      initialSyncSnapshot: AppSyncSnapshot.empty,
+      network: 'main',
+      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+      themeMode: ThemeMode.light,
+      privacyModeEnabled: false,
+      isPasswordConfigured: true,
+      isUnlocked: false,
+      passwordRotationRecoveryFailed: false,
+      biometricUnlockEnabled: biometricEnabled,
+    );
+
+Widget _app({
+  FakeBiometricUnlock? biometric,
+  BiometricUnlockNotifier Function()? biometricNotifier,
+  AppBootstrapState? bootstrap,
+  bool autoPromptBiometric = true,
+}) {
   return ProviderScope(
     overrides: [
-      if (biometric != null)
+      if (bootstrap != null) appBootstrapProvider.overrideWithValue(bootstrap),
+      if (biometricNotifier != null)
+        biometricUnlockProvider.overrideWith(biometricNotifier)
+      else if (biometric != null)
         biometricUnlockServiceProvider.overrideWithValue(biometric),
     ],
     child: MaterialApp(
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
-      home: const MobileUnlockScreen(),
+      home: MobileUnlockScreen(autoPromptBiometric: autoPromptBiometric),
     ),
   );
 }
@@ -219,6 +268,55 @@ void main() {
       AppSecureStore.instance.clearSessionPassword();
     });
 
+    testWidgets(
+      'bootstrap hint paints the backdrop before the probe resolves',
+      (tester) async {
+        await tester.pumpWidget(
+          _app(
+            bootstrap: _bootstrap(biometricEnabled: true),
+            biometricNotifier: _PendingBiometricNotifier.new,
+          ),
+        );
+        // Provider is still loading (never resolves); only the hint can show
+        // the backdrop here.
+        await tester.pump();
+
+        expect(find.byType(MobileBiometricSignInView), findsOneWidget);
+        expect(find.byType(PasscodeNumpad), findsNothing);
+      },
+    );
+
+    testWidgets('no backdrop while loading when the hint is disabled', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          bootstrap: _bootstrap(biometricEnabled: false),
+          biometricNotifier: _PendingBiometricNotifier.new,
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(MobileBiometricSignInView), findsNothing);
+      expect(find.byType(PasscodeNumpad), findsOneWidget);
+    });
+
+    testWidgets('probe errors fall back to the numpad even with the hint', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          bootstrap: _bootstrap(biometricEnabled: true),
+          biometricNotifier: _FailingBiometricNotifier.new,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(MobileBiometricSignInView), findsNothing);
+      expect(find.byType(PasscodeNumpad), findsOneWidget);
+    });
+
     testWidgets('auto-prompt feeds the escrowed passcode to unlock', (
       tester,
     ) async {
@@ -306,6 +404,28 @@ void main() {
       expect(biometric.reads, 2);
     });
 
+    testWidgets('fingerprint devices label the retry action by modality', (
+      tester,
+    ) async {
+      await AppSecureStore.instance.writePlain(
+        kBiometricUnlockEnabledKey,
+        'true',
+      );
+      final biometric = FakeBiometricUnlock(
+        avail: fingerprintAvailability,
+        escrow: '123456',
+      );
+
+      await tester.pumpWidget(
+        _app(biometric: biometric, autoPromptBiometric: false),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.bySemanticsLabel('Sign in with fingerprint'), findsOneWidget);
+      expect(find.byIcon(Icons.fingerprint), findsOneWidget);
+      expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
+    });
+
     testWidgets('invalidation drops the flag and explains the fallback', (
       tester,
     ) async {
@@ -320,7 +440,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text('Biometrics changed. Enter your passcode.'),
+        find.text('Face ID changed. Enter your passcode.'),
         findsOneWidget,
       );
       // The retry key disappears with the flag.

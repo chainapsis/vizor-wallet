@@ -53,31 +53,99 @@ class MobileHomeScreen extends ConsumerWidget {
         sync.failure == null;
 
     return SwapActivityStatusAutoRefresh(
-      child: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            Builder(
-              builder: (context) => MobileTopNavAccount(
-                onAccountTap: () => showMobileAccountsSheet(context),
-              ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (isImporting) const _ImportingBackground(),
+          SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                Builder(
+                  builder: (context) => MobileTopNavAccount(
+                    showSyncStatus: !isImporting,
+                    onAccountTap: () => showMobileAccountsSheet(context),
+                  ),
+                ),
+                Expanded(
+                  // VZR-74: dissolve scrolled content under the top nav
+                  // with a soft eased fade instead of a hard clip line.
+                  child: MobileTopScrollFade(
+                    child: isImporting
+                        ? _ImportingView(progress: sync.displayPercentage)
+                        : _HomeContent(
+                            sync: sync,
+                            activeAccountUuid: activeAccountUuid,
+                            privacyModeEnabled: privacyModeEnabled,
+                            onTogglePrivacyMode: () =>
+                                ref.read(privacyModeProvider.notifier).toggle(),
+                          ),
+                  ),
+                ),
+              ],
             ),
-            Expanded(
-              // VZR-74: dissolve scrolled content under the top nav
-              // with a soft eased fade instead of a hard clip line.
-              child: MobileTopScrollFade(
-                child: isImporting
-                    ? _ImportingView(progress: sync.displayPercentage)
-                    : _HomeContent(
-                        sync: sync,
-                        activeAccountUuid: activeAccountUuid,
-                        privacyModeEnabled: privacyModeEnabled,
-                        onTogglePrivacyMode: () =>
-                            ref.read(privacyModeProvider.notifier).toggle(),
-                      ),
-              ),
-            ),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+const _mobileHomeLabelMStyle = TextStyle(
+  fontFamily: 'Geist',
+  fontWeight: FontWeight.w400,
+  fontSize: 14,
+  height: 16 / 14,
+  letterSpacing: -0.06,
+);
+
+const _mobileHomeLabelMMediumStyle = TextStyle(
+  fontFamily: 'Geist',
+  fontWeight: FontWeight.w500,
+  fontSize: 14,
+  height: 16 / 14,
+  letterSpacing: -0.06,
+);
+
+const _mobileHomeBalanceAmountStyle = TextStyle(
+  fontFamily: 'Young Serif',
+  fontWeight: FontWeight.w400,
+  fontSize: 45,
+  height: 48 / 45,
+  letterSpacing: -1.35,
+  fontFeatures: [FontFeature.enable('case')],
+);
+
+const _mobileHomeBalanceTickerStyle = TextStyle(
+  fontFamily: 'Young Serif',
+  fontWeight: FontWeight.w400,
+  fontSize: 32,
+  height: 33 / 32,
+  letterSpacing: -1.35,
+  fontFeatures: [FontFeature.enable('case')],
+);
+
+const _mobileHomeActionButtonHeight = AppButtonSizing.largeHeight;
+
+class _ImportingBackground extends StatelessWidget {
+  const _ImportingBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.appTheme == AppThemeData.dark;
+    final assetName = isDark
+        ? 'assets/illustrations/home_importing_background_dark.png'
+        : 'assets/illustrations/home_importing_background_light.png';
+
+    return Positioned.fill(
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Image.asset(
+          assetName,
+          key: const ValueKey('mobile_home_importing_background'),
+          width: 1080,
+          height: 720,
+          fit: BoxFit.fill,
         ),
       ),
     );
@@ -192,7 +260,11 @@ class _HomeContent extends ConsumerWidget {
                   expand: true,
                   onPressed: () => context.push('/send'),
                   leading: const _ButtonIcon(AppIcons.plane),
-                  child: const Text('Send'),
+                  height: _mobileHomeActionButtonHeight,
+                  child: const Text(
+                    'Send',
+                    style: _mobileHomeLabelMMediumStyle,
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
@@ -203,7 +275,11 @@ class _HomeContent extends ConsumerWidget {
                   variant: AppButtonVariant.secondary,
                   onPressed: () => context.push('/receive'),
                   leading: const _ButtonIcon(AppIcons.arrowDownCircle),
-                  child: const Text('Receive'),
+                  height: _mobileHomeActionButtonHeight,
+                  child: const Text(
+                    'Receive',
+                    style: _mobileHomeLabelMMediumStyle,
+                  ),
                 ),
               ),
             ],
@@ -214,10 +290,16 @@ class _HomeContent extends ConsumerWidget {
             // the two renders at a time.
             key: const ValueKey('mobile_home_receive'),
             expand: true,
-            variant: AppButtonVariant.secondary,
+            constrainContent: true,
             onPressed: () => context.push('/receive'),
             leading: const _ButtonIcon(AppIcons.addNew),
-            child: const Text('Receive your first ZEC'),
+            height: _mobileHomeActionButtonHeight,
+            child: const Text(
+              'Receive your first ZEC',
+              style: _mobileHomeLabelMMediumStyle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         const SizedBox(height: AppSpacing.md),
         if (recentRows.isEmpty)
@@ -302,10 +384,7 @@ class _BalanceCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   'Shielded balance',
-                  style: AppTypography.labelLarge.copyWith(
-                    fontWeight: FontWeight.w400,
-                    color: cardText,
-                  ),
+                  style: _mobileHomeLabelMStyle.copyWith(color: cardText),
                 ),
               ),
               _PrivacyEyeButton(
@@ -324,8 +403,7 @@ class _BalanceCard extends StatelessWidget {
                     key: const ValueKey('mobile_home_balance_fiat_text'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelLarge.copyWith(
-                      fontWeight: FontWeight.w400,
+                    style: _mobileHomeLabelMStyle.copyWith(
                       color: cardText.withValues(alpha: 0.8),
                     ),
                   ),
@@ -337,8 +415,7 @@ class _BalanceCard extends StatelessWidget {
                     key: const ValueKey(
                       'mobile_home_balance_price_change_text',
                     ),
-                    style: AppTypography.labelLarge.copyWith(
-                      fontWeight: FontWeight.w400,
+                    style: _mobileHomeLabelMStyle.copyWith(
                       color: priceChangeColor,
                     ),
                   ),
@@ -353,11 +430,15 @@ class _BalanceCard extends StatelessWidget {
               children: [
                 TextSpan(
                   text: '$balanceText ',
-                  style: AppTypography.displayLarge.copyWith(color: cardText),
+                  style: _mobileHomeBalanceAmountStyle.copyWith(
+                    color: cardText,
+                  ),
                 ),
                 TextSpan(
                   text: kZcashDefaultCurrencyTicker,
-                  style: AppTypography.headlineLarge.copyWith(color: cardText),
+                  style: _mobileHomeBalanceTickerStyle.copyWith(
+                    color: cardText,
+                  ),
                 ),
               ],
             ),
@@ -388,18 +469,17 @@ class _PrivacyEyeButton extends StatelessWidget {
           onTap();
         },
         child: Container(
-          // 40 px disc, a step lighter than the card (#393C3C on
-          // #2E3232), per the Figma privacy toggle.
-          width: 40,
-          height: 40,
+          key: const ValueKey('mobile_home_privacy_button'),
+          width: 32,
+          height: 32,
           decoration: BoxDecoration(
-            color: const Color(0xFFFFFFFF).withValues(alpha: 0.06),
-            shape: BoxShape.circle,
+            color: const Color(0xFFFFFFFF).withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(AppRadii.full),
           ),
           child: Center(
             child: AppIcon(
               AppIcons.eye,
-              size: 18,
+              size: 16,
               color: context.colors.text.homeCard,
             ),
           ),
@@ -482,14 +562,14 @@ class _EmptyActivity extends StatelessWidget {
     final colors = context.colors;
     return Column(
       children: [
-        const SizedBox(height: AppSpacing.base),
+        const SizedBox(height: AppSpacing.sm),
         Text(
           'No activity, yet...',
           style: AppTypography.headlineSmall.copyWith(
             color: colors.text.accent,
           ),
         ),
-        const SizedBox(height: AppSpacing.xs),
+        const SizedBox(height: AppSpacing.xxs),
         Text(
           'How about running your\nfirst ZEC tx?',
           textAlign: TextAlign.center,
@@ -498,12 +578,36 @@ class _EmptyActivity extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.md),
-        Image.asset(
-          'assets/illustrations/home_rest_character.png',
-          width: 280,
-          fit: BoxFit.contain,
-        ),
+        const _MobileRestImage(),
       ],
+    );
+  }
+}
+
+class _MobileRestImage extends StatelessWidget {
+  const _MobileRestImage();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      key: const ValueKey('mobile_home_rest_canvas'),
+      width: 340,
+      height: 220,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 47,
+            top: 28,
+            child: Image.asset(
+              'assets/illustrations/home_rest_character.png',
+              key: const ValueKey('mobile_home_rest_image'),
+              width: 246,
+              height: 192,
+              fit: BoxFit.contain,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -545,11 +649,7 @@ class _ImportingView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          Image.asset(
-            'assets/illustrations/home_rest_character.png',
-            width: 240,
-            fit: BoxFit.contain,
-          ),
+          const Flexible(child: _MobileRestImage()),
           const Spacer(),
           const SizedBox(height: kMobileTabBarHeight),
         ],

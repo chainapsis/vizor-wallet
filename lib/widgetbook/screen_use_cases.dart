@@ -12,18 +12,40 @@ import '../src/app_bootstrap.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/layout/app_layout.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
+import '../src/core/layout/mobile/app_mobile_shell.dart';
+import '../src/core/layout/mobile/app_mobile_tab_bar.dart';
+import '../src/core/privacy/sensitive_privacy_overlay.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/core/theme/app_theme.dart';
+import '../src/core/widgets/app_icon.dart';
 import '../src/features/accounts/screens/accounts_screen.dart';
+import '../src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
+import '../src/features/accounts/widgets/mobile/mobile_accounts_sheet.dart';
+import '../src/features/activity/swap_activity_row_items_provider.dart';
+import '../src/features/home/screens/mobile/mobile_home_screen.dart';
+import '../src/features/onboarding/lost_password_screen.dart';
+import '../src/features/onboarding/mobile/mobile_biometrics_screen.dart';
+import '../src/features/onboarding/mobile/mobile_passcode_screen.dart';
+import '../src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import '../src/features/onboarding/mobile/mobile_unlock_screen.dart';
-import '../src/features/onboarding/lost_password_screen.dart';
+import '../src/features/onboarding/shared/onboarding_flow_args.dart';
 import '../src/features/onboarding/unlock_screen.dart';
 import '../src/features/onboarding/welcome.dart';
+import '../src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/biometric_unlock_provider.dart';
+import '../src/providers/privacy_mode_provider.dart';
+import '../src/providers/receive_address_provider.dart';
 import '../src/providers/sync_provider.dart';
+import '../src/providers/zec_price_change_provider.dart';
+import '../src/rust/api/sync.dart' as rust_sync;
 import '../src/services/biometric_unlock.dart';
+
+const _previewMnemonic =
+    'abandon ability able about above absent absorb abstract absurd abuse '
+    'access accident account accuse achieve acid acoustic acquire across act '
+    'action actor actress actual';
 
 /// Welcome screen in its large-layout form. Wrapped in a `ProviderScope`
 /// with `appLayoutProvider` overridden to a no-op so the dev window does
@@ -94,7 +116,7 @@ Widget buildMobileUnlockBiometricBackdropUseCase(BuildContext context) {
   return const _MobilePreviewFrame(child: MobileBiometricSignInView());
 }
 
-Widget buildMobileUnlockBiometricsUseCase(BuildContext context) {
+Widget buildMobileUnlockFingerprintUseCase(BuildContext context) {
   return _buildMobileUnlockUseCase(
     const BiometricUnlockState(
       availability: BiometricAvailability(
@@ -107,6 +129,85 @@ Widget buildMobileUnlockBiometricsUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileCreatePasscodeUseCase(BuildContext context) {
+  return _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobilePasscodeScreen(
+        args: SetPasswordScreenArgs.create(mnemonic: _previewMnemonic),
+      ),
+    ),
+  );
+}
+
+Widget buildMobileSecretPassphraseRevealedUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobileSecretPassphraseScreen(
+        args: CreateSecretPassphraseArgs(mnemonic: _previewMnemonic),
+        screenshotStream: Stream.empty(),
+      ),
+    ),
+  );
+}
+
+Widget buildMobileSecretPassphraseProtectedUseCase(BuildContext context) {
+  return const _MobileSecretPassphraseProtectedPreview();
+}
+
+Widget buildMobileSecretPassphraseScreenshotWarningUseCase(
+  BuildContext context,
+) {
+  return _MobilePreviewFrame(
+    child: Stack(
+      children: [
+        const IgnorePointer(
+          child: MobileSecretPassphraseScreen(
+            args: CreateSecretPassphraseArgs(mnemonic: _previewMnemonic),
+            screenshotStream: Stream.empty(),
+          ),
+        ),
+        Positioned.fill(
+          child: ColoredBox(
+            color: AppTheme.of(context).colors.background.neutralScrim,
+          ),
+        ),
+        const Align(
+          alignment: Alignment.bottomCenter,
+          child: IgnorePointer(
+            child: MobileModalCard(child: MobileSeedScreenshotWarningSheet()),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget buildMobileFaceIdOptInUseCase(BuildContext context) {
+  return _buildMobileBiometricOptInUseCase(
+    const BiometricUnlockState(
+      availability: BiometricAvailability(
+        supported: true,
+        enrolled: true,
+        kind: BiometricKind.face,
+      ),
+      enabled: false,
+    ),
+  );
+}
+
+Widget buildMobileFingerprintOptInUseCase(BuildContext context) {
+  return _buildMobileBiometricOptInUseCase(
+    const BiometricUnlockState(
+      availability: BiometricAvailability(
+        supported: true,
+        enrolled: true,
+        kind: BiometricKind.fingerprint,
+      ),
+      enabled: false,
+    ),
+  );
+}
+
 Widget buildMobileForgotPasscodeSheetUseCase(BuildContext context) {
   return _buildMobileUnlockModalUseCase(context, const ForgotPasscodeSheet());
 }
@@ -115,6 +216,13 @@ Widget buildMobileForgotPasscodeLastWarningUseCase(BuildContext context) {
   return _buildMobileUnlockModalUseCase(
     context,
     const ForgotPasscodeLastWarningSheet(),
+  );
+}
+
+Widget buildMobileSeedScreenshotWarningSheetUseCase(BuildContext context) {
+  return _buildMobileModalSnapshotUseCase(
+    context,
+    const MobileSeedScreenshotWarningSheet(),
   );
 }
 
@@ -160,6 +268,81 @@ Widget buildAccountsRemoveUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileAccountsUseCase(BuildContext context) {
+  return _buildMobileAccountsUseCase(_accountsDesignState);
+}
+
+Widget buildMobileAccountsEditAccountUseCase(BuildContext context) {
+  return _buildMobileAccountsUseCase(
+    _accountsDesignState,
+    initialSheetAccountUuid: 'preview-account-2',
+    initialSheet: MobileAccountsInitialSheet.editAccount,
+  );
+}
+
+Widget buildMobileAccountsRemoveAccountUseCase(BuildContext context) {
+  return _buildMobileAccountsUseCase(
+    _accountsDesignState,
+    initialSheetAccountUuid: 'preview-account-2',
+    initialSheet: MobileAccountsInitialSheet.removeAccount,
+  );
+}
+
+Widget buildMobileAccountsManyUseCase(BuildContext context) {
+  return _buildMobileAccountsUseCase(_accountsManyState);
+}
+
+Widget buildMobileHomeDefaultUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14312000000),
+      recentTransactions: [_homeTx(1), _homeTx(2)],
+    ),
+  );
+}
+
+Widget buildMobileHomeNoActivityUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(orchardBalance: BigInt.from(14312000000)),
+  );
+}
+
+Widget buildMobileHomeNoBalanceUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(),
+  );
+}
+
+Widget buildMobileHomeNoBalanceKeystoneUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _homeKeystoneState,
+    syncState: _homeSyncedState(accountUuid: _homeKeystoneAccountUuid),
+  );
+}
+
+Widget buildMobileHomeImportingUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: SyncState(
+      accountUuid: _accountsDesignState.activeAccountUuid,
+      isSyncing: true,
+      percentage: 0.34,
+      displayPercentage: 0.34,
+    ),
+  );
+}
+
+Widget buildMobileHomeAccountsModalUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(orchardBalance: BigInt.from(14312000000)),
+    openAccountsSheet: true,
+  );
+}
+
 Widget _buildAccountsUseCase(
   AccountState accountState, {
   String? initialOpenMenuAccountUuid,
@@ -178,6 +361,73 @@ Widget _buildAccountsUseCase(
       initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
       initialModalAccountUuid: initialModalAccountUuid,
       initialModal: initialModal,
+    ),
+  );
+}
+
+Widget _buildMobileHomeUseCase({
+  required AccountState accountState,
+  required SyncState syncState,
+  bool openAccountsSheet = false,
+}) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
+      accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
+      receiveAddressServiceProvider.overrideWithValue(
+        const _PreviewReceiveAddressService(),
+      ),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(
+          accountState.activeAccountUuid,
+          initialState: syncState,
+        ),
+      ),
+      privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
+      zecMarketDataSourceProvider.overrideWithValue(
+        const _PreviewZecMarketDataSource(
+          ZecMarketData(usdPrice: 70, change24hPct: 13.12),
+        ),
+      ),
+      swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
+        return const [];
+      }),
+    ],
+    child: Center(
+      child: SizedBox(
+        width: 393,
+        height: 852,
+        child: _MobileHomeHarness(openAccountsSheet: openAccountsSheet),
+      ),
+    ),
+  );
+}
+
+Widget _buildMobileAccountsUseCase(
+  AccountState accountState, {
+  String? initialSheetAccountUuid,
+  MobileAccountsInitialSheet? initialSheet,
+}) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_accountsBootstrap(accountState)),
+      accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
+      receiveAddressServiceProvider.overrideWithValue(
+        const _PreviewReceiveAddressService(),
+      ),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(accountState.activeAccountUuid),
+      ),
+    ],
+    child: Center(
+      child: SizedBox(
+        width: 393,
+        height: 852,
+        child: _MobileAccountsHarness(
+          initialSheetAccountUuid: initialSheetAccountUuid,
+          initialSheet: initialSheet,
+        ),
+      ),
     ),
   );
 }
@@ -276,6 +526,168 @@ class _AccountsHarnessState extends State<_AccountsHarness> {
   @override
   Widget build(BuildContext context) {
     return Router.withConfig(config: _router);
+  }
+}
+
+class _MobileAccountsHarness extends StatefulWidget {
+  const _MobileAccountsHarness({
+    this.initialSheetAccountUuid,
+    this.initialSheet,
+  });
+
+  final String? initialSheetAccountUuid;
+  final MobileAccountsInitialSheet? initialSheet;
+
+  @override
+  State<_MobileAccountsHarness> createState() => _MobileAccountsHarnessState();
+}
+
+class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: '/accounts',
+      routes: [
+        GoRoute(
+          path: '/accounts',
+          builder: (_, _) => MobileAccountsScreen(
+            initialSheetAccountUuid: widget.initialSheetAccountUuid,
+            initialSheet: widget.initialSheet,
+          ),
+        ),
+        GoRoute(
+          path: '/add-account',
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/add-account'),
+        ),
+        GoRoute(
+          path: '/send',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/send'),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Router.withConfig(config: _router);
+  }
+}
+
+class _MobileHomeHarness extends StatefulWidget {
+  const _MobileHomeHarness({required this.openAccountsSheet});
+
+  final bool openAccountsSheet;
+
+  @override
+  State<_MobileHomeHarness> createState() => _MobileHomeHarnessState();
+}
+
+class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: '/home',
+      routes: [
+        GoRoute(
+          path: '/home',
+          builder: (_, _) => AppMobileShell(
+            body: _MobileHomeBody(openAccountsSheet: widget.openAccountsSheet),
+            tabBar: AppMobileTabBar(
+              items: _mobileHomeTabItems,
+              currentIndex: 0,
+              onSelect: (_) {},
+            ),
+          ),
+        ),
+        GoRoute(
+          path: '/send',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/send'),
+        ),
+        GoRoute(
+          path: '/receive',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/receive'),
+        ),
+        GoRoute(
+          path: '/swap',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/swap'),
+        ),
+        GoRoute(
+          path: '/activity',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/activity'),
+        ),
+        GoRoute(
+          path: '/activity/tx/:txid',
+          builder: (_, state) => _PreviewRoutePlaceholder(
+            label: '/activity/tx/${state.pathParameters['txid']}',
+          ),
+        ),
+        GoRoute(
+          path: '/settings',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/settings'),
+        ),
+        GoRoute(
+          path: '/accounts',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/accounts'),
+        ),
+        GoRoute(
+          path: '/add-account',
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/add-account'),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Router.withConfig(config: _router);
+  }
+}
+
+class _MobileHomeBody extends StatefulWidget {
+  const _MobileHomeBody({required this.openAccountsSheet});
+
+  final bool openAccountsSheet;
+
+  @override
+  State<_MobileHomeBody> createState() => _MobileHomeBodyState();
+}
+
+class _MobileHomeBodyState extends State<_MobileHomeBody> {
+  var _opened = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_opened || !widget.openAccountsSheet) return;
+    _opened = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) showMobileAccountsSheet(context);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const MobileHomeScreen();
   }
 }
 
@@ -381,6 +793,19 @@ Widget _buildMobileUnlockUseCase(BiometricUnlockState biometricState) {
   );
 }
 
+Widget _buildMobileBiometricOptInUseCase(BiometricUnlockState biometricState) {
+  return ProviderScope(
+    overrides: [
+      biometricUnlockProvider.overrideWith(
+        () => _PreviewBiometricUnlockNotifier(biometricState),
+      ),
+    ],
+    child: const _MobilePreviewFrame(
+      child: IgnorePointer(child: MobileBiometricsScreen()),
+    ),
+  );
+}
+
 Widget _buildMobileUnlockModalUseCase(BuildContext context, Widget sheet) {
   return ProviderScope(
     overrides: [
@@ -424,6 +849,63 @@ Widget _buildMobileUnlockModalUseCase(BuildContext context, Widget sheet) {
       ),
     ),
   );
+}
+
+Widget _buildMobileModalSnapshotUseCase(BuildContext context, Widget sheet) {
+  return Center(
+    child: SizedBox.fromSize(
+      size: const Size(393, 435),
+      child: ClipRect(
+        child: ColoredBox(
+          color: AppTheme.of(context).colors.background.neutralScrim,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                size: const Size(393, 435),
+                padding: EdgeInsets.zero,
+                viewPadding: EdgeInsets.zero,
+              ),
+              child: MobileModalCard(child: sheet),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _MobileSecretPassphraseProtectedPreview extends StatefulWidget {
+  const _MobileSecretPassphraseProtectedPreview();
+
+  @override
+  State<_MobileSecretPassphraseProtectedPreview> createState() =>
+      _MobileSecretPassphraseProtectedPreviewState();
+}
+
+class _MobileSecretPassphraseProtectedPreviewState
+    extends State<_MobileSecretPassphraseProtectedPreview> {
+  late final SensitivePrivacyOverlayController _privacyController =
+      SensitivePrivacyOverlayController(initiallySafe: false);
+
+  @override
+  void dispose() {
+    _privacyController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _MobilePreviewFrame(
+      child: IgnorePointer(
+        child: MobileSecretPassphraseScreen(
+          args: const CreateSecretPassphraseArgs(mnemonic: _previewMnemonic),
+          screenshotStream: const Stream.empty(),
+          privacyOverlayController: _privacyController,
+        ),
+      ),
+    );
+  }
 }
 
 class _MobilePreviewFrame extends StatelessWidget {
@@ -533,6 +1015,29 @@ final _accountsManyState = AccountState(
   activeAddress: 'u1widgetbookaccountsaddress',
 );
 
+const _homeKeystoneAccountUuid = 'preview-keystone-account';
+
+final _homeKeystoneState = AccountState(
+  accounts: const [
+    AccountInfo(
+      uuid: _homeKeystoneAccountUuid,
+      name: 'Keystone Vault',
+      order: 0,
+      isHardware: true,
+      profilePictureId: 'pfp-02',
+    ),
+  ],
+  activeAccountUuid: _homeKeystoneAccountUuid,
+  activeAddress: 'u1widgetbookkeystoneaddress',
+);
+
+const _mobileHomeTabItems = [
+  AppMobileTabItem(iconName: AppIcons.home, label: 'Home'),
+  AppMobileTabItem(iconName: AppIcons.swapArrows, label: 'Swap'),
+  AppMobileTabItem(iconName: AppIcons.history, label: 'Activity'),
+  AppMobileTabItem(iconName: AppIcons.cog, label: 'Settings'),
+];
+
 AppBootstrapState _accountsBootstrap(AccountState accountState) {
   return AppBootstrapState(
     initialLocation: '/accounts',
@@ -545,6 +1050,53 @@ AppBootstrapState _accountsBootstrap(AccountState accountState) {
     isPasswordConfigured: true,
     isUnlocked: true,
     passwordRotationRecoveryFailed: false,
+  );
+}
+
+AppBootstrapState _homeBootstrap(AccountState accountState) {
+  return AppBootstrapState(
+    initialLocation: '/home',
+    initialAccountState: accountState,
+    initialSyncSnapshot: AppSyncSnapshot.empty,
+    network: 'main',
+    rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+    themeMode: ThemeMode.system,
+    privacyModeEnabled: false,
+    isPasswordConfigured: true,
+    isUnlocked: true,
+    passwordRotationRecoveryFailed: false,
+  );
+}
+
+SyncState _homeSyncedState({
+  String? accountUuid,
+  BigInt? orchardBalance,
+  List<rust_sync.TransactionInfo> recentTransactions = const [],
+}) {
+  return SyncState(
+    accountUuid: accountUuid ?? _accountsDesignState.activeAccountUuid,
+    hasAccountScopedData: true,
+    percentage: 1,
+    displayPercentage: 1,
+    orchardBalance: orchardBalance ?? BigInt.zero,
+    recentTransactions: recentTransactions,
+  );
+}
+
+rust_sync.TransactionInfo _homeTx(int index) {
+  final seconds = BigInt.from(1800000000 + index);
+  return rust_sync.TransactionInfo(
+    txidHex: 'preview-home-tx-$index',
+    minedHeight: BigInt.from(1000 + index),
+    expiredUnmined: false,
+    accountBalanceDelta: 0,
+    fee: BigInt.zero,
+    blockTime: seconds,
+    isTransparent: false,
+    txKind: 'received',
+    displayAmount: BigInt.from(index) * BigInt.from(100000000),
+    displayPool: 'shielded',
+    createdTime: seconds,
   );
 }
 
@@ -614,19 +1166,22 @@ class _PreviewAccountNotifier extends AccountNotifier {
 }
 
 class _PreviewSyncNotifier extends SyncNotifier {
-  _PreviewSyncNotifier(this.activeAccountUuid);
+  _PreviewSyncNotifier(this.activeAccountUuid, {this.initialState});
 
   final String? activeAccountUuid;
+  final SyncState? initialState;
 
   @override
-  Future<SyncState> build() async => SyncState(
-    accountUuid: activeAccountUuid,
-    hasAccountScopedData: activeAccountUuid != null,
-    isSyncing: true,
-    percentage: 0.34,
-    displayPercentage: 0.34,
-    totalBalance: BigInt.from(14223000000),
-  );
+  Future<SyncState> build() async =>
+      initialState ??
+      SyncState(
+        accountUuid: activeAccountUuid,
+        hasAccountScopedData: activeAccountUuid != null,
+        isSyncing: true,
+        percentage: 0.34,
+        displayPercentage: 0.34,
+        totalBalance: BigInt.from(14223000000),
+      );
 
   @override
   Future<void> refreshAfterSend() async {}
@@ -648,4 +1203,48 @@ class _PreviewSyncNotifier extends SyncNotifier {
 
   @override
   Future<void> clearSensitiveStateForLock() async {}
+}
+
+class _PreviewPrivacyModeNotifier extends PrivacyModeNotifier {
+  @override
+  Future<void> set(bool enabled) async {
+    state = enabled;
+  }
+}
+
+class _PreviewZecMarketDataSource implements ZecMarketDataSource {
+  const _PreviewZecMarketDataSource(this.data);
+
+  final ZecMarketData? data;
+
+  @override
+  Future<ZecMarketData?> fetchMarketData() async => data;
+}
+
+class _PreviewReceiveAddressService implements ReceiveAddressService {
+  const _PreviewReceiveAddressService();
+
+  @override
+  String? getCachedTransparentAddress(String accountUuid) =>
+      't1WidgetbookTransparentAddress';
+
+  @override
+  Future<String> loadShieldedAddress({
+    required String accountUuid,
+    String? currentShieldedAddress,
+  }) async {
+    return currentShieldedAddress?.isNotEmpty == true
+        ? currentShieldedAddress!
+        : 'u1widgetbookaccountsaddress';
+  }
+
+  @override
+  Future<String> loadTransparentAddress({required String accountUuid}) async {
+    return 't1WidgetbookTransparentAddress';
+  }
+
+  @override
+  Future<String> renewShieldedAddress({required String accountUuid}) async {
+    return 'u1widgetbookaccountsrenewedaddress';
+  }
 }

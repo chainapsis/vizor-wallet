@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart' show Material, showModalBottomSheet;
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../theme/app_theme.dart';
 import '../../widgets/app_icon.dart';
@@ -39,7 +40,22 @@ Future<T?> showAppMobileSheet<T>({
   bool isDismissible = true,
   bool transparentBackground = false,
 }) {
+  final appTheme = context.appTheme;
   final colors = context.colors;
+  ProviderContainer? providerContainer;
+  try {
+    providerContainer = ProviderScope.containerOf(context, listen: false);
+  } on StateError {
+    providerContainer = null;
+  }
+
+  Widget wrapSheet(Widget child) {
+    final themed = AppTheme(data: appTheme, child: child);
+    final container = providerContainer;
+    if (container == null) return themed;
+    return UncontrolledProviderScope(container: container, child: themed);
+  }
+
   return showModalBottomSheet<T>(
     context: context,
     isDismissible: isDismissible,
@@ -54,9 +70,13 @@ Future<T?> showAppMobileSheet<T>({
     backgroundColor: const Color(0x00000000),
     elevation: 0,
     barrierColor: colors.background.neutralScrim,
-    builder: (sheetContext) => MobileModalCard(
-      transparentBackground: transparentBackground,
-      child: builder(sheetContext),
+    builder: (sheetContext) => wrapSheet(
+      Builder(
+        builder: (themedContext) => MobileModalCard(
+          transparentBackground: transparentBackground,
+          child: builder(themedContext),
+        ),
+      ),
     ),
   );
 }
@@ -184,6 +204,8 @@ const List<BoxShadow> _modalShadow = [
 ///   horizontal 16 ([AppSpacing.sm]); a 16px gap between the title line and
 ///   the body. The body ([child]) owns its own internal spacing.
 /// - Title: Body L SemiBold in `text.accent`, kept clear of the close button.
+///   Title-less sheets set [showTitle] to false and keep the same outer
+///   padding + pinned close button without reserving the title row.
 /// - Close: absolutely pinned to the top-right (right 16, top 15.5) so it sits
 ///   above the title line, exactly as the Figma component does — not vertically
 ///   centered in the title row.
@@ -194,6 +216,8 @@ class MobileModalScaffold extends StatelessWidget {
     required this.child,
     this.leading,
     this.titleStyle,
+    this.showTitle = true,
+    this.showClose = true,
     this.bodyGap = AppSpacing.sm,
     this.bottomPadding = AppSpacing.md,
     super.key,
@@ -204,10 +228,13 @@ class MobileModalScaffold extends StatelessWidget {
   final Widget child;
   final Widget? leading;
   final TextStyle? titleStyle;
+  final bool showTitle;
+  final bool showClose;
 
   /// Gap between the title and the body. Defaults to 16; the asset picker
   /// (whose body is a fixed-height scrolling list filling to the card edge)
-  /// passes 8 to match its `_Modal Type` variant.
+  /// passes 8 to match its `_Modal Type` variant. Ignored when [showTitle] is
+  /// false.
   final double bodyGap;
 
   /// Bottom inset below the body. Defaults to 24; the asset picker passes 0 so
@@ -230,45 +257,48 @@ class MobileModalScaffold extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 26),
-                child: Padding(
-                  // Clear the absolute 32px close (+ an 8px gap) so a long title
-                  // ellipsizes instead of sliding under it.
-                  padding: const EdgeInsets.only(right: 40),
-                  child: Row(
-                    children: [
-                      if (leading != null) ...[
-                        leading!,
-                        const SizedBox(width: AppSpacing.s),
-                      ],
-                      Expanded(
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              titleStyle ??
-                              AppTypography.bodyLarge.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: colors.text.accent,
-                              ),
+              if (showTitle) ...[
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 26),
+                  child: Padding(
+                    // Clear the absolute 32px close (+ an 8px gap) so a long title
+                    // ellipsizes instead of sliding under it.
+                    padding: const EdgeInsets.only(right: 40),
+                    child: Row(
+                      children: [
+                        if (leading != null) ...[
+                          leading!,
+                          const SizedBox(width: AppSpacing.s),
+                        ],
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                titleStyle ??
+                                AppTypography.bodyLarge.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: colors.text.accent,
+                                ),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              SizedBox(height: bodyGap),
+                SizedBox(height: bodyGap),
+              ],
               child,
             ],
           ),
         ),
-        Positioned(
-          top: 15.5,
-          right: AppSpacing.sm,
-          child: _ModalCloseButton(onTap: onClose),
-        ),
+        if (showClose)
+          Positioned(
+            top: 15.5,
+            right: AppSpacing.sm,
+            child: _ModalCloseButton(onTap: onClose),
+          ),
       ],
     );
   }

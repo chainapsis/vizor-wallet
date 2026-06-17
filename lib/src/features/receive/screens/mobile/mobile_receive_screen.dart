@@ -222,8 +222,8 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                                 type: type,
                                 address: _addressFor(type),
                                 renewing: _renewing,
-                                onRenew:
-                                    () => unawaited(_renewShieldedAddress()),
+                                onRenew: () =>
+                                    unawaited(_renewShieldedAddress()),
                               ),
                           ],
                         ),
@@ -237,13 +237,9 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                         accountName: accountName,
                         type: _selectedType,
                         address: _selectedAddress,
-                        onShowHelp:
-                            () => unawaited(
-                              showReceiveAddressInfoSheet(
-                                context,
-                                _selectedType,
-                              ),
-                            ),
+                        onShowHelp: () => unawaited(
+                          showReceiveAddressInfoSheet(context, _selectedType),
+                        ),
                       ),
                     ),
                     const SizedBox(height: AppSpacing.base),
@@ -255,17 +251,16 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             AppButton(
+                              key: const ValueKey('mobile_receive_share'),
                               expand: true,
                               constrainContent: true,
                               height: _MobileReceiveMetrics.buttonHeight,
-                              variant:
-                                  _isShielded
-                                      ? AppButtonVariant.primary
-                                      : AppButtonVariant.secondary,
-                              onPressed:
-                                  _selectedAddress.isEmpty
-                                      ? null
-                                      : _shareAddress,
+                              variant: _isShielded
+                                  ? AppButtonVariant.primary
+                                  : AppButtonVariant.secondary,
+                              onPressed: _selectedAddress.isEmpty
+                                  ? null
+                                  : _shareAddress,
                               leading: const AppIcon(
                                 AppIcons.share,
                                 size: _MobileReceiveMetrics.buttonIconSize,
@@ -324,7 +319,7 @@ abstract final class _MobileReceiveMetrics {
 
   static const buttonStackWidth = 300.0;
   static const buttonStackHeight = 112.0;
-  static const buttonHeight = 44.0;
+  static const buttonHeight = AppButtonSizing.largeHeight;
   static const buttonIconSize = 20.0;
 }
 
@@ -419,9 +414,8 @@ class _ReceiveAddressSummary extends StatelessWidget {
             duration: const Duration(milliseconds: 140),
             switchInCurve: Curves.easeOut,
             switchOutCurve: Curves.easeOut,
-            transitionBuilder:
-                (child, animation) =>
-                    FadeTransition(opacity: animation, child: child),
+            transitionBuilder: (child, animation) =>
+                FadeTransition(opacity: animation, child: child),
             child: ReceiveAddressLine(
               key: ValueKey('mobile_receive_address_line_${type.name}'),
               type: type,

@@ -3,9 +3,51 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// What the device offers for the escrow prompt; drives copy ("Face ID"
-/// vs generic "biometrics") and whether the opt-in surfaces render at all.
+/// What the device offers for the escrow prompt; drives copy ("Face ID",
+/// "fingerprint", or generic "biometrics") and whether opt-in surfaces render.
 enum BiometricKind { face, fingerprint, none }
+
+extension BiometricKindCopy on BiometricKind {
+  String get inlineLabel => switch (this) {
+    BiometricKind.face => 'Face ID',
+    BiometricKind.fingerprint => 'fingerprint',
+    BiometricKind.none => 'biometrics',
+  };
+
+  String get standaloneLabel => switch (this) {
+    BiometricKind.face => 'Face ID',
+    BiometricKind.fingerprint => 'Fingerprint',
+    BiometricKind.none => 'Biometrics',
+  };
+
+  String get onboardingTitleSuffix => switch (this) {
+    BiometricKind.face => 'Face ID',
+    BiometricKind.fingerprint => 'your fingerprint',
+    BiometricKind.none => 'biometrics',
+  };
+
+  String get unlockFeatureLabel => switch (this) {
+    BiometricKind.face => 'Face ID unlock',
+    BiometricKind.fingerprint => 'Fingerprint unlock',
+    BiometricKind.none => 'Biometric unlock',
+  };
+
+  String get inlineUnlockFeatureLabel => switch (this) {
+    BiometricKind.face => 'Face ID unlock',
+    BiometricKind.fingerprint => 'fingerprint unlock',
+    BiometricKind.none => 'biometric unlock',
+  };
+
+  String get changedMessage => switch (this) {
+    BiometricKind.face => 'Face ID changed. Enter your passcode.',
+    BiometricKind.fingerprint => 'Fingerprint changed. Enter your passcode.',
+    BiometricKind.none => 'Biometric unlock changed. Enter your passcode.',
+  };
+
+  String get enableLabel => 'Enable $inlineLabel';
+
+  String get signInLabel => 'Sign in with $inlineLabel';
+}
 
 class BiometricAvailability {
   const BiometricAvailability({

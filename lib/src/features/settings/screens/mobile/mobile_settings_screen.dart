@@ -50,6 +50,7 @@ class MobileSettingsScreen extends ConsumerWidget {
     );
     final settingsValueColor = context.colors.text.accent;
     final settingsChevronColor = context.colors.icon.accent;
+    final seedPhraseEnabled = account != null && !account.isHardware;
 
     return SafeArea(
       bottom: false,
@@ -80,7 +81,10 @@ class MobileSettingsScreen extends ConsumerWidget {
                       textStyle: settingsRowStyle,
                       chevronColor: settingsChevronColor,
                       showChevron: true,
-                      onTap: () => context.push('/settings/seed-phrase'),
+                      enabled: seedPhraseEnabled,
+                      onTap: seedPhraseEnabled
+                          ? () => context.push('/settings/seed-phrase')
+                          : null,
                     ),
                     MobileListRow(
                       leading: _RowIcon(AppIcons.lock),
@@ -200,9 +204,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                       MobileListRow(
                         key: const ValueKey('mobile_settings_biometric_row'),
                         leading: _RowIcon(AppIcons.lock),
-                        label: biometric.availability.kind == BiometricKind.face
-                            ? 'Face ID'
-                            : 'Biometrics',
+                        label: biometric.availability.kind.standaloneLabel,
                         value: biometric.enabled ? 'On' : 'Off',
                         minRowHeight: _settingsRowHeight,
                         textStyle: settingsRowStyle,
@@ -301,13 +303,19 @@ class MobileSettingsScreen extends ConsumerWidget {
     try {
       if (state.enabled) {
         await notifier.disable();
-        if (context.mounted) showAppToast(context, 'Biometric unlock off');
+        if (context.mounted) {
+          showAppToast(
+            context,
+            '${state.availability.kind.unlockFeatureLabel} off',
+          );
+        }
         return;
       }
       if (!state.availability.usable) {
         showAppToast(
           context,
-          'Set up biometrics in your device settings first.',
+          'Set up ${state.availability.kind.inlineLabel} '
+          'in your device settings first.',
         );
         return;
       }
@@ -315,10 +323,18 @@ class MobileSettingsScreen extends ConsumerWidget {
           .read(appSecurityProvider.notifier)
           .requireSessionPasswordForNativeSecretUse();
       await notifier.enable(passcode);
-      if (context.mounted) showAppToast(context, 'Biometric unlock on');
+      if (context.mounted) {
+        showAppToast(
+          context,
+          '${state.availability.kind.unlockFeatureLabel} on',
+        );
+      }
     } catch (e) {
       if (!context.mounted) return;
-      showAppToast(context, "Couldn't update biometric unlock.");
+      showAppToast(
+        context,
+        "Couldn't update ${state.availability.kind.inlineUnlockFeatureLabel}.",
+      );
     }
   }
 

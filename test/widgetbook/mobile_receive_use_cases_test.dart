@@ -23,6 +23,14 @@ void main() {
     expect(find.text('Share shielded address'), findsOneWidget);
     expect(find.text('Copy shielded address'), findsOneWidget);
     expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_receive_share'))),
+      const Size(300, 50),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_receive_copy'))),
+      const Size(300, 50),
+    );
+    expect(
       tester.getSize(find.byKey(const ValueKey('receive_address_type_tabs'))),
       const Size(320, 44),
     );
@@ -93,6 +101,15 @@ void main() {
     final closeButton = find.byKey(
       const ValueKey('receive_address_info_close'),
     );
+    final modalClose = find.byKey(
+      const ValueKey('receive_address_info_modal_close'),
+    );
+    final modalCloseIcon = find.byKey(
+      const ValueKey('receive_address_info_modal_close_icon'),
+    );
+    expect(tester.getSize(closeButton), const Size(329, 50));
+    expect(tester.getSize(modalClose), const Size(32, 32));
+    expect(tester.getSize(modalCloseIcon), const Size(20, 20));
     expect(
       tester.getTopLeft(secondItem).dy - tester.getBottomLeft(firstItem).dy,
       moreOrLessEquals(8, epsilon: 0.1),
@@ -142,7 +159,10 @@ Future<void> _pumpReceiveMobileUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
-      home: AppTheme(data: AppThemeData.dark, child: Builder(builder: builder)),
+      home: AppTheme(
+        data: AppThemeData.dark,
+        child: Builder(builder: builder),
+      ),
     ),
   );
   await tester.pump();

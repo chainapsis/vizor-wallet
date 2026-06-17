@@ -475,17 +475,11 @@ Future<void> sendViaWizard(
     const ValueKey('mobile_send_continue'),
     timeout: const Duration(minutes: 1),
   );
-  for (final ch in amountDigits.split('')) {
-    final label = ch == '.' ? 'Decimal point' : 'Digit $ch';
-    final finder = find.bySemanticsLabel(label);
-    await pumpUntil(
-      tester,
-      () => tester.any(finder),
-      description: '$label key',
-    );
-    await tester.tap(finder);
-    await tester.pump(const Duration(milliseconds: 150));
-  }
+  await enterText(
+    tester,
+    const ValueKey('mobile_send_amount_input'),
+    amountDigits,
+  );
   await tapAppButton(
     tester,
     const ValueKey('mobile_send_review_button'),

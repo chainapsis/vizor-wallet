@@ -9,7 +9,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
 
 /// Mobile slippage editor — Figma `Slippage` (`_Modal Type` 4755:84761): a
-/// 60px Young Serif value flanked by 60×44 minus/plus pills (0.5% steps within
+/// 60px Young Serif value flanked by 60×50 minus/plus pills (0.5% steps within
 /// 0.1–5%), or typed directly via the system keypad, capped at two decimal
 /// places. Out-of-range input turns the value and a "Slippage must be 0.1 - 5%"
 /// message destructive and disables Update. The body is a fixed 160px so the
@@ -258,9 +258,9 @@ class _StepperButton extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: enabled ? onTap : null,
         child: Container(
-          // Figma: 60×44 secondary pill.
+          // Mobile button rhythm: 60×50 secondary pill.
           width: 60,
-          height: 44,
+          height: AppButtonSizing.largeHeight,
           decoration: BoxDecoration(
             color: colors.button.secondary.bg,
             borderRadius: BorderRadius.circular(AppRadii.full),

@@ -23,6 +23,12 @@ import 'passcode_widgets.dart';
 const mobileBiometricSignInBackgroundAsset =
     'assets/illustrations/mobile_onboarding_auth_background.png';
 
+/// Backdrop assets shared by [MobileBiometricSignInView] and the unlock
+/// screen's precache, so the warmed [ImageCache] entries match the providers
+/// painted behind the Face ID sheet (same key -> cache hit, no blank frame).
+const _authBackgroundImage = AssetImage(mobileBiometricSignInBackgroundAsset);
+const _welcomeBadgeImage = AssetImage('assets/illustrations/welcome_badge.png');
+
 /// Mobile unlock — Figma `Sign In Passcode` (4885:23041): "Welcome Back",
 /// crimson-filling dots, round numpad keys, a bottom biometric retry action,
 /// and the numpad's help action opening the Forgot Passcode reset sheet.
@@ -43,7 +49,25 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
   var _submitting = false;
   var _biometricPromptShown = false;
   var _biometricFallback = false;
+  // True from a successful biometric read through unlock → navigation, so the
+  // branded backdrop stays up across submit instead of flipping back to the
+  // numpad while the Face ID sheet dismisses.
+  var _biometricUnlocking = false;
+  var _didPrecacheBackdrop = false;
   String? _error;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_didPrecacheBackdrop) return;
+    _didPrecacheBackdrop = true;
+    // Warm the backdrop assets so the biometric sign-in view paints before the
+    // system Face ID sheet covers the screen. Best-effort: a decode failure
+    // must never block unlock, and this is fire-and-forget so it can't stall
+    // the prompt.
+    unawaited(precacheImage(_authBackgroundImage, context, onError: (_, _) {}));
+    unawaited(precacheImage(_welcomeBadgeImage, context, onError: (_, _) {}));
+  }
 
   Future<void> _tryBiometricUnlock() async {
     if (_submitting) return;
@@ -63,9 +87,9 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       final now = ref.read(biometricUnlockProvider).value;
       var nextError = _error;
       if (wasEnabled && now != null && !now.enabled) {
-        // The escrow was invalidated (biometrics re-enrolled) — explain
+        // The escrow was invalidated (biometric data changed) — explain
         // why the prompt stopped appearing.
-        nextError = 'Biometrics changed. Enter your passcode.';
+        nextError = biometric.availability.kind.changedMessage;
       }
       setState(() {
         _biometricFallback = true;
@@ -74,7 +98,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       return;
     }
     setState(() {
-      _biometricFallback = true;
+      _biometricUnlocking = true;
       _entry = passcode;
       _error = null;
     });
@@ -116,6 +140,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
   /// Mirrors the desktop unlock sequence: validate, then rehydrate the
   /// account address and sync state before entering the app.
   Future<void> _submit() async {
+    final fromBiometric = _biometricUnlocking;
     setState(() {
       _submitting = true;
       _error = null;
@@ -144,6 +169,9 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
+        _biometricUnlocking = false;
+        // A biometric-initiated submit that fails drops to the numpad + retry.
+        if (fromBiometric) _biometricFallback = true;
         _entry = '';
         _error = "Couldn't open your wallet. Please try again.";
       });
@@ -154,6 +182,8 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       unawaited(AppHaptics.error());
       setState(() {
         _submitting = false;
+        _biometricUnlocking = false;
+        if (fromBiometric) _biometricFallback = true;
         _entry = '';
         _error = 'Incorrect Passcode';
       });
@@ -195,16 +225,24 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final biometric =
-        ref.watch(biometricUnlockProvider).value ??
-        BiometricUnlockState.initial;
+    final biometricAsync = ref.watch(biometricUnlockProvider);
+    final biometric = biometricAsync.value ?? BiometricUnlockState.initial;
+    // While the async availability probe is still resolving on cold launch,
+    // trust the bootstrap snapshot's "enabled" hint so the branded backdrop
+    // paints on the first frame instead of flashing the numpad before Face ID.
+    final enabledHint = ref.watch(biometricUnlockEnabledHintProvider);
+    final likelyUsable =
+        biometric.usable || (biometricAsync.isLoading && enabledHint);
     final showBiometricSignIn =
-        widget.autoPromptBiometric &&
-        !_biometricFallback &&
-        !_submitting &&
-        _entry.isEmpty &&
-        biometric.usable;
-    if (showBiometricSignIn) {
+        _biometricUnlocking ||
+        (widget.autoPromptBiometric &&
+            !_biometricFallback &&
+            !_submitting &&
+            _entry.isEmpty &&
+            likelyUsable);
+    // Only schedule the real prompt once the probe confirms usability — the
+    // hint paints the backdrop early but must not fire Face ID prematurely.
+    if (showBiometricSignIn && !_biometricUnlocking) {
       _scheduleBiometricPrompt(biometric);
     }
     return Scaffold(
@@ -273,11 +311,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
                               return const SizedBox.shrink();
                             }
                             return PasscodeBiometricButton(
-                              label:
-                                  biometric.availability.kind ==
-                                      BiometricKind.face
-                                  ? 'Sign in with Face ID'
-                                  : 'Sign in with biometrics',
+                              label: biometric.availability.kind.signInLabel,
                               icon:
                                   biometric.availability.kind ==
                                       BiometricKind.face
@@ -330,8 +364,8 @@ class MobileBiometricSignInView extends StatelessWidget {
                 child: SizedBox(
                   width: _backgroundWidth * scale,
                   height: _backgroundHeight * scale,
-                  child: Image.asset(
-                    mobileBiometricSignInBackgroundAsset,
+                  child: Image(
+                    image: _authBackgroundImage,
                     key: const ValueKey('mobile_biometric_sign_in_background'),
                     fit: BoxFit.fill,
                   ),
@@ -340,8 +374,8 @@ class MobileBiometricSignInView extends StatelessWidget {
             },
           ),
           Center(
-            child: Image.asset(
-              'assets/illustrations/welcome_badge.png',
+            child: Image(
+              image: _welcomeBadgeImage,
               key: const ValueKey('mobile_biometric_sign_in_badge'),
               width: 130,
               height: 130,

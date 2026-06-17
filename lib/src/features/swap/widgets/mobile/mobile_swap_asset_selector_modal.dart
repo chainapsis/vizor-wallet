@@ -43,6 +43,8 @@ class _MobileSwapAssetSelectorModalState
   // desktop 44/32.
   static const double _rowHeight = 52;
   static const double _rowGap = AppSpacing.xxs; // 4
+  static const double _scrollbarGutter = AppSpacing.sm;
+  static const double _scrollbarThickness = 6;
 
   /// Stable scroll-viewport bounds: at least ~4 rows so a sparse (or empty)
   /// result set doesn't collapse the modal, at most ~7 rows of travel before
@@ -94,10 +96,8 @@ class _MobileSwapAssetSelectorModalState
   }
 
   /// The scroll viewport height: a stable [_minListHeight].._maxListHeight,
-  /// further capped to the room above the keyboard so the list bottom (and the
-  /// scrollbar thumb) never falls under it. A definite height is what lets the
-  /// [RawScrollbar] map 1:1 to the scroll range, so the thumb reaches the very
-  /// bottom when the last asset does.
+  /// further capped to the room above the keyboard so the list bottom and its
+  /// scrollbar stay on screen.
   double _listHeight(BuildContext context) {
     final media = MediaQuery.of(context);
     // Reserve for the title, the search field, the inter-element gaps and the
@@ -107,12 +107,19 @@ class _MobileSwapAssetSelectorModalState
     return available.clamp(_minListHeight, _maxListHeight);
   }
 
+  double _listContentHeight(int itemCount) {
+    if (itemCount <= 0) return 0;
+    return itemCount * _rowHeight + (itemCount - 1) * _rowGap;
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final assets = _filteredAssets;
     final hasQuery = _queryController.text.isNotEmpty;
     final listHeight = _listHeight(context);
+    final listContentHeight = _listContentHeight(assets.length);
+    final showScrollbar = listContentHeight > listHeight;
 
     return MobileModalScaffold(
       key: const ValueKey('swap_external_asset_menu'),
@@ -177,20 +184,25 @@ class _MobileSwapAssetSelectorModalState
                 : RawScrollbar(
                     key: const ValueKey('swap_asset_selector_scrollbar'),
                     controller: _scrollController,
-                    thumbVisibility: true,
+                    thumbVisibility: showScrollbar,
+                    interactive: true,
                     radius: const Radius.circular(AppRadii.full),
-                    thickness: 6,
-                    crossAxisMargin: 3,
+                    thickness: _scrollbarThickness,
+                    mainAxisMargin: 0,
+                    padding: EdgeInsets.zero,
+                    crossAxisMargin:
+                        (_scrollbarGutter - _scrollbarThickness) / 2,
                     thumbColor: colors.background.overlay,
                     child: Padding(
                       key: const ValueKey('swap_asset_selector_list_gutter'),
-                      padding: const EdgeInsets.only(right: AppSpacing.sm),
+                      padding: const EdgeInsets.only(right: _scrollbarGutter),
                       child: ScrollConfiguration(
                         behavior: ScrollConfiguration.of(
                           context,
                         ).copyWith(scrollbars: false),
                         child: ListView.separated(
                           controller: _scrollController,
+                          physics: const ClampingScrollPhysics(),
                           padding: EdgeInsets.zero,
                           itemCount: assets.length,
                           separatorBuilder: (_, _) =>

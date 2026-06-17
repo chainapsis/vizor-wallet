@@ -40,26 +40,31 @@ class MobileTopNav extends StatelessWidget {
        titleStyle = null,
        height = kMobileTopNavHeight,
        progress = 0,
+       showBackButton = true,
        onBack = null,
        trailing = null,
        backIcon = AppIcons.chevronBackward;
 
-  const MobileTopNav.steps({required this.progress, this.onBack, super.key})
-    : _variant = _MobileTopNavVariant.steps,
-      accountName = '',
-      balanceLabel = null,
-      syncLabel = null,
-      syncLabelColor = null,
-      syncIndicatorColor = null,
-      syncAnimated = false,
-      syncHighlightColor = null,
-      avatar = null,
-      onAccountTap = null,
-      title = '',
-      titleStyle = null,
-      height = kMobileTopNavHeight,
-      trailing = null,
-      backIcon = AppIcons.chevronBackward;
+  const MobileTopNav.steps({
+    required this.progress,
+    this.onBack,
+    this.showBackButton = true,
+    super.key,
+  }) : _variant = _MobileTopNavVariant.steps,
+       accountName = '',
+       balanceLabel = null,
+       syncLabel = null,
+       syncLabelColor = null,
+       syncIndicatorColor = null,
+       syncAnimated = false,
+       syncHighlightColor = null,
+       avatar = null,
+       onAccountTap = null,
+       title = '',
+       titleStyle = null,
+       height = kMobileTopNavHeight,
+       trailing = null,
+       backIcon = AppIcons.chevronBackward;
 
   const MobileTopNav.back({
     required this.title,
@@ -79,7 +84,8 @@ class MobileTopNav extends StatelessWidget {
        syncHighlightColor = null,
        avatar = null,
        onAccountTap = null,
-       progress = 0;
+       progress = 0,
+       showBackButton = true;
 
   final _MobileTopNavVariant _variant;
 
@@ -109,6 +115,7 @@ class MobileTopNav extends StatelessWidget {
 
   /// Steps variant: progress through the flow, 0.0–1.0.
   final double progress;
+  final bool showBackButton;
 
   /// Back variant: centered serif title.
   final String title;
@@ -151,34 +158,38 @@ class MobileTopNav extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onAccountTap,
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: MainAxisSize.max,
         children: [
           avatar ?? _AvatarPlaceholder(size: _avatarSize),
           const SizedBox(width: AppSpacing.s),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                accountName,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colors.text.accent,
-                ),
-              ),
-              if (balanceLabel != null) ...[
-                const SizedBox(height: AppSpacing.xxs),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  balanceLabel!,
+                  accountName,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelLarge.copyWith(
-                    fontWeight: FontWeight.w400,
-                    color: colors.text.secondary,
+                    fontWeight: FontWeight.w600,
+                    color: colors.text.accent,
                   ),
                 ),
+                if (balanceLabel != null) ...[
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    balanceLabel!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      fontWeight: FontWeight.w400,
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ],
       ),
@@ -187,7 +198,9 @@ class MobileTopNav extends StatelessWidget {
     return Row(
       children: [
         const SizedBox(width: AppSpacing.sm),
-        Expanded(child: Align(alignment: Alignment.centerLeft, child: account)),
+        Expanded(
+          child: Align(alignment: Alignment.centerLeft, child: account),
+        ),
         if (syncLabel != null)
           _SyncStatus(
             label: syncLabel!,
@@ -234,10 +247,11 @@ class MobileTopNav extends StatelessWidget {
             ),
           ),
         ),
-        Positioned(
-          left: AppSpacing.s,
-          child: _BackButton(size: _backButtonSize, onTap: onBack),
-        ),
+        if (showBackButton)
+          Positioned(
+            left: AppSpacing.s,
+            child: _BackButton(size: _backButtonSize, onTap: onBack),
+          ),
       ],
     );
   }

@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/privacy/privacy_mask.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
@@ -162,6 +163,56 @@ void main() {
     expect(find.text('No activity, yet...'), findsOneWidget);
   });
 
+  testWidgets('matches the Figma balance card controls and action labels', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(_syncedState(orchardBalance: BigInt.from(14312000000))),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final privacyButtonRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_privacy_button')),
+    );
+    final privacyIcon = tester.widget<AppIcon>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_home_privacy_button')),
+        matching: find.byType(AppIcon),
+      ),
+    );
+    final sendRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_send')),
+    );
+    final sendLabel = tester.widget<Text>(find.text('Send'));
+    final receiveLabel = tester.widget<Text>(find.text('Receive'));
+    final shieldedLabel = tester.widget<Text>(find.text('Shielded balance'));
+    final fiatLabel = tester.widget<Text>(
+      find.byKey(const ValueKey('mobile_home_balance_fiat_text')),
+    );
+    final balanceText = tester.widget<Text>(
+      find.byKey(const ValueKey('mobile_home_shielded_balance')),
+    );
+    final balanceSpan = balanceText.textSpan! as TextSpan;
+    final amountSpan = balanceSpan.children![0] as TextSpan;
+    final tickerSpan = balanceSpan.children![1] as TextSpan;
+
+    expect(privacyButtonRect.size, const Size(32, 32));
+    expect(privacyIcon.size, 16);
+    expect(sendRect.height, AppButtonSizing.largeHeight);
+    expect(sendLabel.style?.fontSize, 14);
+    expect(sendLabel.style?.height, 16 / 14);
+    expect(sendLabel.style?.fontWeight, FontWeight.w500);
+    expect(receiveLabel.style?.fontSize, 14);
+    expect(shieldedLabel.style?.fontSize, 14);
+    expect(shieldedLabel.style?.height, 16 / 14);
+    expect(fiatLabel.style?.fontSize, 14);
+    expect(amountSpan.style?.fontSize, 45);
+    expect(amountSpan.style?.height, 48 / 45);
+    expect(tickerSpan.style?.fontSize, 32);
+    expect(tickerSpan.style?.height, 33 / 32);
+  });
+
   testWidgets('zero balance offers the first-receive action', (tester) async {
     await tester.pumpWidget(_app(_syncedState()));
     await tester.pump();
@@ -172,6 +223,30 @@ void main() {
     await tester.tap(find.text('Receive your first ZEC'));
     await tester.pumpAndSettle();
     expect(find.text('receive route'), findsOneWidget);
+  });
+
+  testWidgets('uses the mobile Rest illustration canvas for empty activity', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 1000));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_app(_syncedState()));
+    await tester.pump();
+
+    final canvasRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_rest_canvas')),
+    );
+    final imageRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_rest_image')),
+    );
+
+    expect(canvasRect.size, const Size(340, 220));
+    expect(imageRect.size, const Size(246, 192));
+    expect(imageRect.left - canvasRect.left, 47);
+    expect(imageRect.top - canvasRect.top, 28);
   });
 
   testWidgets('privacy eye masks the balance', (tester) async {

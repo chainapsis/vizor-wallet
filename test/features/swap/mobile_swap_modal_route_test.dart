@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/features/swap/domain/swap_contract.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_address_edit_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -81,6 +82,71 @@ Widget _app({_MobileDelayedQuoteSwapProvider? swapProvider}) => ProviderScope(
 );
 
 void main() {
+  testWidgets('review actions use the mobile button height', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppTheme(
+            data: AppThemeData.dark,
+            child: Center(
+              child: SizedBox(
+                width: 329,
+                child: MobileSwapReviewActions(
+                  expired: false,
+                  starting: false,
+                  sendsZec: false,
+                  onCancelReview: () {},
+                  onReviewAgain: () {},
+                  onStartIntent: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.getSize(find.byKey(const ValueKey('swap_start_button'))).height,
+      50,
+    );
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('swap_review_cancel_button')))
+          .height,
+      50,
+    );
+  });
+
+  testWidgets('slippage stepper buttons use the mobile button height', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppTheme(
+            data: AppThemeData.dark,
+            child: MobileSwapSlippageStepperModal(
+              slippageBps: 100,
+              onSubmitted: (_) {},
+              onCancel: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_swap_slippage_minus'))),
+      const Size(60, 50),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_swap_slippage_plus'))),
+      const Size(60, 50),
+    );
+  });
+
   testWidgets('swap composer CTA fits on narrow Android-sized screens', (
     tester,
   ) async {

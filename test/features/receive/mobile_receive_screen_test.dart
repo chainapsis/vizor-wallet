@@ -142,8 +142,12 @@ void main() {
     );
     expect(tester.getSize(find.byType(ReceiveRenewButton)), const Size(48, 48));
     expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_receive_share'))),
+      const Size(300, 50),
+    );
+    expect(
       tester.getSize(find.byKey(const ValueKey('mobile_receive_copy'))),
-      const Size(300, 44),
+      const Size(300, 50),
     );
     final helpIcon = tester.widget<AppIcon>(
       find.descendant(

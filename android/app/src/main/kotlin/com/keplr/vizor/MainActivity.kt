@@ -3,6 +3,7 @@ package com.keplr.vizor
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -37,6 +38,23 @@ class MainActivity : FlutterFragmentActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            PRIVACY_SHIELD_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setSensitiveContentVisible" -> {
+                    val visible = (call.arguments as? Map<*, *>)?.get("visible") as? Boolean
+                    if (visible == null) {
+                        result.error("bad_args", "Expected visible argument.", null)
+                    } else {
+                        setSensitiveContentVisible(visible)
+                        result.success(null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     /** REJECT is the platform's error haptic; older APIs report
@@ -63,8 +81,20 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
+    private fun setSensitiveContentVisible(visible: Boolean) {
+        if (visible) {
+            window.setFlags(
+                WindowManager.LayoutParams.FLAG_SECURE,
+                WindowManager.LayoutParams.FLAG_SECURE
+            )
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+    }
+
     companion object {
         private const val CAMERA_PERMISSION_CHANNEL = "com.zcash.wallet/camera_permission"
         private const val HAPTICS_CHANNEL = "com.zcash.wallet/haptics"
+        private const val PRIVACY_SHIELD_CHANNEL = "com.zcash.wallet/privacy_shield"
     }
 }

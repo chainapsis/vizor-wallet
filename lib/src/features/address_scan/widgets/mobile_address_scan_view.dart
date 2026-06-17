@@ -34,9 +34,10 @@ typedef MobileScanResolver = Future<MobileScanOutcome> Function(String raw);
 /// viewfinder and a caption beneath it. Mobile always uses the back
 /// camera, so there is no camera picker.
 ///
-/// Shared by the send recipient scan, the swap address scan, and (via
-/// [MobileScanViewfinderCorners]) the Keystone signing scan, so the
-/// camera chrome stays identical across every mobile scan surface.
+/// The send and swap flows use the card-contained scanner in
+/// `mobile_address_scan_card.dart`; this file keeps the reusable full-screen
+/// primitives and shared viewfinder/error overlays used by mobile scan
+/// surfaces such as Keystone signing.
 class MobileAddressScanView extends StatefulWidget {
   const MobileAddressScanView({
     required this.resolve,

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
+import '../app_bootstrap.dart';
 import '../core/storage/app_secure_store.dart';
 import '../services/biometric_unlock.dart';
 
@@ -10,6 +11,22 @@ const kBiometricUnlockEnabledKey = 'zcash_biometric_unlock_enabled';
 final biometricUnlockServiceProvider = Provider<BiometricUnlock>(
   (ref) => BiometricUnlock(),
 );
+
+/// Synchronous best-effort "biometric unlock enabled" hint from the startup
+/// bootstrap snapshot. Lets the unlock screen paint the biometric backdrop on
+/// the very first frame instead of flashing the numpad while
+/// [biometricUnlockProvider] resolves its async availability probe. Falls back
+/// to false when no bootstrap snapshot is available (widgetbook / tests that
+/// don't override [appBootstrapProvider]).
+final biometricUnlockEnabledHintProvider = Provider<bool>((ref) {
+  try {
+    return ref.watch(
+      appBootstrapProvider.select((b) => b.biometricUnlockEnabled),
+    );
+  } catch (_) {
+    return false;
+  }
+});
 
 class BiometricUnlockState {
   const BiometricUnlockState({

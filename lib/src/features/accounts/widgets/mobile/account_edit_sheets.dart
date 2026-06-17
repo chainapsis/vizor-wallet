@@ -184,7 +184,7 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                'Account label',
+                'Account name',
                 style: AppTypography.labelLarge.copyWith(
                   fontWeight: FontWeight.w400,
                   color: colors.text.secondary,
@@ -398,11 +398,13 @@ class _ProfilePictureGrid extends StatelessWidget {
                                   key: ValueKey(
                                     'mobile_account_pfp_selected_badge_${option.id}',
                                   ),
-                                  width: 20,
+                                  width: 24,
                                   height: 20,
                                   decoration: BoxDecoration(
                                     color: colors.background.inverse,
-                                    shape: BoxShape.circle,
+                                    borderRadius: BorderRadius.circular(
+                                      AppRadii.full,
+                                    ),
                                     border: Border.all(
                                       color: colors.background.base,
                                       width: 3,
@@ -529,9 +531,10 @@ class MobileSheetClose extends StatelessWidget {
 
 /// Centered "Cancel" text action below a sheet's primary button.
 class MobileSheetCancel extends StatelessWidget {
-  const MobileSheetCancel({required this.onTap, super.key});
+  const MobileSheetCancel({required this.onTap, this.textStyle, super.key});
 
   final VoidCallback onTap;
+  final TextStyle? textStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -541,13 +544,15 @@ class MobileSheetCancel extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: SizedBox(
-          height: 44,
+          height: AppButtonSizing.largeHeight,
           child: Center(
             child: Text(
               'Cancel',
-              style: AppTypography.labelLarge.copyWith(
-                color: context.colors.text.primary,
-              ),
+              style:
+                  textStyle ??
+                  AppTypography.labelLarge.copyWith(
+                    color: context.colors.text.primary,
+                  ),
             ),
           ),
         ),

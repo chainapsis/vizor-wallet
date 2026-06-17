@@ -270,11 +270,11 @@ void main() {
         description: 'send amount step',
       );
       await shot('21_send_amount_empty');
-      for (final ch in '0.25'.split('')) {
-        final label = ch == '.' ? 'Decimal point' : 'Digit $ch';
-        await tester.tap(find.bySemanticsLabel(label));
-        await tester.pump(const Duration(milliseconds: 150));
-      }
+      await enterText(
+        tester,
+        const ValueKey('mobile_send_amount_input'),
+        '0.25',
+      );
       await pumpUntil(
         tester,
         () => tester.any(find.text('Finish & Review')),

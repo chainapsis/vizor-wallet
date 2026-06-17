@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/material.dart'
     show BorderRadius, BoxDecoration, MaterialApp, SingleChildScrollView;
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
@@ -139,6 +140,34 @@ void main() {
     for (final icon in copyIcons) {
       expect(icon.size, 20);
     }
+  });
+
+  testWidgets('mobile deposit amount copies the numeric amount only', (
+    tester,
+  ) async {
+    final clipboardWrites = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          final args = call.arguments as Map<Object?, Object?>;
+          clipboardWrites.add(args['text']! as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+
+    await tester.pumpWidget(_harness(_content()));
+    await tester.tap(find.byKey(const ValueKey('swap_copy_deposit_amount')));
+    await tester.pump();
+
+    expect(clipboardWrites, ['999.99']);
   });
 
   testWidgets('mobile deposit detail rows reserve the Figma value area', (

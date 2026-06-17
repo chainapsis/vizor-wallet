@@ -36,8 +36,54 @@ class MobileAccountsSheet extends ConsumerStatefulWidget {
       _MobileAccountsSheetState();
 }
 
+const _accountsSheetLabelMStyle = TextStyle(
+  fontFamily: 'Geist',
+  fontWeight: FontWeight.w500,
+  fontSize: 14,
+  height: 16 / 14,
+  letterSpacing: -0.06,
+);
+
+const _accountsSheetCurrentNameStyle = TextStyle(
+  fontFamily: 'Geist',
+  fontWeight: FontWeight.w500,
+  fontSize: 16,
+  height: 20 / 16,
+  letterSpacing: 0,
+);
+
+const _accountsSheetListMaxHeight = 216.0;
+const _accountsSheetRowHeight = 48.0;
+const _accountsSheetRowGap = 8.0;
+const _accountsSheetScrollbarGutter = 18.0;
+const _accountsSheetScrollbarThickness = 6.0;
+const _accountsSheetCurrentToTitleGap = AppSpacing.md; // 24
+const _accountsSheetTitleToListGap = AppSpacing.s + AppSpacing.xs; // 20
+
+double _accountsSheetListHeight(int rowCount) {
+  if (rowCount <= 0) return 0;
+  final visibleRows = rowCount > 4 ? 4 : rowCount;
+  final height = _accountsSheetContentHeight(visibleRows);
+  return height > _accountsSheetListMaxHeight
+      ? _accountsSheetListMaxHeight
+      : height;
+}
+
+double _accountsSheetContentHeight(int rowCount) {
+  if (rowCount <= 0) return 0;
+  return rowCount * _accountsSheetRowHeight +
+      (rowCount - 1) * _accountsSheetRowGap;
+}
+
 class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
   bool _isCopyingAddress = false;
+  late final ScrollController _accountsScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _accountsScrollController.dispose();
+    super.dispose();
+  }
 
   Future<void> _switchAccount(String uuid) async {
     final activeAccountUuid = ref
@@ -85,7 +131,7 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
 
       await Clipboard.setData(ClipboardData(text: address));
       if (!mounted) return;
-      showAppToast(context, 'Shielded address copied');
+      showAppToast(context, 'Address copied');
     } catch (e) {
       log('MobileAccountsSheet: ERROR copying shielded address: $e');
       if (!mounted) return;
@@ -112,22 +158,19 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
       for (final account in accounts)
         if (account.uuid != active?.uuid) account,
     ];
+    final accountsListHeight = _accountsSheetListHeight(others.length);
+    final showAccountsScrollbar = others.length > 4;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.sm,
-        AppSpacing.sm,
-        AppSpacing.md,
-      ),
+    return MobileModalScaffold(
+      title: '',
+      showTitle: false,
+      bottomPadding: AppSpacing.base,
+      onClose: () => Navigator.of(context).pop(),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: _CloseButton(onTap: () => Navigator.of(context).pop()),
-          ),
+          const SizedBox(height: AppSpacing.s),
           // Centered so the stretch column can't blow the circle up
           // to full width; 56 px per the Figma accounts modal.
           Center(
@@ -138,56 +181,101 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
               isHardware: active?.isHardware ?? false,
             ),
           ),
-          const SizedBox(height: AppSpacing.s),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             active?.name ?? '',
             textAlign: TextAlign.center,
-            style: AppTypography.bodyLarge.copyWith(color: colors.text.accent),
+            style: _accountsSheetCurrentNameStyle.copyWith(
+              color: colors.text.accent,
+            ),
           ),
+          const SizedBox(height: _accountsSheetCurrentToTitleGap),
           if (others.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.md),
             Text(
               'Other accounts',
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.secondary,
+              style: _accountsSheetLabelMStyle.copyWith(
+                color: colors.text.accent,
               ),
             ),
-            const SizedBox(height: AppSpacing.xs),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 240),
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final account in others)
-                    MobileListRow(
-                      key: ValueKey('account_row_${account.uuid}'),
-                      leading: MobileAccountAvatar(
-                        profilePictureId: account.profilePictureId,
-                        size: AppProfilePictureSize.large,
-                        isHardware: account.isHardware,
-                      ),
-                      label: account.name,
-                      trailing: _CopyAddressButton(
-                        onTap: () => unawaited(_copyShieldedAddress(account)),
-                      ),
-                      onTap: () => unawaited(_switchAccount(account.uuid)),
+            const SizedBox(height: _accountsSheetTitleToListGap),
+            SizedBox(
+              key: const ValueKey('mobile_accounts_sheet_list'),
+              height: accountsListHeight,
+              child: RawScrollbar(
+                key: const ValueKey('mobile_accounts_sheet_scrollbar'),
+                controller: _accountsScrollController,
+                thumbVisibility: showAccountsScrollbar,
+                interactive: true,
+                radius: const Radius.circular(AppRadii.full),
+                thickness: _accountsSheetScrollbarThickness,
+                mainAxisMargin: 0,
+                padding: EdgeInsets.zero,
+                crossAxisMargin:
+                    (_accountsSheetScrollbarGutter -
+                        _accountsSheetScrollbarThickness) /
+                    2,
+                thumbColor: colors.background.overlay,
+                child: Padding(
+                  key: const ValueKey('mobile_accounts_sheet_list_gutter'),
+                  padding: const EdgeInsets.only(
+                    right: _accountsSheetScrollbarGutter,
+                  ),
+                  child: ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(
+                      context,
+                    ).copyWith(scrollbars: false),
+                    child: ListView.separated(
+                      controller: _accountsScrollController,
+                      physics: const ClampingScrollPhysics(),
+                      padding: EdgeInsets.zero,
+                      itemCount: others.length,
+                      separatorBuilder: (_, _) =>
+                          const SizedBox(height: _accountsSheetRowGap),
+                      itemBuilder: (context, index) {
+                        final account = others[index];
+                        return MobileListRow(
+                          key: ValueKey('account_row_${account.uuid}'),
+                          minRowHeight: _accountsSheetRowHeight,
+                          textStyle: _accountsSheetLabelMStyle,
+                          leading: MobileAccountAvatar(
+                            profilePictureId: account.profilePictureId,
+                            size: AppProfilePictureSize.navLarge,
+                            isHardware: account.isHardware,
+                          ),
+                          label: account.name,
+                          trailing: _CopyAddressButton(
+                            onTap: () =>
+                                unawaited(_copyShieldedAddress(account)),
+                          ),
+                          onTap: () => unawaited(_switchAccount(account.uuid)),
+                        );
+                      },
                     ),
-                ],
+                  ),
+                ),
               ),
             ),
           ],
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.s),
           Row(
             children: [
               Expanded(
                 child: AppButton(
+                  key: const ValueKey('mobile_accounts_manage'),
                   variant: AppButtonVariant.secondary,
                   expand: true,
+                  constrainContent: true,
                   onPressed: () {
                     Navigator.of(context).pop();
                     context.push('/accounts');
                   },
-                  child: const Text('Manage accounts'),
+                  height: AppButtonSizing.largeHeight,
+                  child: const Text(
+                    'Manage accounts',
+                    style: _accountsSheetLabelMStyle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
@@ -200,34 +288,41 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
   }
 }
 
-class _CloseButton extends StatelessWidget {
-  const _CloseButton({required this.onTap});
+class _AccountSheetButtonShell extends StatefulWidget {
+  const _AccountSheetButtonShell({
+    required this.onTap,
+    required this.child,
+    required this.label,
+  });
 
   final VoidCallback onTap;
+  final Widget child;
+  final String label;
+
+  @override
+  State<_AccountSheetButtonShell> createState() =>
+      _AccountSheetButtonShellState();
+}
+
+class _AccountSheetButtonShellState extends State<_AccountSheetButtonShell> {
+  var _pressed = false;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     return Semantics(
-      label: 'Close',
+      label: widget.label,
       button: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: colors.background.raised,
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: AppIcon(
-              AppIcons.cross,
-              size: AppIconSize.medium,
-              color: colors.icon.accent,
-            ),
-          ),
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: _pressed ? 0.96 : 1,
+          duration: const Duration(milliseconds: 90),
+          curve: Curves.easeOut,
+          child: widget.child,
         ),
       ),
     );
@@ -241,21 +336,17 @@ class _CopyAddressButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
+    return _AccountSheetButtonShell(
       label: 'Copy shielded address',
-      button: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          width: 32,
-          height: 32,
-          child: Center(
-            child: AppIcon(
-              AppIcons.copy,
-              size: AppIconSize.medium,
-              color: context.colors.icon.muted,
-            ),
+      onTap: onTap,
+      child: SizedBox(
+        width: 40,
+        height: 40,
+        child: Center(
+          child: AppIcon(
+            AppIcons.copy,
+            size: 20,
+            color: context.colors.icon.muted,
           ),
         ),
       ),
@@ -271,26 +362,23 @@ class _AddAccountButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Semantics(
+    return _AccountSheetButtonShell(
       label: 'Add account',
-      button: true,
-      child: GestureDetector(
+      onTap: onTap,
+      child: Container(
         key: const ValueKey('mobile_accounts_add'),
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          width: AppButtonSizing.largeHeight,
-          height: AppButtonSizing.largeHeight,
-          decoration: BoxDecoration(
-            color: colors.button.primary.bg,
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: AppIcon(
-              AppIcons.addNew,
-              size: 20,
-              color: colors.button.primary.label,
-            ),
+        width: 80,
+        height: AppButtonSizing.largeHeight,
+        decoration: BoxDecoration(
+          color: colors.button.primary.bg,
+          borderRadius: BorderRadius.circular(AppRadii.full),
+          border: Border.all(color: colors.button.primary.border, width: 1.5),
+        ),
+        child: Center(
+          child: AppIcon(
+            AppIcons.addNew,
+            size: 20,
+            color: colors.button.primary.label,
           ),
         ),
       ),

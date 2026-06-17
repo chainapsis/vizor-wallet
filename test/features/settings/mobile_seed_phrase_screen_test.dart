@@ -6,11 +6,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -92,6 +95,15 @@ const _faceBiometricState = BiometricUnlockState(
   enabled: true,
 );
 
+const _fingerprintBiometricState = BiometricUnlockState(
+  availability: BiometricAvailability(
+    supported: true,
+    enrolled: true,
+    kind: BiometricKind.fingerprint,
+  ),
+  enabled: true,
+);
+
 Widget _app({
   Stream<void>? screenshotStream,
   SensitivePrivacyOverlayController? privacyOverlayController,
@@ -116,6 +128,21 @@ Widget _app({
         privacyOverlayController: privacyOverlayController,
         loadBirthday: false,
       ),
+    ),
+  );
+}
+
+Widget _routerApp(GoRouter router) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      accountProvider.overrideWith(_FakeAccountNotifier.new),
+      appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
+      biometricUnlockServiceProvider.overrideWithValue(_FakeBiometricUnlock()),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
 }
@@ -181,6 +208,21 @@ void main() {
     expect(find.text('abandon'), findsOneWidget);
   });
 
+  testWidgets('confirm gate labels fingerprint retry by modality', (
+    tester,
+  ) async {
+    final biometric = _FakeBiometricController(
+      initialState: _fingerprintBiometricState,
+    );
+    await tester.pumpWidget(_app(biometric: biometric));
+    await tester.pumpAndSettle();
+
+    expect(biometric.reads, 1);
+    expect(find.bySemanticsLabel('Sign in with fingerprint'), findsOneWidget);
+    expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
+    expect(find.byIcon(Icons.fingerprint), findsOneWidget);
+  });
+
   testWidgets('shows the screenshot warning after the phrase is revealed', (
     tester,
   ) async {
@@ -195,12 +237,98 @@ void main() {
     screenshots.add(null);
     await tester.pumpAndSettle();
 
-    expect(find.textContaining("Don't take screenshots"), findsOneWidget);
+    expect(find.textContaining('Don’t take screenshots'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_seed_screenshot_ack')),
       findsOneWidget,
     );
+    final sheetFinder = find.byKey(
+      const ValueKey('mobile_seed_screenshot_sheet'),
+    );
+    final buttonFinder = find.byKey(
+      const ValueKey('mobile_seed_screenshot_ack'),
+    );
+    expect(tester.widget(sheetFinder), isA<MobileModalScaffold>());
+    final eye = tester.widget<AppIcon>(
+      find.byKey(const ValueKey('mobile_seed_screenshot_icon')),
+    );
+    final title = tester.widget<Text>(
+      find.byKey(const ValueKey('mobile_seed_screenshot_title')),
+    );
+    final titleSize = tester.getSize(
+      find.byKey(const ValueKey('mobile_seed_screenshot_title')),
+    );
+    final body = tester.widget<Text>(
+      find.byKey(const ValueKey('mobile_seed_screenshot_body')),
+    );
+    final buttonLabel = tester.widget<Text>(find.text('I understand'));
+
+    expect(eye.size, 30);
+    expect(title.data, 'Don’t take screenshots of your Secret Passphrase');
+    expect(title.maxLines, isNull);
+    expect(title.overflow, isNull);
+    expect(title.style?.fontFamily, 'Young Serif');
+    expect(title.style?.fontSize, 24);
+    expect(title.style?.height, 28 / 24);
+    expect(title.style?.fontWeight, FontWeight.w500);
+    expect(title.style?.letterSpacing, -0.4);
+    expect(titleSize.width, 253);
+    expect(body.textAlign, TextAlign.center);
+    expect(body.maxLines, isNull);
+    expect(body.overflow, isNull);
+    final bodySpan = body.textSpan! as TextSpan;
+    expect(
+      bodySpan.toPlainText(),
+      'Screenshots are not reliable. Anyone who has access to your phone '
+      'or your photo library will be able to see your Secret Passphrase. '
+      'Write down your Phrase on a piece of paper instead.',
+    );
+    expect(
+      bodySpan.style,
+      AppTypography.bodyMedium.copyWith(
+        color: AppThemeData.light.colors.text.accent,
+      ),
+    );
+    expect(
+      (bodySpan.children!.first as TextSpan).style,
+      AppTypography.bodyMediumStrong,
+    );
+    expect(buttonLabel.style, AppTypography.labelLarge);
+    expect(tester.getSize(buttonFinder).height, 50);
   });
+
+  testWidgets(
+    'does not show screenshot warning when covered by another route',
+    (tester) async {
+      final screenshots = StreamController<void>();
+      addTearDown(screenshots.close);
+      final router = GoRouter(
+        initialLocation: '/seed',
+        routes: [
+          GoRoute(
+            path: '/seed',
+            builder: (_, _) => MobileSeedPhraseScreen(
+              screenshotStream: screenshots.stream,
+              loadBirthday: false,
+            ),
+          ),
+          GoRoute(path: '/other', builder: (_, _) => const Text('other route')),
+        ],
+      );
+
+      await tester.pumpWidget(_routerApp(router));
+      await _revealSecret(tester);
+      unawaited(router.push('/other'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('other route'), findsOneWidget);
+
+      screenshots.add(null);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Don’t take screenshots'), findsNothing);
+    },
+  );
 
   testWidgets(
     'covers the revealed phrase when the privacy controller is unsafe',

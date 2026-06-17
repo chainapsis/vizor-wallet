@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart' show Icon, Icons, Scaffold;
 import 'package:flutter/services.dart';
@@ -76,9 +77,18 @@ class _MobileSeedPhraseScreenState
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
 
+  // Owned in production (the test seam injects its own) so the biometric gate
+  // can suppress the privacy shield for the duration of the prompt.
+  late final bool _ownsPrivacyController;
+  late final SensitivePrivacyOverlayController _privacyController;
+
   @override
   void initState() {
     super.initState();
+    _ownsPrivacyController = widget.privacyOverlayController == null;
+    _privacyController =
+        widget.privacyOverlayController ??
+        SensitivePrivacyEnvironmentController();
     _screenshotSub = (widget.screenshotStream ?? screenshotEvents()).listen(
       (_) => _onScreenshot(),
     );
@@ -92,6 +102,7 @@ class _MobileSeedPhraseScreenState
   @override
   void dispose() {
     _screenshotSub?.cancel();
+    if (_ownsPrivacyController) _privacyController.dispose();
     _mnemonic = null;
     super.dispose();
   }
@@ -103,16 +114,27 @@ class _MobileSeedPhraseScreenState
     final biometric = await ref.read(biometricUnlockProvider.future);
     if (!mounted || !biometric.usable) return;
     final wasEnabled = biometric.enabled;
-    final passcode = await ref
-        .read(biometricUnlockProvider.notifier)
-        .readPasscode(reason: 'Confirm access to your secret passphrase');
+    // The biometric sheet pushes the app to `inactive`; suppress the privacy
+    // shield for its duration so the phrase revealed on success doesn't flash
+    // the blur cover during the inactive→resumed transition. The environment
+    // controller releases the suppression on resume.
+    _privacyController.beginAuthPrompt();
+    String? readResult;
+    try {
+      readResult = await ref
+          .read(biometricUnlockProvider.notifier)
+          .readPasscode(reason: 'Confirm access to your secret passphrase');
+    } finally {
+      _privacyController.endAuthPrompt();
+    }
     if (!mounted) return;
+    final passcode = readResult;
     if (passcode == null) {
       final now = ref.read(biometricUnlockProvider).value;
       if (wasEnabled && now != null && !now.enabled) {
         setState(() {
           _entry = '';
-          _gateError = 'Biometrics changed. Enter your passcode.';
+          _gateError = biometric.availability.kind.changedMessage;
         });
       }
       return;
@@ -268,6 +290,7 @@ class _MobileSeedPhraseScreenState
   Future<void> _copy(String? text, String toast) async {
     if (text == null || text.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: text));
+    unawaited(AppHaptics.copy());
     if (mounted) showAppToast(context, toast);
   }
 
@@ -277,19 +300,23 @@ class _MobileSeedPhraseScreenState
     if (_stage != _SeedStage.reveal ||
         _mnemonic == null ||
         _screenshotSheetShowing ||
+        !_isCurrentRoute ||
         !mounted) {
       return;
     }
     _screenshotSheetShowing = true;
+    unawaited(AppHaptics.privacyToggle());
     try {
       await showAppMobileSheet<void>(
         context: context,
-        builder: (_) => const _ScreenshotWarningSheet(),
+        builder: (_) => const MobileSeedScreenshotWarningSheet(),
       );
     } finally {
       _screenshotSheetShowing = false;
     }
   }
+
+  bool get _isCurrentRoute => ModalRoute.of(context)?.isCurrent ?? true;
 
   static String _formatBirthdayDate(int blockTimeSeconds) {
     const months = [
@@ -322,7 +349,7 @@ class _MobileSeedPhraseScreenState
         child: SensitivePrivacyOverlay(
           sensitiveContentVisible:
               _stage == _SeedStage.reveal && _mnemonic != null,
-          controller: widget.privacyOverlayController,
+          controller: _privacyController,
           child: SafeArea(
             child: Column(
               children: [
@@ -401,9 +428,7 @@ class _MobileSeedPhraseScreenState
             height: 36,
             child: Center(
               child: PasscodeBiometricButton(
-                label: biometric.availability.kind == BiometricKind.face
-                    ? 'Sign in with Face ID'
-                    : 'Sign in with biometrics',
+                label: biometric.availability.kind.signInLabel,
                 icon: biometric.availability.kind == BiometricKind.face
                     ? const Center(child: AppIcon(AppIcons.faceId, size: 13.5))
                     : const Icon(Icons.fingerprint, size: 16),
@@ -681,60 +706,105 @@ class _BirthdayRow extends StatelessWidget {
   }
 }
 
-/// Screenshot warning — Figma `If they try to screenshot` (4494:91643).
-class _ScreenshotWarningSheet extends StatelessWidget {
-  const _ScreenshotWarningSheet();
+/// Screenshot warning — Figma `If they try to screenshot` (4494:92098).
+class MobileSeedScreenshotWarningSheet extends StatelessWidget {
+  const MobileSeedScreenshotWarningSheet({super.key});
+
+  static const _iconSize = 30.0;
+  static const _titleMaxWidth = 253.0;
+  static const _textHeightBehavior = TextHeightBehavior(
+    applyHeightToFirstAscent: false,
+    applyHeightToLastDescent: false,
+  );
+
+  static const _titleStyle = TextStyle(
+    fontFamily: 'Young Serif',
+    fontWeight: FontWeight.w500,
+    fontSize: 24,
+    height: 28 / 24,
+    letterSpacing: -0.4,
+    fontFeatures: [FontFeature.enable('case')],
+  );
+
+  static const _buttonLabelStyle = AppTypography.labelLarge;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.base,
-        AppSpacing.sm,
-        AppSpacing.base,
-      ),
+    return MobileModalScaffold(
+      key: const ValueKey('mobile_seed_screenshot_sheet'),
+      title: '',
+      onClose: () => Navigator.of(context).pop(),
+      showTitle: false,
+      showClose: false,
+      bottomPadding: AppSpacing.base,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AppIcon(AppIcons.eyeClosed, size: 28, color: colors.text.destructive),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            "Don't take screenshots of\nyour Secret Passphrase",
-            textAlign: TextAlign.center,
-            style: AppTypography.displaySmall.copyWith(
-              color: colors.text.destructive,
-            ),
+          Column(
+            children: [
+              AppIcon(
+                key: const ValueKey('mobile_seed_screenshot_icon'),
+                AppIcons.eyeClosed,
+                size: _iconSize,
+                color: colors.text.destructive,
+              ),
+              const SizedBox(height: AppSpacing.s),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final titleWidth = constraints.maxWidth.isFinite
+                      ? math.min(_titleMaxWidth, constraints.maxWidth)
+                      : _titleMaxWidth;
+                  return SizedBox(
+                    width: titleWidth,
+                    child: Text(
+                      key: const ValueKey('mobile_seed_screenshot_title'),
+                      'Don’t take screenshots of your Secret Passphrase',
+                      textAlign: TextAlign.center,
+                      softWrap: true,
+                      textHeightBehavior: _textHeightBehavior,
+                      style: _titleStyle.copyWith(
+                        color: colors.text.destructive,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.md),
           Text.rich(
+            key: const ValueKey('mobile_seed_screenshot_body'),
             TextSpan(
               style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.primary,
+                color: colors.text.accent,
               ),
               children: const [
                 TextSpan(
-                  text: 'Screenshots are not reliable. ',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+                  text: 'Screenshots are not reliable',
+                  style: AppTypography.bodyMediumStrong,
                 ),
                 TextSpan(
                   text:
-                      'Anyone who has access to your phone or your photo '
+                      '. Anyone who has access to your phone or your photo '
                       'library will be able to see your Secret Passphrase. '
-                      'Write down your Phrase on a piece of paper instead.',
+                      'Write down your Phrase on a '
+                      'piece of paper instead.',
                 ),
               ],
             ),
             textAlign: TextAlign.center,
+            softWrap: true,
+            textHeightBehavior: _textHeightBehavior,
           ),
           const SizedBox(height: AppSpacing.md),
           AppButton(
             key: const ValueKey('mobile_seed_screenshot_ack'),
             expand: true,
+            height: AppButtonSizing.largeHeight,
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('I understand'),
+            child: const Text('I understand', style: _buttonLabelStyle),
           ),
         ],
       ),
