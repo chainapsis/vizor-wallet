@@ -39,6 +39,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('Create Passcode'), findsOneWidget);
+    final createTitle = tester.widget<Text>(find.text('Create Passcode'));
+    expect(createTitle.style?.fontSize, AppTypography.displayLarge.fontSize);
     await _enter(tester, '12345');
     // Backspace removes a digit before completion.
     await tester.tap(find.bySemanticsLabel('Delete digit'));
@@ -46,6 +48,8 @@ void main() {
     await _enter(tester, '56');
 
     expect(find.text('Confirm Passcode'), findsOneWidget);
+    final confirmTitle = tester.widget<Text>(find.text('Confirm Passcode'));
+    expect(confirmTitle.style?.fontSize, AppTypography.displayLarge.fontSize);
     expect(find.text('Re-enter your passcode.'), findsOneWidget);
   });
 

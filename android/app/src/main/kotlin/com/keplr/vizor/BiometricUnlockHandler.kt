@@ -100,7 +100,7 @@ class BiometricUnlockHandler(private val activity: FragmentActivity) {
             cipher.init(Cipher.ENCRYPT_MODE, key)
 
             authenticate(
-                title = "Enable biometric unlock",
+                title = "Enable fingerprint unlock",
                 cipher = cipher,
                 result = result
             ) { authedCipher ->

@@ -195,43 +195,64 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                   ? null
                   : () => Navigator.of(context).maybePop(),
             ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              isConfirm ? 'Confirm Passcode' : 'Create Passcode',
-              textAlign: TextAlign.center,
-              // The passcode frames title in Headline L (32, glyph extent
-              // 27-28 in passcode1/confirm/5), not the XL step title.
-              style: AppTypography.headlineLarge.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 320),
-                child: Text(
-                  subtitle,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.primary,
-                  ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: AppSpacing.md,
+                ),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              isConfirm
+                                  ? 'Confirm Passcode'
+                                  : 'Create Passcode',
+                              textAlign: TextAlign.center,
+                              style: AppTypography.displayLarge.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.s),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 320),
+                              child: Text(
+                                subtitle,
+                                textAlign: TextAlign.center,
+                                style: AppTypography.bodyMediumStrong.copyWith(
+                                  color: colors.text.primary,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            SizedBox(
+                              height: kPasscodePromptDigitsHeight,
+                              child: PasscodePromptField(
+                                length: kMobilePasscodeLength,
+                                filled: _entry.length,
+                                error: _error,
+                                minGap: 0,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    PasscodeNumpad(
+                      onDigit: _onDigit,
+                      onBackspace: _onBackspace,
+                      canDelete: _entry.isNotEmpty,
+                      enabled: !isSubmitting,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
                 ),
               ),
             ),
-            Expanded(
-              child: PasscodePromptField(
-                length: kMobilePasscodeLength,
-                filled: _entry.length,
-                error: _error,
-              ),
-            ),
-            PasscodeNumpad(
-              onDigit: _onDigit,
-              onBackspace: _onBackspace,
-              canDelete: _entry.isNotEmpty,
-              enabled: !isSubmitting,
-            ),
-            const SizedBox(height: AppSpacing.md),
           ],
         ),
       ),

@@ -99,12 +99,12 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileUnlockFaceIdUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Biometric sign-in backdrop',
+                      name: 'Face ID sign-in backdrop',
                       builder: buildMobileUnlockBiometricBackdropUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Biometrics',
-                      builder: buildMobileUnlockBiometricsUseCase,
+                      name: 'Fingerprint',
+                      builder: buildMobileUnlockFingerprintUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Forgot passcode',
@@ -117,6 +117,36 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Screenshot warning',
                       builder: buildMobileSeedScreenshotWarningSheetUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile onboarding',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Secret phrase revealed',
+                      builder: buildMobileSecretPassphraseRevealedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Secret phrase protected',
+                      builder: buildMobileSecretPassphraseProtectedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Secret phrase screenshot warning',
+                      builder:
+                          buildMobileSecretPassphraseScreenshotWarningUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Create passcode',
+                      builder: buildMobileCreatePasscodeUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Face ID opt-in',
+                      builder: buildMobileFaceIdOptInUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Fingerprint opt-in',
+                      builder: buildMobileFingerprintOptInUseCase,
                     ),
                   ],
                 ),

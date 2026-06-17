@@ -14,6 +14,7 @@ import '../src/core/layout/app_layout.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/layout/mobile/app_mobile_shell.dart';
 import '../src/core/layout/mobile/app_mobile_tab_bar.dart';
+import '../src/core/privacy/sensitive_privacy_overlay.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_icon.dart';
@@ -23,8 +24,12 @@ import '../src/features/accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../src/features/activity/swap_activity_row_items_provider.dart';
 import '../src/features/home/screens/mobile/mobile_home_screen.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
+import '../src/features/onboarding/mobile/mobile_biometrics_screen.dart';
+import '../src/features/onboarding/mobile/mobile_passcode_screen.dart';
+import '../src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import '../src/features/onboarding/mobile/mobile_unlock_screen.dart';
+import '../src/features/onboarding/shared/onboarding_flow_args.dart';
 import '../src/features/onboarding/unlock_screen.dart';
 import '../src/features/onboarding/welcome.dart';
 import '../src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
@@ -36,6 +41,11 @@ import '../src/providers/sync_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
 import '../src/services/biometric_unlock.dart';
+
+const _previewMnemonic =
+    'abandon ability able about above absent absorb abstract absurd abuse '
+    'access accident account accuse achieve acid acoustic acquire across act '
+    'action actor actress actual';
 
 /// Welcome screen in its large-layout form. Wrapped in a `ProviderScope`
 /// with `appLayoutProvider` overridden to a no-op so the dev window does
@@ -106,7 +116,7 @@ Widget buildMobileUnlockBiometricBackdropUseCase(BuildContext context) {
   return const _MobilePreviewFrame(child: MobileBiometricSignInView());
 }
 
-Widget buildMobileUnlockBiometricsUseCase(BuildContext context) {
+Widget buildMobileUnlockFingerprintUseCase(BuildContext context) {
   return _buildMobileUnlockUseCase(
     const BiometricUnlockState(
       availability: BiometricAvailability(
@@ -115,6 +125,85 @@ Widget buildMobileUnlockBiometricsUseCase(BuildContext context) {
         kind: BiometricKind.fingerprint,
       ),
       enabled: true,
+    ),
+  );
+}
+
+Widget buildMobileCreatePasscodeUseCase(BuildContext context) {
+  return _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobilePasscodeScreen(
+        args: SetPasswordScreenArgs.create(mnemonic: _previewMnemonic),
+      ),
+    ),
+  );
+}
+
+Widget buildMobileSecretPassphraseRevealedUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobileSecretPassphraseScreen(
+        args: CreateSecretPassphraseArgs(mnemonic: _previewMnemonic),
+        screenshotStream: Stream.empty(),
+      ),
+    ),
+  );
+}
+
+Widget buildMobileSecretPassphraseProtectedUseCase(BuildContext context) {
+  return const _MobileSecretPassphraseProtectedPreview();
+}
+
+Widget buildMobileSecretPassphraseScreenshotWarningUseCase(
+  BuildContext context,
+) {
+  return _MobilePreviewFrame(
+    child: Stack(
+      children: [
+        const IgnorePointer(
+          child: MobileSecretPassphraseScreen(
+            args: CreateSecretPassphraseArgs(mnemonic: _previewMnemonic),
+            screenshotStream: Stream.empty(),
+          ),
+        ),
+        Positioned.fill(
+          child: ColoredBox(
+            color: AppTheme.of(context).colors.background.neutralScrim,
+          ),
+        ),
+        const Align(
+          alignment: Alignment.bottomCenter,
+          child: IgnorePointer(
+            child: MobileModalCard(child: MobileSeedScreenshotWarningSheet()),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget buildMobileFaceIdOptInUseCase(BuildContext context) {
+  return _buildMobileBiometricOptInUseCase(
+    const BiometricUnlockState(
+      availability: BiometricAvailability(
+        supported: true,
+        enrolled: true,
+        kind: BiometricKind.face,
+      ),
+      enabled: false,
+    ),
+  );
+}
+
+Widget buildMobileFingerprintOptInUseCase(BuildContext context) {
+  return _buildMobileBiometricOptInUseCase(
+    const BiometricUnlockState(
+      availability: BiometricAvailability(
+        supported: true,
+        enrolled: true,
+        kind: BiometricKind.fingerprint,
+      ),
+      enabled: false,
     ),
   );
 }
@@ -704,6 +793,19 @@ Widget _buildMobileUnlockUseCase(BiometricUnlockState biometricState) {
   );
 }
 
+Widget _buildMobileBiometricOptInUseCase(BiometricUnlockState biometricState) {
+  return ProviderScope(
+    overrides: [
+      biometricUnlockProvider.overrideWith(
+        () => _PreviewBiometricUnlockNotifier(biometricState),
+      ),
+    ],
+    child: const _MobilePreviewFrame(
+      child: IgnorePointer(child: MobileBiometricsScreen()),
+    ),
+  );
+}
+
 Widget _buildMobileUnlockModalUseCase(BuildContext context, Widget sheet) {
   return ProviderScope(
     overrides: [
@@ -771,6 +873,39 @@ Widget _buildMobileModalSnapshotUseCase(BuildContext context, Widget sheet) {
       ),
     ),
   );
+}
+
+class _MobileSecretPassphraseProtectedPreview extends StatefulWidget {
+  const _MobileSecretPassphraseProtectedPreview();
+
+  @override
+  State<_MobileSecretPassphraseProtectedPreview> createState() =>
+      _MobileSecretPassphraseProtectedPreviewState();
+}
+
+class _MobileSecretPassphraseProtectedPreviewState
+    extends State<_MobileSecretPassphraseProtectedPreview> {
+  late final SensitivePrivacyOverlayController _privacyController =
+      SensitivePrivacyOverlayController(initiallySafe: false);
+
+  @override
+  void dispose() {
+    _privacyController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _MobilePreviewFrame(
+      child: IgnorePointer(
+        child: MobileSecretPassphraseScreen(
+          args: const CreateSecretPassphraseArgs(mnemonic: _previewMnemonic),
+          screenshotStream: const Stream.empty(),
+          privacyOverlayController: _privacyController,
+        ),
+      ),
+    );
+  }
 }
 
 class _MobilePreviewFrame extends StatelessWidget {

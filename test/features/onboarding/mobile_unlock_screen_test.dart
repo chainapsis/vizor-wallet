@@ -75,6 +75,12 @@ const faceAvailability = BiometricAvailability(
   kind: BiometricKind.face,
 );
 
+const fingerprintAvailability = BiometricAvailability(
+  supported: true,
+  enrolled: true,
+  kind: BiometricKind.fingerprint,
+);
+
 /// Never resolves, so the screen stays in the biometric provider's loading
 /// state — isolating the bootstrap "enabled" hint as the only signal that can
 /// paint the backdrop on the first frame.
@@ -111,6 +117,7 @@ Widget _app({
   FakeBiometricUnlock? biometric,
   BiometricUnlockNotifier Function()? biometricNotifier,
   AppBootstrapState? bootstrap,
+  bool autoPromptBiometric = true,
 }) {
   return ProviderScope(
     overrides: [
@@ -122,7 +129,7 @@ Widget _app({
     ],
     child: MaterialApp(
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
-      home: const MobileUnlockScreen(),
+      home: MobileUnlockScreen(autoPromptBiometric: autoPromptBiometric),
     ),
   );
 }
@@ -397,6 +404,28 @@ void main() {
       expect(biometric.reads, 2);
     });
 
+    testWidgets('fingerprint devices label the retry action by modality', (
+      tester,
+    ) async {
+      await AppSecureStore.instance.writePlain(
+        kBiometricUnlockEnabledKey,
+        'true',
+      );
+      final biometric = FakeBiometricUnlock(
+        avail: fingerprintAvailability,
+        escrow: '123456',
+      );
+
+      await tester.pumpWidget(
+        _app(biometric: biometric, autoPromptBiometric: false),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.bySemanticsLabel('Sign in with fingerprint'), findsOneWidget);
+      expect(find.byIcon(Icons.fingerprint), findsOneWidget);
+      expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
+    });
+
     testWidgets('invalidation drops the flag and explains the fallback', (
       tester,
     ) async {
@@ -411,7 +440,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text('Biometrics changed. Enter your passcode.'),
+        find.text('Face ID changed. Enter your passcode.'),
         findsOneWidget,
       );
       // The retry key disappears with the flag.

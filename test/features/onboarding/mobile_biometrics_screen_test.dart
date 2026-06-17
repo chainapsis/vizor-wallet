@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -73,7 +74,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Unlock your wallet\nwith Face ID'), findsOneWidget);
+    final title = tester.widget<Text>(
+      find.text('Unlock your wallet\nwith Face ID'),
+    );
+    expect(title.style?.fontSize, AppTypography.displayLarge.fontSize);
+    expect(find.bySemanticsLabel('Back'), findsNothing);
     expect(find.text('Enable Face ID'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_biometrics_enable')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.faceId,
+        ),
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byKey(const ValueKey('mobile_biometrics_enable')));
     await tester.pumpAndSettle();
@@ -119,8 +134,24 @@ void main() {
     await tester.pumpWidget(_app(biometric));
     await tester.pumpAndSettle();
 
-    expect(find.text('Unlock your wallet\nwith biometrics'), findsOneWidget);
-    expect(find.text('Enable biometrics'), findsOneWidget);
+    expect(
+      find.text('Unlock your wallet\nwith your fingerprint'),
+      findsOneWidget,
+    );
+    expect(find.text('Enable fingerprint'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_biometrics_enable')),
+        matching: find.byIcon(Icons.fingerprint),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('mobile_biometrics_not_now')))
+          .height,
+      50,
+    );
 
     await tester.tap(find.byKey(const ValueKey('mobile_biometrics_not_now')));
     await tester.pumpAndSettle();
