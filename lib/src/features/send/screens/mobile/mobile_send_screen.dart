@@ -270,6 +270,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _step == _SendStep.recipient &&
       _addressFocus.hasFocus;
 
+  bool get _routePopAllowed =>
+      _phase == _SendPhase.compose &&
+      _step == _SendStep.recipient &&
+      !_isConfirmingSend;
+
   bool get _isShieldedAddress =>
       _addressType == 'unified' || _addressType == 'sapling';
 
@@ -768,7 +773,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     };
 
     return PopScope<void>(
-      canPop: false,
+      canPop: _routePopAllowed,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _handleBack();
       },

@@ -196,6 +196,11 @@ Future<void> _toReviewStep(
   await tester.pumpAndSettle();
 }
 
+bool _sendRouteCanPop(WidgetTester tester) {
+  final popScope = tester.widget<PopScope<void>>(find.byType(PopScope<void>));
+  return popScope.canPop;
+}
+
 void main() {
   setUpAll(() {
     RustLib.initMock(api: _RustApiFake());
@@ -207,6 +212,27 @@ void main() {
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
+  });
+
+  testWidgets('route pop is allowed only on the first recipient step', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select Recipient'), findsOneWidget);
+    expect(_sendRouteCanPop(tester), isTrue);
+
+    await _toAmountStep(tester, _shieldedAddress);
+    expect(find.text('Enter amount'), findsOneWidget);
+    expect(_sendRouteCanPop(tester), isFalse);
+
+    await _enterAmount(tester, '1.5');
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(_sendRouteCanPop(tester), isFalse);
   });
 
   testWidgets('recipient step gates Continue on a valid address', (
@@ -713,6 +739,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Send failed'), findsNWidgets(2)); // nav title + headline
+    expect(_sendRouteCanPop(tester), isFalse);
     await tester.tap(find.byKey(const ValueKey('mobile_send_try_again')));
     await tester.pumpAndSettle();
     expect(find.text('Review Send'), findsOneWidget);
