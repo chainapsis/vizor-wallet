@@ -54,7 +54,7 @@ List<RouteBase> buildMobileRoutes({
               GoRoute(
                 path: tab.path,
                 pageBuilder: (context, state) =>
-                    NoTransitionPage(key: state.pageKey, child: tab.screen),
+                    CupertinoPage(key: state.pageKey, child: tab.screen),
                 // Settings detail screens push over the shell (top-level
                 // routes below) so the bottom tab bar is hidden while
                 // they're open; nothing extra nests inside a branch.
