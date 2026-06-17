@@ -493,6 +493,63 @@ class WidgetbookApp extends StatelessWidget {
                     ),
                   ],
                 ),
+                WidgetbookComponent(
+                  name: 'Mobile send',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Recipient empty',
+                      builder: buildMobileSendRecipientEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient focused',
+                      builder: buildMobileSendRecipientFocusedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient contacts',
+                      builder: buildMobileSendRecipientContactsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient filled',
+                      builder: buildMobileSendRecipientFilledUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount empty',
+                      builder: buildMobileSendAmountEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount error',
+                      builder: buildMobileSendAmountErrorUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount ready',
+                      builder: buildMobileSendAmountReadyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review default',
+                      builder: buildMobileSendReviewDefaultUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review with memo',
+                      builder: buildMobileSendReviewWithMemoUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'QR scan',
+                      builder: buildMobileSendQrScanUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'QR scan - loading',
+                      builder: buildMobileSendQrScanLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'QR scan - requesting',
+                      builder: buildMobileSendQrScanRequestingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'QR scan - denied',
+                      builder: buildMobileSendQrScanDeniedUseCase,
+                    ),
+                  ],
+                ),
               ],
             ),
             WidgetbookFolder(
