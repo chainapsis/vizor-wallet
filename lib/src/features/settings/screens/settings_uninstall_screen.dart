@@ -302,10 +302,14 @@ class _SettingsUninstallScreenState
                   onSubmit: _submitGatePassword,
                   onCancel: _cancel,
                 ),
-                SettingsUninstallStage.removing => _UninstallRemovingView(
+                SettingsUninstallStage.removing => _UninstallDataRemovalView(
+                  isDone: false,
                   progress: _progressController,
+                  onClose: _closeApp,
                 ),
-                SettingsUninstallStage.done => _UninstallDoneView(
+                SettingsUninstallStage.done => _UninstallDataRemovalView(
+                  isDone: true,
+                  progress: _progressController,
                   onClose: _closeApp,
                 ),
               },
@@ -381,39 +385,45 @@ class _UninstallCard extends StatelessWidget {
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _UninstallBadge(helmetOpacity: helmetOpacity),
-          const SizedBox(height: AppSpacing.base),
-          SizedBox(
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: SizedBox(
             width: 348,
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.displayMedium.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                SizedBox(
-                  width: subtitleWidth,
-                  child: Text(
-                    subtitle,
-                    textAlign: TextAlign.center,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.accent,
+                _UninstallBadge(helmetOpacity: helmetOpacity),
+                const SizedBox(height: AppSpacing.base),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: AppTypography.displayMedium.copyWith(
+                        color: colors.text.accent,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: AppSpacing.sm),
+                    SizedBox(
+                      width: subtitleWidth,
+                      child: Text(
+                        subtitle,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: AppSpacing.base),
+                action,
               ],
             ),
           ),
-          const SizedBox(height: AppSpacing.base),
-          action,
-        ],
+        ),
       ),
     );
   }
@@ -428,6 +438,7 @@ class _UninstallBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
+      key: const ValueKey('settings_uninstall_badge'),
       width: 50,
       height: 50,
       child: Stack(
@@ -435,10 +446,12 @@ class _UninstallBadge extends StatelessWidget {
         children: [
           Positioned.fill(
             child: SvgPicture.asset(
+              key: const ValueKey('settings_uninstall_badge_shield'),
               'assets/illustrations/uninstall_badge_shield.svg',
             ),
           ),
           FadeTransition(
+            key: const ValueKey('settings_uninstall_badge_helmet'),
             opacity: helmetOpacity,
             child: Transform.translate(
               offset: const Offset(-0.63, -3.13),
@@ -479,8 +492,9 @@ class _UninstallConfirmView extends StatelessWidget {
       subtitle: _wipeSubtitle,
       subtitleWidth: 240,
       action: SizedBox(
-        width: 256,
+        width: 280,
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               errorText ?? 'This cannot be undone.',
@@ -563,40 +577,182 @@ class _UninstallGateView extends StatelessWidget {
   }
 }
 
-class _UninstallRemovingView extends StatelessWidget {
-  const _UninstallRemovingView({required this.progress});
+class _UninstallDataRemovalView extends StatefulWidget {
+  const _UninstallDataRemovalView({
+    required this.isDone,
+    required this.progress,
+    required this.onClose,
+  });
 
+  final bool isDone;
   final Animation<double> progress;
+  final VoidCallback onClose;
+
+  @override
+  State<_UninstallDataRemovalView> createState() =>
+      _UninstallDataRemovalViewState();
+}
+
+class _UninstallDataRemovalViewState extends State<_UninstallDataRemovalView>
+    with SingleTickerProviderStateMixin {
+  // Done-stage badge motion: keep the helmet visible for 1000ms after the
+  // screen copy changes, then fade it out over 500ms. The shield never moves.
+  static const _helmetHoldMs = 1000;
+  static const _helmetFadeMs = 500;
+  static const _titleSlotHeight = 154.0;
+  static const _actionSlotHeight = 41.0;
+  static const _contentHeight =
+      50.0 +
+      AppSpacing.base +
+      _titleSlotHeight +
+      AppSpacing.base +
+      _actionSlotHeight;
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: _helmetHoldMs + _helmetFadeMs),
+  );
+
+  late final Animation<double> _helmetOpacity = Tween<double>(begin: 1, end: 0)
+      .animate(
+        CurvedAnimation(
+          parent: _controller,
+          curve: const Interval(
+            _helmetHoldMs / (_helmetHoldMs + _helmetFadeMs),
+            1,
+            curve: Curves.easeOut,
+          ),
+        ),
+      );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isDone) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _UninstallDataRemovalView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isDone && widget.isDone) {
+      _controller.forward(from: 0);
+    } else if (oldWidget.isDone && !widget.isDone) {
+      _controller.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final title = widget.isDone
+        ? 'Your data has been removed'
+        : 'Removing data...';
+    final subtitle = widget.isDone ? _finishSubtitle : _wipeSubtitle;
 
-    return _UninstallCard(
-      helmetOpacity: const AlwaysStoppedAnimation(1),
-      title: 'Removing data...',
-      subtitle: _wipeSubtitle,
-      subtitleWidth: 240,
-      action: SizedBox(
-        width: 256,
-        child: AnimatedBuilder(
-          animation: progress,
-          builder: (context, _) {
-            final value = progress.value.clamp(0.0, 1.0);
-            return Column(
+    return SizedBox(
+      width: 420,
+      height: 520,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.xl,
+          AppSpacing.md,
+          AppSpacing.lg,
+        ),
+        child: Center(
+          child: SizedBox(
+            width: 372,
+            height: _contentHeight,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  '${(value * 100).round()}%',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.accent,
+                _UninstallBadge(helmetOpacity: _helmetOpacity),
+                const SizedBox(height: AppSpacing.base),
+                SizedBox(
+                  height: _titleSlotHeight,
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: SizedBox(
+                        width: widget.isDone ? 308 : 372,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              textAlign: TextAlign.center,
+                              style: AppTypography.displayMedium.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            SizedBox(
+                              width: 240,
+                              child: Text(
+                                subtitle,
+                                textAlign: TextAlign.center,
+                                style: AppTypography.bodyMedium.copyWith(
+                                  color: colors.text.accent,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(height: AppSpacing.xs),
-                _UninstallProgressBar(value: value),
+                const SizedBox(height: AppSpacing.base),
+                SizedBox(
+                  height: _actionSlotHeight,
+                  child: Center(
+                    child: widget.isDone
+                        ? AppButton(
+                            onPressed: widget.onClose,
+                            variant: AppButtonVariant.primary,
+                            size: AppButtonSize.mediumLarge,
+                            minWidth: 96,
+                            child: const Text('Close Vizor'),
+                          )
+                        : SizedBox(
+                            width: 256,
+                            child: AnimatedBuilder(
+                              animation: widget.progress,
+                              builder: (context, _) {
+                                final value = widget.progress.value.clamp(
+                                  0.0,
+                                  1.0,
+                                );
+                                return Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      '${(value * 100).round()}%',
+                                      textAlign: TextAlign.center,
+                                      style: AppTypography.bodyMedium.copyWith(
+                                        color: colors.text.accent,
+                                      ),
+                                    ),
+                                    const SizedBox(height: AppSpacing.xs),
+                                    _UninstallProgressBar(value: value),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                  ),
+                ),
               ],
-            );
-          },
+            ),
+          ),
         ),
       ),
     );
@@ -630,64 +786,6 @@ class _UninstallProgressBar extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppRadii.full),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _UninstallDoneView extends StatefulWidget {
-  const _UninstallDoneView({required this.onClose});
-
-  final VoidCallback onClose;
-
-  @override
-  State<_UninstallDoneView> createState() => _UninstallDoneViewState();
-}
-
-class _UninstallDoneViewState extends State<_UninstallDoneView>
-    with SingleTickerProviderStateMixin {
-  // Badge motion on entry: hold the helmet for 1000ms, then fade it out
-  // over 500ms. The shield stays visible.
-  static const _helmetHoldMs = 1000;
-  static const _helmetFadeMs = 500;
-
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: _helmetHoldMs + _helmetFadeMs),
-  )..forward();
-
-  late final Animation<double> _helmetOpacity = Tween<double>(begin: 1, end: 0)
-      .animate(
-        CurvedAnimation(
-          parent: _controller,
-          curve: const Interval(
-            _helmetHoldMs / (_helmetHoldMs + _helmetFadeMs),
-            1,
-            curve: Curves.easeOut,
-          ),
-        ),
-      );
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _UninstallCard(
-      helmetOpacity: _helmetOpacity,
-      title: 'Your data has been removed',
-      subtitle: _finishSubtitle,
-      subtitleWidth: 240,
-      action: AppButton(
-        onPressed: widget.onClose,
-        variant: AppButtonVariant.primary,
-        height: 36,
-        size: AppButtonSize.medium,
-        minWidth: 96,
-        child: const Text('Close Vizor'),
       ),
     );
   }
