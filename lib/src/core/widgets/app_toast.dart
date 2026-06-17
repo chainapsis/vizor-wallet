@@ -77,6 +77,13 @@ class _AppToastHostState extends State<AppToastHost> {
   static final List<_AppToastHostState> _activeStates = [];
   static OverlayEntry? _fallbackOverlayEntry;
 
+  static _AppToastHostState? get _lastActiveState {
+    for (final state in _activeStates.reversed) {
+      if (state.mounted) return state;
+    }
+    return null;
+  }
+
   String? _message;
   String _iconName = AppIcons.checkCircle;
   Timer? _timer;
@@ -166,10 +173,9 @@ void showAppToast(
     return;
   }
 
-  final fallbackState = _AppToastHostState._activeStates.isEmpty
-      ? null
-      : _AppToastHostState._activeStates.last;
-  if (fallbackState != null) {
+  final fallbackState = _AppToastHostState._lastActiveState;
+  if (fallbackState != null &&
+      _canUseToastHostForContext(context, fallbackState.context)) {
     fallbackState.show(message, duration: duration, iconName: iconName);
     return;
   }
@@ -180,10 +186,25 @@ void showAppToast(
     return;
   }
 
+  if (fallbackState != null) {
+    fallbackState.show(message, duration: duration, iconName: iconName);
+    return;
+  }
+
   assert(
     fallbackState != null,
     'showAppToast called without an AppToastHost ancestor.',
   );
+}
+
+bool _canUseToastHostForContext(
+  BuildContext toastContext,
+  BuildContext hostContext,
+) {
+  final toastRoute = ModalRoute.of(toastContext);
+  final hostRoute = ModalRoute.of(hostContext);
+  if (toastRoute == null || hostRoute == null) return true;
+  return identical(toastRoute, hostRoute);
 }
 
 void _showOverlayToast(
