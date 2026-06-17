@@ -21,40 +21,43 @@ class AppToast extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.background.inverse,
-        borderRadius: BorderRadius.circular(AppRadii.small),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s,
-          vertical: AppSpacing.xs,
+    return DefaultTextStyle.merge(
+      style: const TextStyle(decoration: TextDecoration.none),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.background.inverse,
+          borderRadius: BorderRadius.circular(AppRadii.small),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AppIcon(
-              iconName,
-              size: AppIconSize.medium,
-              color: colors.icon.inverse,
-            ),
-            const SizedBox(width: AppSpacing.xxs),
-            // Flexible so long messages wrap inside the pill instead of
-            // overflowing the row off-screen.
-            Flexible(
-              child: Text(
-                message,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.inverse,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s,
+            vertical: AppSpacing.xs,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AppIcon(
+                iconName,
+                size: AppIconSize.medium,
+                color: colors.icon.inverse,
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              // Flexible so long messages wrap inside the pill instead of
+              // overflowing the row off-screen.
+              Flexible(
+                child: Text(
+                  message,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.inverse,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -163,20 +166,24 @@ void showAppToast(
     return;
   }
 
+  final fallbackState = _AppToastHostState._activeStates.isEmpty
+      ? null
+      : _AppToastHostState._activeStates.last;
+  if (fallbackState != null) {
+    fallbackState.show(message, duration: duration, iconName: iconName);
+    return;
+  }
+
   final overlay = Overlay.maybeOf(context, rootOverlay: true);
   if (overlay != null) {
     _showOverlayToast(overlay, message, duration: duration, iconName: iconName);
     return;
   }
 
-  final fallbackState = _AppToastHostState._activeStates.isEmpty
-      ? null
-      : _AppToastHostState._activeStates.last;
   assert(
     fallbackState != null,
     'showAppToast called without an AppToastHost ancestor.',
   );
-  fallbackState?.show(message, duration: duration, iconName: iconName);
 }
 
 void _showOverlayToast(
