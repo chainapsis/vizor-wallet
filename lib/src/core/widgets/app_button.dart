@@ -183,6 +183,8 @@ class AppButton extends StatefulWidget {
     this.minWidth,
     this.iconGap,
     this.focusRingColor,
+    this.disabledBackgroundColor,
+    this.enabledBorderColor,
     this.focusNode,
     this.autofocus = false,
     this.expand = false,
@@ -227,6 +229,12 @@ class AppButton extends StatefulWidget {
 
   /// Optional focus ring color override for one-off surface-specific cases.
   final Color? focusRingColor;
+
+  /// Optional disabled fill override for one-off surface-specific cases.
+  final Color? disabledBackgroundColor;
+
+  /// Optional border color override for enabled states.
+  final Color? enabledBorderColor;
 
   final FocusNode? focusNode;
   final bool autofocus;
@@ -282,7 +290,7 @@ class _AppButtonState extends State<AppButton> {
 
     // Fill priority: disabled > pressed > hover > default.
     final Color currentBg = !_enabled
-        ? disabled.bg
+        ? widget.disabledBackgroundColor ?? disabled.bg
         : _pressed
         ? palette.bgPressed
         : _hovered
@@ -294,13 +302,14 @@ class _AppButtonState extends State<AppButton> {
         : _pressed || _hovered
         ? palette.labelHover
         : palette.label;
-    final Color borderColor = !_enabled
-        ? palette.border
-        : _pressed
+    final Color stateBorderColor = _pressed
         ? palette.borderPressed
         : _hovered
         ? palette.borderHover
         : palette.border;
+    final Color borderColor = !_enabled
+        ? palette.border
+        : widget.enabledBorderColor ?? stateBorderColor;
     final borderWidth = _enabled ? palette.borderWidth : 0.0;
     final iconGap = widget.iconGap ?? sizing.gap;
     final contentPadding = widget.contentPadding ?? sizing.padding;

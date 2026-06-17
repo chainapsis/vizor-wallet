@@ -24,6 +24,8 @@ const _shieldedAddress =
 const _transparentAddress = 't1transparentdestination0000000000000000000';
 const _invalidAddress = 'not-an-address';
 
+var _proposeSendSucceeds = false;
+
 class _RustApiFake implements RustLibApi {
   @override
   Future<AddressValidationResult> crateApiSyncValidateAddress({
@@ -55,6 +57,26 @@ class _RustApiFake implements RustLibApi {
     // assert Continue stays blocked until the estimate lands.
     await Future<void>.delayed(const Duration(milliseconds: 50));
     return BigInt.from(10000);
+  }
+
+  @override
+  Future<ProposalResult> crateApiSyncProposeSend({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String sendFlowId,
+    required String toAddress,
+    required BigInt amountZatoshi,
+    String? memo,
+  }) async {
+    if (!_proposeSendSucceeds) {
+      throw StateError('proposal failed');
+    }
+    return ProposalResult(
+      proposalId: BigInt.from(1),
+      needsSaplingParams: false,
+      feeZatoshi: BigInt.from(10000),
+    );
   }
 
   @override
@@ -160,6 +182,56 @@ Widget _app({
   );
 }
 
+Widget _sendFlowRouterApp() {
+  final router = GoRouter(
+    initialLocation: '/home',
+    routes: [
+      GoRoute(
+        path: '/home',
+        builder: (context, _) => TextButton(
+          key: const ValueKey('mobile_send_open_from_home'),
+          onPressed: () => context.push('/send'),
+          child: const Text('home'),
+        ),
+      ),
+      GoRoute(
+        path: '/send',
+        builder: (_, _) => MobileSendScreen(
+          loadWalletDbPath: () async => '/tmp/zcash-test',
+          openScanner: (_) async => null,
+        ),
+      ),
+      GoRoute(
+        path: '/send/status',
+        builder: (context, _) => TextButton(
+          key: const ValueKey('mobile_send_status_pop'),
+          onPressed: context.canPop() ? () => context.pop() : null,
+          child: Text(
+            context.canPop() ? 'status can pop' : 'status cannot pop',
+          ),
+        ),
+      ),
+    ],
+  );
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      syncProvider.overrideWith(_FakeSyncNotifier.new),
+      zecMarketDataSourceProvider.overrideWithValue(
+        const _FakeMarketDataSource(),
+      ),
+      addressBookRepositoryProvider.overrideWithValue(
+        _FakeAddressBookRepository(const []),
+      ),
+      ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (context, c) => AppTheme(data: AppThemeData.light, child: c!),
+    ),
+  );
+}
+
 Future<void> _enterAddress(WidgetTester tester, String address) async {
   await tester.enterText(
     find.descendant(
@@ -196,6 +268,38 @@ Future<void> _toReviewStep(
   await tester.pumpAndSettle();
 }
 
+bool _sendRouteCanPop(WidgetTester tester) {
+  final popScope = tester.widget<PopScope<void>>(find.byType(PopScope<void>));
+  return popScope.canPop;
+}
+
+BoxDecoration _fieldDecoration(WidgetTester tester, Finder fieldFinder) {
+  final containers = tester.widgetList<Container>(
+    find.descendant(of: fieldFinder, matching: find.byType(Container)),
+  );
+  return containers
+      .map((container) => container.decoration)
+      .whereType<BoxDecoration>()
+      .firstWhere(
+        (decoration) =>
+            decoration.borderRadius ==
+            BorderRadius.circular(AppInputSizing.radius),
+      );
+}
+
+ShapeDecoration _continueButtonDecoration(WidgetTester tester) {
+  final containers = tester.widgetList<AnimatedContainer>(
+    find.descendant(
+      of: find.byKey(const ValueKey('mobile_send_continue')),
+      matching: find.byType(AnimatedContainer),
+    ),
+  );
+  return containers
+      .map((container) => container.decoration)
+      .whereType<ShapeDecoration>()
+      .firstWhere((decoration) => decoration.shape is StadiumBorder);
+}
+
 void main() {
   setUpAll(() {
     RustLib.initMock(api: _RustApiFake());
@@ -203,11 +307,59 @@ void main() {
   tearDownAll(RustLib.dispose);
 
   setUp(() {
+    _proposeSendSucceeds = false;
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
   });
+
+  testWidgets('route pop is allowed only on the first recipient step', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select Recipient'), findsOneWidget);
+    expect(_sendRouteCanPop(tester), isTrue);
+
+    await _toAmountStep(tester, _shieldedAddress);
+    expect(find.text('Enter amount'), findsOneWidget);
+    expect(_sendRouteCanPop(tester), isFalse);
+
+    await _enterAmount(tester, '1.5');
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(_sendRouteCanPop(tester), isFalse);
+  });
+
+  testWidgets(
+    'send status replaces the send route so completed status can pop',
+    (tester) async {
+      _proposeSendSucceeds = true;
+
+      await tester.pumpWidget(_sendFlowRouterApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_send_open_from_home')),
+      );
+      await tester.pumpAndSettle();
+
+      await _toReviewStep(tester);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('status can pop'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_status_pop')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('home'), findsOneWidget);
+      expect(find.text('Review Send'), findsNothing);
+    },
+  );
 
   testWidgets('recipient step gates Continue on a valid address', (
     tester,
@@ -274,31 +426,132 @@ void main() {
     expect(find.text('Continue'), findsOneWidget);
   });
 
-  testWidgets('recipient focus scrim covers the full safe-area frame', (
+  testWidgets(
+    'recipient focus keeps the address field mounted and stationary',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(viewPadding: const EdgeInsets.only(top: 55, bottom: 34)),
+      );
+      await tester.pumpAndSettle();
+
+      final fieldFinder = find.byKey(
+        const ValueKey('mobile_send_address_field'),
+      );
+      final fieldLayerFinder = find.byKey(
+        const ValueKey('mobile_send_recipient_field_layer'),
+      );
+      final groupFinder = find.byKey(
+        const ValueKey('mobile_send_address_field_group'),
+      );
+      final scanRowFinder = find.byKey(const ValueKey('mobile_send_scan_row'));
+      final inputFinder = find.descendant(
+        of: fieldFinder,
+        matching: find.byType(EditableText),
+      );
+      final fieldLayerElementBeforeFocus = tester.element(fieldLayerFinder);
+      final inputElementBeforeFocus = tester.element(inputFinder);
+      final rectBeforeFocus = tester.getRect(fieldFinder);
+      final groupRectBeforeFocus = tester.getRect(groupFinder);
+      final scanRowRectBeforeFocus = tester.getRect(scanRowFinder);
+      expect(
+        tester.widget<EditableText>(inputFinder).focusNode.hasFocus,
+        isFalse,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('mobile_send_address_field')));
+      await tester.pumpAndSettle();
+
+      expect(fieldFinder, findsOneWidget);
+      expect(inputFinder, findsOneWidget);
+      expect(
+        tester.element(fieldLayerFinder),
+        same(fieldLayerElementBeforeFocus),
+      );
+      expect(tester.element(inputFinder), same(inputElementBeforeFocus));
+      expect(
+        tester.widget<EditableText>(inputFinder).focusNode.hasFocus,
+        isTrue,
+      );
+      final focusedDecoration = _fieldDecoration(tester, fieldFinder);
+      final focusedBorder = focusedDecoration.border as Border;
+      expect(focusedBorder.top.color, const Color(0x00000000));
+      final focusedShadow = focusedDecoration.boxShadow!.single;
+      expect(
+        focusedShadow.color,
+        AppThemeData.light.colors.background.neutralScrim,
+      );
+      expect(focusedShadow.offset, const Offset(0, 4));
+      expect(focusedShadow.blurRadius, 4);
+      expect(focusedShadow.spreadRadius, 1000);
+      expect(tester.getRect(fieldFinder), rectBeforeFocus);
+      expect(tester.getRect(groupFinder), groupRectBeforeFocus);
+      expect(tester.getRect(scanRowFinder), scanRowRectBeforeFocus);
+      expect(tester.getSize(fieldFinder).height, AppInputSizing.height);
+      expect(
+        find.byKey(const ValueKey('mobile_send_recipient_focus_address_layer')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile_send_address_field_placeholder')),
+        findsNothing,
+      );
+
+      final fieldRect = tester.getRect(fieldFinder);
+      final scrimRect = tester.getRect(
+        find.byKey(const ValueKey('mobile_send_recipient_focus_scrim')),
+      );
+      expect(scrimRect, Offset.zero & const Size(520, 1100));
+      expect(scrimRect.top, lessThan(fieldRect.top));
+      expect(scrimRect.bottom, greaterThan(fieldRect.bottom));
+    },
+  );
+
+  testWidgets('recipient focus applies backdrop-only Continue colors', (
     tester,
   ) async {
-    await tester.pumpWidget(
-      _app(viewPadding: const EdgeInsets.only(top: 55, bottom: 34)),
+    final colors = AppThemeData.light.colors;
+    final fieldFinder = find.byKey(const ValueKey('mobile_send_address_field'));
+    final scrimFinder = find.byKey(
+      const ValueKey('mobile_send_recipient_focus_scrim'),
     );
+
+    await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('mobile_send_address_field')));
+    await tester.tap(fieldFinder);
     await tester.pumpAndSettle();
 
-    final scrimRect = tester.getRect(
-      find.byKey(const ValueKey('mobile_send_recipient_focus_scrim')),
-    );
-    expect(scrimRect, Offset.zero & const Size(520, 1100));
+    var decoration = _continueButtonDecoration(tester);
     expect(
-      tester
-          .getRect(
-            find.byKey(
-              const ValueKey('mobile_send_recipient_focus_address_layer'),
-            ),
-          )
-          .top,
-      143,
+      decoration.color,
+      Color.alphaBlend(colors.button.disabled.bg, colors.surface.input),
     );
+
+    await _enterAddress(tester, _invalidAddress);
+    await tester.tap(scrimFinder);
+    await tester.pumpAndSettle();
+
+    decoration = _continueButtonDecoration(tester);
+    expect(decoration.color, colors.button.disabled.bg);
+
+    await tester.tap(fieldFinder);
+    await tester.pumpAndSettle();
+    await _enterAddress(tester, _shieldedAddress);
+
+    decoration = _continueButtonDecoration(tester);
+    final focusedEnabledBorder = decoration.shape as StadiumBorder;
+    expect(decoration.color, colors.button.primary.bg);
+    expect(focusedEnabledBorder.side.color, colors.border.subtleOpacity);
+    expect(focusedEnabledBorder.side.width, 1.5);
+
+    await tester.tap(scrimFinder);
+    await tester.pumpAndSettle();
+
+    decoration = _continueButtonDecoration(tester);
+    final normalEnabledBorder = decoration.shape as StadiumBorder;
+    expect(decoration.color, colors.button.primary.bg);
+    expect(normalEnabledBorder.side.color, colors.button.primary.border);
+    expect(normalEnabledBorder.side.width, 1.5);
   });
 
   testWidgets('tapping a contact fills its address', (tester) async {
@@ -713,6 +966,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Send failed'), findsNWidgets(2)); // nav title + headline
+    expect(_sendRouteCanPop(tester), isFalse);
     await tester.tap(find.byKey(const ValueKey('mobile_send_try_again')));
     await tester.pumpAndSettle();
     expect(find.text('Review Send'), findsOneWidget);

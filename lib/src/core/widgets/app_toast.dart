@@ -21,40 +21,43 @@ class AppToast extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.background.inverse,
-        borderRadius: BorderRadius.circular(AppRadii.small),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s,
-          vertical: AppSpacing.xs,
+    return DefaultTextStyle.merge(
+      style: const TextStyle(decoration: TextDecoration.none),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.background.inverse,
+          borderRadius: BorderRadius.circular(AppRadii.small),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AppIcon(
-              iconName,
-              size: AppIconSize.medium,
-              color: colors.icon.inverse,
-            ),
-            const SizedBox(width: AppSpacing.xxs),
-            // Flexible so long messages wrap inside the pill instead of
-            // overflowing the row off-screen.
-            Flexible(
-              child: Text(
-                message,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.inverse,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s,
+            vertical: AppSpacing.xs,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AppIcon(
+                iconName,
+                size: AppIconSize.medium,
+                color: colors.icon.inverse,
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              // Flexible so long messages wrap inside the pill instead of
+              // overflowing the row off-screen.
+              Flexible(
+                child: Text(
+                  message,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.inverse,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -73,6 +76,13 @@ class AppToastHost extends StatefulWidget {
 class _AppToastHostState extends State<AppToastHost> {
   static final List<_AppToastHostState> _activeStates = [];
   static OverlayEntry? _fallbackOverlayEntry;
+
+  static _AppToastHostState? get _lastActiveState {
+    for (final state in _activeStates.reversed) {
+      if (state.mounted) return state;
+    }
+    return null;
+  }
 
   String? _message;
   String _iconName = AppIcons.checkCircle;
@@ -163,20 +173,38 @@ void showAppToast(
     return;
   }
 
+  final fallbackState = _AppToastHostState._lastActiveState;
+  if (fallbackState != null &&
+      _canUseToastHostForContext(context, fallbackState.context)) {
+    fallbackState.show(message, duration: duration, iconName: iconName);
+    return;
+  }
+
   final overlay = Overlay.maybeOf(context, rootOverlay: true);
   if (overlay != null) {
     _showOverlayToast(overlay, message, duration: duration, iconName: iconName);
     return;
   }
 
-  final fallbackState = _AppToastHostState._activeStates.isEmpty
-      ? null
-      : _AppToastHostState._activeStates.last;
+  if (fallbackState != null) {
+    fallbackState.show(message, duration: duration, iconName: iconName);
+    return;
+  }
+
   assert(
     fallbackState != null,
     'showAppToast called without an AppToastHost ancestor.',
   );
-  fallbackState?.show(message, duration: duration, iconName: iconName);
+}
+
+bool _canUseToastHostForContext(
+  BuildContext toastContext,
+  BuildContext hostContext,
+) {
+  final toastRoute = ModalRoute.of(toastContext);
+  final hostRoute = ModalRoute.of(hostContext);
+  if (toastRoute == null || hostRoute == null) return true;
+  return identical(toastRoute, hostRoute);
 }
 
 void _showOverlayToast(

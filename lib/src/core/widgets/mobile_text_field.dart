@@ -32,6 +32,7 @@ class MobileTextField extends StatefulWidget {
     this.backgroundColor,
     this.restingBorderColor,
     this.focusedBorderColor,
+    this.focusedBoxShadow,
     this.textStyle,
     this.hintStyle,
     this.height,
@@ -67,6 +68,9 @@ class MobileTextField extends StatefulWidget {
 
   /// Optional border shown when focused. Defaults to the inverse focus ring.
   final Color? focusedBorderColor;
+
+  /// Optional shadow shown only when focused.
+  final List<BoxShadow>? focusedBoxShadow;
 
   /// Optional text style override. Color is not injected automatically.
   final TextStyle? textStyle;
@@ -124,6 +128,20 @@ class _MobileTextFieldState extends State<MobileTextField> {
     final hintStyle =
         widget.hintStyle ??
         AppTypography.labelMedium.copyWith(color: colors.text.muted);
+    final surfaceShadow = [
+      BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+      BoxShadow(
+        color: colors.shadows.subtle,
+        offset: const Offset(0, 2),
+        blurRadius: 4,
+      ),
+      BoxShadow(
+        color: colors.shadows.subtle,
+        offset: const Offset(0, 1),
+        blurRadius: 2,
+      ),
+      BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+    ];
     return Container(
       // Mobile input metrics (AppInputSizing → 60px tall, radius 16); desktop
       // resolves these to 46 / 12. The surface fill, the focus-only inverse
@@ -142,20 +160,9 @@ class _MobileTextFieldState extends State<MobileTextField> {
           width: 1.5,
           strokeAlign: BorderSide.strokeAlignInside,
         ),
-        boxShadow: [
-          BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
-          BoxShadow(
-            color: colors.shadows.subtle,
-            offset: const Offset(0, 2),
-            blurRadius: 4,
-          ),
-          BoxShadow(
-            color: colors.shadows.subtle,
-            offset: const Offset(0, 1),
-            blurRadius: 2,
-          ),
-          BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
-        ],
+        boxShadow: focused
+            ? widget.focusedBoxShadow ?? surfaceShadow
+            : surfaceShadow,
       ),
       child: Row(
         children: [

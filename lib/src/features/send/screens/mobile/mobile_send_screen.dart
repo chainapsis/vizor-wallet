@@ -98,7 +98,6 @@ const _kMobileSendAddressFieldGroupHeight =
     AppInputSizing.height +
     _kMobileSendAddressErrorGap +
     _kMobileSendRecipientLineHeight;
-const _kMobileSendRecipientFocusFieldTop = kMobileTopNavHeight + AppSpacing.sm;
 const _kMobileSendAmountFieldHeight = 178.0;
 const _kMobileSendAmountInputHeight = 64.0;
 const _kMobileSendAmountLineHeight = 17.0;
@@ -269,6 +268,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _phase == _SendPhase.compose &&
       _step == _SendStep.recipient &&
       _addressFocus.hasFocus;
+
+  bool get _routePopAllowed =>
+      _phase == _SendPhase.compose &&
+      _step == _SendStep.recipient &&
+      !_isConfirmingSend;
 
   bool get _isShieldedAddress =>
       _addressType == 'unified' || _addressType == 'sapling';
@@ -619,12 +623,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         return;
       }
       if (!mounted) return;
-      context.go('/send/status', extra: keystone);
+      context.pushReplacement('/send/status', extra: keystone);
       return;
     }
 
     if (!mounted) return;
-    context.go('/send/status', extra: args);
+    context.pushReplacement('/send/status', extra: args);
   }
 
   // ── Navigation ─────────────────────────────────────────────────────
@@ -745,6 +749,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final showRecipientFocusOverlay = _showRecipientFocusOverlay;
+    final showRecipientFieldLayer =
+        _phase == _SendPhase.compose && _step == _SendStep.recipient;
 
     final title = switch (_phase) {
       _SendPhase.compose => switch (_step) {
@@ -759,7 +765,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _SendPhase.compose => switch (_step) {
         _SendStep.recipient => _buildRecipientStep(
           context,
-          elevateFocusedControls: showRecipientFocusOverlay,
+          hasFocusedRecipient: showRecipientFocusOverlay,
         ),
         _SendStep.amount => _buildAmountStep(context),
         _SendStep.review => _buildReviewStep(context),
@@ -768,7 +774,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     };
 
     return PopScope<void>(
-      canPop: false,
+      canPop: _routePopAllowed,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _handleBack();
       },
@@ -788,24 +794,29 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               ),
               if (showRecipientFocusOverlay) ...[
                 Positioned.fill(
+                  key: const ValueKey(
+                    'mobile_send_recipient_focus_scrim_layer',
+                  ),
                   child: GestureDetector(
                     key: const ValueKey('mobile_send_recipient_focus_scrim'),
                     behavior: HitTestBehavior.opaque,
                     onTap: _addressFocus.unfocus,
-                    child: ColoredBox(color: colors.background.neutralScrim),
+                    child: const SizedBox.expand(),
                   ),
                 ),
+              ],
+              if (showRecipientFieldLayer)
                 Positioned(
-                  key: const ValueKey(
-                    'mobile_send_recipient_focus_address_layer',
-                  ),
+                  key: const ValueKey('mobile_send_recipient_field_layer'),
                   top:
                       MediaQuery.paddingOf(context).top +
-                      _kMobileSendRecipientFocusFieldTop,
+                      kMobileTopNavHeight +
+                      AppSpacing.s,
                   left: AppSpacing.sm,
                   right: AppSpacing.sm,
                   child: _buildAddressFieldGroup(context),
                 ),
+              if (showRecipientFocusOverlay) ...[
                 if (_showRecipientContinue)
                   Positioned(
                     key: const ValueKey(
@@ -814,7 +825,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                     left: AppSpacing.sm,
                     right: AppSpacing.sm,
                     bottom: MediaQuery.paddingOf(context).bottom + AppSpacing.s,
-                    child: _buildRecipientContinueButton(context),
+                    child: _buildRecipientContinueButton(
+                      context,
+                      useBackdropColors: true,
+                    ),
                   ),
               ],
             ],
@@ -828,7 +842,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildRecipientStep(
     BuildContext context, {
-    required bool elevateFocusedControls,
+    required bool hasFocusedRecipient,
   }) {
     final colors = context.colors;
     final contacts = [
@@ -844,19 +858,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.sm,
-              AppSpacing.s,
+              AppSpacing.s +
+                  _kMobileSendAddressFieldGroupHeight +
+                  AppSpacing.md,
               AppSpacing.sm,
               AppSpacing.md,
             ),
             children: [
-              if (elevateFocusedControls)
-                const SizedBox(
-                  key: ValueKey('mobile_send_address_field_placeholder'),
-                  height: _kMobileSendAddressFieldGroupHeight,
-                )
-              else
-                _buildAddressFieldGroup(context),
-              const SizedBox(height: AppSpacing.md),
               Semantics(
                 button: true,
                 child: GestureDetector(
@@ -994,7 +1002,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             ],
           ),
         ),
-        if (_showRecipientContinue && !elevateFocusedControls)
+        if (_showRecipientContinue && !hasFocusedRecipient)
           Padding(
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.sm,
@@ -1010,6 +1018,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAddressFieldGroup(BuildContext context) {
     return Column(
+      key: const ValueKey('mobile_send_address_field_group'),
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [_buildAddressField(context), _buildAddressErrorSpace(context)],
@@ -1019,6 +1028,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   Widget _buildAddressField(BuildContext context) {
     final colors = context.colors;
     final showAction = _addressFocus.hasFocus;
+    final hasAddressError =
+        _addressType == 'invalid' || _addressType == 'error';
     return MobileTextField(
       key: const ValueKey('mobile_send_address_field'),
       fieldKey: const ValueKey('mobile_send_address_input'),
@@ -1039,11 +1050,21 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           ),
         ),
       ),
-      restingBorderColor: _addressType == 'invalid' || _addressType == 'error'
+      restingBorderColor: hasAddressError
           ? colors.border.utilityDestructive
           : null,
-      focusedBorderColor: _addressType == 'invalid' || _addressType == 'error'
+      focusedBorderColor: hasAddressError
           ? colors.border.utilityDestructive
+          : const Color(0x00000000),
+      focusedBoxShadow: showAction
+          ? [
+              BoxShadow(
+                color: colors.background.neutralScrim,
+                offset: const Offset(0, 4),
+                blurRadius: 4,
+                spreadRadius: 1000,
+              ),
+            ]
           : null,
       trailing: showAction
           ? SizedBox(
@@ -1091,13 +1112,23 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
-  Widget _buildRecipientContinueButton(BuildContext context) {
+  Widget _buildRecipientContinueButton(
+    BuildContext context, {
+    bool useBackdropColors = false,
+  }) {
+    final colors = context.colors;
     return SizedBox(
       width: double.infinity,
       child: AppButton(
         key: const ValueKey('mobile_send_continue'),
         expand: true,
         constrainContent: true,
+        disabledBackgroundColor: useBackdropColors
+            ? Color.alphaBlend(colors.button.disabled.bg, colors.surface.input)
+            : null,
+        enabledBorderColor: useBackdropColors
+            ? colors.border.subtleOpacity
+            : null,
         onPressed: _hasValidAddress ? _continueToAmount : null,
         child: Text(
           _addressController.text.trim().isEmpty
