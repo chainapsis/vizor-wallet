@@ -25,6 +25,7 @@ import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../models/swap_activity_status_mapper.dart';
 import '../models/swap_models.dart';
+import '../models/swap_address_book_helpers.dart';
 import '../providers/swap_state_provider.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../widgets/swap_address_edit_modal.dart';
@@ -46,37 +47,6 @@ enum _SwapModalSurface {
   addressScanner,
   contactPicker,
   slippageSettings,
-}
-
-AddressBookNetwork? _addressBookNetworkForSwapDestination(SwapState state) {
-  final asset = state.externalAsset;
-  return AddressBookNetwork.tryFromChainTicker(asset.chainTicker);
-}
-
-List<AddressBookNetwork> _swapContactPickerNetworks(SwapState state) {
-  final network = _addressBookNetworkForSwapDestination(state);
-  if (network == null) return const [];
-  // EVM addresses are interchangeable across EVM chains (the same 0x account
-  // works on every one), so let the user pick any saved EVM contact — e.g. a
-  // Polygon address as the refund for a Base swap. Non-EVM chains keep the
-  // exact-network filter since those address formats are chain-specific.
-  if (network.isEvm) {
-    return [
-      for (final candidate in AddressBookNetwork.values)
-        if (candidate.isEvm) candidate,
-    ];
-  }
-  return [network];
-}
-
-String _swapContactPickerTitle(SwapState state) {
-  final role = state.direction.sendsZec ? 'recipients' : 'refunds';
-  return '${state.externalAsset.symbol} $role';
-}
-
-String _swapContactPickerEmptyTitle(SwapState state) {
-  final role = state.direction.sendsZec ? 'recipients' : 'refunds';
-  return 'No saved ${state.externalAsset.symbol} $role';
 }
 
 class _SwapScreenState extends ConsumerState<SwapScreen> {
@@ -142,7 +112,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
   Future<void> _rememberSwapAddress(String value, SwapState swapState) async {
     final address = value.trim();
     if (address.isEmpty) return;
-    final network = _addressBookNetworkForSwapDestination(swapState);
+    final network = addressBookNetworkForSwapDestination(swapState);
     if (network == null) return;
 
     try {
@@ -374,9 +344,9 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                       ),
                       _SwapModalSurface.contactPicker =>
                         AddressBookContactPickerModal(
-                          title: _swapContactPickerTitle(swapState),
-                          networks: _swapContactPickerNetworks(swapState),
-                          emptyTitle: _swapContactPickerEmptyTitle(swapState),
+                          title: swapContactPickerTitle(swapState),
+                          networks: swapContactPickerNetworks(swapState),
+                          emptyTitle: swapContactPickerEmptyTitle(swapState),
                           onSelected: _selectAddressBookContact,
                           onCancel: _openAddressEditor,
                         ),

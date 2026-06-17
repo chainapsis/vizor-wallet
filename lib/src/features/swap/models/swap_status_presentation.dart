@@ -67,8 +67,8 @@ class SwapStatusDetailRowData {
   final bool help;
   final String? helpTooltip;
 
-  /// External link opened when the row's trailing arrow is tapped (e.g. the
-  /// completed swap's deposit tx row linking to the NEAR Intents explorer).
+  /// Optional external URI opened from the row's trailing action, e.g. the
+  /// completed swap's deposit tx row linking to the NEAR Intents explorer.
   final Uri? linkUri;
   final String? accountProfilePictureId;
 

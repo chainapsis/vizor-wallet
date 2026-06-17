@@ -15,6 +15,7 @@ import 'chip_use_cases.dart';
 import 'context_menu_use_cases.dart';
 import 'color_use_cases.dart';
 import 'icon_use_cases.dart';
+import 'mobile_shell_use_cases.dart';
 import 'receive_use_cases.dart';
 import 'received_receipt_use_cases.dart';
 import 'review_components_use_cases.dart';
@@ -91,6 +92,69 @@ class WidgetbookApp extends StatelessWidget {
                   ],
                 ),
                 WidgetbookComponent(
+                  name: 'Mobile lock',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Passcode only',
+                      builder: buildMobileUnlockPasscodeUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Face ID',
+                      builder: buildMobileUnlockFaceIdUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Face ID sign-in backdrop',
+                      builder: buildMobileUnlockBiometricBackdropUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Fingerprint',
+                      builder: buildMobileUnlockFingerprintUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Forgot passcode',
+                      builder: buildMobileForgotPasscodeSheetUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Last warning',
+                      builder: buildMobileForgotPasscodeLastWarningUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Screenshot warning',
+                      builder: buildMobileSeedScreenshotWarningSheetUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile onboarding',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Secret phrase revealed',
+                      builder: buildMobileSecretPassphraseRevealedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Secret phrase protected',
+                      builder: buildMobileSecretPassphraseProtectedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Secret phrase screenshot warning',
+                      builder:
+                          buildMobileSecretPassphraseScreenshotWarningUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Create passcode',
+                      builder: buildMobileCreatePasscodeUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Face ID opt-in',
+                      builder: buildMobileFaceIdOptInUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Fingerprint opt-in',
+                      builder: buildMobileFingerprintOptInUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
                   name: 'Lost Password',
                   useCases: [
                     WidgetbookUseCase(
@@ -100,6 +164,40 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Enabled',
                       builder: buildLostPasswordEnabledUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Home',
+              children: [
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Default',
+                      builder: buildMobileHomeDefaultUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No activity',
+                      builder: buildMobileHomeNoActivityUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No balance',
+                      builder: buildMobileHomeNoBalanceUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No balance keystone',
+                      builder: buildMobileHomeNoBalanceKeystoneUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Importing',
+                      builder: buildMobileHomeImportingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Accounts modal',
+                      builder: buildMobileHomeAccountsModalUseCase,
                     ),
                   ],
                 ),
@@ -134,6 +232,27 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Many accounts',
                       builder: buildAccountsManyUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Screen',
+                      builder: buildMobileAccountsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Edit account',
+                      builder: buildMobileAccountsEditAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Remove account',
+                      builder: buildMobileAccountsRemoveAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Many accounts',
+                      builder: buildMobileAccountsManyUseCase,
                     ),
                   ],
                 ),
@@ -219,6 +338,27 @@ class WidgetbookApp extends StatelessWidget {
                     ),
                   ],
                 ),
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Shielded',
+                      builder: buildReceiveMobileShieldedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent',
+                      builder: buildReceiveMobileTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Shielded sheet',
+                      builder: buildReceiveMobileShieldedSheetUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent sheet',
+                      builder: buildReceiveMobileTransparentSheetUseCase,
+                    ),
+                  ],
+                ),
               ],
             ),
             WidgetbookFolder(
@@ -275,6 +415,22 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Address scan - Loading',
                       builder: buildSwapAddressScanModalLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile address scan - Requesting',
+                      builder: buildMobileSwapAddressScanRequestingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile address scan - Denied',
+                      builder: buildMobileSwapAddressScanDeniedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile address scan - Active',
+                      builder: buildMobileSwapAddressScanActiveUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile address scan - Loading',
+                      builder: buildMobileSwapAddressScanLoadingUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Slippage modal',
@@ -471,6 +627,63 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Known contact',
                       builder: buildVerifyAddressKnownContactUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile send',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Recipient empty',
+                      builder: buildMobileSendRecipientEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient focused',
+                      builder: buildMobileSendRecipientFocusedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient contacts',
+                      builder: buildMobileSendRecipientContactsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient filled',
+                      builder: buildMobileSendRecipientFilledUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount empty',
+                      builder: buildMobileSendAmountEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount error',
+                      builder: buildMobileSendAmountErrorUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount ready',
+                      builder: buildMobileSendAmountReadyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review default',
+                      builder: buildMobileSendReviewDefaultUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review with memo',
+                      builder: buildMobileSendReviewWithMemoUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'QR scan',
+                      builder: buildMobileSendQrScanUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'QR scan - loading',
+                      builder: buildMobileSendQrScanLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'QR scan - requesting',
+                      builder: buildMobileSendQrScanRequestingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'QR scan - denied',
+                      builder: buildMobileSendQrScanDeniedUseCase,
                     ),
                   ],
                 ),
@@ -711,6 +924,31 @@ class WidgetbookApp extends StatelessWidget {
                 WidgetbookUseCase(
                   name: 'Narrow width',
                   builder: buildContextMenuNarrowUseCase,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'Mobile Shell',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Top nav variants',
+                  builder: buildMobileTopNavVariantsUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Tab bar',
+                  builder: buildMobileTabBarUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Shell',
+                  builder: buildMobileShellUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Sheet',
+                  builder: buildMobileSheetUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Surface card and rows',
+                  builder: buildMobileSurfaceCardUseCase,
                 ),
               ],
             ),

@@ -1,14 +1,27 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart' show TextInputAction;
 
+import '../../../core/layout/app_form_factor.dart';
+import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../core/widgets/mobile_text_field.dart';
 import '../models/address_book_contact.dart';
 import '../providers/address_book_provider.dart';
 import 'address_book_network_icon.dart';
+
+const double _contactPickerRowHeight = 44;
+const double _contactPickerRowGap = AppSpacing.xs;
+const int _contactPickerMobileVisibleRows = 6;
+const double _contactPickerMobileMinListHeight =
+    _contactPickerRowHeight * 5 + _contactPickerRowGap * 4; // 252
+const double _contactPickerMobileMaxListHeight =
+    _contactPickerRowHeight * _contactPickerMobileVisibleRows +
+    _contactPickerRowGap * 5; // 304
 
 class AddressBookContactPickerModal extends ConsumerStatefulWidget {
   const AddressBookContactPickerModal({
@@ -78,10 +91,51 @@ class _AddressBookContactPickerModalState
     ];
   }
 
+  double _mobileListHeight(BuildContext context) {
+    final media = MediaQuery.of(context);
+    // Reserve the title, search field, inter-element gaps, and modal margins.
+    final available =
+        media.size.height - media.viewInsets.bottom - media.padding.top - 260;
+    return available
+        .clamp(
+          _contactPickerMobileMinListHeight,
+          _contactPickerMobileMaxListHeight,
+        )
+        .toDouble();
+  }
+
+  void _clearQuery() {
+    if (_queryController.text.isEmpty) return;
+    setState(() => _queryController.clear());
+    _queryFocusNode.requestFocus();
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final contactsAsync = ref.watch(addressBookProvider);
+
+    // On mobile the swap modal route wraps this in the shared
+    // MobileModalCard (base surface, radius 32, bottom-anchored), so the
+    // surface is full-width, draws no card, and the list scrolls within a
+    // bounded height that the card hugs. Desktop keeps the fixed card.
+    final isMobile = kAppFormFactor == AppFormFactor.mobile;
+    final listHeight = isMobile ? _mobileListHeight(context) : null;
+    final body = _pickerBody(
+      isMobile: isMobile,
+      listHeight: listHeight,
+      contactsAsync: contactsAsync,
+      searchTopInset: !isMobile,
+    );
+
+    if (isMobile) {
+      return MobileModalScaffold(
+        key: const ValueKey('address_book_contact_picker_modal'),
+        title: widget.title,
+        onClose: widget.onCancel,
+        child: body,
+      );
+    }
 
     return Container(
       key: const ValueKey('address_book_contact_picker_modal'),
@@ -100,6 +154,7 @@ class _AddressBookContactPickerModalState
         boxShadow: _modalSurfaceShadows,
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
@@ -132,74 +187,152 @@ class _AddressBookContactPickerModalState
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(top: AppSpacing.sm),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: AppSpacing.xs),
-                    child: AppTextField(
-                      key: const ValueKey('address_book_contact_picker_search'),
-                      label: 'Search',
-                      showLabel: false,
-                      controller: _queryController,
-                      focusNode: _queryFocusNode,
-                      hintText: widget.searchHint,
-                      leading: const AppIcon(AppIcons.search),
-                      leadingSlotWidth: AppInputSizing.iconWrapWidth,
-                      trailingSlotWidth: 40,
-                      inputHorizontalPadding: AppSpacing.s,
-                      showClearButton: true,
-                      onChanged: (_) => setState(() {}),
-                      onClear: () => setState(() {}),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Expanded(
-                    child: contactsAsync.when(
-                      loading: () => const Center(
-                        child: SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: AppIcon(AppIcons.loader, size: 18),
-                        ),
-                      ),
-                      error: (_, _) => const _ContactPickerEmptyResult(
-                        title: "Couldn't load contacts. Try again.",
-                      ),
-                      data: (state) {
-                        final contacts = _filteredContacts(state);
-                        if (contacts.isEmpty) {
-                          return _ContactPickerEmptyResult(
-                            title: widget.emptyTitle,
-                          );
-                        }
-                        return _ContactPickerList(
-                          contacts: contacts,
-                          showNetwork: widget.networks.length > 1,
-                          onSelected: widget.onSelected,
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
+              child: body,
             ),
           ),
         ],
       ),
     );
   }
+
+  Widget _pickerBody({
+    required bool isMobile,
+    required double? listHeight,
+    required AsyncValue<AddressBookState> contactsAsync,
+    required bool searchTopInset,
+  }) {
+    final colors = context.colors;
+    final searchField = isMobile
+        ? MobileTextField(
+            fieldKey: const ValueKey('address_book_contact_picker_search'),
+            controller: _queryController,
+            focusNode: _queryFocusNode,
+            hintText: widget.searchHint,
+            textInputAction: TextInputAction.search,
+            onChanged: (_) => setState(() {}),
+            leading: SizedBox(
+              width: AppInputSizing.iconWrapWidth,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: AppIcon(
+                  AppIcons.search,
+                  size: AppInputSizing.iconSize,
+                  color: colors.icon.accent,
+                ),
+              ),
+            ),
+            trailing: _queryController.text.isEmpty
+                ? null
+                : Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: AppIconHoverButton(
+                      semanticLabel: 'Clear search',
+                      icon: AppIcons.cross,
+                      onTap: _clearQuery,
+                      size: 32,
+                      borderRadius: BorderRadius.circular(AppRadii.small),
+                      hoverColor: colors.background.ground,
+                      iconColor: colors.icon.regular,
+                    ),
+                  ),
+          )
+        : AppTextField(
+            key: const ValueKey('address_book_contact_picker_search'),
+            label: 'Search',
+            showLabel: false,
+            controller: _queryController,
+            focusNode: _queryFocusNode,
+            hintText: widget.searchHint,
+            leading: const AppIcon(AppIcons.search),
+            leadingSlotWidth: AppInputSizing.iconWrapWidth,
+            trailingSlotWidth: 40,
+            inputHorizontalPadding: AppSpacing.s,
+            showClearButton: true,
+            onChanged: (_) => setState(() {}),
+            onClear: () => setState(() {}),
+          );
+
+    return Column(
+      mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        searchTopInset
+            ? Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.xs),
+                child: searchField,
+              )
+            : searchField,
+        const SizedBox(height: AppSpacing.md),
+        _pickerExpandOrBound(
+          isMobile,
+          child: contactsAsync.when(
+            loading: () => _pickerListViewport(
+              height: listHeight,
+              child: const Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: AppIcon(AppIcons.loader, size: 18),
+                ),
+              ),
+            ),
+            error: (_, _) => _pickerListViewport(
+              height: listHeight,
+              child: const _ContactPickerEmptyResult(
+                title: "Couldn't load contacts. Try again.",
+              ),
+            ),
+            data: (state) {
+              final contacts = _filteredContacts(state);
+              if (contacts.isEmpty) {
+                return _pickerListViewport(
+                  height: listHeight,
+                  child: _ContactPickerEmptyResult(title: widget.emptyTitle),
+                );
+              }
+              final list = _ContactPickerList(
+                contacts: contacts,
+                showNetwork: widget.networks.length > 1,
+                thumbVisibilityThreshold: isMobile
+                    ? _contactPickerMobileVisibleRows
+                    : 5,
+                onSelected: widget.onSelected,
+              );
+              return _pickerListViewport(height: listHeight, child: list);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Desktop fills the fixed-height card ([Expanded]); mobile lets the
+/// search/list area flow so the card hugs its content (the populated list
+/// bounds its own height separately).
+Widget _pickerExpandOrBound(bool mobile, {required Widget child}) =>
+    mobile ? child : Expanded(child: child);
+
+Widget _pickerListViewport({required double? height, required Widget child}) {
+  if (height == null) return child;
+  return SizedBox(
+    key: const ValueKey('address_book_contact_picker_list_viewport'),
+    height: height,
+    child: child,
+  );
 }
 
 class _ContactPickerList extends StatefulWidget {
   const _ContactPickerList({
     required this.contacts,
     required this.showNetwork,
+    required this.thumbVisibilityThreshold,
     required this.onSelected,
   });
 
   final List<AddressBookContact> contacts;
   final bool showNetwork;
+  final int thumbVisibilityThreshold;
   final ValueChanged<AddressBookContact> onSelected;
 
   @override
@@ -227,7 +360,7 @@ class _ContactPickerListState extends State<_ContactPickerList> {
     return RawScrollbar(
       key: const ValueKey('address_book_contact_picker_scrollbar'),
       controller: _scrollController,
-      thumbVisibility: widget.contacts.length > 5,
+      thumbVisibility: widget.contacts.length > widget.thumbVisibilityThreshold,
       radius: const Radius.circular(AppRadii.full),
       thickness: 6,
       mainAxisMargin: 6,
@@ -242,7 +375,8 @@ class _ContactPickerListState extends State<_ContactPickerList> {
             controller: _scrollController,
             padding: EdgeInsets.zero,
             itemCount: widget.contacts.length,
-            separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
+            separatorBuilder: (_, _) =>
+                const SizedBox(height: _contactPickerRowGap),
             itemBuilder: (context, index) {
               final contact = widget.contacts[index];
               return _ContactPickerRow(

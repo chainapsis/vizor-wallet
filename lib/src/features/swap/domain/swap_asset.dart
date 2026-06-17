@@ -624,11 +624,16 @@ double _fallbackRateFor(String symbol) {
 
 String formatSwapProtectionPercent(double percent) {
   if (!percent.isFinite || percent <= 0) return '0.0%';
-  if (percent >= 1) return '${percent.toStringAsFixed(1)}%';
-  var text = percent.toStringAsFixed(2);
+  // Round to 2 decimals first: a sub-1 value (e.g. 0.999) can round up to
+  // 1.00, which must read like the >= 1 case ("1.0%") rather than collapse
+  // to "1." once the trailing zeros are trimmed below.
+  final rounded = (percent * 100).round() / 100;
+  if (rounded >= 1) return '${rounded.toStringAsFixed(1)}%';
+  var text = rounded.toStringAsFixed(2);
   while (text.endsWith('0') && text.contains('.')) {
     text = text.substring(0, text.length - 1);
   }
+  if (text.endsWith('.')) text = text.substring(0, text.length - 1);
   return '$text%';
 }
 

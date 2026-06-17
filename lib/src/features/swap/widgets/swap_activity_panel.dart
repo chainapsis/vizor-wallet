@@ -19,19 +19,30 @@ import '../models/swap_models.dart';
 import '../providers/swap_state_provider.dart';
 import 'swap_deposit_tokens_page_content.dart';
 import 'swap_keystone_signing_overlay.dart';
+import 'mobile/mobile_swap_review_header.dart';
+import 'mobile/mobile_swap_status_content.dart';
+import 'mobile/mobile_swap_timeout_content.dart';
 import 'swap_status_page_content.dart';
+
+/// Which rendering the detail surface uses. The orchestration (intent
+/// selection, status refresh, deposit submission, Keystone signing)
+/// is identical; only the widgets differ — desktop keeps the 400pt
+/// pane content, mobile renders the Figma mobile swap frames.
+enum SwapActivityDetailLayout { desktop, mobile }
 
 class SwapActivityDetailSurface extends ConsumerStatefulWidget {
   const SwapActivityDetailSurface({
     required this.intentId,
     this.returnTarget,
     this.autoSignZecDeposit = false,
+    this.layout = SwapActivityDetailLayout.desktop,
     super.key,
   });
 
   final String intentId;
   final SwapActivityReturnTarget? returnTarget;
   final bool autoSignZecDeposit;
+  final SwapActivityDetailLayout layout;
 
   @override
   ConsumerState<SwapActivityDetailSurface> createState() =>
@@ -244,6 +255,7 @@ class _SwapActivityDetailSurfaceState
         : SwapActivityDetailPagePanel(
             state: state,
             intent: activityDetailIntent,
+            layout: widget.layout,
             depositChecking:
                 _depositCheckingIntentId == activityDetailIntent.id,
             depositCheckWarning: null,
@@ -265,6 +277,7 @@ class _SwapActivityDetailSurfaceState
         Positioned.fill(
           child: _SwapActivityDetailPaneContent(
             returnTarget: widget.returnTarget,
+            layout: widget.layout,
             child: pageContent,
           ),
         ),
@@ -278,14 +291,15 @@ class _SwapActivityDetailSurfaceState
                   _handleKeystoneDepositBroadcast(context, result),
             ),
           ),
-        Positioned.fill(
-          child: IgnorePointer(
-            child: AppToastHost(
-              key: const ValueKey('swap_toast_overlay_host'),
-              child: SizedBox.expand(key: _toastOverlayContextKey),
+        if (widget.layout != SwapActivityDetailLayout.mobile)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AppToastHost(
+                key: const ValueKey('swap_toast_overlay_host'),
+                child: SizedBox.expand(key: _toastOverlayContextKey),
+              ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -295,13 +309,19 @@ class _SwapActivityDetailPaneContent extends StatelessWidget {
   const _SwapActivityDetailPaneContent({
     required this.child,
     required this.returnTarget,
+    this.layout = SwapActivityDetailLayout.desktop,
   });
 
   final Widget child;
   final SwapActivityReturnTarget? returnTarget;
+  final SwapActivityDetailLayout layout;
 
   @override
   Widget build(BuildContext context) {
+    // The mobile host draws its own top nav and side padding.
+    if (layout == SwapActivityDetailLayout.mobile) {
+      return child;
+    }
     final returnTarget = this.returnTarget;
     return AppPaneScrollScaffold(
       toolbar: AppPaneToolbar(
@@ -336,6 +356,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
   const SwapActivityDetailPagePanel({
     required this.state,
     required this.intent,
+    this.layout = SwapActivityDetailLayout.desktop,
     required this.depositChecking,
     required this.depositCheckWarning,
     required this.onRefreshStatus,
@@ -350,6 +371,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
 
   final SwapState state;
   final SwapIntent intent;
+  final SwapActivityDetailLayout layout;
   final bool depositChecking;
   final String? depositCheckWarning;
   final VoidCallback onRefreshStatus;
@@ -365,6 +387,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
     final flowContent = _SwapActivityFlowContent(
       state: state,
       intent: intent,
+      layout: layout,
       depositChecking: depositChecking,
       depositCheckWarning: depositCheckWarning,
       onRefreshStatus: onRefreshStatus,
@@ -380,6 +403,28 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
       intentIsHardware: intentIsHardware,
     );
 
+    if (layout == SwapActivityDetailLayout.mobile) {
+      return Container(
+        key: const ValueKey('swap_activity_detail_page'),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return _ActivityDetailScrollArea(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Align(
+                  alignment: isDepositPage
+                      ? Alignment.center
+                      : Alignment.topCenter,
+                  child: flowContent,
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
+
     return KeyedSubtree(
       key: const ValueKey('swap_activity_detail_page'),
       child: Align(
@@ -394,6 +439,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
   const _SwapActivityFlowContent({
     required this.state,
     required this.intent,
+    this.layout = SwapActivityDetailLayout.desktop,
     required this.depositChecking,
     required this.depositCheckWarning,
     required this.onRefreshStatus,
@@ -407,6 +453,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
 
   final SwapState state;
   final SwapIntent intent;
+  final SwapActivityDetailLayout layout;
   final bool depositChecking;
   final String? depositCheckWarning;
   final VoidCallback onRefreshStatus;
@@ -438,9 +485,10 @@ class _SwapActivityFlowContent extends StatelessWidget {
       intentIsHardware: intentIsHardware,
     );
     final primaryContent = switch (intent.status) {
-      SwapIntentStatus.expired => SwapDepositTimeoutPageContent(
-        onRestart: onReviewFreshQuote,
-      ),
+      SwapIntentStatus.expired =>
+        layout == SwapActivityDetailLayout.mobile
+            ? MobileSwapTimeoutContent(onRestart: onReviewFreshQuote)
+            : SwapDepositTimeoutPageContent(onRestart: onReviewFreshQuote),
       _ when showExternalDepositPage && depositInstruction != null =>
         SwapDepositTokensPageContent(
           asset: swapActivitySellAsset(intent) ?? SwapAsset.zec,
@@ -452,6 +500,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
           checking: depositChecking || state.statusRefreshing,
           checkWarning: depositCheckWarning,
           onDeposited: onMarkDeposited,
+          mobile: layout == SwapActivityDetailLayout.mobile,
         ),
       _ when showHardwareDepositPage && depositInstruction != null =>
         SwapHardwareZecDepositPageContent(
@@ -462,21 +511,30 @@ class _SwapActivityFlowContent extends StatelessWidget {
           expiresAt: intent.depositDeadline,
           memo: depositInstruction.memo,
           onDepositZec: () => onSignZecDeposit(intent),
+          mobile: layout == SwapActivityDetailLayout.mobile,
         ),
-      _ => _SwapStatusForIntent(intent: intent),
+      _ => _SwapStatusForIntent(intent: intent, layout: layout),
     };
 
+    final mobile = layout == SwapActivityDetailLayout.mobile;
+    // All mobile branches now render native full-width content (deposit,
+    // status, timeout), so no desktop-content down-scaling is needed.
     return Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
+      crossAxisAlignment: mobile
+          ? CrossAxisAlignment.stretch
+          : CrossAxisAlignment.center,
       children: [
         primaryContent,
         if (showStatusError) ...[
           const SizedBox(height: AppSpacing.md),
-          SizedBox(
-            width: 400,
-            child: _ActivityStatusErrorPanel(message: statusError),
-          ),
+          if (mobile)
+            _ActivityStatusErrorPanel(message: statusError)
+          else
+            SizedBox(
+              width: 400,
+              child: _ActivityStatusErrorPanel(message: statusError),
+            ),
         ],
       ],
     );
@@ -484,9 +542,13 @@ class _SwapActivityFlowContent extends StatelessWidget {
 }
 
 class _SwapStatusForIntent extends ConsumerStatefulWidget {
-  const _SwapStatusForIntent({required this.intent});
+  const _SwapStatusForIntent({
+    required this.intent,
+    this.layout = SwapActivityDetailLayout.desktop,
+  });
 
   final SwapIntent intent;
+  final SwapActivityDetailLayout layout;
 
   @override
   ConsumerState<_SwapStatusForIntent> createState() =>
@@ -495,12 +557,14 @@ class _SwapStatusForIntent extends ConsumerStatefulWidget {
 
 class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
   SwapStatusTab _activeTab = SwapStatusTab.progress;
+  bool _detailsExpanded = false;
 
   @override
   void didUpdateWidget(covariant _SwapStatusForIntent oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.intent.id != widget.intent.id) {
       _activeTab = SwapStatusTab.progress;
+      _detailsExpanded = false;
     }
   }
 
@@ -525,6 +589,43 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
             ),
       addressBookContacts: addressBookContacts,
     );
+    if (widget.layout == SwapActivityDetailLayout.mobile) {
+      final terminal = !presentation.showTabs;
+      final recipient = intent.oneClickRecipient?.trim();
+      final hasRecipient = recipient != null && recipient.isNotEmpty;
+      final recipientFullAddress = mobileSwapStatusRecipientFullAddress(intent);
+      return MobileSwapStatusContent(
+        presentation: presentation,
+        payHeaderRow: MobileSwapReviewHeaderRow(
+          label: terminal ? 'You paid' : "You're paying",
+          amountText: trimSwapAmountText(presentation.payAmountText),
+          asset: presentation.payAsset,
+          bottomText: presentation.payFiatText,
+        ),
+        receiveHeaderRow: MobileSwapReviewHeaderRow(
+          label: terminal ? 'You received' : "You're receiving",
+          amountText: trimSwapAmountText(presentation.receiveAmountText),
+          asset: presentation.receiveAsset,
+          bottomText: hasRecipient
+              ? 'To: ${_truncateHeaderAddress(recipient)}'
+              : presentation.receiveFiatText,
+          fullAddress: recipientFullAddress,
+        ),
+        activeTab: _activeTab,
+        detailsExpanded: _detailsExpanded,
+        onTabChanged: (tab) {
+          setState(() {
+            _activeTab = tab;
+          });
+        },
+        onToggleDetails: () {
+          setState(() {
+            _detailsExpanded = !_detailsExpanded;
+          });
+        },
+      );
+    }
+
     return SwapStatusPageContent(
       title: presentation.title,
       payAsset: presentation.payAsset,
@@ -551,6 +652,20 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           copyTextWithToast(context, text: text, toastMessage: 'Copied'),
     );
   }
+}
+
+/// Figma-style 6 ... 5 truncation for the header's "To:" line.
+String _truncateHeaderAddress(String address) {
+  if (address.length <= 14) return address;
+  return '${address.substring(0, 6)} ... '
+      '${address.substring(address.length - 5)}';
+}
+
+String? mobileSwapStatusRecipientFullAddress(SwapIntent intent) {
+  final recipient = intent.oneClickRecipient?.trim();
+  if (recipient == null || recipient.isEmpty) return null;
+  if (intent.direction == SwapDirection.externalToZec) return null;
+  return recipient;
 }
 
 AccountInfo? _accountInfoForIntent(
@@ -593,6 +708,61 @@ class _SwapActivityMissingPanel extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ActivityDetailScrollArea extends StatefulWidget {
+  const _ActivityDetailScrollArea({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_ActivityDetailScrollArea> createState() =>
+      _ActivityDetailScrollAreaState();
+}
+
+class _ActivityDetailScrollAreaState extends State<_ActivityDetailScrollArea> {
+  late final ScrollController _controller;
+  bool _hasScrollableExtent = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  bool _handleScrollMetrics(ScrollMetricsNotification notification) {
+    final hasScrollableExtent = notification.metrics.maxScrollExtent > 0.5;
+    if (hasScrollableExtent != _hasScrollableExtent) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() => _hasScrollableExtent = hasScrollableExtent);
+        }
+      });
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: _handleScrollMetrics,
+      child: PrimaryScrollController(
+        controller: _controller,
+        child: SingleChildScrollView(
+          physics: _hasScrollableExtent
+              ? const AlwaysScrollableScrollPhysics()
+              : const ClampingScrollPhysics(),
+          child: widget.child,
+        ),
       ),
     );
   }

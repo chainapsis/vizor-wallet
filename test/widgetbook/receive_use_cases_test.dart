@@ -28,13 +28,10 @@ void main() {
     final backLabelStyle = tester.widget<Text>(backLabelFinder).style;
     expect(backLabelStyle?.fontSize, 14);
     expect(backLabelStyle?.height, 16 / 14);
-    expect(
-      backLabelStyle?.color,
-      AppThemeData.light.colors.button.ghost.label,
-    );
+    expect(backLabelStyle?.color, AppThemeData.light.colors.button.ghost.label);
     expect(
       tester.getTopLeft(backLabelFinder).dx,
-      moreOrLessEquals(316, epsilon: 0.1),
+      moreOrLessEquals(328, epsilon: 0.1),
     );
     expect(
       find.byKey(const ValueKey('receive_preview_qr_block_shielded')),

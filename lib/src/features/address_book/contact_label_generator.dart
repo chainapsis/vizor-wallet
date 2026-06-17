@@ -26,7 +26,7 @@ const kGeneratedContactPersonas = <String>[
 
 /// Picks a persona label that does not collide with [existingLabels]
 /// (case-insensitively). Collisions get a numeric suffix ('Warden 2',
-/// 'Warden 3', ...); every produced label stays within the address-book
+/// 'Warden 3', ...); callers that persist labels still enforce the address-book
 /// 20-character limit.
 String generateContactLabel({
   required Iterable<String> existingLabels,

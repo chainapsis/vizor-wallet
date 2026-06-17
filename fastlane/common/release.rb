@@ -15,7 +15,7 @@ module VizorRelease
   end
 
   def release_tag_info(tag)
-    match = /\Arelease\/v(?<base_version>\d+\.\d+\.\d+)(?<prerelease_suffix>-(?:rc|internal)\.\d+)?\z/.match(tag.to_s)
+    match = /\A(?:release|mobile)\/v(?<base_version>\d+\.\d+\.\d+)(?<prerelease_suffix>-(?:rc|internal)\.\d+)?\z/.match(tag.to_s)
     UI.user_error!("Unsupported release tag format: #{tag}") unless match
 
     prerelease_suffix = match[:prerelease_suffix].to_s

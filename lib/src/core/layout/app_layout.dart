@@ -1,10 +1,13 @@
 import 'dart:io' show Platform;
 
 import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
+
+import 'app_form_factor.dart';
+
+export 'app_form_factor.dart';
 
 /// Two fixed-aspect-ratio layouts the desktop app supports.
 ///
@@ -48,13 +51,6 @@ enum AppLayoutMode {
         return const Size(416, 851);
     }
   }
-}
-
-/// True on the desktop platforms that `window_manager` supports and where
-/// layout switching is meaningful.
-bool get isDesktopLayoutPlatform {
-  if (kIsWeb) return false;
-  return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 }
 
 /// Decision boundary for inferring the current layout mode from the

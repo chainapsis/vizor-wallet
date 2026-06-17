@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
@@ -48,7 +49,10 @@ class NetworkFallbackToast extends StatelessWidget {
             ),
             child: Text(
               message,
-              maxLines: 1,
+              // Two lines: the failover messages don't fit one line on
+              // a phone width; desktop stays single-line under the
+              // 560px cap.
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: AppTypography.labelLarge.copyWith(
@@ -112,6 +116,14 @@ class _NetworkFallbackToastHostState extends State<NetworkFallbackToastHost> {
   @override
   Widget build(BuildContext context) {
     final message = _message;
+    // The host mounts in MaterialApp.builder, above every screen and
+    // any SafeArea, so it must keep the toast clear of the status bar
+    // / Dynamic Island itself; on desktop the window has no top inset
+    // and this resolves to the original 32px offset.
+    final topInset = math.max(
+      AppSpacing.base,
+      MediaQuery.paddingOf(context).top + AppSpacing.xs,
+    );
     return _NetworkFallbackToastScope(
       state: this,
       child: Stack(
@@ -125,7 +137,7 @@ class _NetworkFallbackToastHostState extends State<NetworkFallbackToastHost> {
             valueListenable: contentOverlayLeftInset,
             builder: (context, leftInset, child) {
               return Positioned(
-                top: AppSpacing.base,
+                top: topInset,
                 left: leftInset,
                 right: 0,
                 child: child!,
@@ -133,25 +145,32 @@ class _NetworkFallbackToastHostState extends State<NetworkFallbackToastHost> {
             },
             child: IgnorePointer(
               child: Center(
-                child: AnimatedSwitcher(
-                  duration: NetworkFallbackToastHost.animationDuration,
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) {
-                    final position = Tween<Offset>(
-                      begin: const Offset(0, -1),
-                      end: Offset.zero,
-                    ).animate(animation);
-                    return SlideTransition(position: position, child: child);
-                  },
-                  child: message == null
-                      ? const SizedBox.shrink(
-                          key: ValueKey('empty-network-fallback-toast'),
-                        )
-                      : NetworkFallbackToast(
-                          key: ValueKey(message),
-                          message: message,
-                        ),
+                // The horizontal padding keeps long messages off the
+                // screen edges on phones narrower than the 560px cap.
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                  ),
+                  child: AnimatedSwitcher(
+                    duration: NetworkFallbackToastHost.animationDuration,
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      final position = Tween<Offset>(
+                        begin: const Offset(0, -1),
+                        end: Offset.zero,
+                      ).animate(animation);
+                      return SlideTransition(position: position, child: child);
+                    },
+                    child: message == null
+                        ? const SizedBox.shrink(
+                            key: ValueKey('empty-network-fallback-toast'),
+                          )
+                        : NetworkFallbackToast(
+                            key: ValueKey(message),
+                            message: message,
+                          ),
+                  ),
                 ),
               ),
             ),

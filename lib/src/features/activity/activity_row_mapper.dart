@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../core/formatting/zec_amount.dart';
+import '../../core/layout/app_form_factor.dart';
 import '../../core/privacy/privacy_mask.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
@@ -9,10 +10,20 @@ import 'models/activity_row_data.dart';
 
 const _activityAmountPrivacyMaskLength = 3;
 
+/// Color for the "outgoing"/neutral amount line (sent, swap). Mobile
+/// matches the transaction title (`text.accent`) so the amount reads as
+/// heavy as the type; desktop keeps the lighter `text.primary`. Inbound
+/// (green) and failed amounts keep their own semantic colors.
+Color outgoingAmountColor(AppColors colors) =>
+    kAppFormFactor == AppFormFactor.mobile
+    ? colors.text.accent
+    : colors.text.primary;
+
 ActivityRowData buildTransactionActivityRow({
   required BuildContext context,
   required rust_sync.TransactionInfo transaction,
   bool privacyModeEnabled = false,
+  bool dateOnlyTimestamp = false,
   VoidCallback? onTap,
 }) {
   final colors = context.colors;
@@ -41,15 +52,13 @@ ActivityRowData buildTransactionActivityRow({
     title: isFailed && isSent
         ? 'Send failed'
         : isInFlight
-        ? (isSent ? 'Sending ...' : 'Receiving ...')
+        ? _pendingTxTitle(isSent ? 'Sending' : 'Receiving')
         : _txTitle(kind),
-    leadingIconName: isInFlight ? AppIcons.loader : _txIcon(kind),
+    leadingIconName: _txIcon(kind, isPending: isPending),
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
     subtitle: subtitle,
-    subtitleIconName: transaction.displayPool == 'shielded'
-        ? AppIcons.shieldKeyholeOutline
-        : null,
+    subtitleIconName: _poolIcon(transaction.displayPool),
     amountText: _transactionAmountText(
       amount: amount,
       signedAmount: signedAmount,
@@ -66,7 +75,7 @@ ActivityRowData buildTransactionActivityRow({
         ? colors.text.accent
         : isInbound
         ? colors.text.positiveStrong
-        : colors.text.primary,
+        : outgoingAmountColor(colors),
     amountSubtitle: isFailed && amount != BigInt.zero ? 'Refunded' : null,
     statusText: isFailed
         ? 'Failed'
@@ -79,7 +88,10 @@ ActivityRowData buildTransactionActivityRow({
         ? AppIcons.loader
         : null,
     statusColor: isFailed ? colors.text.destructive : colors.text.secondary,
-    timestampText: formatActivityTimestamp(_txTimestamp(transaction)),
+    timestampText: formatActivityTimestamp(
+      _txTimestamp(transaction),
+      dateOnly: dateOnlyTimestamp,
+    ),
     onTap: onTap,
   );
 }
@@ -113,21 +125,28 @@ String _transactionAmountText({
   return ZecAmount.fromZatoshi(signedAmount).signedActivity.toString();
 }
 
-String formatActivityTimestamp(DateTime? timestamp) {
+/// Desktop keeps the older relative "Today, 13:40" form. Mobile activity
+/// sections use absolute "May 29, 13:40" stamps, or date-only section labels.
+String formatActivityTimestamp(DateTime? timestamp, {bool dateOnly = false}) {
   if (timestamp == null) return '--';
-  final now = DateTime.now();
   final local = timestamp.toLocal();
-  final today = DateTime(now.year, now.month, now.day);
-  final date = DateTime(local.year, local.month, local.day);
+  final date = '${_monthName(local.month)} ${local.day}';
+  if (dateOnly) return date;
   final time =
       '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-
-  if (date == today) return 'Today, $time';
-  if (date == today.subtract(const Duration(days: 1))) {
+  if (kAppFormFactor == AppFormFactor.mobile) return '$date, $time';
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final localDate = DateTime(local.year, local.month, local.day);
+  if (localDate == today) return 'Today, $time';
+  if (localDate == today.subtract(const Duration(days: 1))) {
     return 'Yesterday, $time';
   }
-  return '${_monthName(local.month)} ${local.day}, $time';
+  return '$date, $time';
 }
+
+String _pendingTxTitle(String verb) =>
+    kAppFormFactor == AppFormFactor.mobile ? '$verb...' : '$verb ...';
 
 String _txTitle(String kind) {
   return switch (kind) {
@@ -139,7 +158,13 @@ String _txTitle(String kind) {
   };
 }
 
-String _txIcon(String kind) {
+String _txIcon(String kind, {required bool isPending}) {
+  if (isPending) {
+    return switch (kind) {
+      'receiving' || 'received' || 'sent' => AppIcons.loader,
+      _ => AppIcons.history,
+    };
+  }
   return switch (kind) {
     'receiving' => AppIcons.arrowDownCircle,
     'received' => AppIcons.arrowDownCircle,
@@ -154,6 +179,14 @@ String? _poolLabel(String pool) {
     'transparent' => 'Transparent',
     'shielded' => 'Shielded',
     'mixed' => 'Mixed',
+    _ => null,
+  };
+}
+
+String? _poolIcon(String pool) {
+  return switch (pool) {
+    'transparent' => AppIcons.transparentBalance,
+    'shielded' => AppIcons.shieldKeyholeOutline,
     _ => null,
   };
 }

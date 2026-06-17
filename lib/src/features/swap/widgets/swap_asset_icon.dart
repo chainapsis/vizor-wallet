@@ -9,6 +9,8 @@ class SwapAssetIcon extends StatelessWidget {
     this.size = 32,
     this.selected = false,
     this.showChainBadge = true,
+    this.badgeScale = 0.625,
+    this.overhangScale = 0.125,
     super.key,
   });
 
@@ -17,14 +19,26 @@ class SwapAssetIcon extends StatelessWidget {
   final bool selected;
   final bool showChainBadge;
 
+  /// Chain-badge diameter as a fraction of [size]. Desktop renders a 5/8
+  /// badge (0.625) on its 32px asset = a 20px chain circle. The mobile
+  /// composer draws a larger 40px asset but keeps the chain circle at the
+  /// same absolute 20px, so it passes 0.5.
+  final double badgeScale;
+
+  /// How far the badge overhangs the asset's bottom-right corner, as a
+  /// fraction of [size]. Desktop 1/8 (0.125); the mobile 40px asset uses 0.1
+  /// so the 20px badge sits flush with a 4px overhang per Figma.
+  final double overhangScale;
+
   @override
   Widget build(BuildContext context) {
-    // Figma Asset Image: on a 32px asset the chain icon is a 20px circle at
-    // (16,16) — 5/8 of the asset, overhanging by 1/8 — ringed by a 2px
-    // OUTSIDE stroke in the backdrop surface color (no gray border, no
-    // inner padding).
-    final badgeSize = size * 0.625;
-    final overhang = size * 0.125;
+    // Figma Asset Image: the chain icon is a circle ringed by a 2px OUTSIDE
+    // stroke in the backdrop surface color (no gray border, no inner
+    // padding). On desktop's 32px asset it is a 20px circle at (16,16) — 5/8
+    // of the asset, overhanging by 1/8; the mobile composer keeps the 20px
+    // circle on a 40px asset (0.5 / 0.1).
+    final badgeSize = size * badgeScale;
+    final overhang = size * overhangScale;
     return SizedBox(
       width: size,
       height: size,

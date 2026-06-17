@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
+import '../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../models/swap_models.dart';
 
 class SwapSlippageModal extends StatefulWidget {
@@ -326,6 +327,7 @@ class _SlippageCustomRadioCard extends StatelessWidget {
                               decimal: true,
                             ),
                             inputFormatters: const [
+                              CommaToDotInputFormatter(),
                               _SlippageCustomInputFormatter(),
                             ],
                             style: valueStyle,

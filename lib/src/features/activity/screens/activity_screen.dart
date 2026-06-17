@@ -287,14 +287,24 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     });
 
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final syncSnapshot = ref
+        .watch(syncProvider)
+        .value
+        ?.scopedToAccount(accountUuid);
+    final canRenderSyncTransactions =
+        syncSnapshot?.hasRecentTransactionsData ?? false;
     final loadedTransactions = _transactionsAccountUuid == accountUuid
         ? _transactions
         : null;
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final transactions =
-        loadedTransactions ?? const <rust_sync.TransactionInfo>[];
+        loadedTransactions ??
+        (canRenderSyncTransactions
+            ? syncSnapshot!.recentTransactions
+            : const <rust_sync.TransactionInfo>[]);
     final canRenderTransactions =
-        accountUuid != null && loadedTransactions != null;
+        accountUuid != null &&
+        (loadedTransactions != null || canRenderSyncTransactions);
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final swapItems = accountUuid == null || !swapFeatureEnabled
         ? const <SwapActivityRowItem>[]
@@ -368,7 +378,10 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               rowKeyPrefix: 'activity_screen',
               isLoading:
                   _isLoading && !canRenderTransactions && sections.isEmpty,
-              errorText: sections.isEmpty && loadedTransactions == null
+              errorText:
+                  sections.isEmpty &&
+                      loadedTransactions == null &&
+                      !canRenderSyncTransactions
                   ? _error
                   : null,
             ),

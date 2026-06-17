@@ -28,6 +28,7 @@ class SwapReviewPageContent extends StatelessWidget {
     this.payFiatTextOverride,
     this.receiveFiatTextOverride,
     this.onCopy,
+    this.showTitle = true,
     super.key,
   });
 
@@ -46,6 +47,10 @@ class SwapReviewPageContent extends StatelessWidget {
   /// reuses the same mechanic as the rest of the swap flow.
   final ValueChanged<String>? onCopy;
 
+  /// The mobile host renders its own top-nav title; it hides this
+  /// inline one so "Review swap" doesn't appear twice.
+  final bool showTitle;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -55,16 +60,18 @@ class SwapReviewPageContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'Review swap',
-            key: const ValueKey('swap_review_title'),
-            textAlign: TextAlign.center,
-            style: AppTypography.bodyLarge.copyWith(
-              fontWeight: FontWeight.w600,
-              color: colors.text.accent,
+          if (showTitle) ...[
+            Text(
+              'Review swap',
+              key: const ValueKey('swap_review_title'),
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyLarge.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colors.text.accent,
+              ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.base),
+            const SizedBox(height: AppSpacing.base),
+          ],
           SwapReviewInfo(
             pay: _paySideData(),
             receive: _receiveSideData(),
@@ -253,7 +260,7 @@ class _SwapReviewDetailCard extends StatelessWidget {
               label: 'Slippage tolerance',
               value:
                   slippageToleranceTextOverride ??
-                  _slippageToleranceText(quote),
+                  swapReviewSlippageToleranceText(quote),
             ),
             ReviewListRow(
               label: 'Guaranteed minimum',
@@ -324,6 +331,7 @@ String _quoteFiatText(double? value) {
   return value == null ? r'$--' : swapFormatCompactFiatValue(value);
 }
 
-String _slippageToleranceText(SwapQuote quote) {
+/// Public for the mobile review content, which renders the same row.
+String swapReviewSlippageToleranceText(SwapQuote quote) {
   return compactSwapAmountText(quote.slippageToleranceText);
 }

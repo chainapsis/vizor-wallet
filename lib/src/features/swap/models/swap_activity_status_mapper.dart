@@ -46,11 +46,11 @@ class SwapActivityStatusPresentation {
     required this.receiveFiatText,
     required this.payAmountText,
     required this.receiveAmountText,
-    required this.payDetailText,
-    required this.payDetailCopyText,
-    required this.receiveDetailText,
-    required this.receiveDetailCopyText,
-    required this.statusLabel,
+    this.payDetailText = '',
+    this.payDetailCopyText,
+    this.receiveDetailText = '',
+    this.receiveDetailCopyText,
+    this.statusLabel = '',
     required this.badgeKind,
     required this.progressIndex,
     required this.steps,
@@ -265,6 +265,11 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
   final originChainTxHash = intent.originChainTxHash?.trim();
   final destinationChainTxHash = intent.destinationChainTxHash?.trim();
   final depositTxHash = _firstNonEmpty([localDepositTxHash, originChainTxHash]);
+  final txIdRow = _swapActivityTxIdRow(
+    intent: intent,
+    depositTxHash: depositTxHash,
+    depositAddress: depositAddress,
+  );
   final terminal = intent.status.isTerminal;
   final failed =
       _swapActivityStatusBadgeKind(intent.status) == SwapStatusBadgeKind.failed;
@@ -304,6 +309,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
           asset: sourceAsset,
           addressBookLabels: addressBookLabels,
         ),
+      ?txIdRow,
       SwapStatusDetailRowData(
         label: 'Total fees',
         value:
@@ -380,6 +386,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     ),
     if (timestamp != null)
       SwapStatusDetailRowData(label: 'Timestamp', value: timestamp),
+    ?txIdRow,
     if (sendsZec && refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
         label: '$sourceSymbol refund address',
@@ -415,6 +422,37 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       helpTooltip: swapFeeTooltip,
     ),
   ];
+}
+
+SwapStatusDetailRowData? _swapActivityTxIdRow({
+  required SwapIntent intent,
+  required String? depositTxHash,
+  required String? depositAddress,
+}) {
+  final hasExplorerSource =
+      (intent.nearIntentHash?.trim().isNotEmpty ?? false) ||
+      (depositTxHash?.trim().isNotEmpty ?? false);
+  if (!hasExplorerSource) return null;
+
+  final txId = _firstNonEmpty([
+    depositAddress,
+    intent.nearIntentHash?.trim(),
+    depositTxHash,
+  ]);
+  if (txId == null || txId.isEmpty) return null;
+
+  final linkUri = nearIntentsExplorerUri(
+    nearIntentHash: intent.nearIntentHash,
+    depositTxHash: depositTxHash,
+    depositAddress: depositAddress,
+  );
+  if (linkUri == null) return null;
+
+  return SwapStatusDetailRowData(
+    label: 'Tx ID',
+    value: compactSwapAddress(txId),
+    linkUri: linkUri,
+  );
 }
 
 List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(

@@ -10,7 +10,8 @@ import 'widgetbook/widgetbook_app.dart';
 
 /// Widgetbook entry point.
 ///
-/// Run with: `fvm flutter run -t lib/widgetbook.dart`.
+/// Run mobile previews with:
+/// `fvm flutter run -t lib/widgetbook.dart --dart-define=VIZOR_FORM_FACTOR=mobile`.
 ///
 /// On desktop, window_manager ships an NSWindow that starts hidden
 /// (see `macos/Runner/MainFlutterWindow.swift` → `hiddenWindowAtLaunch()`),

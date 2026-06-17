@@ -56,6 +56,7 @@ void main() {
       expect(text.style?.fontSize, AppTypography.labelLarge.fontSize);
       expect(text.style?.height, AppTypography.labelLarge.height);
       expect(text.style?.letterSpacing, AppTypography.labelLarge.letterSpacing);
+      expect(text.maxLines, 2);
       expect(find.byType(AppIcon), findsNothing);
     },
   );
@@ -173,49 +174,109 @@ void main() {
     expect(find.text('Fallback selected'), findsNothing);
   });
 
-  testWidgets('toast clears a mounted sidebar inset and re-centers on release', (
+  testWidgets(
+    'toast clears a mounted sidebar inset and re-centers on release',
+    (tester) async {
+      const inset = 272.0;
+      await tester.pumpWidget(
+        const _ThemedHarness(
+          theme: AppThemeData.light,
+          child: SizedBox(
+            width: 800,
+            height: 300,
+            child: NetworkFallbackToastHost(
+              child: ContentOverlayInset(
+                leftInset: inset,
+                child: _ToastTrigger(message: 'Fallback selected'),
+              ),
+            ),
+          ),
+        ),
+      );
+      // Let the post-frame inset push land.
+      await tester.pump();
+
+      await tester.tap(find.text('Show toast'));
+      await tester.pump();
+      await tester.pump(NetworkFallbackToastHost.animationDuration);
+
+      final hostTopLeft = tester.getTopLeft(
+        find.byType(NetworkFallbackToastHost),
+      );
+      final hostSize = tester.getSize(find.byType(NetworkFallbackToastHost));
+      final toastTopLeft = tester.getTopLeft(find.byType(NetworkFallbackToast));
+      final toastSize = tester.getSize(find.byType(NetworkFallbackToast));
+
+      // Centered within the pane region [inset, width], not the full window.
+      final paneCenter = hostTopLeft.dx + inset + (hostSize.width - inset) / 2;
+      expect(
+        toastTopLeft.dx + toastSize.width / 2,
+        moreOrLessEquals(paneCenter),
+      );
+      expect(toastTopLeft.dx, greaterThan(hostTopLeft.dx + inset / 2));
+
+      await tester.pump(NetworkFallbackToast.defaultDuration);
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets('the toast clears the status bar inset on phones', (
     tester,
   ) async {
-    const inset = 272.0;
     await tester.pumpWidget(
       const _ThemedHarness(
         theme: AppThemeData.light,
-        child: SizedBox(
-          width: 800,
-          height: 300,
+        child: MediaQuery(
+          // A Dynamic Island iPhone reports ~59 of top padding.
+          data: MediaQueryData(padding: EdgeInsets.only(top: 59)),
           child: NetworkFallbackToastHost(
-            child: ContentOverlayInset(
-              leftInset: inset,
-              child: _ToastTrigger(message: 'Fallback selected'),
-            ),
+            child: _ToastTrigger(message: 'Fallback selected'),
           ),
         ),
       ),
     );
-    // Let the post-frame inset push land.
-    await tester.pump();
 
     await tester.tap(find.text('Show toast'));
     await tester.pump();
     await tester.pump(NetworkFallbackToastHost.animationDuration);
 
-    final hostTopLeft = tester.getTopLeft(
-      find.byType(NetworkFallbackToastHost),
-    );
-    final hostSize = tester.getSize(find.byType(NetworkFallbackToastHost));
-    final toastTopLeft = tester.getTopLeft(find.byType(NetworkFallbackToast));
-    final toastSize = tester.getSize(find.byType(NetworkFallbackToast));
-
-    // Centered within the pane region [inset, width], not the full window.
-    final paneCenter = hostTopLeft.dx + inset + (hostSize.width - inset) / 2;
+    final hostTop = tester.getTopLeft(find.byType(NetworkFallbackToastHost)).dy;
     expect(
-      toastTopLeft.dx + toastSize.width / 2,
-      moreOrLessEquals(paneCenter),
+      tester.getTopLeft(find.byType(NetworkFallbackToast)).dy,
+      hostTop + 59 + AppSpacing.xs,
     );
-    expect(toastTopLeft.dx, greaterThan(hostTopLeft.dx + inset / 2));
+  });
 
-    await tester.pump(NetworkFallbackToast.defaultDuration);
-    await tester.pumpAndSettle();
+  testWidgets('long messages keep the side margins on a phone width', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        theme: AppThemeData.light,
+        child: Center(
+          child: SizedBox(
+            width: 390,
+            height: 600,
+            child: NetworkFallbackToastHost(
+              child: _ToastTrigger(
+                message:
+                    'Selected endpoint is unstable. Switched to fallback '
+                    'endpoint.',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Show toast'));
+    await tester.pump();
+    await tester.pump(NetworkFallbackToastHost.animationDuration);
+
+    final host = tester.getRect(find.byType(NetworkFallbackToastHost));
+    final toast = tester.getRect(find.byType(NetworkFallbackToast));
+    expect(toast.left, host.left + AppSpacing.sm);
+    expect(toast.right, host.right - AppSpacing.sm);
   });
 }
 

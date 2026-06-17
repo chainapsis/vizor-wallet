@@ -10,8 +10,8 @@ import '../../address_book/models/address_book_label_lookup.dart';
 import 'send_review_layout.dart';
 
 /// Current unified and transparent address of every local account, keyed by the
-/// trimmed address. Used by the send review/status screens to recognize a
-/// recipient as one of the user's own accounts (self-transfer).
+/// trimmed address. Used by send review surfaces to recognize a recipient as
+/// one of the user's own accounts without persisting addresses in [AccountInfo].
 ///
 /// Address rotation caveat: only each account's CURRENT addresses are matched;
 /// an older rotated address of the same account is not recognized.
@@ -21,7 +21,7 @@ final ownAccountAddressesProvider = FutureProvider<Map<String, AccountInfo>>((
   final accounts = ref.watch(
     accountProvider.select((state) => state.value?.accounts ?? const []),
   );
-  if (accounts.isEmpty) return const {};
+  if (accounts.isEmpty) return const <String, AccountInfo>{};
 
   final network = ref.watch(rpcEndpointProvider).networkName;
   final dbPath = await getWalletDbPath();

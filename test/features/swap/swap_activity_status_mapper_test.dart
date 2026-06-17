@@ -78,6 +78,27 @@ void main() {
     );
   });
 
+  test('adds a NEAR Intents explorer link to the tx id detail row', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: 't1provider-deposit',
+        nearIntentHash: 'intent-hash-123',
+        originChainTxHash: 'zec-origin-txid',
+      ),
+    );
+
+    final txId = _detailRow(presentation.details, 'Tx ID');
+    expect(txId.value, 't1provider-deposit');
+    expect(
+      txId.linkUri.toString(),
+      'https://explorer.near-intents.org/transactions/t1provider-deposit',
+    );
+  });
+
   test('adds address book labels to matching address detail rows', () {
     const recipientAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
     final presentation = swapActivityStatusPresentationForIntent(
@@ -536,7 +557,9 @@ SwapIntent _intent({
   String? depositAddress,
   String? depositMemo,
   String? depositTxHash,
+  String? nearIntentHash,
   String? originChainTxHash,
+  String? destinationChainTxHash,
   String? totalFeesText,
   String? realisedSlippageText,
   String? oneClickRecipient,
@@ -562,10 +585,12 @@ SwapIntent _intent({
     depositAddress: depositAddress,
     depositMemo: depositMemo,
     depositTxHash: depositTxHash,
-    originChainTxHash: originChainTxHash,
     totalFeesText: totalFeesText,
     realisedSlippageText: realisedSlippageText,
     minimumReceiveText: receiveEstimate,
+    nearIntentHash: nearIntentHash,
+    originChainTxHash: originChainTxHash,
+    destinationChainTxHash: destinationChainTxHash,
     oneClickRecipient: oneClickRecipient,
     oneClickRefundTo: oneClickRefundTo,
     providerStatusRaw: providerStatusRaw,
