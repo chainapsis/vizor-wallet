@@ -261,6 +261,21 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _addressType != 'invalid' &&
       _addressType != 'error';
 
+  static const _hardwareTexUnsupportedText =
+      'Keystone does not support TEX sends yet.';
+
+  bool get _activeAccountIsHardware {
+    final uuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (uuid == null) return false;
+    return ref.read(accountProvider.notifier).isHardwareAccount(uuid);
+  }
+
+  // Keystone cannot sign the multi-step shielded -> ephemeral t-addr -> TEX
+  // proposal yet, so block a hardware account from a TEX recipient at the
+  // address step. Software accounts handle TEX via the ZIP-320 two-step.
+  bool get _isHardwareTexRecipient =>
+      _addressType == 'tex' && _activeAccountIsHardware;
+
   bool get _showRecipientContinue =>
       _addressController.text.trim().isNotEmpty || _addressFocus.hasFocus;
 
@@ -369,7 +384,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _continueToAmount() {
-    if (!_hasValidAddress) return;
+    if (!_hasValidAddress || _isHardwareTexRecipient) return;
     _addressFocus.unfocus();
     setState(() => _step = _SendStep.amount);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1091,7 +1106,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAddressErrorSpace(BuildContext context) {
     final colors = context.colors;
-    final showError = _addressType == 'invalid' || _addressType == 'error';
+    final hardwareTex = _isHardwareTexRecipient;
+    final showError =
+        _addressType == 'invalid' || _addressType == 'error' || hardwareTex;
     return SizedBox(
       height: _kMobileSendAddressErrorGap + _kMobileSendRecipientLineHeight,
       child: showError
@@ -1100,9 +1117,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               child: Align(
                 alignment: Alignment.topLeft,
                 child: Text(
-                  _addressType == 'invalid'
-                      ? 'Invalid address'
-                      : 'Address validation failed',
+                  hardwareTex
+                      ? _hardwareTexUnsupportedText
+                      : (_addressType == 'invalid'
+                            ? 'Invalid address'
+                            : 'Address validation failed'),
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.text.destructive,
                   ),
@@ -1130,7 +1149,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         enabledBorderColor: useBackdropColors
             ? colors.border.subtleOpacity
             : null,
-        onPressed: _hasValidAddress ? _continueToAmount : null,
+        onPressed: _hasValidAddress && !_isHardwareTexRecipient
+            ? _continueToAmount
+            : null,
         child: Text(
           _addressController.text.trim().isEmpty
               ? 'Enter address to continue'
