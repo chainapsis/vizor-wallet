@@ -273,6 +273,33 @@ bool _sendRouteCanPop(WidgetTester tester) {
   return popScope.canPop;
 }
 
+BoxDecoration _fieldDecoration(WidgetTester tester, Finder fieldFinder) {
+  final containers = tester.widgetList<Container>(
+    find.descendant(of: fieldFinder, matching: find.byType(Container)),
+  );
+  return containers
+      .map((container) => container.decoration)
+      .whereType<BoxDecoration>()
+      .firstWhere(
+        (decoration) =>
+            decoration.borderRadius ==
+            BorderRadius.circular(AppInputSizing.radius),
+      );
+}
+
+ShapeDecoration _continueButtonDecoration(WidgetTester tester) {
+  final containers = tester.widgetList<AnimatedContainer>(
+    find.descendant(
+      of: find.byKey(const ValueKey('mobile_send_continue')),
+      matching: find.byType(AnimatedContainer),
+    ),
+  );
+  return containers
+      .map((container) => container.decoration)
+      .whereType<ShapeDecoration>()
+      .firstWhere((decoration) => decoration.shape is StadiumBorder);
+}
+
 void main() {
   setUpAll(() {
     RustLib.initMock(api: _RustApiFake());
@@ -445,6 +472,17 @@ void main() {
         tester.widget<EditableText>(inputFinder).focusNode.hasFocus,
         isTrue,
       );
+      final focusedDecoration = _fieldDecoration(tester, fieldFinder);
+      final focusedBorder = focusedDecoration.border as Border;
+      expect(focusedBorder.top.color, const Color(0x00000000));
+      final focusedShadow = focusedDecoration.boxShadow!.single;
+      expect(
+        focusedShadow.color,
+        AppThemeData.light.colors.background.neutralScrim,
+      );
+      expect(focusedShadow.offset, const Offset(0, 4));
+      expect(focusedShadow.blurRadius, 4);
+      expect(focusedShadow.spreadRadius, 1000);
       expect(tester.getRect(fieldFinder), rectBeforeFocus);
       expect(tester.getRect(groupFinder), groupRectBeforeFocus);
       expect(tester.getRect(scanRowFinder), scanRowRectBeforeFocus);
@@ -467,6 +505,54 @@ void main() {
       expect(scrimRect.bottom, greaterThan(fieldRect.bottom));
     },
   );
+
+  testWidgets('recipient focus applies backdrop-only Continue colors', (
+    tester,
+  ) async {
+    final colors = AppThemeData.light.colors;
+    final fieldFinder = find.byKey(const ValueKey('mobile_send_address_field'));
+    final scrimFinder = find.byKey(
+      const ValueKey('mobile_send_recipient_focus_scrim'),
+    );
+
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    await tester.tap(fieldFinder);
+    await tester.pumpAndSettle();
+
+    var decoration = _continueButtonDecoration(tester);
+    expect(
+      decoration.color,
+      Color.alphaBlend(colors.button.disabled.bg, colors.surface.input),
+    );
+
+    await _enterAddress(tester, _invalidAddress);
+    await tester.tap(scrimFinder);
+    await tester.pumpAndSettle();
+
+    decoration = _continueButtonDecoration(tester);
+    expect(decoration.color, colors.button.disabled.bg);
+
+    await tester.tap(fieldFinder);
+    await tester.pumpAndSettle();
+    await _enterAddress(tester, _shieldedAddress);
+
+    decoration = _continueButtonDecoration(tester);
+    final focusedEnabledBorder = decoration.shape as StadiumBorder;
+    expect(decoration.color, colors.button.primary.bg);
+    expect(focusedEnabledBorder.side.color, colors.border.subtleOpacity);
+    expect(focusedEnabledBorder.side.width, 1.5);
+
+    await tester.tap(scrimFinder);
+    await tester.pumpAndSettle();
+
+    decoration = _continueButtonDecoration(tester);
+    final normalEnabledBorder = decoration.shape as StadiumBorder;
+    expect(decoration.color, colors.button.primary.bg);
+    expect(normalEnabledBorder.side.color, colors.button.primary.border);
+    expect(normalEnabledBorder.side.width, 1.5);
+  });
 
   testWidgets('tapping a contact fills its address', (tester) async {
     await tester.pumpWidget(

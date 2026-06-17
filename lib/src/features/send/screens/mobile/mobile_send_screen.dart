@@ -801,7 +801,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                     key: const ValueKey('mobile_send_recipient_focus_scrim'),
                     behavior: HitTestBehavior.opaque,
                     onTap: _addressFocus.unfocus,
-                    child: ColoredBox(color: colors.background.neutralScrim),
+                    child: const SizedBox.expand(),
                   ),
                 ),
               ],
@@ -825,7 +825,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                     left: AppSpacing.sm,
                     right: AppSpacing.sm,
                     bottom: MediaQuery.paddingOf(context).bottom + AppSpacing.s,
-                    child: _buildRecipientContinueButton(context),
+                    child: _buildRecipientContinueButton(
+                      context,
+                      useBackdropColors: true,
+                    ),
                   ),
               ],
             ],
@@ -1025,6 +1028,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   Widget _buildAddressField(BuildContext context) {
     final colors = context.colors;
     final showAction = _addressFocus.hasFocus;
+    final hasAddressError =
+        _addressType == 'invalid' || _addressType == 'error';
     return MobileTextField(
       key: const ValueKey('mobile_send_address_field'),
       fieldKey: const ValueKey('mobile_send_address_input'),
@@ -1045,11 +1050,21 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           ),
         ),
       ),
-      restingBorderColor: _addressType == 'invalid' || _addressType == 'error'
+      restingBorderColor: hasAddressError
           ? colors.border.utilityDestructive
           : null,
-      focusedBorderColor: _addressType == 'invalid' || _addressType == 'error'
+      focusedBorderColor: hasAddressError
           ? colors.border.utilityDestructive
+          : const Color(0x00000000),
+      focusedBoxShadow: showAction
+          ? [
+              BoxShadow(
+                color: colors.background.neutralScrim,
+                offset: const Offset(0, 4),
+                blurRadius: 4,
+                spreadRadius: 1000,
+              ),
+            ]
           : null,
       trailing: showAction
           ? SizedBox(
@@ -1097,13 +1112,23 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
-  Widget _buildRecipientContinueButton(BuildContext context) {
+  Widget _buildRecipientContinueButton(
+    BuildContext context, {
+    bool useBackdropColors = false,
+  }) {
+    final colors = context.colors;
     return SizedBox(
       width: double.infinity,
       child: AppButton(
         key: const ValueKey('mobile_send_continue'),
         expand: true,
         constrainContent: true,
+        disabledBackgroundColor: useBackdropColors
+            ? Color.alphaBlend(colors.button.disabled.bg, colors.surface.input)
+            : null,
+        enabledBorderColor: useBackdropColors
+            ? colors.border.subtleOpacity
+            : null,
         onPressed: _hasValidAddress ? _continueToAmount : null,
         child: Text(
           _addressController.text.trim().isEmpty
