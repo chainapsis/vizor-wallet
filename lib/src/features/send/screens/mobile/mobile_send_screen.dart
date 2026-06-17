@@ -711,7 +711,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       'unified' => 'Unified address',
       'sapling' => 'Shielded address',
       'transparent' => 'Transparent address',
-      'tex' => 'TEX address',
       _ => 'Zcash address',
     };
   }
@@ -2109,7 +2108,7 @@ class _MemoSheetState extends State<_MemoSheet> {
                       : () => Navigator.of(
                           context,
                         ).pop(primaryIsClear ? '' : _currentMemo),
-                  child: Text(primaryIsClear ? 'Clear Memo' : 'Add Memo'),
+                  child: Text(primaryIsClear ? 'Clear memo' : 'Add Memo'),
                 ),
                 const SizedBox(height: AppSpacing.s),
                 AppButton(

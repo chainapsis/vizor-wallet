@@ -349,8 +349,6 @@ pub fn validate_address(address: &str) -> Result<String, String> {
         Ok("unified".into())
     } else if debug.contains("Sapling") {
         Ok("sapling".into())
-    } else if debug.contains("Tex") {
-        Ok("tex".into())
     } else if debug.contains("P2pkh") || debug.contains("P2sh") {
         Ok("transparent".into())
     } else {
@@ -473,13 +471,6 @@ mod tests {
         // with proposals that a parallel test might genuinely insert.
         static COUNTER: AtomicU64 = AtomicU64::new(1_000_000_000);
         COUNTER.fetch_add(1, Ordering::Relaxed)
-    }
-
-    #[test]
-    fn validate_address_classifies_tex_address() {
-        let address_type = validate_address("tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte").unwrap();
-
-        assert_eq!(address_type, "tex");
     }
 
     #[test]

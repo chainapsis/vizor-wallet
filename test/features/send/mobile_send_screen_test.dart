@@ -22,7 +22,6 @@ import 'package:zcash_wallet/src/rust/frb_generated.dart';
 const _shieldedAddress =
     'u1testshieldedaddress00000000000000000000000000000000000000000000000';
 const _transparentAddress = 't1transparentdestination0000000000000000000';
-const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 const _invalidAddress = 'not-an-address';
 
 class _RustApiFake implements RustLibApi {
@@ -38,9 +37,6 @@ class _RustApiFake implements RustLibApi {
         isValid: true,
         addressType: 'transparent',
       );
-    }
-    if (address.startsWith('tex')) {
-      return const AddressValidationResult(isValid: true, addressType: 'tex');
     }
     return const AddressValidationResult(isValid: true, addressType: 'unified');
   }
@@ -670,7 +666,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_send_memo_row')));
     await tester.pumpAndSettle();
     expect(find.text('Add Memo'), findsOneWidget); // title only
-    expect(find.text('Clear Memo'), findsOneWidget);
+    expect(find.text('Clear memo'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_send_memo_clear')),
       findsOneWidget,
@@ -681,7 +677,7 @@ void main() {
       'updated thanks!',
     );
     await tester.pump();
-    expect(find.text('Clear Memo'), findsNothing);
+    expect(find.text('Clear memo'), findsNothing);
     expect(find.text('Add Memo'), findsNWidgets(2)); // title + button
     await tester.tap(find.byKey(const ValueKey('mobile_send_memo_cancel')));
     await tester.pumpAndSettle();
@@ -702,17 +698,6 @@ void main() {
     expect(find.text('Add short encrypted message'), findsNothing);
     expect(find.text('Transparent address'), findsOneWidget);
     expect(find.text('Tx fee'), findsOneWidget);
-  });
-
-  testWidgets('a TEX recipient uses the TEX address fallback label', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_app());
-    await tester.pumpAndSettle();
-    await _toReviewStep(tester, address: _texAddress);
-
-    expect(find.text('Add short encrypted message'), findsNothing);
-    expect(find.text('TEX address'), findsOneWidget);
   });
 
   testWidgets('a failing send lands on the failed status with retry', (
