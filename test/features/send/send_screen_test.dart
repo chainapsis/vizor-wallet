@@ -301,6 +301,33 @@ void main() {
     expect(find.byKey(const ValueKey('send_memo_field')), findsNothing);
   });
 
+  testWidgets('transparent recipient Max fills amount without memo', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(500000000)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      _editableIn('send_address_field'),
+      _transparentAddress,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.textContaining('Max:'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(rustApi.estimateSendMaxCalls, 1);
+    expect(rustApi.lastEstimateSendMaxToAddress, _transparentAddress);
+    expect(rustApi.lastEstimateSendMaxMemo, isNull);
+    expect(_fieldText(tester, 'send_amount_field'), isNotEmpty);
+    expect(find.text('Max amount unavailable'), findsNothing);
+  });
+
   testWidgets('hides imported memo controls for TEX recipients', (
     tester,
   ) async {
@@ -618,13 +645,19 @@ class _FakeSyncNotifier extends SyncNotifier {
 
 class _RustApiFake implements RustLibApi {
   int proposeSendCalls = 0;
+  int estimateSendMaxCalls = 0;
   String? lastProposeToAddress;
   String? lastProposeMemo;
+  String? lastEstimateSendMaxToAddress;
+  String? lastEstimateSendMaxMemo;
 
   void reset() {
     proposeSendCalls = 0;
+    estimateSendMaxCalls = 0;
     lastProposeToAddress = null;
     lastProposeMemo = null;
+    lastEstimateSendMaxToAddress = null;
+    lastEstimateSendMaxMemo = null;
   }
 
   @override
@@ -653,6 +686,24 @@ class _RustApiFake implements RustLibApi {
     String? memo,
   }) async {
     return BigInt.from(10000);
+  }
+
+  @override
+  Future<SendMaxEstimateResult> crateApiSyncEstimateSendMax({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String toAddress,
+    String? memo,
+  }) async {
+    estimateSendMaxCalls++;
+    lastEstimateSendMaxToAddress = toAddress;
+    lastEstimateSendMaxMemo = memo;
+    return SendMaxEstimateResult(
+      amountZatoshi: BigInt.from(499990000),
+      feeZatoshi: BigInt.from(10000),
+      needsSaplingParams: false,
+    );
   }
 
   @override
