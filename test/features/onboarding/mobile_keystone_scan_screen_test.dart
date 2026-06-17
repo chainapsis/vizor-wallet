@@ -279,6 +279,47 @@ void main() {
     expect(find.text('Account 1'), findsOneWidget);
   });
 
+  testWidgets('resets the scan session when returning from select account', (
+    tester,
+  ) async {
+    _setViewSize(tester, const Size(393, 852));
+    _rustApi.decodedAccounts = [_account(1), _account(2)];
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_routerApp(controller: controller));
+    await tester.pump();
+
+    int token() =>
+        tester
+                .widget<AnimatedUrScannerView>(
+                  find.byKey(const ValueKey('mobile_keystone_scan_camera')),
+                )
+                .scanSessionResetToken!
+            as int;
+
+    final initial = token();
+
+    tester
+        .widget<AnimatedUrScannerView>(
+          find.byKey(const ValueKey('mobile_keystone_scan_camera')),
+        )
+        .onComplete(
+          const ScanResult(urType: 'zcash-accounts', data: [1, 2, 3]),
+        );
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(MobileKeystoneSelectAccountScreen), findsOneWidget);
+
+    // Backing out to scan a different Keystone QR must reset the scanner so
+    // it can complete again instead of staying in its finished state.
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileKeystoneScanScreen), findsOneWidget);
+    expect(token(), greaterThan(initial));
+  });
+
   testWidgets('stays on scan with an inline error when no accounts decode', (
     tester,
   ) async {

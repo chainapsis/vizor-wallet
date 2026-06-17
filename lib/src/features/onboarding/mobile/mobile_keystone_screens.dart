@@ -236,8 +236,18 @@ class _MobileKeystoneScanScreenState
       }
 
       ref.read(keystoneOnboardingProvider.notifier).setAccounts(accounts);
-      context.push(KeystoneOnboardingStep.selectAccount.routePath);
       if (mounted) setState(() => _decoding = false);
+      // push() resolves when select-account pops back to this still-mounted
+      // scan screen. Reset the UR session/progress on return so a second
+      // Keystone QR can be scanned — otherwise the scanner stays in its
+      // completed state and ignores new frames.
+      await context.push(KeystoneOnboardingStep.selectAccount.routePath);
+      if (!mounted) return;
+      setState(() {
+        _scanProgress = 0;
+        _scanSessionResetToken++;
+        _error = null;
+      });
     } catch (e, st) {
       log('MobileKeystoneScan: account decode error: $e\n$st');
       if (!mounted) return;
