@@ -399,32 +399,54 @@ void main() {
     expect(find.text('Continue'), findsOneWidget);
   });
 
-  testWidgets('recipient focus scrim covers the full safe-area frame', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _app(viewPadding: const EdgeInsets.only(top: 55, bottom: 34)),
-    );
-    await tester.pumpAndSettle();
+  testWidgets(
+    'recipient focus keeps the address field mounted and stationary',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(viewPadding: const EdgeInsets.only(top: 55, bottom: 34)),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('mobile_send_address_field')));
-    await tester.pumpAndSettle();
+      final fieldFinder = find.byKey(
+        const ValueKey('mobile_send_address_field'),
+      );
+      final inputFinder = find.descendant(
+        of: fieldFinder,
+        matching: find.byType(EditableText),
+      );
+      final rectBeforeFocus = tester.getRect(fieldFinder);
+      expect(
+        tester.widget<EditableText>(inputFinder).focusNode.hasFocus,
+        isFalse,
+      );
 
-    final scrimRect = tester.getRect(
-      find.byKey(const ValueKey('mobile_send_recipient_focus_scrim')),
-    );
-    expect(scrimRect, Offset.zero & const Size(520, 1100));
-    expect(
-      tester
-          .getRect(
-            find.byKey(
-              const ValueKey('mobile_send_recipient_focus_address_layer'),
-            ),
-          )
-          .top,
-      143,
-    );
-  });
+      await tester.tap(find.byKey(const ValueKey('mobile_send_address_field')));
+      await tester.pumpAndSettle();
+
+      expect(fieldFinder, findsOneWidget);
+      expect(inputFinder, findsOneWidget);
+      expect(
+        tester.widget<EditableText>(inputFinder).focusNode.hasFocus,
+        isTrue,
+      );
+      expect(tester.getRect(fieldFinder), rectBeforeFocus);
+      expect(tester.getSize(fieldFinder).height, AppInputSizing.height);
+      expect(
+        find.byKey(const ValueKey('mobile_send_recipient_focus_address_layer')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile_send_address_field_placeholder')),
+        findsNothing,
+      );
+
+      final fieldRect = tester.getRect(fieldFinder);
+      final scrimRect = tester.getRect(
+        find.byKey(const ValueKey('mobile_send_recipient_focus_scrim')),
+      );
+      expect(scrimRect.top, greaterThanOrEqualTo(fieldRect.bottom));
+    },
+  );
 
   testWidgets('tapping a contact fills its address', (tester) async {
     await tester.pumpWidget(

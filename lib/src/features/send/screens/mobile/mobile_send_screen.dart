@@ -98,7 +98,8 @@ const _kMobileSendAddressFieldGroupHeight =
     AppInputSizing.height +
     _kMobileSendAddressErrorGap +
     _kMobileSendRecipientLineHeight;
-const _kMobileSendRecipientFocusFieldTop = kMobileTopNavHeight + AppSpacing.sm;
+const _kMobileSendRecipientFocusScrimTop =
+    kMobileTopNavHeight + AppSpacing.s + _kMobileSendAddressFieldGroupHeight;
 const _kMobileSendAmountFieldHeight = 178.0;
 const _kMobileSendAmountInputHeight = 64.0;
 const _kMobileSendAmountLineHeight = 17.0;
@@ -764,7 +765,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _SendPhase.compose => switch (_step) {
         _SendStep.recipient => _buildRecipientStep(
           context,
-          elevateFocusedControls: showRecipientFocusOverlay,
+          hasFocusedRecipient: showRecipientFocusOverlay,
         ),
         _SendStep.amount => _buildAmountStep(context),
         _SendStep.review => _buildReviewStep(context),
@@ -792,24 +793,19 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 ),
               ),
               if (showRecipientFocusOverlay) ...[
-                Positioned.fill(
+                Positioned(
+                  top:
+                      MediaQuery.paddingOf(context).top +
+                      _kMobileSendRecipientFocusScrimTop,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
                   child: GestureDetector(
                     key: const ValueKey('mobile_send_recipient_focus_scrim'),
                     behavior: HitTestBehavior.opaque,
                     onTap: _addressFocus.unfocus,
                     child: ColoredBox(color: colors.background.neutralScrim),
                   ),
-                ),
-                Positioned(
-                  key: const ValueKey(
-                    'mobile_send_recipient_focus_address_layer',
-                  ),
-                  top:
-                      MediaQuery.paddingOf(context).top +
-                      _kMobileSendRecipientFocusFieldTop,
-                  left: AppSpacing.sm,
-                  right: AppSpacing.sm,
-                  child: _buildAddressFieldGroup(context),
                 ),
                 if (_showRecipientContinue)
                   Positioned(
@@ -833,7 +829,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildRecipientStep(
     BuildContext context, {
-    required bool elevateFocusedControls,
+    required bool hasFocusedRecipient,
   }) {
     final colors = context.colors;
     final contacts = [
@@ -854,13 +850,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               AppSpacing.md,
             ),
             children: [
-              if (elevateFocusedControls)
-                const SizedBox(
-                  key: ValueKey('mobile_send_address_field_placeholder'),
-                  height: _kMobileSendAddressFieldGroupHeight,
-                )
-              else
-                _buildAddressFieldGroup(context),
+              _buildAddressFieldGroup(context),
               const SizedBox(height: AppSpacing.md),
               Semantics(
                 button: true,
@@ -999,7 +989,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             ],
           ),
         ),
-        if (_showRecipientContinue && !elevateFocusedControls)
+        if (_showRecipientContinue && !hasFocusedRecipient)
           Padding(
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.sm,
