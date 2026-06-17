@@ -188,7 +188,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     : () => _showModal(_SettingsModalType.updates),
                 onAbout: () => context.push('/about'),
                 onUninstall: showUninstall
-                    ? () => context.push('/settings/uninstall')
+                    ? () => context.go('/settings/uninstall')
                     : null,
               ),
             ),
