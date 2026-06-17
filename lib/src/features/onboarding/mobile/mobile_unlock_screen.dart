@@ -87,9 +87,9 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       final now = ref.read(biometricUnlockProvider).value;
       var nextError = _error;
       if (wasEnabled && now != null && !now.enabled) {
-        // The escrow was invalidated (biometrics re-enrolled) — explain
+        // The escrow was invalidated (biometric data changed) — explain
         // why the prompt stopped appearing.
-        nextError = 'Biometrics changed. Enter your passcode.';
+        nextError = biometric.availability.kind.changedMessage;
       }
       setState(() {
         _biometricFallback = true;
@@ -311,11 +311,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
                               return const SizedBox.shrink();
                             }
                             return PasscodeBiometricButton(
-                              label:
-                                  biometric.availability.kind ==
-                                      BiometricKind.face
-                                  ? 'Sign in with Face ID'
-                                  : 'Sign in with biometrics',
+                              label: biometric.availability.kind.signInLabel,
                               icon:
                                   biometric.availability.kind ==
                                       BiometricKind.face

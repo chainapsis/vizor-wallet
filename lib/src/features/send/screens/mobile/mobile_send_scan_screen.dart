@@ -1,40 +1,42 @@
-import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
-import 'package:go_router/go_router.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_scan/domain/address_scan_payload.dart';
-import '../../../address_scan/widgets/mobile_address_scan_view.dart';
+import '../../../address_scan/widgets/mobile_address_scan_card.dart';
+import '../../../address_scan/widgets/mobile_address_scan_view.dart'
+    show MobileScanOutcome, MobileScanResolver;
 
-/// Address scanner for the mobile send flow — Figma `Mobile Scanner`
-/// (4484:58700): full-bleed back camera under a dark scrim with the
-/// shared scan chrome. Pops the scanned Zcash address string on success.
-class MobileSendScanScreen extends StatelessWidget {
-  const MobileSendScanScreen({super.key});
+/// Presents the mobile send scanner over the current send screen — Figma
+/// `QR Scan` (4484:61584): a card-contained back camera scanner over the
+/// dimmed app. Pops the scanned Zcash address string on success.
+Future<String?> showMobileSendScanSheet(
+  BuildContext context, {
+  MobileScannerController? controller,
+  MobileScanResolver? resolve,
+}) {
+  return showAppMobileSheet<String>(
+    context: context,
+    builder: (sheetContext) => MobileAddressScanCard(
+      controller: controller,
+      resolve: resolve ?? _resolveZcashAddress,
+      onScanned: (address) => Navigator.of(sheetContext).pop(address),
+      onClose: () => Navigator.of(sheetContext).pop(),
+    ),
+  );
+}
 
-  Future<MobileScanOutcome> _resolveZcashAddress(String raw) async {
-    final address = normalizeAddressScanPayload(raw);
-    if (address == null || address.isEmpty) {
-      return const MobileScanOutcome.rejected(
-        "This QR code isn't a Zcash address.",
-      );
-    }
-    final result = await rust_sync.validateAddress(address: address);
-    if (result.isValid) return MobileScanOutcome.accepted(address);
+Future<MobileScanOutcome> _resolveZcashAddress(String raw) async {
+  final address = normalizeAddressScanPayload(raw);
+  if (address == null || address.isEmpty) {
     return const MobileScanOutcome.rejected(
       "This QR code isn't a Zcash address.",
     );
   }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: MobileAddressScanView(
-        resolve: _resolveZcashAddress,
-        onScanned: (address) => context.pop(address),
-        onClose: () => context.pop(),
-      ),
-    );
-  }
+  final result = await rust_sync.validateAddress(address: address);
+  if (result.isValid) return MobileScanOutcome.accepted(address);
+  return const MobileScanOutcome.rejected(
+    "This QR code isn't a Zcash address.",
+  );
 }

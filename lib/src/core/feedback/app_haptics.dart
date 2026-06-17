@@ -21,6 +21,9 @@ abstract final class AppHaptics {
   /// UIImpactFeedbackGenerator(.medium)).
   static Future<void> privacyToggle() => HapticFeedback.mediumImpact();
 
+  /// Copying sensitive values — a light confirmation tap.
+  static Future<void> copy() => HapticFeedback.lightImpact();
+
   /// A rejected passcode. Native notification-error where the platform
   /// has one (iOS UINotificationFeedbackGenerator(.error), Android
   /// REJECT on API 30+); otherwise a double heavy knock approximates
