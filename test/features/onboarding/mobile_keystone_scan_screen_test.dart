@@ -7,8 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/features/keystone/widgets/keystone_qr_scanner_card.dart';
 import 'package:zcash_wallet/src/features/onboarding/keystone/keystone_onboarding_flow.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_screens.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
@@ -37,24 +37,28 @@ class _RustApiFake implements RustLibApi {
 
 final _rustApi = _RustApiFake();
 
-Widget _app() {
-  return const ProviderScope(
+Widget _app({MobileScannerController? controller}) {
+  return ProviderScope(
     child: MaterialApp(
       home: AppTheme(
         data: AppThemeData.dark,
-        child: MobileKeystoneScanScreen(),
+        child: MobileKeystoneScanScreen(scannerController: controller),
       ),
     ),
   );
 }
 
-Widget _routerApp({String initialLocation = '/onboarding/keystone/scan'}) {
+Widget _routerApp({
+  String initialLocation = '/onboarding/keystone/scan',
+  MobileScannerController? controller,
+}) {
   final router = GoRouter(
     initialLocation: initialLocation,
     routes: [
       GoRoute(
         path: KeystoneOnboardingStep.scanQrCode.routePath,
-        builder: (_, _) => const MobileKeystoneScanScreen(),
+        builder: (_, _) =>
+            MobileKeystoneScanScreen(scannerController: controller),
       ),
       GoRoute(
         path: KeystoneOnboardingStep.selectAccount.routePath,
@@ -115,8 +119,12 @@ void main() {
 
   testWidgets('keeps the Figma camera height on tall phones', (tester) async {
     _setViewSize(tester, const Size(393, 852));
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
 
-    await tester.pumpWidget(_app());
+    controller.value = controller.value.copyWith(isInitialized: true);
+
+    await tester.pumpWidget(_app(controller: controller));
     await tester.pump();
 
     expect(find.byType(SingleChildScrollView), findsNothing);
@@ -127,12 +135,110 @@ void main() {
     expect(_cameraViewportSize(tester), const Size(361, 464));
   });
 
+  testWidgets('uses the Keystone permission card while access is pending', (
+    tester,
+  ) async {
+    _setViewSize(tester, const Size(393, 852));
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_app(controller: controller));
+    await tester.pump();
+
+    final cameraElement = tester.element(
+      find.byKey(const ValueKey('mobile_keystone_scan_camera')),
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_keystone_scan_permission_card')),
+      findsOneWidget,
+    );
+    expect(find.text('Enable camera access'), findsOneWidget);
+    expect(
+      find.text('A camera is required to connect Keystone.'),
+      findsOneWidget,
+    );
+    expect(find.text('Grant access to your camera'), findsNothing);
+    expect(find.text('Scan the address QR code'), findsNothing);
+
+    controller.value = controller.value.copyWith(isInitialized: true);
+    await tester.pump();
+
+    expect(find.text('Loading...'), findsOneWidget);
+    expect(find.text('Enable camera access'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_keystone_scan_permission_card')),
+      findsNothing,
+    );
+    expect(
+      identical(
+        tester.element(
+          find.byKey(const ValueKey('mobile_keystone_scan_camera')),
+        ),
+        cameraElement,
+      ),
+      isTrue,
+    );
+  });
+
+  testWidgets('denied access uses the Keystone retry card', (tester) async {
+    _setViewSize(tester, const Size(393, 852));
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_app(controller: controller));
+    await tester.pump();
+
+    controller.value = controller.value.copyWith(
+      isInitialized: true,
+      error: const MobileScannerException(
+        errorCode: MobileScannerErrorCode.permissionDenied,
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('mobile_keystone_scan_permission_card')),
+      findsOneWidget,
+    );
+    expect(find.text("You've denied camera access"), findsOneWidget);
+    expect(find.text('Request again'), findsOneWidget);
+    expect(find.text('Cancel'), findsNothing);
+  });
+
+  testWidgets('shows scan card once camera permission is granted and running', (
+    tester,
+  ) async {
+    _setViewSize(tester, const Size(393, 852));
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
+
+    controller.value = controller.value.copyWith(
+      isInitialized: true,
+      isRunning: true,
+    );
+    await tester.pumpWidget(_app(controller: controller));
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('mobile_keystone_scan_camera')), findsOne);
+    expect(find.text('Scan a Zcash QR code to continue'), findsOneWidget);
+    expect(find.text('Loading...'), findsNothing);
+    expect(find.text('Enable camera access'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_keystone_scan_permission_card')),
+      findsNothing,
+    );
+  });
+
   testWidgets('shrinks only the camera viewport on shorter phones', (
     tester,
   ) async {
     _setViewSize(tester, const Size(393, 667));
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
 
-    await tester.pumpWidget(_app());
+    controller.value = controller.value.copyWith(isInitialized: true);
+
+    await tester.pumpWidget(_app(controller: controller));
     await tester.pump();
 
     final cameraSize = _cameraViewportSize(tester);
@@ -151,13 +257,15 @@ void main() {
   ) async {
     _setViewSize(tester, const Size(393, 852));
     _rustApi.decodedAccounts = [_account(1), _account(2)];
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
 
-    await tester.pumpWidget(_routerApp());
+    await tester.pumpWidget(_routerApp(controller: controller));
     await tester.pump();
 
     tester
-        .widget<KeystoneQrScannerCard>(
-          find.byKey(const ValueKey('mobile_keystone_scan_card')),
+        .widget<AnimatedUrScannerView>(
+          find.byKey(const ValueKey('mobile_keystone_scan_camera')),
         )
         .onComplete(
           const ScanResult(urType: 'zcash-accounts', data: [1, 2, 3]),
@@ -175,13 +283,20 @@ void main() {
     tester,
   ) async {
     _setViewSize(tester, const Size(393, 852));
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
 
-    await tester.pumpWidget(_app());
+    controller.value = controller.value.copyWith(
+      isInitialized: true,
+      isRunning: true,
+    );
+
+    await tester.pumpWidget(_app(controller: controller));
     await tester.pump();
 
     tester
-        .widget<KeystoneQrScannerCard>(
-          find.byKey(const ValueKey('mobile_keystone_scan_card')),
+        .widget<AnimatedUrScannerView>(
+          find.byKey(const ValueKey('mobile_keystone_scan_camera')),
         )
         .onComplete(
           const ScanResult(urType: 'zcash-accounts', data: [1, 2, 3]),
@@ -217,6 +332,6 @@ void main() {
 
 Size _cameraViewportSize(WidgetTester tester) {
   return tester.getSize(
-    find.byKey(const ValueKey('keystone_qr_scanner_camera_viewport')),
+    find.byKey(const ValueKey('mobile_keystone_scan_card')),
   );
 }

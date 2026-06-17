@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
@@ -13,9 +14,10 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
-import '../../../services/qr_scanner.dart' show ScanResult;
+import '../../../services/qr_scanner.dart'
+    show AnimatedUrScannerView, ScanResult;
+import '../../address_scan/widgets/mobile_address_scan_card.dart';
 import '../../about/about_content.dart' show launchAboutUrl;
-import '../../keystone/widgets/keystone_qr_scanner_card.dart';
 import '../keystone/keystone_onboarding_flow.dart'
     show
         KeystoneOnboardingStep,
@@ -23,6 +25,7 @@ import '../keystone/keystone_onboarding_flow.dart'
         keystoneOnboardingProvider;
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_import_birthday_screen.dart';
+import 'mobile_keystone_scan_card.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 const _keystoneFirmwareUrl = 'https://keyst.one/firmware';
@@ -48,100 +51,116 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
         trailing: const AppIcon(AppIcons.chevronForward),
         child: const Text('Continue'),
       ),
-      child: Container(
-        width: double.infinity,
-        // Same surface-card rhythm as the onboarding info cards: 20 px
-        // sides, 44 px vertical, 16 below a heading, 36 around the
-        // divider.
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 44),
-        decoration: BoxDecoration(
-          color: colors.background.ground,
-          borderRadius: BorderRadius.circular(AppRadii.large),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _SectionHeading(
-              iconName: AppIcons.importWallet,
-              title: '1. Check Keystone firmware',
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              'Check if your Keystone device has the latest version of the '
-              'Cypherpunk firmware, update or install if needed.',
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.primary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            Semantics(
-              button: true,
-              link: true,
-              label: 'Keystone firmware link',
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => unawaited(launchAboutUrl(_keystoneFirmwareUrl)),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AppIcon(
-                      AppIcons.link,
-                      size: AppIconSize.medium,
-                      color: colors.icon.accent,
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
-                    Text(
-                      'Keystone firmware',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
-                  ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _KeystoneIntroCard(
+            key: const ValueKey('mobile_keystone_intro_firmware_card'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionHeading(
+                  iconName: AppIcons.importWallet,
+                  title: '1. Check Keystone firmware',
                 ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 36),
-              child: Container(height: 1, color: colors.border.subtle),
-            ),
-            _SectionHeading(
-              iconName: AppIcons.qr,
-              title: '2. Prepare to connect',
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            for (final (i, step) in const [
-              'Unlock your Keystone.',
-              'Tap the ... menu, then go to Sync.',
-              'Open the Zcash QR code in order to connect.',
-              'Allow camera access when prompted and scan the QR code '
-                  'with your phone.',
-            ].indexed) ...[
-              if (i > 0) const SizedBox(height: AppSpacing.xxs),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 20,
-                    child: Text(
-                      '${i + 1}.',
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.primary,
-                      ),
-                    ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'Check if your Keystone device has the latest version of '
+                  'the Cypherpunk firmware, update or install if needed.',
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.primary,
                   ),
-                  Expanded(
-                    child: Text(
-                      step,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.primary,
-                      ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Semantics(
+                  button: true,
+                  link: true,
+                  label: 'Keystone firmware link',
+                  child: AppButton(
+                    variant: AppButtonVariant.ghost,
+                    size: AppButtonSize.medium,
+                    height: 36,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xs,
                     ),
+                    leading: const AppIcon(AppIcons.link),
+                    onPressed: () =>
+                        unawaited(launchAboutUrl(_keystoneFirmwareUrl)),
+                    child: const Text('Keystone firmware'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          _KeystoneIntroCard(
+            key: const ValueKey('mobile_keystone_intro_prepare_card'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionHeading(
+                  iconName: AppIcons.qr,
+                  title: '2. Prepare to connect',
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                for (final (i, step) in const [
+                  'Unlock your Keystone.',
+                  'Tap the ... menu, then go to Sync.',
+                  'Open the Zcash QR code in order to connect.',
+                  'Allow camera access when prompted and scan the QR code '
+                      'with your phone.',
+                ].indexed) ...[
+                  if (i > 0) const SizedBox(height: AppSpacing.xxs),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        child: Text(
+                          '${i + 1}.',
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: colors.text.primary,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          step,
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: colors.text.primary,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
-              ),
-            ],
-          ],
-        ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KeystoneIntroCard extends StatelessWidget {
+  const _KeystoneIntroCard({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xxs),
+        child: child,
       ),
     );
   }
@@ -175,7 +194,9 @@ class _SectionHeading extends StatelessWidget {
 /// the shared scanner card handles camera permission states and the
 /// animated-UR progress; this screen decodes the completed payload.
 class MobileKeystoneScanScreen extends ConsumerStatefulWidget {
-  const MobileKeystoneScanScreen({super.key});
+  const MobileKeystoneScanScreen({this.scannerController, super.key});
+
+  final MobileScannerController? scannerController;
 
   @override
   ConsumerState<MobileKeystoneScanScreen> createState() =>
@@ -188,12 +209,15 @@ class _MobileKeystoneScanScreenState
 
   bool _decoding = false;
   String? _error;
+  int _scanProgress = 0;
+  int _scanSessionResetToken = 0;
 
   Future<void> _handleScanComplete(ScanResult result) async {
     if (_decoding) return;
     setState(() {
       _decoding = true;
       _error = null;
+      _scanProgress = 100;
     });
 
     try {
@@ -205,6 +229,8 @@ class _MobileKeystoneScanScreenState
         setState(() {
           _decoding = false;
           _error = 'No Zcash accounts were found on this Keystone QR.';
+          _scanProgress = 0;
+          _scanSessionResetToken++;
         });
         return;
       }
@@ -217,10 +243,21 @@ class _MobileKeystoneScanScreenState
       if (!mounted) return;
       setState(() {
         _decoding = false;
+        _scanProgress = 0;
+        _scanSessionResetToken++;
         _error =
             'This QR code could not be decoded as a Keystone Zcash account.';
       });
     }
+  }
+
+  void _handleScanProgress(int progress) {
+    final clamped = progress.clamp(0, 100);
+    if (!mounted || _scanProgress == clamped) return;
+    setState(() {
+      _scanProgress = clamped;
+      if (clamped > 0) _error = null;
+    });
   }
 
   void _handleDecodeError(Object error) {
@@ -230,6 +267,15 @@ class _MobileKeystoneScanScreenState
         : 'Keep the QR code steady and fully visible.';
     if (_error == message) return;
     setState(() => _error = message);
+  }
+
+  String? get _scanCaptionOverride {
+    if (_decoding) return 'Reading accounts...';
+    if (_error != null) return _error;
+    if (_scanProgress > 0 && _scanProgress < 100) {
+      return 'Scanning... $_scanProgress%';
+    }
+    return null;
   }
 
   @override
@@ -248,29 +294,34 @@ class _MobileKeystoneScanScreenState
           final cameraHeight = math.min(_cameraMaxHeight, availableHeight);
           return Align(
             alignment: Alignment.topCenter,
-            child: KeystoneQrScannerCard(
+            child: MobileQrScanCard(
               key: const ValueKey('mobile_keystone_scan_card'),
-              expectedUrType: 'zcash-accounts',
-              decoding: _decoding,
-              error: _error,
-              // The Keystone Scan frames run the card edge-to-edge inside the
-              // 16 px content inset, as a single 464 px rounded camera card
-              // (Figma `Camera` 4654:72631 — no inner frame on mobile). Shorter
-              // phones keep the page fixed and shrink only this viewport.
-              cardWidth: double.infinity,
+              controller: widget.scannerController,
               cameraHeight: cameraHeight,
-              onProgress: (progress) {
-                if (!mounted) return;
-                setState(() {
-                  if (progress > 0) _error = null;
-                });
-              },
-              onDecodeError: _handleDecodeError,
-              onComplete: _handleScanComplete,
-              decodingLabel: 'Reading accounts...',
-              unavailableMessage:
-                  'A camera is required to connect Keystone. You can revert '
-                  'this in settings anytime later.',
+              permissionTitle: 'Scan QR Code',
+              error: _scanCaptionOverride,
+              unavailableDescription:
+                  'Keystone import uses camera QR scanning only. Connect a '
+                  'camera and try again.',
+              onClose: () => Navigator.of(context).maybePop(),
+              permissionBuilder:
+                  (context, status, unavailableDescription, onRetry, onClose) =>
+                      MobileKeystoneScanPermissionCard(
+                        status: status,
+                        unavailableDescription: unavailableDescription,
+                        onRetry: onRetry,
+                        cameraHeight: cameraHeight,
+                      ),
+              cameraViewBuilder: (context, controller) => AnimatedUrScannerView(
+                key: const ValueKey('mobile_keystone_scan_camera'),
+                controller: controller,
+                expectedUrType: 'zcash-accounts',
+                scanSessionResetToken: _scanSessionResetToken,
+                errorBuilder: (context, error) => const SizedBox.shrink(),
+                onProgress: _handleScanProgress,
+                onDecodeError: _handleDecodeError,
+                onComplete: (result) => unawaited(_handleScanComplete(result)),
+              ),
             ),
           );
         },
@@ -323,26 +374,32 @@ class MobileKeystoneSelectAccountScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '${accounts.length} account${accounts.length == 1 ? '' : 's'} '
-            'found',
-            style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.secondary,
+          // Figma `List Title` (4654:74577): Label M Medium on
+          // text/secondary with a 4 px inset.
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.xxs),
+            child: Text(
+              '${accounts.length} account${accounts.length == 1 ? '' : 's'} '
+              'found',
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.secondary,
+              ),
             ),
           ),
           const SizedBox(height: AppSpacing.s),
           for (final account in accounts) ...[
             _AccountCard(
-              name: account.name,
+              name: account.name.trim().isEmpty
+                  ? 'Account ${account.index + 1}'
+                  : account.name,
               detail: _truncate(account.ufvk),
               selected: account == selected,
               onTap: () => ref
                   .read(keystoneOnboardingProvider.notifier)
                   .selectAccount(account),
             ),
-            // 10 px card gap measured from the Select Account frame
-            // (76 px row pitch with the 66 px card).
-            const SizedBox(height: 10),
+            // 12 px gap between radio cards (Figma `Radi Group` 4654:74579).
+            const SizedBox(height: AppSpacing.s),
           ],
         ],
       ),
@@ -375,37 +432,68 @@ class _AccountCard extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
-          height: 66,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          // Figma `Radio Card` (4654:74580): min-h 64, ground fill, 16 px
+          // radius, asymmetric 8/12/4 padding. Only the selected card
+          // carries a 2 px strong border; unselected cards are border-less.
+          constraints: const BoxConstraints(minHeight: 64),
+          padding: const EdgeInsets.only(
+            left: AppSpacing.xs,
+            right: AppSpacing.s,
+            top: AppSpacing.xxs,
+            bottom: AppSpacing.xxs,
+          ),
           decoration: BoxDecoration(
             color: colors.background.ground,
             borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: Border.all(
-              color: selected ? colors.border.strong : colors.border.subtle,
-              width: selected ? 2 : 1,
-            ),
+            border: selected
+                ? Border.all(color: colors.border.strong, width: 2)
+                : null,
           ),
           child: Row(
             children: [
-              AppIcon(AppIcons.user, size: 20, color: colors.icon.muted),
-              const SizedBox(width: AppSpacing.s),
+              // 32 px icon cell; the user glyph dims to 50 % when the card
+              // is not selected (Figma `Card Icon`).
+              SizedBox(
+                width: 32,
+                height: 32,
+                child: Center(
+                  child: Opacity(
+                    opacity: selected ? 1 : 0.5,
+                    child: AppIcon(
+                      AppIcons.user,
+                      size: 20,
+                      color: colors.icon.accent,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Label M; SemiBold when selected, Medium otherwise.
                     Text(
                       name,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTypography.bodyMediumStrong.copyWith(
+                      style: AppTypography.labelLarge.copyWith(
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.w500,
                         color: colors.text.accent,
                       ),
                     ),
+                    const SizedBox(height: 2),
+                    // Label M Regular; accent on the selected card, secondary
+                    // otherwise.
                     Text(
                       detail,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelMedium.copyWith(
-                        color: colors.text.secondary,
+                      style: AppTypography.labelLarge.copyWith(
+                        fontWeight: FontWeight.w400,
+                        color: selected
+                            ? colors.text.accent
+                            : colors.text.secondary,
                       ),
                     ),
                   ],
@@ -434,7 +522,7 @@ class _AccountCard extends StatelessWidget {
                   height: 24,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: colors.background.raised,
+                    color: colors.background.neutralSubtleOpacity,
                   ),
                 ),
             ],
