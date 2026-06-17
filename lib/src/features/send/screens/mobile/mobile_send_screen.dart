@@ -98,8 +98,6 @@ const _kMobileSendAddressFieldGroupHeight =
     AppInputSizing.height +
     _kMobileSendAddressErrorGap +
     _kMobileSendRecipientLineHeight;
-const _kMobileSendRecipientFocusScrimTop =
-    kMobileTopNavHeight + AppSpacing.s + _kMobileSendAddressFieldGroupHeight;
 const _kMobileSendAmountFieldHeight = 178.0;
 const _kMobileSendAmountInputHeight = 64.0;
 const _kMobileSendAmountLineHeight = 17.0;
@@ -751,6 +749,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final showRecipientFocusOverlay = _showRecipientFocusOverlay;
+    final showRecipientFieldLayer =
+        _phase == _SendPhase.compose && _step == _SendStep.recipient;
 
     final title = switch (_phase) {
       _SendPhase.compose => switch (_step) {
@@ -793,13 +793,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 ),
               ),
               if (showRecipientFocusOverlay) ...[
-                Positioned(
-                  top:
-                      MediaQuery.paddingOf(context).top +
-                      _kMobileSendRecipientFocusScrimTop,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
+                Positioned.fill(
+                  key: const ValueKey(
+                    'mobile_send_recipient_focus_scrim_layer',
+                  ),
                   child: GestureDetector(
                     key: const ValueKey('mobile_send_recipient_focus_scrim'),
                     behavior: HitTestBehavior.opaque,
@@ -807,6 +804,19 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                     child: ColoredBox(color: colors.background.neutralScrim),
                   ),
                 ),
+              ],
+              if (showRecipientFieldLayer)
+                Positioned(
+                  key: const ValueKey('mobile_send_recipient_field_layer'),
+                  top:
+                      MediaQuery.paddingOf(context).top +
+                      kMobileTopNavHeight +
+                      AppSpacing.s,
+                  left: AppSpacing.sm,
+                  right: AppSpacing.sm,
+                  child: _buildAddressFieldGroup(context),
+                ),
+              if (showRecipientFocusOverlay) ...[
                 if (_showRecipientContinue)
                   Positioned(
                     key: const ValueKey(
@@ -845,13 +855,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.sm,
-              AppSpacing.s,
+              AppSpacing.s +
+                  _kMobileSendAddressFieldGroupHeight +
+                  AppSpacing.md,
               AppSpacing.sm,
               AppSpacing.md,
             ),
             children: [
-              _buildAddressFieldGroup(context),
-              const SizedBox(height: AppSpacing.md),
               Semantics(
                 button: true,
                 child: GestureDetector(
@@ -1005,6 +1015,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAddressFieldGroup(BuildContext context) {
     return Column(
+      key: const ValueKey('mobile_send_address_field_group'),
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [_buildAddressField(context), _buildAddressErrorSpace(context)],

@@ -410,11 +410,22 @@ void main() {
       final fieldFinder = find.byKey(
         const ValueKey('mobile_send_address_field'),
       );
+      final fieldLayerFinder = find.byKey(
+        const ValueKey('mobile_send_recipient_field_layer'),
+      );
+      final groupFinder = find.byKey(
+        const ValueKey('mobile_send_address_field_group'),
+      );
+      final scanRowFinder = find.byKey(const ValueKey('mobile_send_scan_row'));
       final inputFinder = find.descendant(
         of: fieldFinder,
         matching: find.byType(EditableText),
       );
+      final fieldLayerElementBeforeFocus = tester.element(fieldLayerFinder);
+      final inputElementBeforeFocus = tester.element(inputFinder);
       final rectBeforeFocus = tester.getRect(fieldFinder);
+      final groupRectBeforeFocus = tester.getRect(groupFinder);
+      final scanRowRectBeforeFocus = tester.getRect(scanRowFinder);
       expect(
         tester.widget<EditableText>(inputFinder).focusNode.hasFocus,
         isFalse,
@@ -426,10 +437,17 @@ void main() {
       expect(fieldFinder, findsOneWidget);
       expect(inputFinder, findsOneWidget);
       expect(
+        tester.element(fieldLayerFinder),
+        same(fieldLayerElementBeforeFocus),
+      );
+      expect(tester.element(inputFinder), same(inputElementBeforeFocus));
+      expect(
         tester.widget<EditableText>(inputFinder).focusNode.hasFocus,
         isTrue,
       );
       expect(tester.getRect(fieldFinder), rectBeforeFocus);
+      expect(tester.getRect(groupFinder), groupRectBeforeFocus);
+      expect(tester.getRect(scanRowFinder), scanRowRectBeforeFocus);
       expect(tester.getSize(fieldFinder).height, AppInputSizing.height);
       expect(
         find.byKey(const ValueKey('mobile_send_recipient_focus_address_layer')),
@@ -444,7 +462,9 @@ void main() {
       final scrimRect = tester.getRect(
         find.byKey(const ValueKey('mobile_send_recipient_focus_scrim')),
       );
-      expect(scrimRect.top, greaterThanOrEqualTo(fieldRect.bottom));
+      expect(scrimRect, Offset.zero & const Size(520, 1100));
+      expect(scrimRect.top, lessThan(fieldRect.top));
+      expect(scrimRect.bottom, greaterThan(fieldRect.bottom));
     },
   );
 
