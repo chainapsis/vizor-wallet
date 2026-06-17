@@ -1,22 +1,38 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/seed_card.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
+import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 
 const _mnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse '
     'access accident account accuse achieve acid acoustic acquire across act '
     'action actor actress actual';
 
-Widget _app(Widget child) {
+class _TestCreateMnemonicNotifier extends CreateOnboardingMnemonicNotifier {
+  @override
+  String? build() => _mnemonic;
+}
+
+Widget _app(Widget child, {bool seedCreateMnemonic = false}) {
   return ProviderScope(
+    overrides: [
+      if (seedCreateMnemonic)
+        createOnboardingMnemonicProvider.overrideWith(
+          _TestCreateMnemonicNotifier.new,
+        ),
+    ],
     child: MaterialApp(
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
       home: child,
@@ -56,11 +72,15 @@ void main() {
 
   testWidgets('copy puts the full phrase on the clipboard', (tester) async {
     final copied = <String>[];
+    final haptics = <String>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
       (call) async {
         if (call.method == 'Clipboard.setData') {
           copied.add((call.arguments as Map)['text'] as String);
+        }
+        if (call.method == 'HapticFeedback.vibrate') {
+          haptics.add(call.arguments as String);
         }
         return null;
       },
@@ -85,9 +105,119 @@ void main() {
     await tester.pump();
 
     expect(copied, [_mnemonic]);
+    expect(haptics, ['HapticFeedbackType.lightImpact']);
     expect(find.text('Copied'), findsOneWidget);
     // Copy label resets after the timer.
     await tester.pump(const Duration(seconds: 3));
     expect(find.text('Copy'), findsOneWidget);
   });
+
+  testWidgets('reveal uses privacy haptic before showing the phrase', (
+    tester,
+  ) async {
+    final haptics = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          haptics.add(call.arguments as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _app(const MobileSecretPassphraseScreen(), seedCreateMnemonic: true),
+    );
+    await tester.pump();
+
+    expect(find.byType(SeedCard), findsNothing);
+
+    await tester.tap(find.text('Reveal phrase'));
+    await tester.pump();
+
+    expect(find.byType(SeedCard), findsOneWidget);
+    expect(find.text('abandon'), findsOneWidget);
+    expect(haptics, ['HapticFeedbackType.mediumImpact']);
+  });
+
+  testWidgets('shows screenshot warning after the phrase is revealed', (
+    tester,
+  ) async {
+    final screenshots = StreamController<void>();
+    addTearDown(screenshots.close);
+    final haptics = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          haptics.add(call.arguments as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _app(
+        MobileSecretPassphraseScreen(screenshotStream: screenshots.stream),
+        seedCreateMnemonic: true,
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Reveal phrase'));
+    await tester.pump();
+
+    screenshots.add(null);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileSeedScreenshotWarningSheet), findsOneWidget);
+    expect(find.textContaining('Don’t take screenshots'), findsOneWidget);
+    expect(haptics, [
+      'HapticFeedbackType.mediumImpact',
+      'HapticFeedbackType.mediumImpact',
+    ]);
+  });
+
+  testWidgets(
+    'covers the revealed phrase when the privacy controller is unsafe',
+    (tester) async {
+      final privacyController = SensitivePrivacyOverlayController(
+        initiallySafe: false,
+      );
+      addTearDown(privacyController.dispose);
+
+      await tester.pumpWidget(
+        _app(
+          MobileSecretPassphraseScreen(
+            privacyOverlayController: privacyController,
+          ),
+          seedCreateMnemonic: true,
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+
+      await tester.tap(find.text('Reveal phrase'));
+      await tester.pump();
+
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+
+      privacyController.markSafe();
+      await tester.pump();
+
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+    },
+  );
 }

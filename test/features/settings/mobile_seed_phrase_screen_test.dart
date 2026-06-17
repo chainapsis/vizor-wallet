@@ -94,6 +94,15 @@ const _faceBiometricState = BiometricUnlockState(
   enabled: true,
 );
 
+const _fingerprintBiometricState = BiometricUnlockState(
+  availability: BiometricAvailability(
+    supported: true,
+    enrolled: true,
+    kind: BiometricKind.fingerprint,
+  ),
+  enabled: true,
+);
+
 Widget _app({
   Stream<void>? screenshotStream,
   SensitivePrivacyOverlayController? privacyOverlayController,
@@ -181,6 +190,21 @@ void main() {
     expect(biometric.reads, 2);
     expect(biometric.lastReason, 'Confirm access to your secret passphrase');
     expect(find.text('abandon'), findsOneWidget);
+  });
+
+  testWidgets('confirm gate labels fingerprint retry by modality', (
+    tester,
+  ) async {
+    final biometric = _FakeBiometricController(
+      initialState: _fingerprintBiometricState,
+    );
+    await tester.pumpWidget(_app(biometric: biometric));
+    await tester.pumpAndSettle();
+
+    expect(biometric.reads, 1);
+    expect(find.bySemanticsLabel('Sign in with fingerprint'), findsOneWidget);
+    expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
+    expect(find.byIcon(Icons.fingerprint), findsOneWidget);
   });
 
   testWidgets('shows the screenshot warning after the phrase is revealed', (

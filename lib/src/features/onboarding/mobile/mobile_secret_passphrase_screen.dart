@@ -6,6 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/feedback/app_haptics.dart';
+import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/platform/screenshot_observer.dart';
+import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -20,6 +24,8 @@ import '../create/onboarding_split_view.dart'
         onboardingSecretPassphraseRevealedProvider;
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
+import '../../settings/screens/mobile/mobile_seed_phrase_screen.dart'
+    show MobileSeedScreenshotWarningSheet;
 import 'mobile_create_steps.dart';
 import 'mobile_onboarding_scaffold.dart';
 import 'seed_card.dart';
@@ -31,9 +37,21 @@ import 'seed_card.dart';
 /// passcode step (first wallet) or creates the account directly when a
 /// password is already configured (add-account).
 class MobileSecretPassphraseScreen extends ConsumerStatefulWidget {
-  const MobileSecretPassphraseScreen({this.args, super.key});
+  const MobileSecretPassphraseScreen({
+    this.args,
+    this.screenshotStream,
+    this.privacyOverlayController,
+    super.key,
+  });
 
   final CreateSecretPassphraseArgs? args;
+
+  /// Test seam — production listens to the platform screenshot events.
+  @visibleForTesting
+  final Stream<void>? screenshotStream;
+
+  @visibleForTesting
+  final SensitivePrivacyOverlayController? privacyOverlayController;
 
   @override
   ConsumerState<MobileSecretPassphraseScreen> createState() =>
@@ -48,10 +66,21 @@ class _MobileSecretPassphraseScreenState
   bool _submitting = false;
   String? _error;
   Timer? _copyResetTimer;
+  StreamSubscription<void>? _screenshotSub;
+  bool _screenshotSheetShowing = false;
+  late final bool _ownsPrivacyController;
+  late final SensitivePrivacyOverlayController _privacyController;
 
   @override
   void initState() {
     super.initState();
+    _ownsPrivacyController = widget.privacyOverlayController == null;
+    _privacyController =
+        widget.privacyOverlayController ??
+        SensitivePrivacyEnvironmentController();
+    _screenshotSub = (widget.screenshotStream ?? screenshotEvents()).listen(
+      (_) => _onScreenshot(),
+    );
     final args = widget.args;
     if (args != null) {
       _mnemonic = args.mnemonic;
@@ -81,7 +110,10 @@ class _MobileSecretPassphraseScreenState
 
   @override
   void dispose() {
+    _screenshotSub?.cancel();
+    if (_ownsPrivacyController) _privacyController.dispose();
     _copyResetTimer?.cancel();
+    _mnemonic = null;
     super.dispose();
   }
 
@@ -89,6 +121,7 @@ class _MobileSecretPassphraseScreenState
     final mnemonic = _mnemonic;
     if (mnemonic == null || !_revealed) return;
     await Clipboard.setData(ClipboardData(text: mnemonic));
+    unawaited(AppHaptics.copy());
     if (!mounted) return;
     _copyResetTimer?.cancel();
     setState(() => _copied = true);
@@ -101,6 +134,7 @@ class _MobileSecretPassphraseScreenState
     final mnemonic = _mnemonic;
     if (mnemonic == null || _submitting) return;
     if (!_revealed) {
+      unawaited(AppHaptics.privacyToggle());
       setState(() => _revealed = true);
       ref
           .read(onboardingSecretPassphraseRevealedProvider.notifier)
@@ -145,54 +179,77 @@ class _MobileSecretPassphraseScreenState
     router.go('/home');
   }
 
+  Future<void> _onScreenshot() async {
+    if (!_revealed ||
+        _mnemonic == null ||
+        _screenshotSheetShowing ||
+        !mounted) {
+      return;
+    }
+    _screenshotSheetShowing = true;
+    unawaited(AppHaptics.privacyToggle());
+    try {
+      await showAppMobileSheet<void>(
+        context: context,
+        builder: (_) => const MobileSeedScreenshotWarningSheet(),
+      );
+    } finally {
+      _screenshotSheetShowing = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final words = _mnemonic?.split(' ') ?? const <String>[];
 
-    return MobileOnboardingStepScaffold(
-      progress: mobileCreateProgress(4),
-      onBack: _submitting ? null : () => Navigator.of(context).maybePop(),
-      title: 'Secret Passphrase',
-      subtitle: 'The Master Key to your wallet.',
-      bottomArea: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_error != null) ...[
-            Text(
-              _error!,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.destructive,
+    return SensitivePrivacyOverlay(
+      sensitiveContentVisible: _revealed && _mnemonic != null,
+      controller: _privacyController,
+      child: MobileOnboardingStepScaffold(
+        progress: mobileCreateProgress(4),
+        onBack: _submitting ? null : () => Navigator.of(context).maybePop(),
+        title: 'Secret Passphrase',
+        subtitle: 'The Master Key to your wallet.',
+        bottomArea: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_error != null) ...[
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: colors.text.destructive,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+            ],
+            AppButton(
+              key: const ValueKey('mobile_secret_passphrase_primary'),
+              expand: true,
+              onPressed: _error != null || _submitting ? null : _continue,
+              trailing: const AppIcon(AppIcons.chevronForward),
+              child: Text(
+                _submitting
+                    ? 'Creating wallet...'
+                    : _revealed
+                    ? 'Continue'
+                    : 'Reveal phrase',
               ),
             ),
-            const SizedBox(height: AppSpacing.xs),
           ],
-          AppButton(
-            key: const ValueKey('mobile_secret_passphrase_primary'),
-            expand: true,
-            onPressed: _error != null || _submitting ? null : _continue,
-            trailing: const AppIcon(AppIcons.chevronForward),
-            child: Text(
-              _submitting
-                  ? 'Creating wallet...'
-                  : _revealed
-                  ? 'Continue'
-                  : 'Reveal phrase',
-            ),
-          ),
-        ],
+        ),
+        child: _revealed
+            ? SeedCard(
+                words: words,
+                onCopy: _copy,
+                copied: _copied,
+                // The passphrase frame spreads the grid to a 44 px pitch.
+                rowGap: 19,
+              )
+            : const _RevealWarningCard(),
       ),
-      child: _revealed
-          ? SeedCard(
-              words: words,
-              onCopy: _copy,
-              copied: _copied,
-              // The passphrase frame spreads the grid to a 44 px pitch.
-              rowGap: 19,
-            )
-          : const _RevealWarningCard(),
     );
   }
 }

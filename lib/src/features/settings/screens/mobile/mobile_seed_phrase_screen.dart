@@ -134,7 +134,7 @@ class _MobileSeedPhraseScreenState
       if (wasEnabled && now != null && !now.enabled) {
         setState(() {
           _entry = '';
-          _gateError = 'Biometrics changed. Enter your passcode.';
+          _gateError = biometric.availability.kind.changedMessage;
         });
       }
       return;
@@ -290,6 +290,7 @@ class _MobileSeedPhraseScreenState
   Future<void> _copy(String? text, String toast) async {
     if (text == null || text.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: text));
+    unawaited(AppHaptics.copy());
     if (mounted) showAppToast(context, toast);
   }
 
@@ -303,6 +304,7 @@ class _MobileSeedPhraseScreenState
       return;
     }
     _screenshotSheetShowing = true;
+    unawaited(AppHaptics.privacyToggle());
     try {
       await showAppMobileSheet<void>(
         context: context,
@@ -423,9 +425,7 @@ class _MobileSeedPhraseScreenState
             height: 36,
             child: Center(
               child: PasscodeBiometricButton(
-                label: biometric.availability.kind == BiometricKind.face
-                    ? 'Sign in with Face ID'
-                    : 'Sign in with biometrics',
+                label: biometric.availability.kind.signInLabel,
                 icon: biometric.availability.kind == BiometricKind.face
                     ? const Center(child: AppIcon(AppIcons.faceId, size: 13.5))
                     : const Icon(Icons.fingerprint, size: 16),
