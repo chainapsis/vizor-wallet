@@ -19,10 +19,10 @@ import 'mobile_address_scan_view.dart'
     show MobileScanResolver, MobileScanViewfinderCorners;
 
 /// Card-contained mobile QR scanner — Figma `Address QR` (4697:106096 active /
-/// 4697:111341 loading / 4697:106414 requesting / 4697:111063 denied). Unlike
-/// the full-bleed [MobileAddressScanView] used by the send route, this is the
-/// bottom-sheet card the swap composer presents: it lives inside the shared
-/// [MobileModalCard] surface and morphs between two layouts —
+/// 4697:111341 loading / 4697:106414 requesting / 4697:111063 denied) and send
+/// `QR Scan` (4484:61584). This is the bottom-sheet/card camera surface used
+/// by send and swap: it lives inside the shared [MobileModalCard] surface and
+/// morphs between two layouts —
 ///
 /// - **camera** (active / loading): a tall card whose camera fills the rounded
 ///   surface, with a dashed 256px viewfinder, a caption, a torch toggle
@@ -260,8 +260,11 @@ class MobileAddressScanCardContent extends StatelessWidget {
   /// inset survives the dialog's `SafeArea(top)`.
   double _cameraCardHeight(BuildContext context) {
     final media = MediaQuery.of(context);
-    final reserved =
-        media.viewPadding.top + kMobileTopNavHeight + AppSpacing.base;
+    // Figma `QR Scan` (4484:61584) on the 393x852 mobile artboard places the
+    // modal at y=126 and h=694, with a 32px bottom gap. The scanner overlays
+    // the lower edge of the top nav by 1px, hence the correction below.
+    final targetTop = media.viewPadding.top + kMobileTopNavHeight - 1;
+    final reserved = targetTop + AppSpacing.base;
     return (media.size.height - reserved).clamp(420.0, double.infinity);
   }
 

@@ -8,9 +8,11 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
+import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
@@ -20,6 +22,7 @@ import 'package:zcash_wallet/src/rust/frb_generated.dart';
 const _shieldedAddress =
     'u1testshieldedaddress00000000000000000000000000000000000000000000000';
 const _transparentAddress = 't1transparentdestination0000000000000000000';
+const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 const _invalidAddress = 'not-an-address';
 
 class _RustApiFake implements RustLibApi {
@@ -35,6 +38,9 @@ class _RustApiFake implements RustLibApi {
         isValid: true,
         addressType: 'transparent',
       );
+    }
+    if (address.startsWith('tex')) {
+      return const AddressValidationResult(isValid: true, addressType: 'tex');
     }
     return const AddressValidationResult(isValid: true, addressType: 'unified');
   }
@@ -68,13 +74,15 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
   }
 }
 
-AppBootstrapState _bootstrap() => AppBootstrapState(
+AppBootstrapState _bootstrap({AccountState? accountState}) => AppBootstrapState(
   initialLocation: '/send',
-  initialAccountState: const AccountState(
-    accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
-    activeAccountUuid: 'account-1',
-    activeAddress: 'u1activeaddress',
-  ),
+  initialAccountState:
+      accountState ??
+      const AccountState(
+        accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
+        activeAccountUuid: 'account-1',
+        activeAddress: 'u1activeaddress',
+      ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
@@ -107,22 +115,31 @@ class _FakeAddressBookRepository implements AddressBookRepository {
   Future<void> saveContacts(List<AddressBookContact> contacts) async {}
 }
 
-Widget _app({List<AddressBookContact> contacts = const []}) {
+Widget _app({
+  List<AddressBookContact> contacts = const [],
+  AccountState? accountState,
+  Map<String, AccountInfo> ownAccounts = const {},
+  EdgeInsets viewPadding = EdgeInsets.zero,
+  MobileSendScanner? openScanner,
+}) {
   final router = GoRouter(
     initialLocation: '/send',
     routes: [
       GoRoute(
         path: '/send',
-        builder: (_, _) =>
-            MobileSendScreen(loadWalletDbPath: () async => '/tmp/zcash-test'),
+        builder: (_, _) => MobileSendScreen(
+          loadWalletDbPath: () async => '/tmp/zcash-test',
+          openScanner: openScanner ?? (_) async => null,
+        ),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
-      GoRoute(path: '/send/scan', builder: (_, _) => const Text('scanner')),
     ],
   );
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(accountState: accountState),
+      ),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
         const _FakeMarketDataSource(),
@@ -130,10 +147,19 @@ Widget _app({List<AddressBookContact> contacts = const []}) {
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(contacts),
       ),
+      ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      builder: (context, c) {
+        final mediaQuery = MediaQuery.of(
+          context,
+        ).copyWith(padding: viewPadding, viewPadding: viewPadding);
+        return AppTheme(
+          data: AppThemeData.light,
+          child: MediaQuery(data: mediaQuery, child: c!),
+        );
+      },
     ),
   );
 }
@@ -149,12 +175,11 @@ Future<void> _enterAddress(WidgetTester tester, String address) async {
   await tester.pumpAndSettle();
 }
 
-Future<void> _tapDigits(WidgetTester tester, String digits) async {
-  for (final ch in digits.split('')) {
-    final label = ch == '.' ? 'Decimal point' : 'Digit $ch';
-    await tester.tap(find.bySemanticsLabel(label));
-    await tester.pump();
-  }
+Future<void> _enterAmount(WidgetTester tester, String amount) async {
+  await tester.enterText(
+    find.byKey(const ValueKey('mobile_send_amount_input')),
+    amount,
+  );
   await tester.pumpAndSettle();
 }
 
@@ -170,7 +195,7 @@ Future<void> _toReviewStep(
   String amount = '1.5',
 }) async {
   await _toAmountStep(tester, address);
-  await _tapDigits(tester, amount);
+  await _enterAmount(tester, amount);
   await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
   await tester.pumpAndSettle();
 }
@@ -196,8 +221,22 @@ void main() {
 
     expect(find.text('Select Recipient'), findsOneWidget);
     expect(find.text('Scan a QR Code'), findsOneWidget);
-    // The empty state carries no Continue button, per the Figma frame.
+    // The unfocused empty state carries no Continue button.
     expect(find.byKey(const ValueKey('mobile_send_continue')), findsNothing);
+    expect(find.text('Paste'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_address_field')));
+    await tester.pumpAndSettle();
+    expect(find.text('Paste'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_send_recipient_focus_scrim')),
+      findsOneWidget,
+    );
+    expect(find.text('Enter address to continue'), findsOneWidget);
+    final focusedContinue = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_continue')),
+    );
+    expect(focusedContinue.onPressed, isNull);
 
     await _enterAddress(tester, _invalidAddress);
     expect(find.text('Invalid address'), findsOneWidget);
@@ -207,6 +246,63 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
     await tester.pumpAndSettle();
     expect(find.text('Enter amount'), findsOneWidget);
+  });
+
+  testWidgets('scan result fills the recipient on the current send screen', (
+    tester,
+  ) async {
+    var scannerOpenCount = 0;
+    await tester.pumpWidget(
+      _app(
+        openScanner: (_) async {
+          scannerOpenCount++;
+          return _shieldedAddress;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Scan a QR Code'));
+    await tester.pumpAndSettle();
+
+    expect(scannerOpenCount, 1);
+    expect(find.text('Select Recipient'), findsOneWidget);
+    expect(find.text('scanner'), findsNothing);
+    final editable = tester.widget<EditableText>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_send_address_field')),
+        matching: find.byType(EditableText),
+      ),
+    );
+    expect(editable.controller.text, _shieldedAddress);
+    expect(find.text('Continue'), findsOneWidget);
+  });
+
+  testWidgets('recipient focus scrim covers the full safe-area frame', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(viewPadding: const EdgeInsets.only(top: 55, bottom: 34)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_address_field')));
+    await tester.pumpAndSettle();
+
+    final scrimRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_send_recipient_focus_scrim')),
+    );
+    expect(scrimRect, Offset.zero & const Size(520, 1100));
+    expect(
+      tester
+          .getRect(
+            find.byKey(
+              const ValueKey('mobile_send_recipient_focus_address_layer'),
+            ),
+          )
+          .top,
+      143,
+    );
   });
 
   testWidgets('tapping a contact fills its address', (tester) async {
@@ -237,6 +333,98 @@ void main() {
     expect(find.text('Alice'), findsOneWidget);
   });
 
+  testWidgets('review resolves stored contact before matching own accounts', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0),
+            AccountInfo(
+              uuid: 'account-2',
+              name: 'Savings',
+              order: 1,
+              profilePictureId: 'pfp-02',
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+        ownAccounts: const {
+          _shieldedAddress: AccountInfo(
+            uuid: 'account-2',
+            name: 'Savings',
+            order: 1,
+            profilePictureId: 'pfp-02',
+          ),
+        },
+        contacts: const [
+          AddressBookContact(
+            id: 'alice',
+            label: 'Alice',
+            network: AddressBookNetwork.zcash,
+            address: _shieldedAddress,
+            profilePictureId: 'pfp-01',
+            createdAtMs: 1,
+            updatedAtMs: 1,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _toReviewStep(tester);
+
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('Savings'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_full_address')));
+    await tester.pumpAndSettle();
+    expect(find.text('Alice'), findsWidgets);
+  });
+
+  testWidgets(
+    'review resolves another wallet account when no contact matches',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          accountState: const AccountState(
+            accounts: [
+              AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0),
+              AccountInfo(
+                uuid: 'account-2',
+                name: 'Savings',
+                order: 1,
+                profilePictureId: 'pfp-02',
+              ),
+            ],
+            activeAccountUuid: 'account-1',
+            activeAddress: 'u1activeaddress',
+          ),
+          ownAccounts: const {
+            _shieldedAddress: AccountInfo(
+              uuid: 'account-2',
+              name: 'Savings',
+              order: 1,
+              profilePictureId: 'pfp-02',
+            ),
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _toReviewStep(tester);
+
+      expect(find.text('Savings'), findsOneWidget);
+      expect(find.text('Unified address'), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('mobile_send_full_address')));
+      await tester.pumpAndSettle();
+      expect(find.text('Savings'), findsWidgets);
+    },
+  );
+
   testWidgets('the amount step enforces the spendable balance', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
@@ -244,14 +432,62 @@ void main() {
 
     expect(find.text('Enter amount to continue'), findsOneWidget);
     expect(find.textContaining('Max:'), findsOneWidget);
+    final emptyAmountInput = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+    );
+    expect(emptyAmountInput.focusNode?.hasFocus, isTrue);
+    expect(emptyAmountInput.decoration?.hintText, '0');
+    expect(
+      emptyAmountInput.keyboardType,
+      const TextInputType.numberWithOptions(decimal: true),
+    );
+    expect(emptyAmountInput.cursorWidth, 3);
+    expect(emptyAmountInput.cursorHeight, 48);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('mobile_send_amount_field')))
+          .height,
+      178,
+    );
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('mobile_send_amount_recipient_picture')),
+          )
+          .height,
+      40,
+    );
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('mobile_send_amount_recipient_row')),
+          )
+          .height,
+      68,
+    );
+    final maxText = tester.widget<Text>(find.textContaining('Max:'));
+    expect(maxText.style?.fontSize, AppTypography.labelLarge.fontSize);
+    expect(maxText.style?.height, AppTypography.labelLarge.height);
+
+    await tester.tap(find.text('Sending to'));
+    await tester.pumpAndSettle();
+    final unfocusedAmountInput = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+    );
+    expect(unfocusedAmountInput.focusNode?.hasFocus, isFalse);
 
     // 9 ZEC > the 5 ZEC spendable fixture.
-    await _tapDigits(tester, '9');
-    expect(find.text('Not enough ZEC'), findsOneWidget);
-
-    await tester.tap(find.bySemanticsLabel('Delete digit'));
+    await tester.tap(find.byKey(const ValueKey('mobile_send_amount_input')));
     await tester.pumpAndSettle();
-    await _tapDigits(tester, '1.5');
+    await _enterAmount(tester, '9');
+    expect(find.text('Not enough ZEC'), findsOneWidget);
+    final amountText = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+    );
+    expect(amountText.style?.fontSize, 48);
+    expect(amountText.style?.height, 40 / 48);
+
+    await _enterAmount(tester, '1.5');
     expect(find.text('Not enough ZEC'), findsNothing);
     expect(find.text('Finish & Review'), findsOneWidget);
   });
@@ -267,10 +503,11 @@ void main() {
     // the very next frame — while the fee re-validation is still in
     // flight. The previous amount's "valid" result must not let the
     // tap through.
-    await _tapDigits(tester, '1');
-    await tester.tap(find.bySemanticsLabel('Decimal point'));
-    await tester.pump();
-    await tester.tap(find.bySemanticsLabel('Digit 5'));
+    await _enterAmount(tester, '1');
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+      '1.5',
+    );
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
     await tester.pump();
@@ -293,11 +530,130 @@ void main() {
     expect(find.text('Add short encrypted message'), findsOneWidget);
     expect(find.text('Tx fee'), findsOneWidget);
     expect(find.text('Confirm & Send'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_send_review_info'))),
+      const Size(488, 268),
+    );
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('mobile_send_review_recipient_picture')),
+      ),
+      const Size(40, 40),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_send_review_wrap'))),
+      const Size(488, 161),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_send_review_buttons'))),
+      const Size(488, 112),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_send_cancel'))).height,
+      50,
+    );
+    final reviewAmount = tester.widget<Text>(
+      find.byKey(const ValueKey('mobile_send_review_amount')),
+    );
+    expect(reviewAmount.style?.fontSize, AppTypography.headlineLarge.fontSize);
+    expect(reviewAmount.style?.height, AppTypography.headlineLarge.height);
+    expect(find.text('Unified address'), findsOneWidget);
+    expect(find.text('u1tests .... 0000000'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_send_full_address'))),
+      isA<Size>().having((size) => size.height, 'height', 24),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_full_address')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_address_verify_chunks')),
+      findsOneWidget,
+    );
+    expect(find.text('u1tes'), findsOneWidget);
+    expect(find.text('Cancel'), findsWidgets);
+    await tester.tap(find.text('Cancel').last);
+    await tester.pumpAndSettle();
 
     // Memo round-trip through the sheet.
     await tester.tap(find.byKey(const ValueKey('mobile_send_memo_row')));
     await tester.pumpAndSettle();
     expect(find.text('Add Memo'), findsNWidgets(2)); // title + button
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('mobile_send_memo_text_area')))
+          .height,
+      222,
+    );
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('mobile_send_memo_field')))
+          .height,
+      148,
+    );
+    final memoFieldRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_send_memo_field')),
+    );
+    final memoEditableRect = tester.getRect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_send_memo_field')),
+        matching: find.byType(EditableText),
+      ),
+    );
+    expect(memoEditableRect.left - memoFieldRect.left, closeTo(13.5, 0.01));
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('mobile_send_memo_buttons')))
+          .height,
+      112,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_send_memo_scrollbar')),
+      findsNothing,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_send_memo_editable')),
+      List.filled(12, 'thanks for testing the memo scrollbar').join('\n'),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('mobile_send_memo_scrollbar')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_send_memo_scrollbar_thumb')),
+      findsOneWidget,
+    );
+    final editable = tester.widget<EditableText>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_send_memo_field')),
+        matching: find.byType(EditableText),
+      ),
+    );
+    final memoScrollController = editable.scrollController!;
+    expect(memoScrollController.position.maxScrollExtent, greaterThan(0));
+    final maxMemoScroll = memoScrollController.position.maxScrollExtent;
+    memoScrollController.jumpTo(0);
+    await tester.pump();
+    await tester.tapAt(
+      tester
+          .getRect(find.byKey(const ValueKey('mobile_send_memo_field')))
+          .centerRight
+          .translate(-6, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(memoScrollController.offset, greaterThan(maxMemoScroll * 0.15));
+    expect(memoScrollController.offset, lessThan(maxMemoScroll * 0.85));
+
+    await tester.tapAt(
+      tester
+          .getRect(find.byKey(const ValueKey('mobile_send_memo_field')))
+          .bottomRight
+          .translate(-6, -12),
+    );
+    await tester.pumpAndSettle();
+    expect(memoScrollController.offset, greaterThan(maxMemoScroll * 0.85));
     await tester.enterText(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_send_memo_field')),
@@ -310,6 +666,32 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Message'), findsOneWidget);
     expect(find.text('thanks!'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_memo_row')));
+    await tester.pumpAndSettle();
+    expect(find.text('Add Memo'), findsOneWidget); // title only
+    expect(find.text('Clear Memo'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_send_memo_clear')),
+      findsOneWidget,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_send_memo_editable')),
+      'updated thanks!',
+    );
+    await tester.pump();
+    expect(find.text('Clear Memo'), findsNothing);
+    expect(find.text('Add Memo'), findsNWidgets(2)); // title + button
+    await tester.tap(find.byKey(const ValueKey('mobile_send_memo_cancel')));
+    await tester.pumpAndSettle();
+    expect(find.text('thanks!'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_memo_row')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_memo_clear')));
+    await tester.pumpAndSettle();
+    expect(find.text('Add short encrypted message'), findsOneWidget);
   });
 
   testWidgets('a transparent recipient hides the memo entry', (tester) async {
@@ -318,7 +700,19 @@ void main() {
     await _toReviewStep(tester, address: _transparentAddress);
 
     expect(find.text('Add short encrypted message'), findsNothing);
+    expect(find.text('Transparent address'), findsOneWidget);
     expect(find.text('Tx fee'), findsOneWidget);
+  });
+
+  testWidgets('a TEX recipient uses the TEX address fallback label', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester, address: _texAddress);
+
+    expect(find.text('Add short encrypted message'), findsNothing);
+    expect(find.text('TEX address'), findsOneWidget);
   });
 
   testWidgets('a failing send lands on the failed status with retry', (

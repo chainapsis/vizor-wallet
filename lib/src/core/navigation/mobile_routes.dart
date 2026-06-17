@@ -15,7 +15,6 @@ import '../../features/swap/models/swap_activity_navigation.dart';
 import '../../features/swap/screens/mobile/mobile_swap_review_screen.dart';
 import '../../features/send/services/send_flow.dart'
     show KeystoneBroadcastArgs, SendReviewArgs;
-import '../../features/send/screens/mobile/mobile_send_scan_screen.dart';
 import '../../features/send/screens/mobile/mobile_send_screen.dart';
 import '../../features/send/screens/mobile/mobile_send_status_screen.dart';
 import '../../features/about/screens/mobile/mobile_about_screens.dart';
@@ -113,13 +112,6 @@ List<RouteBase> buildMobileRoutes({
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: MobileSendScreen(initialRecipient: state.extra as String?),
-      ),
-    ),
-    GoRoute(
-      path: '/send/scan',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
-        child: const MobileSendScanScreen(),
       ),
     ),
     GoRoute(
