@@ -300,6 +300,7 @@ class _MobileSeedPhraseScreenState
     if (_stage != _SeedStage.reveal ||
         _mnemonic == null ||
         _screenshotSheetShowing ||
+        !_isCurrentRoute ||
         !mounted) {
       return;
     }
@@ -314,6 +315,8 @@ class _MobileSeedPhraseScreenState
       _screenshotSheetShowing = false;
     }
   }
+
+  bool get _isCurrentRoute => ModalRoute.of(context)?.isCurrent ?? true;
 
   static String _formatBirthdayDate(int blockTimeSeconds) {
     const months = [

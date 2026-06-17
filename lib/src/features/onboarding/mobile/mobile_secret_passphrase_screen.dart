@@ -183,6 +183,7 @@ class _MobileSecretPassphraseScreenState
     if (!_revealed ||
         _mnemonic == null ||
         _screenshotSheetShowing ||
+        !_isCurrentRoute ||
         !mounted) {
       return;
     }
@@ -197,6 +198,8 @@ class _MobileSecretPassphraseScreenState
       _screenshotSheetShowing = false;
     }
   }
+
+  bool get _isCurrentRoute => ModalRoute.of(context)?.isCurrent ?? true;
 
   @override
   Widget build(BuildContext context) {

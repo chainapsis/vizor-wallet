@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
@@ -127,6 +128,21 @@ Widget _app({
         privacyOverlayController: privacyOverlayController,
         loadBirthday: false,
       ),
+    ),
+  );
+}
+
+Widget _routerApp(GoRouter router) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      accountProvider.overrideWith(_FakeAccountNotifier.new),
+      appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
+      biometricUnlockServiceProvider.overrideWithValue(_FakeBiometricUnlock()),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
 }
@@ -280,6 +296,39 @@ void main() {
     expect(buttonLabel.style, AppTypography.labelLarge);
     expect(tester.getSize(buttonFinder).height, 50);
   });
+
+  testWidgets(
+    'does not show screenshot warning when covered by another route',
+    (tester) async {
+      final screenshots = StreamController<void>();
+      addTearDown(screenshots.close);
+      final router = GoRouter(
+        initialLocation: '/seed',
+        routes: [
+          GoRoute(
+            path: '/seed',
+            builder: (_, _) => MobileSeedPhraseScreen(
+              screenshotStream: screenshots.stream,
+              loadBirthday: false,
+            ),
+          ),
+          GoRoute(path: '/other', builder: (_, _) => const Text('other route')),
+        ],
+      );
+
+      await tester.pumpWidget(_routerApp(router));
+      await _revealSecret(tester);
+      unawaited(router.push('/other'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('other route'), findsOneWidget);
+
+      screenshots.add(null);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Don’t take screenshots'), findsNothing);
+    },
+  );
 
   testWidgets(
     'covers the revealed phrase when the privacy controller is unsafe',

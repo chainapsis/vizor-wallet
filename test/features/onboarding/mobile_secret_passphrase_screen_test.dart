@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
@@ -14,6 +15,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passph
 import 'package:zcash_wallet/src/features/onboarding/mobile/seed_card.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 
 const _mnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse '
@@ -23,6 +25,16 @@ const _mnemonic =
 class _TestCreateMnemonicNotifier extends CreateOnboardingMnemonicNotifier {
   @override
   String? build() => _mnemonic;
+}
+
+class _UnconfiguredSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() {
+    return const AppSecurityState(
+      isPasswordConfigured: false,
+      isUnlocked: false,
+    );
+  }
 }
 
 Widget _app(Widget child, {bool seedCreateMnemonic = false}) {
@@ -36,6 +48,35 @@ Widget _app(Widget child, {bool seedCreateMnemonic = false}) {
     child: MaterialApp(
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
       home: child,
+    ),
+  );
+}
+
+Widget _routerApp(Stream<void> screenshotStream) {
+  final router = GoRouter(
+    initialLocation: '/secret',
+    routes: [
+      GoRoute(
+        path: '/secret',
+        builder: (_, _) =>
+            MobileSecretPassphraseScreen(screenshotStream: screenshotStream),
+      ),
+      GoRoute(
+        path: '/onboarding/set-passcode',
+        builder: (_, _) => const Text('set passcode route'),
+      ),
+    ],
+  );
+  return ProviderScope(
+    overrides: [
+      createOnboardingMnemonicProvider.overrideWith(
+        _TestCreateMnemonicNotifier.new,
+      ),
+      appSecurityProvider.overrideWith(_UnconfiguredSecurityNotifier.new),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),
   );
 }
@@ -188,6 +229,44 @@ void main() {
       'HapticFeedbackType.mediumImpact',
       'HapticFeedbackType.mediumImpact',
     ]);
+  });
+
+  testWidgets('does not show screenshot warning after pushing passcode route', (
+    tester,
+  ) async {
+    final screenshots = StreamController<void>();
+    addTearDown(screenshots.close);
+    final haptics = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          haptics.add(call.arguments as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(_routerApp(screenshots.stream));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reveal phrase'));
+    await tester.pump();
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('set passcode route'), findsOneWidget);
+
+    screenshots.add(null);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileSeedScreenshotWarningSheet), findsNothing);
+    expect(haptics, ['HapticFeedbackType.mediumImpact']);
   });
 
   testWidgets(
