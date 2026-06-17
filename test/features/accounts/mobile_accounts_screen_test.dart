@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,6 +20,7 @@ import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import 'package:zcash_wallet/src/features/accounts/widgets/mobile/account_edit_sheets.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
@@ -44,7 +47,12 @@ AppBootstrapState _bootstrap(AccountState accounts) => AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-Widget _app(AccountState accounts) {
+Widget _app(
+  AccountState accounts, {
+  AccountNotifier Function()? accountNotifier,
+  BiometricUnlockNotifier Function()? biometricNotifier,
+  SyncNotifier Function()? syncNotifier,
+}) {
   final router = GoRouter(
     initialLocation: '/accounts',
     routes: [
@@ -56,18 +64,93 @@ Widget _app(AccountState accounts) {
         path: '/add-account',
         builder: (_, _) => const Text('add account route'),
       ),
+      GoRoute(path: '/welcome', builder: (_, _) => const Text('welcome route')),
     ],
   );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap(accounts)),
-      syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
+      if (accountNotifier != null)
+        accountProvider.overrideWith(accountNotifier),
+      biometricUnlockProvider.overrideWith(
+        biometricNotifier ?? _FakeBiometricUnlockNotifier.new,
+      ),
+      syncProvider.overrideWith(
+        syncNotifier ?? () => FakeSyncNotifier(SyncState()),
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),
   );
+}
+
+class _FakeAccountNotifier extends AccountNotifier {
+  _FakeAccountNotifier(this.initialState);
+
+  final AccountState initialState;
+  var resetCount = 0;
+  String? removedUuid;
+
+  @override
+  FutureOr<AccountState> build() => initialState;
+
+  @override
+  Future<void> removeAccount(String uuid) async {
+    removedUuid = uuid;
+  }
+
+  @override
+  Future<void> resetWallet() async {
+    resetCount += 1;
+    state = const AsyncData(AccountState());
+  }
+}
+
+class _FakeWalletMutationSyncNotifier extends FakeSyncNotifier {
+  _FakeWalletMutationSyncNotifier() : super(SyncState());
+
+  var pauseCount = 0;
+  var resumeCount = 0;
+  var clearCachedDbPathCount = 0;
+
+  @override
+  Future<WalletMutationSyncPause> pauseForWalletMutation({
+    FutureOr<void> Function()? onStoppingSync,
+  }) async {
+    pauseCount += 1;
+    await onStoppingSync?.call();
+    return const WalletMutationSyncPause(
+      hadActiveSync: true,
+      hadPolling: false,
+      hadBackgroundSync: false,
+      hadMempoolObserver: false,
+    );
+  }
+
+  @override
+  void resumeAfterWalletMutation(WalletMutationSyncPause pause) {
+    resumeCount += 1;
+  }
+
+  @override
+  void clearCachedWalletDbPath() {
+    clearCachedDbPathCount += 1;
+  }
+}
+
+class _FakeBiometricUnlockNotifier extends BiometricUnlockNotifier {
+  var disableCount = 0;
+
+  @override
+  Future<BiometricUnlockState> build() async => BiometricUnlockState.initial;
+
+  @override
+  Future<void> disable() async {
+    disableCount += 1;
+    state = const AsyncData(BiometricUnlockState.initial);
+  }
 }
 
 Widget _nestedShellApp(AccountState accounts, ValueNotifier<int> tabTaps) {
@@ -170,8 +253,8 @@ void main() {
     expect(safeArea.bottom, isFalse);
   });
 
-  testWidgets('imported accounts offer removal; the last seed anchor does '
-      'not', (tester) async {
+  testWidgets('imported accounts offer removal; the last seed anchor with '
+      'other accounts does not', (tester) async {
     await tester.pumpWidget(
       _app(
         AccountState(
@@ -208,11 +291,59 @@ void main() {
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
 
-    // Sole seed anchor: edit only.
+    // Last seed anchor with another account: edit only.
     await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
     await tester.pumpAndSettle();
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsNothing);
+  });
+
+  testWidgets('the last remaining seed account resets the app on removal', (
+    tester,
+  ) async {
+    final accountState = AccountState(
+      accounts: [_account('a', 'Knight', isSeedAnchor: true)],
+      activeAccountUuid: 'a',
+    );
+    final accountNotifier = _FakeAccountNotifier(accountState);
+    final biometricNotifier = _FakeBiometricUnlockNotifier();
+    final syncNotifier = _FakeWalletMutationSyncNotifier();
+
+    await tester.pumpWidget(
+      _app(
+        accountState,
+        accountNotifier: () => accountNotifier,
+        biometricNotifier: () => biometricNotifier,
+        syncNotifier: () => syncNotifier,
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
+    await tester.pumpAndSettle();
+    expect(find.text('Remove account'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_account_menu_remove')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('completely reset the Vizor app'),
+      findsOneWidget,
+    );
+    expect(find.text('Reset Vizor'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_account_remove_confirm')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.resetCount, 1);
+    expect(accountNotifier.removedUuid, isNull);
+    expect(syncNotifier.pauseCount, 1);
+    expect(syncNotifier.resumeCount, 0);
+    expect(syncNotifier.clearCachedDbPathCount, 1);
+    expect(biometricNotifier.disableCount, 1);
+    expect(find.text('welcome route'), findsOneWidget);
   });
 
   testWidgets('row menu stays above the floating tab bar clearance', (

@@ -21,6 +21,7 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
     this.bottomAreaPadding,
     this.aboveTitle,
     this.titleStyle,
+    this.showBackButton = true,
     this.scrollable = true,
     super.key,
   });
@@ -47,9 +48,12 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
   /// frame puts its illustration first.
   final Widget? aboveTitle;
 
-  /// Overrides the Headline XL title style — the passcode frames use
-  /// the smaller Headline M serif.
+  /// Overrides the default Headline XL title style for compact step titles.
   final TextStyle? titleStyle;
+
+  /// The steps nav normally reserves the leading back affordance; terminal
+  /// opt-in steps can hide it when there is no valid previous action.
+  final bool showBackButton;
 
   /// Keeps the default onboarding behavior scrollable. Screens with a
   /// live camera viewport can opt out so the viewport resizes instead of
@@ -106,7 +110,11 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              MobileTopNav.steps(progress: progress, onBack: onBack),
+              MobileTopNav.steps(
+                progress: progress,
+                onBack: onBack,
+                showBackButton: showBackButton,
+              ),
               Expanded(
                 child: scrollable
                     ? SingleChildScrollView(

@@ -4,10 +4,11 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart' show MaterialApp;
+import 'package:flutter/material.dart' show Icons, MaterialApp;
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -20,22 +21,22 @@ import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 void main() {
   setUpAll(_loadAppFonts);
 
-  testWidgets('mobile lock use cases render biometric variants', (
+  testWidgets('mobile lock use cases render method-specific variants', (
     tester,
   ) async {
     await _pumpMobileLockUseCase(tester, buildMobileUnlockPasscodeUseCase);
     expect(tester.takeException(), isNull);
     expect(find.byType(MobileUnlockScreen), findsOneWidget);
     expect(find.text('Sign in with Face ID'), findsNothing);
-    expect(find.text('Sign in with biometrics'), findsNothing);
+    expect(find.text('Sign in with fingerprint'), findsNothing);
     expect(
       find.byKey(const ValueKey('mobile_unlock_biometric_footer')),
       findsOneWidget,
     );
-    final keypadTopWithoutBiometrics = tester
+    final keypadTopWithoutMethod = tester
         .getTopLeft(find.byType(PasscodeNumpad))
         .dy;
-    final keypadBottomWithoutBiometrics = tester
+    final keypadBottomWithoutMethod = tester
         .getBottomLeft(find.byType(PasscodeNumpad))
         .dy;
     final footerTop = tester
@@ -43,24 +44,21 @@ void main() {
           find.byKey(const ValueKey('mobile_unlock_biometric_footer')),
         )
         .dy;
-    expect(
-      footerTop - keypadBottomWithoutBiometrics,
-      closeTo(AppSpacing.md, 0.1),
-    );
+    expect(footerTop - keypadBottomWithoutMethod, closeTo(AppSpacing.md, 0.1));
 
     await _pumpMobileLockUseCase(tester, buildMobileUnlockFaceIdUseCase);
     expect(tester.takeException(), isNull);
     expect(find.text('Sign in with Face ID'), findsOneWidget);
-    expect(find.text('Sign in with biometrics'), findsNothing);
+    expect(find.text('Sign in with fingerprint'), findsNothing);
     expect(
       tester.getTopLeft(find.byType(PasscodeNumpad)).dy,
-      closeTo(keypadTopWithoutBiometrics, 0.1),
+      closeTo(keypadTopWithoutMethod, 0.1),
     );
-    final biometricButtonSize = tester.getSize(
+    final faceIdButtonSize = tester.getSize(
       find.byKey(const ValueKey('passcode_biometric_button')),
     );
-    expect(biometricButtonSize.height, 36);
-    expect(biometricButtonSize.width, greaterThan(150));
+    expect(faceIdButtonSize.height, 36);
+    expect(faceIdButtonSize.width, greaterThan(150));
     final faceIdLabel = tester.widget<Text>(find.text('Sign in with Face ID'));
     expect(faceIdLabel.style?.fontSize, AppTypography.labelLarge.fontSize);
     expect(
@@ -73,18 +71,94 @@ void main() {
       findsOneWidget,
     );
 
-    await _pumpMobileLockUseCase(tester, buildMobileUnlockBiometricsUseCase);
+    await _pumpMobileLockUseCase(tester, buildMobileUnlockFingerprintUseCase);
     expect(tester.takeException(), isNull);
-    expect(find.text('Sign in with biometrics'), findsOneWidget);
+    expect(find.text('Sign in with fingerprint'), findsOneWidget);
     expect(find.text('Sign in with Face ID'), findsNothing);
-    final biometricsButtonSize = tester.getSize(
+    final fingerprintButtonSize = tester.getSize(
       find.byKey(const ValueKey('passcode_biometric_button')),
     );
-    expect(biometricsButtonSize.height, 36);
-    expect(biometricsButtonSize.width, greaterThan(150));
+    expect(fingerprintButtonSize.height, 36);
+    expect(fingerprintButtonSize.width, greaterThan(150));
   });
 
-  testWidgets('mobile lock use cases render the biometric sign-in backdrop', (
+  testWidgets('mobile onboarding use cases render simulator-hard states', (
+    tester,
+  ) async {
+    await _pumpMobileLockUseCase(
+      tester,
+      buildMobileSecretPassphraseRevealedUseCase,
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text('Secret Passphrase'), findsWidgets);
+    expect(find.text('abandon'), findsOneWidget);
+    expect(find.text('Copy'), findsOneWidget);
+
+    await _pumpMobileLockUseCase(
+      tester,
+      buildMobileSecretPassphraseProtectedUseCase,
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text('abandon'), findsOneWidget);
+    expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+
+    await _pumpMobileLockUseCase(
+      tester,
+      buildMobileSecretPassphraseScreenshotWarningUseCase,
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text('abandon'), findsOneWidget);
+    expect(
+      find.text('Don’t take screenshots of your Secret Passphrase'),
+      findsOneWidget,
+    );
+    expect(find.text('I understand'), findsOneWidget);
+
+    await _pumpMobileLockUseCase(tester, buildMobileCreatePasscodeUseCase);
+    expect(tester.takeException(), isNull);
+    expect(find.text('Create Passcode'), findsOneWidget);
+    expect(find.text('6 digits length'), findsOneWidget);
+    expect(find.byType(PasscodeNumpad), findsOneWidget);
+    final passcodeTitle = tester.widget<Text>(find.text('Create Passcode'));
+    expect(passcodeTitle.style?.fontSize, AppTypography.displayLarge.fontSize);
+
+    await _pumpMobileLockUseCase(tester, buildMobileFaceIdOptInUseCase);
+    expect(tester.takeException(), isNull);
+    expect(find.text('Unlock your wallet\nwith Face ID'), findsOneWidget);
+    final faceIdTitle = tester.widget<Text>(
+      find.text('Unlock your wallet\nwith Face ID'),
+    );
+    expect(faceIdTitle.style?.fontSize, AppTypography.displayLarge.fontSize);
+    expect(find.bySemanticsLabel('Back'), findsNothing);
+    expect(find.text('Enable Face ID'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.faceId,
+      ),
+      findsOneWidget,
+    );
+
+    await _pumpMobileLockUseCase(tester, buildMobileFingerprintOptInUseCase);
+    expect(tester.takeException(), isNull);
+    expect(
+      find.text('Unlock your wallet\nwith your fingerprint'),
+      findsOneWidget,
+    );
+    expect(find.text('Enable fingerprint'), findsOneWidget);
+    expect(find.byIcon(Icons.fingerprint), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Image &&
+            widget.image is AssetImage &&
+            (widget.image as AssetImage).assetName ==
+                'assets/illustrations/biometrics_fingerprint_knight.png',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('mobile lock use cases render the Face ID sign-in backdrop', (
     tester,
   ) async {
     await _pumpMobileLockUseCase(

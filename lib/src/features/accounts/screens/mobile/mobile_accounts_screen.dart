@@ -21,6 +21,7 @@ import '../../../../core/widgets/mobile/mobile_account_avatar.dart';
 import '../../../../core/widgets/mobile/mobile_list_row.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/receive_address_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/wallet_mutation_guard.dart';
@@ -85,11 +86,10 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     }
   }
 
-  /// Mirrors the desktop eligibility rule, except the last remaining
-  /// account: on mobile that is a full app reset, which lives behind
-  /// the unlock screen's forgot-passcode path instead of this menu.
+  /// Mirrors the desktop eligibility rule: the last remaining account
+  /// is removable because removal becomes a full app reset.
   bool _canRemove(AccountInfo account, List<AccountInfo> accounts) {
-    if (accounts.length <= 1) return false;
+    if (accounts.length == 1) return true;
     if (!account.isSeedAnchor) return true;
     final seedAnchorCount = accounts.where((a) => a.isSeedAnchor).length;
     return seedAnchorCount > 1;
@@ -378,27 +378,49 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
   }
 
   Future<void> _showRemoveSheet(AccountInfo account) async {
+    final accounts = ref.read(accountProvider).value?.accounts ?? const [];
+    final isLastAccount = accounts.length == 1;
     final confirmed = await showAppMobileSheet<bool>(
       context: context,
-      builder: (_) => _RemoveAccountSheet(account: account),
+      builder: (_) =>
+          _RemoveAccountSheet(account: account, isLastAccount: isLastAccount),
     );
     if (confirmed != true || !mounted) return;
 
+    final router = GoRouter.of(context);
     setState(() => _busy = true);
     final accountNotifier = ref.read(accountProvider.notifier);
     final syncNotifier = ref.read(syncProvider.notifier);
     try {
-      await runWithSyncPausedForAccountMutation(
-        ref,
-        () => accountNotifier.removeAccount(account.uuid),
-      );
-      await syncNotifier.refreshAfterSend();
+      if (isLastAccount) {
+        await runWithSyncPausedForAccountMutation(ref, () async {
+          await accountNotifier.resetWallet();
+          syncNotifier.clearCachedWalletDbPath();
+          try {
+            await ref.read(biometricUnlockProvider.notifier).disable();
+          } catch (e, st) {
+            log(
+              'MobileAccounts: biometric cleanup after reset failed: $e\n$st',
+            );
+          }
+        }, resumeAfterMutation: false);
+        if (!mounted) return;
+        router.go('/welcome');
+      } else {
+        await runWithSyncPausedForAccountMutation(
+          ref,
+          () => accountNotifier.removeAccount(account.uuid),
+        );
+        await syncNotifier.refreshAfterSend();
+      }
     } catch (e, st) {
       log('MobileAccounts: remove failed: $e\n$st');
       if (mounted) {
         showAppToast(
           context,
-          "Couldn't remove the account",
+          isLastAccount
+              ? "Couldn't reset Vizor"
+              : "Couldn't remove the account",
           iconName: AppIcons.cross,
         );
       }
@@ -574,9 +596,13 @@ class _AccountsGroupCard extends StatelessWidget {
 
 /// Figma `Remove` (4514:85954): compact destructive confirmation sheet.
 class _RemoveAccountSheet extends StatelessWidget {
-  const _RemoveAccountSheet({required this.account});
+  const _RemoveAccountSheet({
+    required this.account,
+    required this.isLastAccount,
+  });
 
   final AccountInfo account;
+  final bool isLastAccount;
 
   static const _titleStyle = TextStyle(
     fontFamily: 'Geist',
@@ -617,8 +643,14 @@ class _RemoveAccountSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            "Are you sure you want to remove this account? This action "
-            "can't be reverted.\nYou will have to re-import your account.",
+            isLastAccount
+                ? 'Removing this account will completely reset the Vizor app. '
+                      'This means deleting all accounts and requiring you to '
+                      'import accounts again.\n'
+                      'This cannot be undone.'
+                : "Are you sure you want to remove this account? This action "
+                      "can't be reverted.\n"
+                      'You will have to re-import your account.',
             style: _bodyStyle.copyWith(color: colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -627,9 +659,9 @@ class _RemoveAccountSheet extends StatelessWidget {
             variant: AppButtonVariant.destructive,
             expand: true,
             onPressed: () => Navigator.of(context).pop(true),
-            leading: const AppIcon(AppIcons.trash),
+            leading: isLastAccount ? null : const AppIcon(AppIcons.trash),
             child: Text(
-              'Remove',
+              isLastAccount ? 'Reset Vizor' : 'Remove',
               style: _buttonLabelStyle.copyWith(
                 color: colors.button.destructive.label,
               ),

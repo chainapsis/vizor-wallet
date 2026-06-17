@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart' show Icon, Icons;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
@@ -54,22 +56,18 @@ class _MobileBiometricsScreenState
   }
 
   static String _methodLabel(BiometricKind kind) {
-    return switch (kind) {
-      BiometricKind.face => 'Face ID',
-      BiometricKind.fingerprint => 'biometrics',
-      BiometricKind.none => 'biometrics',
-    };
+    return kind.inlineLabel;
   }
 
-  static String _fallbackMethodLabel() {
-    if (kIsWeb) return 'biometrics';
-    return Platform.isIOS ? 'Face ID' : 'biometrics';
+  static BiometricKind _fallbackKind() {
+    if (kIsWeb) return BiometricKind.none;
+    return Platform.isIOS ? BiometricKind.face : BiometricKind.fingerprint;
   }
 
   Future<void> _enable() async {
     if (_enabling) return;
     setState(() => _enabling = true);
-    var method = _fallbackMethodLabel();
+    var method = _methodLabel(_fallbackKind());
     try {
       final state = await ref.read(biometricUnlockProvider.future);
       method = _methodLabel(state.availability.kind);
@@ -100,19 +98,14 @@ class _MobileBiometricsScreenState
   Widget build(BuildContext context) {
     final colors = context.colors;
     final biometric = ref.watch(biometricUnlockProvider).value;
-    final method = biometric == null
-        ? _fallbackMethodLabel()
-        : _methodLabel(biometric.availability.kind);
+    final kind = biometric?.availability.kind ?? _fallbackKind();
 
     return MobileOnboardingStepScaffold(
       progress: 1,
-      aboveTitle: Image.asset(
-        'assets/illustrations/biometrics_faceid_knight.png',
-        height: 300,
-        fit: BoxFit.contain,
-      ),
+      showBackButton: false,
+      aboveTitle: _BiometricHero(kind: kind),
       // Line breaks match the Figma title/subtitle wraps.
-      title: 'Unlock your wallet\nwith $method',
+      title: 'Unlock your wallet\nwith ${kind.onboardingTitleSuffix}',
       subtitle:
           'This is an easy and fast way to sign in.\n'
           'You can switch back to passcode anytime.',
@@ -124,31 +117,49 @@ class _MobileBiometricsScreenState
             key: const ValueKey('mobile_biometrics_enable'),
             expand: true,
             onPressed: _enabling ? null : () => unawaited(_enable()),
-            child: Text('Enable $method'),
+            leading: kind == BiometricKind.face
+                ? const AppIcon(AppIcons.faceId)
+                : const Icon(Icons.fingerprint),
+            child: Text(kind.enableLabel),
           ),
           const SizedBox(height: AppSpacing.s),
-          Semantics(
-            button: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _enabling ? null : () => context.go('/home'),
-              child: SizedBox(
-                height: 44,
-                child: Center(
-                  child: Text(
-                    'Not now',
-                    key: const ValueKey('mobile_biometrics_not_now'),
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.primary,
-                    ),
-                  ),
-                ),
+          AppButton(
+            key: const ValueKey('mobile_biometrics_not_now'),
+            variant: AppButtonVariant.ghost,
+            expand: true,
+            onPressed: _enabling ? null : () => context.go('/home'),
+            child: Text(
+              'Not now',
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.primary,
               ),
             ),
           ),
         ],
       ),
       child: const SizedBox.shrink(),
+    );
+  }
+}
+
+class _BiometricHero extends StatelessWidget {
+  const _BiometricHero({required this.kind});
+
+  final BiometricKind kind;
+
+  static const _frameHeight = 321.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final assetName = kind == BiometricKind.fingerprint
+        ? 'assets/illustrations/biometrics_fingerprint_knight.png'
+        : 'assets/illustrations/biometrics_faceid_knight.png';
+    final imageHeight = kind == BiometricKind.fingerprint ? 262.0 : 300.0;
+    return SizedBox(
+      height: _frameHeight,
+      child: Center(
+        child: Image.asset(assetName, height: imageHeight, fit: BoxFit.contain),
+      ),
     );
   }
 }

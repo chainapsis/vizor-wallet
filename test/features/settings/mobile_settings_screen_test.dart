@@ -280,10 +280,14 @@ void main() {
       find.descendant(of: row, matching: find.text('Face ID')),
       findsOneWidget,
     );
+    expect(
+      find.descendant(of: row, matching: find.text('Biometrics')),
+      findsNothing,
+    );
     expect(find.descendant(of: row, matching: find.text('On')), findsOneWidget);
   });
 
-  testWidgets('labels non-face biometric hardware generically', (tester) async {
+  testWidgets('labels fingerprint hardware by modality', (tester) async {
     await tester.pumpWidget(
       _app(
         biometric: const BiometricUnlockState(
@@ -301,11 +305,11 @@ void main() {
     final row = find.byKey(const ValueKey('mobile_settings_biometric_row'));
     expect(row, findsOneWidget);
     expect(
-      find.descendant(of: row, matching: find.text('Biometrics')),
+      find.descendant(of: row, matching: find.text('Fingerprint')),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: row, matching: find.text('Fingerprint')),
+      find.descendant(of: row, matching: find.text('Biometrics')),
       findsNothing,
     );
     expect(
