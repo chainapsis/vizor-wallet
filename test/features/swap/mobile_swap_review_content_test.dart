@@ -167,7 +167,7 @@ void main() {
     expect(title.style?.fontWeight, FontWeight.w600);
 
     final chunkScope = find.byKey(
-      const ValueKey('mobile_swap_verify_address_chunks'),
+      const ValueKey('mobile_address_verify_chunks'),
     );
     expect(chunkScope, findsOneWidget);
     final chunkScopeRect = tester.getRect(chunkScope);
@@ -188,10 +188,10 @@ void main() {
     expect(firstChunk.style?.fontSize, 14);
     expect(firstChunk.style?.height, 16 / 14);
     final firstLineScope = find.byKey(
-      const ValueKey('mobile_swap_verify_address_line_0'),
+      const ValueKey('mobile_address_verify_line_0'),
     );
     final lastLineScope = find.byKey(
-      const ValueKey('mobile_swap_verify_address_line_2'),
+      const ValueKey('mobile_address_verify_line_2'),
     );
     final firstLine = tester.widget<Row>(
       find.descendant(of: firstLineScope, matching: find.byType(Row)),
@@ -202,7 +202,7 @@ void main() {
     expect(firstLine.mainAxisAlignment, MainAxisAlignment.start);
     expect(lastLine.mainAxisAlignment, MainAxisAlignment.start);
     final firstDivider = find.byKey(
-      const ValueKey('mobile_swap_verify_address_divider_0'),
+      const ValueKey('mobile_address_verify_divider_0'),
     );
     expect(tester.getSize(firstDivider).width, moreOrLessEquals(305));
     expect(
