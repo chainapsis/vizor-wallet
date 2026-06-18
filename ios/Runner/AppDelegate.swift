@@ -7,6 +7,8 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    FreshInstallKeychainCleaner.runIfNeeded()
+
     if #available(iOS 26.0, *) {
       BackgroundSyncManager.shared.registerBackgroundTask()
       TxTrackManager.shared.registerTask()
