@@ -16,15 +16,25 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
+import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../../services/native_date_picker.dart';
 import '../import/import_birthday_calendar_overlay.dart'
     show ImportBirthdayCalendarPanel;
 import '../import/import_birthday_estimator.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
+import 'mobile_import_account_discovery_sheet.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 enum _BirthdayEntryMode { date, blockHeight }
+
+enum _MobileImportSubmitPhase {
+  idle,
+  estimating,
+  discoveringAccounts,
+  stoppingSync,
+  importing,
+}
 
 /// Mobile wallet-birthday step — Figma `Import — Calendar`
 /// (4575:112136): a date / block-height entry toggle and a circular
@@ -66,13 +76,18 @@ class _MobileImportBirthdayScreenState
   final _heightFocus = FocusNode();
 
   ImportBirthdayMetadata? _metadata;
-  bool _estimating = false;
-  bool _submitting = false;
+  _MobileImportSubmitPhase _submitPhase = _MobileImportSubmitPhase.idle;
   String? _error;
+
+  bool get _isSubmitting =>
+      _submitPhase != _MobileImportSubmitPhase.idle &&
+      _submitPhase != _MobileImportSubmitPhase.estimating;
 
   @override
   void initState() {
     super.initState();
+    // Repaint the height field's focus ring when it gains/loses the keyboard.
+    _heightFocus.addListener(_onHeightFocusChanged);
     if (widget.loadChainMetadata) {
       unawaited(_loadMetadata());
     }
@@ -80,9 +95,14 @@ class _MobileImportBirthdayScreenState
 
   @override
   void dispose() {
+    _heightFocus.removeListener(_onHeightFocusChanged);
     _heightController.dispose();
     _heightFocus.dispose();
     super.dispose();
+  }
+
+  void _onHeightFocusChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadMetadata() async {
@@ -127,7 +147,7 @@ class _MobileImportBirthdayScreenState
     _BirthdayEntryMode.blockHeight => _heightPlausible,
   };
 
-  bool get _busy => _submitting || _estimating;
+  bool get _busy => _submitPhase != _MobileImportSubmitPhase.idle;
 
   void _setMode(_BirthdayEntryMode mode) {
     if (_busy || _mode == mode) return;
@@ -208,7 +228,7 @@ class _MobileImportBirthdayScreenState
         await _submit(_typedHeight()!);
       case _BirthdayEntryMode.date:
         setState(() {
-          _estimating = true;
+          _submitPhase = _MobileImportSubmitPhase.estimating;
           _error = null;
         });
         try {
@@ -218,13 +238,12 @@ class _MobileImportBirthdayScreenState
             selectedDate: _selectedDate!,
           );
           if (!mounted) return;
-          setState(() => _estimating = false);
           await _submit(height);
         } catch (e) {
           log('MobileImportBirthday: estimate failed: $e');
           if (!mounted) return;
           setState(() {
-            _estimating = false;
+            _submitPhase = _MobileImportSubmitPhase.idle;
             _error =
                 "Couldn't estimate a height for that date. Enter a block "
                 'height instead.';
@@ -233,11 +252,20 @@ class _MobileImportBirthdayScreenState
     }
   }
 
+  /// "I can't remember" — like the desktop skip, import from the Sapling
+  /// activation height so the wallet scans the whole chain rather than
+  /// guessing a birthday.
+  void _skipBirthday() {
+    if (_busy) return;
+    _heightFocus.unfocus();
+    unawaited(_submit(_minHeight));
+  }
+
   Future<void> _submit(int height) async {
     final onHeightConfirmed = widget.onHeightConfirmed;
     if (onHeightConfirmed != null) {
       setState(() {
-        _submitting = true;
+        _submitPhase = _MobileImportSubmitPhase.importing;
         _error = null;
       });
       try {
@@ -246,7 +274,7 @@ class _MobileImportBirthdayScreenState
         log('MobileImportBirthday: height confirm failed: $e\n$st');
         if (!mounted) return;
         setState(() {
-          _submitting = false;
+          _submitPhase = _MobileImportSubmitPhase.idle;
           _error = onboardingSubmitErrorMessage(e);
         });
       }
@@ -255,41 +283,157 @@ class _MobileImportBirthdayScreenState
 
     final security = ref.read(appSecurityProvider);
     if (!security.isPasswordConfigured) {
-      context.push(
-        '/onboarding/set-passcode',
-        extra: SetPasswordScreenArgs.importWallet(
-          mnemonic: widget.args.mnemonic,
-          birthdayHeight: height,
-        ),
-      );
+      try {
+        final selectedAdditionalAccountIndices =
+            await _resolveAdditionalAccountIndices(
+              mnemonic: widget.args.mnemonic,
+              birthdayHeight: height,
+            );
+        if (selectedAdditionalAccountIndices == null) {
+          if (mounted) {
+            setState(() {
+              _submitPhase = _MobileImportSubmitPhase.idle;
+            });
+          }
+          return;
+        }
+        if (!mounted) return;
+        setState(() {
+          _submitPhase = _MobileImportSubmitPhase.idle;
+        });
+        context.push(
+          '/onboarding/set-passcode',
+          extra: SetPasswordScreenArgs.importWallet(
+            mnemonic: widget.args.mnemonic,
+            birthdayHeight: height,
+            selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
+          ),
+        );
+      } catch (e, st) {
+        log('MobileImportBirthday: account discovery failed: $e\n$st');
+        if (!mounted) return;
+        setState(() {
+          _submitPhase = _MobileImportSubmitPhase.idle;
+          _error = onboardingSubmitErrorMessage(e);
+        });
+      }
       return;
     }
 
     setState(() {
-      _submitting = true;
+      _submitPhase = _MobileImportSubmitPhase.importing;
       _error = null;
     });
     final router = GoRouter.of(context);
     final accountNotifier = ref.read(accountProvider.notifier);
     try {
-      await runWithSyncPausedForAccountMutation(
+      final imported = await runWithSyncPausedForAccountMutation(
         ref,
-        () => accountNotifier.importAccount(
-          mnemonic: widget.args.mnemonic,
-          birthdayHeight: height,
-        ),
+        () async {
+          final selectedAdditionalAccountIndices =
+              await _resolveAdditionalAccountIndices(
+                mnemonic: widget.args.mnemonic,
+                birthdayHeight: height,
+              );
+          if (selectedAdditionalAccountIndices == null) return false;
+          if (!mounted) return false;
+          setState(() {
+            _submitPhase = _MobileImportSubmitPhase.importing;
+          });
+          await accountNotifier.importAccount(
+            mnemonic: widget.args.mnemonic,
+            birthdayHeight: height,
+            additionalAccountIndices: selectedAdditionalAccountIndices,
+          );
+          return true;
+        },
+        onStoppingSync: () {
+          if (!mounted) return;
+          setState(() {
+            _submitPhase = _MobileImportSubmitPhase.stoppingSync;
+          });
+        },
+        onSyncPaused: () {
+          if (!mounted) return;
+          setState(() {
+            _submitPhase = _MobileImportSubmitPhase.importing;
+          });
+        },
       );
+      if (!imported) {
+        if (mounted) {
+          setState(() {
+            _submitPhase = _MobileImportSubmitPhase.idle;
+          });
+        }
+        return;
+      }
     } catch (e, st) {
       log('MobileImportBirthday: import failed: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _submitting = false;
+        _submitPhase = _MobileImportSubmitPhase.idle;
         _error = onboardingSubmitErrorMessage(e);
       });
       return;
     }
     router.go('/home');
   }
+
+  Future<List<int>?> _resolveAdditionalAccountIndices({
+    required String mnemonic,
+    required int birthdayHeight,
+  }) async {
+    setState(() {
+      _submitPhase = _MobileImportSubmitPhase.discoveringAccounts;
+      _error = null;
+    });
+
+    final discovery = await ref
+        .read(accountProvider.notifier)
+        .discoverAdditionalSoftwareAccounts(
+          mnemonic: mnemonic,
+          birthdayHeight: birthdayHeight,
+        );
+    if (!mounted) return null;
+    final candidates = discovery.accounts;
+    if (candidates.isEmpty) {
+      setState(() {
+        _submitPhase = _MobileImportSubmitPhase.idle;
+      });
+      return const [];
+    }
+
+    setState(() {
+      _submitPhase = _MobileImportSubmitPhase.idle;
+    });
+    return showMobileImportAccountDiscoverySheet(
+      context: context,
+      accounts: candidates,
+      allowEmptySelection: !discovery.primaryAccountAlreadyExists,
+      bip44CoinType: ref.read(rpcEndpointProvider).network.coinType,
+      loadTransparentBalance: _loadAccountDiscoveryTransparentBalance,
+    );
+  }
+
+  Future<BigInt> _loadAccountDiscoveryTransparentBalance(
+    rust_wallet.SoftwareWalletDiscoveredAccount account,
+  ) {
+    return ref
+        .read(accountProvider.notifier)
+        .previewSoftwareAccountTransparentBalance(
+          mnemonic: widget.args.mnemonic,
+          accountIndex: account.zip32AccountIndex,
+        );
+  }
+
+  String? get _statusMessage => switch (_submitPhase) {
+    _MobileImportSubmitPhase.idle => null,
+    _MobileImportSubmitPhase.estimating => 'Estimating height...',
+    _MobileImportSubmitPhase.discoveringAccounts => 'Checking accounts...',
+    _MobileImportSubmitPhase.stoppingSync => 'Pausing sync...',
+    _MobileImportSubmitPhase.importing => 'Importing wallet...',
+  };
 
   String _formattedDate(DateTime date) =>
       '${date.month.toString().padLeft(2, '0')}/'
@@ -303,36 +447,53 @@ class _MobileImportBirthdayScreenState
 
     return MobileOnboardingStepScaffold(
       progress: 0.8,
-      onBack: _submitting ? null : () => Navigator.of(context).maybePop(),
+      onBack: _isSubmitting ? null : () => Navigator.of(context).maybePop(),
       title: 'Around when did you create your wallet?',
       // Two 25 px lines like the Figma subtitle block.
       subtitle: 'An estimate is enough — sync starts\nfrom there.',
+      // Figma `Buttons Stack` (4752:26672): a full-width skip below the
+      // entry row that imports from the Sapling activation height.
+      bottomArea: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppButton(
+            key: const ValueKey('mobile_import_birthday_skip'),
+            variant: AppButtonVariant.secondary,
+            expand: true,
+            onPressed: _busy ? null : _skipBirthday,
+            trailing: const AppIcon(AppIcons.skip),
+            child: const Text('I can’t remember'),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Flexible(
-                child: _ModeTab(
+          // Tabs size to their content and only scale down on very narrow
+          // screens — a 50/50 Flexible split clipped the longer label.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _ModeTab(
                   key: const ValueKey('mobile_import_birthday_mode_date'),
                   iconName: AppIcons.calendar,
                   label: 'Enter the date',
                   selected: isDateMode,
                   onTap: () => _setMode(_BirthdayEntryMode.date),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Flexible(
-                child: _ModeTab(
+                const SizedBox(width: AppSpacing.sm),
+                _ModeTab(
                   key: const ValueKey('mobile_import_birthday_mode_height'),
                   iconName: AppIcons.block,
                   label: 'Enter the block height',
                   selected: !isDateMode,
                   onTap: () => _setMode(_BirthdayEntryMode.blockHeight),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: AppSpacing.md),
           Row(
@@ -349,6 +510,7 @@ class _MobileImportBirthdayScreenState
                         onTap: () => unawaited(_pickDate()),
                       )
                     : _FieldShell(
+                        focused: _heightFocus.hasFocus,
                         child: Row(
                           children: [
                             Expanded(
@@ -398,14 +560,14 @@ class _MobileImportBirthdayScreenState
                         ),
                       ),
               ),
-              const SizedBox(width: AppSpacing.s),
+              const SizedBox(width: AppSpacing.xs),
               AppButton(
                 key: const ValueKey('mobile_import_birthday_continue'),
                 onPressed: !_canContinue || _busy ? null : _continue,
-                // 78×60 chevron pill per the Figma entry row.
+                // 70×60 chevron pill with a 20 px glyph per the Figma row.
                 height: 60,
-                minWidth: 78,
-                child: const AppIcon(AppIcons.chevronForward, size: 24),
+                minWidth: 70,
+                child: const AppIcon(AppIcons.chevronForward, size: 20),
               ),
             ],
           ),
@@ -418,12 +580,27 @@ class _MobileImportBirthdayScreenState
                 color: colors.text.destructive,
               ),
             )
-          else if (_submitting || _estimating)
-            Text(
-              _submitting ? 'Importing wallet...' : 'Estimating height...',
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
+          else if (_statusMessage != null)
+            // Figma `Import — Estimating` (4752:27008): a spinner + Label M
+            // SemiBold in text.accent, centered, sitting ~24px (spacing/md)
+            // below the field rather than tight against it.
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.s),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AppIcon(AppIcons.loader, size: 20, color: colors.icon.accent),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(
+                    _statusMessage!,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.labelLarge.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colors.text.accent,
+                    ),
+                  ),
+                ],
               ),
             )
           else if (!isDateMode)
@@ -458,7 +635,25 @@ class _ModeTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final color = selected ? colors.text.accent : colors.text.muted;
+    // Figma `Simple Tabs`: both tabs use Body M on text.accent; the
+    // inactive one is the same content at 50% opacity, and the active one
+    // is the medium weight.
+    final tab = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppIcon(iconName, size: AppIconSize.medium, color: colors.icon.accent),
+        const SizedBox(width: AppSpacing.xxs),
+        Text(
+          label,
+          maxLines: 1,
+          style:
+              (selected
+                      ? AppTypography.bodyMediumStrong
+                      : AppTypography.bodyMedium)
+                  .copyWith(color: colors.text.accent),
+        ),
+      ],
+    );
     return Semantics(
       button: true,
       selected: selected,
@@ -468,21 +663,7 @@ class _ModeTab extends StatelessWidget {
         onTap: onTap,
         child: SizedBox(
           height: 44,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppIcon(iconName, size: AppIconSize.medium, color: color),
-              const SizedBox(width: AppSpacing.xxs),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelMedium.copyWith(color: color),
-                ),
-              ),
-            ],
-          ),
+          child: Opacity(opacity: selected ? 1 : 0.5, child: tab),
         ),
       ),
     );
@@ -491,19 +672,45 @@ class _ModeTab extends StatelessWidget {
 
 /// The Figma entry-row field chrome shared by both modes.
 class _FieldShell extends StatelessWidget {
-  const _FieldShell({required this.child});
+  const _FieldShell({required this.child, this.focused = false});
 
   final Widget child;
+
+  /// Shows the inverse focus ring while the field owns the keyboard. The
+  /// resting state has no visible border — the previous always-on 2px
+  /// border read as a permanent focus state.
+  final bool focused;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    // Raised white card (surface.input fill, radius 16, layered subtle
+    // shadow) with a focus-only inverse outline — mirrors MobileTextField.
     return Container(
-      height: 61,
+      height: AppInputSizing.height,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
       decoration: BoxDecoration(
-        border: Border.all(color: colors.border.strong, width: 2),
-        borderRadius: BorderRadius.circular(AppRadii.medium),
+        color: colors.surface.input,
+        borderRadius: BorderRadius.circular(AppInputSizing.radius),
+        border: Border.all(
+          color: focused ? colors.background.inverse : const Color(0x00000000),
+          width: 1.5,
+          strokeAlign: BorderSide.strokeAlignInside,
+        ),
+        boxShadow: [
+          BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+          BoxShadow(
+            color: colors.shadows.subtle,
+            offset: const Offset(0, 2),
+            blurRadius: 4,
+          ),
+          BoxShadow(
+            color: colors.shadows.subtle,
+            offset: const Offset(0, 1),
+            blurRadius: 2,
+          ),
+          BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+        ],
       ),
       child: child,
     );
@@ -552,7 +759,7 @@ class _DateFieldButton extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
-              AppIcon(AppIcons.calendar, size: 18, color: colors.icon.accent),
+              AppIcon(AppIcons.calendar, size: 24, color: colors.icon.accent),
             ],
           ),
         ),

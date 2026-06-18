@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/config/zcash_explorer.dart';
+import '../../../../core/formatting/address_display.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/privacy/privacy_mask.dart';
@@ -14,6 +15,7 @@ import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
@@ -82,7 +84,6 @@ class _MobileTransactionStatusScreenState
   rust_sync.TransactionDetail? _detail;
   String? _error;
   String? _activeAccountUuid;
-  bool _addressExpanded = false;
   bool _messageExpanded = false;
 
   @override
@@ -148,8 +149,7 @@ class _MobileTransactionStatusScreenState
           log('MobileTransactionStatus: detail load failed: $e\n$st');
         }
         if (!mounted ||
-            accountUuid !=
-                ref.read(accountProvider).value?.activeAccountUuid) {
+            accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
           return;
         }
       }
@@ -246,6 +246,15 @@ class _MobileTransactionStatusScreenState
     showAppToast(context, 'Transaction Hash Copied');
   }
 
+  Future<void> _showFullAddressSheet(String address) {
+    return showMobileAddressVerifySheet(
+      context,
+      title: _addressVerifyTitle(address),
+      address: address,
+      leading: _AddressVerifyZecIcon(address: address),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<AsyncValue<AccountState>>(accountProvider, (previous, next) {
@@ -266,11 +275,43 @@ class _MobileTransactionStatusScreenState
     final failed = _phase == _TxPhase.failed;
 
     final amountText = _amountText(tx, privacyModeEnabled: privacyModeEnabled);
-    final address = detail?.primaryAddress?.trim();
-    final poolLabel = _poolLabel(tx?.displayPool);
+    final primaryAddress = detail?.primaryAddress?.trim();
+    final sourceAddress = detail?.sourceAddress?.trim();
+    final sourcePool = detail?.sourcePool?.trim().toLowerCase();
+    final receivingOutput = _isIncoming ? _receivingOutputFor(detail) : null;
+    final receivingAddress = receivingOutput?.address?.trim();
+    final address = _isIncoming ? sourceAddress : primaryAddress;
+    final poolLabel = _isIncoming
+        ? _addressPoolLabel(sourcePool, sourceAddress)
+        : _addressPoolLabel(tx?.displayPool, primaryAddress);
+    final receivingPoolLabel = _addressPoolLabel(
+      receivingOutput?.pool,
+      receivingAddress,
+    );
     final memo = detail?.memo?.trim();
 
     final hasAddress = address != null && address.isNotEmpty;
+    final amountBottom =
+        _isIncoming && receivingAddress != null && receivingAddress.isNotEmpty
+        ? _BottomInfoRow(
+            iconName: _poolIconNameFor(
+              receivingPoolLabel,
+              address: receivingAddress,
+            ),
+            iconColor: _poolIconColorFor(
+              context,
+              receivingPoolLabel,
+              address: receivingAddress,
+            ),
+            text: _truncateAddress(receivingAddress),
+          )
+        : !hasAddress && poolLabel != null
+        ? _BottomInfoRow(
+            iconName: _poolIconNameFor(poolLabel),
+            iconColor: _poolIconColorFor(context, poolLabel),
+            text: poolLabel,
+          )
+        : null;
     final amountRow = _ReviewInfoRow(
       label: 'Amount',
       value: amountText,
@@ -278,28 +319,7 @@ class _MobileTransactionStatusScreenState
       // With no counterparty row (shielded senders are unknown), the
       // pool tag moves under the amount — Figma `Received` keeps the
       // pool on the bottom strip.
-      bottom: !hasAddress && poolLabel != null
-          ? Row(
-              children: [
-                AppIcon(
-                  poolLabel == 'Transparent'
-                      ? AppIcons.transparentBalance
-                      : AppIcons.shieldKeyhole,
-                  size: AppIconSize.medium,
-                  color: poolLabel == 'Transparent'
-                      ? colors.icon.muted
-                      : colors.icon.brandCrimson,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  poolLabel,
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-              ],
-            )
-          : null,
+      bottom: amountBottom,
     );
     final addressRow = (address == null || address.isEmpty)
         ? null
@@ -307,16 +327,6 @@ class _MobileTransactionStatusScreenState
             label: _isIncoming ? 'From' : 'To',
             value: _truncateAddress(address),
             strikethrough: failed,
-            // Same pattern as the send review: the serif value stays
-            // truncated and the full address joins below in label type.
-            expandedDetail: _addressExpanded
-                ? Text(
-                    address,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  )
-                : null,
             leading: _IconBadge(
               child: AppIcon(
                 AppIcons.wallet,
@@ -324,54 +334,58 @@ class _MobileTransactionStatusScreenState
                 color: colors.icon.regular,
               ),
             ),
-            bottom: Row(
-              children: [
-                if (poolLabel != null) ...[
-                  AppIcon(
-                    poolLabel == 'Transparent'
-                        ? AppIcons.transparentBalance
-                        : AppIcons.shieldKeyhole,
-                    size: AppIconSize.medium,
-                    color: poolLabel == 'Transparent'
-                        ? colors.icon.muted
-                        : colors.icon.brandCrimson,
-                  ),
-                  const SizedBox(width: AppSpacing.xxs),
-                  Text(
-                    poolLabel,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: colors.text.secondary,
-                    ),
-                  ),
-                ],
-                const Spacer(),
-                _GhostIconLabelButton(
-                  key: const ValueKey('mobile_tx_status_toggle_address'),
-                  iconName: _addressExpanded
-                      ? AppIcons.eyeClosed
-                      : AppIcons.eye,
-                  label: _addressExpanded
-                      ? 'Hide full address'
-                      : 'Show full address',
-                  onTap: () =>
-                      setState(() => _addressExpanded = !_addressExpanded),
-                ),
-              ],
+            bottom: _BottomInfoRow(
+              iconName: poolLabel == null
+                  ? null
+                  : _poolIconNameFor(poolLabel, address: address),
+              iconColor: poolLabel == null
+                  ? null
+                  : _poolIconColorFor(context, poolLabel, address: address),
+              text: poolLabel,
+              trailing: _GhostIconLabelButton(
+                key: const ValueKey('mobile_tx_status_show_full_address'),
+                iconName: AppIcons.eye,
+                label: 'Show full address',
+                onTap: () => unawaited(_showFullAddressSheet(address)),
+              ),
             ),
           );
+    final unknownFromLabel = _isIncoming && addressRow == null
+        ? _unknownFromLabelForSourcePool(sourcePool)
+        : null;
+    final unknownFromRow = unknownFromLabel == null
+        ? null
+        : _ReviewInfoRow(
+            label: 'From',
+            value: unknownFromLabel,
+            leading: _IconBadge(
+              child: AppIcon(
+                AppIcons.wallet,
+                size: 18,
+                color: colors.icon.regular,
+              ),
+            ),
+            bottom: sourcePool == 'shielded'
+                ? _BottomInfoRow(
+                    iconName: _poolIconNameFor('Shielded'),
+                    iconColor: _poolIconColorFor(context, 'Shielded'),
+                    text: 'Shielded',
+                  )
+                : null,
+          );
 
-    // Sent flows read top-down as amount -> recipient; received flows
-    // as sender -> amount (Figma `Received` 4752:75264).
-    final infoRows = <Widget>[
-      if (_isIncoming && addressRow != null) addressRow else amountRow,
-      const _FlowArrow(),
-      if (_isIncoming || addressRow == null) amountRow else addressRow,
-    ];
-    // Without an address there is nothing to point at — drop the arrow
-    // and the duplicate amount row.
-    final reviewChildren = addressRow == null
+    // Sent flows read top-down as amount -> recipient; received flows as
+    // sender source -> amount, with the receiving output attached under
+    // Amount (Figma `Received` 4752:75264).
+    final fromRow = _isIncoming ? addressRow ?? unknownFromRow : null;
+    final reviewChildren = _isIncoming
+        ? <Widget>[
+            if (fromRow != null) ...[fromRow, const _FlowArrow()],
+            amountRow,
+          ]
+        : addressRow == null
         ? <Widget>[amountRow]
-        : infoRows;
+        : <Widget>[amountRow, const _FlowArrow(), addressRow];
 
     return Scaffold(
       backgroundColor: colors.background.window,
@@ -488,6 +502,65 @@ class _MobileTransactionStatusScreenState
     };
   }
 
+  String? _addressPoolLabel(String? pool, String? address) {
+    final lower = address?.trim().toLowerCase();
+    if (lower != null && lower.startsWith('tex')) return 'TEX';
+    return _poolLabel(pool);
+  }
+
+  String _poolIconNameFor(String? poolLabel, {String? address}) {
+    final isTransparent =
+        poolLabel == 'Transparent' ||
+        (address != null &&
+            zcashAddressDisplayKind(address) ==
+                ZcashAddressDisplayKind.transparent);
+    return isTransparent ? AppIcons.transparentBalance : AppIcons.shieldKeyhole;
+  }
+
+  Color _poolIconColorFor(
+    BuildContext context,
+    String? poolLabel, {
+    String? address,
+  }) {
+    final isTransparent =
+        poolLabel == 'Transparent' ||
+        (address != null &&
+            zcashAddressDisplayKind(address) ==
+                ZcashAddressDisplayKind.transparent);
+    return isTransparent
+        ? context.colors.icon.muted
+        : context.colors.icon.brandCrimson;
+  }
+
+  rust_sync.TransactionDetailOutput? _receivingOutputFor(
+    rust_sync.TransactionDetail? detail,
+  ) {
+    rust_sync.TransactionDetailOutput? best;
+    final outputs =
+        detail?.outputs ?? const <rust_sync.TransactionDetailOutput>[];
+    for (final output in outputs) {
+      final address = output.address?.trim();
+      if (address == null || address.isEmpty) continue;
+      if (best == null || output.amountZatoshi > best.amountZatoshi) {
+        best = output;
+      }
+    }
+    return best;
+  }
+
+  String? _unknownFromLabelForSourcePool(String? pool) {
+    if (pool == null || pool.isEmpty) return null;
+    return pool == 'shielded' ? 'Shielded sender' : 'Unknown sender';
+  }
+
+  String _addressVerifyTitle(String address) {
+    final lower = address.trim().toLowerCase();
+    if (lower.startsWith('u1')) return 'Unified address';
+    if (lower.startsWith('zs')) return 'Shielded address';
+    if (lower.startsWith('t')) return 'Transparent address';
+    return 'Zcash address';
+  }
+
   String _truncateAddress(String address) {
     if (address.length <= 14) return address;
     return '${address.substring(0, 6)} ... '
@@ -500,7 +573,82 @@ class _MobileTransactionStatusScreenState
   }
 }
 
+class _AddressVerifyZecIcon extends StatelessWidget {
+  const _AddressVerifyZecIcon({required this.address});
+
+  final String address;
+
+  @override
+  Widget build(BuildContext context) {
+    final isTransparent =
+        zcashAddressDisplayKind(address) == ZcashAddressDisplayKind.transparent;
+    final colors = context.colors;
+    return Container(
+      width: AppAssetSize.size,
+      height: AppAssetSize.size,
+      decoration: BoxDecoration(
+        color: colors.background.neutralSubtleOpacity,
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: AppIcon(
+          isTransparent
+              ? AppIcons.transparentBalance
+              : AppIcons.shieldKeyholeOutline,
+          size: AppIconSize.medium,
+          color: isTransparent ? colors.icon.muted : colors.icon.brandCrimson,
+        ),
+      ),
+    );
+  }
+}
+
 enum _TxPhase { pending, succeeded, failed }
+
+class _BottomInfoRow extends StatelessWidget {
+  const _BottomInfoRow({
+    required this.text,
+    this.iconName,
+    this.iconColor,
+    this.trailing,
+  });
+
+  final String? text;
+  final String? iconName;
+  final Color? iconColor;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = text;
+    return Row(
+      children: [
+        if (iconName != null) ...[
+          AppIcon(
+            iconName!,
+            size: AppIconSize.medium,
+            color: iconColor ?? context.colors.text.secondary,
+          ),
+          const SizedBox(width: AppSpacing.xxs),
+        ],
+        if (label != null)
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.labelMedium.copyWith(
+                color: context.colors.text.secondary,
+              ),
+            ),
+          )
+        else
+          const Spacer(),
+        ?trailing,
+      ],
+    );
+  }
+}
 
 /// One serif review row — Figma `_Reivew Info` (4265:59148): a 40px
 /// leading badge, the small grey label, the Headline L serif value, and
@@ -511,7 +659,6 @@ class _ReviewInfoRow extends StatelessWidget {
     required this.value,
     required this.leading,
     this.bottom,
-    this.expandedDetail,
     this.strikethrough = false,
   });
 
@@ -519,10 +666,6 @@ class _ReviewInfoRow extends StatelessWidget {
   final String value;
   final Widget leading;
   final Widget? bottom;
-
-  /// Optional full-form line under the serif value (the expanded
-  /// address).
-  final Widget? expandedDetail;
   final bool strikethrough;
 
   @override
@@ -563,10 +706,6 @@ class _ReviewInfoRow extends StatelessWidget {
                         : TextDecoration.none,
                   ),
                 ),
-                if (expandedDetail != null) ...[
-                  const SizedBox(height: AppSpacing.xxs),
-                  expandedDetail!,
-                ],
                 const SizedBox(height: AppSpacing.xxs),
                 SizedBox(height: 24, child: bottom ?? const SizedBox()),
               ],
@@ -771,18 +910,12 @@ class _DetailCard extends StatelessWidget {
           if (feeText != null) ...[
             const SizedBox(height: AppSpacing.sm),
             // Figma `border/neutral/default` (#d4d4d4 light).
-            Container(
-              height: 1,
-              color: colors.border.regular,
-            ),
+            Container(height: 1, color: colors.border.regular),
             const SizedBox(height: AppSpacing.sm),
             _ListRow(
               label: 'Tx fee',
               labelStyle: AppTypography.labelLarge,
-              value: _ValueWithIcon(
-                text: feeText,
-                iconName: AppIcons.help,
-              ),
+              value: _ValueWithIcon(text: feeText, iconName: AppIcons.help),
             ),
           ],
         ],

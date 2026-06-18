@@ -17,20 +17,16 @@ const _activityFeedActivationShortcuts = <ShortcutActivator, Intent>{
 /// amount/timestamp).
 const _activityRowInnerLineGap = AppSpacing.xxs;
 
-/// Subtitle line (Shielded / Transparent). Desktop keeps main's 14px
-/// label; mobile bumps to the 16px label.
-const _activityRowSubtitleStyle = AppTypography.labelLarge;
-
-/// Supporting amount line (timestamp / status). Desktop keeps main's 13px
-/// label; mobile bumps to the 16px label.
-const _activitySupportingStyle = kAppFormFactor == AppFormFactor.mobile
+/// Sub-line text style — the subtitle (Shielded / Transparent) and the
+/// supporting amount line (timestamp / status).
+const _activityRowSubLineStyle = kAppFormFactor == AppFormFactor.mobile
     ? AppTypography.labelLarge
     : AppTypography.labelSmall;
 
 /// Sub-line leading icon (the shielded / transparent badge).
 const _activityRowSubtitleIconSize = kAppFormFactor == AppFormFactor.mobile
     ? AppIconSize.medium
-    : 16.0;
+    : 14.0;
 
 class ActivityFeedSectionData {
   const ActivityFeedSectionData({required this.title, required this.rows});
@@ -416,7 +412,7 @@ class _ActivityFeedCardSegment extends StatelessWidget {
       child: CustomPaint(
         painter: _ActivityFeedCardSegmentShadowPainter(
           position: position,
-          shadows: appSurfaceShadow(colors),
+          shadows: _activityFeedCardShadow(colors),
         ),
         child: DecoratedBox(
           decoration: BoxDecoration(
@@ -693,12 +689,21 @@ class _ActivityFeedCardShell extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: appSurfaceShadow(colors),
+        boxShadow: _activityFeedCardShadow(colors),
       ),
       child: child,
     );
   }
 }
+
+/// Activity cards drop their drop shadow on mobile (flat full-width cards on a
+/// tinted background) and keep the surface shadow on desktop. Form-factor
+/// branching is the compile-time [kAppFormFactor] const so the unused branch is
+/// tree-shaken.
+List<BoxShadow> _activityFeedCardShadow(AppColors colors) =>
+    kAppFormFactor == AppFormFactor.mobile
+    ? const <BoxShadow>[]
+    : appSurfaceShadow(colors);
 
 class ActivityFeedRowGroup extends StatelessWidget {
   const ActivityFeedRowGroup({required this.row, super.key});
@@ -903,9 +908,7 @@ class _ActivityRowTitle extends StatelessWidget {
           style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
         ),
         if (row.subtitle != null) ...[
-          // Mobile-only extra gap; desktop keeps subtitle flush as on main.
-          if (kAppFormFactor == AppFormFactor.mobile)
-            const SizedBox(height: _activityRowInnerLineGap),
+          const SizedBox(height: _activityRowInnerLineGap),
           _ActivityRowSubtitle(
             text: row.subtitle!,
             iconName: row.subtitleIconName,
@@ -943,7 +946,7 @@ class _ActivityRowSubtitle extends StatelessWidget {
             text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: _activityRowSubtitleStyle.copyWith(
+            style: _activityRowSubLineStyle.copyWith(
               color: colors.text.secondary,
               fontWeight: FontWeight.w400,
             ),
@@ -1067,7 +1070,7 @@ class _ActivitySupportingAmountText extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       textAlign: TextAlign.end,
-      style: _activitySupportingStyle.copyWith(color: color, letterSpacing: 0),
+      style: _activityRowSubLineStyle.copyWith(color: color, letterSpacing: 0),
     );
     if (iconName == null) return label;
     return Row(

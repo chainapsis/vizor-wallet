@@ -15,6 +15,7 @@ import 'chip_use_cases.dart';
 import 'context_menu_use_cases.dart';
 import 'color_use_cases.dart';
 import 'icon_use_cases.dart';
+import 'keystone_use_cases.dart';
 import 'mobile_shell_use_cases.dart';
 import 'receive_use_cases.dart';
 import 'received_receipt_use_cases.dart';
@@ -151,6 +152,39 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Fingerprint opt-in',
                       builder: buildMobileFingerprintOptInUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile Keystone',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Connect',
+                      builder: buildMobileKeystoneConnectUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scan permission',
+                      builder: buildMobileKeystoneScanRequestingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scan denied',
+                      builder: buildMobileKeystoneScanDeniedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scan active',
+                      builder: buildMobileKeystoneScanActiveUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scan loading',
+                      builder: buildMobileKeystoneScanLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Select account',
+                      builder: buildMobileKeystoneSelectAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Birthday height',
+                      builder: buildMobileKeystoneBirthdayUseCase,
                     ),
                   ],
                 ),
@@ -743,6 +777,23 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Contact picker',
                       builder: buildAddressBookContactPickerModalUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Contacts list',
+                      builder: buildMobileContactsListUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No contacts',
+                      builder: buildMobileContactsNoContactsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Empty search',
+                      builder: buildMobileContactsEmptySearchUseCase,
                     ),
                   ],
                 ),

@@ -220,6 +220,71 @@ void main() {
       expect(find.text('Restored Parent Toast'), findsOneWidget);
     },
   );
+
+  testWidgets('toast from a root-navigator modal renders above the modal', (
+    tester,
+  ) async {
+    // A host-bearing screen (e.g. mobile home) covered by a root-navigator
+    // bottom sheet (e.g. the accounts sheet). Copying from the sheet must
+    // surface the toast in the root overlay ABOVE the sheet, not inside the
+    // host the sheet covers (which would render it behind the scrim).
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: const AppToastHost(
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: _OpenModalButton(),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open modal'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Copy from modal'));
+    await tester.pump();
+
+    // Renders (the captured theme keeps AppToast.build from throwing) ...
+    expect(find.text('Modal Toast'), findsOneWidget);
+    // ... and from the root overlay, not inside the covered host.
+    expect(
+      find.descendant(
+        of: find.byType(AppToastHost),
+        matching: find.text('Modal Toast'),
+      ),
+      findsNothing,
+    );
+  });
+}
+
+class _OpenModalButton extends StatelessWidget {
+  const _OpenModalButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: TextButton(
+        onPressed: () => showModalBottomSheet<void>(
+          context: context,
+          useRootNavigator: true,
+          builder: (_) => AppTheme(
+            data: AppThemeData.light,
+            child: Builder(
+              builder: (sheetContext) => TextButton(
+                onPressed: () => showAppToast(sheetContext, 'Modal Toast'),
+                child: const Text('Copy from modal'),
+              ),
+            ),
+          ),
+        ),
+        child: const Text('Open modal'),
+      ),
+    );
+  }
 }
 
 class _ThemedHarness extends StatelessWidget {

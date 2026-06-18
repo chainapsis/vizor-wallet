@@ -107,6 +107,42 @@ void main() {
     expect(row!.childRows, isEmpty);
   });
 
+  testWidgets('mobile swap activity rows compact large amounts', (
+    tester,
+  ) async {
+    ActivityRowData? row;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              row = buildSwapActivityRow(
+                context: context,
+                item: const SwapActivityRowItem(
+                  intentId: 'swap-mobile-amounts',
+                  providerLabel: 'NEAR Intents',
+                  sellAmountText: '999,999.99 USDC',
+                  receiveEstimateText: '1234567.891234 USDC',
+                  status: SwapIntentStatus.complete,
+                  direction: SwapDirection.zecToExternal,
+                  externalAsset: SwapAsset.usdc,
+                  activityTimestamp: null,
+                ),
+              );
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(row!.amountText, '-999.999K USDC');
+    expect(row!.childRows, hasLength(1));
+    expect(row!.childRows.single.amountText, '+1.234M USDC');
+  }, tags: 'mobile');
+
   testWidgets('maps broadcast deposits to the confirmation step', (
     tester,
   ) async {

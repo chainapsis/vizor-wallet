@@ -23,6 +23,7 @@ import '../../features/settings/screens/mobile/mobile_endpoint_screen.dart';
 import '../../features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import '../../features/settings/screens/mobile/mobile_settings_screen.dart';
 import '../../features/swap/screens/mobile/mobile_swap_screen.dart';
+import '../config/swap_feature_config.dart';
 import '../layout/mobile/app_mobile_shell.dart';
 import '../layout/mobile/app_mobile_tab_bar.dart';
 import '../widgets/app_icon.dart';
@@ -37,20 +38,19 @@ import 'mobile_tab_history.dart';
 /// redirect guard, deep links, and `bootstrap.initialLocation` work
 /// unchanged. The shared entry routes are passed in (rather than
 /// imported from `app.dart`) to keep the import graph acyclic.
-List<RouteBase> buildMobileRoutes({
-  required List<RouteBase> entryRoutes,
-  required bool swapFeatureEnabled,
-}) {
-  final tabs = _mobileTabs(swapFeatureEnabled: swapFeatureEnabled);
+List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
   return [
     ...entryRoutes,
     StatefulShellRoute.indexedStack(
       pageBuilder: (context, state, navigationShell) => CupertinoPage(
         key: state.pageKey,
-        child: _MobileTabShell(navigationShell: navigationShell, tabs: tabs),
+        child: _MobileTabShell(
+          navigationShell: navigationShell,
+          tabs: _allMobileTabs,
+        ),
       ),
       branches: [
-        for (final tab in tabs)
+        for (final tab in _allMobileTabs)
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -208,24 +208,23 @@ class _MobileTab {
 
 /// Branch order and tab-bar order derive from this single list so their
 /// indices can never drift apart.
-List<_MobileTab> _mobileTabs({required bool swapFeatureEnabled}) => [
-  const _MobileTab(
+const List<_MobileTab> _allMobileTabs = [
+  _MobileTab(
     path: '/home',
     item: AppMobileTabItem(iconName: AppIcons.home, label: 'Home'),
     screen: MobileHomeScreen(),
   ),
-  if (swapFeatureEnabled)
-    const _MobileTab(
-      path: '/swap',
-      item: AppMobileTabItem(iconName: AppIcons.swapArrows, label: 'Swap'),
-      screen: MobileSwapScreen(),
-    ),
-  const _MobileTab(
+  _MobileTab(
+    path: '/swap',
+    item: AppMobileTabItem(iconName: AppIcons.swapArrows, label: 'Swap'),
+    screen: MobileSwapScreen(),
+  ),
+  _MobileTab(
     path: '/activity',
     item: AppMobileTabItem(iconName: AppIcons.history, label: 'Activity'),
     screen: MobileActivityScreen(),
   ),
-  const _MobileTab(
+  _MobileTab(
     path: '/settings',
     item: AppMobileTabItem(iconName: AppIcons.cog, label: 'Settings'),
     screen: MobileSettingsScreen(),
@@ -240,26 +239,43 @@ class _MobileTabShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
+    final visibleTabs = [
+      for (final tab in tabs)
+        if (swapFeatureEnabled || tab.path != '/swap') tab,
+    ];
+    final currentBranchIndex = navigationShell.currentIndex;
+    final currentTab =
+        currentBranchIndex >= 0 && currentBranchIndex < tabs.length
+        ? tabs[currentBranchIndex]
+        : tabs.first;
+    final currentVisibleIndex = visibleTabs.indexOf(currentTab);
+    final tabBarCurrentIndex = currentVisibleIndex < 0
+        ? 0
+        : currentVisibleIndex;
+
     return AppMobileShell(
       body: navigationShell,
       tabBar: AppMobileTabBar(
-        items: [for (final tab in tabs) tab.item],
-        currentIndex: navigationShell.currentIndex,
+        items: [for (final tab in visibleTabs) tab.item],
+        currentIndex: tabBarCurrentIndex,
         onSelect: (index) {
+          final targetTab = visibleTabs[index];
+          final targetBranchIndex = tabs.indexOf(targetTab);
           // Record the outgoing tab path so a tab root can offer a
           // "back to where you came from" affordance (the indexedStack
           // shell keeps no tab history of its own). Skip when re-selecting
           // the active tab — that just resets it to root.
-          if (index != navigationShell.currentIndex) {
+          if (targetBranchIndex != currentBranchIndex) {
             ref
                 .read(mobilePreviousTabPathProvider.notifier)
-                .record(tabs[navigationShell.currentIndex].path);
+                .record(currentTab.path);
           }
           navigationShell.goBranch(
-            index,
+            targetBranchIndex,
             // Re-selecting the active tab resets that tab to its root,
             // the platform-conventional behavior.
-            initialLocation: index == navigationShell.currentIndex,
+            initialLocation: targetBranchIndex == currentBranchIndex,
           );
         },
       ),

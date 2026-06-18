@@ -22,6 +22,7 @@ import 'package:zcash_wallet/src/rust/frb_generated.dart';
 const _shieldedAddress =
     'u1testshieldedaddress00000000000000000000000000000000000000000000000';
 const _transparentAddress = 't1transparentdestination0000000000000000000';
+const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 const _invalidAddress = 'not-an-address';
 
 var _proposeSendSucceeds = false;
@@ -33,6 +34,9 @@ class _RustApiFake implements RustLibApi {
   }) async {
     if (address == _invalidAddress) {
       return const AddressValidationResult(isValid: false, addressType: '');
+    }
+    if (address.startsWith('tex')) {
+      return const AddressValidationResult(isValid: true, addressType: 'tex');
     }
     if (address.startsWith('t1')) {
       return const AddressValidationResult(
@@ -268,6 +272,13 @@ Future<void> _toReviewStep(
   await tester.pumpAndSettle();
 }
 
+String _compactReviewAddress(String address) {
+  final value = address.trim();
+  if (value.length <= 18) return value;
+  return '${value.substring(0, 7)} .... '
+      '${value.substring(value.length - 7)}';
+}
+
 bool _sendRouteCanPop(WidgetTester tester) {
   final popScope = tester.widget<PopScope<void>>(find.byType(PopScope<void>));
   return popScope.canPop;
@@ -312,6 +323,61 @@ void main() {
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
+  });
+
+  testWidgets('recipient step blocks a hardware account from a TEX address', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Keystone',
+              order: 0,
+              isHardware: true,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_address_field')));
+    await tester.pumpAndSettle();
+    await _enterAddress(tester, _texAddress);
+
+    // Keystone cannot sign the TEX two-step, so the address step rejects it ...
+    expect(
+      find.text('Keystone does not support TEX sends yet.'),
+      findsOneWidget,
+    );
+    // ... and Continue stays disabled.
+    final continueButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_continue')),
+    );
+    expect(continueButton.onPressed, isNull);
+  });
+
+  testWidgets('recipient step lets a software account send to a TEX address', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_address_field')));
+    await tester.pumpAndSettle();
+    await _enterAddress(tester, _texAddress);
+
+    // Software wallets do TEX via the ZIP-320 two-step, so no block.
+    expect(find.text('Keystone does not support TEX sends yet.'), findsNothing);
+    final continueButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_continue')),
+    );
+    expect(continueButton.onPressed, isNotNull);
   });
 
   testWidgets('route pop is allowed only on the first recipient step', (
@@ -582,6 +648,32 @@ void main() {
     expect(find.text('Alice'), findsOneWidget);
   });
 
+  testWidgets('review marks a TEX contact distinctly from transparent', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [
+          AddressBookContact(
+            id: 'alice',
+            label: 'Alice',
+            network: AddressBookNetwork.zcash,
+            address: _texAddress,
+            profilePictureId: 'pfp-01',
+            createdAtMs: 1,
+            updatedAtMs: 1,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester, address: _texAddress);
+
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('TEX - ${_compactReviewAddress(_texAddress)}'), findsOne);
+    expect(find.text('Transparent address'), findsNothing);
+  });
+
   testWidgets('review resolves stored contact before matching own accounts', (
     tester,
   ) async {
@@ -738,7 +830,7 @@ void main() {
 
     await _enterAmount(tester, '1.5');
     expect(find.text('Not enough ZEC'), findsNothing);
-    expect(find.text('Finish & Review'), findsOneWidget);
+    expect(find.text('Finish & review'), findsOneWidget);
   });
 
   testWidgets('continue stays blocked while the fee check is pending', (
@@ -764,7 +856,7 @@ void main() {
 
     // Once the re-validation settles, 1.5 ZEC is spendable again.
     await tester.pumpAndSettle();
-    expect(find.text('Finish & Review'), findsOneWidget);
+    expect(find.text('Finish & review'), findsOneWidget);
   });
 
   testWidgets('review shows the receipt and the shielded memo entry', (
@@ -950,6 +1042,20 @@ void main() {
 
     expect(find.text('Add short encrypted message'), findsNothing);
     expect(find.text('Transparent address'), findsOneWidget);
+    expect(find.text('Tx fee'), findsOneWidget);
+  });
+
+  testWidgets('a TEX recipient hides memo but keeps the TEX label', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester, address: _texAddress);
+
+    expect(find.text('Add short encrypted message'), findsNothing);
+    expect(find.text('TEX address'), findsOneWidget);
+    expect(find.text('TEX - ${_compactReviewAddress(_texAddress)}'), findsOne);
+    expect(find.text('Transparent address'), findsNothing);
     expect(find.text('Tx fee'), findsOneWidget);
   });
 

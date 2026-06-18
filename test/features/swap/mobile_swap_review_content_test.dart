@@ -30,17 +30,18 @@ Widget _harness(Widget child) {
 
 MobileSwapReviewContent _content({
   Iterable<AddressBookContact> addressBookContacts = const [],
+  SwapDirection direction = SwapDirection.zecToExternal,
 }) {
   const externalAddress = '0x9aDFd236b6ccD57bd571ca3C538dbB55FE4819E2';
   const walletAddress =
       'u1q6g2k3r4s5t6u7v8w9x0yzaabbccddeeff00112233445566778899';
   final quote = SwapQuote.estimate(
-    direction: SwapDirection.zecToExternal,
+    direction: direction,
     externalAsset: SwapAsset.usdc,
     amount: 1.12,
   );
   final addressPlan = SwapAddressPlan.fromUserInput(
-    direction: SwapDirection.zecToExternal,
+    direction: direction,
     externalAsset: SwapAsset.usdc,
     userExternalAddress: externalAddress,
     walletZecAddress: walletAddress,
@@ -125,6 +126,19 @@ void main() {
     );
     expect(find.text('To: $compactAddress'), findsOneWidget);
     expect(compactAddress.endsWith('...'), isFalse);
+  });
+
+  testWidgets('external pay review omits the refund address line', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(_content(direction: SwapDirection.externalToZec)),
+    );
+
+    expect(find.text("You're paying"), findsOneWidget);
+    expect(find.textContaining('From:'), findsNothing);
+    expect(find.textContaining('Refund to:'), findsNothing);
+    expect(find.text('Full address'), findsNothing);
   });
 
   testWidgets('full address sheet uses shared modal chunk layout', (

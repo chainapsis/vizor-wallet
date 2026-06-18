@@ -175,6 +175,10 @@ class _MobileSendStatusScreenState
       args.amountZatoshi,
       zecUsdUnitPrice: ref.watch(zecHomeUsdUnitPriceProvider),
     );
+    final recipientPoolLabel = _recipientPoolLabel(
+      args.addressType,
+      isShielded: args.isShielded,
+    );
 
     return PopScope<void>(
       canPop: _routePopAllowed,
@@ -259,9 +263,7 @@ class _MobileSendStatusScreenState
                                     ),
                                     const SizedBox(width: AppSpacing.xxs),
                                     Text(
-                                      args.isShielded
-                                          ? 'Shielded'
-                                          : 'Transparent',
+                                      recipientPoolLabel,
                                       style: AppTypography.labelMedium.copyWith(
                                         color: colors.text.secondary,
                                       ),
@@ -351,6 +353,15 @@ class _MobileSendStatusScreenState
     if (txid.length <= 16) return txid;
     return '${txid.substring(0, 8)}...${txid.substring(txid.length - 8)}';
   }
+}
+
+String _recipientPoolLabel(String addressType, {required bool isShielded}) {
+  return switch (addressType.trim().toLowerCase()) {
+    'tex' => 'TEX',
+    'unified' || 'sapling' => 'Shielded',
+    'transparent' => 'Transparent',
+    _ => isShielded ? 'Shielded' : 'Transparent',
+  };
 }
 
 class _ReviewInfoRow extends StatelessWidget {
@@ -585,8 +596,9 @@ class _ListRow extends StatelessWidget {
               ),
             ),
           ),
-          const Spacer(),
-          Flexible(child: value),
+          Expanded(
+            child: Align(alignment: Alignment.centerRight, child: value),
+          ),
         ],
       ),
     );

@@ -204,7 +204,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('24.312'), findsOneWidget);
-    expect(find.text('Finish & Review'), findsOneWidget);
+    expect(find.text('Finish & review'), findsOneWidget);
   });
 
   testWidgets('mobile send review default use case matches review layout', (

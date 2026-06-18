@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/dot_qr_shape.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_asset.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_timeout_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_deposit_tokens_page_content.dart';
@@ -94,16 +95,15 @@ void main() {
     );
   });
 
-  testWidgets('mobile deposit QR uses the Figma smooth rounded modules', (
+  testWidgets('mobile deposit QR uses the shared dotted shape', (
     tester,
   ) async {
     await tester.pumpWidget(_harness(_content()));
 
     final decoration = _qrDecoration(tester);
     expect(decoration.quietZone, PrettyQrQuietZone.zero);
-    final shape = decoration.shape;
-    expect(shape, isA<PrettyQrSmoothSymbol>());
-    expect((shape as PrettyQrSmoothSymbol).roundFactor, 0.75);
+    // Matches the receive screen's dotted QR (round modules + ring/dot finders).
+    expect(decoration.shape, isA<DotQrShape>());
   });
 
   testWidgets('mobile deposit QR card fits a 360dp Android viewport', (
@@ -268,10 +268,10 @@ double _radius(BoxDecoration decoration) {
 }
 
 PrettyQrDecoration _qrDecoration(WidgetTester tester) {
-  final qrDataView = find.byWidgetPredicate(
-    (widget) => widget.runtimeType.toString() == 'PrettyQrDataView',
+  final qrView = find.byWidgetPredicate(
+    (widget) => widget.runtimeType.toString() == 'PrettyQrView',
   );
-  expect(qrDataView, findsOneWidget);
-  final dynamic widget = tester.widget(qrDataView);
+  expect(qrView, findsOneWidget);
+  final dynamic widget = tester.widget(qrView);
   return widget.decoration as PrettyQrDecoration;
 }

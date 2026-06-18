@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_routes.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
@@ -48,17 +49,15 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-GoRouter _router({bool swapFeatureEnabled = true}) => GoRouter(
+GoRouter _router() => GoRouter(
   initialLocation: '/home',
-  routes: buildMobileRoutes(
-    entryRoutes: const [],
-    swapFeatureEnabled: swapFeatureEnabled,
-  ),
+  routes: buildMobileRoutes(entryRoutes: const []),
 );
 
-Widget _app(GoRouter router) => ProviderScope(
+Widget _app(GoRouter router, {bool swapFeatureEnabled = true}) => ProviderScope(
   overrides: [
     appBootstrapProvider.overrideWithValue(_bootstrap()),
+    swapFeatureEnabledProvider.overrideWithValue(swapFeatureEnabled),
     // Funded so the home tab shows the Send action used by the push
     // test.
     syncProvider.overrideWith(
@@ -106,7 +105,7 @@ void main() {
   testWidgets('swap tab is hidden when the swap feature is disabled', (
     tester,
   ) async {
-    await tester.pumpWidget(_app(_router(swapFeatureEnabled: false)));
+    await tester.pumpWidget(_app(_router(), swapFeatureEnabled: false));
     await tester.pumpAndSettle();
 
     expect(find.bySemanticsLabel('Swap'), findsNothing);

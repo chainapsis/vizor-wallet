@@ -53,7 +53,7 @@ void main() {
     await tester.pumpWidget(_app('/import'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Import Your Wallet'), findsOneWidget);
+    expect(find.text('Import Wallet'), findsOneWidget);
     expect(find.byType(MobileImportScreen), findsOneWidget);
 
     await tester.tap(

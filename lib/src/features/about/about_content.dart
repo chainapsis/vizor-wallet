@@ -27,13 +27,13 @@ const kAboutParagraphs = [
     body:
         'Vizor is built around shielded transactions, where the sender, '
         'recipient, and amount stay private. Transparent Zcash works too, but '
-        'private is the default here.',
+        'private is the default.',
   ),
   AboutParagraph(
-    heading: 'Open source, verifiable, and self-custodial',
+    heading: 'Open source, self-custodied',
     body:
-        "Vizor is Apache licensed. Your keys stay on your device. We don't "
-        "see your balances or your transactions.",
+        "Vizor is Apache licensed. Your keys stay on your device.\n"
+        "We don't see your balances or your transactions.",
   ),
 ];
 

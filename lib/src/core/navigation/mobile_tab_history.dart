@@ -21,3 +21,18 @@ final mobilePreviousTabPathProvider =
     NotifierProvider<MobilePreviousTabPathNotifier, String?>(
       MobilePreviousTabPathNotifier.new,
     );
+
+/// Destination for a mobile tab root's Back affordance: the tab the user came
+/// from, falling back to `/home`.
+///
+/// Guards against [currentPath]: the previous-tab record is only updated on
+/// tab-bar switches, not on programmatic `context.go`s, so it can still hold
+/// the current tab's own path (e.g. Home→Activity→Settings, then Settings'
+/// Back `go('/activity')` leaves the record at `/activity` while the user is
+/// back on Activity). Navigating to the current route would be a silent no-op,
+/// so fall back to `/home` in that case.
+String resolveMobileBackPath(WidgetRef ref, {required String currentPath}) {
+  final previous = ref.read(mobilePreviousTabPathProvider);
+  if (previous == null || previous == currentPath) return '/home';
+  return previous;
+}

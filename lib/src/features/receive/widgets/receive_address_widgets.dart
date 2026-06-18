@@ -5,7 +5,6 @@
 library;
 
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart' show CircularProgressIndicator, Colors;
@@ -15,9 +14,9 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart'
     show kZcashDefaultCurrencyTicker;
-import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/dot_qr_shape.dart';
 
 /// Which receiving pool an address belongs to.
 enum ReceiveAddressType { shielded, transparent }
@@ -58,8 +57,9 @@ class ReceiveTabs extends StatelessWidget {
     final colors = context.colors;
     final shieldedActive = selectedType == ReceiveAddressType.shielded;
     final darkSelected = alwaysDarkSelected || shieldedActive;
-    final activeBg =
-        darkSelected ? colors.background.inverse : colors.background.ground;
+    final activeBg = darkSelected
+        ? colors.background.inverse
+        : colors.background.ground;
     final activeText = darkSelected ? colors.text.inverse : colors.text.accent;
 
     return Container(
@@ -76,10 +76,9 @@ class ReceiveTabs extends StatelessWidget {
           AnimatedAlign(
             duration: const Duration(milliseconds: 160),
             curve: Curves.easeOut,
-            alignment:
-                selectedType == ReceiveAddressType.shielded
-                    ? Alignment.centerLeft
-                    : Alignment.centerRight,
+            alignment: selectedType == ReceiveAddressType.shielded
+                ? Alignment.centerLeft
+                : Alignment.centerRight,
             child: Padding(
               padding: const EdgeInsets.all(2),
               child: Container(
@@ -217,14 +216,12 @@ class ReceiveQrSurface extends StatelessWidget {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final isShielded = type == ReceiveAddressType.shielded;
     final usesDarkQrSurface = isDark || isShielded;
-    final qrColor =
-        usesDarkQrSurface
-            ? (isDark ? colors.text.accent : colors.text.inverse)
-            : colors.text.accent;
-    final qrBackground =
-        usesDarkQrSurface
-            ? (isDark ? colors.background.ground : colors.background.inverse)
-            : colors.background.ground;
+    final qrColor = usesDarkQrSurface
+        ? (isDark ? colors.text.accent : colors.text.inverse)
+        : colors.text.accent;
+    final qrBackground = usesDarkQrSurface
+        ? (isDark ? colors.background.ground : colors.background.inverse)
+        : colors.background.ground;
     final embeddedImageAsset = _ReceiveQrEmbeddedImage.assetFor(
       type,
       usesDarkQrSurface: usesDarkQrSurface,
@@ -238,31 +235,29 @@ class ReceiveQrSurface extends StatelessWidget {
         color: qrBackground,
         borderRadius: BorderRadius.circular(_wrapperRadius),
         border: Border.all(
-          color:
-              usesDarkQrSurface
-                  ? colors.border.subtle
-                  : colors.border.inverseOpacity,
+          color: usesDarkQrSurface
+              ? colors.border.subtle
+              : colors.border.inverseOpacity,
         ),
       ),
-      child:
-          address.isNotEmpty
-              ? _CachedQrBitmap(
-                data: address,
-                color: qrColor,
-                size: size,
-                type: type,
-                embeddedImageAsset: embeddedImageAsset,
-                embeddedImageScale: badgeSize / size,
-              )
-              : Center(
-                child: Text(
-                  "We couldn't load your address. Try again in a moment.",
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: colors.text.secondary,
-                  ),
+      child: address.isNotEmpty
+          ? _CachedQrBitmap(
+              data: address,
+              color: qrColor,
+              size: size,
+              type: type,
+              embeddedImageAsset: embeddedImageAsset,
+              embeddedImageScale: badgeSize / size,
+            )
+          : Center(
+              child: Text(
+                "We couldn't load your address. Try again in a moment.",
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: colors.text.secondary,
                 ),
               ),
+            ),
     );
   }
 }
@@ -350,16 +345,11 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
   Future<void> _renderQr() async {
     final generation = ++_generation;
     try {
-      // Desktop keeps main's plain QR (uniform smooth modules, no custom
-      // finder eyes and no transparent min-version bump); mobile uses the
-      // redesigned shape with circular finder eyes.
-      const isMobile = kAppFormFactor == AppFormFactor.mobile;
-      final qrCode = isMobile
-          ? _qrCodeForData(widget.data, widget.type, QrErrorCorrectLevel.M)
-          : QrCode.fromData(
-              data: widget.data,
-              errorCorrectLevel: QrErrorCorrectLevel.M,
-            );
+      final qrCode = _qrCodeForData(
+        widget.data,
+        widget.type,
+        QrErrorCorrectLevel.M,
+      );
       final qrImage = QrImage(qrCode);
       final image = await qrImage.toImage(
         size: _CachedQrBitmap._bitmapSize,
@@ -374,9 +364,13 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
             clipper: const _ReceiveQrEmbeddedImageClipper(),
             position: PrettyQrDecorationImagePosition.embedded,
           ),
-          shape: isMobile
-              ? _ReceiveQrShape(color: widget.color, type: widget.type)
-              : PrettyQrSmoothSymbol(roundFactor: 1, color: widget.color),
+          shape: DotQrShape(
+            color: widget.color,
+            // Transparent receive addresses make a very dense code; clamp the
+            // finder dots so they stay proportional.
+            finderReferenceDimension:
+                widget.type == ReceiveAddressType.transparent ? 49.0 : null,
+          ),
         ),
       );
       if (!mounted || generation != _generation) {
@@ -459,82 +453,6 @@ QrCode _qrCodeForData(
   return QrCode(_transparentMinimumQrVersion, errorCorrectLevel)..addData(data);
 }
 
-class _ReceiveQrShape extends PrettyQrShape {
-  const _ReceiveQrShape({required this.color, required this.type});
-
-  final Color color;
-  final ReceiveAddressType type;
-
-  static const _finderReferenceDimension = 49.0;
-
-  @override
-  void paint(PrettyQrPaintingContext context) {
-    PrettyQrSmoothSymbol(roundFactor: 1, color: color).paint(
-      context.copyWith(
-        matrix: _withoutComponent(
-          context.matrix,
-          PrettyQrComponentType.finderPattern,
-        ),
-      ),
-    );
-    _paintFinderPatterns(context);
-  }
-
-  void _paintFinderPatterns(PrettyQrPaintingContext context) {
-    final module = context.moduleDimension;
-    final visualModule =
-        type == ReceiveAddressType.transparent
-            ? math.min(
-              module,
-              context.boundsDimension / _finderReferenceDimension,
-            )
-            : module;
-    final ringPaint =
-        ui.Paint()
-          ..color = color
-          ..style = ui.PaintingStyle.stroke
-          ..strokeCap = ui.StrokeCap.round
-          ..strokeWidth = visualModule / 1.5;
-    final dotPaint =
-        ui.Paint()
-          ..color = color
-          ..style = ui.PaintingStyle.fill;
-
-    for (final pattern in context.matrix.positionDetectionPatterns) {
-      final center = context.estimatedBounds.topLeft.translate(
-        (pattern.left + PrettyQrPositionDetectionPattern.dimension / 2) *
-            module,
-        (pattern.top + PrettyQrPositionDetectionPattern.dimension / 2) * module,
-      );
-      context.canvas.drawCircle(center, visualModule * 3, ringPaint);
-      context.canvas.drawCircle(center, visualModule * 1.5, dotPaint);
-    }
-  }
-
-  PrettyQrMatrix _withoutComponent(
-    PrettyQrMatrix matrix,
-    PrettyQrComponentType component,
-  ) {
-    return PrettyQrMatrix(
-      version: matrix.version,
-      modules: [
-        for (final module in matrix)
-          module.type == component ? module.toBlank() : module,
-      ],
-    );
-  }
-
-  @override
-  int get hashCode => Object.hash(_ReceiveQrShape, color, type);
-
-  @override
-  bool operator ==(Object other) {
-    return other is _ReceiveQrShape &&
-        other.color == color &&
-        other.type == type;
-  }
-}
-
 class _ReceiveQrEmbeddedImageClipper implements PrettyQrClipper {
   const _ReceiveQrEmbeddedImageClipper();
 
@@ -566,10 +484,9 @@ class ReceiveRenewButton extends StatelessWidget {
     final colors = context.colors;
 
     return MouseRegion(
-      cursor:
-          onTap == null || renewing
-              ? SystemMouseCursors.basic
-              : SystemMouseCursors.click,
+      cursor: onTap == null || renewing
+          ? SystemMouseCursors.basic
+          : SystemMouseCursors.click,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: renewing ? null : onTap,
@@ -591,22 +508,21 @@ class ReceiveRenewButton extends StatelessWidget {
               ),
             ),
             child: Center(
-              child:
-                  renewing
-                      ? SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: colors.text.homeCard,
-                        ),
-                      )
-                      : AppIcon(
-                        AppIcons.renew,
-                        size: AppIconSize.large,
+              child: renewing
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
                         color: colors.text.homeCard,
-                        semanticLabel: 'Generate new shielded address',
                       ),
+                    )
+                  : AppIcon(
+                      AppIcons.renew,
+                      size: AppIconSize.large,
+                      color: colors.text.homeCard,
+                      semanticLabel: 'Generate new shielded address',
+                    ),
             ),
           ),
         ),
@@ -655,10 +571,9 @@ class ReceiveAddressLine extends StatelessWidget {
       textAlign: TextAlign.center,
       text: TextSpan(
         style: (textStyle ?? AppTypography.labelLarge).copyWith(
-          color:
-              secondaryTint
-                  ? context.colors.text.secondary
-                  : context.colors.text.accent,
+          color: secondaryTint
+              ? context.colors.text.secondary
+              : context.colors.text.accent,
         ),
         children: _addressSpans(context, address),
       ),
@@ -669,10 +584,9 @@ class ReceiveAddressLine extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Flexible(
-            child:
-                scaleToFit
-                    ? FittedBox(fit: BoxFit.scaleDown, child: addressText)
-                    : addressText,
+            child: scaleToFit
+                ? FittedBox(fit: BoxFit.scaleDown, child: addressText)
+                : addressText,
           ),
           SizedBox(width: helpGap),
           _IconOnlyButton(
@@ -754,7 +668,7 @@ class _IconOnlyButton extends StatelessWidget {
   }
 }
 
-class ReceiveCopyAddressButton extends StatelessWidget {
+class ReceiveCopyAddressButton extends StatefulWidget {
   const ReceiveCopyAddressButton({
     required this.label,
     required this.type,
@@ -769,31 +683,57 @@ class ReceiveCopyAddressButton extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<ReceiveCopyAddressButton> createState() =>
+      _ReceiveCopyAddressButtonState();
+}
+
+class _ReceiveCopyAddressButtonState extends State<ReceiveCopyAddressButton> {
+  // Pointer hover only fires on desktop; touch platforms never enter, so the
+  // button stays at its resting tokens there.
+  bool _hovered = false;
+
+  void _setHovered(bool value) {
+    if (_hovered == value) return;
+    setState(() => _hovered = value);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final isShielded = type == ReceiveAddressType.shielded;
-    final background =
-        enabled
-            ? (isShielded
-                ? colors.button.primary.bg
-                : colors.button.secondary.bg)
-            : colors.button.disabled.bg;
-    final labelColor =
-        enabled
-            ? (isShielded
-                ? colors.button.primary.label
-                : colors.button.secondary.label)
-            : colors.button.disabled.label;
-    final borderColor =
-        enabled && isShielded
-            ? colors.button.primary.border
-            : Colors.transparent;
+    final label = widget.label;
+    final enabled = widget.enabled;
+    final onTap = widget.onTap;
+    final isShielded = widget.type == ReceiveAddressType.shielded;
+    final hovered = enabled && _hovered;
+    final background = enabled
+        ? (isShielded
+              ? (hovered
+                    ? colors.button.primary.bgHover
+                    : colors.button.primary.bg)
+              : (hovered
+                    ? colors.button.secondary.bgHover
+                    : colors.button.secondary.bg))
+        : colors.button.disabled.bg;
+    final labelColor = enabled
+        ? (isShielded
+              ? (hovered
+                    ? colors.button.primary.labelHover
+                    : colors.button.primary.label)
+              : colors.button.secondary.label)
+        : colors.button.disabled.label;
+    final borderColor = enabled && isShielded
+        ? (hovered
+              ? colors.button.primary.borderHover
+              : colors.button.primary.border)
+        : Colors.transparent;
 
     return Semantics(
       button: true,
       enabled: enabled,
       child: MouseRegion(
         cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        onEnter: (_) => _setHovered(true),
+        onExit: (_) => _setHovered(false),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: enabled ? onTap : null,
@@ -801,10 +741,9 @@ class ReceiveCopyAddressButton extends StatelessWidget {
             decoration: ShapeDecoration(
               color: background,
               shape: StadiumBorder(
-                side:
-                    isShielded
-                        ? BorderSide(color: borderColor, width: 1.5)
-                        : BorderSide.none,
+                side: isShielded
+                    ? BorderSide(color: borderColor, width: 1.5)
+                    : BorderSide.none,
               ),
             ),
             child: SizedBox(
@@ -857,13 +796,13 @@ class ReceiveAddressInfoItem {
 /// drift apart.
 String receiveAddressInfoTitle(ReceiveAddressType type) =>
     type == ReceiveAddressType.shielded
-        ? 'Shielded address'
-        : 'Transparent address';
+    ? 'Shielded address'
+    : 'Transparent address';
 
 String receiveAddressInfoSubtitle(ReceiveAddressType type) =>
     type == ReceiveAddressType.shielded
-        ? 'Strong privacy by default.'
-        : 'Publicly visible';
+    ? 'Strong privacy by default.'
+    : 'Publicly visible';
 
 /// [touchUi] picks the interaction verb in the renew bullet ("tap" on
 /// phones, "click" with a pointer).
@@ -873,17 +812,16 @@ List<ReceiveAddressInfoItem> receiveAddressInfoItems(
 }) {
   if (type == ReceiveAddressType.shielded) {
     return [
-      ReceiveAddressInfoItem(
+      const ReceiveAddressInfoItem(
         iconName: AppIcons.shieldKeyhole,
-        text: touchUi
-            ? 'Tx details — sender, receiver, and amount — are encrypted on-chain & hidden.'
-            : 'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.',
+        text:
+            'Tx details — sender, receiver, and amount — are encrypted on-chain & hidden.',
       ),
       ReceiveAddressInfoItem(
         iconName: AppIcons.renew,
-        text: touchUi
-            ? 'A new Zcash Shielded address is generated only when you tap the Renew button.'
-            : 'A new Zcash shielded address is generated only when you click the renew button.',
+        text:
+            'A new Zcash shielded address is generated only when you '
+            '${touchUi ? 'tap' : 'click'} the renew button.',
       ),
       const ReceiveAddressInfoItem(
         iconName: AppIcons.wallet,
@@ -893,11 +831,10 @@ List<ReceiveAddressInfoItem> receiveAddressInfoItems(
     ];
   }
   return [
-    ReceiveAddressInfoItem(
+    const ReceiveAddressInfoItem(
       iconName: AppIcons.unlock,
-      text: touchUi
-          ? 'All tx details — sender, receiver, and amount — are publicly visible on-chain.'
-          : 'All tx details - sender, receiver, and amount - are publicly visible on-chain.',
+      text:
+          'All tx details — sender, receiver, and amount — are publicly visible on-chain.',
     ),
     const ReceiveAddressInfoItem(
       iconName: AppIcons.dragon,
@@ -905,7 +842,7 @@ List<ReceiveAddressInfoItem> receiveAddressInfoItems(
           'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.',
     ),
     ReceiveAddressInfoItem(
-      iconName: touchUi ? AppIcons.shieldKeyholeOutline : AppIcons.shieldAsset,
+      iconName: AppIcons.shieldKeyholeOutline,
       text:
           'After receiving $kZcashDefaultCurrencyTicker to your transparent '
           "address, Vizor will guide you to shield the balance. Otherwise, "

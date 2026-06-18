@@ -46,12 +46,18 @@ const _txid =
 const _address =
     'u1l8xunezsvhq8fgzfl7404m450nwnd76zshe7f5dxv5z3w4gthawuwukdn5aalh6g'
     '5wfshmrjmd5gh';
+const _transparentSenderAddress = 't1PV7nyJ3J6pZBh6sCrd5dSDd6uhXGVSpEX';
+const _receivingShieldedAddress =
+    'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
+    '73d57f73c6dc05121591a83861cd190591';
+const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 
 rust_sync.TransactionInfo _tx({
   String kind = 'sent',
   BigInt? minedHeight,
   bool expired = false,
   BigInt? fee,
+  String displayPool = 'shielded',
 }) {
   return rust_sync.TransactionInfo(
     txidHex: _txid,
@@ -63,18 +69,27 @@ rust_sync.TransactionInfo _tx({
     isTransparent: false,
     txKind: kind,
     displayAmount: BigInt.from(12312000000),
-    displayPool: 'shielded',
+    displayPool: displayPool,
     createdTime: BigInt.from(1750000000),
   );
 }
 
-rust_sync.TransactionDetail _detail({String kind = 'sent', String? memo}) {
+rust_sync.TransactionDetail _detail({
+  String kind = 'sent',
+  String? primaryAddress,
+  String? sourceAddress,
+  String? sourcePool,
+  String? memo,
+  List<rust_sync.TransactionDetailOutput> outputs = const [],
+}) {
   return rust_sync.TransactionDetail(
     txidHex: _txid,
     txKind: kind,
-    primaryAddress: _address,
+    primaryAddress: primaryAddress ?? _address,
+    sourceAddress: sourceAddress,
+    sourcePool: sourcePool,
     memo: memo,
-    outputs: const [],
+    outputs: outputs,
   );
 }
 
@@ -138,6 +153,26 @@ void main() {
     );
   });
 
+  testWidgets('sent TEX tx keeps a TEX recipient label', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        _tx(displayPool: 'transparent'),
+        detail: _detail(primaryAddress: _texAddress),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sent successfully'), findsOneWidget);
+    expect(find.text('TEX'), findsOneWidget);
+    expect(find.text('Transparent'), findsNothing);
+    expect(
+      find.text(
+        '${_texAddress.substring(0, 6)} ... ${_texAddress.substring(_texAddress.length - 5)}',
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('unmined sent tx shows the in-progress state', (tester) async {
     await tester.pumpWidget(_app(_tx(minedHeight: BigInt.zero)));
     // No pumpAndSettle — the in-progress loader spins forever.
@@ -151,9 +186,7 @@ void main() {
   testWidgets('expired tx shows the failed state with strikethrough', (
     tester,
   ) async {
-    await tester.pumpWidget(
-      _app(_tx(minedHeight: BigInt.zero, expired: true)),
-    );
+    await tester.pumpWidget(_app(_tx(minedHeight: BigInt.zero, expired: true)));
     await tester.pumpAndSettle();
 
     expect(find.text('Send failed'), findsOneWidget);
@@ -169,7 +202,14 @@ void main() {
 
   testWidgets('received tx puts the sender above the amount', (tester) async {
     await tester.pumpWidget(
-      _app(_tx(kind: 'received', fee: BigInt.zero)),
+      _app(
+        _tx(kind: 'received', fee: BigInt.zero),
+        detail: _detail(
+          kind: 'received',
+          sourceAddress: _transparentSenderAddress,
+          sourcePool: 'transparent',
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -182,25 +222,65 @@ void main() {
     expect(find.text('Tx fee'), findsNothing);
   });
 
-  testWidgets('show full address expands and collapses the address', (
-    tester,
-  ) async {
+  testWidgets('show full address opens the verify sheet', (tester) async {
     await tester.pumpWidget(_app(_tx()));
     await tester.pumpAndSettle();
 
     expect(find.text(_address), findsNothing);
     await tester.tap(
-      find.byKey(const ValueKey('mobile_tx_status_toggle_address')),
+      find.byKey(const ValueKey('mobile_tx_status_show_full_address')),
     );
-    await tester.pump();
-    expect(find.text(_address), findsOneWidget);
-    expect(find.text('Hide full address'), findsOneWidget);
-
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_tx_status_toggle_address')),
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_address_verify_chunks')),
+      findsOneWidget,
     );
-    await tester.pump();
+    expect(find.text('Unified address'), findsOneWidget);
+    expect(find.text('u1l8x'), findsOneWidget);
     expect(find.text(_address), findsNothing);
+  });
+
+  testWidgets('received tx separates transparent sender and shielded receiver', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _tx(kind: 'received', fee: BigInt.zero),
+        detail: _detail(
+          kind: 'received',
+          sourceAddress: _transparentSenderAddress,
+          sourcePool: 'transparent',
+          outputs: [
+            rust_sync.TransactionDetailOutput(
+              address: _receivingShieldedAddress,
+              amountZatoshi: BigInt.from(12312000000),
+              pool: 'shielded',
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        '${_transparentSenderAddress.substring(0, 6)} ... '
+        '${_transparentSenderAddress.substring(_transparentSenderAddress.length - 5)}',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        '${_receivingShieldedAddress.substring(0, 6)} ... '
+        '${_receivingShieldedAddress.substring(_receivingShieldedAddress.length - 5)}',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Transparent'), findsOneWidget);
+
+    final fromY = tester.getTopLeft(find.text('From')).dy;
+    final amountY = tester.getTopLeft(find.text('Amount')).dy;
+    expect(fromY, lessThan(amountY));
   });
 
   testWidgets('memo renders a message row that expands', (tester) async {
