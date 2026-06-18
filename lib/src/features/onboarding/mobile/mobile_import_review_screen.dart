@@ -22,8 +22,8 @@ class MobileImportReviewScreen extends StatelessWidget {
     return MobileOnboardingStepScaffold(
       progress: 0.6,
       onBack: () => Navigator.of(context).maybePop(),
-      title: 'Review Secret Phrase',
-      subtitle: 'Review before the import.',
+      title: 'Review Import',
+      subtitle: 'Review your Secret Passphrase before import starts.',
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -36,7 +36,7 @@ class MobileImportReviewScreen extends StatelessWidget {
               extra: ImportBirthdayArgs(mnemonic: args.mnemonic),
             ),
             trailing: const AppIcon(AppIcons.chevronForward),
-            child: const Text('Confirm & import'),
+            child: const Text('Confirm & Continue'),
           ),
           const SizedBox(height: AppSpacing.xs),
           Semantics(
@@ -44,12 +44,13 @@ class MobileImportReviewScreen extends StatelessWidget {
             child: GestureDetector(
               key: const ValueKey('mobile_import_review_edit'),
               behavior: HitTestBehavior.opaque,
-              onTap: () => Navigator.of(context).maybePop(),
+              onTap: () =>
+                  Navigator.of(context).pop(ImportReviewResult.cleared),
               child: SizedBox(
                 height: 44,
                 child: Center(
                   child: Text(
-                    'Edit secret phrase',
+                    'Clear Secret Phrase',
                     style: AppTypography.labelLarge.copyWith(
                       color: context.colors.text.primary,
                     ),
