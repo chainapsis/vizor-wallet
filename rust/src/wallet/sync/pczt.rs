@@ -154,7 +154,7 @@ fn orchard_verifying_key_for_tx_version(tx_version: u32) -> orchard::circuit::Ve
 }
 
 fn ironwood_orchard_circuit_version() -> orchard::circuit::OrchardCircuitVersion {
-    orchard::circuit::OrchardCircuitVersion::Ironwood
+    orchard::circuit::OrchardCircuitVersion::PostNu6_3
 }
 
 /// Create a PCZT from a stored proposal (for hardware wallet signing).

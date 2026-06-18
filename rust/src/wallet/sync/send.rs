@@ -3266,8 +3266,8 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     if selected_value <= fee_amount {
         return Ok(None);
     }
-    let migrated_amount =
-        (selected_value - fee_amount).ok_or("Predicted migration amount underflow".to_string())?;
+    let migrated_amount = (selected_value - fee_amount)
+        .ok_or_else(|| "Predicted migration amount underflow".to_string())?;
     let builder = if migrated_amount
         == Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
             .map_err(|_| "Bad migration minimum output")?
@@ -3449,8 +3449,8 @@ fn create_orchard_to_ironwood_transaction_from_note(
     if selected_value <= fee_amount {
         return Ok(None);
     }
-    let migrated_amount =
-        (selected_value - fee_amount).ok_or("Exact-note migration amount underflow".to_string())?;
+    let migrated_amount = (selected_value - fee_amount)
+        .ok_or_else(|| "Exact-note migration amount underflow".to_string())?;
     let builder = if migrated_amount
         == Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
             .map_err(|_| "Bad migration minimum output")?
@@ -3614,8 +3614,8 @@ fn create_orchard_to_ironwood_pczt_from_note(
     if selected_value <= fee_amount {
         return Ok(None);
     }
-    let migrated_amount =
-        (selected_value - fee_amount).ok_or("Exact-note migration amount underflow".to_string())?;
+    let migrated_amount = (selected_value - fee_amount)
+        .ok_or_else(|| "Exact-note migration amount underflow".to_string())?;
     let builder = if migrated_amount
         == Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
             .map_err(|_| "Bad migration minimum output")?
