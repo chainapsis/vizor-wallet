@@ -34,6 +34,11 @@ class MobileImportReviewArgs {
   String get mnemonic => words.join(' ');
 }
 
+/// Result a pushed review screen returns to whoever opened it. `cleared`
+/// means the user tapped "Clear Secret Phrase" — the opener drops the
+/// entered phrase and returns the user to a fresh entry.
+enum ImportReviewResult { cleared }
+
 /// Validates a candidate phrase; returns an error message or null.
 String? validateImportedMnemonic(List<String> words) {
   if (!kMnemonicWordCounts.contains(words.length)) {
@@ -106,10 +111,16 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
   }
 
   void _confirm() {
-    context.push(
-      '/import/review',
-      extra: MobileImportReviewArgs(words: _words),
-    );
+    context
+        .push<Object?>(
+          '/import/review',
+          extra: MobileImportReviewArgs(words: _words),
+        )
+        .then((result) {
+          // "Clear Secret Phrase" on review wipes the pasted phrase so the
+          // entry reappears empty.
+          if (result == ImportReviewResult.cleared && mounted) _clear();
+        });
   }
 
   bool get _filled => _words.isNotEmpty && _error == null;
@@ -120,7 +131,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
     return MobileOnboardingStepScaffold(
       progress: 0.2,
       onBack: () => Navigator.of(context).maybePop(),
-      title: 'Import Your Wallet',
+      title: 'Import Wallet',
       // Line break matches the Figma subtitle wrap.
       subtitle:
           'Paste your Secret Passphrase or\nenter it manually word by word.',
