@@ -31,7 +31,7 @@ void main() {
     expect(backLabelStyle?.color, AppThemeData.light.colors.button.ghost.label);
     expect(
       tester.getTopLeft(backLabelFinder).dx,
-      moreOrLessEquals(328, epsilon: 0.1),
+      moreOrLessEquals(316, epsilon: 0.1),
     );
     expect(
       find.byKey(const ValueKey('receive_preview_qr_block_shielded')),

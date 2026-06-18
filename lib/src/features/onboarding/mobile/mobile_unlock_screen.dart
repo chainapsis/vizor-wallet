@@ -27,7 +27,9 @@ const mobileBiometricSignInBackgroundAsset =
 /// screen's precache, so the warmed [ImageCache] entries match the providers
 /// painted behind the Face ID sheet (same key -> cache hit, no blank frame).
 const _authBackgroundImage = AssetImage(mobileBiometricSignInBackgroundAsset);
-const _welcomeBadgeImage = AssetImage('assets/illustrations/welcome_badge.png');
+const _welcomeBadgeImage = AssetImage(
+  'assets/illustrations/welcome_badge_mobile.png',
+);
 
 /// Mobile unlock — Figma `Sign In Passcode` (4885:23041): "Welcome Back",
 /// crimson-filling dots, round numpad keys, a bottom biometric retry action,

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
@@ -59,7 +60,9 @@ class SwapDepositTokensPageContent extends StatelessWidget {
       actionArea: _DepositConfirmActionArea(
         checking: checking,
         warning: checkWarning,
-        buttonLabel: 'I’ve deposited tokens',
+        buttonLabel: kAppFormFactor == AppFormFactor.mobile
+            ? 'I’ve deposited tokens'
+            : "I've deposited",
         onDeposited: onDeposited,
         mobile: mobile,
       ),
@@ -894,7 +897,11 @@ class _DepositQrNetworkLogo extends StatelessWidget {
       ),
     );
     if (Overlay.maybeOf(context) == null) return logo;
-    return AppTooltip(message: asset.chainLabel, tapToShow: true, child: logo);
+    return AppTooltip(
+      message: asset.chainLabel,
+      tapToShow: kAppFormFactor == AppFormFactor.mobile,
+      child: logo,
+    );
   }
 }
 
@@ -950,10 +957,14 @@ class _DepositDetailsList extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _DepositDetailRow(
-            label: 'Amount to deposit',
+            label: kAppFormFactor == AppFormFactor.mobile
+                ? 'Amount to deposit'
+                : 'Amount',
             value: amountText,
             copyText: _depositAmountCopyText(amountText, asset),
-            toastMessage: 'Amount copied',
+            toastMessage: kAppFormFactor == AppFormFactor.mobile
+                ? 'Amount copied'
+                : 'Amount Copied',
             copyKey: const ValueKey('swap_copy_deposit_amount'),
             rightKey: const ValueKey('swap_deposit_amount_right_item'),
             mobile: mobile,
@@ -1088,14 +1099,22 @@ class _DepositDetailRow extends StatelessWidget {
                           toastMessage: toastMessage,
                         );
                       },
-                      child: SizedBox.square(
-                        dimension: 20,
-                        child: AppIcon(
-                          AppIcons.copy,
-                          size: 20,
-                          color: colors.icon.regular.withValues(alpha: 0.72),
-                        ),
-                      ),
+                      child: kAppFormFactor == AppFormFactor.mobile
+                          ? SizedBox.square(
+                              dimension: 20,
+                              child: AppIcon(
+                                AppIcons.copy,
+                                size: 20,
+                                color: colors.icon.regular.withValues(
+                                  alpha: 0.72,
+                                ),
+                              ),
+                            )
+                          : AppIcon(
+                              AppIcons.copy,
+                              size: AppIconSize.medium,
+                              color: colors.icon.muted,
+                            ),
                     ),
                   ),
                 ],

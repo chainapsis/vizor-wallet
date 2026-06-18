@@ -27,8 +27,15 @@ import '../swap_activity_row_mapper.dart';
 import '../widgets/activity_feed.dart';
 import 'activity_transaction_status_screen.dart';
 
+/// Loads the full transaction history for one account; injectable so
+/// widget tests can avoid the Rust FFI.
+typedef ActivityHistoryLoader =
+    Future<List<rust_sync.TransactionInfo>> Function(String accountUuid);
+
 class ActivityScreen extends ConsumerStatefulWidget {
-  const ActivityScreen({super.key});
+  const ActivityScreen({this.historyLoader, super.key});
+
+  final ActivityHistoryLoader? historyLoader;
 
   @override
   ConsumerState<ActivityScreen> createState() => _ActivityScreenState();
@@ -61,6 +68,20 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   void dispose() {
     _swapActivityRefreshTimer?.cancel();
     super.dispose();
+  }
+
+  Future<List<rust_sync.TransactionInfo>> _loadHistory(
+    String accountUuid,
+  ) async {
+    final loader = widget.historyLoader;
+    if (loader != null) return loader(accountUuid);
+    final dbPath = await getWalletDbPath();
+    final endpoint = ref.read(rpcEndpointProvider);
+    return rust_sync.getTransactionHistory(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+    );
   }
 
   Future<void> _loadTransactions({
@@ -97,13 +118,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     }
 
     try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      final txs = await rust_sync.getTransactionHistory(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-      );
+      final txs = await _loadHistory(accountUuid);
       if (!_isCurrentTransactionLoad(generation, accountUuid)) {
         return;
       }
@@ -287,24 +302,14 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     });
 
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
-    final syncSnapshot = ref
-        .watch(syncProvider)
-        .value
-        ?.scopedToAccount(accountUuid);
-    final canRenderSyncTransactions =
-        syncSnapshot?.hasRecentTransactionsData ?? false;
     final loadedTransactions = _transactionsAccountUuid == accountUuid
         ? _transactions
         : null;
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final transactions =
-        loadedTransactions ??
-        (canRenderSyncTransactions
-            ? syncSnapshot!.recentTransactions
-            : const <rust_sync.TransactionInfo>[]);
+        loadedTransactions ?? const <rust_sync.TransactionInfo>[];
     final canRenderTransactions =
-        accountUuid != null &&
-        (loadedTransactions != null || canRenderSyncTransactions);
+        accountUuid != null && loadedTransactions != null;
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final swapItems = accountUuid == null || !swapFeatureEnabled
         ? const <SwapActivityRowItem>[]
@@ -378,10 +383,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               rowKeyPrefix: 'activity_screen',
               isLoading:
                   _isLoading && !canRenderTransactions && sections.isEmpty,
-              errorText:
-                  sections.isEmpty &&
-                      loadedTransactions == null &&
-                      !canRenderSyncTransactions
+              errorText: sections.isEmpty && loadedTransactions == null
                   ? _error
                   : null,
             ),
