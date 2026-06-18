@@ -40,7 +40,7 @@ const _zcashdRpcPassword = 'zcash';
 const _accountsKey = 'zcash_accounts';
 
 void logE2e(String message) {
-  debugPrint('[mobile-regtest-e2e] $message');
+  debugPrint('[mobile-$mobileE2eNetwork-e2e] $message');
 }
 
 /// Keeps cosmetic RenderFlex overflows (a few px on the 393pt frame

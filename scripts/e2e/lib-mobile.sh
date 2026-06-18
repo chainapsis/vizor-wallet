@@ -60,6 +60,23 @@ run_mobile_e2e() {
     "$@"
 }
 
+# Runs one mobile integration test file against the public mainnet endpoint.
+# Extra --dart-define flags can be passed as additional arguments.
+run_mobile_mainnet_e2e() {
+  local test_file="$1"
+  local udid="$2"
+  shift 2
+
+  echo "running mobile mainnet E2E ${test_file} on ${udid}"
+  fvm flutter test \
+    "$test_file" \
+    -d "$udid" \
+    --dart-define=VIZOR_FORM_FACTOR=mobile \
+    --dart-define=ZCASH_DEFAULT_NETWORK=main \
+    --dart-define=ZCASH_E2E_NETWORK=mainnet \
+    "$@"
+}
+
 # Starts the python E2E driver on $1 (port), logging to $2. Sets
 # DRIVER_PID; callers must trap and kill it. Extra args pass through to
 # the driver (e.g. --prepared-faucet-zaddr).
