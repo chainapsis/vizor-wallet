@@ -373,8 +373,11 @@ class _SwapProgressRoute extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       key: const ValueKey('swap_progress_route'),
-      // Figma `_Swap Route`: 12px vertical inset inside the card, full width.
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
+      // Desktop: Figma `_Swap Route` 12px vertical inset, full width. Mobile
+      // (mobile-ui-vibe-coding-polishing-2) insets the route horizontally.
+      padding: kAppFormFactor == AppFormFactor.mobile
+          ? const EdgeInsets.symmetric(horizontal: AppSpacing.sm)
+          : const EdgeInsets.symmetric(vertical: AppSpacing.s),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -478,14 +481,17 @@ class _ProgressStep extends StatelessWidget {
                           title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          // Figma keeps every step title on the accent color
-                          // (light #141818 / dark #FFFFFF); only the weight
-                          // distinguishes the active step.
+                          // Desktop keeps every step title on the accent
+                          // color (Figma); mobile
+                          // (mobile-ui-vibe-coding-polishing-2) dims
+                          // pending/complete titles to text.secondary.
                           style: AppTypography.labelLarge.copyWith(
                             fontWeight: active
                                 ? FontWeight.w600
                                 : FontWeight.w500,
-                            color: colors.text.accent,
+                            color: isMobile && !active
+                                ? colors.text.secondary
+                                : colors.text.accent,
                           ),
                         ),
                       ),
@@ -578,7 +584,15 @@ class _ProgressStepIcon extends StatelessWidget {
               animated: animateLoader,
             )
           : complete
-          ? AppIcon(AppIcons.check, size: 16, color: colors.icon.inverse)
+          ? AppIcon(
+              // Mobile (mobile-ui-vibe-coding-polishing-2) shows the per-step
+              // action glyph for completed steps; desktop shows a check.
+              kAppFormFactor == AppFormFactor.mobile
+                  ? _pendingProgressIcon(step)
+                  : AppIcons.check,
+              size: 16,
+              color: colors.icon.inverse,
+            )
           : AppIcon(
               _pendingProgressIcon(step),
               size: 16,

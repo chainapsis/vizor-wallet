@@ -739,7 +739,11 @@ class _DayCell extends StatelessWidget {
           child: SizedBox(width: size, height: size, child: child),
         ),
       );
-    } else if (currentMonth && _isSameDate(date, today)) {
+    } else if (currentMonth &&
+        _isSameDate(date, today) &&
+        kAppFormFactor != AppFormFactor.mobile) {
+      // Desktop-only "today" chip — the mobile wallet-birthday calendar
+      // (mobile-ui-vibe-coding-polishing-2) intentionally has no today marker.
       // Figma today chip (June 16 in 4052:96540): light gray filled circle,
       // measured ≈#ececec on the white panel → background.raised
       // (#EBEBEB light / p150 dark); the day number keeps the accent color.
