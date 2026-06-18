@@ -482,13 +482,14 @@ class _ProgressStep extends StatelessWidget {
                           title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          // Desktop keeps every step title on the accent
-                          // color (Figma); mobile
-                          // (mobile-ui-vibe-coding-polishing-2) keeps active
-                          // AND completed titles accented and dims only
-                          // pending (future) steps to text.secondary.
+                          // Desktop redesign: active title is bold (w600) on
+                          // accent. Mobile (mobile-ui-vibe-coding-polishing-2):
+                          // every title stays w500 (the active step is set
+                          // apart by its loader, description and taller row),
+                          // accent for active/completed and text.secondary
+                          // only for pending (future) steps.
                           style: AppTypography.labelLarge.copyWith(
-                            fontWeight: active
+                            fontWeight: !isMobile && active
                                 ? FontWeight.w600
                                 : FontWeight.w500,
                             color: isMobile && pending
