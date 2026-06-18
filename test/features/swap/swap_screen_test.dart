@@ -6520,7 +6520,7 @@ void main() {
           ),
         ),
       );
-      expect(copyIcon.size, 20);
+      expect(copyIcon.size, AppIconSize.medium);
       expect(
         tester.getSize(find.byKey(const ValueKey('swap_deposit_qr_logo'))),
         const Size(34, 34),
