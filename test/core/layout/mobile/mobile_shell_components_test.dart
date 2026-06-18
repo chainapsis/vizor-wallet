@@ -114,8 +114,8 @@ void main() {
     );
 
     final title = tester.widget<Text>(find.text('Activity'));
-    expect(title.style?.fontFamily, AppTypography.headlineMedium.fontFamily);
-    expect(title.style?.fontSize, AppTypography.headlineMedium.fontSize);
+    expect(title.style?.fontFamily, AppTypography.headlineLarge.fontFamily);
+    expect(title.style?.fontSize, AppTypography.headlineLarge.fontSize);
 
     await tester.tap(find.bySemanticsLabel('Back'));
     expect(backs, 1);
@@ -127,15 +127,18 @@ void main() {
     await tester.pumpWidget(
       _harness(
         const MobileTopNav.back(
-          title: 'Swap in progress...',
-          titleStyle: AppTypography.headlineLarge,
+          // Neutral sample text: a distinct style from the headlineLarge
+          // default, purely to prove the override is applied. (Real screens
+          // like the swap status header use the headlineLarge default.)
+          title: 'Custom title',
+          titleStyle: AppTypography.headlineMedium,
         ),
       ),
     );
 
-    final title = tester.widget<Text>(find.text('Swap in progress...'));
-    expect(title.style?.fontFamily, AppTypography.headlineLarge.fontFamily);
-    expect(title.style?.fontSize, AppTypography.headlineLarge.fontSize);
+    final title = tester.widget<Text>(find.text('Custom title'));
+    expect(title.style?.fontFamily, AppTypography.headlineMedium.fontFamily);
+    expect(title.style?.fontSize, AppTypography.headlineMedium.fontSize);
   });
 
   testWidgets('MobileTopNav.steps clamps and renders progress', (tester) async {

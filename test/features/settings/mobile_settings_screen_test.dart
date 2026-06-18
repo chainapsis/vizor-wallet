@@ -229,7 +229,7 @@ void main() {
     await tester.pumpWidget(_app());
     await tester.pump();
 
-    for (final label in ['Address Book', 'Secret Passphrase']) {
+    for (final label in ['Contacts', 'Secret Passphrase']) {
       final row = tester.widget<Text>(find.text(label));
       expect(
         row.style?.color,

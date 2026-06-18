@@ -164,15 +164,19 @@ void showAppToast(
   Duration duration = AppToast.defaultDuration,
   String iconName = AppIcons.checkCircle,
 }) {
+  // 1. A direct host scope (the toast renders inside the nearest
+  //    AppToastHost, which is under the app's AppTheme).
   final element = context
       .getElementForInheritedWidgetOfExactType<_AppToastScope>();
   final scope = element?.widget as _AppToastScope?;
-  final state = scope?.state;
-  if (state != null) {
-    state.show(message, duration: duration, iconName: iconName);
+  if (scope != null) {
+    scope.state.show(message, duration: duration, iconName: iconName);
     return;
   }
 
+  // 2. No direct host scope. If the most-recently-active host lives on the
+  //    SAME route as the caller, it is not covered by a modal — render there
+  //    (it sits under the app's AppTheme).
   final fallbackState = _AppToastHostState._lastActiveState;
   if (fallbackState != null &&
       _canUseToastHostForContext(context, fallbackState.context)) {
@@ -180,17 +184,33 @@ void showAppToast(
     return;
   }
 
+  // 3. The host is covered by a modal route / bottom sheet (or there is no
+  //    host): render in the root overlay so the toast floats ABOVE the modal
+  //    — e.g. copying an address from the accounts sheet on mobile home. The
+  //    root overlay is mounted above the app's AppTheme, so capture the
+  //    ambient theme here and re-provide it around the overlay toast;
+  //    otherwise AppToast.build cannot resolve tokens and throws.
   final overlay = Overlay.maybeOf(context, rootOverlay: true);
   if (overlay != null) {
-    _showOverlayToast(overlay, message, duration: duration, iconName: iconName);
+    final themeElement = context
+        .getElementForInheritedWidgetOfExactType<AppTheme>();
+    final theme = (themeElement?.widget as AppTheme?)?.data;
+    _showOverlayToast(
+      overlay,
+      message,
+      duration: duration,
+      iconName: iconName,
+      theme: theme,
+    );
     return;
   }
 
+  // 4. Last resort for overlay-less subtrees: the most recently active host,
+  //    even if it is covered.
   if (fallbackState != null) {
     fallbackState.show(message, duration: duration, iconName: iconName);
     return;
   }
-
   assert(
     fallbackState != null,
     'showAppToast called without an AppToastHost ancestor.',
@@ -212,6 +232,7 @@ void _showOverlayToast(
   String message, {
   required Duration duration,
   required String iconName,
+  required AppThemeData? theme,
 }) {
   final previousEntry = _AppToastHostState._fallbackOverlayEntry;
   if (previousEntry?.mounted ?? false) {
@@ -225,6 +246,7 @@ void _showOverlayToast(
       message: message,
       iconName: iconName,
       duration: duration,
+      theme: theme,
       onDismiss: () {
         if (_AppToastHostState._fallbackOverlayEntry == entry) {
           _AppToastHostState._fallbackOverlayEntry = null;
@@ -250,6 +272,7 @@ class _OverlayAppToast extends StatefulWidget {
     required this.message,
     required this.iconName,
     required this.duration,
+    required this.theme,
     required this.onDismiss,
     required this.onDisposed,
   });
@@ -257,6 +280,7 @@ class _OverlayAppToast extends StatefulWidget {
   final String message;
   final String iconName;
   final Duration duration;
+  final AppThemeData? theme;
   final VoidCallback onDismiss;
   final VoidCallback onDisposed;
 
@@ -296,6 +320,14 @@ class _OverlayAppToastState extends State<_OverlayAppToast> {
       AppSpacing.base,
       MediaQuery.paddingOf(context).top + AppSpacing.xs,
     );
+    final theme = widget.theme;
+    Widget toast = AppToast(message: widget.message, iconName: widget.iconName);
+    // The root overlay sits above the app's AppTheme, so re-provide the
+    // ambient theme captured at call time; otherwise AppToast cannot resolve
+    // tokens here.
+    if (theme != null) {
+      toast = AppTheme(data: theme, child: toast);
+    }
     return Positioned(
       top: topInset,
       left: 0,
@@ -304,7 +336,7 @@ class _OverlayAppToastState extends State<_OverlayAppToast> {
         child: Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-            child: AppToast(message: widget.message, iconName: widget.iconName),
+            child: toast,
           ),
         ),
       ),

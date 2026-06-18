@@ -288,7 +288,7 @@ void main() {
     expect(find.text('Strong privacy by default.'), findsOneWidget);
     // The mobile explainer adapts the renew bullet to touch.
     expect(
-      find.textContaining('tap the Renew button', findRichText: true),
+      find.textContaining('tap the renew button', findRichText: true),
       findsOneWidget,
     );
 

@@ -6,8 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -100,6 +102,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Activity'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is AppIcon &&
+            widget.name == AppIcons.chevronBackward &&
+            widget.size == 24,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('mobile_activity_feed'))).dy,
+      moreOrLessEquals(kMobileTopNavHeight + AppSpacing.s),
+    );
     expect(find.text('This week'), findsOneWidget);
     // The older entry lands in a month-year section.
     final olderDate = now.subtract(const Duration(days: 70));
@@ -110,6 +125,10 @@ void main() {
     await tester.pumpWidget(_app((_) async => []));
     await tester.pumpAndSettle();
 
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('mobile_activity_feed'))).dy,
+      moreOrLessEquals(kMobileTopNavHeight + AppSpacing.s),
+    );
     expect(find.text('No activity yet'), findsOneWidget);
   });
 

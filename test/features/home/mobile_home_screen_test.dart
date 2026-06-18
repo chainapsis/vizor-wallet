@@ -130,6 +130,11 @@ void main() {
   testWidgets('shows the importing state before account data exists', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
     await tester.pumpWidget(
       _app(
         SyncState(
@@ -144,6 +149,17 @@ void main() {
     expect(find.text('32%'), findsOneWidget);
     expect(find.textContaining("importing"), findsOneWidget);
     expect(find.text('Send'), findsNothing);
+
+    final canvasRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_rest_canvas')),
+    );
+    final imageRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_rest_image')),
+    );
+
+    expect(canvasRect.size, const Size(340, 220));
+    expect(imageRect.size, const Size(246, 192));
+    expect(canvasRect.bottom, moreOrLessEquals(744));
   });
 
   testWidgets('shows balance, actions, and empty activity when funded', (
@@ -273,6 +289,13 @@ void main() {
     await tester.pump();
     await tester.pump();
 
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.eye,
+      ),
+      findsOneWidget,
+    );
+
     await tester.tap(find.bySemanticsLabel('Hide balance'));
     await tester.pump();
 
@@ -281,6 +304,12 @@ void main() {
       findsAtLeastNWidgets(2),
     );
     expect(impactTypes, ['HapticFeedbackType.mediumImpact']);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.eyeClosed,
+      ),
+      findsOneWidget,
+    );
     expect(find.textContaining('143.12', findRichText: true), findsNothing);
     expect(find.text(r'$10.02K'), findsNothing);
   });

@@ -507,14 +507,10 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                           icon: _mobileFormFactor
                                               ? AppIcons.cameraDenied
                                               : AppIcons.camera,
-                                          title: _mobileFormFactor
-                                              ? 'Enable camera access'
-                                              : 'Enable the Camera access',
-                                          description: _mobileFormFactor
-                                              ? 'A camera is required to connect Keystone.\n'
-                                                    'You can revert this in settings anytime later.'
-                                              : 'A Camera is required to connect Keystone.\n'
-                                                    'You can revert this in settings anytime later.',
+                                          title: 'Enable camera access',
+                                          description:
+                                              'A camera is required to connect Keystone.\n'
+                                              'You can revert this in settings anytime later.',
                                           iconStyle: _CameraPermissionIconStyle
                                               .inverse,
                                         ),

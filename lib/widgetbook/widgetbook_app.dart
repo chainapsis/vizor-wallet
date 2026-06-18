@@ -746,6 +746,23 @@ class WidgetbookApp extends StatelessWidget {
                     ),
                   ],
                 ),
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Contacts list',
+                      builder: buildMobileContactsListUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No contacts',
+                      builder: buildMobileContactsNoContactsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Empty search',
+                      builder: buildMobileContactsEmptySearchUseCase,
+                    ),
+                  ],
+                ),
               ],
             ),
             WidgetbookFolder(

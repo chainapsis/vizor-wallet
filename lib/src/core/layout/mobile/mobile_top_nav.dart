@@ -21,8 +21,9 @@ const double kMobileTopNavHeight = 72;
 ///
 /// Metrics come from Figma node 4237:92733 (393×72; not tokenized as
 /// variables yet, so they live here as constants). The Back-variant
-/// title uses [AppTypography.headlineMedium], which on mobile resolves
-/// to Young Serif 28 px, matching the rendered mobile screen frames.
+/// title uses [AppTypography.headlineLarge], which on mobile resolves to
+/// Young Serif 32 px (Headline L) — the size the shared Mobile Top Nav
+/// component's Back variant uses across the mobile screen frames.
 class MobileTopNav extends StatelessWidget {
   const MobileTopNav.account({
     required this.accountName,
@@ -273,7 +274,7 @@ class MobileTopNav extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
-              style: (titleStyle ?? AppTypography.headlineMedium).copyWith(
+              style: (titleStyle ?? AppTypography.headlineLarge).copyWith(
                 color: colors.text.accent,
               ),
             ),

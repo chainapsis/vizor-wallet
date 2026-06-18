@@ -8,6 +8,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_tooltip.dart';
+import '../../../core/widgets/dot_qr_shape.dart';
 import '../domain/swap_contract.dart';
 import '../models/swap_address_formatting.dart';
 import '../models/swap_deposit_qr_payload.dart';
@@ -795,6 +796,25 @@ class _DepositExpiryLineState extends State<_DepositExpiryLine> {
   }
 }
 
+/// Deposit addresses are often short, which yields a low-version QR with big
+/// modules. The Figma deposit QR (node 4755:87754) is a dense version-9 code
+/// (~53 modules), so pin a minimum version: short data renders just as fine and
+/// dotted as the design, longer data still grows naturally.
+const _depositMinQrVersion = 9;
+
+QrImage _depositQrImage(String data) {
+  final natural = QrCode.fromData(
+    data: data,
+    errorCorrectLevel: QrErrorCorrectLevel.M,
+  );
+  if (natural.typeNumber >= _depositMinQrVersion) {
+    return QrImage(natural);
+  }
+  return QrImage(
+    QrCode(_depositMinQrVersion, QrErrorCorrectLevel.M)..addData(data),
+  );
+}
+
 class _DepositQrCode extends StatelessWidget {
   const _DepositQrCode({
     required this.data,
@@ -829,12 +849,13 @@ class _DepositQrCode extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          PrettyQrView.data(
-            data: data,
-            errorCorrectLevel: QrErrorCorrectLevel.M,
+          PrettyQrView(
+            qrImage: _depositQrImage(data),
             decoration: const PrettyQrDecoration(
               quietZone: PrettyQrQuietZone.zero,
-              shape: PrettyQrSmoothSymbol(roundFactor: 0.75),
+              // Match the receive screen's dotted QR (round modules + ring/dot
+              // finder patterns) via the shared shape.
+              shape: DotQrShape(),
             ),
           ),
           _DepositQrNetworkLogo(asset: asset, size: logoSize),
@@ -1014,9 +1035,17 @@ class _DepositDetailRow extends StatelessWidget {
       child: Row(
         children: [
           if (mobile)
+            // Keep the label column at the Figma width (so the value area
+            // stays >=190) but scale the label down to fit instead of
+            // truncating it — mirrors the value's own scaleDown, so labels
+            // like "Amount to deposit" / "One-time address" read in full.
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: _mobileLabelMaxWidth),
-              child: labelText,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: labelText,
+              ),
             )
           else
             Flexible(fit: FlexFit.loose, child: labelText),

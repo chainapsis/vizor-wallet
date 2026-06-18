@@ -478,7 +478,7 @@ class _PrivacyEyeButton extends StatelessWidget {
           ),
           child: Center(
             child: AppIcon(
-              AppIcons.eye,
+              enabled ? AppIcons.eyeClosed : AppIcons.eye,
               size: 16,
               color: context.colors.text.homeCard,
             ),
@@ -616,43 +616,79 @@ class _MobileRestImage extends StatelessWidget {
 class _ImportingView extends StatelessWidget {
   const _ImportingView({required this.progress});
 
+  static const _horizontalPadding = AppSpacing.sm;
+  static const _topGap = AppSpacing.sm;
+  static const _contentToRestGap = AppSpacing.lg;
+
+  // AppMobileShell floats the 64px nav over the body with a 16px bottom gap.
+  // Figma then leaves 16px between content and nav plus 12px inside the
+  // importing panel, so the Rest illustration clears the nav instead of
+  // sitting underneath it.
+  static const _bottomClearance =
+      kMobileTabBarHeight + AppSpacing.sm + AppSpacing.sm + AppSpacing.s;
+
+  static const _titleStyle = TextStyle(
+    fontFamily: 'Young Serif',
+    fontWeight: FontWeight.w400,
+    fontSize: 24,
+    height: 28 / 24,
+    letterSpacing: -0.4,
+    fontFeatures: [FontFeature.liningFigures()],
+  );
+
   final double progress;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-      child: Column(
-        children: [
-          const Spacer(),
-          Text(
-            '${formatSyncStatusPercentage(progress)}%',
-            style: AppTypography.displayLarge.copyWith(
-              color: colors.text.accent,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            "We're importing\nyour wallet...",
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '${formatSyncStatusPercentage(progress)}%',
+          style: AppTypography.displayLarge.copyWith(color: colors.text.accent),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SizedBox(
+          width: 246,
+          child: Text(
+            "We're importing your wallet...",
             textAlign: TextAlign.center,
-            style: AppTypography.headlineMedium.copyWith(
-              color: colors.text.accent,
-            ),
+            style: _titleStyle.copyWith(color: colors.text.accent),
           ),
-          const SizedBox(height: AppSpacing.s),
-          Text(
-            'Hang tight ... It might take some\ntime. Keep Vizor open & running.',
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SizedBox(
+          width: 247,
+          child: Text(
+            'Hang tight ... It might take some time. Keep Vizor open & running.',
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
-          const Flexible(child: _MobileRestImage()),
-          const Spacer(),
-          const SizedBox(height: kMobileTabBarHeight),
-        ],
+        ),
+        const SizedBox(height: _contentToRestGap),
+        const _MobileRestImage(),
+      ],
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        _horizontalPadding,
+        _topGap,
+        _horizontalPadding,
+        _bottomClearance,
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Align(alignment: Alignment.bottomCenter, child: content),
+            ),
+          );
+        },
       ),
     );
   }
