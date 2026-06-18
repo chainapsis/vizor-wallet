@@ -36,7 +36,7 @@ class MobileImportReviewScreen extends StatelessWidget {
               extra: ImportBirthdayArgs(mnemonic: args.mnemonic),
             ),
             trailing: const AppIcon(AppIcons.chevronForward),
-            child: const Text('Confirm & Continue'),
+            child: const Text('Confirm & continue'),
           ),
           const SizedBox(height: AppSpacing.xs),
           Semantics(
@@ -50,7 +50,7 @@ class MobileImportReviewScreen extends StatelessWidget {
                 height: 44,
                 child: Center(
                   child: Text(
-                    'Clear Secret Phrase',
+                    'Clear secret phrase',
                     style: AppTypography.labelLarge.copyWith(
                       color: context.colors.text.primary,
                     ),

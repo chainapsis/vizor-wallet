@@ -35,7 +35,7 @@ class MobileImportReviewArgs {
 }
 
 /// Result a pushed review screen returns to whoever opened it. `cleared`
-/// means the user tapped "Clear Secret Phrase" — the opener drops the
+/// means the user tapped "Clear secret phrase" — the opener drops the
 /// entered phrase and returns the user to a fresh entry.
 enum ImportReviewResult { cleared }
 
@@ -117,7 +117,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
           extra: MobileImportReviewArgs(words: _words),
         )
         .then((result) {
-          // "Clear Secret Phrase" on review wipes the pasted phrase so the
+          // "Clear secret phrase" on review wipes the pasted phrase so the
           // entry reappears empty.
           if (result == ImportReviewResult.cleared && mounted) _clear();
         });
@@ -125,7 +125,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
 
   void _openManual() {
     context.push<Object?>('/import/manual').then((result) {
-      // The manual flow forwards a Clear Secret Phrase so the entry also
+      // The manual flow forwards a Clear secret phrase so the entry also
       // wipes any stale pasted phrase/error and starts fresh.
       if (result == ImportReviewResult.cleared && mounted) _clear();
     });

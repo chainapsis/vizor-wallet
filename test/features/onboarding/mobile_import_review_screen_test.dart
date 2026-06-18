@@ -30,11 +30,11 @@ void main() {
       find.text('Review your Secret Passphrase before import starts.'),
       findsOneWidget,
     );
-    expect(find.text('Confirm & Continue'), findsOneWidget);
-    expect(find.text('Clear Secret Phrase'), findsOneWidget);
+    expect(find.text('Confirm & continue'), findsOneWidget);
+    expect(find.text('Clear secret phrase'), findsOneWidget);
   });
 
-  testWidgets('Clear Secret Phrase pops with the cleared result', (
+  testWidgets('Clear secret phrase pops with the cleared result', (
     tester,
   ) async {
     await tester.pumpWidget(_host());

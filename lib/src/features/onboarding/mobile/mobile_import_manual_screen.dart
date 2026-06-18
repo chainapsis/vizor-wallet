@@ -72,7 +72,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
   int get _pendingCount => _accepted.length + (_hasTyped ? 1 : 0);
 
   /// A valid-length phrase (12/15/18/21/24) is reachable, so offer
-  /// "Finish & Review" beside "Next Word" (Figma 4746:83516).
+  /// "Finish & review" beside "Next word" (Figma 4746:83516).
   bool get _showFinish => kMnemonicWordCounts.contains(_pendingCount);
 
   /// Accept the typed word and advance to the next slot.
@@ -207,7 +207,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
           extra: MobileImportReviewArgs(words: words),
         )
         .then((result) {
-          // "Clear Secret Phrase" on review — pop back to the import entry
+          // "Clear secret phrase" on review — pop back to the import entry
           // and forward the clear so the entry also drops any stale pasted
           // phrase/error (manual can be opened from a rejected paste).
           if (result == ImportReviewResult.cleared && mounted) {
@@ -216,8 +216,8 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
         });
   }
 
-  /// The CTA row: a single "Next Word" until a valid-length phrase is
-  /// reachable, then "Next Word" (secondary) beside "Finish & Review"
+  /// The CTA row: a single "Next word" until a valid-length phrase is
+  /// reachable, then "Next word" (secondary) beside "Finish & review"
   /// (primary) — Figma 4746:83516.
   Widget _buildButtonRow() {
     final nextEnabled = _hasTyped && !_atMax;
@@ -229,7 +229,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
       expand: !_showFinish,
       onPressed: nextEnabled ? _acceptTyped : null,
       trailing: const AppIcon(AppIcons.chevronForward),
-      child: const Text('Next Word'),
+      child: const Text('Next word'),
     );
     if (!_showFinish) return nextButton;
     return Row(
@@ -242,7 +242,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
             expand: true,
             onPressed: _finish,
             trailing: const AppIcon(AppIcons.chevronForward),
-            child: const Text('Finish & Review'),
+            child: const Text('Finish & review'),
           ),
         ),
       ],
