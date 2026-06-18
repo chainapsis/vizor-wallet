@@ -17,16 +17,20 @@ const _activityFeedActivationShortcuts = <ShortcutActivator, Intent>{
 /// amount/timestamp).
 const _activityRowInnerLineGap = AppSpacing.xxs;
 
-/// Sub-line text style — the subtitle (Shielded / Transparent) and the
-/// supporting amount line (timestamp / status).
-const _activityRowSubLineStyle = kAppFormFactor == AppFormFactor.mobile
+/// Subtitle line (Shielded / Transparent). Desktop keeps main's 14px
+/// label; mobile bumps to the 16px label.
+const _activityRowSubtitleStyle = AppTypography.labelLarge;
+
+/// Supporting amount line (timestamp / status). Desktop keeps main's 13px
+/// label; mobile bumps to the 16px label.
+const _activitySupportingStyle = kAppFormFactor == AppFormFactor.mobile
     ? AppTypography.labelLarge
     : AppTypography.labelSmall;
 
 /// Sub-line leading icon (the shielded / transparent badge).
 const _activityRowSubtitleIconSize = kAppFormFactor == AppFormFactor.mobile
     ? AppIconSize.medium
-    : 14.0;
+    : 16.0;
 
 class ActivityFeedSectionData {
   const ActivityFeedSectionData({required this.title, required this.rows});
@@ -899,7 +903,9 @@ class _ActivityRowTitle extends StatelessWidget {
           style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
         ),
         if (row.subtitle != null) ...[
-          const SizedBox(height: _activityRowInnerLineGap),
+          // Mobile-only extra gap; desktop keeps subtitle flush as on main.
+          if (kAppFormFactor == AppFormFactor.mobile)
+            const SizedBox(height: _activityRowInnerLineGap),
           _ActivityRowSubtitle(
             text: row.subtitle!,
             iconName: row.subtitleIconName,
@@ -937,7 +943,7 @@ class _ActivityRowSubtitle extends StatelessWidget {
             text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: _activityRowSubLineStyle.copyWith(
+            style: _activityRowSubtitleStyle.copyWith(
               color: colors.text.secondary,
               fontWeight: FontWeight.w400,
             ),
@@ -1061,7 +1067,7 @@ class _ActivitySupportingAmountText extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       textAlign: TextAlign.end,
-      style: _activityRowSubLineStyle.copyWith(color: color, letterSpacing: 0),
+      style: _activitySupportingStyle.copyWith(color: color, letterSpacing: 0),
     );
     if (iconName == null) return label;
     return Row(

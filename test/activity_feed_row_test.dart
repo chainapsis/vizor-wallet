@@ -259,7 +259,7 @@ void main() {
         (widget) =>
             widget is AppIcon &&
             widget.name == AppIcons.transparentBalance &&
-            widget.size == 14,
+            widget.size == 16,
       ),
       findsOneWidget,
     );
