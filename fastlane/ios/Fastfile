@@ -226,6 +226,10 @@ platform :ios do
   lane :build do
     metadata = ios_release_metadata
     coingecko_price_base_url = ENV.fetch("VIZOR_COINGECKO_PRICE_BASE_URL", "https://api.coingecko.com/api/v3")
+    force_disable_swap = ENV.fetch("VIZOR_FORCE_DISABLE_IOS_MOBILE_SWAP", "false").strip
+    unless ["true", "false"].include?(force_disable_swap)
+      UI.user_error!("VIZOR_FORCE_DISABLE_IOS_MOBILE_SWAP must be true or false")
+    end
     keychain = setup_ios_signing_keychain
     profile_mapping = sync_ios_match!(keychain)
     configure_ios_code_signing!(profile_mapping)
@@ -239,6 +243,7 @@ platform :ios do
           # Store builds must compile the mobile token set — release
           # builds have no form-factor guard (see AGENTS.md).
           "--dart-define=VIZOR_FORM_FACTOR=mobile",
+          "--dart-define=VIZOR_FORCE_DISABLE_IOS_MOBILE_SWAP=#{force_disable_swap}",
           "--dart-define=#{shell_escape("VIZOR_COINGECKO_PRICE_BASE_URL=#{coingecko_price_base_url}")}",
           "--build-name", shell_escape(metadata.fetch(:version)),
           "--build-number", shell_escape(metadata.fetch(:build_number)),
