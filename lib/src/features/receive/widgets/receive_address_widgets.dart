@@ -15,6 +15,7 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart'
     show kZcashDefaultCurrencyTicker;
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
@@ -349,11 +350,16 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
   Future<void> _renderQr() async {
     final generation = ++_generation;
     try {
-      final qrCode = _qrCodeForData(
-        widget.data,
-        widget.type,
-        QrErrorCorrectLevel.M,
-      );
+      // Desktop keeps main's plain QR (uniform smooth modules, no custom
+      // finder eyes and no transparent min-version bump); mobile uses the
+      // redesigned shape with circular finder eyes.
+      const isMobile = kAppFormFactor == AppFormFactor.mobile;
+      final qrCode = isMobile
+          ? _qrCodeForData(widget.data, widget.type, QrErrorCorrectLevel.M)
+          : QrCode.fromData(
+              data: widget.data,
+              errorCorrectLevel: QrErrorCorrectLevel.M,
+            );
       final qrImage = QrImage(qrCode);
       final image = await qrImage.toImage(
         size: _CachedQrBitmap._bitmapSize,
@@ -368,7 +374,9 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
             clipper: const _ReceiveQrEmbeddedImageClipper(),
             position: PrettyQrDecorationImagePosition.embedded,
           ),
-          shape: _ReceiveQrShape(color: widget.color, type: widget.type),
+          shape: isMobile
+              ? _ReceiveQrShape(color: widget.color, type: widget.type)
+              : PrettyQrSmoothSymbol(roundFactor: 1, color: widget.color),
         ),
       );
       if (!mounted || generation != _generation) {
@@ -865,16 +873,17 @@ List<ReceiveAddressInfoItem> receiveAddressInfoItems(
 }) {
   if (type == ReceiveAddressType.shielded) {
     return [
-      const ReceiveAddressInfoItem(
+      ReceiveAddressInfoItem(
         iconName: AppIcons.shieldKeyhole,
-        text:
-            'Tx details — sender, receiver, and amount — are encrypted on-chain & hidden.',
+        text: touchUi
+            ? 'Tx details — sender, receiver, and amount — are encrypted on-chain & hidden.'
+            : 'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.',
       ),
       ReceiveAddressInfoItem(
         iconName: AppIcons.renew,
-        text:
-            'A new Zcash Shielded address is generated only when you '
-            '${touchUi ? 'tap' : 'click'} the Renew button.',
+        text: touchUi
+            ? 'A new Zcash Shielded address is generated only when you tap the Renew button.'
+            : 'A new Zcash shielded address is generated only when you click the renew button.',
       ),
       const ReceiveAddressInfoItem(
         iconName: AppIcons.wallet,
@@ -884,10 +893,11 @@ List<ReceiveAddressInfoItem> receiveAddressInfoItems(
     ];
   }
   return [
-    const ReceiveAddressInfoItem(
+    ReceiveAddressInfoItem(
       iconName: AppIcons.unlock,
-      text:
-          'All tx details — sender, receiver, and amount — are publicly visible on-chain.',
+      text: touchUi
+          ? 'All tx details — sender, receiver, and amount — are publicly visible on-chain.'
+          : 'All tx details - sender, receiver, and amount - are publicly visible on-chain.',
     ),
     const ReceiveAddressInfoItem(
       iconName: AppIcons.dragon,
@@ -895,7 +905,7 @@ List<ReceiveAddressInfoItem> receiveAddressInfoItems(
           'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.',
     ),
     ReceiveAddressInfoItem(
-      iconName: AppIcons.shieldKeyholeOutline,
+      iconName: touchUi ? AppIcons.shieldKeyholeOutline : AppIcons.shieldAsset,
       text:
           'After receiving $kZcashDefaultCurrencyTicker to your transparent '
           "address, Vizor will guide you to shield the balance. Otherwise, "
