@@ -66,6 +66,7 @@ dependencies:
   pretty_qr_code: ^3.6.0
   # Platform share sheet for the receive screen's share action.
   share_plus: ^12.0.1
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_test:
