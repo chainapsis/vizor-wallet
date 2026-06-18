@@ -1,3 +1,4 @@
+import '../../../core/layout/app_form_factor.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../domain/near_intents_explorer.dart';
 import 'swap_address_formatting.dart';
@@ -265,11 +266,15 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
   final originChainTxHash = intent.originChainTxHash?.trim();
   final destinationChainTxHash = intent.destinationChainTxHash?.trim();
   final depositTxHash = _firstNonEmpty([localDepositTxHash, originChainTxHash]);
-  final txIdRow = _swapActivityTxIdRow(
-    intent: intent,
-    depositTxHash: depositTxHash,
-    depositAddress: depositAddress,
-  );
+  // The Tx ID detail row is a mobile-only addition; desktop keeps the
+  // original detail set (the standalone "<symbol> deposit tx" row).
+  final txIdRow = kAppFormFactor == AppFormFactor.mobile
+      ? _swapActivityTxIdRow(
+          intent: intent,
+          depositTxHash: depositTxHash,
+          depositAddress: depositAddress,
+        )
+      : null;
   final terminal = intent.status.isTerminal;
   final failed =
       _swapActivityStatusBadgeKind(intent.status) == SwapStatusBadgeKind.failed;

@@ -78,7 +78,10 @@ void main() {
     );
   });
 
-  test('adds a NEAR Intents explorer link to the tx id detail row', () {
+  test('omits the tx id detail row on desktop', () {
+    // The "Tx ID" row is a mobile-only addition; desktop keeps the original
+    // detail set. Mobile-lane coverage of the row lives in
+    // mobile_swap_activity_tx_id_test.dart.
     final presentation = swapActivityStatusPresentationForIntent(
       _state(),
       _intent(
@@ -91,11 +94,9 @@ void main() {
       ),
     );
 
-    final txId = _detailRow(presentation.details, 'Tx ID');
-    expect(txId.value, 't1provider-deposit');
     expect(
-      txId.linkUri.toString(),
-      'https://explorer.near-intents.org/transactions/t1provider-deposit',
+      presentation.details.where((row) => row.label == 'Tx ID'),
+      isEmpty,
     );
   });
 
