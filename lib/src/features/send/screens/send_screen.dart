@@ -685,6 +685,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       }
       final reviewArgs = await proposeSendTransfer(
         ref: ref,
+        loadDbPath: ref.read(sendWalletDbPathProvider),
         accountUuid: accountUuid,
         sendFlowId: _sendFlowId,
         address: address,

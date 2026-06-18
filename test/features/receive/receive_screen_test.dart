@@ -209,7 +209,7 @@ void main() {
     expect(find.text('Shielded address'), findsOneWidget);
     expect(
       find.text(
-        'A new Zcash shielded address is generated only when you click the renew button.',
+        'A new Zcash Shielded address is generated only when you click the Renew button.',
       ),
       findsOneWidget,
     );
