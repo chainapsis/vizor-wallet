@@ -1302,7 +1302,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               constrainContent: true,
               onPressed: _amountReady ? _continueToReview : null,
               child: Text(
-                _amountReady ? 'Finish & Review' : 'Enter amount to continue',
+                _amountReady ? 'Finish & review' : 'Enter amount to continue',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
