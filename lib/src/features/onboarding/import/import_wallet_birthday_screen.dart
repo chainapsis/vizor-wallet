@@ -36,15 +36,10 @@ enum _ImportWalletSubmitPhase {
 class ImportWalletBirthdayScreen extends ConsumerStatefulWidget {
   const ImportWalletBirthdayScreen({
     required this.args,
-    this.todayOverride,
     super.key,
   });
 
   final ImportBirthdayArgs args;
-
-  /// Pins the calendar's "today" indicator in capture/widget tests; production
-  /// passes nothing and falls back to the wall clock.
-  final DateTime? todayOverride;
 
   @override
   ConsumerState<ImportWalletBirthdayScreen> createState() =>
@@ -514,7 +509,6 @@ class _ImportWalletBirthdayScreenState
           ? ImportBirthdayCalendarOverlay(
               initialMonth: _calendarInitialDate ?? calendarLastDate,
               selectedDate: _selectedDate,
-              today: widget.todayOverride,
               firstDate: calendarFirstDate,
               lastDate: calendarLastDate,
               onDismiss: _dismissCalendar,
