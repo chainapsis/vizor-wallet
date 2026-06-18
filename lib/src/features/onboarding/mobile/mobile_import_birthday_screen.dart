@@ -16,15 +16,25 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
+import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../../services/native_date_picker.dart';
 import '../import/import_birthday_calendar_overlay.dart'
     show ImportBirthdayCalendarPanel;
 import '../import/import_birthday_estimator.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
+import 'mobile_import_account_discovery_sheet.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 enum _BirthdayEntryMode { date, blockHeight }
+
+enum _MobileImportSubmitPhase {
+  idle,
+  estimating,
+  discoveringAccounts,
+  stoppingSync,
+  importing,
+}
 
 /// Mobile wallet-birthday step — Figma `Import — Calendar`
 /// (4575:112136): a date / block-height entry toggle and a circular
@@ -66,9 +76,12 @@ class _MobileImportBirthdayScreenState
   final _heightFocus = FocusNode();
 
   ImportBirthdayMetadata? _metadata;
-  bool _estimating = false;
-  bool _submitting = false;
+  _MobileImportSubmitPhase _submitPhase = _MobileImportSubmitPhase.idle;
   String? _error;
+
+  bool get _isSubmitting =>
+      _submitPhase != _MobileImportSubmitPhase.idle &&
+      _submitPhase != _MobileImportSubmitPhase.estimating;
 
   @override
   void initState() {
@@ -127,7 +140,7 @@ class _MobileImportBirthdayScreenState
     _BirthdayEntryMode.blockHeight => _heightPlausible,
   };
 
-  bool get _busy => _submitting || _estimating;
+  bool get _busy => _submitPhase != _MobileImportSubmitPhase.idle;
 
   void _setMode(_BirthdayEntryMode mode) {
     if (_busy || _mode == mode) return;
@@ -208,7 +221,7 @@ class _MobileImportBirthdayScreenState
         await _submit(_typedHeight()!);
       case _BirthdayEntryMode.date:
         setState(() {
-          _estimating = true;
+          _submitPhase = _MobileImportSubmitPhase.estimating;
           _error = null;
         });
         try {
@@ -218,13 +231,12 @@ class _MobileImportBirthdayScreenState
             selectedDate: _selectedDate!,
           );
           if (!mounted) return;
-          setState(() => _estimating = false);
           await _submit(height);
         } catch (e) {
           log('MobileImportBirthday: estimate failed: $e');
           if (!mounted) return;
           setState(() {
-            _estimating = false;
+            _submitPhase = _MobileImportSubmitPhase.idle;
             _error =
                 "Couldn't estimate a height for that date. Enter a block "
                 'height instead.';
@@ -237,7 +249,7 @@ class _MobileImportBirthdayScreenState
     final onHeightConfirmed = widget.onHeightConfirmed;
     if (onHeightConfirmed != null) {
       setState(() {
-        _submitting = true;
+        _submitPhase = _MobileImportSubmitPhase.importing;
         _error = null;
       });
       try {
@@ -246,7 +258,7 @@ class _MobileImportBirthdayScreenState
         log('MobileImportBirthday: height confirm failed: $e\n$st');
         if (!mounted) return;
         setState(() {
-          _submitting = false;
+          _submitPhase = _MobileImportSubmitPhase.idle;
           _error = onboardingSubmitErrorMessage(e);
         });
       }
@@ -255,41 +267,157 @@ class _MobileImportBirthdayScreenState
 
     final security = ref.read(appSecurityProvider);
     if (!security.isPasswordConfigured) {
-      context.push(
-        '/onboarding/set-passcode',
-        extra: SetPasswordScreenArgs.importWallet(
-          mnemonic: widget.args.mnemonic,
-          birthdayHeight: height,
-        ),
-      );
+      try {
+        final selectedAdditionalAccountIndices =
+            await _resolveAdditionalAccountIndices(
+              mnemonic: widget.args.mnemonic,
+              birthdayHeight: height,
+            );
+        if (selectedAdditionalAccountIndices == null) {
+          if (mounted) {
+            setState(() {
+              _submitPhase = _MobileImportSubmitPhase.idle;
+            });
+          }
+          return;
+        }
+        if (!mounted) return;
+        setState(() {
+          _submitPhase = _MobileImportSubmitPhase.idle;
+        });
+        context.push(
+          '/onboarding/set-passcode',
+          extra: SetPasswordScreenArgs.importWallet(
+            mnemonic: widget.args.mnemonic,
+            birthdayHeight: height,
+            selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
+          ),
+        );
+      } catch (e, st) {
+        log('MobileImportBirthday: account discovery failed: $e\n$st');
+        if (!mounted) return;
+        setState(() {
+          _submitPhase = _MobileImportSubmitPhase.idle;
+          _error = onboardingSubmitErrorMessage(e);
+        });
+      }
       return;
     }
 
     setState(() {
-      _submitting = true;
+      _submitPhase = _MobileImportSubmitPhase.importing;
       _error = null;
     });
     final router = GoRouter.of(context);
     final accountNotifier = ref.read(accountProvider.notifier);
     try {
-      await runWithSyncPausedForAccountMutation(
+      final imported = await runWithSyncPausedForAccountMutation(
         ref,
-        () => accountNotifier.importAccount(
-          mnemonic: widget.args.mnemonic,
-          birthdayHeight: height,
-        ),
+        () async {
+          final selectedAdditionalAccountIndices =
+              await _resolveAdditionalAccountIndices(
+                mnemonic: widget.args.mnemonic,
+                birthdayHeight: height,
+              );
+          if (selectedAdditionalAccountIndices == null) return false;
+          if (!mounted) return false;
+          setState(() {
+            _submitPhase = _MobileImportSubmitPhase.importing;
+          });
+          await accountNotifier.importAccount(
+            mnemonic: widget.args.mnemonic,
+            birthdayHeight: height,
+            additionalAccountIndices: selectedAdditionalAccountIndices,
+          );
+          return true;
+        },
+        onStoppingSync: () {
+          if (!mounted) return;
+          setState(() {
+            _submitPhase = _MobileImportSubmitPhase.stoppingSync;
+          });
+        },
+        onSyncPaused: () {
+          if (!mounted) return;
+          setState(() {
+            _submitPhase = _MobileImportSubmitPhase.importing;
+          });
+        },
       );
+      if (!imported) {
+        if (mounted) {
+          setState(() {
+            _submitPhase = _MobileImportSubmitPhase.idle;
+          });
+        }
+        return;
+      }
     } catch (e, st) {
       log('MobileImportBirthday: import failed: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _submitting = false;
+        _submitPhase = _MobileImportSubmitPhase.idle;
         _error = onboardingSubmitErrorMessage(e);
       });
       return;
     }
     router.go('/home');
   }
+
+  Future<List<int>?> _resolveAdditionalAccountIndices({
+    required String mnemonic,
+    required int birthdayHeight,
+  }) async {
+    setState(() {
+      _submitPhase = _MobileImportSubmitPhase.discoveringAccounts;
+      _error = null;
+    });
+
+    final discovery = await ref
+        .read(accountProvider.notifier)
+        .discoverAdditionalSoftwareAccounts(
+          mnemonic: mnemonic,
+          birthdayHeight: birthdayHeight,
+        );
+    if (!mounted) return null;
+    final candidates = discovery.accounts;
+    if (candidates.isEmpty) {
+      setState(() {
+        _submitPhase = _MobileImportSubmitPhase.idle;
+      });
+      return const [];
+    }
+
+    setState(() {
+      _submitPhase = _MobileImportSubmitPhase.idle;
+    });
+    return showMobileImportAccountDiscoverySheet(
+      context: context,
+      accounts: candidates,
+      allowEmptySelection: !discovery.primaryAccountAlreadyExists,
+      bip44CoinType: ref.read(rpcEndpointProvider).network.coinType,
+      loadTransparentBalance: _loadAccountDiscoveryTransparentBalance,
+    );
+  }
+
+  Future<BigInt> _loadAccountDiscoveryTransparentBalance(
+    rust_wallet.SoftwareWalletDiscoveredAccount account,
+  ) {
+    return ref
+        .read(accountProvider.notifier)
+        .previewSoftwareAccountTransparentBalance(
+          mnemonic: widget.args.mnemonic,
+          accountIndex: account.zip32AccountIndex,
+        );
+  }
+
+  String? get _statusMessage => switch (_submitPhase) {
+    _MobileImportSubmitPhase.idle => null,
+    _MobileImportSubmitPhase.estimating => 'Estimating height...',
+    _MobileImportSubmitPhase.discoveringAccounts => 'Checking accounts...',
+    _MobileImportSubmitPhase.stoppingSync => 'Pausing sync...',
+    _MobileImportSubmitPhase.importing => 'Importing wallet...',
+  };
 
   String _formattedDate(DateTime date) =>
       '${date.month.toString().padLeft(2, '0')}/'
@@ -303,7 +431,7 @@ class _MobileImportBirthdayScreenState
 
     return MobileOnboardingStepScaffold(
       progress: 0.8,
-      onBack: _submitting ? null : () => Navigator.of(context).maybePop(),
+      onBack: _isSubmitting ? null : () => Navigator.of(context).maybePop(),
       title: 'Around when did you create your wallet?',
       // Two 25 px lines like the Figma subtitle block.
       subtitle: 'An estimate is enough — sync starts\nfrom there.',
@@ -418,9 +546,9 @@ class _MobileImportBirthdayScreenState
                 color: colors.text.destructive,
               ),
             )
-          else if (_submitting || _estimating)
+          else if (_statusMessage != null)
             Text(
-              _submitting ? 'Importing wallet...' : 'Estimating height...',
+              _statusMessage!,
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.secondary,
