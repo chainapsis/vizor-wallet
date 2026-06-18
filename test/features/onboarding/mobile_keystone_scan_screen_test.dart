@@ -82,9 +82,9 @@ Widget _routerApp({
   );
 }
 
-KeystoneAccountInfo _account(int index) {
+KeystoneAccountInfo _account(int index, {String? name}) {
   return KeystoneAccountInfo(
-    name: 'Account $index',
+    name: name ?? 'Account $index',
     ufvk: 'u1testaccount$index ... 3123llasdasd',
     index: index,
     seedFingerprint: Uint8List.fromList([index, 0, 0, 0]),
@@ -369,6 +369,19 @@ void main() {
       expect(find.byType(MobileKeystoneScanScreen), findsOneWidget);
     },
   );
+
+  test('stores the fallback name on selected Keystone accounts', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    container.read(keystoneOnboardingProvider.notifier).setAccounts([
+      _account(0, name: '   '),
+    ]);
+
+    final state = container.read(keystoneOnboardingProvider);
+    expect(state.accounts.single.name, 'Account 1');
+    expect(state.selectedAccount?.name, 'Account 1');
+  });
 }
 
 Size _cameraViewportSize(WidgetTester tester) {
