@@ -5,7 +5,6 @@
 library;
 
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart' show CircularProgressIndicator, Colors;
@@ -17,6 +16,7 @@ import '../../../core/config/network_config.dart'
     show kZcashDefaultCurrencyTicker;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/dot_qr_shape.dart';
 
 /// Which receiving pool an address belongs to.
 enum ReceiveAddressType { shielded, transparent }
@@ -364,7 +364,13 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
             clipper: const _ReceiveQrEmbeddedImageClipper(),
             position: PrettyQrDecorationImagePosition.embedded,
           ),
-          shape: _ReceiveQrShape(color: widget.color, type: widget.type),
+          shape: DotQrShape(
+            color: widget.color,
+            // Transparent receive addresses make a very dense code; clamp the
+            // finder dots so they stay proportional.
+            finderReferenceDimension:
+                widget.type == ReceiveAddressType.transparent ? 49.0 : null,
+          ),
         ),
       );
       if (!mounted || generation != _generation) {
@@ -445,76 +451,6 @@ QrCode _qrCodeForData(
     return natural;
   }
   return QrCode(_transparentMinimumQrVersion, errorCorrectLevel)..addData(data);
-}
-
-class _ReceiveQrShape extends PrettyQrShape {
-  const _ReceiveQrShape({required this.color, required this.type});
-
-  final Color color;
-  final ReceiveAddressType type;
-
-  static const _finderReferenceDimension = 49.0;
-
-  @override
-  void paint(PrettyQrPaintingContext context) {
-    PrettyQrSmoothSymbol(roundFactor: 1, color: color).paint(
-      context.copyWith(
-        matrix: _withoutComponent(
-          context.matrix,
-          PrettyQrComponentType.finderPattern,
-        ),
-      ),
-    );
-    _paintFinderPatterns(context);
-  }
-
-  void _paintFinderPatterns(PrettyQrPaintingContext context) {
-    final module = context.moduleDimension;
-    final visualModule = type == ReceiveAddressType.transparent
-        ? math.min(module, context.boundsDimension / _finderReferenceDimension)
-        : module;
-    final ringPaint = ui.Paint()
-      ..color = color
-      ..style = ui.PaintingStyle.stroke
-      ..strokeCap = ui.StrokeCap.round
-      ..strokeWidth = visualModule / 1.5;
-    final dotPaint = ui.Paint()
-      ..color = color
-      ..style = ui.PaintingStyle.fill;
-
-    for (final pattern in context.matrix.positionDetectionPatterns) {
-      final center = context.estimatedBounds.topLeft.translate(
-        (pattern.left + PrettyQrPositionDetectionPattern.dimension / 2) *
-            module,
-        (pattern.top + PrettyQrPositionDetectionPattern.dimension / 2) * module,
-      );
-      context.canvas.drawCircle(center, visualModule * 3, ringPaint);
-      context.canvas.drawCircle(center, visualModule * 1.5, dotPaint);
-    }
-  }
-
-  PrettyQrMatrix _withoutComponent(
-    PrettyQrMatrix matrix,
-    PrettyQrComponentType component,
-  ) {
-    return PrettyQrMatrix(
-      version: matrix.version,
-      modules: [
-        for (final module in matrix)
-          module.type == component ? module.toBlank() : module,
-      ],
-    );
-  }
-
-  @override
-  int get hashCode => Object.hash(_ReceiveQrShape, color, type);
-
-  @override
-  bool operator ==(Object other) {
-    return other is _ReceiveQrShape &&
-        other.color == color &&
-        other.type == type;
-  }
 }
 
 class _ReceiveQrEmbeddedImageClipper implements PrettyQrClipper {
