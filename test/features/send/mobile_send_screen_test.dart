@@ -830,7 +830,7 @@ void main() {
 
     await _enterAmount(tester, '1.5');
     expect(find.text('Not enough ZEC'), findsNothing);
-    expect(find.text('Finish & Review'), findsOneWidget);
+    expect(find.text('Finish & review'), findsOneWidget);
   });
 
   testWidgets('continue stays blocked while the fee check is pending', (
@@ -856,7 +856,7 @@ void main() {
 
     // Once the re-validation settles, 1.5 ZEC is spendable again.
     await tester.pumpAndSettle();
-    expect(find.text('Finish & Review'), findsOneWidget);
+    expect(find.text('Finish & review'), findsOneWidget);
   });
 
   testWidgets('review shows the receipt and the shielded memo entry', (

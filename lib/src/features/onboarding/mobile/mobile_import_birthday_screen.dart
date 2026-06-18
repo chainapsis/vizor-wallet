@@ -86,6 +86,8 @@ class _MobileImportBirthdayScreenState
   @override
   void initState() {
     super.initState();
+    // Repaint the height field's focus ring when it gains/loses the keyboard.
+    _heightFocus.addListener(_onHeightFocusChanged);
     if (widget.loadChainMetadata) {
       unawaited(_loadMetadata());
     }
@@ -93,9 +95,14 @@ class _MobileImportBirthdayScreenState
 
   @override
   void dispose() {
+    _heightFocus.removeListener(_onHeightFocusChanged);
     _heightController.dispose();
     _heightFocus.dispose();
     super.dispose();
+  }
+
+  void _onHeightFocusChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadMetadata() async {
@@ -243,6 +250,15 @@ class _MobileImportBirthdayScreenState
           });
         }
     }
+  }
+
+  /// "I can't remember" — like the desktop skip, import from the Sapling
+  /// activation height so the wallet scans the whole chain rather than
+  /// guessing a birthday.
+  void _skipBirthday() {
+    if (_busy) return;
+    _heightFocus.unfocus();
+    unawaited(_submit(_minHeight));
   }
 
   Future<void> _submit(int height) async {
@@ -435,32 +451,49 @@ class _MobileImportBirthdayScreenState
       title: 'Around when did you create your wallet?',
       // Two 25 px lines like the Figma subtitle block.
       subtitle: 'An estimate is enough — sync starts\nfrom there.',
+      // Figma `Buttons Stack` (4752:26672): a full-width skip below the
+      // entry row that imports from the Sapling activation height.
+      bottomArea: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppButton(
+            key: const ValueKey('mobile_import_birthday_skip'),
+            variant: AppButtonVariant.secondary,
+            expand: true,
+            onPressed: _busy ? null : _skipBirthday,
+            trailing: const AppIcon(AppIcons.skip),
+            child: const Text('I can’t remember'),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Flexible(
-                child: _ModeTab(
+          // Tabs size to their content and only scale down on very narrow
+          // screens — a 50/50 Flexible split clipped the longer label.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _ModeTab(
                   key: const ValueKey('mobile_import_birthday_mode_date'),
                   iconName: AppIcons.calendar,
                   label: 'Enter the date',
                   selected: isDateMode,
                   onTap: () => _setMode(_BirthdayEntryMode.date),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Flexible(
-                child: _ModeTab(
+                const SizedBox(width: AppSpacing.sm),
+                _ModeTab(
                   key: const ValueKey('mobile_import_birthday_mode_height'),
                   iconName: AppIcons.block,
                   label: 'Enter the block height',
                   selected: !isDateMode,
                   onTap: () => _setMode(_BirthdayEntryMode.blockHeight),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: AppSpacing.md),
           Row(
@@ -477,6 +510,7 @@ class _MobileImportBirthdayScreenState
                         onTap: () => unawaited(_pickDate()),
                       )
                     : _FieldShell(
+                        focused: _heightFocus.hasFocus,
                         child: Row(
                           children: [
                             Expanded(
@@ -526,14 +560,14 @@ class _MobileImportBirthdayScreenState
                         ),
                       ),
               ),
-              const SizedBox(width: AppSpacing.s),
+              const SizedBox(width: AppSpacing.xs),
               AppButton(
                 key: const ValueKey('mobile_import_birthday_continue'),
                 onPressed: !_canContinue || _busy ? null : _continue,
-                // 78×60 chevron pill per the Figma entry row.
+                // 70×60 chevron pill with a 20 px glyph per the Figma row.
                 height: 60,
-                minWidth: 78,
-                child: const AppIcon(AppIcons.chevronForward, size: 24),
+                minWidth: 70,
+                child: const AppIcon(AppIcons.chevronForward, size: 20),
               ),
             ],
           ),
@@ -547,11 +581,26 @@ class _MobileImportBirthdayScreenState
               ),
             )
           else if (_statusMessage != null)
-            Text(
-              _statusMessage!,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
+            // Figma `Import — Estimating` (4752:27008): a spinner + Label M
+            // SemiBold in text.accent, centered, sitting ~24px (spacing/md)
+            // below the field rather than tight against it.
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.s),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AppIcon(AppIcons.loader, size: 20, color: colors.icon.accent),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(
+                    _statusMessage!,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.labelLarge.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colors.text.accent,
+                    ),
+                  ),
+                ],
               ),
             )
           else if (!isDateMode)
@@ -586,7 +635,25 @@ class _ModeTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final color = selected ? colors.text.accent : colors.text.muted;
+    // Figma `Simple Tabs`: both tabs use Body M on text.accent; the
+    // inactive one is the same content at 50% opacity, and the active one
+    // is the medium weight.
+    final tab = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppIcon(iconName, size: AppIconSize.medium, color: colors.icon.accent),
+        const SizedBox(width: AppSpacing.xxs),
+        Text(
+          label,
+          maxLines: 1,
+          style:
+              (selected
+                      ? AppTypography.bodyMediumStrong
+                      : AppTypography.bodyMedium)
+                  .copyWith(color: colors.text.accent),
+        ),
+      ],
+    );
     return Semantics(
       button: true,
       selected: selected,
@@ -596,21 +663,7 @@ class _ModeTab extends StatelessWidget {
         onTap: onTap,
         child: SizedBox(
           height: 44,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppIcon(iconName, size: AppIconSize.medium, color: color),
-              const SizedBox(width: AppSpacing.xxs),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelMedium.copyWith(color: color),
-                ),
-              ),
-            ],
-          ),
+          child: Opacity(opacity: selected ? 1 : 0.5, child: tab),
         ),
       ),
     );
@@ -619,19 +672,45 @@ class _ModeTab extends StatelessWidget {
 
 /// The Figma entry-row field chrome shared by both modes.
 class _FieldShell extends StatelessWidget {
-  const _FieldShell({required this.child});
+  const _FieldShell({required this.child, this.focused = false});
 
   final Widget child;
+
+  /// Shows the inverse focus ring while the field owns the keyboard. The
+  /// resting state has no visible border — the previous always-on 2px
+  /// border read as a permanent focus state.
+  final bool focused;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    // Raised white card (surface.input fill, radius 16, layered subtle
+    // shadow) with a focus-only inverse outline — mirrors MobileTextField.
     return Container(
-      height: 61,
+      height: AppInputSizing.height,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
       decoration: BoxDecoration(
-        border: Border.all(color: colors.border.strong, width: 2),
-        borderRadius: BorderRadius.circular(AppRadii.medium),
+        color: colors.surface.input,
+        borderRadius: BorderRadius.circular(AppInputSizing.radius),
+        border: Border.all(
+          color: focused ? colors.background.inverse : const Color(0x00000000),
+          width: 1.5,
+          strokeAlign: BorderSide.strokeAlignInside,
+        ),
+        boxShadow: [
+          BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+          BoxShadow(
+            color: colors.shadows.subtle,
+            offset: const Offset(0, 2),
+            blurRadius: 4,
+          ),
+          BoxShadow(
+            color: colors.shadows.subtle,
+            offset: const Offset(0, 1),
+            blurRadius: 2,
+          ),
+          BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+        ],
       ),
       child: child,
     );
@@ -680,7 +759,7 @@ class _DateFieldButton extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
-              AppIcon(AppIcons.calendar, size: 18, color: colors.icon.accent),
+              AppIcon(AppIcons.calendar, size: 24, color: colors.icon.accent),
             ],
           ),
         ),
