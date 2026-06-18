@@ -5,10 +5,13 @@ import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../main.dart' show log;
 import 'core/profile_pictures.dart';
+import 'core/config/app_version_config.dart';
 import 'core/config/rpc_endpoint_config.dart';
+import 'core/config/swap_remote_enable_config.dart';
 import 'core/storage/app_secure_store.dart';
 import 'core/storage/wallet_paths.dart';
 import 'providers/account_models.dart';
@@ -56,6 +59,7 @@ class AppBootstrapState {
     required this.isPasswordConfigured,
     required this.isUnlocked,
     required this.passwordRotationRecoveryFailed,
+    this.swapEnabledOverrideCachedForRelease = false,
     this.biometricUnlockEnabled = false,
     this.failureKind,
     this.failureMessage,
@@ -68,6 +72,7 @@ class AppBootstrapState {
   final RpcEndpointConfig rpcEndpointConfig;
   final ThemeMode themeMode;
   final bool privacyModeEnabled;
+  final bool swapEnabledOverrideCachedForRelease;
 
   /// Whether biometric unlock was enabled at startup, read synchronously from
   /// secure storage. The unlock screen uses this to paint the biometric
@@ -219,6 +224,8 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     await _seedNativeRpcEndpointMirror(rpcEndpointConfig);
     final themeMode = await _readThemeMode(storage);
     final privacyModeEnabled = await _readPrivacyModeEnabled(storage);
+    final swapEnabledOverrideCachedForRelease =
+        await _readSwapEnabledOverrideCachedForRelease();
     final biometricUnlockEnabled = await _readBiometricUnlockEnabled(storage);
     final isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;
@@ -316,6 +323,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       rpcEndpointConfig: rpcEndpointConfig,
       themeMode: themeMode,
       privacyModeEnabled: privacyModeEnabled,
+      swapEnabledOverrideCachedForRelease: swapEnabledOverrideCachedForRelease,
       biometricUnlockEnabled: biometricUnlockEnabled,
       isPasswordConfigured: isPasswordConfigured,
       isUnlocked: isUnlocked,
@@ -471,6 +479,17 @@ Future<bool> _readBiometricUnlockEnabled(AppSecureStore storage) async {
     rethrow;
   } catch (e) {
     log('bootstrap: failed to read biometric unlock flag: $e');
+    return false;
+  }
+}
+
+Future<bool> _readSwapEnabledOverrideCachedForRelease() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(swapEnabledOverrideStorageKey(kVizorReleaseVersion)) ??
+        false;
+  } catch (e) {
+    log('bootstrap: failed to read swap override cache: $e');
     return false;
   }
 }

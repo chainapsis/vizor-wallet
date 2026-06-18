@@ -188,11 +188,13 @@ Future<void> runZcashWalletApp() async {
 final _routerProvider = Provider<GoRouter>((ref) {
   final bootstrap = ref.watch(appBootstrapProvider);
   final refresh = ref.watch(routerRefreshProvider);
-  final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
   ref.listen(walletProvider, (_, _) {
     refresh.requestRefresh();
   });
   ref.listen(appSecurityProvider, (_, _) {
+    refresh.requestRefresh();
+  });
+  ref.listen(swapFeatureEnabledProvider, (_, _) {
     refresh.requestRefresh();
   });
   log('router: initialized');
@@ -200,12 +202,8 @@ final _routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: bootstrap.initialLocation,
     refreshListenable: refresh,
-    redirect: (context, state) => appRedirect(
-      ref: ref,
-      bootstrap: bootstrap,
-      swapFeatureEnabled: swapFeatureEnabled,
-      state: state,
-    ),
+    redirect: (context, state) =>
+        appRedirect(ref: ref, bootstrap: bootstrap, state: state),
     // The mobile tree only carries the routes that exist on mobile so
     // far; anything else (desktop-only paths, stale deep links) falls
     // back to home instead of the error screen.
@@ -225,7 +223,6 @@ final _routerProvider = Provider<GoRouter>((ref) {
               ),
               ...mobileOnboardingRoutes(),
             ],
-            swapFeatureEnabled: swapFeatureEnabled,
           )
         : [
             ...appAuthRoutes(
@@ -234,7 +231,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
               unlockScreen: const UnlockScreen(),
             ),
             ...appDesktopOnboardingRoutes(ref),
-            ..._desktopRoutes(swapFeatureEnabled),
+            ..._desktopRoutes(),
           ],
   );
 });
@@ -245,7 +242,6 @@ final _routerProvider = Provider<GoRouter>((ref) {
 String? appRedirect({
   required Ref ref,
   required AppBootstrapState bootstrap,
-  required bool swapFeatureEnabled,
   required GoRouterState state,
 }) {
   final walletAsync = ref.read(walletProvider);
@@ -279,6 +275,7 @@ String? appRedirect({
   final isSwap =
       state.matchedLocation.startsWith('/swap') ||
       state.matchedLocation.startsWith('/activity/swap');
+  final swapFeatureEnabled = ref.read(swapFeatureEnabledProvider);
 
   log(
     'router redirect: location=${state.matchedLocation}, hasWallet=$hasWallet, '
@@ -639,7 +636,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
 ];
 
 /// Main application routes for the desktop (large-form-factor) tree.
-List<RouteBase> _desktopRoutes(bool swapFeatureEnabled) => [
+List<RouteBase> _desktopRoutes() => [
   GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
   GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
   GoRoute(path: '/address-book', builder: (_, _) => const AddressBookScreen()),
@@ -694,16 +691,8 @@ List<RouteBase> _desktopRoutes(bool swapFeatureEnabled) => [
       return SendScreen(prefill: extra is SendPrefillArgs ? extra : null);
     },
   ),
-  GoRoute(
-    path: '/swap',
-    redirect: (_, _) => swapFeatureEnabled ? null : '/home',
-    builder: (_, _) => const SwapScreen(),
-  ),
-  GoRoute(
-    path: '/swap/review',
-    redirect: (_, _) => swapFeatureEnabled ? null : '/home',
-    builder: (_, _) => const SwapReviewScreen(),
-  ),
+  GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+  GoRoute(path: '/swap/review', builder: (_, _) => const SwapReviewScreen()),
   GoRoute(
     path: '/send/review',
     builder: (_, state) {

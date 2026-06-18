@@ -72,10 +72,7 @@ Widget _app({_MobileDelayedQuoteSwapProvider? swapProvider}) => ProviderScope(
   child: MaterialApp.router(
     routerConfig: GoRouter(
       initialLocation: '/home',
-      routes: buildMobileRoutes(
-        entryRoutes: const [],
-        swapFeatureEnabled: true,
-      ),
+      routes: buildMobileRoutes(entryRoutes: const []),
     ),
     builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
   ),
