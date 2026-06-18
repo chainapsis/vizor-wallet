@@ -16,7 +16,6 @@ class ImportBirthdayCalendarOverlay extends StatelessWidget {
     required this.lastDate,
     required this.onDismiss,
     required this.onDateSelected,
-    this.today,
     super.key,
   });
 
@@ -24,10 +23,6 @@ class ImportBirthdayCalendarOverlay extends StatelessWidget {
   final DateTime? selectedDate;
   final DateTime firstDate;
   final DateTime lastDate;
-
-  /// The date the "today" chip marks; defaults to the wall clock. Injectable
-  /// so goldens stay deterministic.
-  final DateTime? today;
   final VoidCallback onDismiss;
   final ValueChanged<DateTime> onDateSelected;
 
@@ -39,7 +34,6 @@ class ImportBirthdayCalendarOverlay extends StatelessWidget {
       child: ImportBirthdayCalendarPanel(
         initialMonth: initialMonth,
         selectedDate: selectedDate,
-        today: today,
         firstDate: firstDate,
         lastDate: lastDate,
         onDateSelected: onDateSelected,
@@ -57,13 +51,11 @@ class ImportBirthdayCalendarPanel extends StatefulWidget {
     required this.firstDate,
     required this.lastDate,
     required this.onDateSelected,
-    this.today,
     super.key,
   });
 
   final DateTime initialMonth;
   final DateTime? selectedDate;
-  final DateTime? today;
   final DateTime firstDate;
   final DateTime lastDate;
   final ValueChanged<DateTime> onDateSelected;
@@ -88,7 +80,6 @@ class _ImportBirthdayCalendarPanelState
 
   late DateTime _visibleMonth;
   late int _visibleYearPageStart;
-  late final DateTime _today = _dateOnly(widget.today ?? DateTime.now());
   _CalendarSelectionMode _selectionMode = _CalendarSelectionMode.day;
 
   @override
@@ -264,7 +255,6 @@ class _ImportBirthdayCalendarPanelState
                       _DayGrid(
                         visibleMonth: _visibleMonth,
                         selectedDate: widget.selectedDate,
-                        today: _today,
                         firstDate: widget.firstDate,
                         lastDate: widget.lastDate,
                         cellSize: _cellSize,
@@ -639,7 +629,6 @@ class _DayGrid extends StatelessWidget {
   const _DayGrid({
     required this.visibleMonth,
     required this.selectedDate,
-    required this.today,
     required this.firstDate,
     required this.lastDate,
     required this.cellSize,
@@ -648,7 +637,6 @@ class _DayGrid extends StatelessWidget {
 
   final DateTime visibleMonth;
   final DateTime? selectedDate;
-  final DateTime today;
   final DateTime firstDate;
   final DateTime lastDate;
   final double cellSize;
@@ -674,7 +662,6 @@ class _DayGrid extends StatelessWidget {
               date: firstCellDate.add(Duration(days: index)),
               visibleMonth: visibleMonth,
               selectedDate: selectedDate,
-              today: today,
               firstDate: firstDate,
               lastDate: lastDate,
               size: cellSize,
@@ -691,7 +678,6 @@ class _DayCell extends StatelessWidget {
     required this.date,
     required this.visibleMonth,
     required this.selectedDate,
-    required this.today,
     required this.firstDate,
     required this.lastDate,
     required this.size,
@@ -701,7 +687,6 @@ class _DayCell extends StatelessWidget {
   final DateTime date;
   final DateTime visibleMonth;
   final DateTime? selectedDate;
-  final DateTime today;
   final DateTime firstDate;
   final DateTime lastDate;
   final double size;
@@ -734,23 +719,6 @@ class _DayCell extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: colors.background.inverse,
-            shape: BoxShape.circle,
-          ),
-          child: SizedBox(width: size, height: size, child: child),
-        ),
-      );
-    } else if (currentMonth &&
-        _isSameDate(date, today) &&
-        kAppFormFactor != AppFormFactor.mobile) {
-      // Desktop-only "today" chip — the mobile wallet-birthday calendar
-      // (mobile-ui-vibe-coding-polishing-2) intentionally has no today marker.
-      // Figma today chip (June 16 in 4052:96540): light gray filled circle,
-      // measured ≈#ececec on the white panel → background.raised
-      // (#EBEBEB light / p150 dark); the day number keeps the accent color.
-      child = Center(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: colors.background.raised,
             shape: BoxShape.circle,
           ),
           child: SizedBox(width: size, height: size, child: child),
