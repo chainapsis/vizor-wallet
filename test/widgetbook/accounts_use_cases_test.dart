@@ -87,6 +87,130 @@ void main() {
     expect(find.text('Privacy Policy'), findsOneWidget);
     expect(find.text('Welcome'), findsOneWidget);
   });
+
+  testWidgets('mobile accounts use case renders the mobile screen', (
+    tester,
+  ) async {
+    await _pumpMobileAccountsUseCase(tester, buildMobileAccountsUseCase);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Accounts'), findsOneWidget);
+    expect(find.text('Current'), findsOneWidget);
+    expect(find.text('Other'), findsOneWidget);
+    expect(find.text('Add account'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_accounts_menu_preview-account-2')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Copy address'), findsOneWidget);
+    expect(find.text('Send ZEC'), findsOneWidget);
+    expect(find.text('Edit account'), findsOneWidget);
+    expect(find.text('Remove account'), findsOneWidget);
+  });
+
+  testWidgets('mobile accounts menu opens the edit sheet', (tester) async {
+    await _pumpMobileAccountsUseCase(tester, buildMobileAccountsUseCase);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_accounts_menu_preview-account-2')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_account_menu_edit')));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Account name'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_account_edit_save')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('mobile accounts menu opens the remove sheet', (tester) async {
+    await _pumpMobileAccountsUseCase(tester, buildMobileAccountsUseCase);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_accounts_menu_preview-account-2')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_account_menu_remove')));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining("can't be reverted"), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_account_remove_confirm')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('mobile accounts modal use cases render edit and remove states', (
+    tester,
+  ) async {
+    await _pumpMobileAccountsUseCase(
+      tester,
+      buildMobileAccountsEditAccountUseCase,
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text('Account name'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_account_edit_save')),
+      findsOneWidget,
+    );
+
+    await _pumpMobileAccountsUseCase(
+      tester,
+      buildMobileAccountsRemoveAccountUseCase,
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining("can't be reverted"), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_account_remove_confirm')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('mobile home use cases render target states', (tester) async {
+    await _pumpMobileHomeUseCase(tester, buildMobileHomeDefaultUseCase);
+    _expectNoFlutterException(tester);
+    expect(find.text('Shielded balance'), findsOneWidget);
+    expect(find.text('Send'), findsOneWidget);
+    expect(find.text('Receive'), findsOneWidget);
+
+    await _pumpMobileHomeUseCase(tester, buildMobileHomeNoBalanceUseCase);
+    _expectNoFlutterException(tester);
+    expect(find.text('Receive your first ZEC'), findsOneWidget);
+
+    await _pumpMobileHomeUseCase(tester, buildMobileHomeImportingUseCase);
+    _expectNoFlutterException(tester);
+    expect(find.text('34%'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_home_importing_background')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('mobile home accounts modal use case opens the switcher sheet', (
+    tester,
+  ) async {
+    await _pumpMobileHomeUseCase(tester, buildMobileHomeAccountsModalUseCase);
+
+    _expectNoFlutterException(tester);
+    expect(find.text('Other accounts'), findsOneWidget);
+    expect(find.text('Manage accounts'), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile_accounts_add')), findsOneWidget);
+  });
+}
+
+void _expectNoFlutterException(WidgetTester tester) {
+  final exception = tester.takeException();
+  if (exception is FlutterError) {
+    fail(exception.toStringDeep());
+  }
+  expect(exception, isNull);
 }
 
 Future<void> _pumpAccountsUseCase(
@@ -113,6 +237,46 @@ Future<void> _pumpAccountsUseCase(
           ),
         ),
       ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+Future<void> _pumpMobileAccountsUseCase(
+  WidgetTester tester,
+  WidgetBuilder builder,
+) async {
+  tester.view.physicalSize = const Size(393, 852);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
+  await tester.pumpWidget(
+    MaterialApp(
+      key: UniqueKey(),
+      builder: (context, child) =>
+          AppTheme(data: AppThemeData.light, child: child!),
+      home: Builder(builder: builder),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+Future<void> _pumpMobileHomeUseCase(
+  WidgetTester tester,
+  WidgetBuilder builder,
+) async {
+  tester.view.physicalSize = const Size(393, 852);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
+  await tester.pumpWidget(
+    MaterialApp(
+      key: UniqueKey(),
+      builder: (context, child) =>
+          AppTheme(data: AppThemeData.dark, child: child!),
+      home: Builder(builder: builder),
     ),
   );
   await tester.pumpAndSettle();

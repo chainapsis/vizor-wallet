@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,7 +29,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../models/send_prefill_args.dart';
-import 'send_review_screen.dart';
+import '../services/send_flow.dart';
 
 final sendWalletDbPathProvider = Provider<Future<String> Function()>((ref) {
   return getWalletDbPath;
@@ -152,14 +151,6 @@ class _AddressTextEditingController extends TextEditingController {
   }
 }
 
-String _newSendFlowId() {
-  final random = math.Random.secure();
-  return List<int>.generate(
-    16,
-    (_) => random.nextInt(256),
-  ).map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
-}
-
 class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _singleLineFieldOverlayReserve = 20.0;
   static const _singleLineFieldGap = AppSpacing.xs;
@@ -174,7 +165,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   final _amountFocusNode = FocusNode();
   final _memoFocusNode = FocusNode();
   final _memoScrollController = ScrollController();
-  late final String _sendFlowId = _newSendFlowId();
+  late final String _sendFlowId = newSendFlowId();
   bool _isSending = false;
   bool _messageExpanded = false;
   bool _contactPickerOpen = false;
@@ -388,8 +379,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       '$_insufficientBalanceText to cover fee';
   String get _insufficientBalanceIncludingFeeText =>
       '$_insufficientBalanceText including fee';
-  String get _insufficientBalanceToCoverAmountAndFeeText =>
-      '$_insufficientBalanceText to cover amount and fee.';
   String _insufficientBalanceWithFeeText(String feeText) =>
       '$_insufficientBalanceText (fee: $feeText)';
   bool get _isHardwareTexSend =>
@@ -620,33 +609,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   bool get _isAmountValid => _amountError == null;
 
-  String _friendlyError(String raw) {
-    final lower = raw.toLowerCase();
-    if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
-      return _insufficientBalanceToCoverAmountAndFeeText;
-    }
-    if (lower.contains('grpc connect failed') ||
-        lower.contains('connection refused') ||
-        lower.contains('dns error') ||
-        lower.contains('tls error')) {
-      return 'Network error. Check your connection and try again.';
-    }
-    // Partial broadcast must be checked before generic "broadcast rejected"
-    if (lower.contains('broadcast failed after') &&
-        lower.contains('txs sent')) {
-      return 'Some parts of this transaction were sent. Open Activity to see '
-          'what went through before you try again.';
-    }
-    if (lower.contains('broadcast rejected')) {
-      return 'The network rejected this transaction. Try again.';
-    }
-    if (lower.contains('proposal not found') ||
-        lower.contains('send flow mismatch')) {
-      return 'Transaction expired before it could be sent. Try again.';
-    }
-    return 'Send failed. Try again.';
-  }
-
   Future<void> _openReview() async {
     setState(() {
       _isSending = true;
@@ -710,9 +672,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       }
 
       final memo = _effectiveMemo;
-      final dbPath = await ref.read(sendWalletDbPathProvider).call();
-      final endpoint = ref.read(rpcEndpointProvider);
-      if (!mounted) return;
 
       // Step 1: Propose transfer
       log('Send: proposing transfer');
@@ -724,54 +683,38 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         });
         return;
       }
-      final proposal = await rust_sync.proposeSend(
-        dbPath: dbPath,
-        network: endpoint.networkName,
+      final reviewArgs = await proposeSendTransfer(
+        ref: ref,
+        loadDbPath: ref.read(sendWalletDbPathProvider),
         accountUuid: accountUuid,
         sendFlowId: _sendFlowId,
-        toAddress: address,
+        address: address,
+        addressType: _addressType,
         amountZatoshi: amountZatoshi,
         memo: memo.isNotEmpty ? memo : null,
       );
-      activeProposalId = proposal.proposalId;
+      activeProposalId = reviewArgs.proposalId;
 
       if (!mounted) {
         return;
       }
       setState(() => _isSending = false);
       pushedReview = true;
-      await context.push(
-        '/send/review',
-        extra: SendReviewArgs(
-          proposalId: proposal.proposalId,
-          sendFlowId: _sendFlowId,
-          proposalAccountUuid: accountUuid,
-          address: address,
-          addressType: _addressType,
-          amountZatoshi: amountZatoshi,
-          feeZatoshi: proposal.feeZatoshi,
-          memo: memo.isNotEmpty ? memo : null,
-          needsSaplingParams: proposal.needsSaplingParams,
-        ),
-      );
+      await context.push('/send/review', extra: reviewArgs);
     } catch (e) {
       log('Send: review preparation error: $e');
       if (!mounted) return;
       setState(() {
-        _error = _friendlyError(e.toString());
+        _error = friendlyProposeSendError(e.toString());
         _isSending = false;
       });
     } finally {
       if (activeProposalId != null && !pushedReview) {
-        try {
-          await rust_sync.discardProposal(
-            proposalId: activeProposalId,
-            sendFlowId: _sendFlowId,
-          );
-          log('Send: released proposal $activeProposalId (review not opened)');
-        } catch (e) {
-          log('Send: discardProposal cleanup failed (non-critical): $e');
-        }
+        await discardSendProposal(
+          proposalId: activeProposalId,
+          sendFlowId: _sendFlowId,
+          logContext: 'Send(review not opened)',
+        );
       }
     }
   }

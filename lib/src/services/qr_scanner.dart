@@ -158,6 +158,7 @@ class AnimatedUrScannerView extends StatefulWidget {
     required this.onComplete,
     this.onProgress,
     this.onDecodeError,
+    this.errorBuilder,
     this.controller,
     this.facing,
     this.scanSessionResetToken,
@@ -168,6 +169,7 @@ class AnimatedUrScannerView extends StatefulWidget {
   final ValueChanged<ScanResult> onComplete;
   final ValueChanged<int>? onProgress;
   final ValueChanged<Object>? onDecodeError;
+  final Widget Function(BuildContext, MobileScannerException)? errorBuilder;
   final MobileScannerController? controller;
   final CameraFacing? facing;
   final Object? scanSessionResetToken;
@@ -294,6 +296,7 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
         return MobileScanner(
           controller: _controller,
           onDetect: _onDetect,
+          errorBuilder: widget.errorBuilder,
           scanWindow: QrScanner.scanWindowFor(constraints.biggest),
           scanWindowUpdateThreshold: QrScanner.scanWindowUpdateThreshold,
         );

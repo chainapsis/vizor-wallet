@@ -1,0 +1,124 @@
+fastlane_version "2.220.0"
+
+default_platform(:android)
+
+require "json"
+require "tempfile"
+require_relative "../common/release"
+
+ANDROID_PACKAGE_NAME = "com.keplr.vizor".freeze
+DEFAULT_ANDROID_TRACK = "internal".freeze
+DEFAULT_ANDROID_RELEASE_STATUS = "completed".freeze
+ANDROID_RELEASE_STATUSES = ["draft", "inProgress", "completed", "halted"].freeze
+
+def shell_escape(value)
+  VizorRelease.shell_escape(value)
+end
+
+def workspace_root
+  VizorRelease.workspace_root
+end
+
+def android_release_tag
+  tag = ENV["RELEASE_TAG"].to_s.strip
+  return tag unless tag.empty?
+
+  ref_type = ENV.fetch("GITHUB_REF_TYPE")
+  UI.user_error!("RELEASE_TAG is required when GITHUB_REF_TYPE is not 'tag'") unless ref_type == "tag"
+  ENV.fetch("GITHUB_REF_NAME")
+end
+
+def android_release_metadata
+  tag = android_release_tag
+  tag_info = VizorRelease.release_tag_info(tag)
+
+  unless ENV["GITHUB_RELEASE_PRERELEASE"].to_s.strip.empty?
+    env_prerelease = VizorRelease.release_boolean_env("GITHUB_RELEASE_PRERELEASE")
+    UI.user_error!("GITHUB_RELEASE_PRERELEASE=#{env_prerelease} does not match release tag #{tag}") unless env_prerelease == tag_info.fetch(:is_prerelease)
+  end
+
+  {
+    tag: tag,
+    version: tag_info.fetch(:base_version),
+    asset_version: tag_info.fetch(:asset_version),
+    is_prerelease: tag_info.fetch(:is_prerelease),
+    build_number: VizorRelease.release_build_number,
+    aab_path: File.join(workspace_root, "build", "app", "outputs", "bundle", "release", "app-release.aab")
+  }
+end
+
+def android_track
+  track = ENV["ANDROID_TRACK"].to_s.strip
+  track.empty? ? DEFAULT_ANDROID_TRACK : track
+end
+
+def android_release_status
+  status = ENV["ANDROID_RELEASE_STATUS"].to_s.strip
+  status = DEFAULT_ANDROID_RELEASE_STATUS if status.empty?
+  unless ANDROID_RELEASE_STATUSES.include?(status)
+    UI.user_error!("Unsupported ANDROID_RELEASE_STATUS=#{status}. Expected one of: #{ANDROID_RELEASE_STATUSES.join(", ")}")
+  end
+  status
+end
+
+def with_google_play_json_key
+  raw_json = ENV.fetch("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON").to_s
+  json = JSON.parse(raw_json)
+
+  Tempfile.create(["google-play-service-account", ".json"]) do |file|
+    file.write(JSON.pretty_generate(json))
+    file.flush
+    yield(file.path)
+  end
+end
+
+platform :android do
+  desc "Build Android release AAB for Google Play"
+  lane :build do
+    metadata = android_release_metadata
+    coingecko_price_base_url = ENV.fetch("VIZOR_COINGECKO_PRICE_BASE_URL", "https://api.coingecko.com/api/v3")
+
+    sh(
+      [
+        "ANDROID_REQUIRE_RELEASE_SIGNING=true",
+        "fvm flutter build appbundle",
+        "--release",
+        # Store builds must compile the mobile token set — release
+        # builds have no form-factor guard (see AGENTS.md).
+        "--dart-define=VIZOR_FORM_FACTOR=mobile",
+        "--dart-define=#{shell_escape("VIZOR_RELEASE_VERSION=#{metadata.fetch(:asset_version)}")}",
+        "--dart-define=#{shell_escape("VIZOR_COINGECKO_PRICE_BASE_URL=#{coingecko_price_base_url}")}",
+        "--build-name", shell_escape(metadata.fetch(:version)),
+        "--build-number", shell_escape(metadata.fetch(:build_number))
+      ].join(" ")
+    )
+  end
+
+  desc "Upload Android AAB to Google Play"
+  lane :upload do
+    metadata = android_release_metadata
+    aab_path = ENV["ANDROID_AAB_PATH"].to_s.strip
+    aab_path = metadata.fetch(:aab_path) if aab_path.empty?
+    UI.user_error!("Missing Android AAB at #{aab_path}") unless File.file?(aab_path)
+
+    with_google_play_json_key do |json_key_path|
+      upload_to_play_store(
+        package_name: ANDROID_PACKAGE_NAME,
+        json_key: json_key_path,
+        aab: aab_path,
+        track: android_track,
+        release_status: android_release_status,
+        skip_upload_metadata: true,
+        skip_upload_changelogs: true,
+        skip_upload_images: true,
+        skip_upload_screenshots: true
+      )
+    end
+  end
+
+  desc "Build and upload Android release to Google Play"
+  lane :release do
+    build
+    upload
+  end
+end

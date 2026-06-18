@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -39,6 +40,7 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
   bool _loadingCameras = false;
   bool _switchingCamera = false;
   bool _completed = false;
+  bool _restartCameraOnResume = false;
   int _scanResetToken = 0;
   String? _error;
 
@@ -58,6 +60,12 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
+    // Desktop restores the prior retry-on-any-resume behavior; mobile only
+    // retries after returning from the OS camera-settings trip.
+    if (kAppFormFactor == AppFormFactor.mobile && !_restartCameraOnResume) {
+      return;
+    }
+    _restartCameraOnResume = false;
     unawaited(_retryCameraStart(openSettingsOnDenied: false));
   }
 
@@ -150,7 +158,11 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
   }
 
   Future<void> _retryCameraStart({required bool openSettingsOnDenied}) async {
-    if (!QrScanner.isAvailable || _controller.value.isStarting) return;
+    if (!QrScanner.isAvailable ||
+        _controller.value.isStarting ||
+        _controller.value.isRunning) {
+      return;
+    }
 
     try {
       await _controller.start();
@@ -164,8 +176,14 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
       return;
     }
 
+    await _openCameraSettings();
+  }
+
+  Future<void> _openCameraSettings() async {
+    _restartCameraOnResume = true;
     final opened = await CameraPermissionSettings.open();
     if (!opened) {
+      _restartCameraOnResume = false;
       log('AddressQrScanModal: failed to open camera permission settings');
     }
   }
@@ -295,37 +313,45 @@ class AddressQrScanModalContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    // Inline AppModalCard shell: the QR modal needs a fixed 440 height and a
-    // size-asserted key, which the shared AppModalCard wrapper cannot expose,
-    // so the card decoration (base surface, large radius, appModalShadow) is
-    // applied directly here to stay in sync with the shared modal pattern.
+    // On mobile the swap modal route wraps this in the shared
+    // MobileModalCard (base surface, radius 32, bottom-anchored); the
+    // camera viewport is fixed-size, so the card hugs it. Desktop keeps the
+    // inline AppModalCard shell because this QR modal needs a fixed 440
+    // height and a size-asserted key.
+    final isMobile = kAppFormFactor == AppFormFactor.mobile;
     return Container(
       key: const ValueKey('address_scan_modal'),
-      width: width,
-      height: height,
-      clipBehavior: Clip.antiAlias,
+      width: isMobile ? double.infinity : width,
+      height: isMobile ? null : height,
+      clipBehavior: isMobile ? Clip.none : Clip.antiAlias,
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
         AppSpacing.md,
         AppSpacing.sm,
         AppSpacing.sm,
       ),
-      decoration: BoxDecoration(
-        color: colors.background.base,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: appModalShadow,
-      ),
+      decoration: isMobile
+          ? null
+          : BoxDecoration(
+              color: colors.background.base,
+              borderRadius: BorderRadius.circular(AppRadii.large),
+              boxShadow: appModalShadow,
+            ),
       child: Column(
+        mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const _AddressQrScanTitle(),
           const SizedBox(height: AppSpacing.sm),
-          Expanded(
+          _scanExpand(
+            isMobile,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
               child: Column(
+                mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
                 children: [
-                  Expanded(
+                  _scanExpand(
+                    isMobile,
                     child: Center(
                       child: _AddressQrCameraModal(
                         status: status,
@@ -367,6 +393,11 @@ class AddressQrScanModalContent extends StatelessWidget {
     );
   }
 }
+
+/// Desktop fills the fixed-height card ([Expanded]); mobile lets the card
+/// hug the fixed-size camera viewport.
+Widget _scanExpand(bool mobile, {required Widget child}) =>
+    mobile ? child : Expanded(child: child);
 
 class _AddressQrScanTitle extends StatelessWidget {
   const _AddressQrScanTitle();

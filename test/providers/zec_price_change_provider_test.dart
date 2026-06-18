@@ -94,7 +94,7 @@ void main() {
       return container;
     }
 
-    test('exposes the fetched percentage after the first tick', () async {
+    test('exposes the fetched market data after the first tick', () async {
       final source = _FakeSource(
         const ZecMarketData(usdPrice: 33.45, change24hPct: -0.26),
       );
@@ -119,7 +119,7 @@ void main() {
       expect(source.fetchCount, 1);
     });
 
-    test('does not fetch while the swap feature is disabled', () async {
+    test('does not fetch while market-price UI is disabled', () async {
       final source = _FakeSource(
         const ZecMarketData(usdPrice: 33.45, change24hPct: 5.0),
       );

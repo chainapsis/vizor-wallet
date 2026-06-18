@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
@@ -86,18 +87,31 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
         ? colors.border.medium
         : colors.border.medium.withValues(alpha: 0);
 
+    // On mobile the swap modal route wraps this in the shared
+    // MobileModalCard (base surface, radius 32, bottom-anchored), so the
+    // surface is full-width, draws no card, and the list scrolls within a
+    // bounded height that the card hugs. Desktop keeps the fixed card.
+    final isMobile = kAppFormFactor == AppFormFactor.mobile;
+
     return Container(
       key: const ValueKey('swap_external_asset_menu'),
-      width: 312,
-      height: 440,
-      clipBehavior: Clip.antiAlias,
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-      decoration: BoxDecoration(
-        color: colors.background.base,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: appModalShadow,
-      ),
+      width: isMobile ? double.infinity : 312,
+      height: isMobile ? null : 440,
+      // Container requires a decoration to clip; the mobile card (with no
+      // decoration here) is clipped by the MobileModalCard surface.
+      clipBehavior: isMobile ? Clip.none : Clip.antiAlias,
+      // Desktop fills to the card edge (bottom 0); mobile hugs, so the
+      // content needs its own bottom breathing room.
+      padding: EdgeInsets.fromLTRB(16, 24, 16, isMobile ? AppSpacing.md : 0),
+      decoration: isMobile
+          ? null
+          : BoxDecoration(
+              color: colors.background.base,
+              borderRadius: BorderRadius.circular(AppRadii.large),
+              boxShadow: appModalShadow,
+            ),
       child: Column(
+        mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
@@ -172,7 +186,9 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
             ),
           ),
           const SizedBox(height: 8),
-          Expanded(
+          _swapAssetListArea(
+            isMobile,
+            bounded: assets.isNotEmpty,
             child: assets.isEmpty
                 ? Center(
                     child: SizedBox(
@@ -207,6 +223,7 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
                         child: ListView.separated(
                           controller: _scrollController,
                           padding: EdgeInsets.zero,
+                          shrinkWrap: isMobile,
                           itemCount: assets.length,
                           separatorBuilder: (_, _) =>
                               const SizedBox(height: AppSpacing.xs),
@@ -227,6 +244,26 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
       ),
     );
   }
+}
+
+/// Desktop fills the fixed-height card with the list ([Expanded]); mobile
+/// lets the card hug its content, so a populated list scrolls within a
+/// bounded height ([ConstrainedBox] + a shrink-wrapped list), matching the
+/// other mobile list sheets. The empty state ([bounded] false) hugs its
+/// text instead of reserving the full bound.
+Widget _swapAssetListArea(
+  bool mobile, {
+  bool bounded = true,
+  required Widget child,
+}) {
+  if (!mobile) return Expanded(child: child);
+  if (bounded) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 420),
+      child: child,
+    );
+  }
+  return child;
 }
 
 class _AssetMenuRow extends StatelessWidget {

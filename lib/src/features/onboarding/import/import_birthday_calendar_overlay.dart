@@ -1,12 +1,14 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart' show appModalShadow;
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 
-class ImportBirthdayCalendarOverlay extends StatefulWidget {
+class ImportBirthdayCalendarOverlay extends StatelessWidget {
   const ImportBirthdayCalendarOverlay({
     required this.initialMonth,
     required this.selectedDate,
@@ -14,7 +16,6 @@ class ImportBirthdayCalendarOverlay extends StatefulWidget {
     required this.lastDate,
     required this.onDismiss,
     required this.onDateSelected,
-    this.today,
     super.key,
   });
 
@@ -22,30 +23,63 @@ class ImportBirthdayCalendarOverlay extends StatefulWidget {
   final DateTime? selectedDate;
   final DateTime firstDate;
   final DateTime lastDate;
-
-  /// The date the "today" chip marks; defaults to the wall clock. Injectable
-  /// so goldens stay deterministic.
-  final DateTime? today;
   final VoidCallback onDismiss;
   final ValueChanged<DateTime> onDateSelected;
 
   @override
-  State<ImportBirthdayCalendarOverlay> createState() =>
-      _ImportBirthdayCalendarOverlayState();
+  Widget build(BuildContext context) {
+    return AppPaneModalOverlay(
+      borderRadius: BorderRadius.circular(AppDesktopSidebarSurface.glassRadius),
+      onDismiss: onDismiss,
+      child: ImportBirthdayCalendarPanel(
+        initialMonth: initialMonth,
+        selectedDate: selectedDate,
+        firstDate: firstDate,
+        lastDate: lastDate,
+        onDateSelected: onDateSelected,
+      ),
+    );
+  }
+}
+
+/// The calendar body itself (month/year navigation + day grid), shared
+/// by the desktop pane overlay above and the mobile birthday sheet.
+class ImportBirthdayCalendarPanel extends StatefulWidget {
+  const ImportBirthdayCalendarPanel({
+    required this.initialMonth,
+    required this.selectedDate,
+    required this.firstDate,
+    required this.lastDate,
+    required this.onDateSelected,
+    super.key,
+  });
+
+  final DateTime initialMonth;
+  final DateTime? selectedDate;
+  final DateTime firstDate;
+  final DateTime lastDate;
+  final ValueChanged<DateTime> onDateSelected;
+
+  @override
+  State<ImportBirthdayCalendarPanel> createState() =>
+      _ImportBirthdayCalendarPanelState();
 }
 
 enum _CalendarSelectionMode { day, month, year }
 
-class _ImportBirthdayCalendarOverlayState
-    extends State<ImportBirthdayCalendarOverlay> {
+class _ImportBirthdayCalendarPanelState
+    extends State<ImportBirthdayCalendarPanel> {
   static const _panelWidth = 312.0;
   static const _calendarWidth = 280.0;
   static const _cellSize = 40.0;
+  // Weekday row + the fixed six-week day grid. Month/year grids center
+  // within the same box so mode switches and paging never reflow the
+  // panel (VZR-75).
+  static const _modeAreaHeight = _cellSize * 7;
   static const _weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   late DateTime _visibleMonth;
   late int _visibleYearPageStart;
-  late final DateTime _today = _dateOnly(widget.today ?? DateTime.now());
   _CalendarSelectionMode _selectionMode = _CalendarSelectionMode.day;
 
   @override
@@ -171,74 +205,65 @@ class _ImportBirthdayCalendarOverlayState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return AppPaneModalOverlay(
-      borderRadius: BorderRadius.circular(AppDesktopSidebarSurface.glassRadius),
-      onDismiss: widget.onDismiss,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colors.surface.input,
-          borderRadius: BorderRadius.circular(AppRadii.large),
-          boxShadow: _calendarPanelShadow(context),
+    final isMobile = kAppFormFactor == AppFormFactor.mobile;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surface.input,
+        borderRadius: BorderRadius.circular(
+          isMobile ? AppRadii.medium : AppRadii.large,
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.sm),
-          child: SizedBox(
-            width: _panelWidth - AppSpacing.sm * 2,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  height: 32,
-                  child: Row(
+        boxShadow: _calendarPanelShadow(context, mobile: isMobile),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: SizedBox(
+          width: _panelWidth - AppSpacing.sm * 2,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                height: 32,
+                child: Row(
+                  children: [
+                    _CalendarTitle(label: _titleLabel, onTap: _handleTitleTap),
+                    const Spacer(),
+                    _CalendarNavButton(
+                      iconName: AppIcons.chevronBackward,
+                      enabled: _canGoPrevious,
+                      onTap: _showPreviousPeriod,
+                    ),
+                    _CalendarNavButton(
+                      iconName: AppIcons.chevronForward,
+                      enabled: _canGoNext,
+                      onTap: _showNextPeriod,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              if (isMobile)
+                const AppDecorativeDivider(width: _calendarWidth)
+              else
+                const _CalendarDivider(width: _calendarWidth),
+              const SizedBox(height: AppSpacing.xs),
+              SizedBox(
+                height: _modeAreaHeight,
+                child: switch (_selectionMode) {
+                  _CalendarSelectionMode.day => Column(
                     children: [
-                      _CalendarTitle(
-                        label: _titleLabel,
-                        onTap: _handleTitleTap,
-                      ),
-                      const Spacer(),
-                      _CalendarNavButton(
-                        iconName: AppIcons.chevronBackward,
-                        enabled: _canGoPrevious,
-                        onTap: _showPreviousPeriod,
-                      ),
-                      _CalendarNavButton(
-                        iconName: AppIcons.chevronForward,
-                        enabled: _canGoNext,
-                        onTap: _showNextPeriod,
+                      _WeekdayRow(weekdays: _weekdays),
+                      _DayGrid(
+                        visibleMonth: _visibleMonth,
+                        selectedDate: widget.selectedDate,
+                        firstDate: widget.firstDate,
+                        lastDate: widget.lastDate,
+                        cellSize: _cellSize,
+                        onDateSelected: widget.onDateSelected,
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                // Current `_Divider` component (the ornament divider was the
-                // old onboarding language): 1.5px hairline, border/default,
-                // Figma r12 — a pill at this height.
-                SizedBox(
-                  width: _calendarWidth,
-                  height: 1.5,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: context.colors.border.regular,
-                      borderRadius: BorderRadius.circular(AppRadii.small),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                ...switch (_selectionMode) {
-                  _CalendarSelectionMode.day => [
-                    _WeekdayRow(weekdays: _weekdays),
-                    _DayGrid(
-                      visibleMonth: _visibleMonth,
-                      selectedDate: widget.selectedDate,
-                      today: _today,
-                      firstDate: widget.firstDate,
-                      lastDate: widget.lastDate,
-                      cellSize: _cellSize,
-                      onDateSelected: widget.onDateSelected,
-                    ),
-                  ],
-                  _CalendarSelectionMode.month => [
-                    _MonthGrid(
+                  _CalendarSelectionMode.month => Center(
+                    child: _MonthGrid(
                       visibleYear: _visibleMonth.year,
                       selectedMonth: widget.selectedDate ?? _visibleMonth,
                       firstMonth: _firstMonth,
@@ -246,9 +271,9 @@ class _ImportBirthdayCalendarOverlayState
                       width: _calendarWidth,
                       onMonthSelected: _selectMonth,
                     ),
-                  ],
-                  _CalendarSelectionMode.year => [
-                    _YearGrid(
+                  ),
+                  _CalendarSelectionMode.year => Center(
+                    child: _YearGrid(
                       pageStartYear: _visibleYearPageStart,
                       selectedYear: (widget.selectedDate ?? _visibleMonth).year,
                       firstYear: _firstMonth.year,
@@ -256,11 +281,31 @@ class _ImportBirthdayCalendarOverlayState
                       width: _calendarWidth,
                       onYearSelected: _selectYear,
                     ),
-                  ],
+                  ),
                 },
-              ],
-            ),
+              ),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CalendarDivider extends StatelessWidget {
+  const _CalendarDivider({required this.width});
+
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: 1.5,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: context.colors.border.regular,
+          borderRadius: BorderRadius.circular(AppRadii.small),
         ),
       ),
     );
@@ -348,8 +393,8 @@ class _WeekdayRow extends StatelessWidget {
       children: [
         for (final weekday in weekdays)
           SizedBox(
-            width: _ImportBirthdayCalendarOverlayState._cellSize,
-            height: _ImportBirthdayCalendarOverlayState._cellSize,
+            width: _ImportBirthdayCalendarPanelState._cellSize,
+            height: _ImportBirthdayCalendarPanelState._cellSize,
             child: Center(
               child: Text(
                 weekday,
@@ -584,7 +629,6 @@ class _DayGrid extends StatelessWidget {
   const _DayGrid({
     required this.visibleMonth,
     required this.selectedDate,
-    required this.today,
     required this.firstDate,
     required this.lastDate,
     required this.cellSize,
@@ -593,7 +637,6 @@ class _DayGrid extends StatelessWidget {
 
   final DateTime visibleMonth;
   final DateTime? selectedDate;
-  final DateTime today;
   final DateTime firstDate;
   final DateTime lastDate;
   final double cellSize;
@@ -603,15 +646,11 @@ class _DayGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final firstOfMonth = _monthStart(visibleMonth);
     final leadingDays = firstOfMonth.weekday % DateTime.daysPerWeek;
-    final daysInMonth = DateTime(
-      visibleMonth.year,
-      visibleMonth.month + 1,
-      0,
-    ).day;
-    final minimumCells = leadingDays + daysInMonth;
-    final neededRows = _ceilDiv(minimumCells, DateTime.daysPerWeek);
-    final rowCount = neededRows < 5 ? 5 : neededRows;
-    final cellCount = rowCount * DateTime.daysPerWeek;
+    // Always six weeks: the tallest month layout, so paging between
+    // months never changes the grid height (VZR-75). Trailing cells
+    // render adjacent-month days disabled and muted, as before.
+    const rowCount = 6;
+    const cellCount = rowCount * DateTime.daysPerWeek;
     final firstCellDate = firstOfMonth.subtract(Duration(days: leadingDays));
 
     return SizedBox(
@@ -623,7 +662,6 @@ class _DayGrid extends StatelessWidget {
               date: firstCellDate.add(Duration(days: index)),
               visibleMonth: visibleMonth,
               selectedDate: selectedDate,
-              today: today,
               firstDate: firstDate,
               lastDate: lastDate,
               size: cellSize,
@@ -640,7 +678,6 @@ class _DayCell extends StatelessWidget {
     required this.date,
     required this.visibleMonth,
     required this.selectedDate,
-    required this.today,
     required this.firstDate,
     required this.lastDate,
     required this.size,
@@ -650,7 +687,6 @@ class _DayCell extends StatelessWidget {
   final DateTime date;
   final DateTime visibleMonth;
   final DateTime? selectedDate;
-  final DateTime today;
   final DateTime firstDate;
   final DateTime lastDate;
   final double size;
@@ -688,19 +724,6 @@ class _DayCell extends StatelessWidget {
           child: SizedBox(width: size, height: size, child: child),
         ),
       );
-    } else if (currentMonth && _isSameDate(date, today)) {
-      // Figma today chip (June 16 in 4052:96540): light gray filled circle,
-      // measured ≈#ececec on the white panel → background.raised
-      // (#EBEBEB light / p150 dark); the day number keeps the accent color.
-      child = Center(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: colors.background.raised,
-            shape: BoxShape.circle,
-          ),
-          child: SizedBox(width: size, height: size, child: child),
-        ),
-      );
     }
 
     return MouseRegion(
@@ -719,9 +742,23 @@ class _DayCell extends StatelessWidget {
 // expressible as a `BoxShadow` and is invisible on the white panel, so only
 // the drops are painted. Dark theme keeps the no-shadow behavior (the shadow
 // tokens are fully transparent in dark).
-List<BoxShadow> _calendarPanelShadow(BuildContext context) {
-  if (AppTheme.of(context) == AppThemeData.dark) {
+List<BoxShadow> _calendarPanelShadow(
+  BuildContext context, {
+  required bool mobile,
+}) {
+  if (!mobile && AppTheme.of(context) == AppThemeData.dark) {
     return const <BoxShadow>[];
+  }
+  if (mobile) {
+    final colors = context.colors;
+    return [
+      BoxShadow(
+        color: colors.shadows.regular,
+        offset: const Offset(0, 4),
+        blurRadius: 16,
+      ),
+      BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+    ];
   }
   return appModalShadow;
 }
@@ -748,10 +785,6 @@ bool _isDateBefore(DateTime value, DateTime boundary) {
 
 bool _isDateAfter(DateTime value, DateTime boundary) {
   return _dateOnly(value).isAfter(_dateOnly(boundary));
-}
-
-int _ceilDiv(int value, int divisor) {
-  return (value + divisor - 1) ~/ divisor;
 }
 
 DateTime _clampMonth(DateTime value, DateTime firstMonth, DateTime lastMonth) {

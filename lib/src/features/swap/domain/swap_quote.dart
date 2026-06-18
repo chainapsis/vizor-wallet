@@ -240,6 +240,18 @@ class SwapQuote {
     return buffer <= 0 || !buffer.isFinite ? 0 : buffer / receiveAmount * 100;
   }
 
+  /// Receive-side counterpart to [slippageToleranceText]: how much of the
+  /// asset being received is protected by the configured slippage (the gap
+  /// between the quoted and the guaranteed-minimum receive). Figma's review
+  /// card lists this as a dedicated "Price protection" row.
+  String get priceProtectionText {
+    final percent = receiveProtectionPercent;
+    final buffer = receiveAmount - minimumReceiveAmount;
+    final amount = buffer <= 0 || !buffer.isFinite ? 0.0 : buffer;
+    return '${formatSwapProtectionAmount(receiveAsset, amount)} '
+        '${receiveAsset.symbol} (${formatSwapProtectionPercent(percent)})';
+  }
+
   String get rateText {
     final override = rateTextOverride;
     if (override != null) {

@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../layout/app_form_factor.dart';
 import '../theme/app_theme.dart';
 
 /// Visual style variant of an [AppButton]. Mapped onto our semantic color
@@ -8,9 +9,11 @@ import '../theme/app_theme.dart';
 enum AppButtonVariant { primary, secondary, ghost, destructive }
 
 /// Vertical density. Large uses 20px icons while MediumLarge/Medium/Small
-/// use 16px; label family/weight stays consistent, with Small using the
-/// reduced label token from the Figma component.
+/// use form-factor-aware metrics; label family/weight stays consistent,
+/// with Small using the reduced label token from the Figma component.
 enum AppButtonSize { large, mediumLarge, medium, small }
+
+const _mobile = kAppFormFactor == AppFormFactor.mobile;
 
 class _Sizing {
   const _Sizing({
@@ -33,7 +36,7 @@ class _Sizing {
   final TextStyle labelStyle;
 }
 
-// Large button — the primary CTA. Uses Desktop `Label M`.
+// Large button — the primary CTA. Uses Figma `Label M`.
 const _largeSizing = _Sizing(
   height: AppButtonSizing.largeHeight,
   padding: EdgeInsets.symmetric(
@@ -59,8 +62,12 @@ const _mediumLargeSizing = _Sizing(
   labelStyle: AppTypography.labelLarge,
 );
 
-// Medium button — standard inline action. Uses Desktop `Label M`.
-const _mediumSizing = _Sizing(
+// Medium button — standard inline action.
+//
+// Desktop preserves the pre-mobile merge density (`Label S`/13px and 16px
+// icons). Mobile follows the mobile Figma component (`Label M` and 20px
+// icons) without changing desktop call sites.
+const _mediumSizingDesktop = _Sizing(
   height: 32,
   padding: EdgeInsets.symmetric(
     horizontal: AppSpacing.xs,
@@ -68,15 +75,26 @@ const _mediumSizing = _Sizing(
   ),
   gap: AppSpacing.xxs,
   iconSize: AppIconSize.medium,
-  labelStyle: AppTypography.labelMedium,
+  labelStyle: AppTypographyDesktop.labelMedium,
 );
 
-// Small (compact) button — inline/dense actions. Uses Desktop `Label S`.
+const _mediumSizingMobile = _Sizing(
+  height: 32,
+  padding: EdgeInsets.symmetric(
+    horizontal: AppSpacing.xs,
+    vertical: AppSpacing.xxs,
+  ),
+  gap: AppSpacing.xxs,
+  iconSize: AppButtonSizingMobile.mediumSmallIconSize,
+  labelStyle: AppTypographyMobile.labelLarge,
+);
+
+// Small (compact) button — inline/dense actions. Uses Figma `Label S`.
 const _smallSizing = _Sizing(
   height: 24,
   padding: EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
   gap: AppSpacing.xxs,
-  iconSize: AppIconSize.medium,
+  iconSize: AppButtonSizing.mediumSmallIconSize,
   labelStyle: AppTypography.labelSmall,
 );
 
@@ -191,13 +209,18 @@ class AppButton extends StatefulWidget {
     this.variant = AppButtonVariant.primary,
     this.size = AppButtonSize.large,
     this.height,
+    this.contentPadding,
     this.leading,
     this.trailing,
     this.minWidth,
     this.iconGap,
     this.focusRingColor,
+    this.disabledBackgroundColor,
+    this.enabledBorderColor,
     this.focusNode,
     this.autofocus = false,
+    this.expand = false,
+    this.constrainContent = false,
   });
 
   /// Tap handler. `null` disables the button.
@@ -214,6 +237,11 @@ class AppButton extends StatefulWidget {
   /// Optional visual height override for one-off composed components that
   /// use the button palette but have a different fixed height in Figma.
   final double? height;
+
+  /// Optional override for the button's internal padding. Default (`null`)
+  /// keeps the design-system sizing for all regular buttons; narrow composed
+  /// rows can opt in without changing the global component metrics.
+  final EdgeInsets? contentPadding;
 
   /// Optional widget shown before [child]. Auto-sized to 16×16 and tinted
   /// to the label color via [IconTheme].
@@ -234,8 +262,26 @@ class AppButton extends StatefulWidget {
   /// Optional focus ring color override for one-off surface-specific cases.
   final Color? focusRingColor;
 
+  /// Optional disabled fill override for one-off surface-specific cases.
+  final Color? disabledBackgroundColor;
+
+  /// Optional border color override for enabled states.
+  final Color? enabledBorderColor;
+
   final FocusNode? focusNode;
   final bool autofocus;
+
+  /// Opt-in full-width behavior. The pill normally stays intrinsic even
+  /// under tight constraints (the focus-ring Stack loosens them); with
+  /// `expand: true` the incoming constraints pass through, so wrapping
+  /// in `Expanded` or a stretched `Column` makes the pill fill — the
+  /// mobile Figma frames use full-width primary CTAs throughout.
+  final bool expand;
+
+  /// Allows the label area to shrink inside bounded/expanded layouts instead
+  /// of letting long text overflow the pill. Intended for one-line CTAs in
+  /// narrow mobile rows; default keeps the historical intrinsic layout.
+  final bool constrainContent;
 
   @override
   State<AppButton> createState() => _AppButtonState();
@@ -267,7 +313,8 @@ class _AppButtonState extends State<AppButton> {
     final sizing = switch (widget.size) {
       AppButtonSize.large => _largeSizing,
       AppButtonSize.mediumLarge => _mediumLargeSizing,
-      AppButtonSize.medium => _mediumSizing,
+      AppButtonSize.medium =>
+        _mobile ? _mediumSizingMobile : _mediumSizingDesktop,
       AppButtonSize.small => _smallSizing,
     };
     final height = widget.height ?? sizing.height;
@@ -277,7 +324,7 @@ class _AppButtonState extends State<AppButton> {
 
     // Fill priority: disabled > pressed > hover > default.
     final Color currentBg = !_enabled
-        ? disabled.bg
+        ? widget.disabledBackgroundColor ?? disabled.bg
         : _pressed
         ? palette.bgPressed
         : _hovered
@@ -289,15 +336,17 @@ class _AppButtonState extends State<AppButton> {
         : _pressed || _hovered
         ? palette.labelHover
         : palette.label;
-    final Color borderColor = !_enabled
-        ? palette.border
-        : _pressed
+    final Color stateBorderColor = _pressed
         ? palette.borderPressed
         : _hovered
         ? palette.borderHover
         : palette.border;
+    final Color borderColor = !_enabled
+        ? palette.border
+        : widget.enabledBorderColor ?? stateBorderColor;
     final borderWidth = _enabled ? palette.borderWidth : 0.0;
     final iconGap = widget.iconGap ?? sizing.gap;
+    final contentPadding = widget.contentPadding ?? sizing.padding;
 
     final rowChildren = <Widget>[];
     if (widget.leading != null) {
@@ -315,13 +364,16 @@ class _AppButtonState extends State<AppButton> {
       style: sizing.labelStyle.copyWith(color: labelColor),
       child: widget.child,
     );
+    final labelSlot = widget.size == AppButtonSize.small
+        ? label
+        : Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+            child: label,
+          );
     rowChildren.add(
-      widget.size == AppButtonSize.small
-          ? label
-          : Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-              child: label,
-            ),
+      widget.constrainContent
+          ? Flexible(fit: FlexFit.loose, child: labelSlot)
+          : labelSlot,
     );
     if (widget.trailing != null) {
       rowChildren
@@ -360,11 +412,13 @@ class _AppButtonState extends State<AppButton> {
                 : BorderSide(color: borderColor, width: borderWidth),
           ),
         ),
-        padding: sizing.padding,
+        padding: contentPadding,
         child: IconTheme.merge(
           data: IconThemeData(color: labelColor, size: sizing.iconSize),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: widget.constrainContent
+                ? MainAxisSize.max
+                : MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: rowChildren,
@@ -390,6 +444,7 @@ class _AppButtonState extends State<AppButton> {
     final focusShell = Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.center,
+      fit: widget.expand ? StackFit.passthrough : StackFit.loose,
       children: [
         pill,
         Positioned(

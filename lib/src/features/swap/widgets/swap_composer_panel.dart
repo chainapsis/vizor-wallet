@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../models/swap_address_formatting.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_models.dart';
@@ -13,6 +14,7 @@ import 'swap_asset_icon.dart';
 class SwapComposerPanel extends StatefulWidget {
   const SwapComposerPanel({
     required this.state,
+    this.width = 396,
     required this.onAmountChanged,
     required this.onAmountFiatChanged,
     required this.onReceiveAmountChanged,
@@ -31,6 +33,10 @@ class SwapComposerPanel extends StatefulWidget {
   });
 
   final SwapState state;
+
+  /// Panel width — 396 on the desktop pane; mobile callers can pass their
+  /// content width.
+  final double width;
   final ValueChanged<String> onAmountChanged;
   final ValueChanged<String> onAmountFiatChanged;
   final ValueChanged<String> onReceiveAmountChanged;
@@ -269,7 +275,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
 
     return Center(
       child: SizedBox(
-        width: 396,
+        width: widget.width,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -280,6 +286,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
               rateText: rateText,
               slippageBps: state.slippageBps,
               settingsOpen: widget.slippageSettingsOpen,
+              settingsEnabled: !state.quoteLoading,
               onSettingsTap: widget.onOpenSlippageSettings,
             ),
             if (quoteError != null) ...[
@@ -298,12 +305,14 @@ class _SwapTicketFooter extends StatelessWidget {
     required this.rateText,
     required this.slippageBps,
     required this.settingsOpen,
+    required this.settingsEnabled,
     required this.onSettingsTap,
   });
 
   final String rateText;
   final int slippageBps;
   final bool settingsOpen;
+  final bool settingsEnabled;
   final VoidCallback onSettingsTap;
 
   @override
@@ -319,6 +328,7 @@ class _SwapTicketFooter extends StatelessWidget {
           _SlippageControl(
             label: formatSwapSlippage(slippageBps),
             selected: settingsOpen,
+            enabled: settingsEnabled,
             onTap: onSettingsTap,
           ),
         ],
@@ -522,6 +532,9 @@ class _SwapAmountInput extends StatelessWidget {
             onChanged: onChanged,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
+              // The decimal-pad key follows the device locale, so map a
+              // comma to the period the validator below expects.
+              const CommaToDotInputFormatter(),
               _DecimalAmountInputFormatter(
                 maxFractionDigits: maxFractionDigits,
               ),
@@ -951,22 +964,24 @@ class _SlippageControl extends StatelessWidget {
   const _SlippageControl({
     required this.label,
     required this.selected,
+    required this.enabled,
     required this.onTap,
   });
 
   final String label;
   final bool selected;
+  final bool enabled;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MouseRegion(
-      cursor: SystemMouseCursors.click,
+      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       child: GestureDetector(
         key: const ValueKey('swap_settings_button'),
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
+        onTap: enabled ? onTap : null,
         child: Container(
           height: 24,
           alignment: Alignment.center,
@@ -984,11 +999,17 @@ class _SlippageControl extends StatelessWidget {
                 label,
                 style: AppTypography.labelLarge.copyWith(
                   fontWeight: FontWeight.w400,
-                  color: colors.text.secondary,
+                  color: colors.text.secondary.withValues(
+                    alpha: enabled ? 1 : 0.45,
+                  ),
                 ),
               ),
               const SizedBox(width: 2),
-              AppIcon(AppIcons.cog, size: 16, color: colors.icon.muted),
+              AppIcon(
+                AppIcons.cog,
+                size: 16,
+                color: colors.icon.muted.withValues(alpha: enabled ? 1 : 0.45),
+              ),
             ],
           ),
         ),

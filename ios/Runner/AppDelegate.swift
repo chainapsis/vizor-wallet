@@ -89,6 +89,39 @@ import UIKit
       }
     }
 
+    let hapticsChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/haptics",
+      binaryMessenger: messenger
+    )
+    hapticsChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "error":
+        // The system's error notification haptic — the triple knock
+        // users know from failed Face ID / wrong system passcode.
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.error)
+        result(true)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    let biometricUnlockChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/biometric_unlock",
+      binaryMessenger: messenger
+    )
+    biometricUnlockChannel.setMethodCallHandler { (call, result) in
+      BiometricUnlockHandler.shared.handle(call, result: result)
+    }
+
+    let datePickerChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/date_picker",
+      binaryMessenger: messenger
+    )
+    datePickerChannel.setMethodCallHandler { (call, result) in
+      DatePickerHandler.shared.handle(call, result: result)
+    }
+
     let cameraPermissionChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/camera_permission",
       binaryMessenger: messenger
@@ -114,5 +147,41 @@ import UIKit
       binaryMessenger: messenger
     )
     eventChannel.setStreamHandler(SyncProgressStreamHandler.shared)
+
+    // EventChannel for screenshot detection — sensitive screens (secret
+    // passphrase) warn when the user captures them.
+    let screenshotChannel = FlutterEventChannel(
+      name: "com.zcash.wallet/screenshots",
+      binaryMessenger: messenger
+    )
+    screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+  }
+}
+
+/// Streams a tick to Dart whenever iOS reports a user screenshot.
+/// Lives in this file so it doesn't need a project.pbxproj entry.
+class ScreenshotStreamHandler: NSObject, FlutterStreamHandler {
+  private var observer: NSObjectProtocol?
+
+  func onListen(
+    withArguments arguments: Any?,
+    eventSink events: @escaping FlutterEventSink
+  ) -> FlutterError? {
+    observer = NotificationCenter.default.addObserver(
+      forName: UIApplication.userDidTakeScreenshotNotification,
+      object: nil,
+      queue: .main
+    ) { _ in
+      events(true)
+    }
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    if let observer = observer {
+      NotificationCenter.default.removeObserver(observer)
+      self.observer = nil
+    }
+    return nil
   }
 }

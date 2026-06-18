@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -372,8 +373,11 @@ class _SwapProgressRoute extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       key: const ValueKey('swap_progress_route'),
-      // Figma `_Swap Route`: 12px vertical inset inside the card, full width.
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
+      // Desktop: Figma `_Swap Route` 12px vertical inset, full width. Mobile
+      // (mobile-ui-vibe-coding-polishing-2) insets the route horizontally.
+      padding: kAppFormFactor == AppFormFactor.mobile
+          ? const EdgeInsets.symmetric(horizontal: AppSpacing.sm)
+          : const EdgeInsets.symmetric(vertical: AppSpacing.s),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -388,6 +392,17 @@ class _SwapProgressRoute extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class SwapProgressRoute extends StatelessWidget {
+  const SwapProgressRoute({required this.steps, super.key});
+
+  final List<SwapStatusStepData> steps;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SwapProgressRoute(steps: steps);
   }
 }
 
@@ -406,12 +421,14 @@ class _ProgressStep extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final active = step.state == SwapStatusStepState.active;
+    final pending = step.state == SwapStatusStepState.pending;
     final isLast = index == count - 1;
+    const isMobile = kAppFormFactor == AppFormFactor.mobile;
     // Fixed per-step heights reproduce the Figma connector lengths: the active
     // step reserves room for its 2-line description (24 title + 8 gap + 58
     // padded description), pending/complete steps a single title row, and the
     // last step has no trailing connector.
-    final height = active ? 90.0 : (isLast ? 24.0 : 37.0);
+    final height = active ? (isMobile ? 112.0 : 90.0) : (isLast ? 24.0 : 37.0);
     final title = step.titleForState(step.state);
     return SizedBox(
       key: ValueKey('swap_activity_route_step_${index}_${step.state.name}'),
@@ -465,18 +482,25 @@ class _ProgressStep extends StatelessWidget {
                           title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          // Figma keeps every step title on the accent color
-                          // (light #141818 / dark #FFFFFF); only the weight
-                          // distinguishes the active step.
+                          // Desktop redesign: active title is bold (w600) on
+                          // accent. Mobile (mobile-ui-vibe-coding-polishing-2):
+                          // every title stays w500 (the active step is set
+                          // apart by its loader, description and taller row),
+                          // accent for active/completed and text.secondary
+                          // only for pending (future) steps.
                           style: AppTypography.labelLarge.copyWith(
-                            fontWeight: active
+                            fontWeight: !isMobile && active
                                 ? FontWeight.w600
                                 : FontWeight.w500,
-                            color: colors.text.accent,
+                            color: isMobile && pending
+                                ? colors.text.secondary
+                                : colors.text.accent,
                           ),
                         ),
                       ),
-                      if (active && step.lastCheckedLabel != null) ...[
+                      if (!isMobile &&
+                          active &&
+                          step.lastCheckedLabel != null) ...[
                         const SizedBox(width: AppSpacing.s),
                         Text(
                           step.lastCheckedLabel!,
@@ -488,23 +512,40 @@ class _ProgressStep extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (isMobile && active && step.lastCheckedLabel != null) ...[
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    step.lastCheckedLabel!,
+                    style: AppTypography.labelMedium.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ],
                 if (active && step.description != null) ...[
                   const SizedBox(height: AppSpacing.xs),
                   // Figma pads the description block vertically (8px above
                   // and below the 2-line text), flush with the title column.
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: AppSpacing.xs,
-                    ),
-                    child: Text(
+                  if (isMobile)
+                    Text(
                       step.description!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.secondary,
                       ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppSpacing.xs,
+                      ),
+                      child: Text(
+                        step.description!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
                     ),
-                  ),
                 ],
               ],
             ),
@@ -541,12 +582,20 @@ class _ProgressStepIcon extends StatelessWidget {
           ? AppIcon(
               AppIcons.loader,
               key: const ValueKey('swap_status_active_step_loader'),
-              size: 16,
+              size: kAppFormFactor == AppFormFactor.mobile ? 20 : 16,
               color: colors.icon.inverse,
               animated: animateLoader,
             )
           : complete
-          ? AppIcon(AppIcons.check, size: 16, color: colors.icon.inverse)
+          ? AppIcon(
+              // Mobile (mobile-ui-vibe-coding-polishing-2) shows the per-step
+              // action glyph for completed steps; desktop shows a check.
+              kAppFormFactor == AppFormFactor.mobile
+                  ? _pendingProgressIcon(step)
+                  : AppIcons.check,
+              size: 16,
+              color: colors.icon.inverse,
+            )
           : AppIcon(
               _pendingProgressIcon(step),
               size: 16,
@@ -893,4 +942,122 @@ String _swapStatusHelpTooltip(String label) {
     'Total fees' => swapTotalFeesTooltip,
     _ => swapStatusDetailTooltip,
   };
+}
+
+/// Animated wrapper around [SwapProgressRoute]: walks the displayed active
+/// step toward [progressIndex] one step per [interval]. Shared by the mobile
+/// status content while the desktop page keeps its existing internal animator.
+class SwapAnimatedProgressRoute extends StatefulWidget {
+  const SwapAnimatedProgressRoute({
+    required this.steps,
+    required this.progressIndex,
+    required this.badgeKind,
+    this.interval = swapStatusDefaultProgressAdvanceInterval,
+    super.key,
+  });
+
+  final List<SwapStatusStepData> steps;
+  final int progressIndex;
+  final SwapStatusBadgeKind badgeKind;
+  final Duration interval;
+
+  @override
+  State<SwapAnimatedProgressRoute> createState() =>
+      _SwapAnimatedProgressRouteState();
+}
+
+class _SwapAnimatedProgressRouteState extends State<SwapAnimatedProgressRoute> {
+  Timer? _timer;
+  late int _displayIndex = _bounded(widget.progressIndex);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(covariant SwapAnimatedProgressRoute oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.steps.length != widget.steps.length ||
+        oldWidget.badgeKind != widget.badgeKind) {
+      _timer?.cancel();
+      _timer = null;
+      _displayIndex = _bounded(widget.progressIndex);
+      return;
+    }
+    _sync();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  int _bounded(int index) {
+    if (widget.steps.isEmpty) return 0;
+    return index.clamp(0, widget.steps.length - 1);
+  }
+
+  bool get _animate {
+    if (widget.badgeKind != SwapStatusBadgeKind.liveQuote) return false;
+    return !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
+  }
+
+  void _sync() {
+    final target = _bounded(widget.progressIndex);
+    if (!_animate || target <= _displayIndex) {
+      _timer?.cancel();
+      _timer = null;
+      if (_displayIndex != target) {
+        setState(() => _displayIndex = target);
+      }
+      return;
+    }
+    if (target == _displayIndex + 1) {
+      _timer?.cancel();
+      _timer = null;
+      setState(() => _displayIndex = target);
+      return;
+    }
+    _advance();
+    _timer ??= Timer.periodic(widget.interval, (_) => _advance());
+  }
+
+  void _advance() {
+    if (!mounted) return;
+    final target = _bounded(widget.progressIndex);
+    if (!_animate || target <= _displayIndex) {
+      _timer?.cancel();
+      _timer = null;
+      if (_displayIndex != target) {
+        setState(() => _displayIndex = target);
+      }
+      return;
+    }
+    final next = _displayIndex + 1;
+    setState(() => _displayIndex = next);
+    if (next >= target) {
+      _timer?.cancel();
+      _timer = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.steps.isEmpty) return const SizedBox.shrink();
+    return SwapProgressRoute(
+      steps: [
+        for (var index = 0; index < widget.steps.length; index++)
+          widget.steps[index].copyWithState(
+            index < _displayIndex
+                ? SwapStatusStepState.complete
+                : index == _displayIndex
+                ? SwapStatusStepState.active
+                : SwapStatusStepState.pending,
+          ),
+      ],
+    );
+  }
 }

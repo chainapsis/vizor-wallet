@@ -6,6 +6,10 @@ const swapGenericMinimumReceiveTooltip =
     "The lowest amount you'll get after slippage. "
     'You may get more, never less.';
 
+const swapPriceProtectionTooltip =
+    'How much of the received amount your slippage tolerance protects. '
+    'The swap is refunded if the rate moves past this.';
+
 const swapFeeTooltip =
     "Covers our fee and the route providers' costs to process this swap. "
     'Already included in the rate above.';

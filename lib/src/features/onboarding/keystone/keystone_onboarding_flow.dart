@@ -98,14 +98,29 @@ class KeystoneOnboardingNotifier extends Notifier<KeystoneOnboardingState> {
   }
 
   void setAccounts(List<KeystoneAccountInfo> accounts) {
+    final normalizedAccounts = accounts
+        .map(_withFallbackAccountName)
+        .toList(growable: false);
     state = KeystoneOnboardingState(
-      accounts: List.unmodifiable(accounts),
-      selectedAccount: accounts.isEmpty ? null : accounts.first,
+      accounts: List.unmodifiable(normalizedAccounts),
+      selectedAccount: normalizedAccounts.isEmpty
+          ? null
+          : normalizedAccounts.first,
     );
   }
 
   void selectAccount(KeystoneAccountInfo account) {
-    state = state.copyWith(selectedAccount: account);
+    state = state.copyWith(selectedAccount: _withFallbackAccountName(account));
+  }
+
+  KeystoneAccountInfo _withFallbackAccountName(KeystoneAccountInfo account) {
+    if (account.name.trim().isNotEmpty) return account;
+    return KeystoneAccountInfo(
+      name: 'Account ${account.index + 1}',
+      ufvk: account.ufvk,
+      index: account.index,
+      seedFingerprint: account.seedFingerprint,
+    );
   }
 }
 

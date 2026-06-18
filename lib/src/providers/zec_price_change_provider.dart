@@ -23,8 +23,9 @@ class ZecMarketData {
   final double? change24hPct;
 }
 
-/// Home ZEC market data source. Swap keeps using its provider-specific pricing
-/// snapshot; this source is only for the home balance fiat label and 24h badge.
+/// Non-swap ZEC market data source. Swap keeps using its provider-specific
+/// pricing snapshot; this source feeds home and mobile wallet-native ZEC
+/// displays.
 abstract interface class ZecMarketDataSource {
   /// Returns the current ZEC/USD price plus optional 24h change percentage
   /// points (e.g. `-0.26` for -0.26%), or null when unavailable.
@@ -77,8 +78,8 @@ Uri coinGeckoSimplePriceUri(Uri baseUri) {
   );
 }
 
-/// Parses CoinGecko `/simple/price` into the home market data model.
-/// Returns null when the required ZEC/USD price is missing or unusable.
+/// Parses CoinGecko `/simple/price` into the market data model. Returns null
+/// when the required ZEC/USD price is missing or unusable.
 ZecMarketData? parseZecMarketData(String body) {
   try {
     final decoded = jsonDecode(body);
@@ -112,9 +113,9 @@ final zecMarketDataSourceProvider = Provider<ZecMarketDataSource>((ref) {
   return CoinGeckoZecMarketDataSource();
 });
 
-/// Latest known home ZEC market data, or null until the first successful fetch.
-/// Stays on the last known value across transient fetch failures. Null while
-/// market-price UI is disabled on non-mainnet builds.
+/// Latest known non-swap ZEC market data, or null until the first successful
+/// fetch. Stays on the last known value across transient fetch failures. Null
+/// while market-price UI is disabled on non-mainnet builds.
 final zecHomeMarketDataProvider =
     NotifierProvider.autoDispose<ZecHomeMarketDataNotifier, ZecMarketData?>(
       ZecHomeMarketDataNotifier.new,

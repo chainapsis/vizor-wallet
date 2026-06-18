@@ -307,16 +307,7 @@ void main() {
     );
 
     String expiryLabel() {
-      final texts = tester
-          .widgetList<Text>(
-            find.descendant(
-              of: find.byKey(const ValueKey('swap_deposit_expiry_label')),
-              matching: find.byType(Text),
-            ),
-          )
-          .map((text) => text.data ?? '')
-          .toList();
-      return texts.join(' ');
+      return _depositExpiryLabelPlainText(tester);
     }
 
     expect(expiryLabel(), 'Deposit within 16mins');
@@ -357,16 +348,7 @@ void main() {
     );
 
     String expiryLabel() {
-      final texts = tester
-          .widgetList<Text>(
-            find.descendant(
-              of: find.byKey(const ValueKey('swap_deposit_expiry_label')),
-              matching: find.byType(Text),
-            ),
-          )
-          .map((text) => text.data ?? '')
-          .toList();
-      return texts.join(' ');
+      return _depositExpiryLabelPlainText(tester);
     }
 
     expect(expiryLabel(), 'Deposit within 2hrs');
@@ -5726,6 +5708,17 @@ void main() {
       ),
     );
     expect(buttonLoaderRect.left - gettingQuoteRect.right, closeTo(4, 1));
+    expect(
+      tester
+          .widget<GestureDetector>(
+            find.byKey(const ValueKey('swap_settings_button')),
+          )
+          .onTap,
+      isNull,
+    );
+    await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('swap_slippage_modal')), findsNothing);
 
     swapProvider.completeQuote();
     await tester.pumpAndSettle();
@@ -7796,7 +7789,17 @@ GoRoute _swapRoute() {
 GoRoute _swapActivityRoute() {
   return GoRoute(
     path: '/activity',
-    builder: (_, _) => const ActivityScreen(),
+    // The desktop ActivityScreen no longer renders the sync snapshot
+    // directly; feed it through its injectable history loader instead, with
+    // the fake sync notifier's seeded recentTransactions standing in for the
+    // FFI-backed history the loader would fetch on a real device.
+    builder: (_, _) => Consumer(
+      builder: (context, ref, _) => ActivityScreen(
+        historyLoader: (_) async =>
+            ref.read(syncProvider).value?.recentTransactions ??
+            const <rust_sync.TransactionInfo>[],
+      ),
+    ),
     routes: [
       GoRoute(
         path: 'swap/:swapId',
@@ -8465,6 +8468,18 @@ Future<void> _enterDestinationText(WidgetTester tester, String value) async {
   await tester.enterText(field, value);
   await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
   await tester.pumpAndSettle();
+}
+
+String _depositExpiryLabelPlainText(WidgetTester tester) {
+  final expiry = find.byKey(const ValueKey('swap_deposit_expiry_label'));
+  final parts = tester
+      .widgetList<Text>(
+        find.descendant(of: expiry, matching: find.byType(Text)),
+      )
+      .map((text) => text.data ?? text.textSpan?.toPlainText() ?? '')
+      .where((text) => text.isNotEmpty)
+      .toList();
+  return parts.join(' ');
 }
 
 String _destinationSummaryText(WidgetTester tester) {

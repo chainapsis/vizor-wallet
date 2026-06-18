@@ -31,6 +31,7 @@ class AppTextField extends StatefulWidget {
     this.inputBottomPadding,
     this.leading,
     this.trailing,
+    this.trailingFitsSlot = false,
     this.messageText,
     this.messageIcon,
     this.messageStyle,
@@ -81,6 +82,13 @@ class AppTextField extends StatefulWidget {
   final double? inputBottomPadding;
   final Widget? leading;
   final Widget? trailing;
+
+  /// When true, a [trailing] widget is rendered at its intrinsic size
+  /// instead of being clamped to the icon-sized slot — use for a text
+  /// pill (e.g. a "Paste" affordance). Pair with [trailingSlotWidth] in
+  /// the fixed-slot layout. Defaults to false so every existing field is
+  /// unaffected.
+  final bool trailingFitsSlot;
   final String? messageText;
   final Widget? messageIcon;
   final TextStyle? messageStyle;
@@ -563,11 +571,13 @@ class _AppTextFieldState extends State<AppTextField> {
                                   AppSpacing.sm,
                                   0,
                                 ),
-                                child: SizedBox(
-                                  width: _appTextFieldInputIconSize,
-                                  height: _appTextFieldInputIconSize,
-                                  child: trailingWidget,
-                                ),
+                                child: widget.trailingFitsSlot
+                                    ? trailingWidget
+                                    : SizedBox(
+                                        width: _appTextFieldInputIconSize,
+                                        height: _appTextFieldInputIconSize,
+                                        child: trailingWidget,
+                                      ),
                               ),
                           ],
                         )
@@ -621,11 +631,15 @@ class _AppTextFieldState extends State<AppTextField> {
                                 child:
                                     clearButton ??
                                     Center(
-                                      child: SizedBox(
-                                        width: _appTextFieldInputIconSize,
-                                        height: _appTextFieldInputIconSize,
-                                        child: trailingWidget,
-                                      ),
+                                      child: widget.trailingFitsSlot
+                                          ? trailingWidget
+                                          : SizedBox(
+                                              width:
+                                                  _appTextFieldInputIconSize,
+                                              height:
+                                                  _appTextFieldInputIconSize,
+                                              child: trailingWidget,
+                                            ),
                                     ),
                               ),
                           ],
@@ -661,11 +675,14 @@ class _AppTextFieldState extends State<AppTextField> {
                                 ),
                               ] else if (trailingWidget != null) ...[
                                 const SizedBox(width: AppSpacing.xs),
-                                SizedBox(
-                                  width: _appTextFieldInputIconSize,
-                                  height: _appTextFieldInputIconSize,
-                                  child: trailingWidget,
-                                ),
+                                if (widget.trailingFitsSlot)
+                                  trailingWidget
+                                else
+                                  SizedBox(
+                                    width: _appTextFieldInputIconSize,
+                                    height: _appTextFieldInputIconSize,
+                                    child: trailingWidget,
+                                  ),
                               ],
                             ],
                           ),

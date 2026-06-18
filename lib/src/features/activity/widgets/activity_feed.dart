@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../models/activity_row_data.dart';
@@ -11,6 +12,25 @@ const _activityFeedActivationShortcuts = <ShortcutActivator, Intent>{
   SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
   SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
 };
+
+/// Vertical gap between a row's two stacked lines (title/subtitle and
+/// amount/timestamp).
+const _activityRowInnerLineGap = AppSpacing.xxs;
+
+/// Subtitle line (Shielded / Transparent). Desktop keeps main's 14px
+/// label; mobile bumps to the 16px label.
+const _activityRowSubtitleStyle = AppTypography.labelLarge;
+
+/// Supporting amount line (timestamp / status). Desktop keeps main's 13px
+/// label; mobile bumps to the 16px label.
+const _activitySupportingStyle = kAppFormFactor == AppFormFactor.mobile
+    ? AppTypography.labelLarge
+    : AppTypography.labelSmall;
+
+/// Sub-line leading icon (the shielded / transparent badge).
+const _activityRowSubtitleIconSize = kAppFormFactor == AppFormFactor.mobile
+    ? AppIconSize.medium
+    : 16.0;
 
 class ActivityFeedSectionData {
   const ActivityFeedSectionData({required this.title, required this.rows});
@@ -26,6 +46,8 @@ class ActivityFeed extends StatelessWidget {
     this.errorText,
     this.emptyText = 'No activity yet',
     this.rowKeyPrefix,
+    this.cardWidth = 396,
+    this.showHeader = true,
     super.key,
   });
 
@@ -35,16 +57,30 @@ class ActivityFeed extends StatelessWidget {
   final String emptyText;
   final String? rowKeyPrefix;
 
+  /// Fixed card width. The 396px default matches the desktop pane;
+  /// mobile passes null so cards stretch to the parent width.
+  final double? cardWidth;
+
+  /// Whether to render the desktop title row ("Activity" + filter).
+  /// Mobile surfaces provide their own top nav title instead.
+  final bool showHeader;
+
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: AppSpacing.s),
-          child: _ActivityFeedTitleRow(),
-        ),
-        const SizedBox(height: AppSpacing.base),
+        if (showHeader) ...[
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: AppSpacing.s),
+            child: _ActivityFeedTitleRow(),
+          ),
+          SizedBox(
+            height: kAppFormFactor == AppFormFactor.mobile
+                ? AppSpacing.lg
+                : AppSpacing.base,
+          ),
+        ],
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
           child: _ActivityFeedBody(
@@ -53,6 +89,7 @@ class ActivityFeed extends StatelessWidget {
             errorText: errorText,
             emptyText: emptyText,
             rowKeyPrefix: rowKeyPrefix,
+            cardWidth: cardWidth,
           ),
         ),
       ],
@@ -267,6 +304,7 @@ class _ActivityFeedSliverItemView extends StatelessWidget {
         width: 396,
         child: _ActivityFeedMessageCard(
           text: item.text!,
+          width: 396,
           isError: item.isError,
         ),
       ),
@@ -378,7 +416,7 @@ class _ActivityFeedCardSegment extends StatelessWidget {
       child: CustomPaint(
         painter: _ActivityFeedCardSegmentShadowPainter(
           position: position,
-          shadows: appSurfaceShadow(colors),
+          shadows: _activityFeedCardShadow(colors),
         ),
         child: DecoratedBox(
           decoration: BoxDecoration(
@@ -504,6 +542,7 @@ class _ActivityFeedBody extends StatelessWidget {
     required this.errorText,
     required this.emptyText,
     required this.rowKeyPrefix,
+    required this.cardWidth,
   });
 
   final List<ActivityFeedSectionData> sections;
@@ -511,6 +550,7 @@ class _ActivityFeedBody extends StatelessWidget {
   final String? errorText;
   final String emptyText;
   final String? rowKeyPrefix;
+  final double? cardWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -519,10 +559,11 @@ class _ActivityFeedBody extends StatelessWidget {
       return _ActivityFeedMessageCard(
         text: message,
         isError: errorText != null,
+        width: cardWidth,
       );
     }
     if (sections.isEmpty) {
-      return _ActivityFeedMessageCard(text: emptyText);
+      return _ActivityFeedMessageCard(text: emptyText, width: cardWidth);
     }
 
     var rowIndex = 0;
@@ -536,6 +577,7 @@ class _ActivityFeedBody extends StatelessWidget {
           if (sectionIndex > 0) const SizedBox(height: AppSpacing.md),
           _ActivityFeedCard(
             section: sections[sectionIndex],
+            width: cardWidth,
             rowKeyBuilder: rowKeyPrefix == null
                 ? null
                 : () => ValueKey('${rowKeyPrefix}_row_${rowIndex++}'),
@@ -554,16 +596,21 @@ ValueKey<String>? _stableRowKey(ActivityRowData row) {
 }
 
 class _ActivityFeedMessageCard extends StatelessWidget {
-  const _ActivityFeedMessageCard({required this.text, this.isError = false});
+  const _ActivityFeedMessageCard({
+    required this.text,
+    required this.width,
+    this.isError = false,
+  });
 
   final String text;
+  final double? width;
   final bool isError;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
-      width: 396,
+      width: width,
       height: 160,
       child: _ActivityFeedCardShell(
         child: Center(
@@ -582,16 +629,21 @@ class _ActivityFeedMessageCard extends StatelessWidget {
 }
 
 class _ActivityFeedCard extends StatelessWidget {
-  const _ActivityFeedCard({required this.section, this.rowKeyBuilder});
+  const _ActivityFeedCard({
+    required this.section,
+    required this.width,
+    this.rowKeyBuilder,
+  });
 
   final ActivityFeedSectionData section;
+  final double? width;
   final ValueKey<String> Function()? rowKeyBuilder;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
-      width: 396,
+      width: width,
       child: _ActivityFeedCardShell(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
@@ -613,7 +665,7 @@ class _ActivityFeedCard extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.s),
               for (var index = 0; index < section.rows.length; index++) ...[
-                if (index > 0) const SizedBox(height: 12),
+                if (index > 0) const SizedBox(height: AppSpacing.s),
                 ActivityFeedRowGroup(
                   key:
                       _stableRowKey(section.rows[index]) ??
@@ -641,12 +693,21 @@ class _ActivityFeedCardShell extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: appSurfaceShadow(colors),
+        boxShadow: _activityFeedCardShadow(colors),
       ),
       child: child,
     );
   }
 }
+
+/// Activity cards drop their drop shadow on mobile (flat full-width cards on a
+/// tinted background) and keep the surface shadow on desktop. Form-factor
+/// branching is the compile-time [kAppFormFactor] const so the unused branch is
+/// tree-shaken.
+List<BoxShadow> _activityFeedCardShadow(AppColors colors) =>
+    kAppFormFactor == AppFormFactor.mobile
+    ? const <BoxShadow>[]
+    : appSurfaceShadow(colors);
 
 class ActivityFeedRowGroup extends StatelessWidget {
   const ActivityFeedRowGroup({required this.row, super.key});
@@ -850,11 +911,15 @@ class _ActivityRowTitle extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
         ),
-        if (row.subtitle != null)
+        if (row.subtitle != null) ...[
+          // Mobile-only extra gap; desktop keeps subtitle flush as on main.
+          if (kAppFormFactor == AppFormFactor.mobile)
+            const SizedBox(height: _activityRowInnerLineGap),
           _ActivityRowSubtitle(
             text: row.subtitle!,
             iconName: row.subtitleIconName,
           ),
+        ],
       ],
     );
   }
@@ -875,7 +940,7 @@ class _ActivityRowSubtitle extends StatelessWidget {
         if (iconName != null) ...[
           AppIcon(
             iconName!,
-            size: 16,
+            size: _activityRowSubtitleIconSize,
             color: iconName == AppIcons.shieldKeyholeOutline
                 ? colors.icon.brandCrimson
                 : colors.icon.muted,
@@ -887,7 +952,7 @@ class _ActivityRowSubtitle extends StatelessWidget {
             text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelLarge.copyWith(
+            style: _activityRowSubtitleStyle.copyWith(
               color: colors.text.secondary,
               fontWeight: FontWeight.w400,
             ),
@@ -918,7 +983,7 @@ class _ActivityRowAmount extends StatelessWidget {
         children: [
           _ActivityAmountValue(row: row, color: amountColor),
           if (supporting != null) ...[
-            const SizedBox(height: AppSpacing.xxs),
+            const SizedBox(height: _activityRowInnerLineGap),
             _ActivitySupportingAmountText(
               row: row,
               text: supporting,
@@ -1011,7 +1076,7 @@ class _ActivitySupportingAmountText extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       textAlign: TextAlign.end,
-      style: AppTypography.labelSmall.copyWith(color: color, letterSpacing: 0),
+      style: _activitySupportingStyle.copyWith(color: color, letterSpacing: 0),
     );
     if (iconName == null) return label;
     return Row(
@@ -1028,8 +1093,8 @@ class _ActivitySupportingAmountText extends StatelessWidget {
 class _ActivityRowIcon extends StatelessWidget {
   const _ActivityRowIcon({required this.row});
 
-  static const _avatarSize = 32.0;
-  static const _progressRingSize = 37.0;
+  static const _avatarSize = AppAssetSize.size;
+  static const _progressRingSize = AppAssetSize.size * (37.0 / 32.0);
 
   final ActivityRowData row;
 
@@ -1049,8 +1114,9 @@ class _ActivityRowIcon extends StatelessWidget {
               child: Center(
                 child: AppIcon(
                   row.leadingIconName,
-                  size: 16,
+                  size: AppAssetSize.icon,
                   color: row.leadingIconColor,
+                  animated: row.leadingIconName == AppIcons.loader,
                 ),
               ),
             ),
@@ -1081,8 +1147,9 @@ class _ActivityIconFallback extends StatelessWidget {
       child: Center(
         child: AppIcon(
           row.leadingIconName,
-          size: 16,
+          size: AppAssetSize.icon,
           color: row.leadingIconColor,
+          animated: row.leadingIconName == AppIcons.loader,
         ),
       ),
     );
@@ -1096,11 +1163,14 @@ class _ActivityChildConnector extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       key: const ValueKey('activity_feed_child_connector'),
-      width: 32,
-      height: 32,
+      width: AppAssetSize.size,
+      height: AppAssetSize.size,
       child: Center(
         child: CustomPaint(
-          size: const Size(14, 14),
+          size: const Size(
+            AppAssetSize.size * (14 / 32),
+            AppAssetSize.size * (14 / 32),
+          ),
           painter: _ActivityChildConnectorPainter(
             color: context.colors.icon.disabled,
           ),

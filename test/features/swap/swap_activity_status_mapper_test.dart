@@ -78,6 +78,28 @@ void main() {
     );
   });
 
+  test('omits the tx id detail row on desktop', () {
+    // The "Tx ID" row is a mobile-only addition; desktop keeps the original
+    // detail set. Mobile-lane coverage of the row lives in
+    // mobile_swap_activity_tx_id_test.dart.
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: 't1provider-deposit',
+        nearIntentHash: 'intent-hash-123',
+        originChainTxHash: 'zec-origin-txid',
+      ),
+    );
+
+    expect(
+      presentation.details.where((row) => row.label == 'Tx ID'),
+      isEmpty,
+    );
+  });
+
   test('adds address book labels to matching address detail rows', () {
     const recipientAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
     final presentation = swapActivityStatusPresentationForIntent(
@@ -536,7 +558,9 @@ SwapIntent _intent({
   String? depositAddress,
   String? depositMemo,
   String? depositTxHash,
+  String? nearIntentHash,
   String? originChainTxHash,
+  String? destinationChainTxHash,
   String? totalFeesText,
   String? realisedSlippageText,
   String? oneClickRecipient,
@@ -562,10 +586,12 @@ SwapIntent _intent({
     depositAddress: depositAddress,
     depositMemo: depositMemo,
     depositTxHash: depositTxHash,
-    originChainTxHash: originChainTxHash,
     totalFeesText: totalFeesText,
     realisedSlippageText: realisedSlippageText,
     minimumReceiveText: receiveEstimate,
+    nearIntentHash: nearIntentHash,
+    originChainTxHash: originChainTxHash,
+    destinationChainTxHash: destinationChainTxHash,
     oneClickRecipient: oneClickRecipient,
     oneClickRefundTo: oneClickRefundTo,
     providerStatusRaw: providerStatusRaw,

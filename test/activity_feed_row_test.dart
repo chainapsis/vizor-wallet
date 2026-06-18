@@ -70,7 +70,7 @@ void main() {
     expect(rows[1].amountText, '-1 $ticker');
     expect(rows[2].amountText, '0.0001 $ticker');
     expect(rows[0].amountColor, AppThemeData.light.colors.text.positiveStrong);
-    expect(rows[1].amountColor, AppThemeData.light.colors.text.primary);
+    expect(rows[1].amountColor, outgoingAmountColor(AppThemeData.light.colors));
     expect(find.text('0.0001 $ticker'), findsOneWidget);
     expect(find.text('+1.2345 $ticker'), findsOneWidget);
     expect(find.text('-1 $ticker'), findsOneWidget);
@@ -101,6 +101,40 @@ void main() {
     expect(rows[0].leadingIconName, AppIcons.loader);
     expect(find.text('Receiving ...'), findsOneWidget);
     expect(find.text('+1.2345 $ticker'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is AppIcon &&
+            widget.name == AppIcons.loader &&
+            widget.size == 16 &&
+            widget.animated,
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('pending sent activity rows render as sending', (tester) async {
+    late final List<ActivityRowData> rows;
+
+    await _pumpMappedTransactions(
+      tester,
+      transactions: [
+        _tx(
+          txidHex: 'sending',
+          kind: 'sent',
+          amount: BigInt.from(100000000),
+          minedHeight: BigInt.zero,
+        ),
+      ],
+      onRows: (value) => rows = value,
+    );
+
+    expect(rows[0].title, 'Sending ...');
+    expect(rows[0].amountText, '-1 $ticker');
+    expect(rows[0].statusText, 'In progress');
+    expect(rows[0].leadingIconName, AppIcons.loader);
+    expect(find.text('Sending ...'), findsOneWidget);
+    expect(find.text('-1 $ticker'), findsOneWidget);
   });
 
   testWidgets('failed sent activity rows render refunded state', (
@@ -197,6 +231,38 @@ void main() {
     );
 
     expect(rows[0].leadingIconName, AppIcons.shieldKeyholeOutline);
+  });
+
+  testWidgets('transparent activity rows use the transparent subtitle icon', (
+    tester,
+  ) async {
+    late final List<ActivityRowData> rows;
+
+    await _pumpMappedTransactions(
+      tester,
+      transactions: [
+        _tx(
+          txidHex: 'transparent-sent',
+          kind: 'sent',
+          amount: BigInt.from(100000000),
+          displayPool: 'transparent',
+        ),
+      ],
+      onRows: (value) => rows = value,
+    );
+
+    expect(rows[0].subtitle, 'Transparent');
+    expect(rows[0].subtitleIconName, AppIcons.transparentBalance);
+    expect(find.text('Transparent'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is AppIcon &&
+            widget.name == AppIcons.transparentBalance &&
+            widget.size == 16,
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('activity feed uses compact value typography', (tester) async {
@@ -405,6 +471,12 @@ void main() {
 
     expect(find.byKey(const ValueKey('row-59')), findsOneWidget);
   });
+
+  test('formatActivityTimestamp drops the clock time when dateOnly', () {
+    final dt = DateTime(2026, 5, 14, 17, 45);
+    expect(formatActivityTimestamp(dt), 'May 14, 17:45');
+    expect(formatActivityTimestamp(dt, dateOnly: true), 'May 14');
+  });
 }
 
 Future<void> _pumpMappedTransactions(
@@ -492,6 +564,7 @@ rust_sync.TransactionInfo _tx({
   required BigInt amount,
   BigInt? minedHeight,
   bool expiredUnmined = false,
+  String displayPool = 'shielded',
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
@@ -503,7 +576,7 @@ rust_sync.TransactionInfo _tx({
     isTransparent: false,
     txKind: kind,
     displayAmount: amount,
-    displayPool: 'shielded',
+    displayPool: displayPool,
     createdTime: BigInt.from(1800000000),
   );
 }

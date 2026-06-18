@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -15,6 +16,12 @@ import '../../../services/qr_scanner.dart';
 import 'keystone_transaction_progress_panel.dart';
 
 enum _CameraAccessStatus { active, requesting, denied, unavailable }
+
+// The mobile Keystone Scan frames diverge from the desktop pane in the
+// permission states: Body L titles, the slashed camera glyph on a dark
+// square for both requesting and denied, a "Request again" retry label,
+// and no footer until the camera feed is live.
+const _mobileFormFactor = kAppFormFactor == AppFormFactor.mobile;
 
 class KeystoneQrScannerCard extends StatefulWidget {
   const KeystoneQrScannerCard({
@@ -26,6 +33,8 @@ class KeystoneQrScannerCard extends StatefulWidget {
     required this.onComplete,
     required this.unavailableMessage,
     this.decodingLabel = 'Reading QR...',
+    this.cardWidth,
+    this.cameraHeight,
     super.key,
   });
 
@@ -38,6 +47,11 @@ class KeystoneQrScannerCard extends StatefulWidget {
   final String unavailableMessage;
   final String decodingLabel;
 
+  /// Layout overrides for the mobile single-pane flow; the defaults keep
+  /// the desktop pane dimensions.
+  final double? cardWidth;
+  final double? cameraHeight;
+
   @override
   State<KeystoneQrScannerCard> createState() => _KeystoneQrScannerCardState();
 }
@@ -45,7 +59,7 @@ class KeystoneQrScannerCard extends StatefulWidget {
 class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     with WidgetsBindingObserver {
   static const _cardWidth = 396.0;
-  static const _cameraWidth = 396.0;
+  static const _mobileCardWidth = 464.0;
   static const _cameraHeight = 310.0;
   static const _outerRadius = 28.0;
   static const _cameraRadius = 24.0;
@@ -57,6 +71,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   bool _loadingCameras = false;
   bool _cameraPickerOpen = false;
   bool _troubleScanningPopoverOpen = false;
+  bool _restartCameraOnResume = false;
   int _scanProgress = 0;
   int _scanSessionResetToken = 0;
 
@@ -240,7 +255,11 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
       : 'Request again, or enable manually\nin the System settings.';
 
   Future<void> _retryCameraStart({required bool openSettingsOnDenied}) async {
-    if (!QrScanner.isAvailable || _controller.value.isStarting) return;
+    if (!QrScanner.isAvailable ||
+        _controller.value.isStarting ||
+        _controller.value.isRunning) {
+      return;
+    }
 
     try {
       await _controller.start();
@@ -253,15 +272,65 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
       return;
     }
 
+    await _openCameraSettings();
+  }
+
+  Future<void> _openCameraSettings() async {
+    _restartCameraOnResume = true;
     final opened = await CameraPermissionSettings.open();
     if (!opened) {
+      _restartCameraOnResume = false;
       log('KeystoneQrScannerCard: failed to open camera permission settings');
     }
+  }
+
+  Widget _cameraDeniedActions() {
+    if (!_mobileFormFactor) {
+      return AppButton(
+        onPressed: () =>
+            unawaited(_retryCameraStart(openSettingsOnDenied: true)),
+        variant: AppButtonVariant.secondary,
+        size: AppButtonSize.medium,
+        minWidth: 96,
+        leading: const AppIcon(AppIcons.renew),
+        child: const Text('Allow camera'),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppButton(
+          key: const ValueKey('keystone_scan_retry_button'),
+          onPressed: () =>
+              unawaited(_retryCameraStart(openSettingsOnDenied: false)),
+          variant: AppButtonVariant.secondary,
+          size: AppButtonSize.medium,
+          minWidth: 128,
+          leading: const AppIcon(AppIcons.renew),
+          child: const Text('Request again'),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        AppButton(
+          key: const ValueKey('keystone_scan_open_settings_button'),
+          onPressed: () => unawaited(_openCameraSettings()),
+          variant: AppButtonVariant.secondary,
+          size: AppButtonSize.medium,
+          minWidth: 128,
+          leading: const AppIcon(AppIcons.cog),
+          child: const Text('Open settings'),
+        ),
+      ],
+    );
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
+    // Desktop restores the prior retry-on-any-resume behavior; mobile only
+    // retries after returning from the OS camera-settings trip.
+    if (_mobileFormFactor && !_restartCameraOnResume) return;
+    _restartCameraOnResume = false;
     unawaited(_retryCameraStart(openSettingsOnDenied: false));
   }
 
@@ -279,29 +348,52 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     final cardSurface = context.appTheme == AppThemeData.dark
         ? colors.background.base
         : colors.background.ground;
+    // The mobile Keystone Scan frames draw the viewfinder as a white
+    // (ground) card on the page background; the desktop pane keeps the
+    // desktop light/dark card surface above.
+    final surfaceColor = _mobileFormFactor
+        ? colors.background.ground
+        : cardSurface;
+    // Mobile draws a single full-bleed rounded camera card (Figma
+    // `Keystone Scan`, radius 32, no inner frame and no camera-picker
+    // footer — the back camera is the only camera). Desktop keeps the
+    // 4 px inset frame around the feed and the camera controls.
+    final outerPadding = _mobileFormFactor
+        ? EdgeInsets.zero
+        : const EdgeInsets.all(AppSpacing.xxs);
+    final outerRadius = _mobileFormFactor ? AppRadii.xLarge : _outerRadius;
+    final cameraRadius = _mobileFormFactor ? AppRadii.xLarge : _cameraRadius;
+    final cardWidth =
+        widget.cardWidth ?? (_mobileFormFactor ? _mobileCardWidth : _cardWidth);
+    final cameraAreaWidth = _mobileFormFactor
+        ? double.infinity
+        : cardWidth - AppSpacing.xxs * 2;
     return SizedBox(
-      width: _cardWidth,
+      width: cardWidth,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
+            padding: outerPadding,
             decoration: BoxDecoration(
-              color: cardSurface,
-              borderRadius: BorderRadius.circular(_outerRadius),
-              boxShadow: [
-                BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
-                BoxShadow(
-                  color: colors.shadows.subtle,
-                  offset: const Offset(0, 1),
-                  blurRadius: 2,
-                ),
-                BoxShadow(
-                  color: colors.shadows.subtle,
-                  offset: const Offset(0, 2),
-                  blurRadius: 4,
-                ),
-                BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
-              ],
+              color: surfaceColor,
+              borderRadius: BorderRadius.circular(outerRadius),
+              boxShadow: _mobileFormFactor
+                  ? null
+                  : [
+                      BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+                      BoxShadow(
+                        color: colors.shadows.subtle,
+                        offset: const Offset(0, 1),
+                        blurRadius: 2,
+                      ),
+                      BoxShadow(
+                        color: colors.shadows.subtle,
+                        offset: const Offset(0, 2),
+                        blurRadius: 4,
+                      ),
+                      BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+                    ],
             ),
             clipBehavior: Clip.antiAlias,
             child: Stack(
@@ -309,16 +401,19 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                 Column(
                   children: [
                     SizedBox(
-                      width: _cameraWidth,
-                      height: _cameraHeight,
+                      key: const ValueKey(
+                        'keystone_qr_scanner_camera_viewport',
+                      ),
+                      width: cameraAreaWidth,
+                      height: widget.cameraHeight ?? _cameraHeight,
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
                           ClipRRect(
-                            borderRadius: BorderRadius.circular(_cameraRadius),
+                            borderRadius: BorderRadius.circular(cameraRadius),
                             clipBehavior: Clip.antiAliasWithSaveLayer,
                             child: DecoratedBox(
-                              decoration: BoxDecoration(color: cardSurface),
+                              decoration: BoxDecoration(color: surfaceColor),
                               child: ValueListenableBuilder<MobileScannerState>(
                                 valueListenable: _controller,
                                 builder: (context, scannerState, _) {
@@ -386,11 +481,13 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                                 label: widget.decodingLabel,
                                                 borderRadius:
                                                     BorderRadius.circular(
-                                                      _cameraRadius,
+                                                      cameraRadius,
                                                     ),
                                               ),
                                         ),
-                                      if (canScan && _cameraPickerOpen)
+                                      if (canScan &&
+                                          _cameraPickerOpen &&
+                                          !_mobileFormFactor)
                                         AppPaneModalOverlay(
                                           onDismiss: _toggleCameraPicker,
                                           borderRadius: BorderRadius.circular(
@@ -409,10 +506,12 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                           _CameraAccessStatus.requesting)
                                         _CameraPermissionPrompt(
                                           backgroundColor: cardSurface,
-                                          icon: AppIcons.camera,
-                                          title: 'Enable the Camera access',
+                                          icon: _mobileFormFactor
+                                              ? AppIcons.cameraDenied
+                                              : AppIcons.camera,
+                                          title: 'Enable camera access',
                                           description:
-                                              'A Camera is required to connect Keystone.\n'
+                                              'A camera is required to connect Keystone.\n'
                                               'You can revert this in settings anytime later.',
                                           iconStyle: _CameraPermissionIconStyle
                                               .inverse,
@@ -451,22 +550,13 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                           icon: AppIcons.cameraDenied,
                                           title: _cameraDeniedTitle,
                                           description: _cameraDeniedDescription,
+                                          // Denied draws the slashed glyph on a
+                                          // raised (grey) square on both
+                                          // platforms — Figma `Keystone Scan`
+                                          // denied state.
                                           iconStyle:
                                               _CameraPermissionIconStyle.raised,
-                                          action: AppButton(
-                                            onPressed: () => unawaited(
-                                              _retryCameraStart(
-                                                openSettingsOnDenied: true,
-                                              ),
-                                            ),
-                                            variant: AppButtonVariant.secondary,
-                                            size: AppButtonSize.medium,
-                                            minWidth: 96,
-                                            leading: const AppIcon(
-                                              AppIcons.renew,
-                                            ),
-                                            child: const Text('Allow camera'),
-                                          ),
+                                          action: _cameraDeniedActions(),
                                         ),
                                     ],
                                   );
@@ -474,57 +564,80 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                               ),
                             ),
                           ),
+                          // The viewfinder edge ring outlines the live
+                          // camera feed; the mobile permission states are
+                          // a plain white card without it.
                           Positioned.fill(
                             child: IgnorePointer(
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(
-                                    _cameraRadius,
-                                  ),
-                                  border: Border.all(
-                                    color: colors.border.subtleOpacity,
-                                    width: 2,
-                                  ),
-                                ),
+                              child: ValueListenableBuilder<MobileScannerState>(
+                                valueListenable: _controller,
+                                builder: (context, scannerState, _) {
+                                  final active =
+                                      _cameraAccessStatus(scannerState) ==
+                                      _CameraAccessStatus.active;
+                                  if (_mobileFormFactor && !active) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(
+                                        cameraRadius,
+                                      ),
+                                      border: Border.all(
+                                        color: colors.border.subtleOpacity,
+                                        width: 2,
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xs),
-                    _TroubleScanningDisclosure(
-                      onToggle: _toggleTroubleScanning,
-                    ),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(minHeight: 56),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.s,
-                          vertical: AppSpacing.sm,
-                        ),
-                        child: ValueListenableBuilder<MobileScannerState>(
-                          valueListenable: _controller,
-                          builder: (context, scannerState, _) {
-                            final accessStatus = _cameraAccessStatus(
-                              scannerState,
-                            );
-                            if (accessStatus != _CameraAccessStatus.active) {
-                              return const SizedBox.shrink();
-                            }
-                            final canChooseCamera =
-                                _cameras.length > 1 &&
-                                !widget.decoding &&
-                                scannerState.isInitialized;
-                            return _CameraControlRow(
-                              label: _cameraLabel(scannerState),
-                              canChooseCamera: canChooseCamera,
-                              disabled: widget.decoding,
-                              onTap: _toggleCameraPicker,
-                            );
-                          },
-                        ),
-                      ),
+                    ValueListenableBuilder<MobileScannerState>(
+                      valueListenable: _controller,
+                      builder: (context, scannerState, _) {
+                        final active =
+                            _cameraAccessStatus(scannerState) ==
+                            _CameraAccessStatus.active;
+                        // Mobile has no footer at all — the scan screen is a
+                        // single camera workflow, and the back camera is the
+                        // only camera. Desktop keeps the link + camera
+                        // controls in every state.
+                        if (_mobileFormFactor) {
+                          return const SizedBox.shrink();
+                        }
+                        return Column(
+                          children: [
+                            const SizedBox(height: AppSpacing.xs),
+                            _TroubleScanningDisclosure(
+                              onToggle: _toggleTroubleScanning,
+                            ),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(minHeight: 56),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.s,
+                                  vertical: AppSpacing.sm,
+                                ),
+                                child: !active
+                                    ? const SizedBox.shrink()
+                                    : _CameraControlRow(
+                                        label: _cameraLabel(scannerState),
+                                        canChooseCamera:
+                                            _cameras.length > 1 &&
+                                            !widget.decoding &&
+                                            scannerState.isInitialized,
+                                        disabled: widget.decoding,
+                                        onTap: _toggleCameraPicker,
+                                      ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -747,7 +860,11 @@ class _CameraPermissionPrompt extends StatelessWidget {
         padding: const EdgeInsets.only(top: AppSpacing.md),
         child: Center(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            // The narrower mobile card keeps the prompt copy on the
+            // designed two lines.
+            padding: const EdgeInsets.symmetric(
+              horizontal: _mobileFormFactor ? AppSpacing.sm : AppSpacing.lg,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -768,9 +885,16 @@ class _CameraPermissionPrompt extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: colors.text.accent,
-                      ),
+                      // Mobile prompt titles are Body L SemiBold in the
+                      // Keystone Scan frames; desktop keeps Body M Strong.
+                      style: _mobileFormFactor
+                          ? AppTypography.bodyLarge.copyWith(
+                              color: colors.text.accent,
+                              fontWeight: FontWeight.w600,
+                            )
+                          : AppTypography.bodyMediumStrong.copyWith(
+                              color: colors.text.accent,
+                            ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: AppSpacing.xxs),

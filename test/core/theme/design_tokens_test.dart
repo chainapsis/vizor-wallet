@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/core/theme/app_icon_size.dart';
 import 'package:zcash_wallet/src/core/theme/app_radii.dart';
 import 'package:zcash_wallet/src/core/theme/app_sizing.dart';
@@ -9,7 +10,55 @@ import 'package:zcash_wallet/src/core/theme/app_typography.dart';
 import 'package:zcash_wallet/src/core/theme/primitives.dart';
 
 void main() {
-  test('desktop sizing tokens match 1 Sizing.zip', () {
+  test('token selectors resolve to the compiled form factor set', () {
+    // `flutter test` runs with the default define (desktop) unless a
+    // --dart-define=VIZOR_FORM_FACTOR=mobile lane overrides it; this test
+    // is form-factor agnostic so it passes in both lanes.
+    final mobile = kAppFormFactor == AppFormFactor.mobile;
+
+    expect(
+      AppTypography.bodyMedium,
+      mobile ? AppTypographyMobile.bodyMedium : AppTypographyDesktop.bodyMedium,
+    );
+    expect(
+      AppTypography.displayLarge,
+      mobile
+          ? AppTypographyMobile.displayLarge
+          : AppTypographyDesktop.displayLarge,
+    );
+    expect(
+      AppTypography.headlineMedium,
+      mobile
+          ? AppTypographyMobile.headlineMedium
+          : AppTypographyDesktop.headlineMedium,
+    );
+    expect(
+      AppTypography.codeMedium,
+      mobile ? AppTypographyMobile.codeMedium : AppTypographyDesktop.codeMedium,
+    );
+    expect(
+      AppButtonSizing.largeHeight,
+      mobile
+          ? AppButtonSizingMobile.largeHeight
+          : AppButtonSizingDesktop.largeHeight,
+    );
+    expect(
+      AppInputSizing.height,
+      mobile ? AppInputSizingMobile.height : AppInputSizingDesktop.height,
+    );
+    expect(
+      AppAssetSize.size,
+      mobile ? AppAssetSizeMobile.size : AppAssetSizeDesktop.size,
+    );
+    expect(
+      AppButtonSizing.mediumSmallIconSize,
+      mobile
+          ? AppButtonSizingMobile.mediumSmallIconSize
+          : AppButtonSizingDesktop.mediumSmallIconSize,
+    );
+  });
+
+  test('desktop sizing tokens match 1 Sizing-3.zip', () {
     expect(AppSpacing.xxs, 4);
     expect(AppSpacing.xs, 8);
     expect(AppSpacing.s, 12);
@@ -28,17 +77,18 @@ void main() {
     expect(AppRadii.xLarge, 32);
     expect(AppRadii.full, 999);
 
-    expect(AppAssetSize.size, 32);
-    expect(AppAssetSize.icon, 16);
-    expect(AppAssetSize.padding, 4);
-    expect(AppIconSize.medium, AppAssetSize.icon);
+    expect(AppAssetSizeDesktop.size, 32);
+    expect(AppAssetSizeDesktop.icon, 16);
+    expect(AppAssetSizeDesktop.padding, 4);
+    expect(AppIconSize.medium, AppAssetSizeDesktop.icon);
 
-    expect(AppButtonSizing.largeHeight, 44);
+    expect(AppButtonSizingDesktop.largeHeight, 44);
+    expect(AppButtonSizingDesktop.mediumSmallIconSize, 16);
 
-    expect(AppInputSizing.height, 46);
-    expect(AppInputSizing.iconWrapWidth, 32);
-    expect(AppInputSizing.iconSize, 20);
-    expect(AppInputSizing.radius, AppRadii.small);
+    expect(AppInputSizingDesktop.height, 46);
+    expect(AppInputSizingDesktop.iconWrapWidth, 32);
+    expect(AppInputSizingDesktop.iconSize, 20);
+    expect(AppInputSizingDesktop.radius, AppRadii.small);
 
     expect(AppWindowSizing.minWidth, 1080);
     expect(AppWindowSizing.minHeight, 720);
@@ -48,47 +98,144 @@ void main() {
     expect(AppWindowSizing.paneRadius, 20);
   });
 
-  test('desktop font tokens match the design system', () {
-    const liningFigures = [FontFeature.enable('case')];
+  test('mobile sizing tokens match 1 Sizing-3.zip', () {
+    expect(AppAssetSizeMobile.size, 40);
+    expect(AppAssetSizeMobile.icon, 18);
+    expect(AppAssetSizeMobile.padding, 0);
 
-    expect(AppTypography.displayMedium.fontFamily, 'Young Serif');
-    expect(AppTypography.displayMedium.fontWeight, FontWeight.w400);
-    expect(AppTypography.displayMedium.fontFeatures, liningFigures);
-    expect(AppTypography.displayMedium.fontSize, 45);
-    expect(AppTypography.displayMedium.height, 48 / 45);
-    expect(AppTypography.displayMedium.letterSpacing, -1.35);
+    expect(AppButtonSizingMobile.largeHeight, 50);
+    expect(AppButtonSizingMobile.mediumSmallIconSize, 20);
 
-    expect(AppTypography.headlineLarge.fontFamily, 'Young Serif');
-    expect(AppTypography.headlineLarge.fontWeight, FontWeight.w400);
-    expect(AppTypography.headlineLarge.fontFeatures, liningFigures);
-    expect(AppTypography.headlineLarge.fontSize, 32);
-    expect(AppTypography.headlineLarge.height, 33 / 32);
-
-    expect(AppTypography.headlineMedium.fontFamily, 'Young Serif');
-    expect(AppTypography.headlineMedium.fontWeight, FontWeight.w400);
-    expect(AppTypography.headlineMedium.fontFeatures, liningFigures);
-    expect(AppTypography.headlineMedium.fontSize, 28);
-    expect(AppTypography.headlineMedium.height, 30 / 28);
-    expect(AppTypography.headlineMedium.letterSpacing, -0.28);
-
-    expect(AppTypography.labelMedium.fontFamily, 'Geist');
-    expect(AppTypography.labelMedium.fontWeight, FontWeight.w500);
-    expect(AppTypography.labelMedium.fontSize, 13);
-    expect(AppTypography.labelMedium.height, 14 / 13);
-    expect(AppTypography.labelMedium.letterSpacing, 0);
-
-    expect(AppTypography.labelSmall.fontFamily, 'Geist');
-    expect(AppTypography.labelSmall.fontWeight, FontWeight.w500);
-    expect(AppTypography.labelSmall.fontSize, 13);
-    expect(AppTypography.labelSmall.height, 14 / 13);
-
-    expect(AppTypography.codeSmall.fontFamily, 'Geist Mono');
-    expect(AppTypography.codeSmall.fontWeight, FontWeight.w500);
-    expect(AppTypography.codeSmall.fontSize, 13);
-    expect(AppTypography.codeSmall.height, 17 / 13);
+    expect(AppInputSizingMobile.height, 60);
+    expect(AppInputSizingMobile.iconWrapWidth, 36);
+    expect(AppInputSizingMobile.iconSize, 24);
+    // Figma `Input/Radii` aliases `Radii.SM` (16) on mobile; the Figma
+    // radii scale is shifted one tier against Dart's, so `SM` = `medium`.
+    expect(AppInputSizingMobile.radius, AppRadii.medium);
   });
 
-  test('semantic color tokens match 2 Color Theme.zip', () {
+  test('desktop font tokens preserve redesign serif typography', () {
+    const caseFigures = [FontFeature.enable('case')];
+
+    expect(AppTypographyDesktop.displayMedium.fontFamily, 'Young Serif');
+    expect(AppTypographyDesktop.displayMedium.fontWeight, FontWeight.w400);
+    expect(AppTypographyDesktop.displayMedium.fontFeatures, caseFigures);
+    expect(AppTypographyDesktop.displayMedium.fontSize, 45);
+    expect(AppTypographyDesktop.displayMedium.height, 48 / 45);
+    expect(AppTypographyDesktop.displayMedium.letterSpacing, -1.35);
+
+    expect(AppTypographyDesktop.headlineLarge.fontFamily, 'Young Serif');
+    expect(AppTypographyDesktop.headlineLarge.fontWeight, FontWeight.w400);
+    expect(AppTypographyDesktop.headlineLarge.fontFeatures, caseFigures);
+    expect(AppTypographyDesktop.headlineLarge.fontSize, 32);
+    expect(AppTypographyDesktop.headlineLarge.height, 33 / 32);
+
+    expect(AppTypographyDesktop.headlineMedium.fontFamily, 'Young Serif');
+    expect(AppTypographyDesktop.headlineMedium.fontWeight, FontWeight.w400);
+    expect(AppTypographyDesktop.headlineMedium.fontFeatures, caseFigures);
+    expect(AppTypographyDesktop.headlineMedium.fontSize, 28);
+    expect(AppTypographyDesktop.headlineMedium.height, 30 / 28);
+    expect(AppTypographyDesktop.headlineMedium.letterSpacing, -0.28);
+
+    expect(AppTypographyDesktop.headlineSmall.fontSize, 16);
+    expect(AppTypographyDesktop.headlineSmall.height, 20 / 16);
+
+    expect(AppTypographyDesktop.bodyLarge.fontSize, 16);
+    expect(AppTypographyDesktop.bodyLarge.height, 24 / 16);
+    expect(AppTypographyDesktop.bodyMedium.fontSize, 14);
+    expect(AppTypographyDesktop.bodyMedium.height, 21 / 14);
+    expect(AppTypographyDesktop.bodyMediumStrong.fontSize, 14);
+    expect(AppTypographyDesktop.bodyMediumStrong.fontWeight, FontWeight.w500);
+    expect(AppTypographyDesktop.bodySmall.fontSize, 12);
+    expect(AppTypographyDesktop.bodySmall.height, 18 / 12);
+    expect(AppTypographyDesktop.bodyExtraSmall.fontSize, 11);
+    expect(AppTypographyDesktop.bodyExtraSmall.height, 16 / 11);
+
+    expect(AppTypographyDesktop.labelLarge.fontSize, 14);
+    expect(AppTypographyDesktop.labelLarge.height, 16 / 14);
+
+    expect(AppTypographyDesktop.labelMedium.fontFamily, 'Geist');
+    expect(AppTypographyDesktop.labelMedium.fontWeight, FontWeight.w500);
+    expect(AppTypographyDesktop.labelMedium.fontSize, 13);
+    expect(AppTypographyDesktop.labelMedium.height, 14 / 13);
+    expect(AppTypographyDesktop.labelMedium.letterSpacing, 0);
+
+    expect(AppTypographyDesktop.labelSmall.fontFamily, 'Geist');
+    expect(AppTypographyDesktop.labelSmall.fontWeight, FontWeight.w500);
+    expect(AppTypographyDesktop.labelSmall.fontSize, 13);
+    expect(AppTypographyDesktop.labelSmall.height, 14 / 13);
+
+    expect(AppTypographyDesktop.codeSmall.fontFamily, 'Geist Mono');
+    expect(AppTypographyDesktop.codeSmall.fontWeight, FontWeight.w500);
+    expect(AppTypographyDesktop.codeSmall.fontSize, 13);
+    expect(AppTypographyDesktop.codeSmall.height, 17 / 13);
+  });
+
+  test('mobile font tokens match 3 Fonts-3.zip and app screen overrides', () {
+    // The current variable export updates mobile body/label/code metrics,
+    // but actual mobile app frames still render display headlines with
+    // Young Serif. Keep that intentional app-level screen behavior pinned.
+    expect(AppTypographyMobile.displayLarge.fontFamily, 'Young Serif');
+    expect(AppTypographyMobile.displayLarge.fontWeight, FontWeight.w400);
+    expect(AppTypographyMobile.displayLarge.fontSize, 40);
+    expect(AppTypographyMobile.displayLarge.height, 40 / 40);
+    expect(AppTypographyMobile.displayLarge.letterSpacing, -1.35);
+    const lining = [FontFeature.liningFigures()];
+    expect(AppTypographyMobile.displayLarge.fontFeatures, lining);
+    expect(AppTypographyMobile.headlineLarge.fontFeatures, lining);
+    expect(AppTypographyMobile.headlineMedium.fontFeatures, lining);
+
+    expect(AppTypographyMobile.headlineLarge.fontFamily, 'Young Serif');
+    expect(
+      AppTypographyMobile.headlineLarge.fontSize,
+      AppTypographyDesktop.headlineLarge.fontSize,
+    );
+    expect(
+      AppTypographyMobile.headlineLarge.height,
+      AppTypographyDesktop.headlineLarge.height,
+    );
+    expect(AppTypographyMobile.headlineMedium.fontFamily, 'Young Serif');
+    expect(
+      AppTypographyMobile.headlineMedium.fontSize,
+      AppTypographyDesktop.headlineMedium.fontSize,
+    );
+    expect(
+      AppTypographyMobile.headlineMedium.height,
+      AppTypographyDesktop.headlineMedium.height,
+    );
+    expect(AppTypographyMobile.headlineMedium.letterSpacing, -0.28);
+
+    // Code S is mode-invariant; Code M scales up on mobile.
+    expect(AppTypographyMobile.codeMedium.fontSize, 16);
+    expect(AppTypographyMobile.codeMedium.height, 21 / 16);
+    expect(AppTypographyMobile.codeSmall, AppTypographyDesktop.codeSmall);
+
+    expect(AppTypographyMobile.headlineSmall.fontSize, 18);
+    expect(AppTypographyMobile.headlineSmall.height, 22 / 18);
+
+    expect(AppTypographyMobile.bodyLarge.fontSize, 18);
+    expect(AppTypographyMobile.bodyLarge.height, 26 / 18);
+    expect(AppTypographyMobile.bodyLarge.letterSpacing, -0.24);
+    expect(AppTypographyMobile.bodyMedium.fontSize, 16);
+    expect(AppTypographyMobile.bodyMedium.height, 25 / 16);
+    expect(AppTypographyMobile.bodyMedium.letterSpacing, -0.21);
+    expect(AppTypographyMobile.bodyMediumStrong.fontSize, 16);
+    expect(AppTypographyMobile.bodyMediumStrong.height, 25 / 16);
+    expect(AppTypographyMobile.bodyMediumStrong.fontWeight, FontWeight.w500);
+    expect(AppTypographyMobile.bodySmall.fontSize, 14);
+    expect(AppTypographyMobile.bodySmall.height, 20 / 14);
+    expect(AppTypographyMobile.bodyExtraSmall.fontSize, 13);
+    expect(AppTypographyMobile.bodyExtraSmall.height, 18 / 13);
+
+    expect(AppTypographyMobile.labelLarge.fontSize, 16);
+    expect(AppTypographyMobile.labelLarge.height, 17 / 16);
+    expect(AppTypographyMobile.labelLarge.letterSpacing, -0.06);
+    expect(AppTypographyMobile.labelMedium.fontSize, 14);
+    expect(AppTypographyMobile.labelMedium.height, 15 / 14);
+    expect(AppTypographyMobile.labelSmall, AppTypographyMobile.labelMedium);
+  });
+
+  test('semantic color tokens match 2 Color Theme-3.zip', () {
     final light = AppThemeData.light.colors;
     final dark = AppThemeData.dark.colors;
 
@@ -128,6 +275,8 @@ void main() {
 
     expect(light.background.utilitySuccessAlpha, const Color(0x263BD38B));
     expect(dark.background.utilitySuccessAlpha, const Color(0x260DC87D));
+    expect(light.fade.illustration, Primitives.p0Alpha0Dark);
+    expect(dark.fade.illustration, Primitives.p0Alpha50Dark);
 
     expect(light.state.hover, Primitives.p50Light);
     expect(light.state.hoverOpacity, const Color(0x0D141818));
@@ -151,7 +300,7 @@ void main() {
     expect(dark.sync.glow, Primitives.p500Dark);
   });
 
-  test('macOS utility color tokens match 2 Color Theme.zip', () {
+  test('macOS utility color tokens match 2 Color Theme-3.zip', () {
     final light = AppThemeData.light.colors.macosUtility;
     final dark = AppThemeData.dark.colors.macosUtility;
 
@@ -172,7 +321,7 @@ void main() {
     expect(dark.innerBorder, const Color(0x26FFFFFF));
   });
 
-  test('plum primitive tokens match 2 Color Theme.zip', () {
+  test('plum primitive tokens match 2 Color Theme-3.zip', () {
     expect(PlumPrimitives.p0Light, const Color(0xFFF6ECF9));
     expect(PlumPrimitives.p50Light, const Color(0xFFE6C5EC));
     expect(PlumPrimitives.p300Light, const Color(0xFFAB40BF));

@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../swap/models/swap_models.dart';
+import 'activity_amount_text.dart';
 import 'activity_row_mapper.dart';
 import 'models/activity_row_data.dart';
 
@@ -84,6 +85,7 @@ ActivityRowData buildSwapActivityRow({
   required BuildContext context,
   required SwapActivityRowItem item,
   bool privacyModeEnabled = false,
+  bool dateOnlyTimestamp = false,
   VoidCallback? onTap,
   String? receivedAmountText,
   VoidCallback? onReceivedLegTap,
@@ -108,14 +110,16 @@ ActivityRowData buildSwapActivityRow({
     subtitle: returnsFunds
         ? '${sellAsset?.symbol ?? 'ZEC'} Refunded'
         : _swapActivityAssetSubtitle(sellAsset) ?? item.providerLabel,
-    amountText: _swapActivityAmountText(
-      item,
-      includeSign: !(returnsFunds || timedOut),
-      privacyModeEnabled: privacyModeEnabled,
+    amountText: activityAmountTextForFormFactor(
+      _swapActivityAmountText(
+        item,
+        includeSign: !(returnsFunds || timedOut),
+        privacyModeEnabled: privacyModeEnabled,
+      ),
     ),
     amountIconName: returnsFunds ? AppIcons.uturnUp : null,
     amountIconColor: returnsFunds ? colors.icon.regular : null,
-    amountColor: colors.text.primary,
+    amountColor: outgoingAmountColor(colors),
     amountSubtitle: timedOut ? 'Timeout' : null,
     amountSubtitleIconName: timedOut ? AppIcons.time : null,
     amountSubtitleIconColor: timedOut ? colors.text.secondary : null,
@@ -134,7 +138,10 @@ ActivityRowData buildSwapActivityRow({
         : incompleteDeposit
         ? colors.text.brandCrimson
         : colors.text.secondary,
-    timestampText: formatActivityTimestamp(item.activityTimestamp),
+    timestampText: formatActivityTimestamp(
+      item.activityTimestamp,
+      dateOnly: dateOnlyTimestamp,
+    ),
     childRows: _swapActivityChildRows(
       context: context,
       item: item,
@@ -142,6 +149,7 @@ ActivityRowData buildSwapActivityRow({
       privacyModeEnabled: privacyModeEnabled,
       receivedAmountText: receivedAmountText,
       onReceivedLegTap: onReceivedLegTap,
+      dateOnlyTimestamp: dateOnlyTimestamp,
     ),
     onTap: onTap,
   );
@@ -156,6 +164,7 @@ List<ActivityRowData> _swapActivityChildRows({
   required bool privacyModeEnabled,
   required String? receivedAmountText,
   required VoidCallback? onReceivedLegTap,
+  required bool dateOnlyTimestamp,
 }) {
   final direction = item.direction;
   if (direction == null || receiveAsset == null) return const [];
@@ -182,10 +191,12 @@ List<ActivityRowData> _swapActivityChildRows({
       leadingIconName: AppIcons.swapArrows,
       leadingBackgroundColor: colors.background.neutralSubtleOpacity,
       leadingIconColor: colors.icon.regular,
-      amountText: amountText,
-      amountColor: colors.text.primary,
+      amountText: activityAmountTextForFormFactor(amountText),
+      amountColor: outgoingAmountColor(colors),
       statusText: '',
-      timestampText: '',
+      timestampText: dateOnlyTimestamp
+          ? _swapActivityChildTimestamp(item, dateOnly: true)
+          : '',
       onTap: receivesZec ? onReceivedLegTap : null,
     ),
   ];
@@ -368,6 +379,26 @@ String? _swapActivityAssetSubtitle(SwapAsset? asset) {
   if (asset == null) return null;
   if (asset.isNativeZec) return '${asset.symbol} ${asset.chainLabel}';
   return '${asset.symbol} on ${asset.chainLabel}';
+}
+
+String _swapActivityChildTimestamp(
+  SwapActivityRowItem item, {
+  bool dateOnly = false,
+}) {
+  final timestamp =
+      item.completedAt ?? item.lastStatusCheckedAt ?? item.updatedAt;
+  if (timestamp == null) return '--';
+  if (dateOnly) return formatActivityTimestamp(timestamp, dateOnly: true);
+  return _relativeActivityTimestamp(timestamp) ??
+      formatActivityTimestamp(timestamp);
+}
+
+String? _relativeActivityTimestamp(DateTime timestamp) {
+  final elapsed = DateTime.now().difference(timestamp.toLocal());
+  if (elapsed.isNegative) return null;
+  if (elapsed.inMinutes < 1) return 'just now';
+  if (elapsed.inHours < 1) return '${elapsed.inMinutes}m ago';
+  return null;
 }
 
 _SwapActivityProgress? _swapActivityProgress(SwapActivityRowItem item) {

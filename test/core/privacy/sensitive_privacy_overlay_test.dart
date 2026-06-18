@@ -17,6 +17,37 @@ void main() {
     expect(supportsPlatformPrivacySignals(isWeb: true, isMacOS: true), isFalse);
   });
 
+  test('native privacy shield supports macOS and Android', () {
+    expect(
+      supportsNativePrivacyShield(
+        isWeb: false,
+        isMacOS: true,
+        isAndroid: false,
+      ),
+      isTrue,
+    );
+    expect(
+      supportsNativePrivacyShield(
+        isWeb: false,
+        isMacOS: false,
+        isAndroid: true,
+      ),
+      isTrue,
+    );
+    expect(
+      supportsNativePrivacyShield(
+        isWeb: false,
+        isMacOS: false,
+        isAndroid: false,
+      ),
+      isFalse,
+    );
+    expect(
+      supportsNativePrivacyShield(isWeb: true, isMacOS: true, isAndroid: true),
+      isFalse,
+    );
+  });
+
   test('reuses one native macOS exposure stream instance', () {
     expect(
       MacOSPrivacyExposureEvents.stream,
@@ -122,6 +153,107 @@ void main() {
     expect(clip.borderRadius, radius);
   });
 
+  testWidgets(
+    'auth-prompt marker does not override a plain unsafe controller',
+    (tester) async {
+      final controller = SensitivePrivacyOverlayController(
+        initiallySafe: false,
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        AppTheme(
+          data: AppThemeData.light,
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: SensitivePrivacyOverlay(
+              sensitiveContentVisible: true,
+              controller: controller,
+              child: const SizedBox(width: 320, height: 240),
+            ),
+          ),
+        ),
+      );
+
+      // Unsafe with visible content → shield shows.
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+
+      // The base controller records the prompt marker but does not decide which
+      // unsafe state is safe to suppress.
+      controller.beginAuthPrompt();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+
+      controller.endAuthPrompt();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'environment controller suppresses the shield across the biometric '
+    'inactive→resumed transition',
+    (tester) async {
+      final controller = SensitivePrivacyEnvironmentController();
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        AppTheme(
+          data: AppThemeData.light,
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: SensitivePrivacyOverlay(
+              sensitiveContentVisible: true,
+              controller: controller,
+              child: const SizedBox(width: 320, height: 240),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+
+      // The prompt suppresses the shield, then iOS drives the app inactive.
+      controller.beginAuthPrompt();
+      controller.setLifecycleInactiveForTesting();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+
+      // A real background transition is not suppressed by the auth marker.
+      controller.setLifecycleHiddenForTesting();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+
+      controller.endAuthPrompt();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+
+      // Return to foreground, then repeat the intended prompt path.
+      controller.setLifecycleForegroundForTesting();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+      controller.beginAuthPrompt();
+      controller.setLifecycleInactiveForTesting();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+
+      // Releasing while still inactive defers — no flash before resume.
+      controller.endAuthPrompt();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+
+      // Returning to foreground clears suppression in lockstep with safe.
+      controller.setLifecycleForegroundForTesting();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+
+      // A genuine background (no prompt) still covers the content.
+      controller.setLifecycleInactiveForTesting();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+    },
+  );
+
   testWidgets('environment controller honors native macOS exposure events', (
     tester,
   ) async {
@@ -172,7 +304,7 @@ void main() {
   });
 
   testWidgets(
-    'syncs sensitive visibility to the native macOS policy bridge',
+    'syncs sensitive visibility to the native privacy shield bridge',
     (tester) async {
       const channel = MethodChannel('com.zcash.wallet/privacy_shield');
       final calls = <MethodCall>[];

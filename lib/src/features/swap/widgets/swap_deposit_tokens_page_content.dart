@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_tooltip.dart';
+import '../../../core/widgets/dot_qr_shape.dart';
 import '../domain/swap_contract.dart';
 import '../models/swap_address_formatting.dart';
 import '../models/swap_deposit_qr_payload.dart';
@@ -24,6 +26,7 @@ class SwapDepositTokensPageContent extends StatelessWidget {
     this.expiresAt,
     this.now,
     this.memo,
+    this.mobile = false,
     super.key,
   });
 
@@ -38,6 +41,11 @@ class SwapDepositTokensPageContent extends StatelessWidget {
   final bool checking;
   final String? checkWarning;
 
+  /// Renders the Figma mobile deposit frame (4731:96923): a single
+  /// full-width card with a large QR stacked over the amount, then the
+  /// detail rows and a full-width primary action.
+  final bool mobile;
+
   @override
   Widget build(BuildContext context) {
     return _SwapDepositPageShell(
@@ -48,11 +56,15 @@ class SwapDepositTokensPageContent extends StatelessWidget {
       expiresAt: expiresAt,
       now: now,
       memo: memo,
+      mobile: mobile,
       actionArea: _DepositConfirmActionArea(
         checking: checking,
         warning: checkWarning,
-        buttonLabel: "I've deposited",
+        buttonLabel: kAppFormFactor == AppFormFactor.mobile
+            ? 'I’ve deposited tokens'
+            : "I've deposited",
         onDeposited: onDeposited,
+        mobile: mobile,
       ),
     );
   }
@@ -68,6 +80,7 @@ class SwapHardwareZecDepositPageContent extends StatelessWidget {
     this.expiresAt,
     this.now,
     this.memo,
+    this.mobile = false,
     super.key,
   });
 
@@ -79,6 +92,7 @@ class SwapHardwareZecDepositPageContent extends StatelessWidget {
   final DateTime Function()? now;
   final String? memo;
   final VoidCallback onDepositZec;
+  final bool mobile;
 
   @override
   Widget build(BuildContext context) {
@@ -90,11 +104,13 @@ class SwapHardwareZecDepositPageContent extends StatelessWidget {
       expiresAt: expiresAt,
       now: now,
       memo: memo,
+      mobile: mobile,
       actionArea: _DepositConfirmActionArea(
         checking: false,
         warning: null,
         buttonLabel: 'Deposit ZEC',
         onDeposited: onDepositZec,
+        mobile: mobile,
       ),
     );
   }
@@ -110,6 +126,7 @@ class _SwapDepositPageShell extends StatelessWidget {
     this.expiresAt,
     this.now,
     this.memo,
+    this.mobile = false,
   });
 
   final SwapAsset asset;
@@ -120,9 +137,46 @@ class _SwapDepositPageShell extends StatelessWidget {
   final DateTime Function()? now;
   final String? memo;
   final Widget actionArea;
+  final bool mobile;
 
   @override
   Widget build(BuildContext context) {
+    if (mobile) return _buildMobile(context);
+    return _buildDesktop(context);
+  }
+
+  Widget _buildMobile(BuildContext context) {
+    // Figma 4731:96923: the screen title comes from the host top nav
+    // ("Review quote"), so the content starts with the full-width QR card.
+    return Column(
+      key: const ValueKey('swap_deposit_tokens_panel'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        KeyedSubtree(
+          key: const ValueKey('swap_activity_deposit_qr_panel'),
+          child: _MobileDepositQrCard(
+            asset: asset,
+            qrData: swapDepositQrPayload(depositAddress, memo),
+            amountText: amountText,
+            expiresInLabel: expiresInLabel,
+            expiresAt: expiresAt,
+            now: now,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        _DepositDetailsList(
+          asset: asset,
+          amountText: amountText,
+          depositAddress: depositAddress,
+          memo: memo,
+          mobile: true,
+        ),
+        actionArea,
+      ],
+    );
+  }
+
+  Widget _buildDesktop(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
       key: const ValueKey('swap_deposit_tokens_panel'),
@@ -162,12 +216,112 @@ class _SwapDepositPageShell extends StatelessWidget {
   }
 }
 
+/// Figma 4731:96923 deposit card: a full-width rounded surface with the
+/// large QR stacked over the amount and the deposit countdown, all
+/// centred. Desktop keeps the side-by-side [_DepositQrCard].
+class _MobileDepositQrCard extends StatelessWidget {
+  const _MobileDepositQrCard({
+    required this.asset,
+    required this.qrData,
+    required this.amountText,
+    required this.expiresInLabel,
+    required this.expiresAt,
+    required this.now,
+  });
+
+  static const _width = 337.0;
+  static const _height = 452.0;
+  static const _radius = 48.0;
+  static const _padding = AppSpacing.s;
+  static const _qrSize = 313.0;
+  static const _qrPadding = AppSpacing.sm;
+  static const _qrLogoSize = 57.0;
+
+  final SwapAsset asset;
+  final String qrData;
+  final String amountText;
+  final String expiresInLabel;
+  final DateTime? expiresAt;
+  final DateTime Function()? now;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = constraints.hasBoundedWidth
+            ? constraints.maxWidth.clamp(0.0, _width).toDouble()
+            : _width;
+        final qrSize = (cardWidth - _padding * 2)
+            .clamp(0.0, _qrSize)
+            .toDouble();
+        final qrScale = _qrSize == 0 ? 1.0 : qrSize / _qrSize;
+        return Center(
+          child: Container(
+            key: const ValueKey('swap_deposit_qr_card'),
+            width: cardWidth,
+            height: _height,
+            padding: const EdgeInsets.all(_padding),
+            decoration: BoxDecoration(
+              color: colors.background.homeCard,
+              borderRadius: BorderRadius.circular(_radius),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _DepositQrCode(
+                  data: qrData,
+                  asset: asset,
+                  size: qrSize,
+                  padding: _qrPadding,
+                  radius: AppRadii.xLarge,
+                  logoSize: _qrLogoSize * qrScale,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                SizedBox(
+                  height: 99,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.sm,
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          amountText,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.headlineLarge.copyWith(
+                            color: colors.text.homeCard,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.s),
+                        _DepositExpiryLine(
+                          expiresInLabel: expiresInLabel,
+                          expiresAt: expiresAt,
+                          now: now,
+                          centered: true,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _DepositConfirmActionArea extends StatelessWidget {
   const _DepositConfirmActionArea({
     required this.checking,
     required this.warning,
     required this.buttonLabel,
     required this.onDeposited,
+    this.mobile = false,
   });
 
   static const _buttonHeight = 44.0;
@@ -180,9 +334,36 @@ class _DepositConfirmActionArea extends StatelessWidget {
   final String? warning;
   final String buttonLabel;
   final VoidCallback onDeposited;
+  final bool mobile;
 
   @override
   Widget build(BuildContext context) {
+    if (mobile) {
+      // Figma pins a full-width primary action below the detail rows.
+      return Column(
+        key: const ValueKey('swap_deposit_confirm_action_area'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (warning != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            _DepositCheckWarning(message: warning!),
+          ],
+          const SizedBox(height: AppSpacing.lg),
+          AppButton(
+            key: const ValueKey('swap_deposit_confirm_button'),
+            onPressed: checking ? null : onDeposited,
+            variant: AppButtonVariant.primary,
+            size: AppButtonSize.large,
+            expand: true,
+            constrainContent: true,
+            child: _DepositConfirmButtonLabel(
+              checking: checking,
+              buttonLabel: buttonLabel,
+            ),
+          ),
+        ],
+      );
+    }
     return SizedBox(
       key: const ValueKey('swap_deposit_confirm_action_area'),
       height: _height,
@@ -234,17 +415,18 @@ class _DepositConfirmButtonLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!checking) {
+      return Text(buttonLabel, maxLines: 1, overflow: TextOverflow.ellipsis);
+    }
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(checking ? 'Checking' : buttonLabel, maxLines: 1),
-        if (checking) ...[
-          const SizedBox(width: AppSpacing.xxs),
-          const AppIcon(
-            AppIcons.loader,
-            key: ValueKey('swap_deposit_confirm_loader'),
-          ),
-        ],
+        const Text('Checking', maxLines: 1, overflow: TextOverflow.ellipsis),
+        const SizedBox(width: AppSpacing.xxs),
+        const AppIcon(
+          AppIcons.loader,
+          key: ValueKey('swap_deposit_confirm_loader'),
+        ),
       ],
     );
   }
@@ -460,13 +642,15 @@ class _DepositExpiryLine extends StatefulWidget {
     required this.expiresInLabel,
     required this.expiresAt,
     required this.now,
-    required this.onCardColor,
+    this.onCardColor,
+    this.centered = false,
   });
 
   final String expiresInLabel;
   final DateTime? expiresAt;
   final DateTime Function()? now;
-  final Color onCardColor;
+  final Color? onCardColor;
+  final bool centered;
 
   @override
   State<_DepositExpiryLine> createState() => _DepositExpiryLineState();
@@ -554,7 +738,36 @@ class _DepositExpiryLineState extends State<_DepositExpiryLine> {
 
   @override
   Widget build(BuildContext context) {
-    final onCardColor = widget.onCardColor;
+    final colors = context.colors;
+    final textStyle = AppTypography.labelLarge.copyWith(
+      color: widget.onCardColor ?? colors.text.homeCard,
+    );
+    if (widget.centered) {
+      return Row(
+        key: const ValueKey('swap_deposit_expiry_label'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Deposit within',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: textStyle,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xxs,
+              vertical: 2,
+            ),
+            child: Text(
+              _expiresInLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: textStyle,
+            ),
+          ),
+        ],
+      );
+    }
     return Row(
       key: const ValueKey('swap_deposit_expiry_label'),
       mainAxisSize: MainAxisSize.min,
@@ -564,7 +777,7 @@ class _DepositExpiryLineState extends State<_DepositExpiryLine> {
             'Deposit within',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelLarge.copyWith(color: onCardColor),
+            style: textStyle,
           ),
         ),
         // Figma 'Time Wrap' carries only its 4px/2px inset — no fill or
@@ -578,7 +791,7 @@ class _DepositExpiryLineState extends State<_DepositExpiryLine> {
             _expiresInLabel,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelLarge.copyWith(color: onCardColor),
+            style: textStyle,
           ),
         ),
       ],
@@ -586,36 +799,69 @@ class _DepositExpiryLineState extends State<_DepositExpiryLine> {
   }
 }
 
+/// Deposit addresses are often short, which yields a low-version QR with big
+/// modules. The Figma deposit QR (node 4755:87754) is a dense version-9 code
+/// (~53 modules), so pin a minimum version: short data renders just as fine and
+/// dotted as the design, longer data still grows naturally.
+const _depositMinQrVersion = 9;
+
+QrImage _depositQrImage(String data) {
+  final natural = QrCode.fromData(
+    data: data,
+    errorCorrectLevel: QrErrorCorrectLevel.M,
+  );
+  if (natural.typeNumber >= _depositMinQrVersion) {
+    return QrImage(natural);
+  }
+  return QrImage(
+    QrCode(_depositMinQrVersion, QrErrorCorrectLevel.M)..addData(data),
+  );
+}
+
 class _DepositQrCode extends StatelessWidget {
-  const _DepositQrCode({required this.data, required this.asset});
+  const _DepositQrCode({
+    required this.data,
+    required this.asset,
+    this.size = 194,
+    this.padding = AppSpacing.s,
+    this.radius = AppRadii.medium,
+    this.logoSize = 34,
+  });
 
   final String data;
   final SwapAsset asset;
+
+  /// Outer side length. Desktop pins 194; mobile uses Figma's 313px QR wrap.
+  final double size;
+  final double padding;
+  final double radius;
+  final double logoSize;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
       key: const ValueKey('swap_deposit_tokens_qr_code'),
-      width: 194,
-      height: 194,
-      padding: const EdgeInsets.all(AppSpacing.s),
+      width: size,
+      height: size,
+      padding: EdgeInsets.all(padding),
       decoration: BoxDecoration(
         color: colors.surface.qrCode,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
+        borderRadius: BorderRadius.circular(radius),
       ),
       child: Stack(
         alignment: Alignment.center,
         children: [
-          PrettyQrView.data(
-            data: data,
-            errorCorrectLevel: QrErrorCorrectLevel.M,
+          PrettyQrView(
+            qrImage: _depositQrImage(data),
             decoration: const PrettyQrDecoration(
               quietZone: PrettyQrQuietZone.zero,
-              shape: PrettyQrSmoothSymbol(roundFactor: 0.75),
+              // Match the receive screen's dotted QR (round modules + ring/dot
+              // finder patterns) via the shared shape.
+              shape: DotQrShape(),
             ),
           ),
-          _DepositQrNetworkLogo(asset: asset),
+          _DepositQrNetworkLogo(asset: asset, size: logoSize),
         ],
       ),
     );
@@ -623,17 +869,18 @@ class _DepositQrCode extends StatelessWidget {
 }
 
 class _DepositQrNetworkLogo extends StatelessWidget {
-  const _DepositQrNetworkLogo({required this.asset});
+  const _DepositQrNetworkLogo({required this.asset, this.size = 34});
 
   final SwapAsset asset;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final logo = Container(
       key: const ValueKey('swap_deposit_qr_logo'),
-      width: 34,
-      height: 34,
+      width: size,
+      height: size,
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
         color: colors.surface.qrCode,
@@ -650,7 +897,11 @@ class _DepositQrNetworkLogo extends StatelessWidget {
       ),
     );
     if (Overlay.maybeOf(context) == null) return logo;
-    return AppTooltip(message: asset.chainLabel, child: logo);
+    return AppTooltip(
+      message: asset.chainLabel,
+      tapToShow: kAppFormFactor == AppFormFactor.mobile,
+      child: logo,
+    );
   }
 }
 
@@ -686,27 +937,37 @@ class _DepositDetailsList extends StatelessWidget {
     required this.amountText,
     required this.depositAddress,
     this.memo,
+    this.mobile = false,
   });
 
   final SwapAsset asset;
   final String amountText;
   final String depositAddress;
   final String? memo;
+  final bool mobile;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       key: const ValueKey('swap_deposit_details'),
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      padding: EdgeInsets.symmetric(
+        horizontal: mobile ? AppSpacing.s : AppSpacing.sm,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _DepositDetailRow(
-            label: 'Amount',
+            label: kAppFormFactor == AppFormFactor.mobile
+                ? 'Amount to deposit'
+                : 'Amount',
             value: amountText,
             copyText: _depositAmountCopyText(amountText, asset),
-            toastMessage: 'Amount Copied',
+            toastMessage: kAppFormFactor == AppFormFactor.mobile
+                ? 'Amount copied'
+                : 'Amount Copied',
             copyKey: const ValueKey('swap_copy_deposit_amount'),
+            rightKey: const ValueKey('swap_deposit_amount_right_item'),
+            mobile: mobile,
           ),
           _DepositDetailRow(
             label: 'One-time address',
@@ -715,6 +976,8 @@ class _DepositDetailsList extends StatelessWidget {
             toastMessage: 'Address copied',
             copyKey: const ValueKey('swap_copy_deposit_address'),
             scaleValueToFit: true,
+            rightKey: const ValueKey('swap_deposit_address_right_item'),
+            mobile: mobile,
           ),
           if (memo?.trim().isNotEmpty ?? false)
             _DepositDetailRow(
@@ -723,6 +986,8 @@ class _DepositDetailsList extends StatelessWidget {
               copyText: memo!.trim(),
               toastMessage: 'Memo copied',
               copyKey: const ValueKey('swap_copy_deposit_memo'),
+              rightKey: const ValueKey('swap_deposit_memo_right_item'),
+              mobile: mobile,
             ),
         ],
       ),
@@ -737,48 +1002,89 @@ class _DepositDetailRow extends StatelessWidget {
     required this.copyText,
     required this.toastMessage,
     required this.copyKey,
+    required this.rightKey,
     this.scaleValueToFit = false,
+    this.mobile = false,
   });
+
+  static const _mobileLabelMaxWidth = 134.0;
 
   final String label;
   final String value;
   final String copyText;
   final String toastMessage;
   final Key copyKey;
+  final Key rightKey;
   final bool scaleValueToFit;
+  final bool mobile;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final labelText = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTypography.labelLarge.copyWith(color: colors.text.secondary),
+      ),
+    );
+    final valueTextStyle = AppTypography.labelLarge.copyWith(
+      color: colors.text.accent,
+    );
+    final valueText = Text(
+      value,
+      maxLines: 1,
+      softWrap: false,
+      overflow: mobile ? TextOverflow.visible : TextOverflow.ellipsis,
+      textAlign: TextAlign.end,
+      style: valueTextStyle,
+    );
     return SizedBox(
       height: 32,
       child: Row(
         children: [
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.secondary,
+          if (mobile)
+            // Keep the label column at the Figma width (so the value area
+            // stays >=190) but scale the label down to fit instead of
+            // truncating it — mirrors the value's own scaleDown, so labels
+            // like "Amount to deposit" / "One-time address" read in full.
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: _mobileLabelMaxWidth),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: labelText,
               ),
-            ),
-          ),
+            )
+          else
+            Flexible(fit: FlexFit.loose, child: labelText),
           const SizedBox(width: AppSpacing.s),
           Expanded(
-            child: Align(
-              alignment: Alignment.centerRight,
+            child: Padding(
+              key: rightKey,
+              padding: EdgeInsets.fromLTRB(
+                mobile ? AppSpacing.xs : 0,
+                mobile ? AppSpacing.xxs : 0,
+                AppSpacing.xxs,
+                mobile ? AppSpacing.xxs : 0,
+              ),
               child: Row(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Flexible(
-                    child: _DepositDetailValueText(
-                      value,
-                      scaleToFit: scaleValueToFit,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
+                    child: mobile
+                        ? FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerRight,
+                            child: valueText,
+                          )
+                        : _DepositDetailValueText(
+                            value,
+                            scaleToFit: scaleValueToFit,
+                            style: valueTextStyle,
+                          ),
                   ),
                   const SizedBox(width: AppSpacing.xxs),
                   MouseRegion(
@@ -793,11 +1099,22 @@ class _DepositDetailRow extends StatelessWidget {
                           toastMessage: toastMessage,
                         );
                       },
-                      child: AppIcon(
-                        AppIcons.copy,
-                        size: AppIconSize.medium,
-                        color: colors.icon.muted,
-                      ),
+                      child: kAppFormFactor == AppFormFactor.mobile
+                          ? SizedBox.square(
+                              dimension: 20,
+                              child: AppIcon(
+                                AppIcons.copy,
+                                size: 20,
+                                color: colors.icon.regular.withValues(
+                                  alpha: 0.72,
+                                ),
+                              ),
+                            )
+                          : AppIcon(
+                              AppIcons.copy,
+                              size: AppIconSize.medium,
+                              color: colors.icon.muted,
+                            ),
                     ),
                   ),
                 ],

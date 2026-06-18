@@ -25,6 +25,7 @@ abstract final class AppIcons {
   static const arrowForwardIos = 'arrow_forward_ios';
   static const arrowTopRight = 'arrow_top_right';
   static const arrowUpward = 'arrow_upward';
+  static const backspace = 'backspace';
   static const block = 'block';
   static const book = 'book';
   static const calendar = 'calendar';
@@ -45,10 +46,12 @@ abstract final class AppIcons {
   static const doubleArrowVertical = 'double_arrow_vertical';
   static const dragon = 'dragon';
   static const edit = 'edit';
+  static const editFilled = 'edit_filled';
   static const endpoint = 'endpoint';
   static const eye = 'eye';
   static const eyeClosed = 'eye_closed';
   static const expand = 'expand';
+  static const faceId = 'face_id';
   static const filter = 'filter';
   static const github = 'github';
   static const globe = 'globe';
@@ -66,11 +69,13 @@ abstract final class AppIcons {
   static const night = 'night';
   static const options = 'options';
   static const plane = 'plane';
+  static const plus = 'plus';
   static const qr = 'qr';
   static const qrCodeFill = 'qr_code_fill';
   static const renew = 'renew';
   static const scroll = 'scroll';
   static const search = 'search';
+  static const share = 'share';
   static const shieldAsset = 'shield_asset';
   static const shieldKeyhole = 'shield_keyhole';
   static const shieldKeyholeOutline = 'shield_keyhole_outline';
