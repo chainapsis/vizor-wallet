@@ -58,8 +58,9 @@ class MobileSettingsScreen extends ConsumerWidget {
         children: [
           MobileTopNav.back(
             title: 'Settings',
-            onBack: () =>
-                context.go(ref.read(mobilePreviousTabPathProvider) ?? '/home'),
+            onBack: () => context.go(
+              resolveMobileBackPath(ref, currentPath: '/settings'),
+            ),
           ),
           Expanded(
             child: ListView(

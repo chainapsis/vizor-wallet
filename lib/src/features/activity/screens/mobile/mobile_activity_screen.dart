@@ -206,7 +206,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
             MobileTopNav.back(
               title: 'Activity',
               onBack: () => context.go(
-                ref.read(mobilePreviousTabPathProvider) ?? '/home',
+                resolveMobileBackPath(ref, currentPath: '/activity'),
               ),
             ),
             Expanded(

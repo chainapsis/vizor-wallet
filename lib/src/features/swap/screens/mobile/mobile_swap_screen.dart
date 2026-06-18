@@ -311,7 +311,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 onBack: keyboardOpen
                     ? () => FocusManager.instance.primaryFocus?.unfocus()
                     : () => context.go(
-                        ref.read(mobilePreviousTabPathProvider) ?? '/home',
+                        resolveMobileBackPath(ref, currentPath: '/swap'),
                       ),
                 trailing: const SwapNearIntentsAttribution(alignEnd: true),
               ),
