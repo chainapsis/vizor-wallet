@@ -159,7 +159,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                     MobileListRow(
                       key: const ValueKey('mobile_settings_address_book_row'),
                       leading: _RowIcon(AppIcons.users),
-                      label: 'Address Book',
+                      label: 'Contacts',
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
                       chevronColor: settingsChevronColor,

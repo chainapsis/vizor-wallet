@@ -69,6 +69,7 @@ abstract final class AppIcons {
   static const night = 'night';
   static const options = 'options';
   static const plane = 'plane';
+  static const plus = 'plus';
   static const qr = 'qr';
   static const qrCodeFill = 'qr_code_fill';
   static const renew = 'renew';

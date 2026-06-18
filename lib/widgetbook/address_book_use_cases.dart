@@ -21,6 +21,7 @@ import '../src/core/widgets/app_profile_picture_picker_modal.dart';
 import '../src/core/widgets/app_text_field.dart';
 import '../src/features/address_book/models/address_book_contact.dart';
 import '../src/features/address_book/providers/address_book_provider.dart';
+import '../src/features/address_book/screens/mobile/mobile_address_book_screen.dart';
 import '../src/features/address_book/widgets/address_book_contact_picker_modal.dart';
 
 Widget buildAddressBookContactsListUseCase(BuildContext context) {
@@ -84,6 +85,22 @@ Widget buildAddressBookRemoveContactModalUseCase(BuildContext context) {
   return const _AddressBookFrame(
     contentState: _AddressBookContentState.list,
     modalState: _AddressBookModalState.removeContact,
+  );
+}
+
+Widget buildMobileContactsListUseCase(BuildContext context) {
+  return _mobileContactsPreview(
+    const AddressBookState(contacts: _mobileContacts),
+  );
+}
+
+Widget buildMobileContactsNoContactsUseCase(BuildContext context) {
+  return _mobileContactsPreview(const AddressBookState());
+}
+
+Widget buildMobileContactsEmptySearchUseCase(BuildContext context) {
+  return _mobileContactsPreview(
+    const AddressBookState(contacts: _mobileContacts, query: 'zzzz'),
   );
 }
 
@@ -1300,24 +1317,6 @@ class _NetworkAssetIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (network == _AddressBookNetwork.zcash) {
-      return Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: context.colors.background.brandCrimsonStrong,
-          shape: BoxShape.circle,
-        ),
-        child: Center(
-          child: AppIcon(
-            AppIcons.zcashCurrency,
-            size: size * 0.62,
-            color: context.colors.icon.onPrimary,
-          ),
-        ),
-      );
-    }
-
     final padding = size <= 16 ? 0.0 : 3.0;
     return Container(
       width: size,
@@ -1463,6 +1462,92 @@ class _WidgetbookAddressBookRepository implements AddressBookRepository {
 }
 
 void _noop() {}
+
+// --- Mobile Contacts previews (Figma CONTACTS mobile frames) ---
+
+const _mobileContacts = <AddressBookContact>[
+  AddressBookContact(
+    id: 'mobile_mike',
+    label: 'Mike',
+    network: AddressBookNetwork.zcash,
+    address: 'u1234512345abcdef67890zyxwv',
+    profilePictureId: 'pfp-01',
+    createdAtMs: 1,
+    updatedAtMs: 1,
+  ),
+  AddressBookContact(
+    id: 'mobile_john',
+    label: 'John',
+    network: AddressBookNetwork.zcash,
+    address: 'u9876543210fedcba09876lkjhg',
+    profilePictureId: 'pfp-02',
+    createdAtMs: 2,
+    updatedAtMs: 2,
+  ),
+  AddressBookContact(
+    id: 'mobile_sol',
+    label: 'Solana Binance',
+    network: AddressBookNetwork.solana,
+    address: '43123abc987def43123xyz0pqrs',
+    profilePictureId: 'pfp-06',
+    createdAtMs: 3,
+    updatedAtMs: 3,
+  ),
+];
+
+Widget _mobileContactsPreview(AddressBookState state) {
+  return ProviderScope(
+    overrides: [
+      addressBookProvider.overrideWith(
+        () => _PreviewAddressBookNotifier(state),
+      ),
+    ],
+    // IgnorePointer keeps it a static gallery snapshot — the real screen's
+    // back/send/add taps route through GoRouter, which the widgetbook host
+    // doesn't provide.
+    child: const _MobileContactsFrame(
+      child: IgnorePointer(child: MobileAddressBookScreen()),
+    ),
+  );
+}
+
+class _PreviewAddressBookNotifier extends AddressBookNotifier {
+  _PreviewAddressBookNotifier(this._state);
+
+  final AddressBookState _state;
+
+  @override
+  Future<AddressBookState> build() async => _state;
+}
+
+class _MobileContactsFrame extends StatelessWidget {
+  const _MobileContactsFrame({required this.child});
+
+  final Widget child;
+
+  static const _size = Size(393, 852);
+  static const _safeArea = EdgeInsets.only(top: 55, bottom: 24);
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    return Center(
+      child: SizedBox.fromSize(
+        size: _size,
+        child: ClipRect(
+          child: MediaQuery(
+            data: mediaQuery.copyWith(
+              size: _size,
+              padding: _safeArea,
+              viewPadding: _safeArea,
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 String _addressBookEmptyContactsAsset(BuildContext context) {
   return AppTheme.of(context) == AppThemeData.dark
