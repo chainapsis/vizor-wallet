@@ -60,7 +60,11 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
-    if (!_restartCameraOnResume) return;
+    // Desktop restores the prior retry-on-any-resume behavior; mobile only
+    // retries after returning from the OS camera-settings trip.
+    if (kAppFormFactor == AppFormFactor.mobile && !_restartCameraOnResume) {
+      return;
+    }
     _restartCameraOnResume = false;
     unawaited(_retryCameraStart(openSettingsOnDenied: false));
   }
