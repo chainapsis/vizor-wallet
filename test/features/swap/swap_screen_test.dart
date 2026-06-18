@@ -7789,7 +7789,17 @@ GoRoute _swapRoute() {
 GoRoute _swapActivityRoute() {
   return GoRoute(
     path: '/activity',
-    builder: (_, _) => const ActivityScreen(),
+    // The desktop ActivityScreen no longer renders the sync snapshot
+    // directly; feed it through its injectable history loader instead, with
+    // the fake sync notifier's seeded recentTransactions standing in for the
+    // FFI-backed history the loader would fetch on a real device.
+    builder: (_, _) => Consumer(
+      builder: (context, ref, _) => ActivityScreen(
+        historyLoader: (_) async =>
+            ref.read(syncProvider).value?.recentTransactions ??
+            const <rust_sync.TransactionInfo>[],
+      ),
+    ),
     routes: [
       GoRoute(
         path: 'swap/:swapId',
