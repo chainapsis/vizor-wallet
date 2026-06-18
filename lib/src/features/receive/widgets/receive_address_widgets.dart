@@ -812,10 +812,11 @@ List<ReceiveAddressInfoItem> receiveAddressInfoItems(
 }) {
   if (type == ReceiveAddressType.shielded) {
     return [
-      const ReceiveAddressInfoItem(
+      ReceiveAddressInfoItem(
         iconName: AppIcons.shieldKeyhole,
-        text:
-            'Tx details — sender, receiver, and amount — are encrypted on-chain & hidden.',
+        text: touchUi
+            ? 'Tx details — sender, receiver, and amount — are encrypted on-chain & hidden.'
+            : 'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.',
       ),
       ReceiveAddressInfoItem(
         iconName: AppIcons.renew,
@@ -831,10 +832,11 @@ List<ReceiveAddressInfoItem> receiveAddressInfoItems(
     ];
   }
   return [
-    const ReceiveAddressInfoItem(
+    ReceiveAddressInfoItem(
       iconName: AppIcons.unlock,
-      text:
-          'All tx details — sender, receiver, and amount — are publicly visible on-chain.',
+      text: touchUi
+          ? 'All tx details — sender, receiver, and amount — are publicly visible on-chain.'
+          : 'All tx details - sender, receiver, and amount - are publicly visible on-chain.',
     ),
     const ReceiveAddressInfoItem(
       iconName: AppIcons.dragon,
@@ -842,7 +844,7 @@ List<ReceiveAddressInfoItem> receiveAddressInfoItems(
           'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.',
     ),
     ReceiveAddressInfoItem(
-      iconName: AppIcons.shieldKeyholeOutline,
+      iconName: touchUi ? AppIcons.shieldKeyholeOutline : AppIcons.shieldAsset,
       text:
           'After receiving $kZcashDefaultCurrencyTicker to your transparent '
           "address, Vizor will guide you to shield the balance. Otherwise, "
