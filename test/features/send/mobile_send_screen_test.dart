@@ -22,6 +22,7 @@ import 'package:zcash_wallet/src/rust/frb_generated.dart';
 const _shieldedAddress =
     'u1testshieldedaddress00000000000000000000000000000000000000000000000';
 const _transparentAddress = 't1transparentdestination0000000000000000000';
+const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 const _invalidAddress = 'not-an-address';
 
 var _proposeSendSucceeds = false;
@@ -39,6 +40,9 @@ class _RustApiFake implements RustLibApi {
         isValid: true,
         addressType: 'transparent',
       );
+    }
+    if (address.startsWith('tex')) {
+      return const AddressValidationResult(isValid: true, addressType: 'tex');
     }
     return const AddressValidationResult(isValid: true, addressType: 'unified');
   }
@@ -266,6 +270,13 @@ Future<void> _toReviewStep(
   await _enterAmount(tester, amount);
   await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
   await tester.pumpAndSettle();
+}
+
+String _compactReviewAddress(String address) {
+  final value = address.trim();
+  if (value.length <= 18) return value;
+  return '${value.substring(0, 7)} .... '
+      '${value.substring(value.length - 7)}';
 }
 
 bool _sendRouteCanPop(WidgetTester tester) {
@@ -580,6 +591,32 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Enter amount'), findsOneWidget);
     expect(find.text('Alice'), findsOneWidget);
+  });
+
+  testWidgets('review marks a TEX contact distinctly from transparent', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [
+          AddressBookContact(
+            id: 'alice',
+            label: 'Alice',
+            network: AddressBookNetwork.zcash,
+            address: _texAddress,
+            profilePictureId: 'pfp-01',
+            createdAtMs: 1,
+            updatedAtMs: 1,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester, address: _texAddress);
+
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('TEX - ${_compactReviewAddress(_texAddress)}'), findsOne);
+    expect(find.text('Transparent address'), findsNothing);
   });
 
   testWidgets('review resolves stored contact before matching own accounts', (
@@ -950,6 +987,20 @@ void main() {
 
     expect(find.text('Add short encrypted message'), findsNothing);
     expect(find.text('Transparent address'), findsOneWidget);
+    expect(find.text('Tx fee'), findsOneWidget);
+  });
+
+  testWidgets('a TEX recipient hides memo but keeps the TEX label', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester, address: _texAddress);
+
+    expect(find.text('Add short encrypted message'), findsNothing);
+    expect(find.text('TEX address'), findsOneWidget);
+    expect(find.text('TEX - ${_compactReviewAddress(_texAddress)}'), findsOne);
+    expect(find.text('Transparent address'), findsNothing);
     expect(find.text('Tx fee'), findsOneWidget);
   });
 

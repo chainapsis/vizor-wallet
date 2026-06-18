@@ -148,8 +148,7 @@ class _MobileTransactionStatusScreenState
           log('MobileTransactionStatus: detail load failed: $e\n$st');
         }
         if (!mounted ||
-            accountUuid !=
-                ref.read(accountProvider).value?.activeAccountUuid) {
+            accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
           return;
         }
       }
@@ -267,7 +266,8 @@ class _MobileTransactionStatusScreenState
 
     final amountText = _amountText(tx, privacyModeEnabled: privacyModeEnabled);
     final address = detail?.primaryAddress?.trim();
-    final poolLabel = _poolLabel(tx?.displayPool);
+    final txPoolLabel = _poolLabel(tx?.displayPool);
+    final addressPoolLabel = _addressPoolLabel(tx?.displayPool, address);
     final memo = detail?.memo?.trim();
 
     final hasAddress = address != null && address.isNotEmpty;
@@ -278,21 +278,21 @@ class _MobileTransactionStatusScreenState
       // With no counterparty row (shielded senders are unknown), the
       // pool tag moves under the amount — Figma `Received` keeps the
       // pool on the bottom strip.
-      bottom: !hasAddress && poolLabel != null
+      bottom: !hasAddress && txPoolLabel != null
           ? Row(
               children: [
                 AppIcon(
-                  poolLabel == 'Transparent'
+                  _poolLabelIsTransparentLike(txPoolLabel)
                       ? AppIcons.transparentBalance
                       : AppIcons.shieldKeyhole,
                   size: AppIconSize.medium,
-                  color: poolLabel == 'Transparent'
+                  color: _poolLabelIsTransparentLike(txPoolLabel)
                       ? colors.icon.muted
                       : colors.icon.brandCrimson,
                 ),
                 const SizedBox(width: AppSpacing.xxs),
                 Text(
-                  poolLabel,
+                  txPoolLabel,
                   style: AppTypography.labelMedium.copyWith(
                     color: colors.text.secondary,
                   ),
@@ -326,19 +326,19 @@ class _MobileTransactionStatusScreenState
             ),
             bottom: Row(
               children: [
-                if (poolLabel != null) ...[
+                if (addressPoolLabel != null) ...[
                   AppIcon(
-                    poolLabel == 'Transparent'
+                    _poolLabelIsTransparentLike(addressPoolLabel)
                         ? AppIcons.transparentBalance
                         : AppIcons.shieldKeyhole,
                     size: AppIconSize.medium,
-                    color: poolLabel == 'Transparent'
+                    color: _poolLabelIsTransparentLike(addressPoolLabel)
                         ? colors.icon.muted
                         : colors.icon.brandCrimson,
                   ),
                   const SizedBox(width: AppSpacing.xxs),
                   Text(
-                    poolLabel,
+                    addressPoolLabel,
                     style: AppTypography.labelMedium.copyWith(
                       color: colors.text.secondary,
                     ),
@@ -369,9 +369,7 @@ class _MobileTransactionStatusScreenState
     ];
     // Without an address there is nothing to point at — drop the arrow
     // and the duplicate amount row.
-    final reviewChildren = addressRow == null
-        ? <Widget>[amountRow]
-        : infoRows;
+    final reviewChildren = addressRow == null ? <Widget>[amountRow] : infoRows;
 
     return Scaffold(
       backgroundColor: colors.background.window,
@@ -486,6 +484,16 @@ class _MobileTransactionStatusScreenState
       'mixed' => 'Mixed',
       _ => null,
     };
+  }
+
+  String? _addressPoolLabel(String? pool, String? address) {
+    final lower = address?.trim().toLowerCase();
+    if (lower != null && lower.startsWith('tex')) return 'TEX';
+    return _poolLabel(pool);
+  }
+
+  bool _poolLabelIsTransparentLike(String label) {
+    return label == 'Transparent' || label == 'TEX';
   }
 
   String _truncateAddress(String address) {
@@ -771,18 +779,12 @@ class _DetailCard extends StatelessWidget {
           if (feeText != null) ...[
             const SizedBox(height: AppSpacing.sm),
             // Figma `border/neutral/default` (#d4d4d4 light).
-            Container(
-              height: 1,
-              color: colors.border.regular,
-            ),
+            Container(height: 1, color: colors.border.regular),
             const SizedBox(height: AppSpacing.sm),
             _ListRow(
               label: 'Tx fee',
               labelStyle: AppTypography.labelLarge,
-              value: _ValueWithIcon(
-                text: feeText,
-                iconName: AppIcons.help,
-              ),
+              value: _ValueWithIcon(text: feeText, iconName: AppIcons.help),
             ),
           ],
         ],

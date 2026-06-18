@@ -46,12 +46,14 @@ const _txid =
 const _address =
     'u1l8xunezsvhq8fgzfl7404m450nwnd76zshe7f5dxv5z3w4gthawuwukdn5aalh6g'
     '5wfshmrjmd5gh';
+const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 
 rust_sync.TransactionInfo _tx({
   String kind = 'sent',
   BigInt? minedHeight,
   bool expired = false,
   BigInt? fee,
+  String displayPool = 'shielded',
 }) {
   return rust_sync.TransactionInfo(
     txidHex: _txid,
@@ -63,16 +65,20 @@ rust_sync.TransactionInfo _tx({
     isTransparent: false,
     txKind: kind,
     displayAmount: BigInt.from(12312000000),
-    displayPool: 'shielded',
+    displayPool: displayPool,
     createdTime: BigInt.from(1750000000),
   );
 }
 
-rust_sync.TransactionDetail _detail({String kind = 'sent', String? memo}) {
+rust_sync.TransactionDetail _detail({
+  String kind = 'sent',
+  String? memo,
+  String address = _address,
+}) {
   return rust_sync.TransactionDetail(
     txidHex: _txid,
     txKind: kind,
-    primaryAddress: _address,
+    primaryAddress: address,
     memo: memo,
     outputs: const [],
   );
@@ -138,6 +144,26 @@ void main() {
     );
   });
 
+  testWidgets('sent TEX tx keeps a TEX recipient label', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        _tx(displayPool: 'transparent'),
+        detail: _detail(address: _texAddress),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sent successfully'), findsOneWidget);
+    expect(find.text('TEX'), findsOneWidget);
+    expect(find.text('Transparent'), findsNothing);
+    expect(
+      find.text(
+        '${_texAddress.substring(0, 6)} ... ${_texAddress.substring(_texAddress.length - 5)}',
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('unmined sent tx shows the in-progress state', (tester) async {
     await tester.pumpWidget(_app(_tx(minedHeight: BigInt.zero)));
     // No pumpAndSettle — the in-progress loader spins forever.
@@ -151,9 +177,7 @@ void main() {
   testWidgets('expired tx shows the failed state with strikethrough', (
     tester,
   ) async {
-    await tester.pumpWidget(
-      _app(_tx(minedHeight: BigInt.zero, expired: true)),
-    );
+    await tester.pumpWidget(_app(_tx(minedHeight: BigInt.zero, expired: true)));
     await tester.pumpAndSettle();
 
     expect(find.text('Send failed'), findsOneWidget);
@@ -168,9 +192,7 @@ void main() {
   });
 
   testWidgets('received tx puts the sender above the amount', (tester) async {
-    await tester.pumpWidget(
-      _app(_tx(kind: 'received', fee: BigInt.zero)),
-    );
+    await tester.pumpWidget(_app(_tx(kind: 'received', fee: BigInt.zero)));
     await tester.pumpAndSettle();
 
     expect(find.text('Received'), findsOneWidget);

@@ -715,6 +715,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       'unified' => 'Unified address',
       'sapling' => 'Shielded address',
       'transparent' => 'Transparent address',
+      'tex' => 'TEX address',
       _ => 'Zcash address',
     };
   }
@@ -1448,6 +1449,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                             headline: recipient.headline,
                             bottom: _ReviewAddressLine(
                               address: _compactReviewAddress(address),
+                              addressType: _addressType,
                               isShielded: _isShieldedAddress,
                               onFullAddress: () => unawaited(
                                 _showFullAddressSheet(address, recipient),
@@ -1759,17 +1761,21 @@ class _ReviewInfoRow extends StatelessWidget {
 class _ReviewAddressLine extends StatelessWidget {
   const _ReviewAddressLine({
     required this.address,
+    required this.addressType,
     required this.isShielded,
     required this.onFullAddress,
   });
 
   final String address;
+  final String addressType;
   final bool isShielded;
   final VoidCallback onFullAddress;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isTex = _isTexAddressType(addressType);
+    final label = isTex ? 'TEX - $address' : address;
     return Row(
       children: [
         Expanded(
@@ -1787,7 +1793,7 @@ class _ReviewAddressLine extends StatelessWidget {
               const SizedBox(width: AppSpacing.xxs),
               Expanded(
                 child: Text(
-                  address,
+                  label,
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.text.secondary,
                   ),
@@ -1809,6 +1815,9 @@ class _ReviewAddressLine extends StatelessWidget {
     );
   }
 }
+
+bool _isTexAddressType(String addressType) =>
+    addressType.trim().toLowerCase() == 'tex';
 
 class _ReviewSmallButton extends StatelessWidget {
   const _ReviewSmallButton({

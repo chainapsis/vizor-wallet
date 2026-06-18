@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 const _address =
     'u1l8xunezsvhq8fgzfl7404m450nwnd76zshe7f5dxv5z3w4gthawuwukdn5aalh6g'
     '5wfshmrjmd5gh';
+const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 const _displayTxid =
     '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f';
 
@@ -39,7 +40,10 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
   }
 }
 
-Widget _app({required MobileSendBroadcastRunner broadcastRunner}) {
+Widget _app({
+  required MobileSendBroadcastRunner broadcastRunner,
+  SendReviewArgs? args,
+}) {
   return ProviderScope(
     overrides: [
       swapFeatureEnabledProvider.overrideWithValue(true),
@@ -51,7 +55,7 @@ Widget _app({required MobileSendBroadcastRunner broadcastRunner}) {
       home: AppTheme(
         data: AppThemeData.light,
         child: MobileSendStatusScreen(
-          args: _args,
+          args: args ?? _args,
           broadcastRunner: broadcastRunner,
         ),
       ),
@@ -117,6 +121,51 @@ void main() {
     expect(find.text('Completed'), findsOneWidget);
     expect(find.byKey(const ValueKey('mobile_send_status_txid')), findsOne);
     expect(find.text('0.00015 ZEC'), findsOneWidget);
+  });
+
+  testWidgets('TEX recipient stays distinct from transparent on status', (
+    tester,
+  ) async {
+    final broadcast = Completer<SendBroadcastOutcome>();
+    await tester.pumpWidget(
+      _app(
+        args: SendReviewArgs(
+          proposalId: _args.proposalId,
+          sendFlowId: _args.sendFlowId,
+          proposalAccountUuid: _args.proposalAccountUuid,
+          address: _texAddress,
+          addressType: 'tex',
+          amountZatoshi: _args.amountZatoshi,
+          feeZatoshi: _args.feeZatoshi,
+          needsSaplingParams: _args.needsSaplingParams,
+        ),
+        broadcastRunner:
+            ({
+              required ref,
+              required args,
+              keystone,
+              required confirmSaplingParamsDownload,
+              shouldAbort,
+            }) => broadcast.future,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('TEX'), findsOneWidget);
+    expect(find.text('Transparent'), findsNothing);
+
+    broadcast.complete(
+      const SendBroadcastOutcome(
+        phase: SendBroadcastPhase.succeeded,
+        proposalConsumed: true,
+        txid: _displayTxid,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('TEX'), findsOneWidget);
+    expect(find.text('Transparent'), findsNothing);
   });
 
   testWidgets('failed status allows route pop after broadcast finishes', (
