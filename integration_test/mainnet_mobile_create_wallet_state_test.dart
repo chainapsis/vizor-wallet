@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'support/mobile_regtest_flow.dart';
 
 const _accountsKey = 'zcash_accounts';
+const _holdAfterCreate = bool.fromEnvironment('ZCASH_E2E_HOLD_AFTER_CREATE');
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +43,10 @@ void main() {
       final dbPath = await getWalletDbPath();
       expect(File(dbPath).existsSync(), isTrue);
       logE2e('mainnet wallet state created with DB $dbName');
+
+      while (_holdAfterCreate) {
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
     },
     timeout: const Timeout(Duration(minutes: 5)),
   );
