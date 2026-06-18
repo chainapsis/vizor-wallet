@@ -207,10 +207,11 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
           extra: MobileImportReviewArgs(words: words),
         )
         .then((result) {
-          // "Clear Secret Phrase" on review — discard the typed words and
-          // pop back to the import entry to start over.
+          // "Clear Secret Phrase" on review — pop back to the import entry
+          // and forward the clear so the entry also drops any stale pasted
+          // phrase/error (manual can be opened from a rejected paste).
           if (result == ImportReviewResult.cleared && mounted) {
-            navigator.maybePop();
+            navigator.pop(ImportReviewResult.cleared);
           }
         });
   }

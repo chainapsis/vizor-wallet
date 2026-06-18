@@ -123,6 +123,14 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
         });
   }
 
+  void _openManual() {
+    context.push<Object?>('/import/manual').then((result) {
+      // The manual flow forwards a Clear Secret Phrase so the entry also
+      // wipes any stale pasted phrase/error and starts fresh.
+      if (result == ImportReviewResult.cleared && mounted) _clear();
+    });
+  }
+
   bool get _filled => _words.isNotEmpty && _error == null;
 
   @override
@@ -195,7 +203,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
               child: GestureDetector(
                 key: const ValueKey('mobile_import_enter_manually'),
                 behavior: HitTestBehavior.opaque,
-                onTap: () => context.push('/import/manual'),
+                onTap: _openManual,
                 child: SizedBox(
                   height: 44,
                   child: Center(
@@ -235,7 +243,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
               child: GestureDetector(
                 key: const ValueKey('mobile_import_slots'),
                 behavior: HitTestBehavior.opaque,
-                onTap: () => context.push('/import/manual'),
+                onTap: _openManual,
                 child: ImportSlotsCard(words: _words),
               ),
             ),
