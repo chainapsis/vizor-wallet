@@ -327,7 +327,9 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
-    if (!_restartCameraOnResume) return;
+    // Desktop restores the prior retry-on-any-resume behavior; mobile only
+    // retries after returning from the OS camera-settings trip.
+    if (_mobileFormFactor && !_restartCameraOnResume) return;
     _restartCameraOnResume = false;
     unawaited(_retryCameraStart(openSettingsOnDenied: false));
   }
