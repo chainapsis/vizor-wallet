@@ -421,6 +421,7 @@ class _ProgressStep extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final active = step.state == SwapStatusStepState.active;
+    final pending = step.state == SwapStatusStepState.pending;
     final isLast = index == count - 1;
     const isMobile = kAppFormFactor == AppFormFactor.mobile;
     // Fixed per-step heights reproduce the Figma connector lengths: the active
@@ -483,13 +484,14 @@ class _ProgressStep extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           // Desktop keeps every step title on the accent
                           // color (Figma); mobile
-                          // (mobile-ui-vibe-coding-polishing-2) dims
-                          // pending/complete titles to text.secondary.
+                          // (mobile-ui-vibe-coding-polishing-2) keeps active
+                          // AND completed titles accented and dims only
+                          // pending (future) steps to text.secondary.
                           style: AppTypography.labelLarge.copyWith(
                             fontWeight: active
                                 ? FontWeight.w600
                                 : FontWeight.w500,
-                            color: isMobile && !active
+                            color: isMobile && pending
                                 ? colors.text.secondary
                                 : colors.text.accent,
                           ),
