@@ -87,9 +87,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
       final tokens = tokenizeMnemonicWords(_typed);
       final word = tokens.isEmpty ? '' : tokens.first;
       if (word.isEmpty || !_wordList.contains(word)) {
-        setState(
-          () => _error = "'$_typed' isn't in the passphrase word list.",
-        );
+        setState(() => _error = "'$_typed' isn't in the passphrase word list.");
         _focusNode.requestFocus();
         return;
       }
@@ -405,6 +403,9 @@ class _WordField extends StatelessWidget {
               keyboardType: TextInputType.visiblePassword,
               autocorrect: false,
               enableSuggestions: false,
+              // Keep the keyboard open when return/check submits a word.
+              // onSubmitted still advances through the shared handler below.
+              onEditingComplete: () {},
               onSubmitted: onSubmitted,
               // The parent decides: a multi-word paste distributes across
               // slots; a single word + trailing space accepts.

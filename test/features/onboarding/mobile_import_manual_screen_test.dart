@@ -54,6 +54,33 @@ void main() {
     expect(find.textContaining('abandon'), findsOneWidget);
   });
 
+  testWidgets('keyboard action advances without dropping focus', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    final field = find.byKey(const ValueKey('mobile_import_manual_field'));
+    await tester.showKeyboard(field);
+    await tester.enterText(field, 'abandon');
+    await tester.pump();
+
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
+      isTrue,
+    );
+
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    expect(find.text('02'), findsOneWidget);
+    expect(find.textContaining('abandon'), findsOneWidget);
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
+      isTrue,
+    );
+  });
+
   testWidgets('an unknown word is rejected with an error', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pump();
