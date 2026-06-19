@@ -1312,7 +1312,7 @@ class _ChainAddressSelector extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _NetworkAssetIcon(network: network, size: 16),
+                  _NetworkAssetIcon(network: network, size: 20),
                   const SizedBox(width: AppSpacing.xxs),
                   Text(
                     network.label,
