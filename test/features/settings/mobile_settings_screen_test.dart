@@ -75,21 +75,32 @@ class _FakeBiometricNotifier extends BiometricUnlockNotifier {
   _FakeBiometricNotifier(this.initialState);
 
   final BiometricUnlockState initialState;
+  int disableCount = 0;
 
   @override
   Future<BiometricUnlockState> build() async => initialState;
+
+  @override
+  Future<void> disable() async {
+    disableCount++;
+    final current = state.value ?? initialState;
+    state = AsyncData(current.copyWith(enabled: false));
+  }
 }
 
 Widget _app({
   AccountState accountState = _accountState,
   BiometricUnlockState? biometric,
+  BiometricUnlockNotifier Function()? biometricNotifier,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap(accountState)),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
       themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
-      if (biometric != null)
+      if (biometricNotifier != null)
+        biometricUnlockProvider.overrideWith(biometricNotifier)
+      else if (biometric != null)
         biometricUnlockProvider.overrideWith(
           () => _FakeBiometricNotifier(biometric),
         ),
@@ -287,6 +298,118 @@ void main() {
     expect(find.descendant(of: row, matching: find.text('On')), findsOneWidget);
   });
 
+  testWidgets('asks before turning off Face ID unlock', (tester) async {
+    final biometricNotifier = _FakeBiometricNotifier(
+      const BiometricUnlockState(
+        availability: BiometricAvailability(
+          supported: true,
+          enrolled: true,
+          kind: BiometricKind.face,
+        ),
+        enabled: true,
+      ),
+    );
+
+    await tester.pumpWidget(_app(biometricNotifier: () => biometricNotifier));
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_settings_biometric_row')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Turn off Face ID unlock?'), findsOneWidget);
+    expect(find.textContaining('You will use your passcode'), findsOneWidget);
+    expect(biometricNotifier.disableCount, 0);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_biometric_disable_confirm')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(biometricNotifier.disableCount, 1);
+    expect(find.text('Turn off Face ID unlock?'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_settings_biometric_row')),
+        matching: find.text('Off'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('cancel keeps biometric unlock enabled', (tester) async {
+    final biometricNotifier = _FakeBiometricNotifier(
+      const BiometricUnlockState(
+        availability: BiometricAvailability(
+          supported: true,
+          enrolled: true,
+          kind: BiometricKind.fingerprint,
+        ),
+        enabled: true,
+      ),
+    );
+
+    await tester.pumpWidget(_app(biometricNotifier: () => biometricNotifier));
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_settings_biometric_row')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Turn off fingerprint unlock?'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(biometricNotifier.disableCount, 0);
+    expect(find.text('Turn off fingerprint unlock?'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_settings_biometric_row')),
+        matching: find.text('On'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('close keeps biometric unlock enabled', (tester) async {
+    final biometricNotifier = _FakeBiometricNotifier(
+      const BiometricUnlockState(
+        availability: BiometricAvailability(
+          supported: true,
+          enrolled: true,
+          kind: BiometricKind.face,
+        ),
+        enabled: true,
+      ),
+    );
+
+    await tester.pumpWidget(_app(biometricNotifier: () => biometricNotifier));
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_settings_biometric_row')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Turn off Face ID unlock?'), findsOneWidget);
+
+    await tester.tap(_modalCloseIcon());
+    await tester.pumpAndSettle();
+
+    expect(biometricNotifier.disableCount, 0);
+    expect(find.text('Turn off Face ID unlock?'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_settings_biometric_row')),
+        matching: find.text('On'),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('labels fingerprint hardware by modality', (tester) async {
     await tester.pumpWidget(
       _app(
@@ -317,6 +440,15 @@ void main() {
       findsOneWidget,
     );
   });
+}
+
+Finder _modalCloseIcon() {
+  return find.descendant(
+    of: find.byType(MobileModalScaffold),
+    matching: find.byWidgetPredicate(
+      (widget) => widget is AppIcon && widget.name == AppIcons.cross,
+    ),
+  );
 }
 
 AppIcon _chevronIn(WidgetTester tester, ValueKey<String> rowKey) {

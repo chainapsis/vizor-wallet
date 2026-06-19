@@ -303,6 +303,11 @@ class MobileSettingsScreen extends ConsumerWidget {
     if (!context.mounted) return;
     try {
       if (state.enabled) {
+        final confirmed = await showAppMobileSheet<bool>(
+          context: context,
+          builder: (_) => _DisableBiometricSheet(kind: state.availability.kind),
+        );
+        if (!context.mounted || confirmed != true) return;
         await notifier.disable();
         if (context.mounted) {
           showAppToast(
@@ -351,6 +356,78 @@ class MobileSettingsScreen extends ConsumerWidget {
     if (selected != null && selected != current) {
       await ref.read(themeModeProvider.notifier).set(selected);
     }
+  }
+}
+
+/// Compact confirmation sheet for disabling biometric unlock. Mirrors the
+/// destructive action hierarchy used by the mobile remove-account sheet.
+class _DisableBiometricSheet extends StatelessWidget {
+  const _DisableBiometricSheet({required this.kind});
+
+  final BiometricKind kind;
+
+  static const _titleStyle = TextStyle(
+    fontFamily: 'Geist',
+    fontWeight: FontWeight.w600,
+    fontSize: 16,
+    height: 24 / 16,
+    letterSpacing: -0.24,
+  );
+  static const _bodyStyle = TextStyle(
+    fontFamily: 'Geist',
+    fontWeight: FontWeight.w400,
+    fontSize: 14,
+    height: 21 / 14,
+    letterSpacing: -0.21,
+  );
+  static const _buttonLabelStyle = TextStyle(
+    fontFamily: 'Geist',
+    fontWeight: FontWeight.w500,
+    fontSize: 14,
+    height: 16 / 14,
+    letterSpacing: -0.06,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MobileModalScaffold(
+      title: 'Turn off ${kind.inlineUnlockFeatureLabel}?',
+      onClose: () => Navigator.of(context).pop(false),
+      leading: AppIcon(AppIcons.lock, size: 20, color: colors.icon.accent),
+      titleStyle: _titleStyle.copyWith(color: colors.text.accent),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'You will use your passcode to unlock Vizor. You can turn '
+            '${kind.inlineUnlockFeatureLabel} back on in settings anytime.',
+            style: _bodyStyle.copyWith(color: colors.text.accent),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('mobile_biometric_disable_confirm'),
+            variant: AppButtonVariant.destructive,
+            expand: true,
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              'Turn off',
+              style: _buttonLabelStyle.copyWith(
+                color: colors.button.destructive.label,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          MobileSheetCancel(
+            onTap: () => Navigator.of(context).pop(false),
+            textStyle: _buttonLabelStyle.copyWith(
+              color: colors.button.ghost.label,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
