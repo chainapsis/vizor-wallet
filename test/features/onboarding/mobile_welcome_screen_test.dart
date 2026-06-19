@@ -126,7 +126,7 @@ void main() {
 
   testWidgets(
     'Get started opens method selection with the three entry points and '
-    'the legal footer',
+    'the hidden legal footer space',
     (tester) async {
       await tester.pumpWidget(_app());
       await tester.pumpAndSettle();
@@ -137,6 +137,21 @@ void main() {
       expect(find.text('Import wallet'), findsOneWidget);
       expect(find.text('Connect Keystone'), findsOneWidget);
       expect(find.textContaining('you agree to our'), findsOneWidget);
+      final hiddenFooter = find.byKey(
+        const ValueKey('mobile_method_legal_footer_hidden'),
+      );
+      expect(hiddenFooter, findsOneWidget);
+      expect(tester.widget<Opacity>(hiddenFooter).opacity, 0);
+      final semantics = find.byKey(
+        const ValueKey('mobile_method_legal_footer_semantics'),
+      );
+      final pointer = find.byKey(
+        const ValueKey('mobile_method_legal_footer_pointer'),
+      );
+      expect(semantics, findsOneWidget);
+      expect(tester.widget<ExcludeSemantics>(semantics).excluding, isTrue);
+      expect(pointer, findsOneWidget);
+      expect(tester.widget<IgnorePointer>(pointer).ignoring, isTrue);
     },
   );
 

@@ -111,7 +111,17 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const _MethodLegalFooter(),
+                    const ExcludeSemantics(
+                      key: ValueKey('mobile_method_legal_footer_semantics'),
+                      child: IgnorePointer(
+                        key: ValueKey('mobile_method_legal_footer_pointer'),
+                        child: Opacity(
+                          key: ValueKey('mobile_method_legal_footer_hidden'),
+                          opacity: 0,
+                          child: _MethodLegalFooter(),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: AppSpacing.s),
                   ],
                 ),
