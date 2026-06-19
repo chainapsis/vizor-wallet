@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart' show Scaffold;
+import 'package:flutter/material.dart' show Material, MaterialType, Scaffold;
 import 'package:flutter/services.dart' show TextInputAction;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -563,7 +564,6 @@ class _ContactRowMenuButton extends StatefulWidget {
 }
 
 class _ContactRowMenuButtonState extends State<_ContactRowMenuButton> {
-  final LayerLink _layerLink = LayerLink();
   OverlayEntry? _menuEntry;
 
   @override
@@ -581,41 +581,181 @@ class _ContactRowMenuButtonState extends State<_ContactRowMenuButton> {
   }
 
   void _showMenu() {
-    final overlay = Overlay.of(context);
-    final appTheme = AppTheme.of(context);
-    _menuEntry = OverlayEntry(
-      builder: (_) {
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () => _hideMenu(),
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final overlayRenderObject = overlay.context.findRenderObject();
+    final anchorRenderObject = context.findRenderObject();
+    if (overlayRenderObject is! RenderBox || anchorRenderObject is! RenderBox) {
+      return;
+    }
+
+    final anchorTopLeft = anchorRenderObject.localToGlobal(
+      Offset.zero,
+      ancestor: overlayRenderObject,
+    );
+    final anchorRect = anchorTopLeft & anchorRenderObject.size;
+    final overlaySize = overlayRenderObject.size;
+    final canSend = widget.onSend != null;
+    const menuWidth = 173.0;
+    const menuPadding = EdgeInsets.symmetric(
+      horizontal: AppSpacing.xxs,
+      vertical: AppSpacing.sm,
+    );
+    final menuHeight = canSend ? 173.0 : 139.0;
+    const bottomNavClearance = kMobileTabBarHeight + AppSpacing.lg;
+    final colors = context.colors;
+    final menuMaxTop = math.max(
+      AppSpacing.sm,
+      overlaySize.height - bottomNavClearance - menuHeight,
+    );
+    final menuTop = (anchorRect.top + 34).clamp(AppSpacing.sm, menuMaxTop);
+    final menuRight =
+        (overlaySize.width - anchorRect.right).clamp(
+              AppSpacing.sm,
+              math.max(
+                AppSpacing.sm,
+                overlaySize.width - menuWidth - AppSpacing.sm,
               ),
+            )
+            as double;
+
+    void select(VoidCallback action) {
+      _hideMenu();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        action();
+      });
+    }
+
+    Widget item({
+      required Key key,
+      required String iconName,
+      required String label,
+      required VoidCallback action,
+      Color? textColor,
+      Color? iconColor,
+    }) {
+      final itemTextColor = textColor ?? colors.text.inverse;
+      final itemIconColor = iconColor ?? colors.icon.inverse;
+      return Semantics(
+        button: true,
+        label: label,
+        excludeSemantics: true,
+        child: GestureDetector(
+          key: key,
+          behavior: HitTestBehavior.opaque,
+          onTap: () => select(action),
+          child: Container(
+            height: 26,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xs,
+              vertical: AppSpacing.xxs,
             ),
-            CompositedTransformFollower(
-              link: _layerLink,
-              showWhenUnlinked: false,
-              // Anchor the menu's top-right to the button's top-right so it
-              // opens down-left under the dots (Figma `right-0`, `top-22`).
-              targetAnchor: Alignment.topRight,
-              followerAnchor: Alignment.topRight,
-              offset: const Offset(0, 22),
-              child: AppTheme(
-                data: appTheme,
-                child: _ContactContextMenu(
-                  canSend: widget.onSend != null,
-                  onCopy: _handleCopy,
-                  onSend: _handleSend,
-                  onEdit: _handleEdit,
-                  onRemove: _handleRemove,
+            child: Row(
+              children: [
+                AppIcon(
+                  iconName,
+                  size: AppIconSize.medium,
+                  color: itemIconColor,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: itemTextColor,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final menuItems = [
+      item(
+        key: const ValueKey('mobile_contact_menu_copy'),
+        iconName: AppIcons.copy,
+        label: 'Copy address',
+        action: _handleCopy,
+      ),
+      if (canSend)
+        item(
+          key: const ValueKey('mobile_contact_menu_send'),
+          iconName: AppIcons.plane,
+          label: 'Send ZEC',
+          action: _handleSend,
+        ),
+      item(
+        key: const ValueKey('mobile_contact_menu_edit'),
+        iconName: AppIcons.edit,
+        label: 'Edit contact',
+        action: _handleEdit,
+      ),
+      const AppContextMenuDivider(),
+      item(
+        key: const ValueKey('mobile_contact_menu_remove'),
+        iconName: AppIcons.trash,
+        label: 'Remove contact',
+        action: _handleRemove,
+        textColor: colors.text.destructiveLight,
+        iconColor: colors.icon.destructiveLight,
+      ),
+    ];
+
+    final entry = OverlayEntry(
+      builder: (_) => Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _hideMenu,
+              child: const SizedBox.expand(),
+            ),
+          ),
+          Positioned(
+            top: menuTop,
+            right: menuRight,
+            child: Material(
+              type: MaterialType.transparency,
+              child: DefaultTextStyle.merge(
+                style: const TextStyle(decoration: TextDecoration.none),
+                child: SizedBox(
+                  key: const ValueKey('mobile_contact_menu_card'),
+                  width: menuWidth,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colors.background.inverse,
+                      borderRadius: BorderRadius.circular(AppRadii.medium),
+                      border: Border.all(color: colors.border.inverseOpacity),
+                      boxShadow: appContextMenuShadow,
+                    ),
+                    child: Padding(
+                      padding: menuPadding,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (var i = 0; i < menuItems.length; i++) ...[
+                            if (i > 0) const SizedBox(height: AppSpacing.xs),
+                            menuItems[i],
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
-          ],
-        );
-      },
+          ),
+        ],
+      ),
     );
+    _menuEntry = entry;
     overlay.insert(_menuEntry!);
     setState(() {});
   }
@@ -662,16 +802,17 @@ class _ContactRowMenuButtonState extends State<_ContactRowMenuButton> {
           width: 44,
           height: 44,
           child: Center(
-            child: CompositedTransformTarget(
-              link: _layerLink,
-              child: Container(
+            child: DecoratedBox(
+              key: ValueKey('mobile_contact_menu_button_${widget.contact.id}'),
+              decoration: BoxDecoration(
+                color: active
+                    ? context.colors.state.hover
+                    : const Color(0x00000000),
+                borderRadius: BorderRadius.circular(AppRadii.xSmall),
+              ),
+              child: SizedBox(
                 width: 20,
                 height: 20,
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: active ? context.colors.background.base : null,
-                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
-                ),
                 child: Center(
                   child: Transform.rotate(
                     angle: -math.pi / 2,
@@ -687,56 +828,6 @@ class _ContactRowMenuButtonState extends State<_ContactRowMenuButton> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _ContactContextMenu extends StatelessWidget {
-  const _ContactContextMenu({
-    required this.canSend,
-    required this.onCopy,
-    required this.onSend,
-    required this.onEdit,
-    required this.onRemove,
-  });
-
-  final bool canSend;
-  final VoidCallback onCopy;
-  final VoidCallback onSend;
-  final VoidCallback onEdit;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppContextMenu(
-      children: [
-        AppContextMenuItem(
-          iconName: AppIcons.copy,
-          label: 'Copy address',
-          onTap: onCopy,
-        ),
-        if (canSend) ...[
-          const SizedBox(height: AppSpacing.xxs),
-          AppContextMenuItem(
-            iconName: AppIcons.plane,
-            label: 'Send ZEC',
-            onTap: onSend,
-          ),
-        ],
-        const SizedBox(height: AppSpacing.xxs),
-        AppContextMenuItem(
-          iconName: AppIcons.scroll,
-          label: 'Edit contact',
-          onTap: onEdit,
-        ),
-        const AppContextMenuDivider(),
-        AppContextMenuItem(
-          iconName: AppIcons.trash,
-          label: 'Remove contact',
-          destructive: true,
-          onTap: onRemove,
-        ),
-      ],
     );
   }
 }

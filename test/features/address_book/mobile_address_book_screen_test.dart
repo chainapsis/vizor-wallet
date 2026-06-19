@@ -95,6 +95,21 @@ void main() {
     expect(find.text('Send ZEC'), findsOneWidget);
     expect(find.text('Edit contact'), findsOneWidget);
     expect(find.text('Remove contact'), findsOneWidget);
+    final openMenuButton = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('mobile_contact_menu_button_mike')),
+    );
+    expect(
+      (openMenuButton.decoration as BoxDecoration).color,
+      AppThemeData.light.colors.state.hover,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_contact_menu_card'))),
+      const Size(173, 173),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_contact_menu_copy'))),
+      const Size(165, 26),
+    );
 
     // Dismiss the menu (tap the scrim).
     await tester.tapAt(const Offset(10, 10));
@@ -107,6 +122,10 @@ void main() {
     expect(find.text('Send ZEC'), findsNothing);
     expect(find.text('Edit contact'), findsOneWidget);
     expect(find.text('Remove contact'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_contact_menu_card'))),
+      const Size(173, 139),
+    );
   });
 
   testWidgets('non-matching search shows the empty-search state', (
