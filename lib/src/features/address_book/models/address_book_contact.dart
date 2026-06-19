@@ -178,3 +178,7 @@ String? validateAddressBookAddress(String address) {
   if (trimmed.isEmpty) return 'Add an address';
   return null;
 }
+
+String addressBookQrScanTitle(AddressBookNetwork network) {
+  return 'Scan ${network.label} QR code';
+}

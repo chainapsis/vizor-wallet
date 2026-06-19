@@ -1051,9 +1051,12 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
   }
 
   Future<void> _scanAddress() async {
+    final scanTitle = addressBookQrScanTitle(_network);
     final scanned = await showAppMobileSheet<String>(
       context: context,
       builder: (sheetContext) => MobileAddressScanCard(
+        caption: scanTitle,
+        permissionTitle: scanTitle,
         resolve: (raw) async {
           final address = normalizeAddressScanPayload(raw);
           if (address == null || address.isEmpty) {

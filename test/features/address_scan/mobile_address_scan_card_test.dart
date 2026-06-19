@@ -62,11 +62,15 @@ void _useSwapViewport(WidgetTester tester) {
 
 MobileAddressScanCard _card(
   MobileScannerController controller, {
+  String? caption,
+  String? permissionTitle,
   VoidCallback? onClose,
   ValueChanged<String>? onScanned,
 }) {
   return MobileAddressScanCard(
     controller: controller,
+    caption: caption ?? 'Scan a Zcash QR code to continue',
+    permissionTitle: permissionTitle ?? 'Scan the address QR code',
     resolve: (raw) async => MobileScanOutcome.accepted(raw),
     onScanned: onScanned ?? (_) {},
     onClose: onClose ?? () {},
@@ -102,6 +106,37 @@ void main() {
       find.byKey(const ValueKey('mobile_address_scan_cancel_button')),
     );
     expect(closed, 1);
+  });
+
+  testWidgets('custom copy replaces the default Zcash scan copy', (
+    tester,
+  ) async {
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      _host(
+        _card(
+          controller,
+          caption: 'Scan Ethereum QR code',
+          permissionTitle: 'Scan Ethereum QR code',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Scan Ethereum QR code'), findsOneWidget);
+    expect(find.text('Scan a Zcash QR code to continue'), findsNothing);
+    expect(find.text('Scan the address QR code'), findsNothing);
+
+    controller.value = controller.value.copyWith(
+      isInitialized: true,
+      isRunning: true,
+    );
+    await tester.pump();
+
+    expect(find.text('Scan Ethereum QR code'), findsOneWidget);
+    expect(find.text('Scan a Zcash QR code to continue'), findsNothing);
   });
 
   testWidgets('denied access swaps in the retry copy and action', (
@@ -168,7 +203,10 @@ void main() {
 
     // Permission card first; the camera preview is already mounted behind it.
     expect(find.text('Scan the address QR code'), findsOneWidget);
-    final cameraElement = tester.element(find.byKey(_cameraKey));
+    expect(find.byKey(_cameraKey), findsNothing);
+    final cameraElement = tester.element(
+      find.byKey(_cameraKey, skipOffstage: false),
+    );
 
     // Granted-but-spinning-up → the camera card takes over (loading veil).
     controller.value = controller.value.copyWith(isInitialized: true);
@@ -186,8 +224,12 @@ void main() {
     controller.value = controller.value.copyWith(isInitialized: false);
     await tester.pump();
     expect(find.text('Scan the address QR code'), findsOneWidget);
+    expect(find.byKey(_cameraKey), findsNothing);
     expect(
-      identical(tester.element(find.byKey(_cameraKey)), cameraElement),
+      identical(
+        tester.element(find.byKey(_cameraKey, skipOffstage: false)),
+        cameraElement,
+      ),
       isTrue,
     );
   });
