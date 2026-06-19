@@ -8,26 +8,39 @@ import '../../../core/widgets/app_icon.dart';
 
 enum KeystonePcztQrStagePhase { preparing, ready, working, failed }
 
+const _scanOptimizedQrInk = Color(0xFF000000);
+
 class KeystonePcztQrStage extends StatelessWidget {
   const KeystonePcztQrStage({
     required this.phase,
     required this.urParts,
     required this.error,
+    this.size = 230,
+    this.scanOptimized = false,
+    this.frameInterval = const Duration(milliseconds: 250),
     super.key,
   });
 
   final KeystonePcztQrStagePhase phase;
   final List<String> urParts;
   final String? error;
+  final double size;
+  final bool scanOptimized;
+  final Duration frameInterval;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
-      width: 230,
-      height: 230,
+      width: size,
+      height: size,
       child: switch (phase) {
-        KeystonePcztQrStagePhase.ready => _AnimatedKeystoneQr(urParts: urParts),
+        KeystonePcztQrStagePhase.ready => _AnimatedKeystoneQr(
+          urParts: urParts,
+          size: size,
+          scanOptimized: scanOptimized,
+          frameInterval: frameInterval,
+        ),
         KeystonePcztQrStagePhase.failed => Center(
           child: Text(
             error ?? 'Keystone signing could not be prepared.',
@@ -61,9 +74,17 @@ class _QrStageLoader extends StatelessWidget {
 }
 
 class _AnimatedKeystoneQr extends StatefulWidget {
-  const _AnimatedKeystoneQr({required this.urParts});
+  const _AnimatedKeystoneQr({
+    required this.urParts,
+    required this.size,
+    required this.scanOptimized,
+    required this.frameInterval,
+  });
 
   final List<String> urParts;
+  final double size;
+  final bool scanOptimized;
+  final Duration frameInterval;
 
   @override
   State<_AnimatedKeystoneQr> createState() => _AnimatedKeystoneQrState();
@@ -83,7 +104,9 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   @override
   void didUpdateWidget(covariant _AnimatedKeystoneQr oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.urParts != widget.urParts) {
+    if (oldWidget.urParts != widget.urParts ||
+        oldWidget.scanOptimized != widget.scanOptimized ||
+        oldWidget.frameInterval != widget.frameInterval) {
       _index = 0;
       _frames.clear();
       _startTimer();
@@ -94,7 +117,9 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
     return _frames[index] ??= QrImage(
       QrCode.fromData(
         data: widget.urParts[index],
-        errorCorrectLevel: QrErrorCorrectLevel.L,
+        errorCorrectLevel: widget.scanOptimized
+            ? QrErrorCorrectLevel.M
+            : QrErrorCorrectLevel.L,
       ),
     );
   }
@@ -102,7 +127,7 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   void _startTimer() {
     _timer?.cancel();
     if (widget.urParts.length <= 1) return;
-    _timer = Timer.periodic(const Duration(milliseconds: 250), (_) {
+    _timer = Timer.periodic(widget.frameInterval, (_) {
       if (!mounted) return;
       setState(() {
         _index = (_index + 1) % widget.urParts.length;
@@ -119,21 +144,32 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   @override
   Widget build(BuildContext context) {
     if (widget.urParts.isEmpty) return const SizedBox.shrink();
-    // Figma (render-measured from 4654:62168 / 4654:63922): the QR ink is
-    // drawn directly on the modal panel in both themes — no backing card.
-    // Light paints #141818 modules on the #f7f7f7 panel; dark inverts the
-    // ink and paints #f7f7f7 modules on the #232828 panel. Both use the
-    // smooth symbol (adjacent modules merge into rounded runs; isolated
-    // modules render as dots) with bullseye finder eyes painted over the
-    // symbol's own eye pattern; the eye knockout matches the panel color.
-    final isDark = AppTheme.of(context) == AppThemeData.dark;
-    final moduleColor = isDark
-        ? const Color(0xFFF7F7F7)
-        : const Color(0xFF141818);
+    // Figma (render-measured from 4654:62168 / 4654:63922): the default QR
+    // ink is drawn directly on the modal panel in both themes, using the
+    // accent icon token with bullseye finder eyes painted over the symbol's
+    // own eye pattern; the eye knockout matches the panel color.
+    final colors = context.colors;
+    final moduleColor = colors.icon.accent;
     final frame = _frameAt(_index);
+    if (widget.scanOptimized) {
+      return SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: ColoredBox(
+          color: colors.surface.qrCode,
+          child: PrettyQrView(
+            qrImage: frame,
+            decoration: const PrettyQrDecoration(
+              quietZone: PrettyQrQuietZone.modules(3),
+              shape: PrettyQrSquaresSymbol(color: _scanOptimizedQrInk),
+            ),
+          ),
+        ),
+      );
+    }
     return SizedBox(
-      width: 230,
-      height: 230,
+      width: widget.size,
+      height: widget.size,
       child: Stack(
         fit: StackFit.expand,
         children: [

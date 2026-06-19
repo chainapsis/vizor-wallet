@@ -179,6 +179,14 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileKeystoneScanLoadingUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'PCZT QR default',
+                      builder: buildMobileKeystonePcztQrDefaultUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'PCZT QR mobile optimized',
+                      builder: buildMobileKeystonePcztQrOptimizedUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Select account',
                       builder: buildMobileKeystoneSelectAccountUseCase,
                     ),

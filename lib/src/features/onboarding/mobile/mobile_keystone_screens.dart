@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -205,8 +205,6 @@ class MobileKeystoneScanScreen extends ConsumerStatefulWidget {
 
 class _MobileKeystoneScanScreenState
     extends ConsumerState<MobileKeystoneScanScreen> {
-  static const _cameraMaxHeight = 464.0;
-
   bool _decoding = false;
   String? _error;
   int _scanProgress = 0;
@@ -288,54 +286,72 @@ class _MobileKeystoneScanScreenState
     return null;
   }
 
+  double _scanModalHeight(BuildContext context) {
+    return MobileAddressScanCardContent.modalCameraHeight(context);
+  }
+
+  Widget _buildScanCard(double cameraHeight) {
+    return MobileQrScanCard(
+      key: const ValueKey('mobile_keystone_scan_card'),
+      controller: widget.scannerController,
+      cameraHeight: cameraHeight,
+      caption: kMobileKeystoneScanCaption,
+      permissionTitle: 'Scan QR Code',
+      error: _scanCaptionOverride,
+      unavailableDescription:
+          'Keystone import uses camera QR scanning only. Connect a '
+          'camera and try again.',
+      onClose: () => Navigator.of(context).maybePop(),
+      permissionBuilder:
+          (context, status, unavailableDescription, onRetry, onClose) =>
+              MobileKeystoneScanPermissionCard(
+                status: status,
+                unavailableDescription: unavailableDescription,
+                onRetry: onRetry,
+                cameraHeight: cameraHeight,
+              ),
+      cameraViewBuilder: (context, controller) => AnimatedUrScannerView(
+        key: const ValueKey('mobile_keystone_scan_camera'),
+        controller: controller,
+        expectedUrType: 'zcash-accounts',
+        scanSessionResetToken: _scanSessionResetToken,
+        errorBuilder: (context, error) => const SizedBox.shrink(),
+        onProgress: _handleScanProgress,
+        onDecodeError: _handleDecodeError,
+        onComplete: (result) => unawaited(_handleScanComplete(result)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return MobileOnboardingStepScaffold(
-      progress: 0.4,
-      onBack: () => Navigator.of(context).maybePop(),
-      title: 'Scan QR Code',
-      subtitle: 'Prepare your Keystone wallet',
-      scrollable: false,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final availableHeight = constraints.maxHeight.isFinite
-              ? math.max(0.0, constraints.maxHeight)
-              : _cameraMaxHeight;
-          final cameraHeight = math.min(_cameraMaxHeight, availableHeight);
-          return Align(
-            alignment: Alignment.topCenter,
-            child: MobileQrScanCard(
-              key: const ValueKey('mobile_keystone_scan_card'),
-              controller: widget.scannerController,
-              cameraHeight: cameraHeight,
-              permissionTitle: 'Scan QR Code',
-              error: _scanCaptionOverride,
-              unavailableDescription:
-                  'Keystone import uses camera QR scanning only. Connect a '
-                  'camera and try again.',
-              onClose: () => Navigator.of(context).maybePop(),
-              permissionBuilder:
-                  (context, status, unavailableDescription, onRetry, onClose) =>
-                      MobileKeystoneScanPermissionCard(
-                        status: status,
-                        unavailableDescription: unavailableDescription,
-                        onRetry: onRetry,
-                        cameraHeight: cameraHeight,
-                      ),
-              cameraViewBuilder: (context, controller) => AnimatedUrScannerView(
-                key: const ValueKey('mobile_keystone_scan_camera'),
-                controller: controller,
-                expectedUrType: 'zcash-accounts',
-                scanSessionResetToken: _scanSessionResetToken,
-                errorBuilder: (context, error) => const SizedBox.shrink(),
-                onProgress: _handleScanProgress,
-                onDecodeError: _handleDecodeError,
-                onComplete: (result) => unawaited(_handleScanComplete(result)),
-              ),
-            ),
-          );
-        },
-      ),
+    final colors = context.colors;
+    final cameraHeight = _scanModalHeight(context);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        MobileOnboardingStepScaffold(
+          progress: 0.4,
+          onBack: () => Navigator.of(context).maybePop(),
+          title: 'Scan QR Code',
+          subtitle: 'Prepare your Keystone wallet',
+          scrollable: false,
+          child: const SizedBox.shrink(),
+        ),
+        IgnorePointer(
+          child: ModalBarrier(color: colors.background.neutralScrim),
+        ),
+        SafeArea(
+          bottom: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Spacer(),
+              MobileModalCard(child: _buildScanCard(cameraHeight)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -488,8 +504,9 @@ class _AccountCard extends StatelessWidget {
                       name,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelLarge.copyWith(
-                        fontWeight:
-                            selected ? FontWeight.w600 : FontWeight.w500,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
                         color: colors.text.accent,
                       ),
                     ),

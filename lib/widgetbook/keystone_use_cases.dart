@@ -12,6 +12,7 @@ import '../src/app_bootstrap.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
+import '../src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import '../src/features/onboarding/keystone/keystone_onboarding_flow.dart';
 import '../src/features/onboarding/mobile/mobile_import_birthday_screen.dart';
@@ -23,12 +24,12 @@ import '../src/providers/account_provider.dart' show AccountState;
 import '../src/rust/wallet/keystone.dart' show KeystoneAccountInfo;
 
 Widget buildMobileKeystoneScanRequestingUseCase(BuildContext context) {
-  return const _MobileKeystoneInlineScanFrame(
+  return const _MobileKeystoneModalScanFrame(
     child: MobileKeystoneScanCardContent(
       key: ValueKey('mobile_keystone_scan_widgetbook_card'),
       status: AddressQrCameraStatus.requesting,
       cameraView: _MobileKeystoneScanCameraPreview(),
-      cameraHeight: 464,
+      cameraHeight: 694,
       onTorch: _noop,
       onClose: _noop,
       onRetry: _noop,
@@ -37,12 +38,12 @@ Widget buildMobileKeystoneScanRequestingUseCase(BuildContext context) {
 }
 
 Widget buildMobileKeystoneScanDeniedUseCase(BuildContext context) {
-  return const _MobileKeystoneInlineScanFrame(
+  return const _MobileKeystoneModalScanFrame(
     child: MobileKeystoneScanCardContent(
       key: ValueKey('mobile_keystone_scan_widgetbook_card'),
       status: AddressQrCameraStatus.denied,
       cameraView: _MobileKeystoneScanCameraPreview(),
-      cameraHeight: 464,
+      cameraHeight: 694,
       onTorch: _noop,
       onClose: _noop,
       onRetry: _noop,
@@ -74,6 +75,29 @@ Widget buildMobileKeystoneScanLoadingUseCase(BuildContext context) {
       onTorch: _noop,
       onClose: _noop,
       onRetry: _noop,
+    ),
+  );
+}
+
+Widget buildMobileKeystonePcztQrDefaultUseCase(BuildContext context) {
+  return _MobileKeystonePcztQrFrame(
+    child: KeystonePcztQrStage(
+      phase: KeystonePcztQrStagePhase.ready,
+      urParts: _pcztPreviewUrParts(),
+      error: null,
+    ),
+  );
+}
+
+Widget buildMobileKeystonePcztQrOptimizedUseCase(BuildContext context) {
+  return _MobileKeystonePcztQrFrame(
+    child: KeystonePcztQrStage(
+      phase: KeystonePcztQrStagePhase.ready,
+      urParts: _pcztPreviewUrParts(),
+      error: null,
+      size: 280,
+      scanOptimized: true,
+      frameInterval: const Duration(milliseconds: 100),
     ),
   );
 }
@@ -191,34 +215,6 @@ class _SeededKeystoneOnboardingNotifier extends KeystoneOnboardingNotifier {
   }
 }
 
-class _MobileKeystoneInlineScanFrame extends StatelessWidget {
-  const _MobileKeystoneInlineScanFrame({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 393,
-      height: 852,
-      child: MediaQuery(
-        data: const MediaQueryData(
-          size: Size(393, 852),
-          viewPadding: EdgeInsets.only(top: 55),
-        ),
-        child: MobileOnboardingStepScaffold(
-          progress: 0.4,
-          onBack: _noop,
-          title: 'Scan QR Code',
-          subtitle: 'Prepare your Keystone wallet',
-          scrollable: false,
-          child: Align(alignment: Alignment.topCenter, child: child),
-        ),
-      ),
-    );
-  }
-}
-
 class _MobileKeystoneModalScanFrame extends StatelessWidget {
   const _MobileKeystoneModalScanFrame({required this.child});
 
@@ -244,32 +240,83 @@ class _MobileKeystoneModalScanFrame extends StatelessWidget {
               title: 'Scan QR Code',
               subtitle: 'Prepare your Keystone wallet',
               scrollable: false,
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: MobileKeystoneScanCardContent(
-                  status: AddressQrCameraStatus.denied,
-                  cameraView: _MobileKeystoneScanCameraPreview(),
-                  cameraHeight: 464,
-                  onTorch: _noop,
-                  onClose: _noop,
-                  onRetry: _noop,
-                ),
-              ),
+              child: SizedBox.shrink(),
             ),
-            ColoredBox(
-              color: colors.background.neutralScrim,
-              child: SafeArea(
-                bottom: false,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Spacer(),
-                    MobileModalCard(child: child),
-                  ],
-                ),
+            IgnorePointer(
+              child: ModalBarrier(color: colors.background.neutralScrim),
+            ),
+            SafeArea(
+              bottom: false,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Spacer(),
+                  MobileModalCard(child: child),
+                ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileKeystonePcztQrFrame extends StatelessWidget {
+  const _MobileKeystonePcztQrFrame({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      width: 393,
+      height: 852,
+      child: MediaQuery(
+        data: const MediaQueryData(
+          size: Size(393, 852),
+          viewPadding: EdgeInsets.only(top: 55),
+        ),
+        child: DecoratedBox(
+          decoration: const BoxDecoration(color: Color(0xFF000000)),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              child: Column(
+                children: [
+                  const SizedBox(height: 72),
+                  Text(
+                    'Confirm transaction',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.headlineSmall.copyWith(
+                      color: const Color(0xFFFFFFFF),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.s),
+                  Text(
+                    'Use your Keystone wallet to scan this transaction QR '
+                    'code. Follow the steps on your device.',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: const Color(0xCCFFFFFF),
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: colors.background.ground,
+                      borderRadius: BorderRadius.circular(AppRadii.large),
+                    ),
+                    child: child,
+                  ),
+                  const Spacer(),
+                  const SizedBox(height: 96),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -301,6 +348,17 @@ class _MobileKeystoneScanCameraPreview extends StatelessWidget {
       ),
     );
   }
+}
+
+List<String> _pcztPreviewUrParts() {
+  const payload =
+      'lpadaxcsfwdmfwfwhdcxhdcxfwcxhdcxhdcxfwcxhdcxhdcxfwcxhdcxhdcxfwcx'
+      'hdcxhdcxfwcxhdcxhdcxfwcxhdcxhdcxfwcxhdcxhdcxfwcxhdcxhdcxfwcxhdcx'
+      'hdcxfwcxhdcxhdcxfwcxhdcxhdcxfwcxhdcxhdcxfwcxhdcxhdcxfwcxhdcxhdcx';
+  return [
+    for (var i = 1; i <= 12; i++)
+      'ur:zcash-pczt/$i-12/$payload${i.toString().padLeft(2, '0')}',
+  ];
 }
 
 void _noop() {}

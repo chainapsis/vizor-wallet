@@ -9,6 +9,7 @@ import '../../address_scan/widgets/mobile_address_scan_card.dart';
 
 const _keystoneScannerCardHeight = 464.0;
 const _keystoneScannerFooterHeight = 68.0;
+const kMobileKeystoneScanCaption = 'Scan the Keystone account QR';
 
 class MobileKeystoneScanCardContent extends StatelessWidget {
   const MobileKeystoneScanCardContent({
@@ -37,7 +38,7 @@ class MobileKeystoneScanCardContent extends StatelessWidget {
     return MobileAddressScanCardContent(
       status: status,
       cameraView: cameraView,
-      caption: 'Scan a Zcash QR code to continue',
+      caption: kMobileKeystoneScanCaption,
       error: error,
       unavailableDescription: unavailableDescription,
       cameraHeight: cameraHeight ?? _keystoneScannerCardHeight,
@@ -199,7 +200,9 @@ class _KeystonePermissionMessage extends StatelessWidget {
           decoration: BoxDecoration(
             // Requesting sits on the inverse tile, denied on the neutral
             // raised tile (Figma 4654:72631 / 4654:72955) — both theme-aware.
-            color: denied ? colors.background.raised : colors.background.inverse,
+            color: denied
+                ? colors.background.raised
+                : colors.background.inverse,
             borderRadius: BorderRadius.circular(AppRadii.small),
           ),
           child: Center(
