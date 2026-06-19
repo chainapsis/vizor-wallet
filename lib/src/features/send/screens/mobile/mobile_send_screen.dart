@@ -209,7 +209,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final initial = widget.initialRecipient;
     if (initial != null && initial.trim().isNotEmpty) {
       _addressController.text = initial.trim();
-      _addressType = 'unified';
       unawaited(_validateAddress());
     }
     final initialContactLabel = widget.initialContactLabel;
