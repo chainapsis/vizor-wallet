@@ -198,3 +198,56 @@ final class BiometricUnlockHandler {
     }
   }
 }
+
+/// Device-owner verification for destructive local actions.
+///
+/// This is separate from biometric unlock: it never reads the wallet passcode
+/// escrow and accepts the OS-level owner credential fallback.
+final class DeviceOwnerAuthHandler {
+  static let shared = DeviceOwnerAuthHandler()
+
+  private init() {}
+
+  func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "verify":
+      let args = call.arguments as? [String: Any]
+      let reason = (args?["reason"] as? String) ?? "Confirm reset Vizor"
+      verify(reason: reason, result: result)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func verify(reason: String, result: @escaping FlutterResult) {
+    let context = LAContext()
+    var error: NSError?
+    guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+      result(FlutterError(code: "unavailable", message: error?.localizedDescription, details: nil))
+      return
+    }
+
+    context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, error in
+      DispatchQueue.main.async {
+        if success {
+          result(true)
+          return
+        }
+
+        guard let laError = error as? LAError else {
+          result(FlutterError(code: "failed", message: error?.localizedDescription, details: nil))
+          return
+        }
+
+        switch laError.code {
+        case .userCancel, .systemCancel, .appCancel:
+          result(false)
+        case .passcodeNotSet, .biometryNotAvailable, .biometryNotEnrolled:
+          result(FlutterError(code: "unavailable", message: laError.localizedDescription, details: nil))
+        default:
+          result(FlutterError(code: "failed", message: laError.localizedDescription, details: nil))
+        }
+      }
+    }
+  }
+}

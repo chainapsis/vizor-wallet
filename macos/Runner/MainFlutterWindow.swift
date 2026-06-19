@@ -1,5 +1,6 @@
 import Cocoa
 import FlutterMacOS
+import LocalAuthentication
 import desktop_window_bootstrap
 
 private func appWindowBackgroundColor(for brightness: String) -> NSColor {
@@ -520,6 +521,60 @@ final class CameraPermissionSettingsChannel {
   }
 }
 
+final class DeviceOwnerAuthChannel {
+  private static var channel: FlutterMethodChannel?
+
+  static func register(messenger: FlutterBinaryMessenger) {
+    let methodChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/device_owner_auth",
+      binaryMessenger: messenger
+    )
+    channel = methodChannel
+    methodChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "verify":
+        let arguments = call.arguments as? [String: Any]
+        let reason = (arguments?["reason"] as? String) ?? "Confirm reset Vizor"
+        verify(reason: reason, result: result)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  private static func verify(reason: String, result: @escaping FlutterResult) {
+    let context = LAContext()
+    var error: NSError?
+    guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+      result(FlutterError(code: "unavailable", message: error?.localizedDescription, details: nil))
+      return
+    }
+
+    context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, error in
+      DispatchQueue.main.async {
+        if success {
+          result(true)
+          return
+        }
+
+        guard let laError = error as? LAError else {
+          result(FlutterError(code: "failed", message: error?.localizedDescription, details: nil))
+          return
+        }
+
+        switch laError.code {
+        case .userCancel, .systemCancel, .appCancel:
+          result(false)
+        case .passcodeNotSet, .biometryNotAvailable, .biometryNotEnrolled:
+          result(FlutterError(code: "unavailable", message: laError.localizedDescription, details: nil))
+        default:
+          result(FlutterError(code: "failed", message: laError.localizedDescription, details: nil))
+        }
+      }
+    }
+  }
+}
+
 class MainFlutterWindow: NSWindow {
   private let vizorWindowToolbarDelegate = VizorWindowToolbarDelegate()
   private var vizorWindowToolbar: NSToolbar?
@@ -551,6 +606,9 @@ class MainFlutterWindow: NSWindow {
       messenger: flutterViewController.engine.binaryMessenger
     )
     CameraPermissionSettingsChannel.register(
+      messenger: flutterViewController.engine.binaryMessenger
+    )
+    DeviceOwnerAuthChannel.register(
       messenger: flutterViewController.engine.binaryMessenger
     )
     RegisterGeneratedPlugins(registry: flutterViewController)
