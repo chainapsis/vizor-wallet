@@ -726,7 +726,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   String _fallbackAddressTypeLabel() {
     return switch (_addressType) {
-      'unified' => 'Unified address',
+      'unified' => 'Shielded address',
       'sapling' => 'Shielded address',
       'transparent' => 'Transparent address',
       'tex' => 'TEX address',

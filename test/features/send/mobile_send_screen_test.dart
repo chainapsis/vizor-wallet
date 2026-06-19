@@ -953,7 +953,8 @@ void main() {
     );
     expect(reviewAmount.style?.fontSize, AppTypography.headlineLarge.fontSize);
     expect(reviewAmount.style?.height, AppTypography.headlineLarge.height);
-    expect(find.text('Unified address'), findsOneWidget);
+    expect(find.text('Shielded address'), findsOneWidget);
+    expect(find.text('Unified address'), findsNothing);
     expect(find.text('u1tests .... 0000000'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_full_address'))),

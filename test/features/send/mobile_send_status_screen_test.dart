@@ -109,6 +109,9 @@ void main() {
     expect(find.text('123.12 ZEC'), findsOneWidget);
     expect(find.text(r'$8.62K'), findsOneWidget);
     expect(find.text('To'), findsOneWidget);
+    expect(find.text('Shielded'), findsOneWidget);
+    expect(find.text('Shielded address'), findsNothing);
+    expect(find.text('Unified address'), findsNothing);
 
     broadcast.complete(
       const SendBroadcastOutcome(
