@@ -3233,9 +3233,10 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
             BuildConfig::Standard {
                 sapling_anchor: None,
                 orchard_anchor: Some(dummy_anchor),
+                #[cfg(zcash_unstable = "nu6.3")]
+                ironwood_anchor: Some(orchard::Anchor::empty_tree()),
             },
         )
-        .with_ironwood_anchor(orchard::Anchor::empty_tree())
         .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
 
         builder
@@ -3266,7 +3267,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     if selected_value <= fee_amount {
         return Ok(None);
     }
-    let migrated_amount = (selected_value - fee_amount)
+    let migrated_amount: Zatoshis = (selected_value - fee_amount)
         .ok_or_else(|| "Predicted migration amount underflow".to_string())?;
     let builder = if migrated_amount
         == Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
@@ -3414,9 +3415,10 @@ fn create_orchard_to_ironwood_transaction_from_note(
             BuildConfig::Standard {
                 sapling_anchor: None,
                 orchard_anchor: Some(orchard_anchor),
+                #[cfg(zcash_unstable = "nu6.3")]
+                ironwood_anchor: Some(orchard::Anchor::empty_tree()),
             },
         )
-        .with_ironwood_anchor(orchard::Anchor::empty_tree())
         .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
 
         for (note, merkle_path) in orchard_inputs.iter() {
@@ -3449,7 +3451,7 @@ fn create_orchard_to_ironwood_transaction_from_note(
     if selected_value <= fee_amount {
         return Ok(None);
     }
-    let migrated_amount = (selected_value - fee_amount)
+    let migrated_amount: Zatoshis = (selected_value - fee_amount)
         .ok_or_else(|| "Exact-note migration amount underflow".to_string())?;
     let builder = if migrated_amount
         == Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
@@ -3579,9 +3581,10 @@ fn create_orchard_to_ironwood_pczt_from_note(
             BuildConfig::Standard {
                 sapling_anchor: None,
                 orchard_anchor: Some(orchard_anchor),
+                #[cfg(zcash_unstable = "nu6.3")]
+                ironwood_anchor: Some(orchard::Anchor::empty_tree()),
             },
         )
-        .with_ironwood_anchor(orchard::Anchor::empty_tree())
         .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
 
         for (note, merkle_path) in orchard_inputs.iter() {
@@ -3614,7 +3617,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
     if selected_value <= fee_amount {
         return Ok(None);
     }
-    let migrated_amount = (selected_value - fee_amount)
+    let migrated_amount: Zatoshis = (selected_value - fee_amount)
         .ok_or_else(|| "Exact-note migration amount underflow".to_string())?;
     let builder = if migrated_amount
         == Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
@@ -3727,9 +3730,10 @@ fn make_orchard_split_builder(
         BuildConfig::Standard {
             sapling_anchor: None,
             orchard_anchor: Some(orchard_anchor),
+            #[cfg(zcash_unstable = "nu6.3")]
+            ironwood_anchor: Some(orchard::Anchor::empty_tree()),
         },
     )
-    .with_ironwood_anchor(orchard::Anchor::empty_tree())
     .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
 
     #[cfg(zcash_unstable = "nu6.3")]
