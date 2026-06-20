@@ -72,34 +72,34 @@ url = "2.5.8"
 [dependencies.zcash_primitives]
 version = "0.28"
 git = "https://github.com/valargroup/librustzcash"
-rev = "dc95dcef33a081b925db551eac8bf6533fff22ed"
+branch = "adam/qleak-pr44-orchard-dummy-ciphertexts"
 
 [dependencies.zcash_address]
 version = "0.12"
 git = "https://github.com/valargroup/librustzcash"
-rev = "dc95dcef33a081b925db551eac8bf6533fff22ed"
+branch = "adam/qleak-pr44-orchard-dummy-ciphertexts"
 
 [dependencies.zcash_keys]
 version = "0.14"
 git = "https://github.com/valargroup/librustzcash"
-rev = "dc95dcef33a081b925db551eac8bf6533fff22ed"
+branch = "adam/qleak-pr44-orchard-dummy-ciphertexts"
 features = ["orchard"]
 
 [dependencies.zcash_protocol]
 version = "0.9"
 git = "https://github.com/valargroup/librustzcash"
-rev = "dc95dcef33a081b925db551eac8bf6533fff22ed"
+branch = "adam/qleak-pr44-orchard-dummy-ciphertexts"
 
 [dependencies.transparent]
 package = "zcash_transparent"
 version = "0.8"
 git = "https://github.com/valargroup/librustzcash"
-rev = "dc95dcef33a081b925db551eac8bf6533fff22ed"
+branch = "adam/qleak-pr44-orchard-dummy-ciphertexts"
 
 [dependencies.zcash_client_backend]
 version = "0.23"
 git = "https://github.com/valargroup/librustzcash"
-rev = "dc95dcef33a081b925db551eac8bf6533fff22ed"
+branch = "adam/qleak-pr44-orchard-dummy-ciphertexts"
 features = [
     "orchard",
     "transparent-inputs",
@@ -112,31 +112,31 @@ features = [
 [dependencies.zcash_client_sqlite]
 version = "0.21"
 git = "https://github.com/valargroup/librustzcash"
-rev = "dc95dcef33a081b925db551eac8bf6533fff22ed"
+branch = "adam/qleak-pr44-orchard-dummy-ciphertexts"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
 [dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting"
-rev = "bb42afd366569dd0e2eb5cc78f3482ef104e895c"
+branch = "adam/qleak-pr136-orchard-librustzcash"
 package = "zcash_voting"
 
 # Must match versions used by zcash_client_sqlite to avoid type conflicts
 [dependencies.orchard]
 version = "0.14"
 git = "https://github.com/zcash/orchard"
-rev = "b2af0a11abe00f59c51258d349c2105fe7a16215"
+branch = "adam/qleak-dummy-ciphertexts-on-pr505"
 
 # Proofs
 [dependencies.zcash_proofs]
 version = "0.28"
 git = "https://github.com/valargroup/librustzcash"
-rev = "dc95dcef33a081b925db551eac8bf6533fff22ed"
+branch = "adam/qleak-pr44-orchard-dummy-ciphertexts"
 
 [dependencies.pczt]
 version = "0.7"
 git = "https://github.com/valargroup/librustzcash"
-rev = "dc95dcef33a081b925db551eac8bf6533fff22ed"
+branch = "adam/qleak-pr44-orchard-dummy-ciphertexts"
 features = ["orchard", "io-finalizer", "signer", "zcp-builder"]
 
 [dependencies.ur-registry]
@@ -154,7 +154,7 @@ hex = "0.4"
 
 [dev-dependencies.vote-commitment-tree]
 git = "https://github.com/valargroup/zcash_voting"
-rev = "bb42afd366569dd0e2eb5cc78f3482ef104e895c"
+branch = "adam/qleak-pr136-orchard-librustzcash"
 package = "vote-commitment-tree"
 
 [lints.rust]

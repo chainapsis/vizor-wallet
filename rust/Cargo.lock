@@ -940,7 +940,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.3.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=dc95dcef33a081b925db551eac8bf6533fff22ed#dc95dcef33a081b925db551eac8bf6533fff22ed"
+source = "git+https://github.com/valargroup/librustzcash?branch=adam%2Fqleak-pr44-orchard-dummy-ciphertexts#0c3ad735f8402295fccb9acf2fe897779500bbf5"
 dependencies = [
  "blake2b_simd",
  "corez",
@@ -965,7 +965,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.1"
-source = "git+https://github.com/valargroup/librustzcash?rev=dc95dcef33a081b925db551eac8bf6533fff22ed#dc95dcef33a081b925db551eac8bf6533fff22ed"
+source = "git+https://github.com/valargroup/librustzcash?branch=adam%2Fqleak-pr44-orchard-dummy-ciphertexts#0c3ad735f8402295fccb9acf2fe897779500bbf5"
 dependencies = [
  "blake2b_simd",
 ]
@@ -2212,7 +2212,7 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 [[package]]
 name = "orchard"
 version = "0.14.0"
-source = "git+https://github.com/zcash/orchard?rev=b2af0a11abe00f59c51258d349c2105fe7a16215#b2af0a11abe00f59c51258d349c2105fe7a16215"
+source = "git+https://github.com/zcash/orchard?branch=adam%2Fqleak-dummy-ciphertexts-on-pr505#204d8ce99f2f35c01654694dd294e3a20ef882d5"
 dependencies = [
  "aes",
  "bitvec",
@@ -2323,7 +2323,7 @@ dependencies = [
 [[package]]
 name = "pczt"
 version = "0.7.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=dc95dcef33a081b925db551eac8bf6533fff22ed#dc95dcef33a081b925db551eac8bf6533fff22ed"
+source = "git+https://github.com/valargroup/librustzcash?branch=adam%2Fqleak-pr44-orchard-dummy-ciphertexts#0c3ad735f8402295fccb9acf2fe897779500bbf5"
 dependencies = [
  "blake2b_simd",
  "bls12_381",
@@ -3959,7 +3959,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree"
 version = "0.3.2"
-source = "git+https://github.com/valargroup/zcash_voting?rev=bb42afd366569dd0e2eb5cc78f3482ef104e895c#bb42afd366569dd0e2eb5cc78f3482ef104e895c"
+source = "git+https://github.com/valargroup/zcash_voting?branch=adam%2Fqleak-pr136-orchard-librustzcash#2e63e562e53c9fdec38ccfc3875abd0f8cdc34f0"
 dependencies = [
  "anyhow",
  "ff",
@@ -3975,7 +3975,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree-client"
 version = "0.5.2"
-source = "git+https://github.com/valargroup/zcash_voting?rev=bb42afd366569dd0e2eb5cc78f3482ef104e895c#bb42afd366569dd0e2eb5cc78f3482ef104e895c"
+source = "git+https://github.com/valargroup/zcash_voting?branch=adam%2Fqleak-pr136-orchard-librustzcash#2e63e562e53c9fdec38ccfc3875abd0f8cdc34f0"
 dependencies = [
  "base64",
  "ff",
@@ -3990,7 +3990,7 @@ dependencies = [
 [[package]]
 name = "voting-circuits"
 version = "0.8.0"
-source = "git+https://github.com/valargroup/voting-circuits?rev=dba34961b908ebd7a8ec4b408f459737d9d3e0de#dba34961b908ebd7a8ec4b408f459737d9d3e0de"
+source = "git+https://github.com/valargroup/voting-circuits?branch=adam%2Fqleak-pr94-orchard-dummy-ciphertexts#58528f0e3e882e60f7fc7bdc3d3933cd877531bd"
 dependencies = [
  "blake2b_simd",
  "ff",
@@ -4407,7 +4407,7 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.12.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=dc95dcef33a081b925db551eac8bf6533fff22ed#dc95dcef33a081b925db551eac8bf6533fff22ed"
+source = "git+https://github.com/valargroup/librustzcash?branch=adam%2Fqleak-pr44-orchard-dummy-ciphertexts#0c3ad735f8402295fccb9acf2fe897779500bbf5"
 dependencies = [
  "bech32",
  "bs58",
@@ -4420,7 +4420,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.23.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=dc95dcef33a081b925db551eac8bf6533fff22ed#dc95dcef33a081b925db551eac8bf6533fff22ed"
+source = "git+https://github.com/valargroup/librustzcash?branch=adam%2Fqleak-pr44-orchard-dummy-ciphertexts#0c3ad735f8402295fccb9acf2fe897779500bbf5"
 dependencies = [
  "async-trait",
  "base64",
@@ -4475,7 +4475,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_sqlite"
 version = "0.21.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=dc95dcef33a081b925db551eac8bf6533fff22ed#dc95dcef33a081b925db551eac8bf6533fff22ed"
+source = "git+https://github.com/valargroup/librustzcash?branch=adam%2Fqleak-pr44-orchard-dummy-ciphertexts#0c3ad735f8402295fccb9acf2fe897779500bbf5"
 dependencies = [
  "bip32",
  "bitflags",
@@ -4521,7 +4521,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.4.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=dc95dcef33a081b925db551eac8bf6533fff22ed#dc95dcef33a081b925db551eac8bf6533fff22ed"
+source = "git+https://github.com/valargroup/librustzcash?branch=adam%2Fqleak-pr44-orchard-dummy-ciphertexts#0c3ad735f8402295fccb9acf2fe897779500bbf5"
 dependencies = [
  "corez",
  "hex",
@@ -4531,7 +4531,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.14.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=dc95dcef33a081b925db551eac8bf6533fff22ed#dc95dcef33a081b925db551eac8bf6533fff22ed"
+source = "git+https://github.com/valargroup/librustzcash?branch=adam%2Fqleak-pr44-orchard-dummy-ciphertexts#0c3ad735f8402295fccb9acf2fe897779500bbf5"
 dependencies = [
  "bech32",
  "bip32",
@@ -4573,7 +4573,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.28.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=dc95dcef33a081b925db551eac8bf6533fff22ed#dc95dcef33a081b925db551eac8bf6533fff22ed"
+source = "git+https://github.com/valargroup/librustzcash?branch=adam%2Fqleak-pr44-orchard-dummy-ciphertexts#0c3ad735f8402295fccb9acf2fe897779500bbf5"
 dependencies = [
  "blake2b_simd",
  "block-buffer 0.11.0-rc.3",
@@ -4603,7 +4603,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.28.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=dc95dcef33a081b925db551eac8bf6533fff22ed#dc95dcef33a081b925db551eac8bf6533fff22ed"
+source = "git+https://github.com/valargroup/librustzcash?branch=adam%2Fqleak-pr44-orchard-dummy-ciphertexts#0c3ad735f8402295fccb9acf2fe897779500bbf5"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -4624,7 +4624,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.9.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=dc95dcef33a081b925db551eac8bf6533fff22ed#dc95dcef33a081b925db551eac8bf6533fff22ed"
+source = "git+https://github.com/valargroup/librustzcash?branch=adam%2Fqleak-pr44-orchard-dummy-ciphertexts#0c3ad735f8402295fccb9acf2fe897779500bbf5"
 dependencies = [
  "corez",
  "document-features",
@@ -4662,7 +4662,7 @@ dependencies = [
 [[package]]
 name = "zcash_transparent"
 version = "0.8.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=dc95dcef33a081b925db551eac8bf6533fff22ed#dc95dcef33a081b925db551eac8bf6533fff22ed"
+source = "git+https://github.com/valargroup/librustzcash?branch=adam%2Fqleak-pr44-orchard-dummy-ciphertexts#0c3ad735f8402295fccb9acf2fe897779500bbf5"
 dependencies = [
  "bip32",
  "bs58",
@@ -4686,7 +4686,7 @@ dependencies = [
 [[package]]
 name = "zcash_voting"
 version = "1.0.0"
-source = "git+https://github.com/valargroup/zcash_voting?rev=bb42afd366569dd0e2eb5cc78f3482ef104e895c#bb42afd366569dd0e2eb5cc78f3482ef104e895c"
+source = "git+https://github.com/valargroup/zcash_voting?branch=adam%2Fqleak-pr136-orchard-librustzcash#2e63e562e53c9fdec38ccfc3875abd0f8cdc34f0"
 dependencies = [
  "anyhow",
  "base64",
@@ -4848,7 +4848,7 @@ dependencies = [
 [[package]]
 name = "zip321"
 version = "0.8.0"
-source = "git+https://github.com/valargroup/librustzcash?rev=dc95dcef33a081b925db551eac8bf6533fff22ed#dc95dcef33a081b925db551eac8bf6533fff22ed"
+source = "git+https://github.com/valargroup/librustzcash?branch=adam%2Fqleak-pr44-orchard-dummy-ciphertexts#0c3ad735f8402295fccb9acf2fe897779500bbf5"
 dependencies = [
  "base64",
  "nom",
