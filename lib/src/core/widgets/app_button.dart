@@ -385,13 +385,18 @@ class _AppButtonState extends State<AppButton> {
       ),
     );
 
-    return Focus(
-      focusNode: widget.focusNode,
-      autofocus: widget.autofocus,
-      canRequestFocus: _enabled,
-      onFocusChange: _handleFocusChange,
-      onKeyEvent: _handleKeyEvent,
-      child: pointer,
+    return Semantics(
+      button: true,
+      enabled: _enabled,
+      onTap: _enabled ? widget.onPressed : null,
+      child: Focus(
+        focusNode: widget.focusNode,
+        autofocus: widget.autofocus,
+        canRequestFocus: _enabled,
+        onFocusChange: _handleFocusChange,
+        onKeyEvent: _handleKeyEvent,
+        child: pointer,
+      ),
     );
   }
 

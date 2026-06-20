@@ -71,6 +71,12 @@ class KeystoneOnboardingState {
   final List<KeystoneAccountInfo> accounts;
   final KeystoneAccountInfo? selectedAccount;
 
+  KeystoneAccountInfo? get effectiveSelectedAccount {
+    final selected = selectedAccount;
+    if (selected != null) return selected;
+    return accounts.length == 1 ? accounts.first : null;
+  }
+
   KeystoneOnboardingState copyWith({
     List<KeystoneAccountInfo>? accounts,
     KeystoneAccountInfo? selectedAccount,

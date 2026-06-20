@@ -11,6 +11,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../import/import_birthday_calendar_overlay.dart';
@@ -80,10 +81,22 @@ class _KeystoneWalletBirthdayScreenState
   }
 
   int get _minimumBirthdayHeight {
-    final endpoint = ref.read(rpcEndpointProvider);
-    if (isLocalIronwoodTestnetEndpoint(endpoint)) return 1;
+    if (_usesLocalIronwoodBirthdayFloor) return 1;
     return _metadata?.saplingActivationHeight ??
-        endpoint.network.saplingActivationHeight;
+        ref.read(rpcEndpointProvider).network.saplingActivationHeight;
+  }
+
+  bool get _usesLocalIronwoodBirthdayFloor {
+    final primary = ref.read(rpcEndpointProvider);
+    if (_isLocalIronwoodBirthdayEndpoint(primary)) return true;
+    final current = ref.read(rpcEndpointFailoverProvider).current;
+    return _isLocalIronwoodBirthdayEndpoint(current);
+  }
+
+  bool _isLocalIronwoodBirthdayEndpoint(RpcEndpointConfig endpoint) {
+    return endpoint.walletNetworkName ==
+            kLocalIronwoodTestnetWalletNetworkName ||
+        isLocalIronwoodTestnetEndpoint(endpoint);
   }
 
   Future<void> _loadMetadata() async {
@@ -92,10 +105,13 @@ class _KeystoneWalletBirthdayScreenState
     });
 
     try {
-      final endpoint = ref.read(rpcEndpointProvider);
-      final metadata = await ImportBirthdayEstimator.loadMetadata(
-        endpoint: endpoint,
-      );
+      final metadata = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .runWithEndpointFallback(
+            operation: 'keystone birthday metadata',
+            action: (endpoint) =>
+                ImportBirthdayEstimator.loadMetadata(endpoint: endpoint),
+          );
       if (!mounted) return;
       setState(() {
         _metadata = metadata;
@@ -123,11 +139,15 @@ class _KeystoneWalletBirthdayScreenState
     });
 
     try {
-      final endpoint = ref.read(rpcEndpointProvider);
-      final estimatedHeight =
-          await ImportBirthdayEstimator.estimateBirthdayHeight(
-            endpoint: endpoint,
-            selectedDate: date,
+      final estimatedHeight = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .runWithEndpointFallback(
+            operation: 'keystone birthday estimate',
+            action: (endpoint) =>
+                ImportBirthdayEstimator.estimateBirthdayHeight(
+                  endpoint: endpoint,
+                  selectedDate: date,
+                ),
           );
       if (!mounted || seq != _estimateSeq) return;
       setState(() {
@@ -244,12 +264,20 @@ class _KeystoneWalletBirthdayScreenState
   }
 
   Future<void> _submit({int? birthdayHeightOverride}) async {
+    if (_isSubmitting) return;
+
     final birthdayHeight = birthdayHeightOverride ?? _resolvedBirthdayHeight();
-    if (_isSubmitting || birthdayHeight == null) {
+    if (birthdayHeight == null) {
+      setState(() {
+        _submitError =
+            _manualHeightError ?? 'Doesn’t seem like a legit block height';
+      });
       return;
     }
 
-    final account = ref.read(keystoneOnboardingProvider).selectedAccount;
+    final account = ref
+        .read(keystoneOnboardingProvider)
+        .effectiveSelectedAccount;
     if (account == null) {
       context.go(KeystoneOnboardingStep.selectAccount.routePath);
       return;
