@@ -133,6 +133,12 @@ operating-system chrome and presentation-only background layers.
 - Do not recreate, style, test, or otherwise implement the ignored OS/background
   layers unless the user explicitly asks to work on native window chrome.
 
+### Hardware Wallet QR Codes
+
+Hardware-wallet PCZT QR codes prioritize scan reliability over Figma parity.
+Use black-on-white square modules with an explicit quiet zone. Do not apply
+decorative QR treatments to codes that Keystone devices need to scan.
+
 ## UI Copy Conventions
 
 - **Sentence case is the project default for all user-facing strings**: button
