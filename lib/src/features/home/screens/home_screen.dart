@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart'
     show CircularProgressIndicator, Scrollbar, Tooltip;
 import 'package:flutter/widgets.dart';
@@ -47,6 +48,12 @@ String? shieldBalanceBroadcastStatusMessage(
 ) {
   if (result.status == 'broadcasted') return null;
   return shieldBalancePendingBroadcastMessage;
+}
+
+bool _isNativeMnemonicUnavailable(Object error) {
+  final message = error.toString().toLowerCase();
+  return message.contains('secure storage salt not found') ||
+      message.contains('mnemonic not found for account');
 }
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -148,41 +155,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       attemptedEndpoint = endpoint;
 
       late final rust_sync.ShieldTransparentResult result;
-      late final Future<rust_sync.ShieldTransparentResult> resultFuture;
 
-      if (Platform.isMacOS) {
+      if (Platform.isMacOS && !kDebugMode) {
         final password = ref
             .read(appSecurityProvider.notifier)
             .requireSessionPasswordForNativeSecretUse();
-        resultFuture = rust_sync
-            .shieldTransparentBalanceWithMacosStoredMnemonic(
-              dbPath: dbPath,
-              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              network: endpoint.walletNetworkName,
-              accountUuid: accountUuid,
-              password: password,
-            );
-      } else {
-        final mnemonicBytes = await accountNotifier.getMnemonicBytesForAccount(
-          accountUuid,
-        );
-        if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
-          throw Exception('Mnemonic not found for the active account.');
-        }
-
         try {
-          resultFuture = rust_sync.shieldTransparentBalance(
+          result = await rust_sync
+              .shieldTransparentBalanceWithMacosStoredMnemonic(
+                dbPath: dbPath,
+                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                network: endpoint.walletNetworkName,
+                accountUuid: accountUuid,
+                password: password,
+              );
+        } catch (e) {
+          if (!_isNativeMnemonicUnavailable(e)) {
+            rethrow;
+          }
+          log(
+            'HomeScreen: native macOS mnemonic unavailable, falling back to '
+            'Dart mnemonic storage: $e',
+          );
+          result = await _shieldTransparentBalanceWithMnemonicBytes(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
             network: endpoint.walletNetworkName,
             accountUuid: accountUuid,
-            mnemonicBytes: mnemonicBytes,
           );
-        } finally {
-          mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
         }
+      } else {
+        result = await _shieldTransparentBalanceWithMnemonicBytes(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: endpoint.walletNetworkName,
+          accountUuid: accountUuid,
+        );
       }
-      result = await resultFuture;
       log(
         'HomeScreen: shielded transparent balance txids=${result.txids} '
         'status=${result.status} '
@@ -245,6 +254,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           _isShieldingBalance = false;
         });
       }
+    }
+  }
+
+  Future<rust_sync.ShieldTransparentResult>
+  _shieldTransparentBalanceWithMnemonicBytes({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+  }) async {
+    final mnemonicBytes = await ref
+        .read(accountProvider.notifier)
+        .getMnemonicBytesForAccount(accountUuid);
+    if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+      throw Exception('Mnemonic not found for the active account.');
+    }
+
+    try {
+      return await rust_sync.shieldTransparentBalance(
+        dbPath: dbPath,
+        lightwalletdUrl: lightwalletdUrl,
+        network: network,
+        accountUuid: accountUuid,
+        mnemonicBytes: mnemonicBytes,
+      );
+    } finally {
+      mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
     }
   }
 
