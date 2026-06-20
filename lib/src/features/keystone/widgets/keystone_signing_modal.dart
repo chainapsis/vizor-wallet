@@ -8,6 +8,8 @@ import 'keystone_pczt_qr_stage.dart';
 
 enum KeystoneSigningModalPhase { preparing, ready, failed }
 
+const _desktopPcztQrSize = 264.0;
+
 class KeystoneSigningModal extends StatelessWidget {
   const KeystoneSigningModal({
     required this.phase,
@@ -102,6 +104,7 @@ class KeystoneSigningModal extends StatelessWidget {
                   },
                   urParts: urParts,
                   error: error,
+                  size: _desktopPcztQrSize,
                 ),
                 if (instruction != null && instruction.isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.sm),

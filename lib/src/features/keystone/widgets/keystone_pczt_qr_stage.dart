@@ -16,8 +16,8 @@ class KeystonePcztQrStage extends StatelessWidget {
     required this.urParts,
     required this.error,
     this.size = 230,
-    this.scanOptimized = false,
-    this.frameInterval = const Duration(milliseconds: 250),
+    this.scanOptimized = true,
+    this.frameInterval = const Duration(milliseconds: 100),
     super.key,
   });
 
@@ -144,7 +144,10 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   @override
   Widget build(BuildContext context) {
     if (widget.urParts.isEmpty) return const SizedBox.shrink();
-    // Figma (render-measured from 4654:62168 / 4654:63922): the default QR
+    // Hardware-wallet PCZT QR is scan-first: use high-contrast square modules
+    // on the QR surface with an explicit quiet zone. The decorative Figma
+    // treatment is retained only for explicit non-scanning previews.
+    // Figma (render-measured from 4654:62168 / 4654:63922): the decorative QR
     // ink is drawn directly on the modal panel in both themes, using the
     // accent icon token with bullseye finder eyes painted over the symbol's
     // own eye pattern; the eye knockout matches the panel color.
