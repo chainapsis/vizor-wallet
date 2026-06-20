@@ -18,8 +18,7 @@ class KeystoneSelectAccountScreen extends ConsumerStatefulWidget {
 
 class _KeystoneSelectAccountScreenState
     extends ConsumerState<KeystoneSelectAccountScreen> {
-  void _continue(KeystoneAccountInfo account) {
-    ref.read(keystoneOnboardingProvider.notifier).selectAccount(account);
+  void _continue() {
     context.go(KeystoneOnboardingStep.walletBirthdayHeight.routePath);
   }
 
@@ -28,7 +27,7 @@ class _KeystoneSelectAccountScreenState
     final colors = context.colors;
     final state = ref.watch(keystoneOnboardingProvider);
     final accounts = state.accounts;
-    final selected = state.effectiveSelectedAccount;
+    final selected = state.selectedAccount;
 
     return KeystoneOnboardingTrailingPane(
       child: Column(
@@ -83,9 +82,7 @@ class _KeystoneSelectAccountScreenState
               mainAxisSize: MainAxisSize.min,
               children: [
                 AppButton(
-                  onPressed: selected == null
-                      ? null
-                      : () => _continue(selected),
+                  onPressed: selected == null ? null : _continue,
                   variant: AppButtonVariant.primary,
                   minWidth: 256,
                   trailing: const AppIcon(AppIcons.chevronForward),
