@@ -595,7 +595,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       if (!mounted || seq != _validateSeq) return;
 
       final totalNeeded = zatoshi + fee;
-      if (widget.isSyncedToTip && totalNeeded > available) {
+      final latestAvailable = _availableBalanceForCurrentAddress;
+      if (widget.isSyncedToTip && totalNeeded > latestAvailable) {
         final feeText = ZecAmount.fromZatoshi(fee).fee.toString();
         setState(() => _amountError = _insufficientBalanceWithFeeText(feeText));
       } else {
