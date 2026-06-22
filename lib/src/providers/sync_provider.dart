@@ -71,6 +71,9 @@ class SyncState {
   BigInt get pendingBalance =>
       transparentPendingBalance + saplingPendingBalance + orchardPendingBalance;
 
+  bool get isSyncedToTip =>
+      !isSyncing && chainTipHeight > 0 && scannedHeight >= chainTipHeight;
+
   SyncState({
     this.accountUuid,
     bool hasAccountScopedData = false,

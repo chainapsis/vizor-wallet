@@ -26,6 +26,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../../services/send_failure.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../models/send_prefill_args.dart';
@@ -66,6 +67,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       activeAccountUuid: activeAccountUuid,
       activeAccountIsHardware: activeAccountIsHardware,
       spendableBalance: spendableBalance,
+      isSyncedToTip: sync.isSyncedToTip,
       prefill: widget.prefill,
     );
   }
@@ -78,6 +80,7 @@ class _SendComposeBody extends ConsumerStatefulWidget {
     required this.activeAccountUuid,
     required this.activeAccountIsHardware,
     required this.spendableBalance,
+    required this.isSyncedToTip,
     this.prefill,
   });
 
@@ -85,6 +88,7 @@ class _SendComposeBody extends ConsumerStatefulWidget {
   final String? activeAccountUuid;
   final bool activeAccountIsHardware;
   final BigInt spendableBalance;
+  final bool isSyncedToTip;
   final SendPrefillArgs? prefill;
 
   @override
@@ -516,12 +520,14 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       });
     } catch (e) {
       if (!mounted || !_isMaxMode || seq != _maxSeq) return;
-      final msg = e.toString().toLowerCase();
+      final failure = classifySendFailure(e);
       setState(() {
         _isResolvingMax = false;
         _maxQuote = null;
-        if (msg.contains('insufficient')) {
+        if (failure == SendFailureKind.insufficientFunds) {
           _amountError = _insufficientBalanceToCoverFeeText;
+        } else if (failure.isWaitingForSync) {
+          _amountError = '';
         } else {
           _amountError = 'Max amount unavailable';
         }
@@ -561,7 +567,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       return;
     }
     final available = _availableBalanceForCurrentAddress;
-    if (zatoshi > available) {
+    if (widget.isSyncedToTip && zatoshi > available) {
       setState(() => _amountError = _insufficientBalanceText);
       return;
     }
@@ -589,7 +595,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       if (!mounted || seq != _validateSeq) return;
 
       final totalNeeded = zatoshi + fee;
-      if (totalNeeded > available) {
+      if (widget.isSyncedToTip && totalNeeded > available) {
         final feeText = ZecAmount.fromZatoshi(fee).fee.toString();
         setState(() => _amountError = _insufficientBalanceWithFeeText(feeText));
       } else {
@@ -597,9 +603,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       }
     } catch (e) {
       if (!mounted || seq != _validateSeq) return;
-      final msg = e.toString();
-      if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
+      final failure = classifySendFailure(e);
+      if (failure == SendFailureKind.insufficientFunds) {
         setState(() => _amountError = _insufficientBalanceIncludingFeeText);
+      } else if (failure.isWaitingForSync) {
+        setState(() => _amountError = null);
       } else {
         log('Send: fee estimation failed (non-blocking): $e');
         setState(() => _amountError = null);
@@ -663,7 +671,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
       // Check balance before proposing
       final available = _availableBalanceForCurrentAddress;
-      if (amountZatoshi > available) {
+      if (widget.isSyncedToTip && amountZatoshi > available) {
         setState(() {
           _error = '$_insufficientBalanceText.';
           _isSending = false;
@@ -704,8 +712,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     } catch (e) {
       log('Send: review preparation error: $e');
       if (!mounted) return;
+      final failure = classifySendFailure(e);
       setState(() {
-        _error = friendlyProposeSendError(e.toString());
+        _error = failure.isWaitingForSync
+            ? 'Still syncing. Try again once sync finishes.'
+            : friendlyProposeSendError(e.toString());
         _isSending = false;
       });
     } finally {
