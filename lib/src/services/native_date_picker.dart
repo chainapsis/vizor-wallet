@@ -1,8 +1,8 @@
 import 'package:flutter/services.dart';
 
-/// iOS-native date picker sheet (`UICalendarView` in a content-fit
-/// detent), presented over the Flutter view by `DatePickerHandler.swift`
-/// on the `com.zcash.wallet/date_picker` channel.
+/// iOS-native date/month picker sheets, presented over the Flutter view
+/// by `DatePickerHandler.swift` on the
+/// `com.zcash.wallet/date_picker` channel.
 ///
 /// Dates cross the channel as `yyyy-MM-dd` strings — never epoch
 /// timestamps — so a calendar day survives the Dart↔Swift hop without
@@ -10,8 +10,7 @@ import 'package:flutter/services.dart';
 ///
 /// Only iOS registers a handler. Callers branch on `Platform.isIOS`
 /// first and keep the Flutter calendar sheet as the fallback for
-/// Android and for any channel failure (e.g. the handler requires
-/// iOS 16+ and reports `unavailable` below that).
+/// Android and for any channel failure.
 abstract final class NativeDatePicker {
   static const channel = MethodChannel('com.zcash.wallet/date_picker');
 
@@ -29,6 +28,27 @@ abstract final class NativeDatePicker {
     Color? accentColor,
   }) async {
     final raw = await channel.invokeMethod<String>('pickDate', {
+      if (initialDate != null) 'initial': encodeDate(initialDate),
+      'min': encodeDate(firstDate),
+      'max': encodeDate(lastDate),
+      'isDarkTheme': isDarkTheme,
+      if (accentColor != null) 'accentColorHex': _encodeColor(accentColor),
+    });
+    return raw == null ? null : decodeDate(raw);
+  }
+
+  /// Presents an iOS month/year picker and resolves with a day inside the
+  /// chosen month. The native side clamps edge months into [firstDate] /
+  /// [lastDate], so callers can keep using the returned value as a normal
+  /// date for height estimation.
+  static Future<DateTime?> pickMonthYear({
+    DateTime? initialDate,
+    required DateTime firstDate,
+    required DateTime lastDate,
+    required bool isDarkTheme,
+    Color? accentColor,
+  }) async {
+    final raw = await channel.invokeMethod<String>('pickMonthYear', {
       if (initialDate != null) 'initial': encodeDate(initialDate),
       'min': encodeDate(firstDate),
       'max': encodeDate(lastDate),

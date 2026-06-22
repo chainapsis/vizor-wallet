@@ -58,6 +58,37 @@ void main() {
     );
   });
 
+  test(
+    'pickMonthYear sends yyyy-MM-dd bounds and decodes the picked month',
+    () async {
+      MethodCall? sent;
+      messenger.setMockMethodCallHandler(NativeDatePicker.channel, (
+        call,
+      ) async {
+        sent = call;
+        return '2024-03-01';
+      });
+
+      final picked = await NativeDatePicker.pickMonthYear(
+        initialDate: DateTime(2024, 2, 20),
+        firstDate: DateTime(2018, 10, 28),
+        lastDate: DateTime(2024, 3, 12),
+        isDarkTheme: true,
+        accentColor: const Color(0xFFE5484D),
+      );
+
+      expect(sent!.method, 'pickMonthYear');
+      expect(sent!.arguments, {
+        'initial': '2024-02-20',
+        'min': '2018-10-28',
+        'max': '2024-03-12',
+        'isDarkTheme': true,
+        'accentColorHex': 'e5484d',
+      });
+      expect(picked, DateTime(2024, 3, 1));
+    },
+  );
+
   test('pickDate surfaces handler errors for the Flutter-sheet fallback', () {
     messenger.setMockMethodCallHandler(NativeDatePicker.channel, (call) async {
       throw PlatformException(code: 'unavailable');
