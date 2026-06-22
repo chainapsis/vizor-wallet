@@ -172,10 +172,10 @@ class _MobileImportBirthdayScreenState
     DateTime? candidate;
     var picked = false;
     if (Platform.isIOS) {
-      // iOS gets the OS-native calendar sheet; the Flutter sheet below
-      // stays as the fallback (handler requires iOS 16+).
+      // iOS gets an OS-native month/year picker. The Flutter calendar sheet
+      // below stays as the fallback for Android and channel failures.
       try {
-        candidate = await NativeDatePicker.pickDate(
+        candidate = await NativeDatePicker.pickMonthYear(
           initialDate: _selectedDate,
           firstDate: _firstDate,
           lastDate: _lastDate,
@@ -435,10 +435,11 @@ class _MobileImportBirthdayScreenState
     _MobileImportSubmitPhase.importing => 'Importing wallet...',
   };
 
-  String _formattedDate(DateTime date) =>
-      '${date.month.toString().padLeft(2, '0')}/'
-      '${date.day.toString().padLeft(2, '0')}/'
-      '${date.year}';
+  String _formattedDate(DateTime date) => Platform.isIOS
+      ? '${date.month.toString().padLeft(2, '0')}/${date.year}'
+      : '${date.month.toString().padLeft(2, '0')}/'
+            '${date.day.toString().padLeft(2, '0')}/'
+            '${date.year}';
 
   @override
   Widget build(BuildContext context) {
@@ -480,7 +481,7 @@ class _MobileImportBirthdayScreenState
                 _ModeTab(
                   key: const ValueKey('mobile_import_birthday_mode_date'),
                   iconName: AppIcons.calendar,
-                  label: 'Enter the date',
+                  label: Platform.isIOS ? 'Enter the month' : 'Enter the date',
                   selected: isDateMode,
                   onTap: () => _setMode(_BirthdayEntryMode.date),
                 ),
@@ -718,8 +719,7 @@ class _FieldShell extends StatelessWidget {
 }
 
 /// The date "field" — looks like the entry field but is not typeable;
-/// the calendar sheet is the only input. Tapping anywhere on it opens
-/// the sheet.
+/// tapping anywhere on it opens the native picker or fallback calendar.
 class _DateFieldButton extends StatelessWidget {
   const _DateFieldButton({
     required this.date,
@@ -738,7 +738,7 @@ class _DateFieldButton extends StatelessWidget {
     final colors = context.colors;
     return Semantics(
       button: true,
-      label: 'Pick a date',
+      label: Platform.isIOS ? 'Pick a month' : 'Pick a date',
       child: GestureDetector(
         key: const ValueKey('mobile_import_birthday_date'),
         behavior: HitTestBehavior.opaque,
@@ -748,7 +748,7 @@ class _DateFieldButton extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  formatted ?? 'mm/dd/yyyy',
+                  formatted ?? (Platform.isIOS ? 'mm/yyyy' : 'mm/dd/yyyy'),
                   key: const ValueKey('mobile_import_birthday_date_text'),
                   maxLines: 1,
                   style: AppTypography.headlineSmall.copyWith(

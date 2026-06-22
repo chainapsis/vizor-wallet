@@ -120,10 +120,10 @@ void main() {
         description: 'import birthday',
       );
       await shot('04_import_birthday');
-      // The date "field" opens the OS-native UICalendarView sheet on
-      // iOS (the tour only runs on the iOS simulator). There are no
-      // Flutter widgets to wait on — give the present animation real
-      // time, capture, then dismiss through the picker channel since
+      // The date "field" opens the OS-native month/year picker on iOS
+      // (the tour only runs on the iOS simulator). There are no Flutter
+      // widgets to wait on — give the present animation real time,
+      // capture, then dismiss through the picker channel since
       // flutter_test cannot tap native UIKit views.
       await tapWidget(tester, const ValueKey('mobile_import_birthday_date'));
       await settle(tester, const Duration(milliseconds: 1500));
