@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import '../../main.dart' show log;
 import '../core/config/rpc_endpoint_config.dart';
@@ -47,7 +46,6 @@ abstract class BackgroundSyncDelegate {
 
   /// Whether auto-sync polling should be suppressed while background mode is active.
   /// iOS: true (BGTask manages sync, polling would interfere).
-  /// Android: false (background mode is just a notification, polling still needed).
   bool get shouldSuppressPolling;
 
   void setupListeners({
@@ -72,92 +70,8 @@ abstract class BackgroundSyncDelegate {
   void onProgress(SyncProgressEvent event);
 
   static BackgroundSyncDelegate create() {
-    if (Platform.isAndroid) return AndroidBackgroundSyncDelegate();
     if (Platform.isIOS) return IOSBackgroundSyncDelegate();
     return NoOpBackgroundSyncDelegate();
-  }
-}
-
-// ======================== Android ========================
-
-class AndroidBackgroundSyncDelegate implements BackgroundSyncDelegate {
-  bool _active = false;
-  DataCallback? _taskDataCallback;
-
-  @override
-  bool get isActive => _active;
-
-  @override
-  bool get shouldSuppressPolling => false; // notification only, polling still needed
-
-  @override
-  void setupListeners({
-    required void Function() onStopRequested,
-    required void Function(SyncProgressEvent) onBackgroundProgress,
-  }) {
-    disposeListeners();
-    _taskDataCallback = (data) {
-      if (data == 'stop_sync') {
-        log(
-          'BackgroundSyncDelegate(Android): stop requested from notification',
-        );
-        onStopRequested();
-      }
-    };
-    FlutterForegroundTask.addTaskDataCallback(_taskDataCallback!);
-  }
-
-  @override
-  void disposeListeners() {
-    final callback = _taskDataCallback;
-    if (callback == null) return;
-    FlutterForegroundTask.removeTaskDataCallback(callback);
-    _taskDataCallback = null;
-  }
-
-  @override
-  Future<void> enable({required RpcEndpointConfig endpoint}) async {
-    _active = true;
-    await bg_sync.startBackgroundSync();
-    log('BackgroundSyncDelegate(Android): enabled');
-  }
-
-  @override
-  Future<bool> disable() async {
-    _active = false;
-    await bg_sync.stopBackgroundSync();
-    log('BackgroundSyncDelegate(Android): disabled');
-    return false; // sync never stopped, no restart needed
-  }
-
-  @override
-  Future<void> shutdownForLock() async {
-    _active = false;
-    await bg_sync.stopBackgroundSync();
-    log('BackgroundSyncDelegate(Android): shut down for lock');
-  }
-
-  @override
-  Future<bool> isAvailable() async => true;
-
-  @override
-  void onSyncDone() {
-    // Android background mode = notification only. Keep it active across
-    // sync cycles until the user explicitly disables it.
-  }
-
-  @override
-  void onResume() {}
-
-  @override
-  void onProgress(SyncProgressEvent event) {
-    if (_active) {
-      bg_sync.updateBackgroundSyncProgress(
-        percentage: event.percentage,
-        scannedHeight: event.scannedHeight,
-        chainTipHeight: event.chainTipHeight,
-      );
-    }
   }
 }
 
