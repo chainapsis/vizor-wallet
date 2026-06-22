@@ -369,21 +369,34 @@ class _MobileKeystoneSignScreenState
               ),
             ),
             const Spacer(),
-            Container(
-              padding: const EdgeInsets.all(AppSpacing.sm),
-              decoration: BoxDecoration(
-                color: colors.background.ground,
-                borderRadius: BorderRadius.circular(AppRadii.large),
-              ),
-              child: KeystonePcztQrStage(
-                phase: switch (_stage) {
-                  _SignStage.showQr => KeystonePcztQrStagePhase.ready,
-                  _SignStage.failed => KeystonePcztQrStagePhase.failed,
-                  _ => KeystonePcztQrStagePhase.preparing,
-                },
-                urParts: _urParts,
-                error: _error,
-              ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final availableWidth = constraints.maxWidth.isFinite
+                    ? constraints.maxWidth
+                    : 312.0;
+                final qrSize = (availableWidth - AppSpacing.sm * 2)
+                    .clamp(220.0, 280.0)
+                    .toDouble();
+                return Container(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: colors.background.ground,
+                    borderRadius: BorderRadius.circular(AppRadii.large),
+                  ),
+                  child: KeystonePcztQrStage(
+                    phase: switch (_stage) {
+                      _SignStage.showQr => KeystonePcztQrStagePhase.ready,
+                      _SignStage.failed => KeystonePcztQrStagePhase.failed,
+                      _ => KeystonePcztQrStagePhase.preparing,
+                    },
+                    urParts: _urParts,
+                    error: _error,
+                    size: qrSize,
+                    scanOptimized: true,
+                    frameInterval: const Duration(milliseconds: 100),
+                  ),
+                );
+              },
             ),
             const Spacer(),
             // Space for the bottom bar in the outer stack.

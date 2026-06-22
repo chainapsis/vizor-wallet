@@ -1023,7 +1023,7 @@ class _ChainAddressSelector extends StatelessWidget {
               children: [
                 const _NetworkAssetIcon(
                   network: _AddressBookNetwork.zcash,
-                  size: 16,
+                  size: 20,
                 ),
                 const SizedBox(width: AppSpacing.xxs),
                 Text(
@@ -1317,19 +1317,9 @@ class _NetworkAssetIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final padding = size <= 16 ? 0.0 : 3.0;
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: context.colors.background.raised,
-        shape: BoxShape.circle,
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: EdgeInsets.all(padding),
-        child: Image.asset(network.assetPath, fit: BoxFit.cover),
-      ),
+    return SizedBox.square(
+      dimension: size,
+      child: ClipOval(child: Image.asset(network.assetPath, fit: BoxFit.cover)),
     );
   }
 }

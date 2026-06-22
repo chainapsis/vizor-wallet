@@ -209,7 +209,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final initial = widget.initialRecipient;
     if (initial != null && initial.trim().isNotEmpty) {
       _addressController.text = initial.trim();
-      _addressType = 'unified';
       unawaited(_validateAddress());
     }
     final initialContactLabel = widget.initialContactLabel;
@@ -727,7 +726,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   String _fallbackAddressTypeLabel() {
     return switch (_addressType) {
-      'unified' => 'Unified address',
+      'unified' => 'Shielded address',
       'sapling' => 'Shielded address',
       'transparent' => 'Transparent address',
       'tex' => 'TEX address',

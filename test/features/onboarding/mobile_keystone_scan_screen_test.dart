@@ -36,14 +36,21 @@ class _RustApiFake implements RustLibApi {
 }
 
 final _rustApi = _RustApiFake();
+const _phoneViewPadding = EdgeInsets.only(top: 55);
 
 Widget _app({MobileScannerController? controller}) {
   return ProviderScope(
     child: MaterialApp(
-      home: AppTheme(
-        data: AppThemeData.dark,
-        child: MobileKeystoneScanScreen(scannerController: controller),
-      ),
+      home: MobileKeystoneScanScreen(scannerController: controller),
+      builder: (context, child) {
+        final mediaQuery = MediaQuery.of(
+          context,
+        ).copyWith(padding: _phoneViewPadding, viewPadding: _phoneViewPadding);
+        return AppTheme(
+          data: AppThemeData.dark,
+          child: MediaQuery(data: mediaQuery, child: child!),
+        );
+      },
     ),
   );
 }
@@ -74,10 +81,42 @@ Widget _routerApp({
   return ProviderScope(
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (context, child) => AppTheme(
-        data: AppThemeData.dark,
-        child: child ?? const SizedBox.shrink(),
-      ),
+      builder: (context, child) {
+        final mediaQuery = MediaQuery.of(
+          context,
+        ).copyWith(padding: _phoneViewPadding, viewPadding: _phoneViewPadding);
+        return AppTheme(
+          data: AppThemeData.dark,
+          child: MediaQuery(
+            data: mediaQuery,
+            child: child ?? const SizedBox.shrink(),
+          ),
+        );
+      },
+    ),
+  );
+}
+
+Widget _stackedRouteApp({MobileScannerController? controller}) {
+  return ProviderScope(
+    child: MaterialApp(
+      initialRoute: '/scan',
+      routes: {
+        '/': (_) => const SizedBox(key: ValueKey('previous-screen')),
+        '/scan': (_) => MobileKeystoneScanScreen(scannerController: controller),
+      },
+      builder: (context, child) {
+        final mediaQuery = MediaQuery.of(
+          context,
+        ).copyWith(padding: _phoneViewPadding, viewPadding: _phoneViewPadding);
+        return AppTheme(
+          data: AppThemeData.dark,
+          child: MediaQuery(
+            data: mediaQuery,
+            child: child ?? const SizedBox.shrink(),
+          ),
+        );
+      },
     ),
   );
 }
@@ -132,7 +171,8 @@ void main() {
       find.byKey(const ValueKey('mobile_keystone_scan_explainer')),
       findsNothing,
     );
-    expect(_cameraViewportSize(tester), const Size(361, 464));
+    expect(_cameraViewportSize(tester), const Size(361, 694));
+    expect(_cameraViewportTopLeft(tester), const Offset(16, 126));
   });
 
   testWidgets('uses the Keystone permission card while access is pending', (
@@ -145,11 +185,21 @@ void main() {
     await tester.pumpWidget(_app(controller: controller));
     await tester.pump();
 
-    final cameraElement = tester.element(
-      find.byKey(const ValueKey('mobile_keystone_scan_camera')),
-    );
     expect(
       find.byKey(const ValueKey('mobile_keystone_scan_permission_card')),
+      findsOneWidget,
+    );
+    expect(_cameraViewportSize(tester), const Size(361, 694));
+    expect(_cameraViewportTopLeft(tester), const Offset(16, 126));
+    expect(
+      find.byKey(const ValueKey('mobile_keystone_scan_camera')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('mobile_keystone_scan_camera'),
+        skipOffstage: false,
+      ),
       findsOneWidget,
     );
     expect(find.text('Enable camera access'), findsOneWidget);
@@ -159,6 +209,7 @@ void main() {
     );
     expect(find.text('Grant access to your camera'), findsNothing);
     expect(find.text('Scan the address QR code'), findsNothing);
+    expect(find.text('Scan a Zcash QR code to continue'), findsNothing);
 
     controller.value = controller.value.copyWith(isInitialized: true);
     await tester.pump();
@@ -169,15 +220,28 @@ void main() {
       find.byKey(const ValueKey('mobile_keystone_scan_permission_card')),
       findsNothing,
     );
+    expect(find.byKey(const ValueKey('mobile_keystone_scan_camera')), findsOne);
+  });
+
+  testWidgets('keeps the onboarding back button tappable behind the scrim', (
+    tester,
+  ) async {
+    _setViewSize(tester, const Size(393, 852));
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_stackedRouteApp(controller: controller));
+    await tester.pump();
+
     expect(
-      identical(
-        tester.element(
-          find.byKey(const ValueKey('mobile_keystone_scan_camera')),
-        ),
-        cameraElement,
-      ),
-      isTrue,
+      find.byKey(const ValueKey('mobile_keystone_scan_permission_card')),
+      findsOneWidget,
     );
+
+    await tester.tapAt(Offset(AppSpacing.s + 22, _phoneViewPadding.top + 36));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('previous-screen')), findsOneWidget);
   });
 
   testWidgets('denied access uses the Keystone retry card', (tester) async {
@@ -203,6 +267,18 @@ void main() {
     expect(find.text("You've denied camera access"), findsOneWidget);
     expect(find.text('Request again'), findsOneWidget);
     expect(find.text('Cancel'), findsNothing);
+    expect(find.text('Scan a Zcash QR code to continue'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_keystone_scan_camera')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('mobile_keystone_scan_camera'),
+        skipOffstage: false,
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('shows scan card once camera permission is granted and running', (
@@ -220,7 +296,8 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const ValueKey('mobile_keystone_scan_camera')), findsOne);
-    expect(find.text('Scan a Zcash QR code to continue'), findsOneWidget);
+    expect(find.text('Scan the Keystone account QR'), findsOneWidget);
+    expect(find.text('Scan a Zcash QR code to continue'), findsNothing);
     expect(find.text('Loading...'), findsNothing);
     expect(find.text('Enable camera access'), findsNothing);
     expect(
@@ -247,9 +324,8 @@ void main() {
       find.byKey(const ValueKey('mobile_keystone_scan_explainer')),
       findsNothing,
     );
-    expect(cameraSize.width, 361);
-    expect(cameraSize.height, lessThan(464));
-    expect(cameraSize.height, greaterThan(300));
+    expect(cameraSize, const Size(361, 509));
+    expect(_cameraViewportTopLeft(tester), const Offset(16, 126));
   });
 
   testWidgets('moves to select account after a Keystone account QR scan', (
@@ -259,6 +335,10 @@ void main() {
     _rustApi.decodedAccounts = [_account(1), _account(2)];
     final controller = MobileScannerController(autoStart: false);
     addTearDown(controller.dispose);
+    controller.value = controller.value.copyWith(
+      isInitialized: true,
+      isRunning: true,
+    );
 
     await tester.pumpWidget(_routerApp(controller: controller));
     await tester.pump();
@@ -286,6 +366,10 @@ void main() {
     _rustApi.decodedAccounts = [_account(1), _account(2)];
     final controller = MobileScannerController(autoStart: false);
     addTearDown(controller.dispose);
+    controller.value = controller.value.copyWith(
+      isInitialized: true,
+      isRunning: true,
+    );
 
     await tester.pumpWidget(_routerApp(controller: controller));
     await tester.pump();
@@ -386,6 +470,12 @@ void main() {
 
 Size _cameraViewportSize(WidgetTester tester) {
   return tester.getSize(
+    find.byKey(const ValueKey('mobile_keystone_scan_card')),
+  );
+}
+
+Offset _cameraViewportTopLeft(WidgetTester tester) {
+  return tester.getTopLeft(
     find.byKey(const ValueKey('mobile_keystone_scan_card')),
   );
 }

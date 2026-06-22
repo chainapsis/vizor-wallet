@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -143,6 +145,8 @@ Widget _app({
   Map<String, AccountInfo> ownAccounts = const {},
   EdgeInsets viewPadding = EdgeInsets.zero,
   MobileSendScanner? openScanner,
+  String? initialRecipient,
+  MobileSendAddressValidator? validateAddress,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -152,6 +156,8 @@ Widget _app({
         builder: (_, _) => MobileSendScreen(
           loadWalletDbPath: () async => '/tmp/zcash-test',
           openScanner: openScanner ?? (_) async => null,
+          initialRecipient: initialRecipient,
+          validateAddress: validateAddress,
         ),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
@@ -360,6 +366,55 @@ void main() {
       find.byKey(const ValueKey('mobile_send_continue')),
     );
     expect(continueButton.onPressed, isNull);
+  });
+
+  testWidgets('prefilled recipient waits for validation before Continue', (
+    tester,
+  ) async {
+    final validation = Completer<AddressValidationResult>();
+
+    await tester.pumpWidget(
+      _app(
+        initialRecipient: _texAddress,
+        validateAddress: ({required address}) => validation.future,
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Keystone',
+              order: 0,
+              isHardware: true,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final pendingContinue = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_continue')),
+    );
+    expect(pendingContinue.onPressed, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pump();
+    expect(find.text('Enter amount'), findsNothing);
+
+    validation.complete(
+      const AddressValidationResult(isValid: true, addressType: 'tex'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Keystone does not support TEX sends yet.'),
+      findsOneWidget,
+    );
+    final blockedContinue = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_continue')),
+    );
+    expect(blockedContinue.onPressed, isNull);
   });
 
   testWidgets('recipient step lets a software account send to a TEX address', (
@@ -898,7 +953,8 @@ void main() {
     );
     expect(reviewAmount.style?.fontSize, AppTypography.headlineLarge.fontSize);
     expect(reviewAmount.style?.height, AppTypography.headlineLarge.height);
-    expect(find.text('Unified address'), findsOneWidget);
+    expect(find.text('Shielded address'), findsOneWidget);
+    expect(find.text('Unified address'), findsNothing);
     expect(find.text('u1tests .... 0000000'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_full_address'))),

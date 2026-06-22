@@ -175,9 +175,9 @@ class _MobileQrScanCardState extends State<MobileQrScanCard>
         final status = _cameraAccessStatus(state);
         return MobileAddressScanCardContent(
           status: status,
-          // The camera preview is mounted in every state (covered by the
-          // permission card when access isn't granted) so the controller keeps
-          // running and reporting permission changes.
+          // The camera preview is mounted in every state (offstage until
+          // access is granted) so the controller keeps running and reporting
+          // permission changes.
           cameraView: QrScanner.isAvailable
               ? widget.cameraViewBuilder(context, _controller)
               : null,
@@ -213,10 +213,9 @@ class _MobileQrScanCardState extends State<MobileQrScanCard>
 ///   `_Modal Type` title, a camera-icon message and a Cancel button — and, when
 ///   denied/unavailable, a "Request again" action.
 ///
-/// The camera preview is mounted in every state (just covered by the opaque
-/// permission card when access isn't granted yet) so the single
-/// [MobileScannerController] keeps running and the requesting → active
-/// transition is seamless.
+/// The camera preview is mounted in every state (kept offstage until access is
+/// granted) so the single [MobileScannerController] keeps running and the
+/// requesting → active transition is seamless.
 class MobileAddressScanCard extends StatefulWidget {
   const MobileAddressScanCard({
     required this.resolve,
@@ -224,6 +223,7 @@ class MobileAddressScanCard extends StatefulWidget {
     required this.onClose,
     this.controller,
     this.caption = 'Scan a Zcash QR code to continue',
+    this.permissionTitle = 'Scan the address QR code',
     this.steadyHint = 'Keep the QR code steady and fully visible.',
     super.key,
   });
@@ -244,6 +244,9 @@ class MobileAddressScanCard extends StatefulWidget {
 
   /// Idle caption beneath the viewfinder.
   final String caption;
+
+  /// Title shown in the permission/requesting card state.
+  final String permissionTitle;
 
   /// Fallback message when resolution throws.
   final String steadyHint;
@@ -292,6 +295,7 @@ class _MobileAddressScanCardState extends State<MobileAddressScanCard> {
     return MobileQrScanCard(
       controller: widget.controller,
       caption: widget.caption,
+      permissionTitle: widget.permissionTitle,
       error: _error,
       unavailableDescription:
           'Address QR scanning needs a camera on this device.',
@@ -343,10 +347,10 @@ class MobileAddressScanCardContent extends StatelessWidget {
   final VoidCallback onClose;
   final VoidCallback onRetry;
 
-  /// The camera card nearly fills the screen, leaving the dimmed swap behind
+  /// The camera card nearly fills the screen, leaving the dimmed app behind
   /// visible under the top nav. `viewPadding` (not `padding`) so the status-bar
   /// inset survives the dialog's `SafeArea(top)`.
-  double _cameraCardHeight(BuildContext context) {
+  static double modalCameraHeight(BuildContext context) {
     final media = MediaQuery.of(context);
     // Figma `QR Scan` (4484:61584) on the 393x852 mobile artboard places the
     // modal at y=126 and h=694, with a 32px bottom gap. The scanner overlays
@@ -364,12 +368,15 @@ class MobileAddressScanCardContent extends StatelessWidget {
     final hasFixedHeight = showsCamera || permissionBuilder != null;
     return SizedBox(
       height: hasFixedHeight
-          ? (cameraHeight ?? _cameraCardHeight(context))
+          ? (cameraHeight ?? modalCameraHeight(context))
           : null,
       child: Stack(
         fit: hasFixedHeight ? StackFit.expand : StackFit.loose,
         children: [
-          if (cameraView != null) Positioned.fill(child: cameraView!),
+          if (cameraView != null)
+            Positioned.fill(
+              child: Offstage(offstage: !showsCamera, child: cameraView!),
+            ),
           if (status == AddressQrCameraStatus.active) ...[
             const Positioned.fill(child: _ScanViewfinder()),
             Positioned(

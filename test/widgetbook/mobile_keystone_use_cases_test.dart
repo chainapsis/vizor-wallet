@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/widgetbook/keystone_use_cases.dart';
 
@@ -28,8 +29,16 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('mobile_keystone_scan_widgetbook_card')),
       ),
-      const Size(361, 464),
+      const Size(361, 694),
     );
+    expect(
+      tester.getTopLeft(
+        find.byKey(const ValueKey('mobile_keystone_scan_widgetbook_card')),
+      ),
+      const Offset(16, 126),
+    );
+    expect(find.byType(PrettyQrView), findsNothing);
+    expect(find.byType(PrettyQrView, skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('mobile Keystone scan denied use case exposes retry action', (
@@ -44,6 +53,20 @@ void main() {
       find.byKey(const ValueKey('mobile_keystone_scan_retry_button')),
       findsOneWidget,
     );
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('mobile_keystone_scan_widgetbook_card')),
+      ),
+      const Size(361, 694),
+    );
+    expect(
+      tester.getTopLeft(
+        find.byKey(const ValueKey('mobile_keystone_scan_widgetbook_card')),
+      ),
+      const Offset(16, 126),
+    );
+    expect(find.byType(PrettyQrView), findsNothing);
+    expect(find.byType(PrettyQrView, skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('mobile Keystone active scan use case renders common scan card', (
@@ -52,7 +75,8 @@ void main() {
     await _pumpUseCase(tester, buildMobileKeystoneScanActiveUseCase);
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Scan a Zcash QR code to continue'), findsOneWidget);
+    expect(find.text('Scan the Keystone account QR'), findsOneWidget);
+    expect(find.text('Scan a Zcash QR code to continue'), findsNothing);
     expect(find.text('Enable camera access'), findsNothing);
     expect(
       tester.getSize(
@@ -66,6 +90,7 @@ void main() {
       ),
       const Offset(16, 126),
     );
+    expect(find.byType(PrettyQrView), findsOneWidget);
   });
 
   testWidgets('mobile Keystone loading scan use case renders loading veil', (
@@ -113,7 +138,10 @@ void main() {
     await _pumpUseCase(tester, buildMobileKeystoneBirthdayUseCase);
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Around when did you create your wallet?'), findsOneWidget);
+    expect(
+      find.text('Around when did you create your wallet?'),
+      findsOneWidget,
+    );
     expect(find.text('Enter the date'), findsOneWidget);
     expect(find.text('Enter the block height'), findsOneWidget);
   });
