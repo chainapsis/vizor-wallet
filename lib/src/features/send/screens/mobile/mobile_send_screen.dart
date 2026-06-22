@@ -31,6 +31,7 @@ import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
+import '../../../../services/send_failure.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../services/send_flow.dart';
@@ -705,6 +706,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     _maxQuote = null;
   }
 
+  bool get _isSyncedToTip {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    return (ref.read(syncProvider).value ?? SyncState())
+        .scopedToAccount(accountUuid)
+        .isSyncedToTip;
+  }
+
   void _handleAmountChanged(String value) {
     if (_amountInputIsUsd) {
       _handleFiatAmountChanged(value);
@@ -884,7 +892,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       setState(() => _amountError = '');
       return;
     }
-    if (zatoshi > _spendable) {
+    if (_isSyncedToTip && zatoshi > _spendable) {
       setState(() => _amountError = _notEnoughZecText);
       return;
     }
@@ -907,7 +915,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         memo: _effectiveMemo.isNotEmpty ? _effectiveMemo : null,
       );
       if (!mounted || seq != _validateSeq) return;
-      if (zatoshi + fee > _spendable) {
+      if (_isSyncedToTip && zatoshi + fee > _spendable) {
         setState(() => _amountError = _notEnoughZecText);
       } else {
         setState(() {
@@ -917,9 +925,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       }
     } catch (e) {
       if (!mounted || seq != _validateSeq) return;
-      final msg = e.toString();
-      if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
+      final failure = classifySendFailure(e);
+      if (failure == SendFailureKind.insufficientFunds) {
         setState(() => _amountError = _notEnoughZecText);
+      } else if (failure.isWaitingForSync) {
+        setState(() => _amountError = null);
       } else {
         log('MobileSend: fee estimation failed (non-blocking): $e');
         setState(() => _amountError = null);
@@ -1060,10 +1070,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     } catch (e) {
       log('MobileSend: propose error: $e');
       if (!mounted) return;
+      final failure = classifySendFailure(e);
       setState(() {
         _isConfirmingSend = false;
         _phase = _SendPhase.failed;
-        _error = friendlyProposeSendError(e.toString());
+        _error = failure.isWaitingForSync
+            ? 'Still syncing. Try again once sync finishes.'
+            : friendlyProposeSendError(e.toString());
       });
       return;
     }

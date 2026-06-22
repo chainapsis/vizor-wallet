@@ -344,9 +344,9 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(find.text('Shielded → Shielded'), findsNothing);
     expect(find.text('Shielded → Transparent'), findsNothing);
@@ -419,6 +419,39 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(rustApi.proposeSendCalls, 0);
+  });
+
+  testWidgets('mid-sync spendable shortfall still reaches proposal', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        syncedToTip: false,
+        spendableBalance: BigInt.from(50000000),
+        prefill: const SendPrefillArgs(
+          id: 'mid-sync-shortfall',
+          source: 'ZIP-321',
+          address: _shieldedAddress,
+          amountText: '1.0',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    expect(find.text('Insufficient balance'), findsNothing);
+
+    await tester.tap(find.text('Review'));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(rustApi.proposeSendCalls, 1);
   });
 
   testWidgets('hardware TEX sends are blocked inline before proposal', (
@@ -498,6 +531,7 @@ Widget _sendHarness({
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
   BigInt? transparentBalance,
+  bool syncedToTip = true,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -518,6 +552,7 @@ Widget _sendHarness({
         () => _FakeSyncNotifier(
           spendableBalance: spendableBalance ?? BigInt.from(500000000),
           transparentBalance: transparentBalance ?? BigInt.zero,
+          syncedToTip: syncedToTip,
         ),
       ),
       if (addressBookRepository != null)
@@ -628,15 +663,20 @@ class _FakeSyncNotifier extends SyncNotifier {
   _FakeSyncNotifier({
     required this.spendableBalance,
     required this.transparentBalance,
+    required this.syncedToTip,
   });
 
   final BigInt spendableBalance;
   final BigInt transparentBalance;
+  final bool syncedToTip;
 
   @override
   Future<SyncState> build() async => SyncState(
     accountUuid: 'account-1',
     hasAccountScopedData: true,
+    isSyncing: !syncedToTip,
+    scannedHeight: syncedToTip ? 100 : 80,
+    chainTipHeight: 100,
     spendableBalance: spendableBalance,
     transparentBalance: transparentBalance,
     totalBalance: spendableBalance + transparentBalance,

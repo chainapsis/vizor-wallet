@@ -2464,6 +2464,78 @@ void main() {
     expect(_fieldText(tester, 'swap_amount_field'), '1.2339');
   });
 
+  testWidgets('ZEC max amount asks the user to wait while sync is incomplete', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final maxEstimator = _FakeSwapMaxAmountEstimator();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        syncedToTip: false,
+        spendableBalance: BigInt.zero,
+        maxAmountEstimator: maxEstimator,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_max_amount_button')));
+    await tester.pumpAndSettle();
+
+    expect(maxEstimator.requests, ['account-1']);
+    expect(
+      find.text('Still syncing. Try again once sync finishes.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Insufficient shielded balance to cover fee'),
+      findsNothing,
+    );
+    expect(find.text('Max amount unavailable'), findsNothing);
+  });
+
+  testWidgets('ZEC max amount maps coded syncing errors to wait copy', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final maxEstimator = _FakeSwapMaxAmountEstimator(
+      error: Exception('sync_in_progress|have 0, need 210000'),
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        syncedToTip: false,
+        spendableBalance: BigInt.from(100000000),
+        maxAmountEstimator: maxEstimator,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_max_amount_button')));
+    await tester.pumpAndSettle();
+
+    expect(maxEstimator.requests, ['account-1']);
+    expect(
+      find.text('Still syncing. Try again once sync finishes.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Insufficient shielded balance to cover fee'),
+      findsNothing,
+    );
+    expect(find.text('Max amount unavailable'), findsNothing);
+  });
+
   testWidgets('ZEC max amount ignores stale result after account switch', (
     tester,
   ) async {
@@ -2510,7 +2582,7 @@ void main() {
   });
 
   testWidgets(
-    'ZEC review is disabled when the amount reaches available balance',
+    'ZEC composer allows review when the amount reaches available balance',
     (tester) async {
       await _setDesktopViewport(tester);
       final swapProvider = _FakeSwapProvider();
@@ -2539,16 +2611,70 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Max: 1 ZEC'), findsOneWidget);
-      expect(find.text('Not enough ZEC'), findsOneWidget);
+      expect(find.text('Review swap'), findsOneWidget);
+      expect(find.text('Not enough ZEC'), findsNothing);
 
       await tester.tap(find.byKey(const ValueKey('swap_review_button')));
       await tester.pumpAndSettle();
 
-      expect(swapProvider.requests, isEmpty);
+      expect(swapProvider.requests, hasLength(1));
       expect(
         find.byKey(const ValueKey('swap_review_cancel_button')),
-        findsNothing,
+        findsOneWidget,
       );
+      expect(
+        find.text(
+          "You don't have enough ZEC for this swap. Try a smaller amount.",
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Not enough ZEC'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'ZEC composer defers the balance block while sync is incomplete',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final swapProvider = _FakeSwapProvider();
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          seedSwapActivityFixtures: false,
+          spendableBalance: BigInt.from(100000000),
+          syncedToTip: false,
+          swapProvider: swapProvider,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '1',
+      );
+      await _enterDestinationText(
+        tester,
+        '0x52908400098527886e0f7030069857d2e4169ee7',
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Max: 1 ZEC'), findsOneWidget);
+      expect(find.text('Review swap'), findsOneWidget);
+      expect(find.text('Not enough ZEC'), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+      await tester.pumpAndSettle();
+
+      expect(swapProvider.requests, hasLength(1));
+      expect(
+        find.byKey(const ValueKey('swap_review_cancel_button')),
+        findsOneWidget,
+      );
+      expect(find.text('Not enough ZEC'), findsNothing);
     },
   );
 
@@ -5540,6 +5666,55 @@ void main() {
     },
   );
 
+  testWidgets(
+    'exact-output review defers the balance block while sync is incomplete',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final swapProvider = _DriftingExactOutputSwapProvider();
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: swapProvider,
+          spendableBalance: BigInt.from(155000000),
+          syncedToTip: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_receive_amount_field')),
+        '105.26',
+      );
+      await _enterDestinationText(
+        tester,
+        '0x52908400098527886e0f7030069857d2e4169ee7',
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+      await tester.pumpAndSettle();
+
+      _expectReviewInfoAmountFits(
+        tester,
+        sideKey: const ValueKey('swap_review_info_pay'),
+        amountText: '1.6000 ZEC',
+      );
+      expect(
+        find.text(
+          "You don't have enough ZEC for this swap. Try a smaller amount.",
+        ),
+        findsNothing,
+      );
+      expect(find.text('Confirm swap'), findsOneWidget);
+      expect(find.text('Not enough ZEC'), findsNothing);
+      expect(swapProvider.startedQuotes, isEmpty);
+    },
+  );
+
   testWidgets('review summary fiat values use the live exact-input quote', (
     tester,
   ) async {
@@ -6967,6 +7142,60 @@ void main() {
     expect(find.textContaining('Insufficient balance'), findsNothing);
   });
 
+  testWidgets('ZEC deposit preflight syncing error asks the user to wait', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider();
+    final depositSender = _FakeSwapDepositSender(
+      preflightError: Exception('sync_in_progress|have 0, need 210000'),
+    );
+    final sessionStore = _FakeSwapPersistenceStore();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        depositSender: depositSender,
+        sessionStore: sessionStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.002',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+
+    expect(depositSender.preflightRequests, hasLength(1));
+    expect(depositSender.requests, isEmpty);
+    expect(swapProvider.startedQuotes, isEmpty);
+    expect(sessionStore.savedIntents, isEmpty);
+    expect(
+      find.textContaining('Still syncing. Try again once sync finishes.'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('ZEC deposit could not be prepared.'),
+      findsNothing,
+    );
+  });
+
   testWidgets('hardware ZEC swaps open deposit page before Keystone signing', (
     tester,
   ) async {
@@ -7685,6 +7914,7 @@ Widget _routerHarness(
   RpcEndpointChainNameGetter? failoverChainNameGetter,
   RpcEndpointLatestBlockHeightGetter? failoverHeightGetter,
   List<rust_sync.TransactionInfo> recentTransactions = const [],
+  bool syncedToTip = true,
 }) {
   final fixtureIntents = seedSwapActivityFixtures
       ? _accountScopedSwapActivityFixtureIntents()
@@ -7702,6 +7932,7 @@ Widget _routerHarness(
       syncProvider.overrideWith(
         () => _FakeSwapSyncNotifier(
           spendableBalance ?? BigInt.from(10000000000),
+          syncedToTip: syncedToTip,
           recentTransactions: recentTransactions,
         ),
       ),

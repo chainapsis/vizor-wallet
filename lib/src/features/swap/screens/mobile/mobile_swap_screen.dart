@@ -365,7 +365,6 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                           Expanded(
                             child: _MobileSwapReviewButton(
                               state: swapState,
-                              zecAvailableZatoshi: sync.spendableBalance,
                               onOpenDestinationAddress: () =>
                                   _openModal(_SwapModalSurface.addressEditor),
                               onReviewQuote: openReview,
@@ -411,29 +410,19 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
 class _MobileSwapReviewButton extends StatelessWidget {
   const _MobileSwapReviewButton({
     required this.state,
-    required this.zecAvailableZatoshi,
     required this.onOpenDestinationAddress,
     required this.onReviewQuote,
   });
 
   final SwapState state;
-  final BigInt zecAvailableZatoshi;
   final VoidCallback onOpenDestinationAddress;
   final VoidCallback onReviewQuote;
-
-  bool get _balanceExceeded {
-    if (!state.direction.sendsZec) return false;
-    final amount = parseZecAmount(state.amountText.trim());
-    if (amount == null || amount <= BigInt.zero) return false;
-    return amount >= zecAvailableZatoshi;
-  }
 
   @override
   Widget build(BuildContext context) {
     final needsDestinationAddress = state.destinationText.trim().isEmpty;
     final destinationFormatError = state.destinationAddressFormatError;
-    final balanceExceeded = _balanceExceeded;
-    final canReview = state.canReviewQuote && !balanceExceeded;
+    final canReview = state.canReviewQuote;
     final onPressed = needsDestinationAddress
         ? onOpenDestinationAddress
         : canReview
@@ -444,11 +433,7 @@ class _MobileSwapReviewButton extends StatelessWidget {
               ? 'Add recipient address'
               : 'Add refund address')
         : destinationFormatError ??
-              (balanceExceeded
-                  ? 'Not enough ZEC'
-                  : state.quoteLoading
-                  ? 'Getting quote'
-                  : 'Continue to review');
+              (state.quoteLoading ? 'Getting quote' : 'Continue to review');
 
     return AppButton(
       key: const ValueKey('mobile_swap_review_button'),

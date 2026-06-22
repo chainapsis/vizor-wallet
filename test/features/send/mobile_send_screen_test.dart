@@ -31,6 +31,7 @@ const _invalidAddress = 'not-an-address';
 
 var _proposeSendSucceeds = false;
 Completer<ProposalResult>? _proposeSendCompleter;
+Object? _proposeSendError;
 int _estimateSendMaxCalls = 0;
 String? _lastEstimateSendMaxToAddress;
 String? _lastEstimateSendMaxMemo;
@@ -109,6 +110,8 @@ class _RustApiFake implements RustLibApi {
   }) async {
     final completer = _proposeSendCompleter;
     if (completer != null) return completer.future;
+    final error = _proposeSendError;
+    if (error != null) throw error;
     if (!_proposeSendSucceeds) {
       throw StateError('proposal failed');
     }
@@ -152,10 +155,17 @@ AppBootstrapState _bootstrap({AccountState? accountState}) => AppBootstrapState(
 );
 
 class _FakeSyncNotifier extends SyncNotifier {
+  _FakeSyncNotifier({required this.syncedToTip});
+
+  final bool syncedToTip;
+
   @override
   Future<SyncState> build() async => SyncState(
     accountUuid: 'account-1',
     hasAccountScopedData: true,
+    isSyncing: !syncedToTip,
+    scannedHeight: syncedToTip ? 100 : 80,
+    chainTipHeight: 100,
     spendableBalance: BigInt.from(500000000), // 5 ZEC
     totalBalance: BigInt.from(500000000),
   );
@@ -181,6 +191,7 @@ Widget _app({
   MobileSendScanner? openScanner,
   String? initialRecipient,
   MobileSendAddressValidator? validateAddress,
+  bool syncedToTip = true,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -202,7 +213,9 @@ Widget _app({
       appBootstrapProvider.overrideWithValue(
         _bootstrap(accountState: accountState),
       ),
-      syncProvider.overrideWith(_FakeSyncNotifier.new),
+      syncProvider.overrideWith(
+        () => _FakeSyncNotifier(syncedToTip: syncedToTip),
+      ),
       zecMarketDataSourceProvider.overrideWithValue(
         const _FakeMarketDataSource(),
       ),
@@ -329,7 +342,7 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
-      syncProvider.overrideWith(_FakeSyncNotifier.new),
+      syncProvider.overrideWith(() => _FakeSyncNotifier(syncedToTip: true)),
       zecMarketDataSourceProvider.overrideWithValue(
         const _FakeMarketDataSource(),
       ),
@@ -429,6 +442,7 @@ void main() {
   setUp(() {
     _proposeSendSucceeds = false;
     _proposeSendCompleter = null;
+    _proposeSendError = null;
     _estimateSendMaxCalls = 0;
     _lastEstimateSendMaxToAddress = null;
     _lastEstimateSendMaxMemo = null;
@@ -1486,6 +1500,41 @@ void main() {
     expect(
       feeText.data,
       ZecAmount.fromZatoshi(BigInt.from(20000)).fee.toString(),
+    );
+  });
+
+  testWidgets('mid-sync spendable shortfall does not block review', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(syncedToTip: false));
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    // 9 ZEC is above the 5 ZEC currently scanned fixture, but sync has not
+    // reached the tip yet, so this is not a final insufficient-funds verdict.
+    await _enterAmount(tester, '9');
+
+    expect(find.text('Not enough ZEC'), findsNothing);
+    expect(find.text('Finish & review'), findsOneWidget);
+  });
+
+  testWidgets('coded syncing propose error stays on review', (tester) async {
+    _proposeSendError = StateError('sync_in_progress|have 5, need 9');
+
+    await tester.pumpWidget(_app(syncedToTip: false));
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester, amount: '9');
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Still syncing. Try again once sync finishes.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Insufficient shielded balance to cover amount and fee.'),
+      findsNothing,
     );
   });
 

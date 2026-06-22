@@ -53,19 +53,25 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-Widget _app({_MobileDelayedQuoteSwapProvider? swapProvider}) => ProviderScope(
+Widget _app({
+  _MobileDelayedQuoteSwapProvider? swapProvider,
+  SyncState? syncState,
+}) => ProviderScope(
   overrides: [
     appBootstrapProvider.overrideWithValue(_bootstrap()),
     if (swapProvider != null)
       swapIntentProvider.overrideWithValue(swapProvider),
     syncProvider.overrideWith(
       () => FakeSyncNotifier(
-        SyncState(
-          accountUuid: 'account-1',
-          hasAccountScopedData: true,
-          orchardBalance: BigInt.from(100000000),
-          spendableBalance: BigInt.from(100000000),
-        ),
+        syncState ??
+            SyncState(
+              accountUuid: 'account-1',
+              hasAccountScopedData: true,
+              scannedHeight: 100,
+              chainTipHeight: 100,
+              orchardBalance: BigInt.from(100000000),
+              spendableBalance: BigInt.from(100000000),
+            ),
       ),
     ),
   ],
@@ -324,6 +330,53 @@ void main() {
     expect(identical(stateBefore, stateAfter), isTrue);
     expect(stateAfter.widget.focusNode.hasFocus, isTrue);
   });
+
+  testWidgets(
+    'swap composer defers the balance block while sync is incomplete',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 50,
+            chainTipHeight: 100,
+            orchardBalance: BigInt.from(100000000),
+            spendableBalance: BigInt.from(100000000),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('Swap').last);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '1',
+      );
+      await tester.tap(find.text('Add recipient address'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_destination_field')),
+        '0x52908400098527886e0f7030069857d2e4169ee7',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('swap_address_update_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Continue to review'), findsOneWidget);
+      expect(find.text('Not enough ZEC'), findsNothing);
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('mobile_swap_review_button')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+    },
+  );
 
   testWidgets(
     'review quote loading shows loader and disables slippage settings',

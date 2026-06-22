@@ -283,7 +283,6 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                         const SizedBox(height: AppSpacing.md),
                         _SwapReviewFooter(
                           state: swapState,
-                          zecAvailableZatoshi: sync.spendableBalance,
                           onOpenDestinationAddress: _openAddressEditor,
                           onReviewQuote: openReview,
                         ),
@@ -412,25 +411,19 @@ class _SwapPageTitle extends StatelessWidget {
 class _SwapReviewFooter extends StatelessWidget {
   const _SwapReviewFooter({
     required this.state,
-    required this.zecAvailableZatoshi,
     required this.onOpenDestinationAddress,
     required this.onReviewQuote,
   });
 
   final SwapState state;
-  final BigInt zecAvailableZatoshi;
   final VoidCallback onOpenDestinationAddress;
   final VoidCallback onReviewQuote;
 
   @override
   Widget build(BuildContext context) {
-    final balanceExceeded = _reviewAmountExceedsAvailableZec(
-      state,
-      zecAvailableZatoshi,
-    );
     final needsDestinationAddress = state.destinationText.trim().isEmpty;
     final destinationFormatError = state.destinationAddressFormatError;
-    final canReview = state.canReviewQuote && !balanceExceeded;
+    final canReview = state.canReviewQuote;
     final onPressed = needsDestinationAddress
         ? onOpenDestinationAddress
         : canReview
@@ -440,15 +433,10 @@ class _SwapReviewFooter extends StatelessWidget {
     final label = needsDestinationAddress
         ? _destinationAddressActionLabel(state)
         : destinationFormatError ??
-              (balanceExceeded
-                  ? 'Not enough ZEC'
-                  : state.quoteLoading
-                  ? 'Getting quote'
-                  : 'Review swap');
+              (state.quoteLoading ? 'Getting quote' : 'Review swap');
     final reviewReady =
         !needsDestinationAddress &&
         destinationFormatError == null &&
-        !balanceExceeded &&
         !state.quoteLoading;
 
     return Center(
@@ -510,21 +498,4 @@ String _destinationAddressActionLabel(SwapState state) {
   return state.direction.sendsZec
       ? 'Add recipient address'
       : 'Add refund address';
-}
-
-bool _reviewAmountExceedsAvailableZec(
-  SwapState state,
-  BigInt availableZatoshi,
-) {
-  if (!state.direction.sendsZec) return false;
-  return _zecAmountTextExceedsAvailable(state.amountText, availableZatoshi);
-}
-
-bool _zecAmountTextExceedsAvailable(
-  String amountText,
-  BigInt availableZatoshi,
-) {
-  final amount = parseZecAmount(amountText);
-  if (amount == null || amount <= BigInt.zero) return false;
-  return amount >= availableZatoshi;
 }

@@ -11,6 +11,7 @@ import '../models/swap_models.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../services/send_failure.dart';
 import 'swap_activity_tracker.dart';
 import 'swap_deposit_sender.dart';
 import 'swap_failure_policy.dart';
@@ -32,6 +33,12 @@ class SwapNotifier extends Notifier<SwapState> {
 
   String? get _activeAccountUuidOrNull =>
       ref.read(accountProvider).value?.activeAccountUuid;
+
+  bool _isSyncedToTip(String accountUuid) {
+    return (ref.read(syncProvider).value ?? SyncState())
+        .scopedToAccount(accountUuid)
+        .isSyncedToTip;
+  }
 
   String? _accountUuidForIntent(SwapIntent intent) {
     final activeAccountUuid = _activeAccountUuidOrNull;
@@ -307,7 +314,9 @@ class SwapNotifier extends Notifier<SwapState> {
       if (maxZatoshi <= BigInt.zero) {
         state = state.copyWith(
           maxAmountLoading: false,
-          maxAmountError: 'Insufficient shielded balance to cover fee',
+          maxAmountError: _isSyncedToTip(accountUuid)
+              ? 'Insufficient shielded balance to cover fee'
+              : 'Still syncing. Try again once sync finishes.',
         );
         return;
       }
@@ -337,10 +346,12 @@ class SwapNotifier extends Notifier<SwapState> {
         state = state.copyWith(maxAmountLoading: false);
         return;
       }
-      final msg = e.toString().toLowerCase();
+      final failure = classifySendFailure(e);
       state = state.copyWith(
         maxAmountLoading: false,
-        maxAmountError: msg.contains('insufficient')
+        maxAmountError: failure.isWaitingForSync
+            ? 'Still syncing. Try again once sync finishes.'
+            : failure == SendFailureKind.insufficientFunds
             ? 'Insufficient shielded balance to cover fee'
             : 'Max amount unavailable',
       );
@@ -536,12 +547,12 @@ class SwapNotifier extends Notifier<SwapState> {
           'Swap: live ZEC deposit preflight failed '
           'quote=${_shortSwapValue(quote.providerQuoteId)} error=$e',
         );
+        final failure = classifySendFailure(e);
         state = state.copyWith(
           startSubmitting: false,
-          statusError: swapFailureMessage(
-            SwapFailureOperation.sendZecDeposit,
-            e,
-          ),
+          statusError: failure.isWaitingForSync
+              ? 'Still syncing. Try again once sync finishes.'
+              : swapFailureMessage(SwapFailureOperation.sendZecDeposit, e),
         );
         return false;
       }

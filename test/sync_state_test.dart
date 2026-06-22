@@ -138,6 +138,34 @@ void main() {
     expect(completed.totalBalance, BigInt.from(123));
     expect(completed.recentTransactions, hasLength(1));
   });
+
+  group('isSyncedToTip', () {
+    test('is false without a chain tip', () {
+      expect(SyncState().isSyncedToTip, isFalse);
+    });
+
+    test('is false while sync is actively running', () {
+      final state = SyncState(
+        isSyncing: true,
+        scannedHeight: 100,
+        chainTipHeight: 100,
+      );
+
+      expect(state.isSyncedToTip, isFalse);
+    });
+
+    test('is false until the fully scanned height reaches the tip', () {
+      final state = SyncState(scannedHeight: 99, chainTipHeight: 100);
+
+      expect(state.isSyncedToTip, isFalse);
+    });
+
+    test('is true when fully scanned to a non-zero tip', () {
+      final state = SyncState(scannedHeight: 100, chainTipHeight: 100);
+
+      expect(state.isSyncedToTip, isTrue);
+    });
+  });
 }
 
 rust_sync.TransactionInfo _tx(String txidHex) {
