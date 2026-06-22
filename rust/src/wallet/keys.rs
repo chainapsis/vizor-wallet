@@ -1881,6 +1881,61 @@ mod tests {
         assert_eq!(prune_orphaned_scan_ranges(db_path_str).unwrap(), 0);
     }
 
+    /// Codex follow-up: proves the rescue prune must run AFTER `update_chain_tip`.
+    /// When the blocks table's `max_scanned` sits BELOW the surviving birthday
+    /// (a deleted account that synced only a low region left a scanned block
+    /// there), librustzcash's `update_chain_tip` anchors new ranges at
+    /// `max_scanned + 1` WITHOUT clamping to the birthday, so it re-creates
+    /// sub-birthday pending work. A prune that ran only before `update_chain_tip`
+    /// would miss it; the prune run afterwards demotes it.
+    #[test]
+    fn test_prune_cleans_subbirthday_range_recreated_by_update_chain_tip() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            Some(2_400_000),
+            "survivor",
+        )
+        .unwrap();
+        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
+        let birthday = scan_min_birthday(db_path_str);
+
+        // Simulate a deleted account's leftover scanned block BELOW the birthday:
+        // a single blocks-table row at 746399 makes max_scanned < birthday.
+        {
+            let conn = rusqlite::Connection::open(db_path_str).unwrap();
+            conn.execute(
+                "INSERT INTO blocks (height, hash, time, sapling_tree) \
+                 VALUES (746399, X'00', 0, X'')",
+                [],
+            )
+            .unwrap();
+        }
+
+        // Re-run update_chain_tip (as the sync does). With max_scanned (746399)
+        // below the birthday, it re-creates sub-birthday pending work anchored at
+        // max_scanned + 1, NOT clamped to the birthday.
+        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
+        assert!(
+            pending_scan_coverage_below(db_path_str, birthday),
+            "update_chain_tip should re-create sub-birthday pending work from max_scanned+1",
+        );
+
+        // The rescue prune, run AFTER update_chain_tip, must demote it.
+        prune_orphaned_scan_ranges(db_path_str).unwrap();
+        assert!(
+            !pending_scan_coverage_below(db_path_str, birthday),
+            "prune after update_chain_tip must demote the re-created sub-birthday range",
+        );
+        assert!(pending_scan_coverage_at_or_above(db_path_str, birthday));
+    }
+
     #[test]
     fn test_delete_account_handles_internal_sent_note_to_deleted_account() {
         let temp_dir = tempfile::tempdir().unwrap();

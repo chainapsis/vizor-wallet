@@ -828,23 +828,6 @@ pub async fn run_sync_inner(
     let mut last_err = String::new();
     *SYNC_START.lock().unwrap() = Some(std::time::Instant::now());
 
-    // Rescue pass (VZR-89): demote orphaned historical scan ranges left below
-    // the remaining accounts' birthday by a pre-fix account deletion. Without
-    // this, a wallet already stuck at "0% Syncing" by such an orphan keeps
-    // re-scanning millions of irrelevant blocks on every run. No-op for healthy
-    // wallets. Best-effort: a failure here must not block sync itself.
-    match crate::wallet::keys::prune_orphaned_scan_ranges(db_data_path) {
-        Ok(demoted) if demoted > 0 => log::info!(
-            "[{}] sync: pruned {demoted} orphaned scan range(s) below the wallet birthday",
-            elapsed(),
-        ),
-        Ok(_) => {}
-        Err(e) => log::warn!(
-            "[{}] sync: failed to prune orphaned scan ranges (continuing): {e}",
-            elapsed(),
-        ),
-    }
-
     for attempt in 0..=MAX_RETRIES {
         if attempt > 0 {
             let delay_secs = 1u64 << attempt; // 2, 4, 8
@@ -1027,6 +1010,34 @@ async fn run_sync_impl(
 
     // 3. Download subtree roots (incremental)
     download_subtree_roots(&mut client, &mut db).await?;
+
+    // Rescue pass (VZR-89): demote orphaned scan ranges left below the surviving
+    // accounts' birthday by a pre-fix account deletion, so a wallet bricked by
+    // that bug heals automatically (just update + re-sync, no reinstall) and a
+    // freshly-deleted old import doesn't pin progress / block completion.
+    //
+    // This MUST run AFTER `update_chain_tip` above, not before it: that call
+    // anchors new Verify/Historic ranges at `max_scanned + 1` (read from the
+    // `blocks` table) WITHOUT clamping to the wallet birthday
+    // (zcash_client_sqlite scanning.rs::update_chain_tip / block_height_extrema).
+    // If a deleted, only-partially-synced old-birthday account left scanned
+    // blocks BELOW the surviving birthday, `max_scanned` sits below it and
+    // `update_chain_tip` re-creates sub-birthday pending work. Pruning here —
+    // after the tip update, before `initial_total` is measured — demotes both
+    // the original orphan and any such re-created range, so the orphaned history
+    // is never scanned. No-op for healthy wallets; best-effort (a failure must
+    // not block sync).
+    match crate::wallet::keys::prune_orphaned_scan_ranges(db_data_path) {
+        Ok(demoted) if demoted > 0 => log::info!(
+            "[{}] sync: pruned {demoted} orphaned scan range(s) below the wallet birthday",
+            elapsed(),
+        ),
+        Ok(_) => {}
+        Err(e) => log::warn!(
+            "[{}] sync: failed to prune orphaned scan ranges (continuing): {e}",
+            elapsed(),
+        ),
+    }
 
     // 4. Calculate initial scan target (before any scanning)
     let mut initial_total: u64 = {
