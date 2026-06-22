@@ -88,6 +88,22 @@ typedef MobileSendFeeEstimator =
 
 typedef MobileSendScanner = Future<String?> Function(BuildContext context);
 
+class _MobileSendMaxQuote {
+  const _MobileSendMaxQuote({
+    required this.accountUuid,
+    required this.address,
+    required this.memo,
+    required this.amountZatoshi,
+    required this.feeZatoshi,
+  });
+
+  final String accountUuid;
+  final String address;
+  final String memo;
+  final BigInt amountZatoshi;
+  final BigInt feeZatoshi;
+}
+
 class MobileSendAmountArgs {
   const MobileSendAmountArgs({
     required this.sendFlowId,
@@ -111,6 +127,7 @@ class MobileSendReviewDraftArgs {
     required this.addressType,
     required this.amountText,
     this.feeZatoshi,
+    this.isMaxMode = false,
     this.memo,
     this.contactLabel,
     this.contactPictureId,
@@ -121,6 +138,7 @@ class MobileSendReviewDraftArgs {
   final String addressType;
   final String amountText;
   final BigInt? feeZatoshi;
+  final bool isMaxMode;
   final String? memo;
   final String? contactLabel;
   final String? contactPictureId;
@@ -162,6 +180,7 @@ class MobileSendReviewScreen extends StatelessWidget {
       initialAmount: args.amountText,
       initialFeeZatoshi: args.feeZatoshi,
       refreshReviewFeeOnInit: true,
+      initialMaxMode: args.isMaxMode,
       initialMemo: args.memo,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
@@ -218,6 +237,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.initialAmountStep = false,
     this.initialReview = false,
     this.initialFeeZatoshi,
+    this.initialMaxMode = false,
     this.refreshReviewFeeOnInit = false,
     this.initialMemo,
     this.initialContactLabel,
@@ -242,6 +262,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   final bool initialAmountReady;
   final bool initialReview;
   final BigInt? initialFeeZatoshi;
+  final bool initialMaxMode;
   final bool refreshReviewFeeOnInit;
   final String? initialMemo;
   final String? initialSendFlowId;
@@ -286,6 +307,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String _amountText = '';
   String? _amountError = ''; // null = valid, '' = silently incomplete
   int _validateSeq = 0;
+  bool _isMaxMode = false;
+  bool _isResolvingMax = false;
+  int _maxSeq = 0;
+  _MobileSendMaxQuote? _maxQuote;
 
   // Review state.
   String _memo = '';
@@ -322,6 +347,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _step = widget.initialReview ? _SendStep.review : _SendStep.amount;
       _amountText = widget.initialAmount?.trim() ?? '';
       _amountController.text = _amountText;
+      _isMaxMode = widget.initialMaxMode;
       if (widget.initialAmountError != null) {
         _amountError = widget.initialAmountError;
       } else if (widget.initialAmountReady || widget.initialReview) {
@@ -330,6 +356,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         if (_feeZatoshi == null && !widget.refreshReviewFeeOnInit) {
           _feeZatoshi = BigInt.from(10000);
         }
+        _seedInitialMaxQuote();
       } else if (_amountText.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) unawaited(_validateAmount());
@@ -338,7 +365,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     if (widget.initialReview && widget.refreshReviewFeeOnInit) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(_estimateReviewFee());
+        if (mounted) unawaited(_refreshReviewQuote());
       });
     }
     if (widget.initialRecipientFocused) {
@@ -431,6 +458,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _contactPictureId = null;
       }
       _addressType = '';
+      _clearMaxMode();
     });
     unawaited(_validateAddress());
   }
@@ -522,9 +550,168 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         .spendableBalance;
   }
 
+  String? get _activeAccountUuid =>
+      ref.read(accountProvider).value?.activeAccountUuid;
+
+  bool get _hasCurrentMaxQuote {
+    final quote = _maxQuote;
+    if (quote == null) return false;
+    return quote.accountUuid == _activeAccountUuid &&
+        quote.address == _addressController.text.trim() &&
+        quote.memo == _effectiveMemo &&
+        parseZecAmount(_amountText.trim()) == quote.amountZatoshi &&
+        _feeZatoshi == quote.feeZatoshi;
+  }
+
+  void _seedInitialMaxQuote() {
+    if (!_isMaxMode) return;
+    final accountUuid = _activeAccountUuid;
+    final amountZatoshi = parseZecAmount(_amountText.trim());
+    final feeZatoshi = _feeZatoshi;
+    if (accountUuid == null || amountZatoshi == null || feeZatoshi == null) {
+      return;
+    }
+    _maxQuote = _MobileSendMaxQuote(
+      accountUuid: accountUuid,
+      address: _addressController.text.trim(),
+      memo: _effectiveMemo,
+      amountZatoshi: amountZatoshi,
+      feeZatoshi: feeZatoshi,
+    );
+  }
+
+  void _clearMaxMode() {
+    _maxSeq++;
+    _isMaxMode = false;
+    _isResolvingMax = false;
+    _maxQuote = null;
+  }
+
   void _handleAmountChanged(String value) {
-    setState(() => _amountText = value.trim());
+    setState(() {
+      _amountText = value.trim();
+      if (_isMaxMode) {
+        _clearMaxMode();
+      }
+    });
     unawaited(_validateAmount());
+  }
+
+  void _activateMaxMode() {
+    if (_isResolvingMax) return;
+    _amountFocus.unfocus();
+    setState(() {
+      _isMaxMode = true;
+      _maxQuote = null;
+      _amountError = '';
+      _error = null;
+    });
+    unawaited(_resolveMaxEstimate());
+  }
+
+  String? _maxEstimatePreconditionError() {
+    if (_activeAccountUuid == null) return 'Max amount unavailable';
+    if (!_hasValidAddress) return 'Max amount unavailable';
+    if (_isHardwareTexRecipient) return _hardwareTexUnsupportedText;
+    if (utf8.encode(_effectiveMemo).length > 512) {
+      return 'Message is too long';
+    }
+    return null;
+  }
+
+  Future<void> _resolveMaxEstimate() async {
+    _validateSeq++;
+    final seq = ++_maxSeq;
+    final accountUuid = _activeAccountUuid;
+    final address = _addressController.text.trim();
+    final memo = _effectiveMemo;
+    final preconditionError = _maxEstimatePreconditionError();
+    setState(() {
+      _isMaxMode = true;
+      _isResolvingMax = preconditionError == null;
+      _maxQuote = null;
+      _amountError = preconditionError ?? '';
+      if (preconditionError != null) {
+        _feeZatoshi = null;
+      }
+    });
+    if (preconditionError != null || accountUuid == null) return;
+
+    try {
+      final dbPath = await widget.loadWalletDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
+      if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) return;
+
+      final estimate = await rust_sync.estimateSendMax(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        toAddress: address,
+        memo: memo.isNotEmpty ? memo : null,
+      );
+      if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) return;
+
+      if (estimate.amountZatoshi <= BigInt.zero) {
+        _applyMaxEstimateError('Not enough ZEC');
+        return;
+      }
+
+      final amountText = ZecAmount.fromZatoshi(
+        estimate.amountZatoshi,
+      ).pretty().amountText;
+      _amountController.value = TextEditingValue(
+        text: amountText,
+        selection: TextSelection.collapsed(offset: amountText.length),
+      );
+
+      setState(() {
+        _amountText = amountText;
+        _amountError = null;
+        _feeZatoshi = estimate.feeZatoshi;
+        _isResolvingMax = false;
+        _maxQuote = _MobileSendMaxQuote(
+          accountUuid: accountUuid,
+          address: address,
+          memo: memo,
+          amountZatoshi: estimate.amountZatoshi,
+          feeZatoshi: estimate.feeZatoshi,
+        );
+      });
+    } catch (e) {
+      if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) return;
+      final msg = e.toString().toLowerCase();
+      _applyMaxEstimateError(
+        msg.contains('insufficient')
+            ? 'Not enough ZEC'
+            : 'Max amount unavailable',
+      );
+    }
+  }
+
+  bool _isCurrentMaxRequest(
+    int seq,
+    String accountUuid,
+    String address,
+    String memo,
+  ) {
+    return mounted &&
+        _isMaxMode &&
+        seq == _maxSeq &&
+        _activeAccountUuid == accountUuid &&
+        _addressController.text.trim() == address &&
+        _effectiveMemo == memo;
+  }
+
+  void _applyMaxEstimateError(String message) {
+    setState(() {
+      _isResolvingMax = false;
+      _maxQuote = null;
+      _feeZatoshi = null;
+      _amountError = message;
+    });
+    if (_step == _SendStep.review) {
+      showAppToast(context, message, iconName: AppIcons.warning);
+    }
   }
 
   /// Same shape as the desktop validator — quick spendable pre-check,
@@ -586,8 +773,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   bool get _amountReady =>
+      !_isResolvingMax &&
       _amountError == null &&
-      (parseZecAmount(_amountText.trim()) ?? BigInt.zero) > BigInt.zero;
+      (parseZecAmount(_amountText.trim()) ?? BigInt.zero) > BigInt.zero &&
+      (!_isMaxMode || _hasCurrentMaxQuote);
 
   void _continueToReview() {
     if (!_amountReady) return;
@@ -602,6 +791,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             addressType: _addressType,
             amountText: _amountText,
             feeZatoshi: _feeZatoshi,
+            isMaxMode: _isMaxMode && _hasCurrentMaxQuote,
             memo: _memo,
             contactLabel: _contactLabel,
             contactPictureId: _contactPictureId,
@@ -612,12 +802,17 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     setState(() => _step = _SendStep.review);
     // Refresh the fee for the review card (the memo may change it).
-    unawaited(_estimateReviewFee());
+    unawaited(_refreshReviewQuote());
   }
 
   // ── Review step ────────────────────────────────────────────────────
 
   String get _effectiveMemo => _isShieldedAddress ? _memo.trim() : '';
+
+  Future<void> _refreshReviewQuote() {
+    if (_isMaxMode) return _resolveMaxEstimate();
+    return _estimateReviewFee();
+  }
 
   Future<void> _estimateReviewFee() async {
     final seq = ++_feeSeq;
@@ -653,7 +848,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
     if (next == null || !mounted) return;
     setState(() => _memo = next);
-    unawaited(_estimateReviewFee());
+    unawaited(_refreshReviewQuote());
   }
 
   Future<void> _showFeeInfo() {
@@ -712,6 +907,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Future<void> _confirmAndSend() async {
     if (_phase != _SendPhase.compose || _isConfirmingSend) return;
+    if (_isResolvingMax || (_isMaxMode && !_hasCurrentMaxQuote)) return;
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
     final isHardware = ref
@@ -1470,7 +1666,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               constrainContent: true,
               onPressed: _amountReady ? _continueToReview : null,
               child: Text(
-                _amountReady ? 'Finish & review' : 'Enter amount to continue',
+                _isResolvingMax
+                    ? 'Calculating max amount'
+                    : _amountReady
+                    ? 'Finish & review'
+                    : 'Enter amount to continue',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -1548,10 +1748,21 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             const SizedBox(height: AppSpacing.s),
             SizedBox(
               height: _kMobileSendAmountLineHeight,
-              child: Text(
-                'Max: $spendableText',
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.secondary,
+              child: Center(
+                child: Semantics(
+                  button: true,
+                  label: 'Use maximum spendable balance',
+                  child: GestureDetector(
+                    key: const ValueKey('mobile_send_max_button'),
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _isResolvingMax ? null : _activateMaxMode,
+                    child: Text(
+                      'Max: $spendableText',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -1671,7 +1882,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 AppButton(
                   key: const ValueKey('mobile_send_confirm'),
                   expand: true,
-                  onPressed: _isConfirmingSend
+                  onPressed:
+                      _isConfirmingSend ||
+                          _isResolvingMax ||
+                          (_isMaxMode && !_hasCurrentMaxQuote)
                       ? null
                       : () => unawaited(_confirmAndSend()),
                   leading: const AppIcon(AppIcons.plane, size: 20),
