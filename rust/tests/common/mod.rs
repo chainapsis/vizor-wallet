@@ -203,6 +203,35 @@ pub fn inject_orphaned_historic_below(db_path: &Path, height: i64) -> usize {
     .expect("inject orphaned historic range")
 }
 
+/// Simulate the harder pre-fix stuck state: a deleted old-birthday account that
+/// was only PARTIALLY synced leaves a `Scanned` (priority 10) range below the
+/// surviving birthday, followed by an `Ignored` gap up to the birthday. This is
+/// the configuration that pins librustzcash's `block_fully_scanned` and blocks
+/// sync completion until the rescue prune demotes the leftover Scanned range.
+pub fn inject_orphaned_scanned_below(db_path: &Path, birthday: i64) {
+    assert!(
+        birthday > 2,
+        "birthday must leave room for a sub-birthday range"
+    );
+    let mid = birthday / 2 + 1;
+    let conn = rusqlite::Connection::open(db_path).expect("open wallet db");
+    conn.execute(
+        "DELETE FROM scan_queue WHERE block_range_end <= ?1",
+        [birthday],
+    )
+    .expect("clear sub-birthday ranges");
+    conn.execute(
+        "INSERT INTO scan_queue (block_range_start, block_range_end, priority) VALUES (1, ?1, 10)",
+        [mid],
+    )
+    .expect("inject leftover scanned range");
+    conn.execute(
+        "INSERT INTO scan_queue (block_range_start, block_range_end, priority) VALUES (?1, ?2, 0)",
+        [mid, birthday],
+    )
+    .expect("inject ignored gap");
+}
+
 pub fn execute_send(
     db_path: &Path,
     sender_account_uuid: &str,
