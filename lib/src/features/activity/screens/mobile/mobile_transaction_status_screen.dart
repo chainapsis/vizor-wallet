@@ -621,36 +621,49 @@ class _BottomInfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = text;
-    return Row(
-      children: [
-        if (iconName != null) ...[
-          AppIcon(
-            iconName!,
-            size: AppIconSize.medium,
-            color: iconColor ?? context.colors.text.secondary,
-          ),
-          const SizedBox(width: AppSpacing.xxs),
-        ],
-        if (label != null)
-          Expanded(
-            flex: trailing == null ? 1 : 2,
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelMedium.copyWith(
-                color: context.colors.text.secondary,
+    final trailingWidget = trailing;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final leadingWidth = iconName == null
+            ? 0.0
+            : AppIconSize.medium + AppSpacing.xxs;
+        final maxTrailingWidth = constraints.hasBoundedWidth
+            ? (constraints.maxWidth - leadingWidth)
+                  .clamp(0.0, constraints.maxWidth)
+                  .toDouble()
+            : double.infinity;
+
+        return Row(
+          children: [
+            if (iconName != null) ...[
+              AppIcon(
+                iconName!,
+                size: AppIconSize.medium,
+                color: iconColor ?? context.colors.text.secondary,
               ),
-            ),
-          )
-        else
-          const Spacer(),
-        if (trailing != null)
-          Flexible(
-            flex: 3,
-            child: Align(alignment: Alignment.centerRight, child: trailing),
-          ),
-      ],
+              const SizedBox(width: AppSpacing.xxs),
+            ],
+            if (label != null)
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: context.colors.text.secondary,
+                  ),
+                ),
+              )
+            else
+              const Spacer(),
+            if (trailingWidget != null)
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxTrailingWidth),
+                child: trailingWidget,
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -803,6 +816,7 @@ class _GhostIconLabelButton extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.xxs),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               AppIcon(

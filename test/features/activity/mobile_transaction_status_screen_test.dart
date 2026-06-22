@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -124,6 +125,8 @@ Widget _app(
 }
 
 void main() {
+  setUpAll(_loadAppFonts);
+
   testWidgets('mined sent tx shows success title, chip, fee, and address', (
     tester,
   ) async {
@@ -240,6 +243,42 @@ void main() {
     expect(find.text(_address), findsNothing);
   });
 
+  testWidgets('show full address action label fits on mobile width', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(_app(_tx()));
+    await tester.pumpAndSettle();
+
+    final action = find.byKey(
+      const ValueKey('mobile_tx_status_show_full_address'),
+    );
+    final actionLabel = find.descendant(
+      of: action,
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is RichText &&
+            widget.text.toPlainText() == 'Show full address',
+      ),
+    );
+
+    expect(action, findsOneWidget);
+    expect(actionLabel, findsOneWidget);
+    final richText = tester.widget<RichText>(actionLabel);
+    final textPainter = TextPainter(
+      text: richText.text,
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    expect(
+      tester.getSize(actionLabel).width,
+      greaterThanOrEqualTo(textPainter.width - 0.5),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('received tx separates transparent sender and shielded receiver', (
     tester,
   ) async {
@@ -321,4 +360,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Message'), findsNothing);
   });
+}
+
+Future<void> _loadAppFonts() async {
+  final youngSerif = FontLoader('Young Serif')
+    ..addFont(rootBundle.load('assets/fonts/YoungSerif-Regular.ttf'));
+  final geist = FontLoader('Geist')
+    ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
+    ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
+
+  await Future.wait([youngSerif.load(), geist.load()]);
 }
