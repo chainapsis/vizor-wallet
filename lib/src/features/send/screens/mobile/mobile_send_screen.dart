@@ -599,8 +599,22 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _amountError == null &&
       (parseZecAmount(_amountText.trim()) ?? BigInt.zero) > BigInt.zero;
 
+  bool _recheckAmountBeforeReview() {
+    final zatoshi = parseZecAmount(_amountText.trim());
+    if (zatoshi == null || zatoshi <= BigInt.zero) return false;
+    if (!_isSyncedToTip) return true;
+
+    final fee = _feeZatoshi;
+    final required = fee == null ? zatoshi : zatoshi + fee;
+    if (required <= _spendable) return true;
+
+    setState(() => _amountError = 'Not enough ZEC');
+    return false;
+  }
+
   void _continueToReview() {
     if (!_amountReady) return;
+    if (!_recheckAmountBeforeReview()) return;
     _amountFocus.unfocus();
     if (widget.useRouteSteps) {
       unawaited(

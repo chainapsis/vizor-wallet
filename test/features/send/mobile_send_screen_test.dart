@@ -127,10 +127,17 @@ AppBootstrapState _bootstrap({AccountState? accountState}) => AppBootstrapState(
 class _FakeSyncNotifier extends SyncNotifier {
   _FakeSyncNotifier({required this.syncedToTip});
 
-  final bool syncedToTip;
+  bool syncedToTip;
+
+  void setSyncedToTip(bool value) {
+    syncedToTip = value;
+    state = AsyncData(_syncState());
+  }
 
   @override
-  Future<SyncState> build() async => SyncState(
+  Future<SyncState> build() async => _syncState();
+
+  SyncState _syncState() => SyncState(
     accountUuid: 'account-1',
     hasAccountScopedData: true,
     isSyncing: !syncedToTip,
@@ -1073,6 +1080,30 @@ void main() {
 
     expect(find.text('Not enough ZEC'), findsNothing);
     expect(find.text('Finish & review'), findsOneWidget);
+  });
+
+  testWidgets('review rechecks amount after sync reaches tip', (tester) async {
+    await tester.pumpWidget(_app(syncedToTip: false));
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    await _enterAmount(tester, '9');
+    expect(find.text('Not enough ZEC'), findsNothing);
+    expect(find.text('Finish & review'), findsOneWidget);
+
+    final notifier =
+        ProviderScope.containerOf(
+              tester.element(find.byType(MobileSendScreen)),
+            ).read(syncProvider.notifier)
+            as _FakeSyncNotifier;
+    notifier.setSyncedToTip(true);
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Not enough ZEC'), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile_send_confirm')), findsNothing);
   });
 
   testWidgets('coded syncing propose error stays on review', (tester) async {
