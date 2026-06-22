@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart' show CupertinoRouteTransitionMixin;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -131,6 +133,50 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(MobileSendScreen), findsNothing);
     expect(find.byType(MobileHomeScreen), findsOneWidget);
+  });
+
+  testWidgets('send amount and review routes push Cupertino pages', (
+    tester,
+  ) async {
+    final router = _router();
+    await tester.pumpWidget(_app(router));
+    await tester.pumpAndSettle();
+
+    unawaited(
+      router.push<void>(
+        '/send/amount',
+        extra: const MobileSendAmountArgs(
+          sendFlowId: 'flow-1',
+          recipient: 'u1routeraddress',
+          addressType: 'unified',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileSendAmountScreen), findsOneWidget);
+    var route = ModalRoute.of(
+      tester.element(find.byType(MobileSendAmountScreen)),
+    );
+    expect(route, isA<CupertinoRouteTransitionMixin<dynamic>>());
+
+    unawaited(
+      router.push<void>(
+        '/send/review',
+        extra: MobileSendReviewDraftArgs(
+          sendFlowId: 'flow-1',
+          recipient: 'u1routeraddress',
+          addressType: 'unified',
+          amountText: '0.25',
+          feeZatoshi: BigInt.from(10000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileSendReviewScreen), findsOneWidget);
+    route = ModalRoute.of(tester.element(find.byType(MobileSendReviewScreen)));
+    expect(route, isA<CupertinoRouteTransitionMixin<dynamic>>());
   });
 
   testWidgets('receive pushes over a Cupertino shell page', (tester) async {

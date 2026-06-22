@@ -88,6 +88,87 @@ typedef MobileSendFeeEstimator =
 
 typedef MobileSendScanner = Future<String?> Function(BuildContext context);
 
+class MobileSendAmountArgs {
+  const MobileSendAmountArgs({
+    required this.sendFlowId,
+    required this.recipient,
+    required this.addressType,
+    this.contactLabel,
+    this.contactPictureId,
+  });
+
+  final String sendFlowId;
+  final String recipient;
+  final String addressType;
+  final String? contactLabel;
+  final String? contactPictureId;
+}
+
+class MobileSendReviewDraftArgs {
+  const MobileSendReviewDraftArgs({
+    required this.sendFlowId,
+    required this.recipient,
+    required this.addressType,
+    required this.amountText,
+    this.feeZatoshi,
+    this.memo,
+    this.contactLabel,
+    this.contactPictureId,
+  });
+
+  final String sendFlowId;
+  final String recipient;
+  final String addressType;
+  final String amountText;
+  final BigInt? feeZatoshi;
+  final String? memo;
+  final String? contactLabel;
+  final String? contactPictureId;
+}
+
+class MobileSendAmountScreen extends StatelessWidget {
+  const MobileSendAmountScreen({required this.args, super.key});
+
+  final MobileSendAmountArgs args;
+
+  @override
+  Widget build(BuildContext context) {
+    return MobileSendScreen(
+      useRouteSteps: true,
+      initialAmountStep: true,
+      initialSendFlowId: args.sendFlowId,
+      initialRecipient: args.recipient,
+      initialAddressType: args.addressType,
+      initialContactLabel: args.contactLabel,
+      initialContactPictureId: args.contactPictureId,
+    );
+  }
+}
+
+class MobileSendReviewScreen extends StatelessWidget {
+  const MobileSendReviewScreen({required this.args, super.key});
+
+  final MobileSendReviewDraftArgs args;
+
+  @override
+  Widget build(BuildContext context) {
+    return MobileSendScreen(
+      useRouteSteps: true,
+      initialReview: true,
+      initialAmountReady: true,
+      initialSendFlowId: args.sendFlowId,
+      initialRecipient: args.recipient,
+      initialAddressType: args.addressType,
+      initialAmount: args.amountText,
+      initialFeeZatoshi: args.feeZatoshi,
+      refreshReviewFeeOnInit: true,
+      initialMemo: args.memo,
+      initialContactLabel: args.contactLabel,
+      initialContactPictureId: args.contactPictureId,
+    );
+  }
+}
+
 const _kMobileSendRecipientLineHeight = 17.0;
 const _kMobileSendAddressActionHeight = 36.0;
 const _kMobileSendAddressActionSlotWidth = 96.0;
@@ -127,11 +208,17 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.validateAddress,
     this.estimateFee,
     this.openScanner = showMobileSendScanSheet,
+    this.useRouteSteps = false,
+    this.initialSendFlowId,
     this.initialRecipient,
+    this.initialAddressType,
     this.initialAmount,
     this.initialAmountError,
     this.initialAmountReady = false,
+    this.initialAmountStep = false,
     this.initialReview = false,
+    this.initialFeeZatoshi,
+    this.refreshReviewFeeOnInit = false,
     this.initialMemo,
     this.initialContactLabel,
     this.initialContactPictureId,
@@ -146,13 +233,19 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   /// Pre-fills the recipient step (e.g. the accounts row menu's
   /// "Send ZEC" action passes that account's shielded address).
   final String? initialRecipient;
+  final String? initialAddressType;
 
   /// Preview/test seam for opening the amount step with a preset value.
+  final bool initialAmountStep;
   final String? initialAmount;
   final String? initialAmountError;
   final bool initialAmountReady;
   final bool initialReview;
+  final BigInt? initialFeeZatoshi;
+  final bool refreshReviewFeeOnInit;
   final String? initialMemo;
+  final String? initialSendFlowId;
+  final bool useRouteSteps;
 
   /// Preview/test seam for recipient summary states.
   final String? initialContactLabel;
@@ -177,7 +270,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   final _addressFocus = FocusNode();
   final _amountController = TextEditingController();
   final _amountFocus = FocusNode();
-  late final String _sendFlowId = newSendFlowId();
+  late final String _sendFlowId = widget.initialSendFlowId ?? newSendFlowId();
 
   var _step = _SendStep.recipient;
   var _phase = _SendPhase.compose;
@@ -209,7 +302,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final initial = widget.initialRecipient;
     if (initial != null && initial.trim().isNotEmpty) {
       _addressController.text = initial.trim();
-      unawaited(_validateAddress());
+      final initialAddressType = widget.initialAddressType?.trim();
+      if (initialAddressType != null && initialAddressType.isNotEmpty) {
+        _addressType = initialAddressType;
+      } else {
+        unawaited(_validateAddress());
+      }
     }
     final initialContactLabel = widget.initialContactLabel;
     if (initialContactLabel != null && initialContactLabel.trim().isNotEmpty) {
@@ -220,20 +318,28 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (initialMemo != null && initialMemo.trim().isNotEmpty) {
       _memo = initialMemo.trim();
     }
-    if (widget.initialAmount != null) {
+    if (widget.initialAmountStep || widget.initialAmount != null) {
       _step = widget.initialReview ? _SendStep.review : _SendStep.amount;
-      _amountText = widget.initialAmount!.trim();
+      _amountText = widget.initialAmount?.trim() ?? '';
       _amountController.text = _amountText;
       if (widget.initialAmountError != null) {
         _amountError = widget.initialAmountError;
       } else if (widget.initialAmountReady || widget.initialReview) {
         _amountError = null;
-        _feeZatoshi = BigInt.from(10000);
+        _feeZatoshi = widget.initialFeeZatoshi;
+        if (_feeZatoshi == null && !widget.refreshReviewFeeOnInit) {
+          _feeZatoshi = BigInt.from(10000);
+        }
       } else if (_amountText.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) unawaited(_validateAmount());
         });
       }
+    }
+    if (widget.initialReview && widget.refreshReviewFeeOnInit) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_estimateReviewFee());
+      });
     }
     if (widget.initialRecipientFocused) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -285,7 +391,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   bool get _routePopAllowed =>
       _phase == _SendPhase.compose &&
-      _step == _SendStep.recipient &&
+      (widget.useRouteSteps || _step == _SendStep.recipient) &&
       !_isConfirmingSend;
 
   bool get _isShieldedAddress =>
@@ -385,6 +491,21 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   void _continueToAmount() {
     if (!_hasValidAddress || _isHardwareTexRecipient) return;
     _addressFocus.unfocus();
+    if (widget.useRouteSteps) {
+      unawaited(
+        context.push<void>(
+          '/send/amount',
+          extra: MobileSendAmountArgs(
+            sendFlowId: _sendFlowId,
+            recipient: _addressController.text.trim(),
+            addressType: _addressType,
+            contactLabel: _contactLabel,
+            contactPictureId: _contactPictureId,
+          ),
+        ),
+      );
+      return;
+    }
     setState(() => _step = _SendStep.amount);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _amountFocus.requestFocus();
@@ -471,6 +592,24 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   void _continueToReview() {
     if (!_amountReady) return;
     _amountFocus.unfocus();
+    if (widget.useRouteSteps) {
+      unawaited(
+        context.push<void>(
+          '/send/review',
+          extra: MobileSendReviewDraftArgs(
+            sendFlowId: _sendFlowId,
+            recipient: _addressController.text.trim(),
+            addressType: _addressType,
+            amountText: _amountText,
+            feeZatoshi: _feeZatoshi,
+            memo: _memo,
+            contactLabel: _contactLabel,
+            contactPictureId: _contactPictureId,
+          ),
+        ),
+      );
+      return;
+    }
     setState(() => _step = _SendStep.review);
     // Refresh the fee for the review card (the memo may change it).
     unawaited(_estimateReviewFee());
@@ -561,6 +700,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
+  void _openStatusRoute(Object extra) {
+    if (widget.useRouteSteps) {
+      final router = GoRouter.of(context);
+      router.go('/home');
+      unawaited(router.push<void>('/send/status', extra: extra));
+      return;
+    }
+    context.pushReplacement('/send/status', extra: extra);
+  }
+
   Future<void> _confirmAndSend() async {
     if (_phase != _SendPhase.compose || _isConfirmingSend) return;
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
@@ -637,15 +786,23 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         return;
       }
       if (!mounted) return;
-      context.pushReplacement('/send/status', extra: keystone);
+      _openStatusRoute(keystone);
       return;
     }
 
     if (!mounted) return;
-    context.pushReplacement('/send/status', extra: args);
+    _openStatusRoute(args);
   }
 
   // ── Navigation ─────────────────────────────────────────────────────
+
+  void _cancelSend() {
+    if (widget.useRouteSteps) {
+      context.go('/home');
+      return;
+    }
+    context.pop();
+  }
 
   void _handleBack() {
     switch (_phase) {
@@ -660,8 +817,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         context.pop();
       case _SendStep.amount:
         _amountFocus.unfocus();
+        if (widget.useRouteSteps) {
+          context.pop();
+          return;
+        }
         setState(() => _step = _SendStep.recipient);
       case _SendStep.review:
+        if (widget.useRouteSteps) {
+          context.pop();
+          return;
+        }
         setState(() => _step = _SendStep.amount);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _amountFocus.requestFocus();
@@ -1515,7 +1680,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   key: const ValueKey('mobile_send_cancel'),
                   expand: true,
                   variant: AppButtonVariant.ghost,
-                  onPressed: () => context.pop(),
+                  onPressed: _cancelSend,
                   child: const Text('Cancel'),
                 ),
               ],
