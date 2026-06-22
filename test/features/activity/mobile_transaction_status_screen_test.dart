@@ -297,6 +297,25 @@ void main() {
     expect(find.text(memo), findsOneWidget);
   });
 
+  testWidgets('long one-line memo preview does not overflow on mobile width', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const memo = 'ㅎㅎㅎㅎㅎㅎㅎㅎㅎㅎㅎㅎㅎㅎㅎㅎㅎㅎㅎㅎ';
+    await tester.pumpWidget(_app(_tx(), detail: _detail(memo: memo)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Message'), findsOneWidget);
+    final previewText = tester.widget<Text>(
+      find.text('${memo.substring(0, 18)}...'),
+    );
+    expect(previewText.maxLines, 1);
+    expect(previewText.overflow, TextOverflow.ellipsis);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('no memo means no message row', (tester) async {
     await tester.pumpWidget(_app(_tx()));
     await tester.pumpAndSettle();
