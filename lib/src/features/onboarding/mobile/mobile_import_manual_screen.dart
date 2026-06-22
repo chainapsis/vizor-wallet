@@ -80,6 +80,22 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
     if (_hasTyped) _onSubmitted(_controller.text);
   }
 
+  bool _addAcceptedWord(String word) {
+    if (_accepted.length >= kMnemonicMaxWords) {
+      setState(() {
+        _controller.clear();
+        _error = null;
+      });
+      return false;
+    }
+    setState(() {
+      _accepted.add(word);
+      _controller.clear();
+      _error = null;
+    });
+    return true;
+  }
+
   /// Accept the typed word (if any), then validate the full phrase and
   /// move to review. Validation happens here so review stays read-only.
   void _finish() {
@@ -87,27 +103,23 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
       final tokens = tokenizeMnemonicWords(_typed);
       final word = tokens.isEmpty ? '' : tokens.first;
       if (word.isEmpty || !_wordList.contains(word)) {
-        setState(
-          () => _error = "'$_typed' isn't in the passphrase word list.",
-        );
+        setState(() => _error = "'$_typed' isn't in the passphrase word list.");
         _focusNode.requestFocus();
         return;
       }
-      setState(() {
-        _accepted.add(word);
-        _controller.clear();
-        _error = null;
-      });
+      if (!_addAcceptedWord(word)) {
+        _review();
+        return;
+      }
     }
     _review();
   }
 
   void _acceptWord(String word) {
-    setState(() {
-      _accepted.add(word);
-      _controller.clear();
-      _error = null;
-    });
+    if (!_addAcceptedWord(word)) {
+      _review();
+      return;
+    }
     if (_accepted.length >= kMnemonicMaxWords) {
       _review();
     }
@@ -184,10 +196,23 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
   void _stepBack() {
     if (_accepted.isEmpty) return;
     setState(() {
-      _controller.text = _accepted.removeLast();
-      _controller.selection = TextSelection.collapsed(
-        offset: _controller.text.length,
-      );
+      _restoreLastWordToField();
+      _error = null;
+    });
+    _focusNode.requestFocus();
+  }
+
+  void _restoreLastWordToField() {
+    _controller.text = _accepted.removeLast();
+    _controller.selection = TextSelection.collapsed(
+      offset: _controller.text.length,
+    );
+  }
+
+  void _editLastWordAfterReviewBack() {
+    if (_accepted.isEmpty) return;
+    setState(() {
+      _restoreLastWordToField();
       _error = null;
     });
     _focusNode.requestFocus();
@@ -212,13 +237,15 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
           // phrase/error (manual can be opened from a rejected paste).
           if (result == ImportReviewResult.cleared && mounted) {
             navigator.pop(ImportReviewResult.cleared);
+          } else if (mounted) {
+            _editLastWordAfterReviewBack();
           }
         });
   }
 
-  /// The CTA row: a single "Next word" until a valid-length phrase is
-  /// reachable, then "Next word" (secondary) beside "Finish & review"
-  /// (primary) — Figma 4746:83516.
+  /// The CTA block: a single "Next word" until a valid-length phrase is
+  /// reachable, then a full-width "Finish & review" primary action plus a
+  /// secondary "Next word" to continue toward longer standard phrases.
   Widget _buildButtonRow() {
     final nextEnabled = _hasTyped && !_atMax;
     final nextButton = AppButton(
@@ -226,25 +253,25 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
       variant: _showFinish
           ? AppButtonVariant.secondary
           : AppButtonVariant.primary,
-      expand: !_showFinish,
+      expand: true,
       onPressed: nextEnabled ? _acceptTyped : null,
       trailing: const AppIcon(AppIcons.chevronForward),
       child: const Text('Next word'),
     );
     if (!_showFinish) return nextButton;
-    return Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        nextButton,
-        const SizedBox(width: AppSpacing.xs),
-        Expanded(
-          child: AppButton(
-            key: const ValueKey('mobile_import_manual_finish'),
-            expand: true,
-            onPressed: _finish,
-            trailing: const AppIcon(AppIcons.chevronForward),
-            child: const Text('Finish & review'),
-          ),
+        AppButton(
+          key: const ValueKey('mobile_import_manual_finish'),
+          expand: true,
+          onPressed: _finish,
+          trailing: const AppIcon(AppIcons.chevronForward),
+          child: const Text('Finish & review'),
         ),
+        const SizedBox(height: AppSpacing.xs),
+        nextButton,
       ],
     );
   }
@@ -405,6 +432,9 @@ class _WordField extends StatelessWidget {
               keyboardType: TextInputType.visiblePassword,
               autocorrect: false,
               enableSuggestions: false,
+              // Keep the keyboard open when return/check submits a word.
+              // onSubmitted still advances through the shared handler below.
+              onEditingComplete: () {},
               onSubmitted: onSubmitted,
               // The parent decides: a multi-word paste distributes across
               // slots; a single word + trailing space accepts.
