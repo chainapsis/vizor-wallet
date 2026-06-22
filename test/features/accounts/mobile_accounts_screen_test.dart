@@ -659,7 +659,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('does not show a page-level add account action', (tester) async {
+  testWidgets('add account routes to the add-account flow', (tester) async {
     await tester.pumpWidget(
       _app(
         AccountState(
@@ -670,11 +670,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(
-      find.byKey(const ValueKey('mobile_accounts_add_account')),
-      findsNothing,
-    );
-    expect(find.text('Add account'), findsNothing);
+    final button = find.byKey(const ValueKey('mobile_accounts_add_account'));
+    expect(button, findsOneWidget);
+    expect(find.text('Add account'), findsOneWidget);
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('add account route'), findsOneWidget);
   });
 
   testWidgets('remove asks for confirmation with the design copy', (

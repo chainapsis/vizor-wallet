@@ -97,7 +97,7 @@ void main() {
     expect(find.text('Accounts'), findsOneWidget);
     expect(find.text('Current'), findsOneWidget);
     expect(find.text('Other'), findsOneWidget);
-    expect(find.text('Add account'), findsNothing);
+    expect(find.text('Add account'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey('mobile_accounts_menu_preview-account-2')),
