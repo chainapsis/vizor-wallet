@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -454,6 +456,41 @@ void main() {
     expect(rustApi.proposeSendCalls, 1);
   });
 
+  testWidgets('fee estimate uses latest spendable balance after sync update', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    rustApi.estimateFeeCompleter = Completer<BigInt>();
+
+    await tester.pumpWidget(
+      _sendHarness(syncedToTip: false, spendableBalance: BigInt.from(50000000)),
+    );
+    await tester.pump();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pump();
+    await tester.enterText(_editableIn('send_amount_field'), '1.0');
+    await tester.pump();
+
+    final notifier =
+        ProviderScope.containerOf(
+              tester.element(find.byType(SendScreen)),
+            ).read(syncProvider.notifier)
+            as _FakeSyncNotifier;
+    notifier.updateSyncState(
+      syncedToTip: true,
+      spendableBalance: BigInt.from(200000000),
+    );
+    await tester.pump();
+
+    rustApi.estimateFeeCompleter!.complete(BigInt.from(10000));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.textContaining('Insufficient'), findsNothing);
+    expect(find.byKey(const ValueKey('send_review_button')), findsOneWidget);
+  });
+
   testWidgets('hardware TEX sends are blocked inline before proposal', (
     tester,
   ) async {
@@ -666,12 +703,20 @@ class _FakeSyncNotifier extends SyncNotifier {
     required this.syncedToTip,
   });
 
-  final BigInt spendableBalance;
-  final BigInt transparentBalance;
-  final bool syncedToTip;
+  BigInt spendableBalance;
+  BigInt transparentBalance;
+  bool syncedToTip;
+
+  void updateSyncState({BigInt? spendableBalance, bool? syncedToTip}) {
+    this.spendableBalance = spendableBalance ?? this.spendableBalance;
+    this.syncedToTip = syncedToTip ?? this.syncedToTip;
+    state = AsyncData(_syncState());
+  }
 
   @override
-  Future<SyncState> build() async => SyncState(
+  Future<SyncState> build() async => _syncState();
+
+  SyncState _syncState() => SyncState(
     accountUuid: 'account-1',
     hasAccountScopedData: true,
     isSyncing: !syncedToTip,
@@ -690,6 +735,7 @@ class _RustApiFake implements RustLibApi {
   String? lastProposeMemo;
   String? lastEstimateSendMaxToAddress;
   String? lastEstimateSendMaxMemo;
+  Completer<BigInt>? estimateFeeCompleter;
 
   void reset() {
     proposeSendCalls = 0;
@@ -698,6 +744,7 @@ class _RustApiFake implements RustLibApi {
     lastProposeMemo = null;
     lastEstimateSendMaxToAddress = null;
     lastEstimateSendMaxMemo = null;
+    estimateFeeCompleter = null;
   }
 
   @override
@@ -725,6 +772,8 @@ class _RustApiFake implements RustLibApi {
     required BigInt amountZatoshi,
     String? memo,
   }) async {
+    final completer = estimateFeeCompleter;
+    if (completer != null) return completer.future;
     return BigInt.from(10000);
   }
 
