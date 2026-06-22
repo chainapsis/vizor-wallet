@@ -805,6 +805,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _handleBack() {
+    if (_isConfirmingSend) return;
     switch (_phase) {
       case _SendPhase.failed:
         setState(() => _phase = _SendPhase.compose);
@@ -967,7 +968,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               SafeArea(
                 child: Column(
                   children: [
-                    MobileTopNav.back(title: title, onBack: _handleBack),
+                    MobileTopNav.back(
+                      title: title,
+                      onBack: _isConfirmingSend ? null : _handleBack,
+                    ),
                     Expanded(child: body),
                   ],
                 ),

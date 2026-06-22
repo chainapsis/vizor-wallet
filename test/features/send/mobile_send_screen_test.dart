@@ -29,6 +29,7 @@ const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 const _invalidAddress = 'not-an-address';
 
 var _proposeSendSucceeds = false;
+Completer<ProposalResult>? _proposeSendCompleter;
 
 class _RustApiFake implements RustLibApi {
   @override
@@ -76,6 +77,8 @@ class _RustApiFake implements RustLibApi {
     required BigInt amountZatoshi,
     String? memo,
   }) async {
+    final completer = _proposeSendCompleter;
+    if (completer != null) return completer.future;
     if (!_proposeSendSucceeds) {
       throw StateError('proposal failed');
     }
@@ -369,6 +372,7 @@ void main() {
 
   setUp(() {
     _proposeSendSucceeds = false;
+    _proposeSendCompleter = null;
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1100)
@@ -590,6 +594,50 @@ void main() {
 
     expect(find.text('home'), findsOneWidget);
     expect(find.text('Review Send'), findsNothing);
+  });
+
+  testWidgets('route-step review ignores back while preparing send', (
+    tester,
+  ) async {
+    final proposalCompleter = Completer<ProposalResult>();
+    _proposeSendCompleter = proposalCompleter;
+    addTearDown(() {
+      if (!proposalCompleter.isCompleted) {
+        proposalCompleter.completeError(StateError('test ended'));
+      }
+      _proposeSendCompleter = null;
+    });
+
+    await tester.pumpWidget(_sendFlowRouterApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
+
+    await _toReviewStep(tester);
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pump();
+
+    expect(find.text('Preparing...'), findsOneWidget);
+    expect(find.bySemanticsLabel('Back'), findsNothing);
+    expect(_sendRouteCanPop(tester), isFalse);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(find.text('Preparing...'), findsOneWidget);
+
+    proposalCompleter.complete(
+      ProposalResult(
+        proposalId: BigInt.from(1),
+        needsSaplingParams: false,
+        feeZatoshi: BigInt.from(10000),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('status can pop'), findsOneWidget);
   });
 
   testWidgets('recipient step gates Continue on a valid address', (
