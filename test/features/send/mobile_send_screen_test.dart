@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
@@ -28,6 +29,7 @@ const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 const _invalidAddress = 'not-an-address';
 
 var _proposeSendSucceeds = false;
+Completer<ProposalResult>? _proposeSendCompleter;
 
 class _RustApiFake implements RustLibApi {
   @override
@@ -75,6 +77,8 @@ class _RustApiFake implements RustLibApi {
     required BigInt amountZatoshi,
     String? memo,
   }) async {
+    final completer = _proposeSendCompleter;
+    if (completer != null) return completer.future;
     if (!_proposeSendSucceeds) {
       throw StateError('proposal failed');
     }
@@ -192,7 +196,7 @@ Widget _app({
   );
 }
 
-Widget _sendFlowRouterApp() {
+Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
   final router = GoRouter(
     initialLocation: '/home',
     routes: [
@@ -207,9 +211,52 @@ Widget _sendFlowRouterApp() {
       GoRoute(
         path: '/send',
         builder: (_, _) => MobileSendScreen(
+          useRouteSteps: true,
           loadWalletDbPath: () async => '/tmp/zcash-test',
           openScanner: (_) async => null,
+          estimateFee: estimateFee,
         ),
+      ),
+      GoRoute(
+        path: '/send/amount',
+        builder: (_, state) {
+          final args = state.extra! as MobileSendAmountArgs;
+          return MobileSendScreen(
+            useRouteSteps: true,
+            initialAmountStep: true,
+            initialSendFlowId: args.sendFlowId,
+            initialRecipient: args.recipient,
+            initialAddressType: args.addressType,
+            initialContactLabel: args.contactLabel,
+            initialContactPictureId: args.contactPictureId,
+            loadWalletDbPath: () async => '/tmp/zcash-test',
+            openScanner: (_) async => null,
+            estimateFee: estimateFee,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/send/review',
+        builder: (_, state) {
+          final args = state.extra! as MobileSendReviewDraftArgs;
+          return MobileSendScreen(
+            useRouteSteps: true,
+            initialReview: true,
+            initialAmountReady: true,
+            initialSendFlowId: args.sendFlowId,
+            initialRecipient: args.recipient,
+            initialAddressType: args.addressType,
+            initialAmount: args.amountText,
+            initialFeeZatoshi: args.feeZatoshi,
+            refreshReviewFeeOnInit: true,
+            initialMemo: args.memo,
+            initialContactLabel: args.contactLabel,
+            initialContactPictureId: args.contactPictureId,
+            loadWalletDbPath: () async => '/tmp/zcash-test',
+            openScanner: (_) async => null,
+            estimateFee: estimateFee,
+          );
+        },
       ),
       GoRoute(
         path: '/send/status',
@@ -325,6 +372,7 @@ void main() {
 
   setUp(() {
     _proposeSendSucceeds = false;
+    _proposeSendCompleter = null;
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1100)
@@ -456,31 +504,141 @@ void main() {
     expect(_sendRouteCanPop(tester), isFalse);
   });
 
-  testWidgets(
-    'send status replaces the send route so completed status can pop',
-    (tester) async {
-      _proposeSendSucceeds = true;
+  testWidgets('route-step mode lets amount and review pop as pages', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sendFlowRouterApp());
+    await tester.pumpAndSettle();
 
-      await tester.pumpWidget(_sendFlowRouterApp());
-      await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
 
-      await tester.tap(
-        find.byKey(const ValueKey('mobile_send_open_from_home')),
-      );
-      await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+    expect(find.text('Enter amount'), findsOneWidget);
+    expect(_sendRouteCanPop(tester), isTrue);
 
-      await _toReviewStep(tester);
-      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
-      await tester.pumpAndSettle();
+    await _enterAmount(tester, '1.5');
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
 
-      expect(find.text('status can pop'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('mobile_send_status_pop')));
-      await tester.pumpAndSettle();
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(_sendRouteCanPop(tester), isTrue);
 
-      expect(find.text('home'), findsOneWidget);
-      expect(find.text('Review Send'), findsNothing);
-    },
-  );
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter amount'), findsOneWidget);
+
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('Select Recipient'), findsOneWidget);
+  });
+
+  testWidgets('route-step review refreshes the fee on entry', (tester) async {
+    var feeCalls = 0;
+    final refreshedFee = BigInt.from(30000);
+
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        estimateFee:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required toAddress,
+              required amountZatoshi,
+              memo,
+            }) async {
+              feeCalls++;
+              return feeCalls == 1 ? BigInt.from(10000) : refreshedFee;
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
+
+    await _toAmountStep(tester, _shieldedAddress);
+    await _enterAmount(tester, '1.5');
+    expect(feeCalls, 1);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(feeCalls, greaterThanOrEqualTo(2));
+    final feeText = tester.widget<Text>(
+      find.byKey(const ValueKey('mobile_send_fee')),
+    );
+    expect(feeText.data, ZecAmount.fromZatoshi(refreshedFee).fee.toString());
+  });
+
+  testWidgets('route-step send status clears intermediate send pages', (
+    tester,
+  ) async {
+    _proposeSendSucceeds = true;
+
+    await tester.pumpWidget(_sendFlowRouterApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
+
+    await _toReviewStep(tester);
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('status can pop'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('mobile_send_status_pop')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('home'), findsOneWidget);
+    expect(find.text('Review Send'), findsNothing);
+  });
+
+  testWidgets('route-step review ignores back while preparing send', (
+    tester,
+  ) async {
+    final proposalCompleter = Completer<ProposalResult>();
+    _proposeSendCompleter = proposalCompleter;
+    addTearDown(() {
+      if (!proposalCompleter.isCompleted) {
+        proposalCompleter.completeError(StateError('test ended'));
+      }
+      _proposeSendCompleter = null;
+    });
+
+    await tester.pumpWidget(_sendFlowRouterApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
+
+    await _toReviewStep(tester);
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pump();
+
+    expect(find.text('Preparing...'), findsOneWidget);
+    expect(find.bySemanticsLabel('Back'), findsNothing);
+    expect(_sendRouteCanPop(tester), isFalse);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(find.text('Preparing...'), findsOneWidget);
+
+    proposalCompleter.complete(
+      ProposalResult(
+        proposalId: BigInt.from(1),
+        needsSaplingParams: false,
+        feeZatoshi: BigInt.from(10000),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('status can pop'), findsOneWidget);
+  });
 
   testWidgets('recipient step gates Continue on a valid address', (
     tester,

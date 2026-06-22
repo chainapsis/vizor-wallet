@@ -38,6 +38,7 @@ abstract final class AppBackResolver {
   static const _routeLabels = <String, String>{
     '/home': 'Home',
     '/send': 'Send',
+    '/send/amount': 'Amount',
     '/send/review': 'Review',
     '/send/keystone/scan': 'Keystone',
     '/send/status': 'Status',

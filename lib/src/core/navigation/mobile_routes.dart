@@ -111,10 +111,36 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/send',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
-        child: MobileSendScreen(initialRecipient: state.extra as String?),
-      ),
+      pageBuilder: (context, state) {
+        final extra = state.extra;
+        return CupertinoPage(
+          key: state.pageKey,
+          child: MobileSendScreen(
+            useRouteSteps: true,
+            initialRecipient: extra is String ? extra : null,
+          ),
+        );
+      },
+    ),
+    GoRoute(
+      path: '/send/amount',
+      pageBuilder: (context, state) {
+        final extra = state.extra;
+        final child = extra is MobileSendAmountArgs
+            ? MobileSendAmountScreen(args: extra)
+            : const MobileSendScreen(useRouteSteps: true);
+        return CupertinoPage(key: state.pageKey, child: child);
+      },
+    ),
+    GoRoute(
+      path: '/send/review',
+      pageBuilder: (context, state) {
+        final extra = state.extra;
+        final child = extra is MobileSendReviewDraftArgs
+            ? MobileSendReviewScreen(args: extra)
+            : const MobileSendScreen(useRouteSteps: true);
+        return CupertinoPage(key: state.pageKey, child: child);
+      },
     ),
     GoRoute(
       path: '/send/status',
@@ -126,7 +152,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
             keystone: extra,
           ),
           SendReviewArgs() => MobileSendStatusScreen(args: extra),
-          _ => const MobileSendScreen(),
+          _ => const MobileSendScreen(useRouteSteps: true),
         };
         return CupertinoPage(key: state.pageKey, child: child);
       },
