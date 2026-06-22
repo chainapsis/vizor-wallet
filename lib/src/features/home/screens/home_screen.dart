@@ -67,7 +67,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  bool _canBackgroundSync = false;
   bool _isShieldingBalance = false;
   bool _showKeystoneShieldSigning = false;
   String? _shieldBalanceError;
@@ -76,21 +75,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _checkBackgroundSyncAvailability();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
     });
-  }
-
-  Future<void> _checkBackgroundSyncAvailability() async {
-    final available = await SyncNotifier.isBackgroundSyncAvailable();
-    log('[zcash] BackgroundSync available: $available');
-    if (mounted) {
-      setState(() {
-        _canBackgroundSync = available;
-      });
-    }
   }
 
   String _formatZec(BigInt zatoshi) {
@@ -370,7 +358,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 isActivityLoading: isActivityLoading,
                 passwordRotationRecoveryFailed:
                     bootstrap.passwordRotationRecoveryFailed,
-                canBackgroundSync: _canBackgroundSync,
                 privacyModeEnabled: privacyModeEnabled,
                 shieldedBalanceText: _formatZec(shieldedBalance),
                 shieldedFiatBalanceText: shieldedFiatBalanceText,
@@ -386,10 +373,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onShieldBalancePressed: () =>
                     unawaited(_shieldTransparentBalance()),
                 onDismissShieldBalanceError: _dismissShieldBalanceError,
-                onSyncInBackground: () =>
-                    ref.read(syncProvider.notifier).enableBackgroundSync(),
-                onStopBackgroundSync: () =>
-                    ref.read(syncProvider.notifier).disableBackgroundSync(),
                 onRetrySync: () => ref.read(syncProvider.notifier).startSync(),
               ),
             ),
@@ -411,7 +394,6 @@ class _HomePane extends ConsumerStatefulWidget {
     required this.hasActivitySyncData,
     required this.isActivityLoading,
     required this.passwordRotationRecoveryFailed,
-    required this.canBackgroundSync,
     required this.privacyModeEnabled,
     required this.shieldedBalanceText,
     required this.shieldedFiatBalanceText,
@@ -425,8 +407,6 @@ class _HomePane extends ConsumerStatefulWidget {
     required this.onTogglePrivacyMode,
     required this.onShieldBalancePressed,
     required this.onDismissShieldBalanceError,
-    required this.onSyncInBackground,
-    required this.onStopBackgroundSync,
     required this.onRetrySync,
   });
 
@@ -434,7 +414,6 @@ class _HomePane extends ConsumerStatefulWidget {
   final bool hasActivitySyncData;
   final bool isActivityLoading;
   final bool passwordRotationRecoveryFailed;
-  final bool canBackgroundSync;
   final bool privacyModeEnabled;
   final String shieldedBalanceText;
   final String? shieldedFiatBalanceText;
@@ -448,8 +427,6 @@ class _HomePane extends ConsumerStatefulWidget {
   final VoidCallback onTogglePrivacyMode;
   final VoidCallback onShieldBalancePressed;
   final VoidCallback onDismissShieldBalanceError;
-  final VoidCallback onSyncInBackground;
-  final VoidCallback onStopBackgroundSync;
   final VoidCallback onRetrySync;
 
   @override
@@ -585,22 +562,6 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         onTap: syncFailure.showSettingsAction
             ? () => context.push('/settings/endpoint')
             : widget.onRetrySync,
-      );
-    }
-    if (widget.sync.isBackgroundMode) {
-      return _HomeNoticeData(
-        iconName: AppIcons.renew,
-        message: 'Background sync is running.',
-        actionLabel: 'Stop sync',
-        onTap: widget.onStopBackgroundSync,
-      );
-    }
-    if (widget.canBackgroundSync && widget.sync.isSyncing) {
-      return _HomeNoticeData(
-        iconName: AppIcons.loader,
-        message: 'Continue syncing in the background.',
-        actionLabel: 'Sync in background',
-        onTap: widget.onSyncInBackground,
       );
     }
     return null;
