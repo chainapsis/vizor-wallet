@@ -96,6 +96,9 @@ security-framework = { version = "3.7", features = ["OSX_10_15"] }
 [dev-dependencies]
 tempfile = "3"
 hex = "0.4"
+# Integration tests inject/inspect scan_queue rows directly to exercise the
+# VZR-89 rescue path. Keep this version aligned with the [dependencies] entry.
+rusqlite = "0.37"
 vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting", rev = "38b0c738ee8773382a817a00166791210d4dcc6d", package = "vote-commitment-tree" }
 
 [lints.rust]

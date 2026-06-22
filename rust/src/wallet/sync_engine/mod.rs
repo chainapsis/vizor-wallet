@@ -828,6 +828,23 @@ pub async fn run_sync_inner(
     let mut last_err = String::new();
     *SYNC_START.lock().unwrap() = Some(std::time::Instant::now());
 
+    // Rescue pass (VZR-89): demote orphaned historical scan ranges left below
+    // the remaining accounts' birthday by a pre-fix account deletion. Without
+    // this, a wallet already stuck at "0% Syncing" by such an orphan keeps
+    // re-scanning millions of irrelevant blocks on every run. No-op for healthy
+    // wallets. Best-effort: a failure here must not block sync itself.
+    match crate::wallet::keys::prune_orphaned_scan_ranges(db_data_path) {
+        Ok(demoted) if demoted > 0 => log::info!(
+            "[{}] sync: pruned {demoted} orphaned scan range(s) below the wallet birthday",
+            elapsed(),
+        ),
+        Ok(_) => {}
+        Err(e) => log::warn!(
+            "[{}] sync: failed to prune orphaned scan ranges (continuing): {e}",
+            elapsed(),
+        ),
+    }
+
     for attempt in 0..=MAX_RETRIES {
         if attempt > 0 {
             let delay_secs = 1u64 << attempt; // 2, 4, 8

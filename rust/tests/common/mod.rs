@@ -167,6 +167,42 @@ pub fn path_str(path: &Path) -> String {
     path.to_str().expect("utf-8 path").to_string()
 }
 
+// --- VZR-89 scan_queue helpers (orphaned-range rescue tests) --------------
+
+/// Lowest birthday across surviving accounts — the threshold below which any
+/// pending scan range is orphaned.
+pub fn min_account_birthday(db_path: &Path) -> i64 {
+    let conn = rusqlite::Connection::open(db_path).expect("open wallet db");
+    conn.query_row("SELECT MIN(birthday_height) FROM accounts", [], |r| {
+        r.get(0)
+    })
+    .expect("min birthday")
+}
+
+/// True if any pending (priority > Scanned) scan range starts below `height`.
+pub fn has_pending_scan_below(db_path: &Path, height: i64) -> bool {
+    let conn = rusqlite::Connection::open(db_path).expect("open wallet db");
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM scan_queue WHERE block_range_start < ?1 AND priority > 10)",
+        [height],
+        |r| r.get(0),
+    )
+    .expect("query scan_queue")
+}
+
+/// Simulate a wallet already stuck by a PRE-FIX account deletion: demote the
+/// (normally Ignored) sub-birthday range to Historic so it looks like the
+/// orphan librustzcash leaves behind after deleting an old-birthday account.
+/// Returns the number of rows flipped to Historic.
+pub fn inject_orphaned_historic_below(db_path: &Path, height: i64) -> usize {
+    let conn = rusqlite::Connection::open(db_path).expect("open wallet db");
+    conn.execute(
+        "UPDATE scan_queue SET priority = 20 WHERE block_range_end <= ?1 AND priority = 0",
+        [height],
+    )
+    .expect("inject orphaned historic range")
+}
+
 pub fn execute_send(
     db_path: &Path,
     sender_account_uuid: &str,
