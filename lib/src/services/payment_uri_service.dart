@@ -32,13 +32,16 @@ class PaymentUriService {
       _addUris(pending);
       await _channel.invokeMethod<void>('ready');
     } on MissingPluginException {
-      // Unsupported desktop builds do not install this channel.
+      // Platforms whose native runner does not install this channel land
+      // here; the payment-URI feature simply stays inert for them.
     }
   }
 
   static bool get _isSupportedPlatform {
     if (kIsWeb) return false;
     return switch (defaultTargetPlatform) {
+      TargetPlatform.android ||
+      TargetPlatform.iOS ||
       TargetPlatform.linux ||
       TargetPlatform.macOS ||
       TargetPlatform.windows => true,

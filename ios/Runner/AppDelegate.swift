@@ -165,6 +165,27 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+
+    // MethodChannel for ZIP-321 payment URIs (zcash:). Mirrors the desktop
+    // com.zcash.wallet/payment_uri contract (takePendingUris / ready / onUris).
+    // The scene delegate feeds inbound URLs into PaymentUriChannelBridge; this
+    // app uses the UIScene lifecycle, so application(_:open:) is never called.
+    let paymentUriChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/payment_uri",
+      binaryMessenger: messenger
+    )
+    PaymentUriChannelBridge.shared.attach(channel: paymentUriChannel)
+    paymentUriChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "takePendingUris":
+        result(PaymentUriChannelBridge.shared.takePending())
+      case "ready":
+        PaymentUriChannelBridge.shared.markReady()
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 }
 
@@ -193,5 +214,64 @@ class ScreenshotStreamHandler: NSObject, FlutterStreamHandler {
       self.observer = nil
     }
     return nil
+  }
+}
+
+/// Buffers inbound `zcash:` payment URIs until Dart signals readiness, then
+/// flushes them over `com.zcash.wallet/payment_uri`. Mirrors the macOS
+/// `PaymentUriChannel`. Fed by `SceneDelegate` (this app uses the UIScene
+/// lifecycle, so `application(_:open:)` never fires). Lives in this file so it
+/// needs no project.pbxproj entry. All access is on the main thread.
+final class PaymentUriChannelBridge {
+  static let shared = PaymentUriChannelBridge()
+  private init() {}
+
+  private var channel: FlutterMethodChannel?
+  private var pendingUris: [String] = []
+  private var dartReady = false
+
+  func attach(channel: FlutterMethodChannel) {
+    self.channel = channel
+    // Re-tie readiness to this channel's lifetime: a fresh Flutter engine (new
+    // implicit engine -> didInitializeImplicitFlutterEngine -> attach) means the
+    // new Dart isolate will register its handler and call `ready` again. The
+    // other platforms gate the ready flag on channel/engine lifetime; matching
+    // that here keeps a URI that arrives before the new Dart handler is set up
+    // buffered (delivered via takePendingUris) instead of pushed via onUris and
+    // lost.
+    dartReady = false
+  }
+
+  func markReady() {
+    dartReady = true
+    flush()
+  }
+
+  func takePending() -> [String] {
+    let uris = pendingUris
+    pendingUris.removeAll()
+    return uris
+  }
+
+  /// Extracts `zcash:` URLs from the contexts, buffers them, and flushes if
+  /// Dart is ready. Returns `true` when at least one `zcash:` URL was consumed.
+  @discardableResult
+  func handle(urlContexts: Set<UIOpenURLContext>) -> Bool {
+    let strings = urlContexts.compactMap { context -> String? in
+      let url = context.url
+      guard url.scheme?.lowercased() == "zcash" else { return nil }
+      return url.absoluteString
+    }
+    guard !strings.isEmpty else { return false }
+    pendingUris.append(contentsOf: strings)
+    flush()
+    return true
+  }
+
+  private func flush() {
+    guard dartReady, let channel, !pendingUris.isEmpty else { return }
+    let uris = pendingUris
+    pendingUris.removeAll()
+    channel.invokeMethod("onUris", arguments: uris)
   }
 }
