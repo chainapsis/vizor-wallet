@@ -197,6 +197,7 @@ Widget _app({
   MobileSendScanner? openScanner,
   String? initialRecipient,
   MobileSendAddressValidator? validateAddress,
+  MobileSendFeeEstimator? estimateFee,
   bool syncedToTip = true,
 }) {
   final router = GoRouter(
@@ -210,6 +211,7 @@ Widget _app({
               openScanner: openScanner ?? (_) async => null,
               initialRecipient: initialRecipient,
               validateAddress: validateAddress,
+              estimateFee: estimateFee,
             ),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
@@ -1139,6 +1141,55 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
     await tester.pumpAndSettle();
 
+    expect(find.text('Not enough ZEC'), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile_send_confirm')), findsNothing);
+  });
+
+  testWidgets('review re-estimates fee after sync reaches tip', (tester) async {
+    var allowFeeEstimate = false;
+    var feeCalls = 0;
+    await tester.pumpWidget(
+      _app(
+        syncedToTip: false,
+        estimateFee: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required toAddress,
+          required amountZatoshi,
+          memo,
+        }) async {
+          feeCalls++;
+          if (!allowFeeEstimate) {
+            throw StateError('sync_in_progress|wallet is still scanning');
+          }
+          return BigInt.from(10000);
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    // 4.99995 ZEC is below the 5 ZEC spendable fixture, but adding the
+    // 0.0001 ZEC fee makes the final synced total insufficient.
+    await _enterAmount(tester, '4.99995');
+    expect(feeCalls, 1);
+    expect(find.text('Not enough ZEC'), findsNothing);
+    expect(find.text('Finish & review'), findsOneWidget);
+
+    final notifier =
+        ProviderScope.containerOf(
+              tester.element(find.byType(MobileSendScreen)),
+            ).read(syncProvider.notifier)
+            as _FakeSyncNotifier;
+    notifier.setSyncedToTip(true);
+    allowFeeEstimate = true;
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(feeCalls, 2);
     expect(find.text('Not enough ZEC'), findsOneWidget);
     expect(find.byKey(const ValueKey('mobile_send_confirm')), findsNothing);
   });
