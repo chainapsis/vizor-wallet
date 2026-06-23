@@ -24,6 +24,13 @@ import '../widgets/voting_config_settings_panel.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
+const _votingBetaLabelAsset = 'assets/illustrations/voting_beta_label.png';
+const _votingBetaLabelWidth = 42.0;
+const _votingBetaLabelHeight = 24.0;
+const _votingBetaLabelCenterDx = 34.0;
+const _votingBetaLabelTopOffset = -10.0;
+const _votingHeaderTitleHeight = 33.0;
+
 class VotingPollsScreen extends ConsumerStatefulWidget {
   const VotingPollsScreen({super.key});
 
@@ -290,12 +297,30 @@ class _VotingHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Vote',
-                style: AppTypography.headlineLarge.copyWith(
-                  color: context.colors.text.accent,
+              SizedBox(
+                key: const ValueKey('voting_header_title_row'),
+                height: _votingHeaderTitleHeight,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.topCenter,
+                  children: [
+                    Text(
+                      'Vote',
+                      key: const ValueKey('voting_header_title'),
+                      style: AppTypography.headlineLarge.copyWith(
+                        color: context.colors.text.accent,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    Positioned(
+                      top: _votingBetaLabelTopOffset,
+                      child: Transform.translate(
+                        offset: const Offset(_votingBetaLabelCenterDx, 0),
+                        child: const _VotingBetaLabel(),
+                      ),
+                    ),
+                  ],
                 ),
-                textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppSpacing.sm),
               SizedBox(
@@ -319,6 +344,24 @@ class _VotingHeader extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _VotingBetaLabel extends StatelessWidget {
+  const _VotingBetaLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      key: ValueKey('voting_header_beta_label'),
+      width: _votingBetaLabelWidth,
+      height: _votingBetaLabelHeight,
+      child: Image(
+        image: AssetImage(_votingBetaLabelAsset),
+        fit: BoxFit.contain,
+        semanticLabel: 'Beta',
       ),
     );
   }

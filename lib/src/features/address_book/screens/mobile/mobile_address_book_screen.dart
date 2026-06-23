@@ -1450,7 +1450,7 @@ class _RemoveContactSheet extends StatelessWidget {
             expand: true,
             variant: AppButtonVariant.destructive,
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Remove contact'),
+            child: const Text('Remove'),
           ),
           const SizedBox(height: AppSpacing.s),
           MobileSheetCancel(onTap: () => Navigator.of(context).pop(false)),

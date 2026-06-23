@@ -43,7 +43,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Remove contact'), findsWidgets);
+    expect(find.text('Remove contact'), findsOneWidget);
+    expect(find.text('Remove'), findsOneWidget);
     expect(
       find.text('Mike will be removed from your contacts.'),
       findsOneWidget,
