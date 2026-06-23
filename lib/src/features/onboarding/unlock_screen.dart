@@ -211,6 +211,7 @@ class _UnlockContent extends StatelessWidget {
               width: _fieldWidth,
               height: _fieldGroupHeight,
               child: PasswordTextField(
+                key: const ValueKey('unlock_password_field'),
                 label: 'Password',
                 hintText: 'Enter password',
                 showLabel: false,
@@ -234,6 +235,7 @@ class _UnlockContent extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 AppButton(
+                  key: const ValueKey('unlock_submit_button'),
                   onPressed: canSubmit ? onSubmit : null,
                   variant: AppButtonVariant.primary,
                   minWidth: _buttonWidth,

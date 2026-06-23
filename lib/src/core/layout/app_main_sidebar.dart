@@ -430,6 +430,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(
+                      key: const ValueKey('sidebar_sign_out_button'),
                       label: 'Sign out',
                       iconName: AppIcons.logOut,
                       onTap: _isSigningOut ? null : _handleSignOut,
