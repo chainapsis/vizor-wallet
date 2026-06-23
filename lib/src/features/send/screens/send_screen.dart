@@ -527,7 +527,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         if (failure == SendFailureKind.insufficientFunds) {
           _amountError = _insufficientBalanceToCoverFeeText;
         } else if (failure.isWaitingForSync) {
-          _amountError = '';
+          _amountError = 'Still syncing. Try again once sync finishes.';
         } else {
           _amountError = 'Max amount unavailable';
         }

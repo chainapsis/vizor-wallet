@@ -330,6 +330,35 @@ void main() {
     expect(find.text('Max amount unavailable'), findsNothing);
   });
 
+  testWidgets('Max syncing failure asks the user to wait', (tester) async {
+    await _setDesktopViewport(tester);
+    rustApi.estimateSendMaxError = StateError(
+      'sync_in_progress|wallet is still scanning',
+    );
+
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(500000000)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      _editableIn('send_address_field'),
+      _transparentAddress,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.textContaining('Max:'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(rustApi.estimateSendMaxCalls, 1);
+    expect(
+      find.text('Still syncing. Try again once sync finishes.'),
+      findsOneWidget,
+    );
+    expect(find.text('Max amount unavailable'), findsNothing);
+  });
+
   testWidgets('hides imported memo controls for TEX recipients', (
     tester,
   ) async {
@@ -736,6 +765,7 @@ class _RustApiFake implements RustLibApi {
   String? lastEstimateSendMaxToAddress;
   String? lastEstimateSendMaxMemo;
   Completer<BigInt>? estimateFeeCompleter;
+  Object? estimateSendMaxError;
 
   void reset() {
     proposeSendCalls = 0;
@@ -745,6 +775,7 @@ class _RustApiFake implements RustLibApi {
     lastEstimateSendMaxToAddress = null;
     lastEstimateSendMaxMemo = null;
     estimateFeeCompleter = null;
+    estimateSendMaxError = null;
   }
 
   @override
@@ -788,6 +819,8 @@ class _RustApiFake implements RustLibApi {
     estimateSendMaxCalls++;
     lastEstimateSendMaxToAddress = toAddress;
     lastEstimateSendMaxMemo = memo;
+    final error = estimateSendMaxError;
+    if (error != null) throw error;
     return SendMaxEstimateResult(
       amountZatoshi: BigInt.from(499990000),
       feeZatoshi: BigInt.from(10000),
