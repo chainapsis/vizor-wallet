@@ -413,6 +413,18 @@ fn shortfall_is_final(synced_to_tip: bool, sync_running: bool) -> bool {
     synced_to_tip && !sync_running
 }
 
+// Classification is coupled to the *Display* text of librustzcash errors and to the
+// custom error strings produced by this module's send-max builders. Pinned to
+// zcash_client_backend 0.23.0:
+//   - Error::InsufficientFunds => "Insufficient balance (have …, need … including fee)"
+//     (zcash_client_backend/src/data_api/error.rs:208)
+//   - Error::ScanRequired      => "Must scan blocks first"
+//     (zcash_client_backend/src/data_api/error.rs:212)
+//   - build_send_max_proposal  => "Wallet must sync before sending max" /
+//                                 "Insufficient shielded balance to cover fee"
+// If a crate bump changes any of these strings, the regression-canary tests below
+// (send_build_error_code_*) go red. Re-verify the substring matchers before updating the
+// literals — a silent miss here reintroduces the VZR-42 false "insufficient" symptom.
 fn send_build_error_code(detail: &str, shortfall_is_final: bool) -> Option<&'static str> {
     let lower = detail.to_lowercase();
     if lower.contains("scanrequired")
@@ -1471,12 +1483,34 @@ mod tests {
 
     #[test]
     fn send_build_error_code_marks_insufficient_as_syncing_until_synced() {
+        // Representative of the real zcash_client_backend 0.23.0 Display for
+        // Error::InsufficientFunds (data_api/error.rs:208) — exercises the final vs
+        // non-final branch on the actual string prod feeds (not the variant name).
+        // The crate-coupling canary that breaks on a Display *rename* is
+        // `classifier_matches_real_librustzcash_display` below.
+        let insufficient = "Propose failed: Insufficient balance (have 0, need 210000 including fee)";
         assert_eq!(
-            send_build_error_code("Propose failed: InsufficientFunds", false),
+            send_build_error_code(insufficient, false),
             Some(SEND_FAILURE_SYNC_IN_PROGRESS)
         );
         assert_eq!(
-            send_build_error_code("Propose failed: InsufficientFunds", true),
+            send_build_error_code(insufficient, true),
+            Some(SEND_FAILURE_INSUFFICIENT_FUNDS)
+        );
+    }
+
+    #[test]
+    fn send_build_error_code_marks_send_max_insufficient_shortfall() {
+        // Custom string from build_transparent_recipient_send_max_proposal_from_notes; it
+        // carries no code prefix, so estimate_send_max relies on this substring match to map
+        // a mid-sync send-max shortfall to "still syncing" instead of a raw `unknown` error.
+        let detail = "Propose max failed: Insufficient shielded balance to cover fee";
+        assert_eq!(
+            send_build_error_code(detail, false),
+            Some(SEND_FAILURE_SYNC_IN_PROGRESS)
+        );
+        assert_eq!(
+            send_build_error_code(detail, true),
             Some(SEND_FAILURE_INSUFFICIENT_FUNDS)
         );
     }
@@ -1490,6 +1524,7 @@ mod tests {
 
     #[test]
     fn send_build_error_code_marks_scan_required() {
+        // Real zcash_client_backend 0.23.0 Display for Error::ScanRequired (data_api/error.rs:212).
         assert_eq!(
             send_build_error_code("Propose failed: Must scan blocks first", false),
             Some(SEND_FAILURE_SCAN_REQUIRED)
@@ -1512,6 +1547,53 @@ mod tests {
         assert_eq!(
             send_build_error_code("Propose failed: network unavailable", false),
             None
+        );
+    }
+
+    /// Crate-coupling canary: construct the REAL librustzcash error variants and run their
+    /// actual Display output through the classifier. Unlike the literal-based tests above,
+    /// this fails if a zcash_client_backend bump renames the Error::InsufficientFunds /
+    /// Error::ScanRequired Display text so the substring matchers stop firing — which would
+    /// otherwise silently reintroduce the VZR-42 false-"insufficient" symptom in the field.
+    #[test]
+    fn classifier_matches_real_librustzcash_display() {
+        use zcash_client_backend::data_api::error::Error;
+
+        // Every generic only needs to satisfy the Display bound; Infallible does.
+        type ConcreteError =
+            Error<Infallible, Infallible, Infallible, Infallible, Infallible, Infallible>;
+
+        let insufficient: ConcreteError = Error::InsufficientFunds {
+            available: Zatoshis::ZERO,
+            required: Zatoshis::ZERO,
+        };
+        let scan_required: ConcreteError = Error::ScanRequired;
+
+        // The real Display must still contain the tokens send_build_error_code keys on.
+        assert!(
+            insufficient.to_string().to_lowercase().contains("insufficient"),
+            "Error::InsufficientFunds Display changed: {insufficient}"
+        );
+        assert!(
+            scan_required
+                .to_string()
+                .to_lowercase()
+                .contains("must scan blocks first"),
+            "Error::ScanRequired Display changed: {scan_required}"
+        );
+
+        // End-to-end through the production classifier on that real Display text.
+        assert_eq!(
+            send_build_error_code(&format!("Propose failed: {insufficient}"), true),
+            Some(SEND_FAILURE_INSUFFICIENT_FUNDS)
+        );
+        assert_eq!(
+            send_build_error_code(&format!("Propose failed: {insufficient}"), false),
+            Some(SEND_FAILURE_SYNC_IN_PROGRESS)
+        );
+        assert_eq!(
+            send_build_error_code(&format!("Propose failed: {scan_required}"), false),
+            Some(SEND_FAILURE_SCAN_REQUIRED)
         );
     }
 
