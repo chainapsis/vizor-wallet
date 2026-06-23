@@ -954,22 +954,63 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     return 'Enter amount to continue';
   }
 
-  bool _recheckAmountBeforeReview() {
+  Future<bool> _recheckAmountBeforeReview() async {
     final zatoshi = parseZecAmount(_amountText.trim());
     if (zatoshi == null || zatoshi <= BigInt.zero) return false;
     if (!_isSyncedToTip) return true;
 
-    final fee = _feeZatoshi;
-    final required = fee == null ? zatoshi : zatoshi + fee;
-    if (required <= _spendable) return true;
+    final seq = ++_validateSeq;
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return false;
 
-    setState(() => _amountError = 'Not enough ZEC');
-    return false;
+    try {
+      final dbPath = await widget.loadWalletDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
+      if (!mounted || seq != _validateSeq) return false;
+      final fee = await (widget.estimateFee ?? rust_sync.estimateFee)(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        toAddress: _addressController.text.trim(),
+        amountZatoshi: zatoshi,
+        memo: _effectiveMemo.isNotEmpty ? _effectiveMemo : null,
+      );
+      if (!mounted || seq != _validateSeq) return false;
+
+      final required = zatoshi + fee;
+      if (required <= _spendable) {
+        setState(() {
+          _amountError = null;
+          _feeZatoshi = fee;
+        });
+        return true;
+      }
+
+      setState(() {
+        _amountError = _notEnoughZecText;
+        _feeZatoshi = fee;
+      });
+      return false;
+    } catch (e) {
+      if (!mounted || seq != _validateSeq) return false;
+      final failure = classifySendFailure(e);
+      if (failure == SendFailureKind.insufficientFunds) {
+        setState(() => _amountError = _notEnoughZecText);
+        return false;
+      }
+      if (failure.isWaitingForSync) {
+        setState(() => _amountError = null);
+        return true;
+      }
+      log('MobileSend: review amount recheck failed (non-blocking): $e');
+      return true;
+    }
   }
 
-  void _continueToReview() {
+  Future<void> _continueToReview() async {
     if (!_amountReady) return;
-    if (!_recheckAmountBeforeReview()) return;
+    if (!await _recheckAmountBeforeReview()) return;
+    if (!mounted) return;
     _amountFocus.unfocus();
     if (widget.useRouteSteps) {
       unawaited(
