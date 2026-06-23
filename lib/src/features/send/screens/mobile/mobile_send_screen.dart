@@ -427,10 +427,26 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _step == _SendStep.recipient &&
       _addressFocus.hasFocus;
 
+  // Null-safe route-pop check: the go_router context.canPop() extension calls
+  // GoRouter.of, which throws when there's no GoRouter in context (e.g.
+  // widgetbook galleries rendering this screen bare). maybeOf returns null there.
+  bool get _canPopRoute => GoRouter.maybeOf(context)?.canPop() ?? false;
+
   bool get _routePopAllowed =>
       _phase == _SendPhase.compose &&
-      (widget.useRouteSteps || _step == _SendStep.recipient) &&
-      !_isConfirmingSend;
+      !_isConfirmingSend &&
+      switch (_step) {
+        // First step: let the system back gesture pop the route only when
+        // there's actually something to pop; otherwise _handleBack routes to
+        // /home (a deep link can make /send the navigation root).
+        _SendStep.recipient => _canPopRoute,
+        // amount -> recipient is a same-route _step change, so intercept the
+        // pop and let _handleBack do the step transition.
+        _SendStep.amount => false,
+        // Review is a pushed /send/review route under useRouteSteps; let it pop
+        // back to /send. Otherwise _handleBack steps back to amount in-place.
+        _SendStep.review => widget.useRouteSteps,
+      };
 
   bool get _isShieldedAddress =>
       _addressType == 'unified' || _addressType == 'sapling';
@@ -999,13 +1015,20 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     switch (_step) {
       case _SendStep.recipient:
-        context.pop();
-      case _SendStep.amount:
-        _amountFocus.unfocus();
-        if (widget.useRouteSteps) {
+        // First compose step: pop to wherever we came from, or fall back to
+        // /home when there's nothing to pop. A payment-URI deep link can make
+        // /send the navigation root, leaving the back button with nowhere to go.
+        if (_canPopRoute) {
           context.pop();
-          return;
+        } else {
+          context.go('/home');
         }
+      case _SendStep.amount:
+        // Always step back to the recipient step. recipient -> amount is a
+        // same-route _step change (not a push), so back must mirror it instead
+        // of popping the whole /send route. A prefilled-amount deep link lands
+        // here too; this lets the user see/edit the address.
+        _amountFocus.unfocus();
         setState(() => _step = _SendStep.recipient);
       case _SendStep.review:
         if (widget.useRouteSteps) {
