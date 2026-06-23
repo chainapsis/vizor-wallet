@@ -14,6 +14,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/device_owner_auth_provider.dart';
+import '../../../providers/payment_uri_prefill_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/biometric_unlock.dart';
@@ -162,11 +163,20 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         if (!isValid) return;
 
         unlocked = true;
+        // Claim a payment-URI prefill parked while the wallet was locked,
+        // before the post-unlock work runs, so we route to /send (the payment
+        // the user intended) instead of the default /home.
+        final pendingPrefill =
+            ref.read(paymentUriPrefillProvider.notifier).take();
         await accountNotifier.restoreAfterUnlock();
         await syncNotifier.refreshAfterUnlock();
         await syncNotifier.startSyncAnyway();
         if (!mounted) return;
-        context.go('/home');
+        if (pendingPrefill != null) {
+          context.go('/send', extra: pendingPrefill);
+        } else {
+          context.go('/home');
+        }
       });
     } catch (e, st) {
       log('MobileUnlockScreen._submit: ERROR: $e\n$st');

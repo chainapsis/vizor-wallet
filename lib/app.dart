@@ -77,6 +77,7 @@ import 'src/providers/app_security_provider.dart';
 import 'src/providers/linux_update_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
+import 'src/providers/payment_uri_prefill_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
 import 'src/rust/frb_generated.dart';
@@ -890,7 +891,6 @@ class _PaymentUriLinkListener extends ConsumerStatefulWidget {
 class _PaymentUriLinkListenerState
     extends ConsumerState<_PaymentUriLinkListener> {
   StreamSubscription<String>? _subscription;
-  SendPrefillArgs? _pendingPrefill;
   var _paymentSequence = 0;
 
   @override
@@ -919,13 +919,13 @@ class _PaymentUriLinkListenerState
 
   void _handlePaymentUri(String rawUri) {
     try {
-      _pendingPrefill = _prefillFromUri(rawUri);
+      ref.read(paymentUriPrefillProvider.notifier).set(_prefillFromUri(rawUri));
       _schedulePendingDrain();
     } on Zip321ParseException catch (e) {
-      _pendingPrefill = null;
+      ref.read(paymentUriPrefillProvider.notifier).clear();
       _showPaymentUriMessage(e.message);
     } catch (e) {
-      _pendingPrefill = null;
+      ref.read(paymentUriPrefillProvider.notifier).clear();
       log('Payment URI: failed to parse: $e');
       _showPaymentUriMessage('Payment link could not be opened.');
     }
@@ -956,7 +956,7 @@ class _PaymentUriLinkListenerState
   }
 
   void _drainPendingPrefill() {
-    final prefill = _pendingPrefill;
+    final prefill = ref.read(paymentUriPrefillProvider);
     if (prefill == null) return;
 
     final bootstrap = ref.read(appBootstrapProvider);
@@ -969,7 +969,7 @@ class _PaymentUriLinkListenerState
     final wallet = walletAsync.value;
     final hasWallet = wallet?.hasWallet ?? bootstrap.hasWallet;
     if (!hasWallet) {
-      _pendingPrefill = null;
+      ref.read(paymentUriPrefillProvider.notifier).clear();
       widget.router.go('/welcome');
       _showPaymentUriMessage(
         'Set up or import a wallet before opening payment links.',
@@ -979,11 +979,14 @@ class _PaymentUriLinkListenerState
 
     final security = ref.read(appSecurityProvider);
     if (!security.isUnlocked) {
+      // Leave the prefill parked in paymentUriPrefillProvider. The unlock flow
+      // claims it and routes to /send, so the payment intent is not lost when
+      // the link is opened while the wallet is locked.
       widget.router.go('/unlock');
       return;
     }
 
-    _pendingPrefill = null;
+    ref.read(paymentUriPrefillProvider.notifier).clear();
     widget.router.go('/send', extra: prefill);
   }
 
