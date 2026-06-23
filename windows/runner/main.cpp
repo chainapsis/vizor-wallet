@@ -22,7 +22,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // plugins.
   const HRESULT ro_init = ::RoInitialize(RO_INIT_SINGLETHREADED);
   const bool ro_initialized = SUCCEEDED(ro_init);
-  RegisterZcashProtocolHandler();
+  // Conditional: don't steal the zcash: handler from another wallet/channel on
+  // every launch. Install/update hooks (RunVelopackHooks) still claim it.
+  RegisterZcashProtocolHandlerIfUnclaimed();
 
   flutter::DartProject project(L"data");
 

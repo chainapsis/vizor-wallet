@@ -124,3 +124,21 @@ void UnregisterZcashProtocolHandler() {
   ::RegDeleteTreeW(HKEY_CURRENT_USER, kProtocolKeyPath);
   NotifyAssociationChanged();
 }
+
+void RegisterZcashProtocolHandlerIfUnclaimed() {
+  const std::wstring module_path = ToLower(ModuleFileName());
+  if (module_path.empty()) {
+    return;
+  }
+  // Only (re)register at startup when no handler is set yet, or when the
+  // existing handler already points at this install. Registering on every
+  // launch unconditionally would silently steal the zcash: handler back from
+  // another wallet (or another Vizor channel) the user selected. Install and
+  // update hooks still register unconditionally -- that is the intended moment
+  // to claim the handler.
+  const std::wstring command = ToLower(ReadDefaultCommand());
+  if (!command.empty() && command.find(module_path) == std::wstring::npos) {
+    return;
+  }
+  RegisterZcashProtocolHandler();
+}
