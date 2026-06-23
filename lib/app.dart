@@ -4,7 +4,6 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:go_router/go_router.dart';
 import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -85,7 +84,6 @@ void log(String message) => debugPrint('[zcash] $message');
 
 Future<void> initializeZcashWalletRuntime() async {
   WidgetsFlutterBinding.ensureInitialized();
-  FlutterForegroundTask.initCommunicationPort();
   log('runtime: initializing RustLib');
   await RustLib.init();
 

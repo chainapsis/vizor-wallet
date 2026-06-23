@@ -621,31 +621,49 @@ class _BottomInfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = text;
-    return Row(
-      children: [
-        if (iconName != null) ...[
-          AppIcon(
-            iconName!,
-            size: AppIconSize.medium,
-            color: iconColor ?? context.colors.text.secondary,
-          ),
-          const SizedBox(width: AppSpacing.xxs),
-        ],
-        if (label != null)
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelMedium.copyWith(
-                color: context.colors.text.secondary,
+    final trailingWidget = trailing;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final leadingWidth = iconName == null
+            ? 0.0
+            : AppIconSize.medium + AppSpacing.xxs;
+        final maxTrailingWidth = constraints.hasBoundedWidth
+            ? (constraints.maxWidth - leadingWidth)
+                  .clamp(0.0, constraints.maxWidth)
+                  .toDouble()
+            : double.infinity;
+
+        return Row(
+          children: [
+            if (iconName != null) ...[
+              AppIcon(
+                iconName!,
+                size: AppIconSize.medium,
+                color: iconColor ?? context.colors.text.secondary,
               ),
-            ),
-          )
-        else
-          const Spacer(),
-        ?trailing,
-      ],
+              const SizedBox(width: AppSpacing.xxs),
+            ],
+            if (label != null)
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: context.colors.text.secondary,
+                  ),
+                ),
+              )
+            else
+              const Spacer(),
+            if (trailingWidget != null)
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxTrailingWidth),
+                child: trailingWidget,
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -799,6 +817,7 @@ class _GhostIconLabelButton extends StatelessWidget {
           padding: const EdgeInsets.all(AppSpacing.xxs),
           child: Row(
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
               AppIcon(
                 iconName,
@@ -806,10 +825,15 @@ class _GhostIconLabelButton extends StatelessWidget {
                 color: colors.button.ghost.label,
               ),
               const SizedBox(width: AppSpacing.xxs),
-              Text(
-                label,
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.button.ghost.label,
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.button.ghost.label,
+                  ),
                 ),
               ),
             ],
@@ -961,8 +985,10 @@ class _ListRow extends StatelessWidget {
               ),
             ),
           ),
-          const Spacer(),
-          value,
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Align(alignment: Alignment.centerRight, child: value),
+          ),
         ],
       ),
     );
@@ -989,13 +1015,19 @@ class _ValueWithIcon extends StatelessWidget {
         AppSpacing.xxs,
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
           if (text != null)
-            Text(
-              text!,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.accent,
+            Flexible(
+              child: Text(
+                text!,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: AppTypography.labelLarge.copyWith(
+                  color: colors.text.accent,
+                ),
               ),
             ),
           if (iconName != null) ...[
@@ -1055,18 +1087,23 @@ class _StatusChip extends StatelessWidget {
         AppSpacing.xxs,
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
           if (phase == _TxPhase.pending)
             _SpinningIcon(color: color)
           else
             AppIcon(iconName, size: 20, color: color),
           const SizedBox(width: AppSpacing.xxs),
-          Text(
-            text,
-            style: AppTypography.labelLarge.copyWith(
-              fontWeight: FontWeight.w600,
-              color: color,
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.labelLarge.copyWith(
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
             ),
           ),
         ],
