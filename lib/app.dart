@@ -911,9 +911,10 @@ class _PaymentUriLinkListenerState
     ref.listen<AsyncValue<WalletState>>(walletProvider, (_, _) {
       _schedulePendingDrain();
     });
-    ref.listen<AppSecurityState>(appSecurityProvider, (_, _) {
-      _schedulePendingDrain();
-    });
+    // No appSecurityProvider listener: the unlock screens own the post-unlock
+    // navigation for a parked prefill (claim + go to /send). Draining here on
+    // unlock too would race and clobber that navigation. The wallet listener
+    // still covers the loading -> loaded transition.
     return widget.child;
   }
 
@@ -922,10 +923,10 @@ class _PaymentUriLinkListenerState
       ref.read(paymentUriPrefillProvider.notifier).set(_prefillFromUri(rawUri));
       _schedulePendingDrain();
     } on Zip321ParseException catch (e) {
-      ref.read(paymentUriPrefillProvider.notifier).clear();
+      // Do not clear here: a failed parse of THIS link must not wipe a prefill
+      // already parked from an earlier valid link.
       _showPaymentUriMessage(e.message);
     } catch (e) {
-      ref.read(paymentUriPrefillProvider.notifier).clear();
       log('Payment URI: failed to parse: $e');
       _showPaymentUriMessage('Payment link could not be opened.');
     }
@@ -985,6 +986,11 @@ class _PaymentUriLinkListenerState
       widget.router.go('/unlock');
       return;
     }
+
+    // A link that arrives mid-unlock (wallet already unlocked but still on the
+    // unlock screen) is delivered by the unlock flow itself; navigating here
+    // too would clobber it. Defer and let the unlock screen claim it.
+    if (widget.router.state.matchedLocation == '/unlock') return;
 
     ref.read(paymentUriPrefillProvider.notifier).clear();
     widget.router.go('/send', extra: prefill);

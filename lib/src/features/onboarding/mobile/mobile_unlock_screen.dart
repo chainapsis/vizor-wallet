@@ -163,15 +163,15 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         if (!isValid) return;
 
         unlocked = true;
-        // Claim a payment-URI prefill parked while the wallet was locked,
-        // before the post-unlock work runs, so we route to /send (the payment
-        // the user intended) instead of the default /home.
-        final pendingPrefill =
-            ref.read(paymentUriPrefillProvider.notifier).take();
         await accountNotifier.restoreAfterUnlock();
         await syncNotifier.refreshAfterUnlock();
         await syncNotifier.startSyncAnyway();
         if (!mounted) return;
+        // Claim the payment-URI prefill (parked while locked) only now, after
+        // the post-unlock work has succeeded. Claiming earlier would drop the
+        // payment if any of the awaits above threw or this screen unmounted.
+        final pendingPrefill =
+            ref.read(paymentUriPrefillProvider.notifier).takeIfFresh();
         if (pendingPrefill != null) {
           context.go('/send', extra: pendingPrefill);
         } else {
