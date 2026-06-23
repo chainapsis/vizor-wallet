@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
 import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_screen.dart';
+import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_navigation.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
@@ -31,6 +32,7 @@ import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_keysto
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
@@ -192,6 +194,46 @@ void main() {
     expect(find.byType(MobileSendScreen), findsNothing);
     expect(find.byType(MobileHomeScreen), findsOneWidget);
   });
+
+  testWidgets(
+    'a ZIP-321 SendPrefillArgs on /send populates the mobile send screen',
+    (tester) async {
+      final router = _router();
+      await tester.pumpWidget(
+        _app(
+          router,
+          // The amount step's price placeholder shimmers forever while the
+          // live ZEC/USD price is null, which would hang pumpAndSettle.
+          overrides: [zecLiveUsdUnitPriceProvider.overrideWithValue(210)],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      unawaited(
+        router.push<void>(
+          '/send',
+          extra: const SendPrefillArgs(
+            id: 'payment-uri-1',
+            source: 'zcash-uri',
+            address: 'u1routeraddress',
+            amountText: '0.25',
+            memoText: 'coffee',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The mobile /send route must unpack SendPrefillArgs (a ZIP-321 payment
+      // URI) into the recipient + amount + memo, not drop it like a bare
+      // recipient string would.
+      final sendScreen = tester.widget<MobileSendScreen>(
+        find.byType(MobileSendScreen),
+      );
+      expect(sendScreen.initialRecipient, 'u1routeraddress');
+      expect(sendScreen.initialAmount, '0.25');
+      expect(sendScreen.initialMemo, 'coffee');
+    },
+  );
 
   testWidgets('send amount and review routes push Cupertino pages', (
     tester,
