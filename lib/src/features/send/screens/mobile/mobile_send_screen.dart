@@ -434,19 +434,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   bool get _routePopAllowed =>
       _phase == _SendPhase.compose &&
-      !_isConfirmingSend &&
-      switch (_step) {
-        // First step: let the system back gesture pop the route only when
-        // there's actually something to pop; otherwise _handleBack routes to
-        // /home (a deep link can make /send the navigation root).
-        _SendStep.recipient => _canPopRoute,
-        // amount -> recipient is a same-route _step change, so intercept the
-        // pop and let _handleBack do the step transition.
-        _SendStep.amount => false,
-        // Review is a pushed /send/review route under useRouteSteps; let it pop
-        // back to /send. Otherwise _handleBack steps back to amount in-place.
-        _SendStep.review => widget.useRouteSteps,
-      };
+      (widget.useRouteSteps || _step == _SendStep.recipient) &&
+      !_isConfirmingSend;
 
   bool get _isShieldedAddress =>
       _addressType == 'unified' || _addressType == 'sapling';
@@ -1024,11 +1013,20 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           context.go('/home');
         }
       case _SendStep.amount:
-        // Always step back to the recipient step. recipient -> amount is a
-        // same-route _step change (not a push), so back must mirror it instead
-        // of popping the whole /send route. A prefilled-amount deep link lands
-        // here too; this lets the user see/edit the address.
         _amountFocus.unfocus();
+        if (widget.useRouteSteps) {
+          if (_canPopRoute) {
+            // Normal flow: amount is a pushed /send/amount page — pop it back
+            // to the recipient page.
+            context.pop();
+          } else {
+            // A prefilled-amount deep link landed on the amount step of the
+            // root /send route (no page to pop), so popping is a dead end.
+            // Step back to recipient in place; the address is already filled.
+            setState(() => _step = _SendStep.recipient);
+          }
+          return;
+        }
         setState(() => _step = _SendStep.recipient);
       case _SendStep.review:
         if (widget.useRouteSteps) {
