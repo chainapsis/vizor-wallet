@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/features/send/domain/zip321_payment_request.dart';
+import 'package:zcash_wallet/src/core/zcash/zip321_payment_request.dart';
 
 void main() {
   test('parses a CipherPay-style ZIP-321 payment URI', () {
