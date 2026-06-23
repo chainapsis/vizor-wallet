@@ -296,6 +296,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   late final String _sendFlowId = widget.initialSendFlowId ?? newSendFlowId();
 
   var _step = _SendStep.recipient;
+  // True when a ZIP-321 prefill jumped straight to the amount step while the
+  // address is still validating; lets us bounce back to the recipient step if
+  // the prefilled address turns out invalid (see _maybeFallBackToRecipientStep).
+  var _amountJumpPendingAddressCheck = false;
   var _phase = _SendPhase.compose;
   var _isConfirmingSend = false;
 
@@ -347,6 +351,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     if (widget.initialAmountStep || widget.initialAmount != null) {
       _step = widget.initialReview ? _SendStep.review : _SendStep.amount;
+      // A ZIP-321 payment URI can prefill the amount and skip to the amount
+      // step; if the prefilled address validates as invalid, bounce back to the
+      // recipient step instead of letting the user continue past the error.
+      _amountJumpPendingAddressCheck =
+          !widget.initialReview && widget.initialRecipient != null;
       _amountText = widget.initialAmount?.trim() ?? '';
       _amountController.text = _amountText;
       _isMaxMode = widget.initialMaxMode;
@@ -443,13 +452,32 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             address: address,
           );
       if (!mounted || seq != _addressSeq) return;
-      setState(
-        () => _addressType = result.isValid ? result.addressType : 'invalid',
-      );
+      setState(() {
+        _addressType = result.isValid ? result.addressType : 'invalid';
+        _maybeFallBackToRecipientStep();
+      });
     } catch (e) {
       log('MobileSend: address validation error: $e');
       if (!mounted || seq != _addressSeq) return;
-      setState(() => _addressType = 'error');
+      setState(() {
+        _addressType = 'error';
+        _maybeFallBackToRecipientStep();
+      });
+    }
+  }
+
+  /// A ZIP-321 payment URI can jump straight to the amount step with the
+  /// address + amount prefilled. If the prefilled address then validates as
+  /// definitively invalid, fall back to the recipient step so the address error
+  /// is shown instead of letting the user continue past it. Only `'invalid'`
+  /// (validation ran and rejected the address) triggers this — a transient
+  /// `'error'` (validation itself failed, e.g. offline) is left alone and is
+  /// re-checked downstream at review/send. Runs once, for the initial prefill.
+  void _maybeFallBackToRecipientStep() {
+    if (!_amountJumpPendingAddressCheck) return;
+    _amountJumpPendingAddressCheck = false;
+    if (_step == _SendStep.amount && _addressType == 'invalid') {
+      _step = _SendStep.recipient;
     }
   }
 
