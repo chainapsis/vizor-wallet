@@ -271,17 +271,20 @@ pub(crate) fn plan_external_utxo_refresh(
     recent_limit: usize,
     sweep_limit: usize,
 ) -> Result<Vec<TransparentUtxoRefreshBatch>, String> {
-    let external_addresses = projected_external_addresses(addresses);
+    let discovery_addresses = all_external_addresses(addresses);
+    let cached_external_addresses = projected_external_addresses(addresses);
     let mut record = read_compatible_record(db_path, network, account_uuid)?
         .unwrap_or_else(|| empty_record(network, None));
     record.version = CACHE_VERSION;
     record.network = network_cache_key(network).to_string();
     record.dirty = false;
-    record.utxo_checked_heights = preserved_utxo_checked_heights(&record, &external_addresses);
-    record.external_addresses = external_addresses;
+    record.utxo_checked_heights = preserved_utxo_checked_heights(&record, &discovery_addresses);
+    record.external_addresses = cached_external_addresses;
 
     let batches = external_utxo_refresh_batches(
-        &record,
+        &discovery_addresses,
+        &record.utxo_checked_heights,
+        record.utxo_sweep_next_offset,
         account_birthday_height,
         safety_start_height,
         recent_limit,
@@ -307,22 +310,13 @@ pub(crate) fn mark_utxo_refresh_batch_complete(
         Some(record) => record,
         None => return Ok(()),
     };
-    let selected = child_indices.iter().copied().collect::<HashSet<_>>();
-    let known = record
-        .external_addresses
-        .iter()
-        .map(|address| address.child_index)
-        .collect::<HashSet<_>>();
     let mut checked = record
         .utxo_checked_heights
         .iter()
-        .filter(|entry| known.contains(&entry.child_index))
         .map(|entry| (entry.child_index, entry.next_start_height))
         .collect::<BTreeMap<_, _>>();
-    for child_index in selected {
-        if known.contains(&child_index) {
-            checked.insert(child_index, next_start_height);
-        }
+    for child_index in child_indices.iter().copied() {
+        checked.insert(child_index, next_start_height);
     }
     record.utxo_checked_heights = checked
         .into_iter()
@@ -345,6 +339,7 @@ fn write_clean_addresses(
     addresses: &[keys::ExternalTransparentAddress],
     scanned_height: Option<u64>,
 ) -> Result<(), String> {
+    let full_external_addresses = all_external_addresses(addresses);
     let external_addresses = projected_external_addresses(addresses);
     let existing = read_compatible_record(db_path, network, account_uuid)?;
     let (utxo_sweep_next_offset, utxo_checked_heights) = existing
@@ -352,7 +347,7 @@ fn write_clean_addresses(
         .map(|record| {
             (
                 record.utxo_sweep_next_offset,
-                preserved_utxo_checked_heights(record, &external_addresses),
+                preserved_utxo_checked_heights(record, &full_external_addresses),
             )
         })
         .unwrap_or_default();
@@ -370,6 +365,22 @@ fn write_clean_addresses(
             utxo_checked_heights,
         },
     )
+}
+
+fn all_external_addresses(
+    addresses: &[keys::ExternalTransparentAddress],
+) -> Vec<CachedExternalAddress> {
+    let mut external_addresses = addresses
+        .iter()
+        .filter(|address| !address.address.is_empty())
+        .map(|address| CachedExternalAddress {
+            child_index: address.child_index,
+            address: address.address.clone(),
+            has_received: address.has_received,
+        })
+        .collect::<Vec<_>>();
+    external_addresses.sort_by_key(|address| address.child_index);
+    external_addresses
 }
 
 fn projected_external_addresses(
@@ -398,30 +409,19 @@ fn projected_external_addresses(
 }
 
 fn external_utxo_refresh_batches(
-    record: &CacheRecord,
+    addresses: &[CachedExternalAddress],
+    utxo_checked_heights: &[CachedUtxoCheck],
+    utxo_sweep_next_offset: usize,
     account_birthday_height: u64,
     safety_start_height: u64,
     recent_limit: usize,
     sweep_limit: usize,
 ) -> Vec<TransparentUtxoRefreshBatch> {
-    if record.external_addresses.is_empty() {
+    if addresses.is_empty() {
         return Vec::new();
     }
 
-    let latest_index = first_unused_child_index(&record.external_addresses).unwrap_or_else(|| {
-        record
-            .external_addresses
-            .iter()
-            .map(|address| address.child_index)
-            .max()
-            .unwrap_or(0)
-    });
-    let mut eligible = record
-        .external_addresses
-        .iter()
-        .filter(|address| address.child_index <= latest_index)
-        .cloned()
-        .collect::<Vec<_>>();
+    let mut eligible = addresses.to_vec();
     eligible.sort_by_key(|address| std::cmp::Reverse(address.child_index));
 
     let recent = eligible
@@ -435,8 +435,7 @@ fn external_utxo_refresh_batches(
         .cloned()
         .collect::<Vec<_>>();
 
-    let checked_heights = record
-        .utxo_checked_heights
+    let checked_heights = utxo_checked_heights
         .iter()
         .map(|entry| (entry.child_index, entry.next_start_height))
         .collect::<BTreeMap<_, _>>();
@@ -452,7 +451,7 @@ fn external_utxo_refresh_batches(
     }
 
     if !old.is_empty() && sweep_limit > 0 {
-        let offset = record.utxo_sweep_next_offset % old.len();
+        let offset = utxo_sweep_next_offset % old.len();
         let take = sweep_limit.min(old.len());
         let selected = (0..take)
             .map(|i| old[(offset + i) % old.len()].clone())
@@ -511,14 +510,6 @@ fn refresh_batch(
         start_height,
         next_sweep_offset,
     })
-}
-
-fn first_unused_child_index(addresses: &[CachedExternalAddress]) -> Option<u32> {
-    addresses
-        .iter()
-        .filter(|address| !address.has_received)
-        .map(|address| address.child_index)
-        .min()
 }
 
 fn preserved_utxo_checked_heights(
@@ -846,6 +837,91 @@ mod tests {
                 (1, "t1child1", true),
                 (2, "t1child2", false),
             ]
+        );
+    }
+
+    #[test]
+    fn external_utxo_plan_uses_full_gap_window_but_stores_compact_receive_cache() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let addresses = (0..5)
+            .map(|child_index| keys::ExternalTransparentAddress {
+                child_index,
+                address: format!("t1child{child_index}"),
+                has_received: false,
+            })
+            .collect::<Vec<_>>();
+
+        let batches = plan_external_utxo_refresh(
+            db_path,
+            WalletNetwork::Main,
+            "account-1",
+            &addresses,
+            100,
+            150,
+            20,
+            20,
+        )
+        .unwrap();
+
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].child_indices, vec![4, 3, 2, 1, 0]);
+        let record = read_cached_record(db_path, "account-1");
+        let cached = record
+            .external_addresses
+            .iter()
+            .map(|address| {
+                (
+                    address.child_index,
+                    address.address.as_str(),
+                    address.has_received,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(cached, vec![(0, "t1child0", false)]);
+
+        mark_utxo_refresh_batch_complete(
+            db_path,
+            WalletNetwork::Main,
+            "account-1",
+            &batches[0].child_indices,
+            1_000,
+            batches[0].next_sweep_offset,
+        )
+        .unwrap();
+        write_clean_addresses(
+            db_path,
+            WalletNetwork::Main,
+            "account-1",
+            &addresses,
+            Some(42),
+        )
+        .unwrap();
+        let record = read_cached_record(db_path, "account-1");
+        assert_eq!(
+            record
+                .utxo_checked_heights
+                .iter()
+                .map(|entry| (entry.child_index, entry.next_start_height))
+                .collect::<Vec<_>>(),
+            vec![(0, 1_000), (1, 1_000), (2, 1_000), (3, 1_000), (4, 1_000),]
+        );
+
+        let batches = plan_external_utxo_refresh(
+            db_path,
+            WalletNetwork::Main,
+            "account-1",
+            &addresses,
+            100,
+            150,
+            20,
+            20,
+        )
+        .unwrap();
+        assert_eq!(
+            batches[0].start_height,
+            1_000 - TRANSPARENT_UTXO_REQUERY_LOOKBACK
         );
     }
 
