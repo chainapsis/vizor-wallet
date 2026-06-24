@@ -39,6 +39,13 @@ const MAX_MNEMONIC_WORD_COUNT: usize = 24;
 const MNEMONIC_WORD_COUNT_STEP: usize = 3;
 const TRANSPARENT_EXTERNAL_KEY_SCOPE: i64 = 0;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExternalTransparentAddress {
+    pub child_index: u32,
+    pub address: String,
+    pub has_received: bool,
+}
+
 fn map_account_import_error(
     error: SqliteClientError,
     duplicate_message: &str,
@@ -575,6 +582,25 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
     Ok(accounts)
 }
 
+pub fn list_account_uuids_from_db(db_path: &str) -> Result<Vec<String>, String> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
+    let mut stmt = conn
+        .prepare("SELECT uuid FROM accounts ORDER BY id ASC")
+        .map_err(|e| format!("Failed to prepare account UUID query: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, Vec<u8>>(0))
+        .map_err(|e| format!("Failed to list account UUIDs: {e}"))?;
+
+    let mut uuids = Vec::new();
+    for row in rows {
+        let bytes = row.map_err(|e| format!("Failed to read account UUID: {e}"))?;
+        let uuid = uuid::Uuid::from_slice(&bytes)
+            .map_err(|e| format!("Invalid account UUID bytes in DB: {e}"))?;
+        uuids.push(uuid.to_string());
+    }
+    Ok(uuids)
+}
+
 /// Delete an account from the wallet database.
 pub fn delete_account(
     db_path: &str,
@@ -892,38 +918,131 @@ pub fn get_transparent_address_from_db(
 /// expose a new address.
 pub fn get_transparent_receive_address_from_db(
     db_path: &str,
-    _network: WalletNetwork,
+    network: WalletNetwork,
     account_uuid: Option<&str>,
 ) -> Result<String, String> {
+    let addresses =
+        get_external_transparent_receive_addresses_from_db(db_path, network, account_uuid)?;
+    first_unused_external_transparent_address(&addresses)
+        .ok_or_else(|| "No unused external transparent receive address available".to_string())
+}
+
+pub(crate) fn get_external_transparent_receive_addresses_from_db(
+    db_path: &str,
+    _network: WalletNetwork,
+    account_uuid: Option<&str>,
+) -> Result<Vec<ExternalTransparentAddress>, String> {
     let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
     let account_uuid_bytes = resolve_account_uuid_bytes_for_read(&conn, account_uuid)?;
 
-    conn.query_row(
-        r#"
-        SELECT a.cached_transparent_receiver_address
-        FROM addresses a
-        JOIN accounts acct ON acct.id = a.account_id
-        WHERE acct.uuid = :account_uuid
-          AND a.key_scope = :external_scope
-          AND a.transparent_child_index IS NOT NULL
-          AND a.cached_transparent_receiver_address IS NOT NULL
-          AND NOT EXISTS (
-              SELECT 1
-              FROM transparent_received_outputs tro
-              WHERE tro.address_id = a.id
-          )
-        ORDER BY a.transparent_child_index ASC
-        LIMIT 1
-        "#,
-        named_params! {
-            ":account_uuid": account_uuid_bytes.as_slice(),
-            ":external_scope": TRANSPARENT_EXTERNAL_KEY_SCOPE,
-        },
-        |row| row.get::<_, String>(0),
-    )
-    .optional()
-    .map_err(|e| format!("Failed to get transparent receive address: {e}"))?
-    .ok_or_else(|| "No unused external transparent receive address available".to_string())
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT a.transparent_child_index,
+                   a.cached_transparent_receiver_address,
+                   EXISTS (
+                       SELECT 1
+                       FROM transparent_received_outputs tro
+                       WHERE tro.address_id = a.id
+                   ) AS has_received
+            FROM addresses a
+            JOIN accounts acct ON acct.id = a.account_id
+            WHERE acct.uuid = :account_uuid
+              AND a.key_scope = :external_scope
+              AND a.transparent_child_index IS NOT NULL
+              AND a.cached_transparent_receiver_address IS NOT NULL
+            ORDER BY a.transparent_child_index ASC
+            "#,
+        )
+        .map_err(|e| format!("Failed to prepare external transparent address query: {e}"))?;
+
+    let rows = stmt
+        .query_map(
+            named_params! {
+                ":account_uuid": account_uuid_bytes.as_slice(),
+                ":external_scope": TRANSPARENT_EXTERNAL_KEY_SCOPE,
+            },
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)? != 0,
+                ))
+            },
+        )
+        .map_err(|e| format!("Failed to get external transparent addresses: {e}"))?;
+
+    let mut addresses = Vec::new();
+    for row in rows {
+        let (child_index, address, has_received) =
+            row.map_err(|e| format!("Failed to read external transparent address: {e}"))?;
+        let child_index = u32::try_from(child_index)
+            .map_err(|e| format!("Invalid transparent child index {child_index}: {e}"))?;
+        addresses.push(ExternalTransparentAddress {
+            child_index,
+            address,
+            has_received,
+        });
+    }
+
+    Ok(addresses)
+}
+
+pub fn get_recent_transparent_receive_addresses_from_db(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: Option<&str>,
+    limit: u32,
+) -> Result<Vec<String>, String> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    let addresses =
+        get_external_transparent_receive_addresses_from_db(db_path, network, account_uuid)?;
+    Ok(recent_external_transparent_addresses(
+        &addresses,
+        limit.min(100) as usize,
+    ))
+}
+
+pub(crate) fn first_unused_external_transparent_address(
+    addresses: &[ExternalTransparentAddress],
+) -> Option<String> {
+    addresses
+        .iter()
+        .filter(|address| !address.has_received)
+        .min_by_key(|address| address.child_index)
+        .map(|address| address.address.clone())
+}
+
+pub(crate) fn recent_external_transparent_addresses(
+    addresses: &[ExternalTransparentAddress],
+    limit: usize,
+) -> Vec<String> {
+    if limit == 0 {
+        return Vec::new();
+    }
+
+    let Some(latest_index) = addresses
+        .iter()
+        .filter(|address| !address.has_received)
+        .map(|address| address.child_index)
+        .min()
+        .or_else(|| addresses.iter().map(|address| address.child_index).max())
+    else {
+        return Vec::new();
+    };
+
+    let mut recent = addresses
+        .iter()
+        .filter(|address| address.child_index <= latest_index)
+        .collect::<Vec<_>>();
+    recent.sort_by_key(|address| std::cmp::Reverse(address.child_index));
+    recent
+        .into_iter()
+        .take(limit)
+        .map(|address| address.address.clone())
+        .collect()
 }
 
 /// Validate that a wallet database exists and has at least one account.
@@ -1180,6 +1299,71 @@ mod tests {
 
         assert_eq!(receive_address, second_external);
         assert_eq!(second_exposed_after, second_exposed_before);
+    }
+
+    #[test]
+    fn test_get_recent_transparent_receive_addresses_walks_down_from_current_receive() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        let (uuid, _) =
+            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
+                .unwrap();
+
+        let conn = rusqlite::Connection::open(db_path_str).unwrap();
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+        let rows = external_transparent_address_rows(&conn, &uuid);
+        assert!(rows.len() >= 4);
+
+        mark_transparent_address_received(&conn, &uuid, rows[0].0, &rows[0].1, 1);
+        mark_transparent_address_received(&conn, &uuid, rows[1].0, &rows[1].1, 2);
+
+        let recent = get_recent_transparent_receive_addresses_from_db(
+            db_path_str,
+            WalletNetwork::Main,
+            Some(&uuid),
+            3,
+        )
+        .unwrap();
+
+        assert_eq!(
+            recent,
+            vec![rows[2].1.clone(), rows[1].1.clone(), rows[0].1.clone()]
+        );
+    }
+
+    #[test]
+    fn test_get_recent_transparent_receive_addresses_honors_limit() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        let (uuid, _) =
+            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
+                .unwrap();
+
+        let conn = rusqlite::Connection::open(db_path_str).unwrap();
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+        let rows = external_transparent_address_rows(&conn, &uuid);
+        assert!(rows.len() >= 4);
+        mark_transparent_address_received(&conn, &uuid, rows[0].0, &rows[0].1, 1);
+        mark_transparent_address_received(&conn, &uuid, rows[1].0, &rows[1].1, 2);
+        mark_transparent_address_received(&conn, &uuid, rows[2].0, &rows[2].1, 3);
+
+        let recent = get_recent_transparent_receive_addresses_from_db(
+            db_path_str,
+            WalletNetwork::Main,
+            Some(&uuid),
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(recent, vec![rows[3].1.clone(), rows[2].1.clone()]);
     }
 
     #[test]

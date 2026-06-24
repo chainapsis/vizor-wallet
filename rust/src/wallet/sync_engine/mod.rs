@@ -25,6 +25,7 @@ use crate::wallet::{
         SYNC_DB_BUSY_TIMEOUT,
     },
     network::WalletNetwork,
+    transparent_receive_cache,
 };
 
 use {
@@ -715,6 +716,7 @@ async fn repair_anchor_root_mismatch_if_needed(
 
 async fn refresh_utxos(
     client: &mut CompactTxStreamerClient<Channel>,
+    db_data_path: &str,
     db: &mut WalletDatabase,
     network: WalletNetwork,
 ) -> Result<(), SyncError> {
@@ -733,8 +735,26 @@ async fn refresh_utxos(
             .collect();
 
         if !addresses.is_empty() {
-            refresh_transparent_addresses(client, db, addresses, start_height, "transparent UTXOs")
-                .await?;
+            let received_any = refresh_transparent_addresses(
+                client,
+                db,
+                addresses,
+                start_height,
+                "transparent UTXOs",
+            )
+            .await?;
+            if received_any {
+                let account_uuid = account_id.expose_uuid().to_string();
+                if let Err(e) =
+                    transparent_receive_cache::mark_account_dirty(db_data_path, &account_uuid)
+                {
+                    log::warn!(
+                        "transparent receive cache: failed to mark account {} dirty: {}",
+                        account_uuid,
+                        e
+                    );
+                }
+            }
         }
     }
 
@@ -747,9 +767,9 @@ async fn refresh_transparent_addresses(
     addresses: Vec<String>,
     start_height: BlockHeight,
     label: &str,
-) -> Result<(), SyncError> {
+) -> Result<bool, SyncError> {
     if addresses.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
 
     log::info!(
@@ -770,6 +790,7 @@ async fn refresh_transparent_addresses(
         .map_err(|e| SyncError::net(format!("get_address_utxos_stream: {e}")))?
         .into_inner();
 
+    let mut received_any = false;
     while let Some(reply) = stream
         .message()
         .await
@@ -805,9 +826,10 @@ async fn refresh_transparent_addresses(
             db.put_received_transparent_utxo(&output)
                 .map_err(|e| SyncError::db(format!("put_received_transparent_utxo: {e}")))
         })?;
+        received_any = true;
     }
 
-    Ok(())
+    Ok(received_any)
 }
 
 // ==================== Main sync ====================
@@ -967,7 +989,7 @@ async fn run_sync_impl(
         return Ok(());
     }
 
-    refresh_utxos(&mut client, &mut db, network).await?;
+    refresh_utxos(&mut client, db_data_path, &mut db, network).await?;
 
     if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
         log::info!(
@@ -1744,6 +1766,22 @@ async fn run_sync_impl(
         final_scanned_height,
         final_tip_height,
     );
+    match transparent_receive_cache::refresh_all_from_wallet_db(
+        db_data_path,
+        network,
+        Some(final_scanned_height),
+    ) {
+        Ok(refreshed) => log::info!(
+            "[{}] sync: refreshed transparent receive cache ({} accounts)",
+            elapsed(),
+            refreshed
+        ),
+        Err(e) => log::warn!(
+            "[{}] sync: transparent receive cache refresh failed: {}",
+            elapsed(),
+            e
+        ),
+    }
     // Final progress
     let final_progress = SyncProgressEvent {
         scanned_height: final_scanned_height,

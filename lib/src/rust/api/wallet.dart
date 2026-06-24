@@ -225,6 +225,18 @@ Future<String> getTransparentReceiveAddress({
   accountUuid: accountUuid,
 );
 
+Future<List<String>> getRecentTransparentReceiveAddresses({
+  required String dbPath,
+  required String network,
+  String? accountUuid,
+  required int limit,
+}) => RustLib.instance.api.crateApiWalletGetRecentTransparentReceiveAddresses(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  limit: limit,
+);
+
 /// Result of adding an account to an existing wallet.
 class AccountCreationResult {
   final String accountUuid;
