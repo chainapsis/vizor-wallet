@@ -13,7 +13,9 @@ import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
+import '../../../../providers/device_owner_auth_provider.dart';
 import '../../../../providers/router_refresh_provider.dart';
+import '../../../../services/device_owner_auth.dart';
 import '../../../onboarding/mobile/forgot_passcode_sheet.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
@@ -231,7 +233,28 @@ class _MobileChangePasscodeScreenState
     setState(() => _submitting = true);
     final router = GoRouter.of(context);
     try {
-      await resetWalletForForgottenPasscode(ref);
+      final didReset = await resetWalletForForgottenPasscode(ref);
+      if (!mounted) return;
+      if (!didReset) {
+        setState(() {
+          _submitting = false;
+          _entry = '';
+          _error = null;
+        });
+        return;
+      }
+    } on DeviceOwnerAuthException catch (e, st) {
+      log('MobileChangePasscode._resetWallet auth failed: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _entry = '';
+        _error =
+            e.kind == DeviceOwnerAuthErrorKind.unavailable
+                ? kWalletResetDeviceAuthRequiredMessage
+                : kWalletResetDeviceAuthFailedMessage;
+      });
+      return;
     } catch (e, st) {
       log('MobileChangePasscode._resetWallet: ERROR: $e\n$st');
       if (!mounted) return;
