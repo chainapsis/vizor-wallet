@@ -134,7 +134,8 @@ class _MobileSwapReviewScreenState
       swapState.reviewAccountUuid,
     );
     final startBlockedReason =
-        swapReviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
+        sync.isSyncedToTip &&
+            swapReviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
         ? "You don't have enough ZEC for this swap. Try a smaller amount."
         : null;
 

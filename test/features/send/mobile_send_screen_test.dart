@@ -30,6 +30,7 @@ const _invalidAddress = 'not-an-address';
 
 var _proposeSendSucceeds = false;
 Completer<ProposalResult>? _proposeSendCompleter;
+Object? _proposeSendError;
 int _estimateSendMaxCalls = 0;
 String? _lastEstimateSendMaxToAddress;
 String? _lastEstimateSendMaxMemo;
@@ -108,6 +109,8 @@ class _RustApiFake implements RustLibApi {
   }) async {
     final completer = _proposeSendCompleter;
     if (completer != null) return completer.future;
+    final error = _proposeSendError;
+    if (error != null) throw error;
     if (!_proposeSendSucceeds) {
       throw StateError('proposal failed');
     }
@@ -151,10 +154,24 @@ AppBootstrapState _bootstrap({AccountState? accountState}) => AppBootstrapState(
 );
 
 class _FakeSyncNotifier extends SyncNotifier {
+  _FakeSyncNotifier({required this.syncedToTip});
+
+  bool syncedToTip;
+
+  void setSyncedToTip(bool value) {
+    syncedToTip = value;
+    state = AsyncData(_syncState());
+  }
+
   @override
-  Future<SyncState> build() async => SyncState(
+  Future<SyncState> build() async => _syncState();
+
+  SyncState _syncState() => SyncState(
     accountUuid: 'account-1',
     hasAccountScopedData: true,
+    isSyncing: !syncedToTip,
+    scannedHeight: syncedToTip ? 100 : 80,
+    chainTipHeight: 100,
     spendableBalance: BigInt.from(500000000), // 5 ZEC
     totalBalance: BigInt.from(500000000),
   );
@@ -180,18 +197,22 @@ Widget _app({
   MobileSendScanner? openScanner,
   String? initialRecipient,
   MobileSendAddressValidator? validateAddress,
+  MobileSendFeeEstimator? estimateFee,
+  bool syncedToTip = true,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
     routes: [
       GoRoute(
         path: '/send',
-        builder: (_, _) => MobileSendScreen(
-          loadWalletDbPath: () async => '/tmp/zcash-test',
-          openScanner: openScanner ?? (_) async => null,
-          initialRecipient: initialRecipient,
-          validateAddress: validateAddress,
-        ),
+        builder:
+            (_, _) => MobileSendScreen(
+              loadWalletDbPath: () async => '/tmp/zcash-test',
+              openScanner: openScanner ?? (_) async => null,
+              initialRecipient: initialRecipient,
+              validateAddress: validateAddress,
+              estimateFee: estimateFee,
+            ),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
     ],
@@ -201,7 +222,9 @@ Widget _app({
       appBootstrapProvider.overrideWithValue(
         _bootstrap(accountState: accountState),
       ),
-      syncProvider.overrideWith(_FakeSyncNotifier.new),
+      syncProvider.overrideWith(
+        () => _FakeSyncNotifier(syncedToTip: syncedToTip),
+      ),
       zecMarketDataSourceProvider.overrideWithValue(
         const _FakeMarketDataSource(),
       ),
@@ -231,20 +254,22 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
     routes: [
       GoRoute(
         path: '/home',
-        builder: (context, _) => TextButton(
-          key: const ValueKey('mobile_send_open_from_home'),
-          onPressed: () => context.push('/send'),
-          child: const Text('home'),
-        ),
+        builder:
+            (context, _) => TextButton(
+              key: const ValueKey('mobile_send_open_from_home'),
+              onPressed: () => context.push('/send'),
+              child: const Text('home'),
+            ),
       ),
       GoRoute(
         path: '/send',
-        builder: (_, _) => MobileSendScreen(
-          useRouteSteps: true,
-          loadWalletDbPath: () async => '/tmp/zcash-test',
-          openScanner: (_) async => null,
-          estimateFee: estimateFee,
-        ),
+        builder:
+            (_, _) => MobileSendScreen(
+              useRouteSteps: true,
+              loadWalletDbPath: () async => '/tmp/zcash-test',
+              openScanner: (_) async => null,
+              estimateFee: estimateFee,
+            ),
       ),
       GoRoute(
         path: '/send/amount',
@@ -290,20 +315,21 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
       ),
       GoRoute(
         path: '/send/status',
-        builder: (context, _) => TextButton(
-          key: const ValueKey('mobile_send_status_pop'),
-          onPressed: context.canPop() ? () => context.pop() : null,
-          child: Text(
-            context.canPop() ? 'status can pop' : 'status cannot pop',
-          ),
-        ),
+        builder:
+            (context, _) => TextButton(
+              key: const ValueKey('mobile_send_status_pop'),
+              onPressed: context.canPop() ? () => context.pop() : null,
+              child: Text(
+                context.canPop() ? 'status can pop' : 'status cannot pop',
+              ),
+            ),
       ),
     ],
   );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
-      syncProvider.overrideWith(_FakeSyncNotifier.new),
+      syncProvider.overrideWith(() => _FakeSyncNotifier(syncedToTip: true)),
       zecMarketDataSourceProvider.overrideWithValue(
         const _FakeMarketDataSource(),
       ),
@@ -403,6 +429,7 @@ void main() {
   setUp(() {
     _proposeSendSucceeds = false;
     _proposeSendCompleter = null;
+    _proposeSendError = null;
     _estimateSendMaxCalls = 0;
     _lastEstimateSendMaxToAddress = null;
     _lastEstimateSendMaxMemo = null;
@@ -573,18 +600,17 @@ void main() {
 
     await tester.pumpWidget(
       _sendFlowRouterApp(
-        estimateFee:
-            ({
-              required dbPath,
-              required network,
-              required accountUuid,
-              required toAddress,
-              required amountZatoshi,
-              memo,
-            }) async {
-              feeCalls++;
-              return feeCalls == 1 ? BigInt.from(10000) : refreshedFee;
-            },
+        estimateFee: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required toAddress,
+          required amountZatoshi,
+          memo,
+        }) async {
+          feeCalls++;
+          return feeCalls == 1 ? BigInt.from(10000) : refreshedFee;
+        },
       ),
     );
     await tester.pumpAndSettle();
@@ -1080,6 +1106,114 @@ void main() {
     expect(find.text('Finish & review'), findsOneWidget);
   });
 
+  testWidgets('mid-sync spendable shortfall does not block review', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(syncedToTip: false));
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    // 9 ZEC is above the 5 ZEC currently scanned fixture, but sync has not
+    // reached the tip yet, so this is not a final insufficient-funds verdict.
+    await _enterAmount(tester, '9');
+
+    expect(find.text('Not enough ZEC'), findsNothing);
+    expect(find.text('Finish & review'), findsOneWidget);
+  });
+
+  testWidgets('review rechecks amount after sync reaches tip', (tester) async {
+    await tester.pumpWidget(_app(syncedToTip: false));
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    await _enterAmount(tester, '9');
+    expect(find.text('Not enough ZEC'), findsNothing);
+    expect(find.text('Finish & review'), findsOneWidget);
+
+    final notifier =
+        ProviderScope.containerOf(
+              tester.element(find.byType(MobileSendScreen)),
+            ).read(syncProvider.notifier)
+            as _FakeSyncNotifier;
+    notifier.setSyncedToTip(true);
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Not enough ZEC'), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile_send_confirm')), findsNothing);
+  });
+
+  testWidgets('review re-estimates fee after sync reaches tip', (tester) async {
+    var allowFeeEstimate = false;
+    var feeCalls = 0;
+    await tester.pumpWidget(
+      _app(
+        syncedToTip: false,
+        estimateFee: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required toAddress,
+          required amountZatoshi,
+          memo,
+        }) async {
+          feeCalls++;
+          if (!allowFeeEstimate) {
+            throw StateError('sync_in_progress|wallet is still scanning');
+          }
+          return BigInt.from(10000);
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    // 4.99995 ZEC is below the 5 ZEC spendable fixture, but adding the
+    // 0.0001 ZEC fee makes the final synced total insufficient.
+    await _enterAmount(tester, '4.99995');
+    expect(feeCalls, 1);
+    expect(find.text('Not enough ZEC'), findsNothing);
+    expect(find.text('Finish & review'), findsOneWidget);
+
+    final notifier =
+        ProviderScope.containerOf(
+              tester.element(find.byType(MobileSendScreen)),
+            ).read(syncProvider.notifier)
+            as _FakeSyncNotifier;
+    notifier.setSyncedToTip(true);
+    allowFeeEstimate = true;
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(feeCalls, 2);
+    expect(find.text('Not enough ZEC'), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile_send_confirm')), findsNothing);
+  });
+
+  testWidgets('coded syncing propose error stays on review', (tester) async {
+    _proposeSendError = StateError('sync_in_progress|have 5, need 9');
+
+    await tester.pumpWidget(_app(syncedToTip: false));
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester, amount: '9');
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Still syncing. Try again once sync finishes.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Insufficient shielded balance to cover amount and fee.'),
+      findsNothing,
+    );
+  });
+
   testWidgets('the amount step Max action fills the estimated send amount', (
     tester,
   ) async {
@@ -1100,6 +1234,27 @@ void main() {
     expect(find.text('Finish & review'), findsOneWidget);
   });
 
+  testWidgets('Max syncing failure shows syncing copy', (tester) async {
+    _sendMaxEstimateBuilder = ({required toAddress, memo}) {
+      throw StateError('sync_in_progress|wallet is still scanning');
+    };
+
+    await tester.pumpWidget(_app(syncedToTip: false));
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_max_button')));
+    await tester.pumpAndSettle();
+
+    expect(_estimateSendMaxCalls, 1);
+    expect(
+      find.text('Still syncing. Try again once sync finishes.'),
+      findsOneWidget,
+    );
+    expect(find.text('Not enough ZEC'), findsNothing);
+    expect(find.text('Max amount unavailable'), findsNothing);
+  });
+
   testWidgets('Max ignores a stale pending amount fee validation', (
     tester,
   ) async {
@@ -1108,18 +1263,17 @@ void main() {
 
     await tester.pumpWidget(
       _sendFlowRouterApp(
-        estimateFee:
-            ({
-              required dbPath,
-              required network,
-              required accountUuid,
-              required toAddress,
-              required amountZatoshi,
-              memo,
-            }) {
-              feeCalls++;
-              return feeCompleter.future;
-            },
+        estimateFee: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required toAddress,
+          required amountZatoshi,
+          memo,
+        }) {
+          feeCalls++;
+          return feeCompleter.future;
+        },
       ),
     );
     await tester.pumpAndSettle();
@@ -1169,14 +1323,14 @@ void main() {
   testWidgets('route-step max mode recalculates amount when memo changes', (
     tester,
   ) async {
-    _sendMaxEstimateBuilder = ({required toAddress, memo}) =>
-        SendMaxEstimateResult(
-          amountZatoshi: memo == 'thanks!'
-              ? BigInt.from(499980000)
-              : BigInt.from(499990000),
-          feeZatoshi: memo == 'thanks!'
-              ? BigInt.from(20000)
-              : BigInt.from(10000),
+    _sendMaxEstimateBuilder =
+        ({required toAddress, memo}) => SendMaxEstimateResult(
+          amountZatoshi:
+              memo == 'thanks!'
+                  ? BigInt.from(499980000)
+                  : BigInt.from(499990000),
+          feeZatoshi:
+              memo == 'thanks!' ? BigInt.from(20000) : BigInt.from(10000),
           needsSaplingParams: false,
         );
 

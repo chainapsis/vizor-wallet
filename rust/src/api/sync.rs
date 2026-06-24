@@ -651,6 +651,7 @@ pub fn propose_send(
             &to_address,
             amount_zatoshi,
             memo.as_deref(),
+            is_sync_running(),
         )?;
         Ok(ProposalResult {
             proposal_id: r.proposal_id,
@@ -678,6 +679,7 @@ pub fn estimate_fee(
             &to_address,
             amount_zatoshi,
             memo.as_deref(),
+            is_sync_running(),
         )
     })
 }
@@ -698,6 +700,7 @@ pub fn estimate_send_max(
             &account_uuid,
             &to_address,
             memo.as_deref(),
+            is_sync_running(),
         )?;
         Ok(SendMaxEstimateResult {
             amount_zatoshi: r.amount_zatoshi,

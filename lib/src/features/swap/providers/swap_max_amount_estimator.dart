@@ -7,6 +7,7 @@ import '../../../providers/sync_provider.dart';
 import '../../../providers/receive_address_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../../services/send_failure.dart';
 
 final swapMaxAmountEstimatorProvider = Provider<SwapMaxAmountEstimator>((ref) {
   return RustSwapMaxAmountEstimator(ref);
@@ -83,9 +84,7 @@ Future<BigInt> findMaxZecAmountByFeeProbe({
 }
 
 bool _isInsufficientFundsError(Object error) {
-  final msg = error.toString().toLowerCase();
-  return msg.contains('insufficient balance') ||
-      msg.contains('insufficient funds');
+  return classifySendFailure(error) == SendFailureKind.insufficientFunds;
 }
 
 String _shortSwapValue(String? value) {

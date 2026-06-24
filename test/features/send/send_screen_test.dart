@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -328,6 +330,35 @@ void main() {
     expect(find.text('Max amount unavailable'), findsNothing);
   });
 
+  testWidgets('Max syncing failure asks the user to wait', (tester) async {
+    await _setDesktopViewport(tester);
+    rustApi.estimateSendMaxError = StateError(
+      'sync_in_progress|wallet is still scanning',
+    );
+
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(500000000)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      _editableIn('send_address_field'),
+      _transparentAddress,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.textContaining('Max:'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(rustApi.estimateSendMaxCalls, 1);
+    expect(
+      find.text('Still syncing. Try again once sync finishes.'),
+      findsOneWidget,
+    );
+    expect(find.text('Max amount unavailable'), findsNothing);
+  });
+
   testWidgets('hides imported memo controls for TEX recipients', (
     tester,
   ) async {
@@ -344,9 +375,9 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(find.text('Shielded → Shielded'), findsNothing);
     expect(find.text('Shielded → Transparent'), findsNothing);
@@ -419,6 +450,74 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(rustApi.proposeSendCalls, 0);
+  });
+
+  testWidgets('mid-sync spendable shortfall still reaches proposal', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        syncedToTip: false,
+        spendableBalance: BigInt.from(50000000),
+        prefill: const SendPrefillArgs(
+          id: 'mid-sync-shortfall',
+          source: 'ZIP-321',
+          address: _shieldedAddress,
+          amountText: '1.0',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    expect(find.text('Insufficient balance'), findsNothing);
+
+    await tester.tap(find.text('Review'));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(rustApi.proposeSendCalls, 1);
+  });
+
+  testWidgets('fee estimate uses latest spendable balance after sync update', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    rustApi.estimateFeeCompleter = Completer<BigInt>();
+
+    await tester.pumpWidget(
+      _sendHarness(syncedToTip: false, spendableBalance: BigInt.from(50000000)),
+    );
+    await tester.pump();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pump();
+    await tester.enterText(_editableIn('send_amount_field'), '1.0');
+    await tester.pump();
+
+    final notifier =
+        ProviderScope.containerOf(
+              tester.element(find.byType(SendScreen)),
+            ).read(syncProvider.notifier)
+            as _FakeSyncNotifier;
+    notifier.updateSyncState(
+      syncedToTip: true,
+      spendableBalance: BigInt.from(200000000),
+    );
+    await tester.pump();
+
+    rustApi.estimateFeeCompleter!.complete(BigInt.from(10000));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.textContaining('Insufficient'), findsNothing);
+    expect(find.byKey(const ValueKey('send_review_button')), findsOneWidget);
   });
 
   testWidgets('hardware TEX sends are blocked inline before proposal', (
@@ -498,6 +597,7 @@ Widget _sendHarness({
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
   BigInt? transparentBalance,
+  bool syncedToTip = true,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -518,6 +618,7 @@ Widget _sendHarness({
         () => _FakeSyncNotifier(
           spendableBalance: spendableBalance ?? BigInt.from(500000000),
           transparentBalance: transparentBalance ?? BigInt.zero,
+          syncedToTip: syncedToTip,
         ),
       ),
       if (addressBookRepository != null)
@@ -628,15 +729,28 @@ class _FakeSyncNotifier extends SyncNotifier {
   _FakeSyncNotifier({
     required this.spendableBalance,
     required this.transparentBalance,
+    required this.syncedToTip,
   });
 
-  final BigInt spendableBalance;
-  final BigInt transparentBalance;
+  BigInt spendableBalance;
+  BigInt transparentBalance;
+  bool syncedToTip;
+
+  void updateSyncState({BigInt? spendableBalance, bool? syncedToTip}) {
+    this.spendableBalance = spendableBalance ?? this.spendableBalance;
+    this.syncedToTip = syncedToTip ?? this.syncedToTip;
+    state = AsyncData(_syncState());
+  }
 
   @override
-  Future<SyncState> build() async => SyncState(
+  Future<SyncState> build() async => _syncState();
+
+  SyncState _syncState() => SyncState(
     accountUuid: 'account-1',
     hasAccountScopedData: true,
+    isSyncing: !syncedToTip,
+    scannedHeight: syncedToTip ? 100 : 80,
+    chainTipHeight: 100,
     spendableBalance: spendableBalance,
     transparentBalance: transparentBalance,
     totalBalance: spendableBalance + transparentBalance,
@@ -650,6 +764,8 @@ class _RustApiFake implements RustLibApi {
   String? lastProposeMemo;
   String? lastEstimateSendMaxToAddress;
   String? lastEstimateSendMaxMemo;
+  Completer<BigInt>? estimateFeeCompleter;
+  Object? estimateSendMaxError;
 
   void reset() {
     proposeSendCalls = 0;
@@ -658,6 +774,8 @@ class _RustApiFake implements RustLibApi {
     lastProposeMemo = null;
     lastEstimateSendMaxToAddress = null;
     lastEstimateSendMaxMemo = null;
+    estimateFeeCompleter = null;
+    estimateSendMaxError = null;
   }
 
   @override
@@ -685,6 +803,8 @@ class _RustApiFake implements RustLibApi {
     required BigInt amountZatoshi,
     String? memo,
   }) async {
+    final completer = estimateFeeCompleter;
+    if (completer != null) return completer.future;
     return BigInt.from(10000);
   }
 
@@ -699,6 +819,8 @@ class _RustApiFake implements RustLibApi {
     estimateSendMaxCalls++;
     lastEstimateSendMaxToAddress = toAddress;
     lastEstimateSendMaxMemo = memo;
+    final error = estimateSendMaxError;
+    if (error != null) throw error;
     return SendMaxEstimateResult(
       amountZatoshi: BigInt.from(499990000),
       feeZatoshi: BigInt.from(10000),

@@ -136,6 +136,9 @@ pub(crate) struct ShieldTransparentPcztResult {
 }
 
 const SHIELDING_THRESHOLD_ZATOSHI: u64 = 100_000;
+const SEND_FAILURE_SYNC_IN_PROGRESS: &str = "sync_in_progress";
+const SEND_FAILURE_SCAN_REQUIRED: &str = "scan_required";
+const SEND_FAILURE_INSUFFICIENT_FUNDS: &str = "insufficient_funds";
 
 struct RetainAllNotes;
 
@@ -208,6 +211,7 @@ pub fn propose_send(
     to_address: &str,
     amount_zatoshi: u64,
     memo_str: Option<&str>,
+    sync_running: bool,
 ) -> Result<ProposalResult, String> {
     use zcash_protocol::{PoolType, ShieldedProtocol as SP};
 
@@ -237,7 +241,7 @@ pub fn propose_send(
         .map_err(|e| format!("Cannot create payment: {e:?}"))?;
     let request = TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))?;
 
-    let proposal = propose_transfer::<_, _, _, _, Infallible>(
+    let proposal = match propose_transfer::<_, _, _, _, Infallible>(
         &mut db,
         &network,
         account_id,
@@ -246,8 +250,17 @@ pub fn propose_send(
         request,
         ConfirmationsPolicy::default(),
         None,
-    )
-    .map_err(|e| format!("Propose failed: {e}"))?;
+    ) {
+        Ok(proposal) => proposal,
+        Err(e) => {
+            return Err(classify_send_build_error(
+                &db,
+                "Propose failed",
+                e,
+                sync_running,
+            ))
+        }
+    };
 
     let needs_sapling = proposal
         .steps()
@@ -293,6 +306,7 @@ pub fn estimate_fee(
     to_address: &str,
     amount_zatoshi: u64,
     memo_str: Option<&str>,
+    sync_running: bool,
 ) -> Result<u64, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
@@ -316,7 +330,7 @@ pub fn estimate_fee(
         .map_err(|e| format!("Cannot create payment: {e:?}"))?;
     let request = TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))?;
 
-    let proposal = propose_transfer::<_, _, _, _, Infallible>(
+    let proposal = match propose_transfer::<_, _, _, _, Infallible>(
         &mut db,
         &network,
         account_id,
@@ -325,8 +339,17 @@ pub fn estimate_fee(
         request,
         ConfirmationsPolicy::default(),
         None,
-    )
-    .map_err(|e| format!("Propose failed: {e}"))?;
+    ) {
+        Ok(proposal) => proposal,
+        Err(e) => {
+            return Err(classify_send_build_error(
+                &db,
+                "Propose failed",
+                e,
+                sync_running,
+            ))
+        }
+    };
 
     let fee: u64 = proposal
         .steps()
@@ -349,11 +372,89 @@ pub(crate) fn estimate_send_max(
     account_uuid: &str,
     to_address: &str,
     memo_str: Option<&str>,
+    sync_running: bool,
 ) -> Result<SendMaxEstimateResult, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
-    let proposal = build_send_max_proposal(&mut db, network, account_id, to_address, memo_str)?;
+    let proposal = match build_send_max_proposal(&mut db, network, account_id, to_address, memo_str)
+    {
+        Ok(proposal) => proposal,
+        Err(e) => {
+            return Err(classify_send_build_error(
+                &db,
+                "Propose max failed",
+                e,
+                sync_running,
+            ))
+        }
+    };
     summarize_send_max_proposal(&proposal)
+}
+
+fn classify_send_build_error(
+    db: &WalletDatabase,
+    context: &str,
+    error: impl std::fmt::Display,
+    sync_running: bool,
+) -> String {
+    let detail = format!("{context}: {error}");
+    let code = send_build_error_code(
+        &detail,
+        shortfall_is_final(wallet_is_synced_to_tip(db), sync_running),
+    );
+
+    match code {
+        Some(code) => format!("{code}|{detail}"),
+        None => detail,
+    }
+}
+
+fn shortfall_is_final(synced_to_tip: bool, sync_running: bool) -> bool {
+    synced_to_tip && !sync_running
+}
+
+// Classification is coupled to the *Display* text of librustzcash errors and to the
+// custom error strings produced by this module's send-max builders. Pinned to
+// zcash_client_backend 0.23.0:
+//   - Error::InsufficientFunds => "Insufficient balance (have …, need … including fee)"
+//     (zcash_client_backend/src/data_api/error.rs:208)
+//   - Error::ScanRequired      => "Must scan blocks first"
+//     (zcash_client_backend/src/data_api/error.rs:212)
+//   - build_send_max_proposal  => "Wallet must sync before sending max" /
+//                                 "Insufficient shielded balance to cover fee"
+// If a crate bump changes any of these strings, the regression-canary tests below
+// (send_build_error_code_*) go red. Re-verify the substring matchers before updating the
+// literals — a silent miss here reintroduces the VZR-42 false "insufficient" symptom.
+fn send_build_error_code(detail: &str, shortfall_is_final: bool) -> Option<&'static str> {
+    let lower = detail.to_lowercase();
+    if lower.contains("scanrequired")
+        || lower.contains("scan required")
+        || lower.contains("scan_required")
+        || lower.contains("must scan blocks first")
+    {
+        Some(SEND_FAILURE_SCAN_REQUIRED)
+    } else if lower.contains("wallet must sync before sending max") {
+        Some(SEND_FAILURE_SYNC_IN_PROGRESS)
+    } else if lower.contains("insufficient") {
+        Some(if shortfall_is_final {
+            SEND_FAILURE_INSUFFICIENT_FUNDS
+        } else {
+            SEND_FAILURE_SYNC_IN_PROGRESS
+        })
+    } else {
+        None
+    }
+}
+
+fn wallet_is_synced_to_tip(db: &WalletDatabase) -> bool {
+    db.get_wallet_summary(ConfirmationsPolicy::default())
+        .ok()
+        .flatten()
+        .map(|summary| {
+            u32::from(summary.chain_tip_height()) > 0
+                && summary.fully_scanned_height() >= summary.chain_tip_height()
+        })
+        .unwrap_or(false)
 }
 
 /// Dry-run the transparent shielding proposal path without creating or
@@ -1378,6 +1479,122 @@ mod tests {
 
     fn receiver(value: u64, scope: TransparentKeyScope) -> (TransparentKeyOrigin, Balance) {
         (TransparentKeyOrigin::Derived { scope }, balance(value))
+    }
+
+    #[test]
+    fn send_build_error_code_marks_insufficient_as_syncing_until_synced() {
+        // Representative of the real zcash_client_backend 0.23.0 Display for
+        // Error::InsufficientFunds (data_api/error.rs:208) — exercises the final vs
+        // non-final branch on the actual string prod feeds (not the variant name).
+        // The crate-coupling canary that breaks on a Display *rename* is
+        // `classifier_matches_real_librustzcash_display` below.
+        let insufficient = "Propose failed: Insufficient balance (have 0, need 210000 including fee)";
+        assert_eq!(
+            send_build_error_code(insufficient, false),
+            Some(SEND_FAILURE_SYNC_IN_PROGRESS)
+        );
+        assert_eq!(
+            send_build_error_code(insufficient, true),
+            Some(SEND_FAILURE_INSUFFICIENT_FUNDS)
+        );
+    }
+
+    #[test]
+    fn send_build_error_code_marks_send_max_insufficient_shortfall() {
+        // Custom string from build_transparent_recipient_send_max_proposal_from_notes; it
+        // carries no code prefix, so estimate_send_max relies on this substring match to map
+        // a mid-sync send-max shortfall to "still syncing" instead of a raw `unknown` error.
+        let detail = "Propose max failed: Insufficient shielded balance to cover fee";
+        assert_eq!(
+            send_build_error_code(detail, false),
+            Some(SEND_FAILURE_SYNC_IN_PROGRESS)
+        );
+        assert_eq!(
+            send_build_error_code(detail, true),
+            Some(SEND_FAILURE_INSUFFICIENT_FUNDS)
+        );
+    }
+
+    #[test]
+    fn active_sync_keeps_shortfall_non_final_even_when_db_is_synced() {
+        assert!(!shortfall_is_final(true, true));
+        assert!(shortfall_is_final(true, false));
+        assert!(!shortfall_is_final(false, false));
+    }
+
+    #[test]
+    fn send_build_error_code_marks_scan_required() {
+        // Real zcash_client_backend 0.23.0 Display for Error::ScanRequired (data_api/error.rs:212).
+        assert_eq!(
+            send_build_error_code("Propose failed: Must scan blocks first", false),
+            Some(SEND_FAILURE_SCAN_REQUIRED)
+        );
+    }
+
+    #[test]
+    fn send_build_error_code_marks_send_max_sync_required() {
+        assert_eq!(
+            send_build_error_code(
+                "Propose max failed: Wallet must sync before sending max",
+                false
+            ),
+            Some(SEND_FAILURE_SYNC_IN_PROGRESS)
+        );
+    }
+
+    #[test]
+    fn send_build_error_code_leaves_unknown_errors_uncoded() {
+        assert_eq!(
+            send_build_error_code("Propose failed: network unavailable", false),
+            None
+        );
+    }
+
+    /// Crate-coupling canary: construct the REAL librustzcash error variants and run their
+    /// actual Display output through the classifier. Unlike the literal-based tests above,
+    /// this fails if a zcash_client_backend bump renames the Error::InsufficientFunds /
+    /// Error::ScanRequired Display text so the substring matchers stop firing — which would
+    /// otherwise silently reintroduce the VZR-42 false-"insufficient" symptom in the field.
+    #[test]
+    fn classifier_matches_real_librustzcash_display() {
+        use zcash_client_backend::data_api::error::Error;
+
+        // Every generic only needs to satisfy the Display bound; Infallible does.
+        type ConcreteError =
+            Error<Infallible, Infallible, Infallible, Infallible, Infallible, Infallible>;
+
+        let insufficient: ConcreteError = Error::InsufficientFunds {
+            available: Zatoshis::ZERO,
+            required: Zatoshis::ZERO,
+        };
+        let scan_required: ConcreteError = Error::ScanRequired;
+
+        // The real Display must still contain the tokens send_build_error_code keys on.
+        assert!(
+            insufficient.to_string().to_lowercase().contains("insufficient"),
+            "Error::InsufficientFunds Display changed: {insufficient}"
+        );
+        assert!(
+            scan_required
+                .to_string()
+                .to_lowercase()
+                .contains("must scan blocks first"),
+            "Error::ScanRequired Display changed: {scan_required}"
+        );
+
+        // End-to-end through the production classifier on that real Display text.
+        assert_eq!(
+            send_build_error_code(&format!("Propose failed: {insufficient}"), true),
+            Some(SEND_FAILURE_INSUFFICIENT_FUNDS)
+        );
+        assert_eq!(
+            send_build_error_code(&format!("Propose failed: {insufficient}"), false),
+            Some(SEND_FAILURE_SYNC_IN_PROGRESS)
+        );
+        assert_eq!(
+            send_build_error_code(&format!("Propose failed: {scan_required}"), false),
+            Some(SEND_FAILURE_SCAN_REQUIRED)
+        );
     }
 
     #[test]

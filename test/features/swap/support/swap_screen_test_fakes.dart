@@ -23,10 +23,12 @@ class _FakeReceiveAddressService extends ReceiveAddressService {
 class _FakeSwapSyncNotifier extends SyncNotifier {
   _FakeSwapSyncNotifier(
     this.spendableBalance, {
+    this.syncedToTip = true,
     this.recentTransactions = const [],
   });
 
   final BigInt spendableBalance;
+  final bool syncedToTip;
   final List<rust_sync.TransactionInfo> recentTransactions;
   var restartCount = 0;
 
@@ -34,6 +36,9 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
   Future<SyncState> build() async => SyncState(
     accountUuid: 'account-1',
     hasAccountScopedData: true,
+    isSyncing: !syncedToTip,
+    scannedHeight: syncedToTip ? 100 : 50,
+    chainTipHeight: 100,
     spendableBalance: spendableBalance,
     totalBalance: spendableBalance,
     recentTransactions: recentTransactions,
@@ -46,15 +51,18 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
 }
 
 class _FakeSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
-  _FakeSwapMaxAmountEstimator({BigInt? maxZatoshi})
+  _FakeSwapMaxAmountEstimator({BigInt? maxZatoshi, this.error})
     : maxZatoshi = maxZatoshi ?? BigInt.zero;
 
   final BigInt maxZatoshi;
+  final Object? error;
   final requests = <String>[];
 
   @override
   Future<BigInt> estimateMaxZecSellAmount({required String accountUuid}) async {
     requests.add(accountUuid);
+    final error = this.error;
+    if (error != null) throw error;
     return maxZatoshi;
   }
 }
