@@ -22,11 +22,16 @@ class DeviceOwnerAuthException implements Exception {
 /// The platform prompt only proves that the current OS user can satisfy the
 /// device credential / local authentication challenge.
 class DeviceOwnerAuth {
-  DeviceOwnerAuth({@visibleForTesting MethodChannel? channel})
-    : _channel =
-          channel ?? const MethodChannel('com.zcash.wallet/device_owner_auth');
+  DeviceOwnerAuth({
+    @visibleForTesting MethodChannel? channel,
+    @visibleForTesting bool? requiresAppProvidedCredentialOverride,
+  }) : _channel =
+           channel ?? const MethodChannel('com.zcash.wallet/device_owner_auth'),
+       _requiresAppProvidedCredentialOverride =
+           requiresAppProvidedCredentialOverride;
 
   final MethodChannel _channel;
+  final bool? _requiresAppProvidedCredentialOverride;
 
   bool get _platformSupported =>
       !kIsWeb &&
@@ -36,11 +41,26 @@ class DeviceOwnerAuth {
           Platform.isLinux ||
           Platform.isWindows);
 
+  /// Whether the app must collect the OS credential itself before calling
+  /// [verify], instead of the OS presenting its own prompt.
+  ///
+  /// True only on Windows: there is no Windows consent API that requires the
+  /// device PIN/password while excluding Windows Hello biometrics, so the reset
+  /// gate renders its own password field and we validate the typed Windows
+  /// account password via `LogonUser` (which a biometric can never satisfy).
+  /// iOS/macOS/Android/Linux present a native passcode prompt instead, so
+  /// [verify] is called without a [password].
+  bool get requiresAppProvidedCredential =>
+      _requiresAppProvidedCredentialOverride ?? (!kIsWeb && Platform.isWindows);
+
   /// Returns true only when the OS confirms the device owner.
   ///
   /// A user cancellation returns false. Missing platform support, missing
   /// device credentials, or platform errors throw [DeviceOwnerAuthException].
-  Future<bool> verify({required String reason}) async {
+  ///
+  /// [password] is only consumed when [requiresAppProvidedCredential] is true
+  /// (Windows); on the OS-prompt platforms it is ignored.
+  Future<bool> verify({required String reason, String? password}) async {
     if (!_platformSupported) {
       throw const DeviceOwnerAuthException(
         DeviceOwnerAuthErrorKind.unavailable,
@@ -48,8 +68,11 @@ class DeviceOwnerAuth {
     }
 
     try {
-      return await _channel.invokeMethod<bool>('verify', {'reason': reason}) ==
-          true;
+      final args = <String, Object?>{'reason': reason};
+      if (password != null) {
+        args['password'] = password;
+      }
+      return await _channel.invokeMethod<bool>('verify', args) == true;
     } on MissingPluginException {
       throw const DeviceOwnerAuthException(
         DeviceOwnerAuthErrorKind.unavailable,

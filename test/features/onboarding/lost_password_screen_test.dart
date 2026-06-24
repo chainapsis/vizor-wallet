@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/lost_password_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/forgot_passcode_sheet.dart';
+import 'package:zcash_wallet/src/features/onboarding/windows_account_password_dialog.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/device_owner_auth_provider.dart';
@@ -14,16 +15,23 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/services/device_owner_auth.dart';
 
 class _FakeDeviceOwnerAuth extends DeviceOwnerAuth {
-  _FakeDeviceOwnerAuth({required this.result});
+  _FakeDeviceOwnerAuth({
+    required this.result,
+    bool requiresAppProvidedCredential = false,
+  }) : super(
+         requiresAppProvidedCredentialOverride: requiresAppProvidedCredential,
+       );
 
   final bool result;
   var calls = 0;
   String? lastReason;
+  String? lastPassword;
 
   @override
-  Future<bool> verify({required String reason}) async {
+  Future<bool> verify({required String reason, String? password}) async {
     calls += 1;
     lastReason = reason;
+    lastPassword = password;
     return result;
   }
 }
@@ -32,7 +40,7 @@ class _ThrowingDeviceOwnerAuth extends DeviceOwnerAuth {
   var calls = 0;
 
   @override
-  Future<bool> verify({required String reason}) async {
+  Future<bool> verify({required String reason, String? password}) async {
     calls += 1;
     throw const DeviceOwnerAuthException(
       DeviceOwnerAuthErrorKind.unavailable,
@@ -225,6 +233,180 @@ void main() {
     expect(accountNotifier.resets, 1);
     expect(syncNotifier.cachedPathClears, 1);
     expect(biometricNotifier.disables, 1);
+  });
+
+  testWidgets('windows account-password dialog confirms on correct password', (
+    tester,
+  ) async {
+    final auth = _FakeDeviceOwnerAuth(
+      result: true,
+      requiresAppProvidedCredential: true,
+    );
+    bool? dialogResult;
+
+    await tester.pumpWidget(
+      AppTheme(
+        data: AppThemeData.light,
+        child: ProviderScope(
+          overrides: [deviceOwnerAuthProvider.overrideWithValue(auth)],
+          child: MaterialApp(
+            home: Builder(
+              builder:
+                  (context) => Center(
+                    child: TextButton(
+                      onPressed: () async {
+                        dialogResult = await showWindowsAccountPasswordDialog(
+                          context,
+                        );
+                      },
+                      child: const Text('open'),
+                    ),
+                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.text('Confirm reset Vizor'), findsOneWidget);
+
+    await tester.enterText(find.byType(EditableText), 'hunter2');
+    await tester.tap(find.text('Confirm reset'));
+    await tester.pumpAndSettle();
+
+    expect(auth.calls, 1);
+    expect(auth.lastPassword, 'hunter2');
+    expect(dialogResult, isTrue);
+    expect(find.text('Confirm reset Vizor'), findsNothing);
+  });
+
+  testWidgets('windows account-password dialog returns false on cancel', (
+    tester,
+  ) async {
+    final auth = _FakeDeviceOwnerAuth(
+      result: true,
+      requiresAppProvidedCredential: true,
+    );
+    bool? dialogResult;
+
+    await tester.pumpWidget(
+      AppTheme(
+        data: AppThemeData.light,
+        child: ProviderScope(
+          overrides: [deviceOwnerAuthProvider.overrideWithValue(auth)],
+          child: MaterialApp(
+            home: Builder(
+              builder:
+                  (context) => Center(
+                    child: TextButton(
+                      onPressed: () async {
+                        dialogResult = await showWindowsAccountPasswordDialog(
+                          context,
+                        );
+                      },
+                      child: const Text('open'),
+                    ),
+                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(auth.calls, 0);
+    expect(dialogResult, isFalse);
+  });
+
+  testWidgets('windows account-password dialog shows error on wrong password', (
+    tester,
+  ) async {
+    final auth = _FakeDeviceOwnerAuth(
+      result: false,
+      requiresAppProvidedCredential: true,
+    );
+
+    await tester.pumpWidget(
+      AppTheme(
+        data: AppThemeData.light,
+        child: ProviderScope(
+          overrides: [deviceOwnerAuthProvider.overrideWithValue(auth)],
+          child: MaterialApp(
+            home: Builder(
+              builder:
+                  (context) => Center(
+                    child: TextButton(
+                      onPressed:
+                          () async =>
+                              showWindowsAccountPasswordDialog(context),
+                      child: const Text('open'),
+                    ),
+                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(EditableText), 'wrong');
+    await tester.tap(find.text('Confirm reset'));
+    await tester.pumpAndSettle();
+
+    expect(auth.calls, 1);
+    expect(find.text('Incorrect password. Try again.'), findsOneWidget);
+    // The dialog stays open so the user can retry.
+    expect(find.text('Confirm reset Vizor'), findsOneWidget);
+  });
+
+  testWidgets('lost-password on Windows uses the account-password dialog', (
+    tester,
+  ) async {
+    final auth = _FakeDeviceOwnerAuth(
+      result: true,
+      requiresAppProvidedCredential: true,
+    );
+    var resetCalls = 0;
+
+    tester.view.physicalSize = const Size(1080, 720);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      AppTheme(
+        data: AppThemeData.light,
+        child: ProviderScope(
+          overrides: [deviceOwnerAuthProvider.overrideWithValue(auth)],
+          child: MaterialApp(
+            home: LostPasswordScreen(
+              initialCountdownSeconds: 0,
+              countdownEnabled: false,
+              onReset: () async => resetCalls += 1,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Reset Vizor'));
+    await tester.pumpAndSettle();
+    // Windows takes the in-app password dialog, never an OS biometric prompt.
+    expect(find.text('Confirm reset Vizor'), findsOneWidget);
+
+    await tester.enterText(find.byType(EditableText), 'hunter2');
+    await tester.tap(find.text('Confirm reset'));
+    await tester.pumpAndSettle();
+
+    expect(auth.lastPassword, 'hunter2');
+    expect(resetCalls, 1);
   });
 }
 

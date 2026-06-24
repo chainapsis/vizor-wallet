@@ -2,11 +2,88 @@
 
 #include <flutter/standard_method_codec.h>
 #include <shellapi.h>
+#include <windows.h>
+#include <lmcons.h>
 
 #include <optional>
+#include <string>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "utils.h"
 #include "velopack_update.h"
+
+namespace {
+
+std::wstring StringArg(const flutter::EncodableValue* arguments,
+                       const char* key) {
+  if (arguments == nullptr ||
+      !std::holds_alternative<flutter::EncodableMap>(*arguments)) {
+    return std::wstring();
+  }
+  const auto& map = std::get<flutter::EncodableMap>(*arguments);
+  const auto it = map.find(flutter::EncodableValue(std::string(key)));
+  if (it == map.end() || !std::holds_alternative<std::string>(it->second)) {
+    return std::wstring();
+  }
+  return Utf16FromUtf8(std::get<std::string>(it->second));
+}
+
+// Passcode/password-only by design: this NEVER invokes Windows Hello. There is
+// no Windows consent API that requires the device password while excluding Hello
+// biometrics, so the reset gate collects the Windows account password in the
+// Flutter UI and we validate it here with LogonUserW. LogonUserW consumes a
+// plaintext password and can never be satisfied by a face/fingerprint, so the
+// biometrics-excluded guarantee holds by construction.
+void VerifyDeviceOwner(
+    std::wstring password,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  wchar_t username[UNLEN + 1];
+  DWORD username_length = UNLEN + 1;
+  if (!::GetUserNameW(username, &username_length)) {
+    result->Error("failed", "Could not resolve the current Windows user.");
+    return;
+  }
+
+  HANDLE token = nullptr;
+  // L"." validates against the local account database only.
+  const BOOL ok =
+      ::LogonUserW(username, L".", password.c_str(), LOGON32_LOGON_NETWORK,
+                   LOGON32_PROVIDER_DEFAULT, &token);
+  const DWORD error = ok ? ERROR_SUCCESS : ::GetLastError();
+  if (token != nullptr) {
+    ::CloseHandle(token);
+  }
+  if (!password.empty()) {
+    ::SecureZeroMemory(password.data(), password.size() * sizeof(wchar_t));
+  }
+
+  if (ok) {
+    result->Success(flutter::EncodableValue(true));
+    return;
+  }
+  switch (error) {
+    case ERROR_LOGON_FAILURE:
+    case ERROR_PASSWORD_EXPIRED:
+    case ERROR_INVALID_LOGON_HOURS:
+      // Wrong / unusable password — let the user retry.
+      result->Success(flutter::EncodableValue(false));
+      return;
+    case ERROR_ACCOUNT_RESTRICTION:
+    case ERROR_ACCOUNT_DISABLED:
+    case ERROR_NO_SUCH_USER:
+      // No validatable account password: blank-password local account, or a
+      // passwordless / Microsoft-account sign-in. The Dart layer surfaces a
+      // graceful "can't verify" state instead of a hard failure.
+      result->Error("unavailable",
+                    "This Windows account can't be verified by password.");
+      return;
+    default:
+      result->Error("failed", "Device authentication failed.");
+      return;
+  }
+}
+
+}  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -46,6 +123,20 @@ bool FlutterWindow::OnCreate() {
             SW_SHOWNORMAL));
         result->Success(flutter::EncodableValue(shell_result > 32));
       });
+  device_owner_auth_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "com.zcash.wallet/device_owner_auth",
+          &flutter::StandardMethodCodec::GetInstance());
+  device_owner_auth_channel_->SetMethodCallHandler(
+      [](const auto& call, auto result) {
+        if (call.method_name() != "verify") {
+          result->NotImplemented();
+          return;
+        }
+        VerifyDeviceOwner(StringArg(call.arguments(), "password"),
+                          std::move(result));
+      });
   velopack_update_channel_ =
       CreateVelopackUpdateChannel(flutter_controller_->engine()->messenger());
 
@@ -66,6 +157,7 @@ bool FlutterWindow::OnCreate() {
 void FlutterWindow::OnDestroy() {
   if (flutter_controller_) {
     camera_permission_channel_.reset();
+    device_owner_auth_channel_.reset();
     velopack_update_channel_.reset();
     flutter_controller_ = nullptr;
   }

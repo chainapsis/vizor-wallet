@@ -14,6 +14,7 @@ import '../../providers/device_owner_auth_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../services/device_owner_auth.dart';
 import 'shared/onboarding_auth_shell.dart';
+import 'windows_account_password_dialog.dart';
 
 class LostPasswordScreen extends ConsumerStatefulWidget {
   const LostPasswordScreen({
@@ -84,7 +85,7 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
     });
 
     try {
-      final verified = await verifyDeviceOwnerForWalletReset(ref);
+      final verified = await _verifyDeviceOwner();
       if (!mounted) return;
       if (!verified) {
         setState(() {
@@ -123,6 +124,20 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
         _isResetting = false;
       });
     }
+  }
+
+  /// Proves device ownership before wiping the wallet.
+  ///
+  /// On iOS/macOS/Android/Linux the OS shows its own passcode prompt. On
+  /// Windows there is no consent API that excludes Windows Hello, so we collect
+  /// the Windows account password ourselves and validate it via LogonUser; that
+  /// dialog reports its own inline errors and resolves to false on cancel.
+  Future<bool> _verifyDeviceOwner() {
+    final auth = ref.read(deviceOwnerAuthProvider);
+    if (auth.requiresAppProvidedCredential) {
+      return showWindowsAccountPasswordDialog(context);
+    }
+    return verifyDeviceOwnerForWalletReset(ref);
   }
 
   Future<void> _resetWallet() async {
