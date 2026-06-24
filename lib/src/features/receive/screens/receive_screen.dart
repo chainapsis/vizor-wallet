@@ -26,6 +26,14 @@ import '../widgets/receive_address_widgets.dart';
 const _renewShieldedAddressErrorMessage =
     "We couldn't refresh your shielded address. Try again, or use your current one.";
 
+bool _didSyncAttemptEnd(SyncState previous, SyncState next) {
+  final completedAt = next.lastSyncCompletedAt;
+  final failedAt = next.lastSyncFailedAt;
+
+  return (completedAt != null && completedAt != previous.lastSyncCompletedAt) ||
+      (failedAt != null && failedAt != previous.lastSyncFailedAt);
+}
+
 class ReceiveScreen extends ConsumerStatefulWidget {
   const ReceiveScreen({super.key});
 
@@ -285,10 +293,9 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     ref.listen(syncProvider, (previous, next) {
       final previousState = previous?.asData?.value;
       final nextState = next.asData?.value;
-      final completedAt = nextState?.lastSyncCompletedAt;
       if (previousState != null &&
-          completedAt != null &&
-          completedAt != previousState.lastSyncCompletedAt) {
+          nextState != null &&
+          _didSyncAttemptEnd(previousState, nextState)) {
         unawaited(_refreshTransparentReceiveAddressAfterSync());
       }
     });
