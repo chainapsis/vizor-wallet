@@ -614,7 +614,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
     final infoItems = receiveAddressInfoItems(type, touchUi: false);
     final heights = _isShielded
         ? const [63.0, 63.0, 63.0]
-        : const [42.0, 84.0, 105.0];
+        : const [42.0, 84.0, 105.0, 105.0];
     final items = [
       for (var i = 0; i < infoItems.length; i++)
         _InfoItemData(
@@ -631,7 +631,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
             : 'receive_transparent_info_modal',
       ),
       width: 312,
-      height: _isShielded ? 382 : 403,
+      height: _isShielded ? 382 : 516,
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
       decoration: BoxDecoration(
         color: colors.background.ground,
@@ -681,7 +681,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           SizedBox(
             width: 280,
-            height: _isShielded ? 205 : 247,
+            height: _isShielded ? 205 : 360,
             child: Column(
               children: [
                 for (var i = 0; i < items.length; i++) ...[

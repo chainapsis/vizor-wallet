@@ -1012,6 +1012,12 @@ class _ReceiveInfoModal extends StatelessWidget {
                   'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.',
             ),
             _InfoItemData(
+              iconName: AppIcons.renew,
+              height: 105,
+              text:
+                  'After this address receives ZEC and Vizor syncs, your next transparent address will automatically change. Previous addresses still belong to this wallet.',
+            ),
+            _InfoItemData(
               iconName: AppIcons.shieldAsset,
               height: 105,
               text:
@@ -1026,7 +1032,7 @@ class _ReceiveInfoModal extends StatelessWidget {
             : 'receive_preview_transparent_info_modal',
       ),
       width: 312,
-      height: isShielded ? 382 : 403,
+      height: isShielded ? 382 : 516,
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
       decoration: BoxDecoration(
         color: colors.background.ground,
@@ -1076,7 +1082,7 @@ class _ReceiveInfoModal extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           SizedBox(
             width: 280,
-            height: isShielded ? 205 : 247,
+            height: isShielded ? 205 : 360,
             child: Column(
               children: [
                 for (var i = 0; i < items.length; i++) ...[

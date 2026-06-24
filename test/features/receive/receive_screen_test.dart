@@ -249,6 +249,42 @@ void main() {
     );
   });
 
+  testWidgets('explains transparent address rotation and shielding', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_receiveHarness());
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.text('Transparent'));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(_findAppIcon(AppIcons.help));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('Transparent address'), findsOneWidget);
+    expect(
+      find.textContaining('next transparent address will automatically change'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Vizor will guide you to shield the balance'),
+      findsOneWidget,
+    );
+    expect(_findAppIcon(AppIcons.renew), findsOneWidget);
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('receive_transparent_info_modal')),
+      ),
+      const Size(312, 516),
+    );
+  });
+
   testWidgets('receive info modal does not block sidebar navigation', (
     tester,
   ) async {

@@ -317,11 +317,31 @@ void main() {
       findsOneWidget,
     );
     expect(
+      find.textContaining(
+        'next transparent address will automatically change',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(
+        'Vizor will guide you to shield the balance',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+    expect(
       find.byWidgetPredicate(
         (widget) =>
             widget is AppIcon && widget.name == AppIcons.shieldKeyholeOutline,
       ),
       findsOneWidget,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.renew,
+      ),
+      findsAtLeastNWidgets(1),
     );
   });
 

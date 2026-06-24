@@ -31,7 +31,7 @@ class ReceiveAddressInfoSheet extends StatelessWidget {
     final colors = context.colors;
     final items = receiveAddressInfoItems(type, touchUi: true);
     final isShielded = type == ReceiveAddressType.shielded;
-    final itemMaxLines = isShielded ? const [3, 3, 3] : const [2, 4, 4];
+    final itemMaxLines = isShielded ? const [3, 3, 3] : const [2, 4, 4, 4];
 
     return Stack(
       children: [
