@@ -540,16 +540,164 @@ class _BalanceCard extends StatelessWidget {
                 ],
               ),
             ),
-            if (hasTransparentBalance)
-              _MobileTransparentBalanceStrip(
-                key: const ValueKey('mobile_home_transparent_balance_strip'),
-                balanceText: transparentBalanceText,
-                canShieldBalance: canShieldBalance,
-                isShieldingBalance: isShieldingBalance,
-                privacyModeEnabled: privacyModeEnabled,
-                onShieldBalancePressed: onShieldBalancePressed,
-              ),
+            _AnimatedMobileTransparentBalanceStrip(
+              visible: hasTransparentBalance,
+              balanceText: transparentBalanceText,
+              canShieldBalance: canShieldBalance,
+              isShieldingBalance: isShieldingBalance,
+              privacyModeEnabled: privacyModeEnabled,
+              onShieldBalancePressed: onShieldBalancePressed,
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+const _mobileTransparentBalanceStripHeight = 57.0;
+const _mobileTransparentBalanceMotionDuration = Duration(milliseconds: 280);
+const _mobileTransparentBalanceMotionReverseDuration = Duration(
+  milliseconds: 240,
+);
+
+class _AnimatedMobileTransparentBalanceStrip extends StatefulWidget {
+  const _AnimatedMobileTransparentBalanceStrip({
+    required this.visible,
+    required this.balanceText,
+    required this.canShieldBalance,
+    required this.isShieldingBalance,
+    required this.privacyModeEnabled,
+    required this.onShieldBalancePressed,
+  });
+
+  final bool visible;
+  final String balanceText;
+  final bool canShieldBalance;
+  final bool isShieldingBalance;
+  final bool privacyModeEnabled;
+  final VoidCallback onShieldBalancePressed;
+
+  @override
+  State<_AnimatedMobileTransparentBalanceStrip> createState() =>
+      _AnimatedMobileTransparentBalanceStripState();
+}
+
+class _AnimatedMobileTransparentBalanceStripState
+    extends State<_AnimatedMobileTransparentBalanceStrip>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _sizeFactor;
+  late final Animation<double> _opacity;
+  late final Animation<Offset> _offset;
+
+  late String _balanceText;
+  late bool _canShieldBalance;
+  late bool _isShieldingBalance;
+  late bool _privacyModeEnabled;
+  late VoidCallback _onShieldBalancePressed;
+  var _hasCachedStrip = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: _mobileTransparentBalanceMotionDuration,
+      reverseDuration: _mobileTransparentBalanceMotionReverseDuration,
+      value: widget.visible ? 1.0 : 0.0,
+    )..addStatusListener(_handleAnimationStatus);
+    final curve = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    _sizeFactor = curve;
+    _opacity = CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.2, 1.0, curve: Curves.easeOut),
+      reverseCurve: Curves.easeIn,
+    );
+    _offset = Tween<Offset>(
+      begin: const Offset(0, -0.14),
+      end: Offset.zero,
+    ).animate(curve);
+    if (widget.visible) {
+      _cacheVisibleStrip();
+      _hasCachedStrip = true;
+    }
+  }
+
+  @override
+  void didUpdateWidget(
+    covariant _AnimatedMobileTransparentBalanceStrip oldWidget,
+  ) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.visible) {
+      setState(() {
+        _cacheVisibleStrip();
+        _hasCachedStrip = true;
+      });
+      unawaited(_controller.forward());
+      return;
+    }
+
+    if (oldWidget.visible && !widget.visible) {
+      unawaited(_controller.reverse());
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeStatusListener(_handleAnimationStatus)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _cacheVisibleStrip() {
+    _balanceText = widget.balanceText;
+    _canShieldBalance = widget.canShieldBalance;
+    _isShieldingBalance = widget.isShieldingBalance;
+    _privacyModeEnabled = widget.privacyModeEnabled;
+    _onShieldBalancePressed = widget.onShieldBalancePressed;
+  }
+
+  void _handleAnimationStatus(AnimationStatus status) {
+    if (status != AnimationStatus.dismissed ||
+        widget.visible ||
+        !_hasCachedStrip) {
+      return;
+    }
+    setState(() => _hasCachedStrip = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_hasCachedStrip && !widget.visible && _controller.isDismissed) {
+      return const SizedBox.shrink();
+    }
+
+    return ClipRect(
+      key: const ValueKey('mobile_home_transparent_balance_strip'),
+      child: SizeTransition(
+        sizeFactor: _sizeFactor,
+        axisAlignment: -1,
+        child: FadeTransition(
+          opacity: _opacity,
+          child: SlideTransition(
+            position: _offset,
+            child: IgnorePointer(
+              ignoring: !widget.visible,
+              child: _MobileTransparentBalanceStrip(
+                balanceText: _balanceText,
+                canShieldBalance: _canShieldBalance,
+                isShieldingBalance: _isShieldingBalance,
+                privacyModeEnabled: _privacyModeEnabled,
+                onShieldBalancePressed: _onShieldBalancePressed,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -563,7 +711,6 @@ class _MobileTransparentBalanceStrip extends StatelessWidget {
     required this.isShieldingBalance,
     required this.privacyModeEnabled,
     required this.onShieldBalancePressed,
-    super.key,
   });
 
   final String balanceText;
@@ -581,7 +728,7 @@ class _MobileTransparentBalanceStrip extends StatelessWidget {
     );
 
     return SizedBox(
-      height: 57,
+      height: _mobileTransparentBalanceStripHeight,
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.sm,

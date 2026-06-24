@@ -77,7 +77,9 @@ Widget _app(
     usdPrice: 70,
     change24hPct: 13.12,
   ),
+  FakeSyncNotifier? syncNotifier,
 }) {
+  final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
   final router = GoRouter(
     initialLocation: '/home',
     routes: [
@@ -94,7 +96,7 @@ Widget _app(
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
-      syncProvider.overrideWith(() => FakeSyncNotifier(syncState)),
+      syncProvider.overrideWith(() => effectiveSyncNotifier),
       privacyModeProvider.overrideWith(_FakePrivacyModeNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
         _FakeMarketDataSource(marketData),
@@ -216,6 +218,42 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Shield'), findsOneWidget);
+  });
+
+  testWidgets('animates transparent balance tray away before removal', (
+    tester,
+  ) async {
+    final syncNotifier = FakeSyncNotifier(
+      _syncedState(
+        orchardBalance: BigInt.from(14312000000),
+        transparentBalance: BigInt.from(242000000),
+        canShieldTransparentBalance: true,
+      ),
+    );
+    await tester.pumpWidget(
+      _app(syncNotifier.initialState!, syncNotifier: syncNotifier),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final stripFinder = find.byKey(
+      const ValueKey('mobile_home_transparent_balance_strip'),
+    );
+    expect(stripFinder, findsOneWidget);
+    final expandedHeight = tester.getSize(stripFinder).height;
+    expect(expandedHeight, moreOrLessEquals(57));
+
+    syncNotifier.setSyncState(
+      _syncedState(orchardBalance: BigInt.from(14312000000)),
+    );
+    await tester.pump();
+    expect(stripFinder, findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 70));
+    expect(tester.getSize(stripFinder).height, lessThan(expandedHeight));
+
+    await tester.pumpAndSettle();
+    expect(stripFinder, findsNothing);
   });
 
   testWidgets('matches the Figma balance card controls and action labels', (
