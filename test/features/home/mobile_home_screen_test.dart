@@ -39,6 +39,12 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
   Future<ZecMarketData?> fetchMarketData() async => data;
 }
 
+TextStyle _effectiveTextStyle(WidgetTester tester, Finder finder) {
+  final text = tester.widget<Text>(finder);
+  final defaultStyle = DefaultTextStyle.of(tester.element(finder)).style;
+  return defaultStyle.merge(text.style);
+}
+
 const _accountState = AccountState(
   accounts: [
     AccountInfo(
@@ -200,8 +206,8 @@ void main() {
     final sendRect = tester.getRect(
       find.byKey(const ValueKey('mobile_home_send')),
     );
-    final sendLabel = tester.widget<Text>(find.text('Send'));
-    final receiveLabel = tester.widget<Text>(find.text('Receive'));
+    final sendLabelStyle = _effectiveTextStyle(tester, find.text('Send'));
+    final receiveLabelStyle = _effectiveTextStyle(tester, find.text('Receive'));
     final shieldedLabel = tester.widget<Text>(find.text('Shielded balance'));
     final fiatLabel = tester.widget<Text>(
       find.byKey(const ValueKey('mobile_home_balance_fiat_text')),
@@ -216,10 +222,20 @@ void main() {
     expect(privacyButtonRect.size, const Size(32, 32));
     expect(privacyIcon.size, 16);
     expect(sendRect.height, AppButtonSizing.largeHeight);
-    expect(sendLabel.style?.fontSize, 14);
-    expect(sendLabel.style?.height, 16 / 14);
-    expect(sendLabel.style?.fontWeight, FontWeight.w500);
-    expect(receiveLabel.style?.fontSize, 14);
+    expect(sendLabelStyle.fontSize, AppTypography.labelLarge.fontSize);
+    expect(sendLabelStyle.height, AppTypography.labelLarge.height);
+    expect(sendLabelStyle.fontWeight, AppTypography.labelLarge.fontWeight);
+    expect(
+      sendLabelStyle.letterSpacing,
+      AppTypography.labelLarge.letterSpacing,
+    );
+    expect(receiveLabelStyle.fontSize, AppTypography.labelLarge.fontSize);
+    expect(receiveLabelStyle.height, AppTypography.labelLarge.height);
+    expect(receiveLabelStyle.fontWeight, AppTypography.labelLarge.fontWeight);
+    expect(
+      receiveLabelStyle.letterSpacing,
+      AppTypography.labelLarge.letterSpacing,
+    );
     expect(shieldedLabel.style?.fontSize, 14);
     expect(shieldedLabel.style?.height, 16 / 14);
     expect(fiatLabel.style?.fontSize, 14);

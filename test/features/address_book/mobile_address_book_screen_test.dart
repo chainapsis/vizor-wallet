@@ -128,6 +128,30 @@ void main() {
     );
   });
 
+  testWidgets('remove contact sheet uses a short destructive action label', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester);
+    await tester.pumpWidget(
+      _harness(_FakeRepo([_contact(id: 'mike', label: 'Mike')])),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_contact_menu_mike')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove contact'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Remove contact?'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_address_book_remove_confirm')),
+        matching: find.text('Remove'),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('non-matching search shows the empty-search state', (
     tester,
   ) async {

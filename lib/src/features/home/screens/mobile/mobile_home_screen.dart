@@ -99,14 +99,6 @@ const _mobileHomeLabelMStyle = TextStyle(
   letterSpacing: -0.06,
 );
 
-const _mobileHomeLabelMMediumStyle = TextStyle(
-  fontFamily: 'Geist',
-  fontWeight: FontWeight.w500,
-  fontSize: 14,
-  height: 16 / 14,
-  letterSpacing: -0.06,
-);
-
 const _mobileHomeBalanceAmountStyle = TextStyle(
   fontFamily: 'Young Serif',
   fontWeight: FontWeight.w400,
@@ -261,10 +253,7 @@ class _HomeContent extends ConsumerWidget {
                   onPressed: () => context.push('/send'),
                   leading: const _ButtonIcon(AppIcons.plane),
                   height: _mobileHomeActionButtonHeight,
-                  child: const Text(
-                    'Send',
-                    style: _mobileHomeLabelMMediumStyle,
-                  ),
+                  child: const Text('Send'),
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
@@ -276,10 +265,7 @@ class _HomeContent extends ConsumerWidget {
                   onPressed: () => context.push('/receive'),
                   leading: const _ButtonIcon(AppIcons.arrowDownCircle),
                   height: _mobileHomeActionButtonHeight,
-                  child: const Text(
-                    'Receive',
-                    style: _mobileHomeLabelMMediumStyle,
-                  ),
+                  child: const Text('Receive'),
                 ),
               ),
             ],
@@ -296,7 +282,6 @@ class _HomeContent extends ConsumerWidget {
             height: _mobileHomeActionButtonHeight,
             child: const Text(
               'Receive your first ZEC',
-              style: _mobileHomeLabelMMediumStyle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),

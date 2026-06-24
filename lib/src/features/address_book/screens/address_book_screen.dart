@@ -1622,7 +1622,7 @@ class _RemoveContactModal extends StatelessWidget {
             cancelKey: const ValueKey('address_book_remove_cancel_button'),
             actionKey: const ValueKey('address_book_remove_confirm_button'),
             onCancel: onCancel,
-            actionLabel: 'Remove contact',
+            actionLabel: 'Remove',
             actionVariant: AppButtonVariant.destructive,
             onAction: () => unawaited(onRemove()),
           ),

@@ -1299,7 +1299,7 @@ class _RemoveContactModal extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           AppModalActions(
             onCancel: () {},
-            actionLabel: 'Remove contact',
+            actionLabel: 'Remove',
             actionVariant: AppButtonVariant.destructive,
             onAction: () {},
           ),

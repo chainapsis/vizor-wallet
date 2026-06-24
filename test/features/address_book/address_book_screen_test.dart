@@ -592,6 +592,34 @@ void main() {
     expect(find.text('send route'), findsOneWidget);
   });
 
+  testWidgets('remove contact modal uses a short destructive action label', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final repo = _FakeAddressBookRepository([
+      _contact(id: 'mike', label: 'Mike', address: 'u1mike'),
+    ]);
+
+    await tester.pumpWidget(_addressBookHarness(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('address_book_contact_menu_mike')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove contact'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Remove contact'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('address_book_remove_confirm_button')),
+        matching: find.text('Remove'),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('omits send action for non-Zcash contacts', (tester) async {
     await _setDesktopViewport(tester);
     final repo = _FakeAddressBookRepository([
