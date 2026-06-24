@@ -133,8 +133,6 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       setState(() {
         _transparentAddress = cachedAddress;
         _transparentErrorText = null;
-        _isLoadingTransparent = false;
-        _transparentLoadingAccountUuid = null;
       });
     }
 
@@ -143,7 +141,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     }
 
     setState(() {
-      _isLoadingTransparent = cachedAddress == null;
+      _isLoadingTransparent = true;
       _transparentLoadingAccountUuid = targetAccountUuid;
       _transparentErrorText = null;
     });

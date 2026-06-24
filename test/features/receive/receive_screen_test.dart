@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
+import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -154,6 +155,57 @@ void main() {
     await tester.pump();
 
     expect(service.transparentReceiveLoads, 1);
+  });
+
+  testWidgets('disables transparent copy while cached address refreshes', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    late _DelayedTransparentReceiveAddressService service;
+    await tester.pumpWidget(
+      _receiveHarness(
+        receiveAddressService: (ref) {
+          service = _DelayedTransparentReceiveAddressService(ref);
+          return service;
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.text('Transparent'));
+    await tester.pump();
+
+    expect(service.transparentReceiveLoads, 1);
+    expect(
+      tester
+          .widget<ReceiveCopyAddressButton>(
+            find.byKey(
+              const ValueKey('receive_copy_transparent_address_button'),
+            ),
+          )
+          .enabled,
+      isFalse,
+    );
+
+    service.completeTransparentRefresh();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(
+      tester
+          .widget<ReceiveCopyAddressButton>(
+            find.byKey(
+              const ValueKey('receive_copy_transparent_address_button'),
+            ),
+          )
+          .enabled,
+      isTrue,
+    );
   });
 
   testWidgets('uses dark receive color for renew icon and address text', (
@@ -532,6 +584,8 @@ const _renewedShieldedAddress =
     'u1testrenewedshieldedaddress0000000000000000000000000000000000000000000';
 const _transparentAddress =
     't1testtransparentaddress111111111111111111111111111111111111';
+const _freshTransparentAddress =
+    't1freshtransparentaddress222222222222222222222222222222222222';
 const _accountOneAddress = 'u1accountone-stale';
 const _accountTwoAddress = 'u1accounttwo-current';
 
@@ -577,6 +631,23 @@ class _RecordingReceiveAddressService extends _FakeReceiveAddressService {
   Future<String> renewShieldedAddress({required String accountUuid}) async {
     renewedAccountUuid = accountUuid;
     return _renewedShieldedAddress;
+  }
+}
+
+class _DelayedTransparentReceiveAddressService
+    extends _FakeReceiveAddressService {
+  _DelayedTransparentReceiveAddressService(super.ref);
+
+  final _transparentRefresh = Completer<String>();
+
+  @override
+  Future<String> loadTransparentReceiveAddress({required String accountUuid}) {
+    transparentReceiveLoads++;
+    return _transparentRefresh.future;
+  }
+
+  void completeTransparentRefresh() {
+    _transparentRefresh.complete(_freshTransparentAddress);
   }
 }
 
