@@ -299,6 +299,58 @@ void main() {
     );
   });
 
+  testWidgets('updates hidden transparent address after sync stops', (
+    tester,
+  ) async {
+    final service = _FakeReceiveAddressService();
+    await _pumpReceive(tester, service);
+
+    expect(
+      find.textContaining(_shielded.substring(0, 13), findRichText: true),
+      findsOneWidget,
+    );
+    expect(service.transparentLoads, 1);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileReceiveScreen)),
+      listen: false,
+    );
+    final syncNotifier =
+        container.read(syncProvider.notifier) as FakeSyncNotifier;
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: _accountState.activeAccountUuid,
+        hasAccountScopedData: true,
+        isSyncing: true,
+      ),
+    );
+    await tester.pump();
+
+    service.transparentAddress = _freshTransparent;
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: _accountState.activeAccountUuid,
+        hasAccountScopedData: true,
+        isSyncing: false,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(service.transparentLoads, 2);
+
+    await tester.tap(find.text('Transparent'));
+    await _settle(tester);
+
+    expect(
+      find.textContaining(
+        _freshTransparent.substring(0, 13),
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('swipes between shielded and transparent receive codes', (
     tester,
   ) async {

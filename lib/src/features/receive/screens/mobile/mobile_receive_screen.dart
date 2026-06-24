@@ -24,11 +24,15 @@ import '../../widgets/receive_address_widgets.dart';
 const _renewShieldedAddressErrorMessage =
     "We couldn't refresh your shielded address. Try again, or use your current one.";
 
-bool _didSyncAttemptEnd(SyncState previous, SyncState next) {
+bool _shouldRefreshTransparentAddressAfterSyncUpdate(
+  SyncState previous,
+  SyncState next,
+) {
   final completedAt = next.lastSyncCompletedAt;
   final failedAt = next.lastSyncFailedAt;
 
-  return (completedAt != null && completedAt != previous.lastSyncCompletedAt) ||
+  return (previous.isSyncing && !next.isSyncing) ||
+      (completedAt != null && completedAt != previous.lastSyncCompletedAt) ||
       (failedAt != null && failedAt != previous.lastSyncFailedAt);
 }
 
@@ -200,7 +204,10 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
       final nextState = next.asData?.value;
       if (previousState != null &&
           nextState != null &&
-          _didSyncAttemptEnd(previousState, nextState)) {
+          _shouldRefreshTransparentAddressAfterSyncUpdate(
+            previousState,
+            nextState,
+          )) {
         unawaited(_refreshTransparentReceiveAddressAfterSync());
       }
     });
