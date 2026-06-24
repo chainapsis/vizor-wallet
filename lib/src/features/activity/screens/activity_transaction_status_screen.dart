@@ -16,7 +16,10 @@ import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
-import '../../../core/widgets/app_back_link.dart';
+import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/review_info_row.dart';
+import '../../../core/widgets/review_list_row.dart';
+import '../../../core/widgets/review_wrap_card.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -27,7 +30,6 @@ import '../../address_book/providers/address_book_provider.dart';
 import '../../send/widgets/send_recipient_resolver.dart';
 import '../../send/widgets/send_status_content_view.dart';
 import '../../send/widgets/send_verify_address_overlay.dart';
-import '../../send/widgets/transaction_receipt_view.dart';
 import '../widgets/received_receipt_view.dart';
 import '../widgets/shielded_receipt_view.dart';
 
@@ -225,14 +227,6 @@ class _ActivityTransactionStatusScreenState
         (expected == 'received' && actual == 'receiving');
   }
 
-  void _copyTransactionHash() {
-    copyTextWithToast(
-      context,
-      text: widget.args.txidHex,
-      toastMessage: 'Transaction hash copied',
-    );
-  }
-
   Future<void> _openTransactionExplorer() async {
     final endpoint = ref.read(rpcEndpointProvider);
     final launched = await launchZcashExplorerTransaction(
@@ -269,17 +263,6 @@ class _ActivityTransactionStatusScreenState
     });
   }
 
-  TransactionReceiptPhase _phaseFor(rust_sync.TransactionInfo? tx) {
-    if (tx == null) {
-      return _isLoading
-          ? TransactionReceiptPhase.loading
-          : TransactionReceiptPhase.failed;
-    }
-    if (tx.expiredUnmined) return TransactionReceiptPhase.failed;
-    if (tx.minedHeight == BigInt.zero) return TransactionReceiptPhase.pending;
-    return TransactionReceiptPhase.succeeded;
-  }
-
   String _amountText(
     rust_sync.TransactionInfo? tx, {
     required bool privacyModeEnabled,
@@ -292,15 +275,6 @@ class _ActivityTransactionStatusScreenState
     return hideAmountIfPrivacyMode(
       ZecAmount.fromZatoshi(tx.displayAmount).activityDetail.toString(),
       privacyModeEnabled: privacyModeEnabled,
-    );
-  }
-
-  String _dateText(rust_sync.TransactionInfo? tx) {
-    if (tx == null) return '--';
-    final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
-    if (seconds <= BigInt.zero) return '--';
-    return _formatDate(
-      DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000),
     );
   }
 
@@ -324,33 +298,6 @@ class _ActivityTransactionStatusScreenState
     );
   }
 
-  String _formatDate(DateTime value) {
-    const months = <String>[
-      '',
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
-    final local = value.toLocal();
-    final hh = local.hour.toString().padLeft(2, '0');
-    final mm = local.minute.toString().padLeft(2, '0');
-    return '${months[local.month]} ${local.day}, ${local.year} $hh:$mm';
-  }
-
-  List<String> _splitTxid(String txid) {
-    if (txid.length <= 32) return [txid];
-    return [txid.substring(0, 32), txid.substring(32)];
-  }
-
   rust_sync.TransactionDetail? _matchingDetailFor(
     rust_sync.TransactionInfo? tx,
   ) {
@@ -361,47 +308,6 @@ class _ActivityTransactionStatusScreenState
     }
     if (!_txKindMatches(detail.txKind, tx.txKind)) return null;
     return detail;
-  }
-
-  TransactionReceiptBlockData _transactionHashBlock(BuildContext context) {
-    final colors = context.colors;
-    final txidLines = _splitTxid(widget.args.txidHex);
-    return TransactionReceiptBlockData(
-      title: 'Transaction Hash',
-      onCopy: _copyTransactionHash,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final line in txidLines)
-            Text(
-              line,
-              style: AppTypography.codeSmall.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  List<TransactionReceiptBlockData> _extraBlocksFor(
-    rust_sync.TransactionDetail? detail,
-  ) {
-    final memo = detail?.memo?.trim();
-    if (memo == null || memo.isEmpty) return const [];
-    return [
-      TransactionReceiptBlockData(
-        title: 'Message',
-        titleTrailing: TransactionReceiptMessageToggle(
-          expanded: _messageExpanded,
-          onTap: _toggleMessageExpanded,
-        ),
-        child: TransactionReceiptMessageText(
-          memo: memo,
-          expanded: _messageExpanded,
-        ),
-      ),
-    ];
   }
 
   /// The output the funds arrived on (the "Amount" sub-address) — the
@@ -420,10 +326,6 @@ class _ActivityTransactionStatusScreenState
       }
     }
     return best;
-  }
-
-  bool _isShieldedZcashAddress(String address) {
-    return address.startsWith('u1') || address.startsWith('zs');
   }
 
   ReceivedReceiptStatus _receivedStatusFor(rust_sync.TransactionInfo tx) {
@@ -455,9 +357,10 @@ class _ActivityTransactionStatusScreenState
     final hasFromAddress = fromAddress != null && fromAddress.isNotEmpty;
     final receivingOutput = _receivingOutputFor(detail);
     final receivingAddress = receivingOutput?.address?.trim();
-    final receivingIsShielded =
-        receivingOutput?.pool == 'shielded' ||
-        (receivingAddress != null && _isShieldedZcashAddress(receivingAddress));
+    // Trust the authoritative output pool; a unified-address sub-line must
+    // not flip a transparent receive to the shielded badge (see the received
+    // t-address recovery in Rust `detail_address`).
+    final receivingIsShielded = receivingOutput?.pool == 'shielded';
     final memo = detail?.memo?.trim();
     final hasMemo = memo != null && memo.isNotEmpty;
     final ownAccounts =
@@ -476,14 +379,12 @@ class _ActivityTransactionStatusScreenState
         status: _receivedStatusFor(tx),
         amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
         timestampText: _timestampText(tx),
-        txIdText: tx.txidHex,
+        txIdText: truncatedTxid(tx.txidHex),
         fromRecipient: fromRecipient,
         unknownFromKind: hasFromAddress
             ? null
             : _unknownFromKindForSourcePool(fromPool),
-        isShieldedSource:
-            fromPool == 'shielded' ||
-            (hasFromAddress && _isShieldedZcashAddress(fromAddress)),
+        isShieldedSource: fromPool == 'shielded',
         // Received receipts still show the transaction-level network fee.
         // The sender paid it, so the row is labeled separately from send fees.
         feeText: tx.fee > BigInt.zero
@@ -532,7 +433,7 @@ class _ActivityTransactionStatusScreenState
       amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
       recipient: recipient,
       timestampText: _timestampText(tx),
-      txIdText: tx.txidHex,
+      txIdText: truncatedTxid(tx.txidHex),
       feeText: _feeText(tx, privacyModeEnabled: privacyModeEnabled),
       isShieldedRecipient:
           zcashAddressDisplayKind(recipientAddress) ==
@@ -564,7 +465,7 @@ class _ActivityTransactionStatusScreenState
         status: _shieldedStatusFor(tx),
         amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
         timestampText: _timestampText(tx),
-        txIdText: tx.txidHex,
+        txIdText: truncatedTxid(tx.txidHex),
         feeText: tx.fee > BigInt.zero
             ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
             : null,
@@ -576,76 +477,101 @@ class _ActivityTransactionStatusScreenState
     );
   }
 
-  /// Legacy receipt rendering — still used while the transaction is loading
-  /// (or failed to load) and for the kinds without a redesigned frame yet
-  /// (unknown transactions).
-  Widget _legacyReceiptContent(
-    rust_sync.TransactionInfo? tx,
-    rust_sync.TransactionDetail? detail, {
+  /// Fallback for the states without a dedicated redesigned receipt: a
+  /// loading / not-found message when no transaction is available, and a
+  /// minimal receipt (amount + status card, no counterparty) for an unknown
+  /// kind or a sent tx whose recipient could not be resolved. Mirrors the
+  /// mobile status screen, which renders these states the same unified way.
+  Widget _fallbackContent(
+    rust_sync.TransactionInfo? tx, {
     required bool privacyModeEnabled,
   }) {
-    final useFailedReceiptLayout = tx?.expiredUnmined == true;
-    final error = useFailedReceiptLayout
-        ? 'Transaction expired before it was mined.'
-        : _error;
-
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: IgnorePointer(
-            child: TransactionReceiptIllustration(
-              failed: useFailedReceiptLayout,
+    final colors = context.colors;
+    if (tx == null) {
+      return _ReceiptContentColumn(
+        child: Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.xl),
+          child: Text(
+            _isLoading
+                ? 'Loading transaction…'
+                : (_error ?? 'Transaction could not be loaded.'),
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
             ),
           ),
         ),
-        Positioned.fill(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.md,
-              AppSpacing.md,
-              0,
-              AppSpacing.md,
+      );
+    }
+
+    final (statusValue, statusIconName, statusColor) = tx.expiredUnmined
+        ? ('Failed', AppIcons.cancel, colors.text.destructive)
+        : tx.minedHeight == BigInt.zero
+        ? ('In progress', AppIcons.loader, colors.text.secondary)
+        : ('Completed', AppIcons.checkCircle, colors.text.positiveStrong);
+    final feeText = tx.fee > BigInt.zero
+        ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
+        : null;
+
+    return _ReceiptContentColumn(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Transaction',
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyLarge.copyWith(
+              color: colors.text.accent,
+              fontWeight: FontWeight.w600,
             ),
-            child: Column(
-              children: [
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: AppRouteBackLink(),
+          ),
+          const SizedBox(height: AppSpacing.base),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            child: ReviewInfoRow(
+              label: 'Amount',
+              value: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
+              leading: ClipOval(
+                child: Image.asset(
+                  'assets/icons/network_zec.png',
+                  width: AppAssetSize.size,
+                  height: AppAssetSize.size,
+                  fit: BoxFit.cover,
                 ),
-                const SizedBox(height: AppSpacing.s),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 255),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: TransactionReceiptView(
-                        phase: _phaseFor(tx),
-                        amountText: _amountText(
-                          tx,
-                          privacyModeEnabled: privacyModeEnabled,
-                        ),
-                        primaryBlock: _transactionHashBlock(context),
-                        extraBlocks: _extraBlocksFor(detail),
-                        dateText: _dateText(tx),
-                        feeText: _feeText(
-                          tx,
-                          privacyModeEnabled: privacyModeEnabled,
-                        ),
-                        error: error,
-                        useFailedReceiptLayout: useFailedReceiptLayout,
-                        showPrimaryCopyAction: true,
-                        pinActionsToBottom: true,
-                        onTransactionHashPressed: () =>
-                            unawaited(_openTransactionExplorer()),
-                      ),
-                    ),
-                  ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.base),
+          ReviewWrapCard(
+            children: [
+              ReviewListRow(
+                label: 'Status',
+                value: statusValue,
+                valueColor: statusColor,
+                leadingIconName: statusIconName,
+              ),
+              ReviewListRow(label: 'Timestamp', value: _timestampText(tx)),
+              ReviewListRow(
+                label: 'Tx ID',
+                value: truncatedTxid(widget.args.txidHex),
+                trailingIconName: AppIcons.arrowTopRight,
+                onPressed: () => unawaited(_openTransactionExplorer()),
+              ),
+              if (feeText != null) ...[
+                const ReviewWrapDivider(),
+                ReviewListRow(
+                  label: 'Tx fee',
+                  value: feeText,
+                  trailingIconName: AppIcons.help,
+                  trailingIconColor: colors.text.secondary,
+                  trailingIconTooltip: kTxFeeHelpTooltip,
                 ),
               ],
-            ),
+            ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -724,12 +650,8 @@ class _ActivityTransactionStatusScreenState
             if (redesignedContent != null)
               _redesignedPane(redesignedContent)
             else
-              Positioned.fill(
-                child: _legacyReceiptContent(
-                  tx,
-                  detail,
-                  privacyModeEnabled: privacyModeEnabled,
-                ),
+              _redesignedPane(
+                _fallbackContent(tx, privacyModeEnabled: privacyModeEnabled),
               ),
             if (verifyAddress != null && verifyAccountUuid != null)
               SendVerifyAddressOverlay(

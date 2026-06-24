@@ -48,6 +48,21 @@ String truncatedAddress(String address) {
       '${trimmed.substring(trimmed.length - kTruncatedAddressTailLength)}';
 }
 
+/// Number of leading/trailing hex chars kept when middle-truncating a
+/// transaction id / hash to `12345678...90abcdef`.
+const kTruncatedTxidEndLength = 8;
+
+/// Middle-truncates a transaction id / hash for display (`12345678...90abcdef`).
+/// Matches the form the mobile status screens use, so desktop and mobile
+/// render tx ids identically.
+String truncatedTxid(String txid) {
+  final trimmed = txid.trim();
+  if (trimmed.length <= kTruncatedTxidEndLength * 2) return trimmed;
+  return '${trimmed.substring(0, kTruncatedTxidEndLength)}'
+      '...'
+      '${trimmed.substring(trimmed.length - kTruncatedTxidEndLength)}';
+}
+
 /// Characters per group in the verify-address modal grid.
 const kAddressVerifyGroupSize = 5;
 

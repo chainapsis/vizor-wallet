@@ -5,14 +5,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/received_receipt_view.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_status_content_view.dart';
-import 'package:zcash_wallet/src/features/send/widgets/transaction_receipt_view.dart';
 import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/shielded_receipt_view.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -60,7 +61,6 @@ void main() {
     );
 
     expect(find.byType(ReceivedReceiptView), findsOneWidget);
-    expect(find.byType(TransactionReceiptView), findsNothing);
     expect(find.text('Received successfully'), findsOneWidget);
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('120.00 ZEC'), findsOneWidget);
@@ -300,12 +300,11 @@ void main() {
     );
 
     expect(find.byType(SendStatusContentView), findsOneWidget);
-    expect(find.byType(TransactionReceiptView), findsNothing);
     expect(find.text('Sent successfully'), findsOneWidget);
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('u195091 ... 190591'), findsOneWidget);
     expect(find.text('0.0001 ZEC'), findsOneWidget);
-    expect(find.text(_txidHex), findsOneWidget);
+    expect(find.text(truncatedTxid(_txidHex)), findsOneWidget);
   });
 
   testWidgets(
@@ -440,7 +439,6 @@ void main() {
     );
 
     expect(find.byType(ShieldedReceiptView), findsOneWidget);
-    expect(find.byType(TransactionReceiptView), findsNothing);
     expect(find.byType(ReceivedReceiptView), findsNothing);
     expect(find.byType(SendStatusContentView), findsNothing);
     expect(find.text('Shielded successfully'), findsOneWidget);
@@ -449,6 +447,154 @@ void main() {
     expect(find.text('Tx fee'), findsOneWidget);
     expect(find.text('0.00203209 ZEC'), findsOneWidget);
   });
+
+  testWidgets('renders a minimal fallback receipt for an unknown tx kind', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'unknown',
+        initialTransaction: _transaction(txKind: 'unknown'),
+        initialDetail: _detail(txKind: 'unknown'),
+      ),
+    );
+
+    // No legacy illustration receipt: a neutral redesigned fallback with a
+    // "Transaction" title, the amount row, and the status detail card.
+    expect(find.byType(ReceivedReceiptView), findsNothing);
+    expect(find.byType(SendStatusContentView), findsNothing);
+    expect(find.byType(ShieldedReceiptView), findsNothing);
+    expect(find.text('Transaction'), findsOneWidget);
+    expect(find.text('Amount'), findsOneWidget);
+    expect(find.text('120.00 ZEC'), findsOneWidget);
+    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text(_expectedTimestamp(_blockTime)), findsOneWidget);
+  });
+
+  testWidgets(
+    'falls back to the minimal receipt for a sent tx with no recipient',
+    (tester) async {
+      // A sent tx whose detail carries no resolvable recipient address skips
+      // the SendStatusContentView branch and routes to _fallbackContent.
+      await _pumpScreen(
+        tester,
+        args: ActivityTransactionStatusArgs(
+          txidHex: _txidHex,
+          txKind: 'sent',
+          initialTransaction: _transaction(
+            txKind: 'sent',
+            fee: BigInt.from(10000),
+          ),
+          // primaryAddress omitted (null) -> no recipient to resolve.
+          initialDetail: _detail(txKind: 'sent'),
+        ),
+      );
+
+      // No dedicated redesigned receipt rendered.
+      expect(find.byType(SendStatusContentView), findsNothing);
+      expect(find.byType(ReceivedReceiptView), findsNothing);
+      expect(find.byType(ShieldedReceiptView), findsNothing);
+
+      // Neutral fallback: title, amount, status card.
+      expect(find.text('Transaction'), findsOneWidget);
+      expect(find.text('Amount'), findsOneWidget);
+      expect(find.text('120.00 ZEC'), findsOneWidget);
+      expect(find.text('Completed'), findsOneWidget);
+      // Non-zero fee renders the fallback "Tx fee" row.
+      expect(find.text('Tx fee'), findsOneWidget);
+      expect(find.text('0.0001 ZEC'), findsOneWidget);
+      // The fallback has no counterparty row, so no To/From label is forced.
+      expect(find.text('To'), findsNothing);
+      expect(find.text('From'), findsNothing);
+    },
+  );
+
+  testWidgets('shows the loading/not-found fallback when no tx is available', (
+    tester,
+  ) async {
+    // With no initialTransaction the screen has tx == null and kicks off
+    // _loadTransaction(showLoading: true). The FFI history call cannot run in
+    // the widget-test harness (path_provider is unimplemented), so the screen
+    // ends in the not-found state rather than the live "Loading transaction…"
+    // spinner.
+    await _pumpScreen(
+      tester,
+      args: const ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+      ),
+    );
+    // Let the failed FFI load settle so the fallback message resolves.
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.byType(SendStatusContentView), findsNothing);
+    expect(find.byType(ReceivedReceiptView), findsNothing);
+    expect(find.byType(ShieldedReceiptView), findsNothing);
+    final showsLoading = find
+        .text('Loading transaction…')
+        .evaluate()
+        .isNotEmpty;
+    final showsNotFound = find
+        .textContaining('could not be loaded')
+        .evaluate()
+        .isNotEmpty;
+    expect(
+      showsLoading || showsNotFound,
+      isTrue,
+      reason: 'expected the loading or not-found fallback copy',
+    );
+  });
+
+  testWidgets(
+    'received transparent output with a unified address shows no shield badge',
+    (tester) async {
+      // BUG-1 regression: the Dart layer no longer infers the pool from the
+      // address prefix. A transparent receive whose recovered output address is
+      // a unified (u1...) address must stay transparent, not flip to the
+      // crimson "Shielded" badge.
+      await _pumpScreen(
+        tester,
+        args: ActivityTransactionStatusArgs(
+          txidHex: _txidHex,
+          txKind: 'received',
+          initialTransaction: _transaction(txKind: 'received'),
+          initialDetail: _detail(
+            txKind: 'received',
+            // Transparent source with no address -> unknown (non-shielded)
+            // sender, so the From row contributes no shield icon either.
+            sourcePool: 'transparent',
+            outputs: [
+              rust_sync.TransactionDetailOutput(
+                address: _recipientAddress,
+                amountZatoshi: BigInt.from(12000000000),
+                pool: 'transparent',
+              ),
+            ],
+          ),
+        ),
+      );
+
+      expect(find.byType(ReceivedReceiptView), findsOneWidget);
+      // The receiving sub-line glyph is the transparent-balance icon.
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is AppIcon && w.name == AppIcons.transparentBalance,
+        ),
+        findsWidgets,
+      );
+      // The shielded shield-keyhole glyph must not appear anywhere.
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is AppIcon && w.name == AppIcons.shieldKeyhole,
+        ),
+        findsNothing,
+      );
+      // And the crimson "Shielded" badge label is absent.
+      expect(find.text('Shielded'), findsNothing);
+    },
+  );
 }
 
 rust_sync.TransactionInfo _transaction({

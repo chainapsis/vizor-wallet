@@ -36,6 +36,57 @@ void main() {
     });
   });
 
+  group('truncatedTxid', () {
+    test('keeps first 8 and last 8 of a 64-char hex id', () {
+      const txid =
+          '0123456789abcdef0123456789abcdef'
+          '0123456789abcdef0123456789abcdef';
+      expect(txid.length, 64);
+      expect(
+        truncatedTxid(txid),
+        '${txid.substring(0, kTruncatedTxidEndLength)}'
+        '...'
+        '${txid.substring(txid.length - kTruncatedTxidEndLength)}',
+      );
+    });
+
+    test('returns short ids unchanged', () {
+      const sixteen = '0123456789abcdef';
+      expect(sixteen.length, 16);
+      expect(truncatedTxid(sixteen), sixteen);
+      expect(truncatedTxid('abc123'), 'abc123');
+      expect(truncatedTxid(''), '');
+    });
+
+    test('returns ids at the truncation boundary unchanged', () {
+      const boundary = kTruncatedTxidEndLength * 2;
+      final atBoundary = 'a' * boundary;
+      expect(atBoundary.length, 16);
+      expect(truncatedTxid(atBoundary), atBoundary);
+
+      final pastBoundary = 'a' * (boundary + 1);
+      expect(pastBoundary.length, 17);
+      expect(
+        truncatedTxid(pastBoundary),
+        '${pastBoundary.substring(0, kTruncatedTxidEndLength)}'
+        '...'
+        '${pastBoundary.substring(pastBoundary.length - kTruncatedTxidEndLength)}',
+      );
+    });
+
+    test('trims surrounding whitespace before measuring', () {
+      const txid =
+          '0123456789abcdef0123456789abcdef'
+          '0123456789abcdef0123456789abcdef';
+      expect(
+        truncatedTxid('  $txid  '),
+        '${txid.substring(0, kTruncatedTxidEndLength)}'
+        '...'
+        '${txid.substring(txid.length - kTruncatedTxidEndLength)}',
+      );
+    });
+  });
+
   group('addressVerifyGrid', () {
     test('returns no rows for an empty address', () {
       expect(addressVerifyGrid(''), isEmpty);
