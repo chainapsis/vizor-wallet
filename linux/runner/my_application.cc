@@ -5,6 +5,7 @@
 #include <gdk/gdkx.h>
 #endif
 
+#include "device_owner_auth_channel.h"
 #include "flutter/generated_plugin_registrant.h"
 
 struct _MyApplication {
@@ -95,7 +96,9 @@ static void my_application_activate(GApplication* application) {
                            self);
   gtk_widget_realize(GTK_WIDGET(view));
 
-  fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+  FlPluginRegistry* registry = FL_PLUGIN_REGISTRY(view);
+  fl_register_plugins(registry);
+  device_owner_auth_channel_register(registry);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
