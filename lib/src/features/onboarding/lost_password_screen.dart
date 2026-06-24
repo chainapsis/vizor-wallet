@@ -10,7 +10,9 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../providers/account_provider.dart';
+import '../../providers/device_owner_auth_provider.dart';
 import '../../providers/sync_provider.dart';
+import '../../services/device_owner_auth.dart';
 import 'shared/onboarding_auth_shell.dart';
 
 class LostPasswordScreen extends ConsumerStatefulWidget {
@@ -35,15 +37,15 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
   Timer? _countdownTimer;
   late int _remainingSeconds;
   bool _isResetting = false;
+  String? _error;
 
   bool get _canReset => _remainingSeconds <= 0 && !_isResetting;
 
   @override
   void initState() {
     super.initState();
-    _remainingSeconds = widget.initialCountdownSeconds < 0
-        ? 0
-        : widget.initialCountdownSeconds;
+    _remainingSeconds =
+        widget.initialCountdownSeconds < 0 ? 0 : widget.initialCountdownSeconds;
     if (widget.countdownEnabled && _remainingSeconds > 0) {
       _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
@@ -78,9 +80,20 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
     if (!_canReset) return;
     setState(() {
       _isResetting = true;
+      _error = null;
     });
 
     try {
+      final verified = await verifyDeviceOwnerForWalletReset(ref);
+      if (!mounted) return;
+      if (!verified) {
+        setState(() {
+          _isResetting = false;
+          _error = null;
+        });
+        return;
+      }
+
       final onReset = widget.onReset;
       if (onReset != null) {
         await onReset();
@@ -93,6 +106,16 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
         if (!mounted) return;
         context.go('/welcome');
       }
+    } on DeviceOwnerAuthException catch (e, st) {
+      log('LostPasswordScreen._handleReset auth failed: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _isResetting = false;
+        _error =
+            e.kind == DeviceOwnerAuthErrorKind.unavailable
+                ? kWalletResetDeviceAuthRequiredMessage
+                : kWalletResetDeviceAuthFailedMessage;
+      });
     } catch (e, st) {
       log('LostPasswordScreen._handleReset: ERROR: $e\n$st');
       if (!mounted) return;
@@ -133,6 +156,7 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
             child: _LostPasswordContent(
               remainingSeconds: _remainingSeconds,
               canReset: _canReset,
+              error: _error,
               onBack: _handleBack,
               onReset: _handleReset,
             ),
@@ -147,18 +171,20 @@ class _LostPasswordContent extends StatelessWidget {
   const _LostPasswordContent({
     required this.remainingSeconds,
     required this.canReset,
+    required this.error,
     required this.onBack,
     required this.onReset,
   });
 
   final int remainingSeconds;
   final bool canReset;
+  final String? error;
   final VoidCallback onBack;
   final VoidCallback onReset;
 
   static const double cardWidth = 396;
   static const double cardHeight = 520;
-  static const double _buttonGroupWidth = 256;
+  static const double _buttonGroupWidth = 348;
   static const double _destructiveButtonWidth = 232;
 
   @override
@@ -170,9 +196,11 @@ class _LostPasswordContent extends StatelessWidget {
     final strongStyle = AppTypography.bodyMediumStrong.copyWith(
       color: colors.text.accent,
     );
-    final buttonLabel = remainingSeconds > 0
-        ? 'Reset after ${remainingSeconds}s...'
-        : 'Reset Vizor';
+    final buttonLabel =
+        remainingSeconds > 0
+            ? 'Reset after ${remainingSeconds}s...'
+            : 'Reset Vizor';
+    final statusText = error ?? 'This cannot be undone.';
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -232,10 +260,12 @@ class _LostPasswordContent extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'This cannot be undone.',
+                statusText,
                 style: AppTypography.bodyMediumStrong.copyWith(
                   color: colors.text.destructive,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppSpacing.md),
