@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
@@ -14,7 +15,7 @@ use zcash_client_backend::{
     },
     proto::service,
 };
-use zcash_client_sqlite::error::SqliteClientError;
+use zcash_client_sqlite::{error::SqliteClientError, AccountUuid};
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
@@ -24,6 +25,7 @@ use crate::wallet::{
         open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock, WalletDatabase,
         SYNC_DB_BUSY_TIMEOUT,
     },
+    keys,
     network::WalletNetwork,
     transparent_receive_cache,
 };
@@ -32,6 +34,7 @@ use {
     ::transparent::{
         address::Script,
         bundle::{OutPoint, TxOut},
+        keys::TransparentKeyScope,
     },
     zcash_client_backend::{
         proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
@@ -81,6 +84,8 @@ const BATCH_SIZE_FOREGROUND: u32 = 2000;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const BATCH_SIZE_FOREGROUND: u32 = 1000;
 const BATCH_SIZE_BACKGROUND: u32 = 300;
+const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
+const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
 
 /// Sandblasting attack range (Zcash mainnet). Blocks in this range
 /// contain a very large number of outputs from a sustained spam
@@ -719,46 +724,153 @@ async fn refresh_utxos(
     db_data_path: &str,
     db: &mut WalletDatabase,
     network: WalletNetwork,
+    tip_height: BlockHeight,
 ) -> Result<(), SyncError> {
     for account_id in db
         .get_account_ids()
         .map_err(|e| SyncError::db(format!("get_account_ids: {e}")))?
     {
-        let start_height = db
+        let account_uuid = account_id.expose_uuid().to_string();
+        let safety_start_height = db
             .utxo_query_height(account_id)
             .map_err(|e| SyncError::db(format!("utxo_query_height: {e}")))?;
-        let addresses: Vec<String> = db
+        let account_birthday_height = account_birthday_height(db_data_path, account_id)
+            .unwrap_or_else(|e| {
+                log::warn!(
+                    "sync: failed to read account {} birthday for transparent UTXO sweep: {}",
+                    account_uuid,
+                    e
+                );
+                u64::from(u32::from(safety_start_height))
+            });
+
+        let external_addresses = keys::get_external_transparent_receive_addresses_from_db(
+            db_data_path,
+            network,
+            Some(&account_uuid),
+        )
+        .map_err(|e| SyncError::db(format!("external transparent receive addresses: {e}")))?;
+        let external_batches = match transparent_receive_cache::plan_external_utxo_refresh(
+            db_data_path,
+            network,
+            &account_uuid,
+            &external_addresses,
+            account_birthday_height,
+            u64::from(u32::from(safety_start_height)),
+            TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT,
+            TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT,
+        ) {
+            Ok(batches) => batches,
+            Err(e) => {
+                log::warn!(
+                    "transparent receive cache: failed to plan bounded UTXO refresh for account {}; falling back to full external refresh: {}",
+                    account_uuid,
+                    e
+                );
+                vec![transparent_receive_cache::TransparentUtxoRefreshBatch {
+                    addresses: external_addresses
+                        .iter()
+                        .filter(|address| !address.address.is_empty())
+                        .map(|address| address.address.clone())
+                        .collect(),
+                    child_indices: Vec::new(),
+                    start_height: u64::from(u32::from(safety_start_height)),
+                    next_sweep_offset: None,
+                }]
+            }
+        };
+
+        for (batch_index, batch) in external_batches.into_iter().enumerate() {
+            let start_height = block_height_from_u64(
+                batch.start_height,
+                "transparent receive UTXO batch start height",
+            )?;
+            let label = if batch.next_sweep_offset.is_some() {
+                format!("transparent external UTXOs sweep batch {}", batch_index + 1)
+            } else {
+                "transparent external UTXOs recent batch".to_string()
+            };
+            let received_any =
+                refresh_transparent_addresses(client, db, batch.addresses, start_height, &label)
+                    .await?;
+            if received_any {
+                mark_transparent_receive_cache_dirty(db_data_path, &account_uuid);
+            }
+            if let Err(e) = transparent_receive_cache::mark_utxo_refresh_batch_complete(
+                db_data_path,
+                network,
+                &account_uuid,
+                &batch.child_indices,
+                u64::from(u32::from(tip_height)) + 1,
+                batch.next_sweep_offset,
+            ) {
+                log::warn!(
+                    "transparent receive cache: failed to mark UTXO batch complete for account {}: {}",
+                    account_uuid,
+                    e
+                );
+            }
+        }
+
+        let external_selected = external_addresses
+            .iter()
+            .map(|address| address.address.as_str())
+            .collect::<BTreeSet<_>>();
+        let non_external_addresses: Vec<String> = db
             .get_transparent_receivers(account_id, true, true)
             .map_err(|e| SyncError::db(format!("get_transparent_receivers: {e}")))?
-            .into_keys()
-            .map(|addr| addr.encode(&network))
+            .into_iter()
+            .filter(|(_, metadata)| metadata.scope() != Some(TransparentKeyScope::EXTERNAL))
+            .map(|(addr, _)| addr.encode(&network))
+            .filter(|addr| !external_selected.contains(addr.as_str()))
             .collect();
 
-        if !addresses.is_empty() {
+        if !non_external_addresses.is_empty() {
             let received_any = refresh_transparent_addresses(
                 client,
                 db,
-                addresses,
-                start_height,
-                "transparent UTXOs",
+                non_external_addresses,
+                safety_start_height,
+                "transparent non-external UTXOs",
             )
             .await?;
             if received_any {
-                let account_uuid = account_id.expose_uuid().to_string();
-                if let Err(e) =
-                    transparent_receive_cache::mark_account_dirty(db_data_path, &account_uuid)
-                {
-                    log::warn!(
-                        "transparent receive cache: failed to mark account {} dirty: {}",
-                        account_uuid,
-                        e
-                    );
-                }
+                mark_transparent_receive_cache_dirty(db_data_path, &account_uuid);
             }
         }
     }
 
     Ok(())
+}
+
+fn mark_transparent_receive_cache_dirty(db_data_path: &str, account_uuid: &str) {
+    if let Err(e) = transparent_receive_cache::mark_account_dirty(db_data_path, account_uuid) {
+        log::warn!(
+            "transparent receive cache: failed to mark account {} dirty: {}",
+            account_uuid,
+            e
+        );
+    }
+}
+
+fn account_birthday_height(db_path: &str, account_id: AccountUuid) -> Result<u64, SyncError> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(SYNC_DB_BUSY_TIMEOUT))
+        .map_err(|e| SyncError::db(format!("open DB for account birthday: {e}")))?;
+    let birthday: i64 = conn
+        .query_row(
+            "SELECT birthday_height FROM accounts WHERE uuid = ?1",
+            params![account_id.expose_uuid().as_bytes().as_slice()],
+            |row| row.get(0),
+        )
+        .map_err(|e| SyncError::db(format!("account birthday query: {e}")))?;
+    u64::try_from(birthday)
+        .map_err(|_| SyncError::parse(format!("invalid account birthday height: {birthday}")))
+}
+
+fn block_height_from_u64(height: u64, label: &str) -> Result<BlockHeight, SyncError> {
+    let height = u32::try_from(height)
+        .map_err(|_| SyncError::parse(format!("{label} exceeded u32: {height}")))?;
+    Ok(BlockHeight::from_u32(height))
 }
 
 async fn refresh_transparent_addresses(
@@ -989,7 +1101,7 @@ async fn run_sync_impl(
         return Ok(());
     }
 
-    refresh_utxos(&mut client, db_data_path, &mut db, network).await?;
+    refresh_utxos(&mut client, db_data_path, &mut db, network, tip_height).await?;
 
     if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
         log::info!(
