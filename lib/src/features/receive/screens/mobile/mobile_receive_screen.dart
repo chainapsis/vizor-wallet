@@ -17,6 +17,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/receive_address_provider.dart';
+import '../../../../providers/sync_provider.dart';
 import '../../widgets/mobile/receive_address_info_sheet.dart';
 import '../../widgets/receive_address_widgets.dart';
 
@@ -98,6 +99,26 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
     }
   }
 
+  Future<void> _refreshTransparentReceiveAddressAfterSync() async {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+
+    try {
+      final address = await ref
+          .read(receiveAddressServiceProvider)
+          .loadTransparentReceiveAddress(accountUuid: accountUuid);
+      if (!mounted) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+        return;
+      }
+      if (_transparentAddress == address) return;
+
+      setState(() => _transparentAddress = address);
+    } catch (e) {
+      log('MobileReceive: ERROR refreshing transparent address after sync: $e');
+    }
+  }
+
   String get _selectedAddress => switch (_selectedType) {
     ReceiveAddressType.shielded => _shieldedAddress ?? '',
     ReceiveAddressType.transparent => _transparentAddress ?? '',
@@ -166,6 +187,17 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(syncProvider, (previous, next) {
+      final previousState = previous?.asData?.value;
+      final nextState = next.asData?.value;
+      final completedAt = nextState?.lastSyncCompletedAt;
+      if (previousState != null &&
+          completedAt != null &&
+          completedAt != previousState.lastSyncCompletedAt) {
+        unawaited(_refreshTransparentReceiveAddressAfterSync());
+      }
+    });
+
     final colors = context.colors;
     final accountName =
         ref.watch(accountProvider).value?.activeAccount?.name ?? '';

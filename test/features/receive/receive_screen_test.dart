@@ -208,6 +208,68 @@ void main() {
     );
   });
 
+  testWidgets('silently updates transparent address after sync completes', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    late _FakeReceiveAddressService service;
+    await tester.pumpWidget(
+      _receiveHarness(
+        receiveAddressService: (ref) {
+          service = _FakeReceiveAddressService(ref);
+          return service;
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.text('Transparent'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      _findAddressRichText('t1testtranspa ... 11111111111'),
+      findsOneWidget,
+    );
+    expect(service.transparentReceiveLoads, 1);
+
+    service.transparentReceiveAddress = _freshTransparentAddress;
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ReceiveScreen)),
+      listen: false,
+    );
+    final syncNotifier =
+        container.read(syncProvider.notifier) as FakeSyncNotifier;
+    syncNotifier.emit(
+      _syncedStateFor(
+        _bootstrap.initialAccountState,
+      ).copyWith(lastSyncCompletedAt: DateTime.utc(2026, 6, 24, 12)),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(service.transparentReceiveLoads, 2);
+    expect(
+      _findAddressRichText('t1freshtransp ... 22222222222'),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<ReceiveCopyAddressButton>(
+            find.byKey(
+              const ValueKey('receive_copy_transparent_address_button'),
+            ),
+          )
+          .enabled,
+      isTrue,
+    );
+  });
+
   testWidgets('uses dark receive color for renew icon and address text', (
     tester,
   ) async {

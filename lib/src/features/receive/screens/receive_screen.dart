@@ -19,6 +19,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/receive_address_provider.dart';
+import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../widgets/receive_address_widgets.dart';
 
@@ -175,6 +176,32 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     }
   }
 
+  Future<void> _refreshTransparentReceiveAddressAfterSync() async {
+    if (_selectedType != ReceiveAddressType.transparent) return;
+
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+
+    try {
+      final address = await ref
+          .read(receiveAddressServiceProvider)
+          .loadTransparentReceiveAddress(accountUuid: accountUuid);
+      if (!mounted) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+        return;
+      }
+      if (_selectedType != ReceiveAddressType.transparent) return;
+      if (_transparentAddress == address) return;
+
+      setState(() {
+        _transparentAddress = address;
+        _transparentErrorText = null;
+      });
+    } catch (e) {
+      log('Receive: ERROR refreshing transparent address after sync: $e');
+    }
+  }
+
   Future<void> _renewShieldedAddress() async {
     if (_isRenewingShielded) return;
 
@@ -253,6 +280,16 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       final nextUuid = next.value?.activeAccountUuid;
       if (nextUuid != null && nextUuid != _activeAccountUuid) {
         unawaited(_loadAddresses());
+      }
+    });
+    ref.listen(syncProvider, (previous, next) {
+      final previousState = previous?.asData?.value;
+      final nextState = next.asData?.value;
+      final completedAt = nextState?.lastSyncCompletedAt;
+      if (previousState != null &&
+          completedAt != null &&
+          completedAt != previousState.lastSyncCompletedAt) {
+        unawaited(_refreshTransparentReceiveAddressAfterSync());
       }
     });
 
