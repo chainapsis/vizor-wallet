@@ -208,10 +208,6 @@ class _WidgetbookReceiveAddressService implements ReceiveAddressService {
   }) async => currentShieldedAddress ?? _mobileShieldedAddress;
 
   @override
-  Future<String> loadTransparentAddress({required String accountUuid}) async =>
-      _mobileTransparentAddress;
-
-  @override
   Future<String> loadTransparentReceiveAddress({
     required String accountUuid,
   }) async => _mobileTransparentAddress;

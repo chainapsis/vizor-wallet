@@ -734,18 +734,6 @@ pub fn validate_mnemonic(mnemonic: String) -> bool {
     keys::mnemonic_to_seed(&mnemonic).is_ok()
 }
 
-/// Get the transparent address for a specific account (or first account if uuid is None).
-pub fn get_transparent_address(
-    db_path: String,
-    network: String,
-    account_uuid: Option<String>,
-) -> Result<String, String> {
-    catch(|| {
-        let network = parse_network_and_migrate(&db_path, &network)?;
-        keys::get_transparent_address_from_db(&db_path, network, account_uuid.as_deref())
-    })
-}
-
 /// Get the next transparent receive address for a specific account.
 ///
 /// This is read-only: it returns the first tracked external transparent address

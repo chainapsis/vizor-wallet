@@ -85,7 +85,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     });
 
     if (_selectedType == ReceiveAddressType.transparent) {
-      unawaited(_loadTransparentAddress(accountUuid: accountUuid));
+      unawaited(_loadTransparentReceiveAddress(accountUuid: accountUuid));
     }
 
     try {
@@ -115,7 +115,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     }
   }
 
-  Future<void> _loadTransparentAddress({String? accountUuid}) async {
+  Future<void> _loadTransparentReceiveAddress({String? accountUuid}) async {
     final targetAccountUuid =
         accountUuid ?? ref.read(accountProvider).value?.activeAccountUuid;
     if (targetAccountUuid == null) return;
@@ -229,7 +229,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
 
     setState(() => _selectedType = type);
     if (type == ReceiveAddressType.transparent) {
-      unawaited(_loadTransparentAddress());
+      unawaited(_loadTransparentReceiveAddress());
     }
   }
 

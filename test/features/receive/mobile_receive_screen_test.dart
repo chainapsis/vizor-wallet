@@ -58,10 +58,6 @@ class _FakeReceiveAddressService implements ReceiveAddressService {
   }) async => currentShieldedAddress ?? _shielded;
 
   @override
-  Future<String> loadTransparentAddress({required String accountUuid}) async =>
-      _transparent;
-
-  @override
   Future<String> loadTransparentReceiveAddress({
     required String accountUuid,
   }) async => _transparent;

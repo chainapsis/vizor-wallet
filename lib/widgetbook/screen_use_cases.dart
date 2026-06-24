@@ -1556,11 +1556,6 @@ class _PreviewReceiveAddressService implements ReceiveAddressService {
   }
 
   @override
-  Future<String> loadTransparentAddress({required String accountUuid}) async {
-    return 't1WidgetbookTransparentAddress';
-  }
-
-  @override
   Future<String> loadTransparentReceiveAddress({
     required String accountUuid,
   }) async {

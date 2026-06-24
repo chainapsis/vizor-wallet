@@ -885,31 +885,6 @@ fn orchard_address_request() -> UnifiedAddressRequest {
     .expect("valid receiver requirements")
 }
 
-/// Get the transparent address from an existing wallet database.
-pub fn get_transparent_address_from_db(
-    db_path: &str,
-    network: WalletNetwork,
-    account_uuid: Option<&str>,
-) -> Result<String, String> {
-    let db = open_wallet_db_for_read(db_path, network)?;
-
-    let account_id = resolve_account_id(&db, account_uuid)?;
-
-    let current_ua = db
-        .get_last_generated_address_matching(account_id, UnifiedAddressRequest::AllAvailableKeys)
-        .map_err(|e| format!("Failed to get current generated address: {e}"))?
-        .ok_or_else(|| "No tracked transparent address available".to_string())?;
-    let taddr = current_ua.transparent().ok_or_else(|| {
-        "Current generated address does not include a transparent receiver".to_string()
-    })?;
-
-    Ok(encode_transparent_address(
-        &network.b58_pubkey_address_prefix(),
-        &network.b58_script_address_prefix(),
-        taddr,
-    ))
-}
-
 /// Get the first external transparent receive address that has no received output.
 ///
 /// zcash_client_sqlite pre-generates external transparent gap-limit rows for

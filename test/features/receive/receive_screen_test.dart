@@ -555,11 +555,6 @@ class _FakeReceiveAddressService extends ReceiveAddressService {
   }
 
   @override
-  Future<String> loadTransparentAddress({required String accountUuid}) async {
-    return _transparentAddress;
-  }
-
-  @override
   Future<String> loadTransparentReceiveAddress({
     required String accountUuid,
   }) async {
@@ -610,11 +605,6 @@ class _RacyReceiveAddressService extends ReceiveAddressService {
 
   @override
   String? getCachedTransparentAddress(String accountUuid) => null;
-
-  @override
-  Future<String> loadTransparentAddress({required String accountUuid}) async {
-    return 't1transparent-$accountUuid';
-  }
 
   @override
   Future<String> loadTransparentReceiveAddress({
