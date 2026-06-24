@@ -158,6 +158,32 @@ BigInt _parseBaseUnits(String? value, String fieldName) {
   return parsed;
 }
 
+void _validateFormattedAmountMatchesBaseUnits({
+  required String formatted,
+  required BigInt baseUnits,
+  required int decimals,
+  required String fieldName,
+  String? operation,
+}) {
+  late final String formattedBaseUnitsText;
+  try {
+    formattedBaseUnitsText = _decimalStringToBaseUnits(formatted, decimals);
+  } on OneClickApiException catch (error) {
+    throw OneClickApiException(
+      error.message,
+      operation: operation ?? error.operation,
+      statusCode: error.statusCode,
+    );
+  }
+  final formattedBaseUnits = BigInt.parse(formattedBaseUnitsText);
+  if (formattedBaseUnits != baseUnits) {
+    throw OneClickApiException(
+      'Mismatched $fieldName formatted and base-unit amounts',
+      operation: operation,
+    );
+  }
+}
+
 String _decimalStringToBaseUnits(String value, int decimals) {
   var normalized = value.trim().toLowerCase();
   if (normalized.startsWith('+')) {

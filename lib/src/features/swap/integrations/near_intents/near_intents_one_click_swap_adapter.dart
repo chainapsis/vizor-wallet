@@ -83,18 +83,22 @@ class NearIntentsOneClickSwapAdapter
     final amountToken = request.mode == SwapQuoteMode.exactInput
         ? sellToken
         : receiveToken;
+    final amountBaseUnits = _toBaseUnits(amountText, amountToken.decimals);
+    final requestedSlippageBps = request.slippageBps ?? slippageBps;
+    final requestedRefundTo = request.refundAddress!.trim();
+    final requestedRecipient = request.destination.trim();
 
     final body = <String, Object?>{
       'dry': request.dryRun,
       'swapType': request.mode.oneClickSwapType,
-      'slippageTolerance': request.slippageBps ?? slippageBps,
+      'slippageTolerance': requestedSlippageBps,
       'originAsset': sellToken.assetId,
       'depositType': 'ORIGIN_CHAIN',
       'destinationAsset': receiveToken.assetId,
-      'amount': _toBaseUnits(amountText, amountToken.decimals),
-      'refundTo': request.refundAddress!.trim(),
+      'amount': amountBaseUnits,
+      'refundTo': requestedRefundTo,
       'refundType': 'ORIGIN_CHAIN',
-      'recipient': request.destination.trim(),
+      'recipient': requestedRecipient,
       'recipientType': 'DESTINATION_CHAIN',
       'deadline': _deadlineIso(request.deadline ?? quoteDeadline),
       'depositMode': 'SIMPLE',
@@ -115,6 +119,12 @@ class NearIntentsOneClickSwapAdapter
       expectedOriginAsset: sellToken.assetId,
       expectedDestinationAsset: receiveToken.assetId,
       expectedMode: request.mode,
+      expectedFixedAmountBaseUnits: amountBaseUnits,
+      expectedSlippageBps: requestedSlippageBps,
+      expectedRefundTo: requestedRefundTo,
+      expectedRecipient: requestedRecipient,
+      sellToken: sellToken,
+      receiveToken: receiveToken,
     );
     return _quoteFromOneClick(
       quoteResponse,
@@ -706,17 +716,79 @@ class NearIntentsOneClickSwapAdapter
     required String expectedOriginAsset,
     required String expectedDestinationAsset,
     required SwapQuoteMode expectedMode,
+    required String expectedFixedAmountBaseUnits,
+    required int expectedSlippageBps,
+    required String expectedRefundTo,
+    required String expectedRecipient,
+    required _OneClickToken sellToken,
+    required _OneClickToken receiveToken,
   }) {
     final actual = response.quoteRequest;
-    if (actual.originAsset == expectedOriginAsset &&
-        actual.destinationAsset == expectedDestinationAsset &&
-        actual.mode == expectedMode) {
-      return;
+    if (actual.originAsset != expectedOriginAsset ||
+        actual.destinationAsset != expectedDestinationAsset ||
+        actual.swapTypeRaw?.trim().toUpperCase() !=
+            expectedMode.oneClickSwapType) {
+      throw OneClickApiException(
+        '1Click quote response did not match the requested route',
+        operation: 'quote',
+      );
     }
-    throw OneClickApiException(
-      '1Click quote response did not match the requested route',
+
+    final quote = response.quote;
+    final amountField = expectedMode == SwapQuoteMode.exactInput
+        ? quote.amountIn
+        : quote.amountOut;
+    final amountFieldName = expectedMode == SwapQuoteMode.exactInput
+        ? 'amountIn'
+        : 'amountOut';
+    if (_parseQuoteResponseBaseUnits(amountField, amountFieldName) !=
+        BigInt.parse(expectedFixedAmountBaseUnits)) {
+      throw OneClickApiException(
+        '1Click quote response did not match the requested amount',
+        operation: 'quote',
+      );
+    }
+
+    _validateFormattedAmountMatchesBaseUnits(
+      formatted: quote.amountInFormatted,
+      baseUnits: _parseQuoteResponseBaseUnits(quote.amountIn, 'amountIn'),
+      decimals: sellToken.decimals,
+      fieldName: 'amountIn',
       operation: 'quote',
     );
+    _validateFormattedAmountMatchesBaseUnits(
+      formatted: quote.amountOutFormatted,
+      baseUnits: _parseQuoteResponseBaseUnits(quote.amountOut, 'amountOut'),
+      decimals: receiveToken.decimals,
+      fieldName: 'amountOut',
+      operation: 'quote',
+    );
+
+    if (actual.slippageToleranceBps != expectedSlippageBps) {
+      throw const OneClickApiException(
+        '1Click quote response did not match the requested slippage',
+        operation: 'quote',
+      );
+    }
+    if (actual.refundTo?.trim() != expectedRefundTo ||
+        actual.recipient?.trim() != expectedRecipient) {
+      throw const OneClickApiException(
+        '1Click quote response did not match the requested addresses',
+        operation: 'quote',
+      );
+    }
+  }
+
+  BigInt _parseQuoteResponseBaseUnits(String? value, String fieldName) {
+    try {
+      return _parseBaseUnits(value, fieldName);
+    } on OneClickApiException catch (error) {
+      throw OneClickApiException(
+        error.message,
+        operation: 'quote',
+        statusCode: error.statusCode,
+      );
+    }
   }
 
   _OneClickToken _requireToken(
