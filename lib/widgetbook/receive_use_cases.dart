@@ -72,14 +72,12 @@ class _ReceiveDesktopHarness extends StatelessWidget {
       color: colors.background.window,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final maxWidth =
-              constraints.maxWidth.isFinite
-                  ? constraints.maxWidth
-                  : ReceiveDesktopPreview.size.width;
-          final maxHeight =
-              constraints.maxHeight.isFinite
-                  ? constraints.maxHeight
-                  : ReceiveDesktopPreview.size.height;
+          final maxWidth = constraints.maxWidth.isFinite
+              ? constraints.maxWidth
+              : ReceiveDesktopPreview.size.width;
+          final maxHeight = constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : ReceiveDesktopPreview.size.height;
           final contentWidth = math.max(320.0, maxWidth);
           final contentHeight = math.max(240.0, maxHeight);
           final scale = math.min(
@@ -212,6 +210,11 @@ class _WidgetbookReceiveAddressService implements ReceiveAddressService {
   @override
   Future<String> loadTransparentAddress({required String accountUuid}) async =>
       _mobileTransparentAddress;
+
+  @override
+  Future<String> loadTransparentReceiveAddress({
+    required String accountUuid,
+  }) async => _mobileTransparentAddress;
 
   @override
   Future<String> renewShieldedAddress({required String accountUuid}) async =>

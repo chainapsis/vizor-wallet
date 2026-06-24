@@ -62,6 +62,11 @@ class _FakeReceiveAddressService implements ReceiveAddressService {
       _transparent;
 
   @override
+  Future<String> loadTransparentReceiveAddress({
+    required String accountUuid,
+  }) async => _transparent;
+
+  @override
   Future<String> renewShieldedAddress({required String accountUuid}) async {
     renewals++;
     return 'u1renewedaddress9876543210abcdefghij';

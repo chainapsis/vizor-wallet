@@ -211,6 +211,20 @@ Future<String> getTransparentAddress({
   accountUuid: accountUuid,
 );
 
+/// Get the next transparent receive address for a specific account.
+///
+/// This is read-only: it returns the first tracked external transparent address
+/// that has not received a transparent output.
+Future<String> getTransparentReceiveAddress({
+  required String dbPath,
+  required String network,
+  String? accountUuid,
+}) => RustLib.instance.api.crateApiWalletGetTransparentReceiveAddress(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
 /// Result of adding an account to an existing wallet.
 class AccountCreationResult {
   final String accountUuid;

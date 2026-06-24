@@ -127,6 +127,35 @@ void main() {
     );
   });
 
+  testWidgets('refreshes transparent receive address even when cached', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    late _FakeReceiveAddressService service;
+    await tester.pumpWidget(
+      _receiveHarness(
+        receiveAddressService: (ref) {
+          service = _FakeReceiveAddressService(ref);
+          return service;
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(service.transparentReceiveLoads, 0);
+
+    await tester.tap(find.text('Transparent'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(service.transparentReceiveLoads, 1);
+  });
+
   testWidgets('uses dark receive color for renew icon and address text', (
     tester,
   ) async {
@@ -473,6 +502,9 @@ const _accountTwoAddress = 'u1accounttwo-current';
 class _FakeReceiveAddressService extends ReceiveAddressService {
   _FakeReceiveAddressService(super.ref);
 
+  int transparentReceiveLoads = 0;
+  String transparentReceiveAddress = _transparentAddress;
+
   @override
   Future<String> loadShieldedAddress({
     required String accountUuid,
@@ -489,6 +521,14 @@ class _FakeReceiveAddressService extends ReceiveAddressService {
   @override
   Future<String> loadTransparentAddress({required String accountUuid}) async {
     return _transparentAddress;
+  }
+
+  @override
+  Future<String> loadTransparentReceiveAddress({
+    required String accountUuid,
+  }) async {
+    transparentReceiveLoads++;
+    return transparentReceiveAddress;
   }
 
   @override
@@ -537,6 +577,13 @@ class _RacyReceiveAddressService extends ReceiveAddressService {
 
   @override
   Future<String> loadTransparentAddress({required String accountUuid}) async {
+    return 't1transparent-$accountUuid';
+  }
+
+  @override
+  Future<String> loadTransparentReceiveAddress({
+    required String accountUuid,
+  }) async {
     return 't1transparent-$accountUuid';
   }
 

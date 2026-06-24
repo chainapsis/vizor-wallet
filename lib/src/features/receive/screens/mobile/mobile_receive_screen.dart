@@ -86,7 +86,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
       setState(() => _shieldedAddress = '');
     }
     try {
-      final transparent = await service.loadTransparentAddress(
+      final transparent = await service.loadTransparentReceiveAddress(
         accountUuid: accountUuid,
       );
       if (!mounted) return;

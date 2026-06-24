@@ -84,8 +84,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       _transparentAddress = cachedTransparentAddress;
     });
 
-    if (_selectedType == ReceiveAddressType.transparent &&
-        cachedTransparentAddress == null) {
+    if (_selectedType == ReceiveAddressType.transparent) {
       unawaited(_loadTransparentAddress(accountUuid: accountUuid));
     }
 
@@ -137,22 +136,20 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
         _isLoadingTransparent = false;
         _transparentLoadingAccountUuid = null;
       });
-      return;
     }
 
-    if (_isLoadingTransparent &&
-        _transparentLoadingAccountUuid == targetAccountUuid) {
+    if (_transparentLoadingAccountUuid == targetAccountUuid) {
       return;
     }
 
     setState(() {
-      _isLoadingTransparent = true;
+      _isLoadingTransparent = cachedAddress == null;
       _transparentLoadingAccountUuid = targetAccountUuid;
       _transparentErrorText = null;
     });
 
     try {
-      final address = await service.loadTransparentAddress(
+      final address = await service.loadTransparentReceiveAddress(
         accountUuid: targetAccountUuid,
       );
       if (!mounted) return;

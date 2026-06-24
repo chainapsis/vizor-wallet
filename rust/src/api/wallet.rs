@@ -738,6 +738,21 @@ pub fn get_transparent_address(
     })
 }
 
+/// Get the next transparent receive address for a specific account.
+///
+/// This is read-only: it returns the first tracked external transparent address
+/// that has not received a transparent output.
+pub fn get_transparent_receive_address(
+    db_path: String,
+    network: String,
+    account_uuid: Option<String>,
+) -> Result<String, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        keys::get_transparent_receive_address_from_db(&db_path, network, account_uuid.as_deref())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

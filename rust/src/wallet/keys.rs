@@ -6,7 +6,7 @@ use std::{
 
 use ::transparent::keys::{IncomingViewingKey as _, NonHardenedChildIndex};
 use bip0039::{Count, English, Language, Mnemonic};
-use rusqlite::named_params;
+use rusqlite::{named_params, OptionalExtension};
 use secrecy::{ExposeSecret, SecretVec};
 use zcash_client_backend::data_api::{
     chain::ChainState, Account as _, AccountBirthday, AccountPurpose, AccountSource, WalletRead,
@@ -24,9 +24,9 @@ use zip32::fingerprint::SeedFingerprint;
 
 use crate::wallet::{
     db::{
-        open_wallet_db_for_read_with_timeout, open_wallet_db_with_timeout,
-        with_wallet_db_write_lock, WalletDatabase, ACCOUNT_MUTATION_DB_BUSY_TIMEOUT,
-        READ_DB_BUSY_TIMEOUT, WALLET_DB_BUSY_TIMEOUT,
+        open_readonly_conn_with_timeout, open_wallet_db_for_read_with_timeout,
+        open_wallet_db_with_timeout, with_wallet_db_write_lock, WalletDatabase,
+        ACCOUNT_MUTATION_DB_BUSY_TIMEOUT, READ_DB_BUSY_TIMEOUT, WALLET_DB_BUSY_TIMEOUT,
     },
     network::WalletNetwork,
 };
@@ -37,6 +37,7 @@ const DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE: &str = "This Keystone account is alrea
 const MIN_MNEMONIC_WORD_COUNT: usize = 12;
 const MAX_MNEMONIC_WORD_COUNT: usize = 24;
 const MNEMONIC_WORD_COUNT_STEP: usize = 3;
+const TRANSPARENT_EXTERNAL_KEY_SCOPE: i64 = 0;
 
 fn map_account_import_error(
     error: SqliteClientError,
@@ -759,6 +760,27 @@ fn resolve_account_id(
     }
 }
 
+fn resolve_account_uuid_bytes_for_read(
+    conn: &rusqlite::Connection,
+    account_uuid: Option<&str>,
+) -> Result<Vec<u8>, String> {
+    match account_uuid {
+        Some(uuid_str) => {
+            let account_id = parse_account_uuid(uuid_str)?;
+            Ok(account_id.expose_uuid().as_bytes().to_vec())
+        }
+        None => conn
+            .query_row(
+                "SELECT uuid FROM accounts ORDER BY id ASC LIMIT 1",
+                [],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(|e| format!("Failed to resolve first account: {e}"))?
+            .ok_or_else(|| "No accounts found in wallet".to_string()),
+    }
+}
+
 /// Get the Unified Address from an existing wallet database.
 pub fn get_address_from_db(
     db_path: &str,
@@ -860,6 +882,48 @@ pub fn get_transparent_address_from_db(
         &network.b58_script_address_prefix(),
         taddr,
     ))
+}
+
+/// Get the first external transparent receive address that has no received output.
+///
+/// zcash_client_sqlite pre-generates external transparent gap-limit rows for
+/// each account. This function intentionally reads those rows without calling
+/// get_next_available_address, so displaying receive UI does not reserve or
+/// expose a new address.
+pub fn get_transparent_receive_address_from_db(
+    db_path: &str,
+    _network: WalletNetwork,
+    account_uuid: Option<&str>,
+) -> Result<String, String> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
+    let account_uuid_bytes = resolve_account_uuid_bytes_for_read(&conn, account_uuid)?;
+
+    conn.query_row(
+        r#"
+        SELECT a.cached_transparent_receiver_address
+        FROM addresses a
+        JOIN accounts acct ON acct.id = a.account_id
+        WHERE acct.uuid = :account_uuid
+          AND a.key_scope = :external_scope
+          AND a.transparent_child_index IS NOT NULL
+          AND a.cached_transparent_receiver_address IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM transparent_received_outputs tro
+              WHERE tro.address_id = a.id
+          )
+        ORDER BY a.transparent_child_index ASC
+        LIMIT 1
+        "#,
+        named_params! {
+            ":account_uuid": account_uuid_bytes.as_slice(),
+            ":external_scope": TRANSPARENT_EXTERNAL_KEY_SCOPE,
+        },
+        |row| row.get::<_, String>(0),
+    )
+    .optional()
+    .map_err(|e| format!("Failed to get transparent receive address: {e}"))?
+    .ok_or_else(|| "No unused external transparent receive address available".to_string())
 }
 
 /// Validate that a wallet database exists and has at least one account.
@@ -1063,6 +1127,101 @@ mod tests {
                 .unwrap()
                 .unified_address
         );
+    }
+
+    #[test]
+    fn test_get_transparent_receive_address_returns_first_unused_external_address() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        let (uuid, _) =
+            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
+                .unwrap();
+
+        let conn = rusqlite::Connection::open(db_path_str).unwrap();
+        let (_, first_external, exposed_before) = external_transparent_address_row(&conn, &uuid, 0);
+
+        let receive_address =
+            get_transparent_receive_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid))
+                .unwrap();
+        let (_, _, exposed_after) = external_transparent_address_row(&conn, &uuid, 0);
+
+        assert_eq!(receive_address, first_external);
+        assert_eq!(exposed_after, exposed_before);
+    }
+
+    #[test]
+    fn test_get_transparent_receive_address_skips_received_external_address() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        let (uuid, _) =
+            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
+                .unwrap();
+
+        let conn = rusqlite::Connection::open(db_path_str).unwrap();
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+        let (first_id, first_external, _) = external_transparent_address_row(&conn, &uuid, 0);
+        let (_, second_external, second_exposed_before) =
+            external_transparent_address_row(&conn, &uuid, 1);
+
+        mark_transparent_address_received(&conn, &uuid, first_id, &first_external, 1);
+
+        let receive_address =
+            get_transparent_receive_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid))
+                .unwrap();
+        let (_, _, second_exposed_after) = external_transparent_address_row(&conn, &uuid, 1);
+
+        assert_eq!(receive_address, second_external);
+        assert_eq!(second_exposed_after, second_exposed_before);
+    }
+
+    #[test]
+    fn test_get_transparent_receive_address_does_not_return_internal_or_ephemeral() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        let (uuid, _) =
+            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
+                .unwrap();
+
+        let conn = rusqlite::Connection::open(db_path_str).unwrap();
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+        let account_id = account_row_id(&conn, &uuid);
+        let non_external_count: i64 = conn
+            .query_row(
+                r#"
+                SELECT COUNT(*)
+                FROM addresses
+                WHERE account_id = ?1
+                  AND key_scope IN (1, 2)
+                  AND cached_transparent_receiver_address IS NOT NULL
+                "#,
+                rusqlite::params![account_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(non_external_count > 0);
+
+        let external_rows = external_transparent_address_rows(&conn, &uuid);
+        assert!(!external_rows.is_empty());
+        for (index, (address_id, address)) in external_rows.iter().enumerate() {
+            mark_transparent_address_received(&conn, &uuid, *address_id, address, index as u32);
+        }
+
+        let error =
+            get_transparent_receive_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid))
+                .unwrap_err();
+        assert!(error.contains("No unused external transparent receive address available"));
     }
 
     #[test]
@@ -1422,6 +1581,85 @@ mod tests {
             |row| row.get(0),
         )
         .unwrap()
+    }
+
+    fn external_transparent_address_row(
+        conn: &rusqlite::Connection,
+        account_uuid: &str,
+        child_index: i64,
+    ) -> (i64, String, Option<i64>) {
+        let account_id = account_row_id(conn, account_uuid);
+        conn.query_row(
+            r#"
+            SELECT id, cached_transparent_receiver_address, exposed_at_height
+            FROM addresses
+            WHERE account_id = ?1
+              AND key_scope = ?2
+              AND transparent_child_index = ?3
+              AND cached_transparent_receiver_address IS NOT NULL
+            "#,
+            rusqlite::params![account_id, TRANSPARENT_EXTERNAL_KEY_SCOPE, child_index],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap()
+    }
+
+    fn external_transparent_address_rows(
+        conn: &rusqlite::Connection,
+        account_uuid: &str,
+    ) -> Vec<(i64, String)> {
+        let account_id = account_row_id(conn, account_uuid);
+        let mut stmt = conn
+            .prepare(
+                r#"
+                SELECT id, cached_transparent_receiver_address
+                FROM addresses
+                WHERE account_id = ?1
+                  AND key_scope = ?2
+                  AND transparent_child_index IS NOT NULL
+                  AND cached_transparent_receiver_address IS NOT NULL
+                ORDER BY transparent_child_index ASC
+                "#,
+            )
+            .unwrap();
+        stmt.query_map(
+            rusqlite::params![account_id, TRANSPARENT_EXTERNAL_KEY_SCOPE],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+    }
+
+    fn mark_transparent_address_received(
+        conn: &rusqlite::Connection,
+        account_uuid: &str,
+        address_id: i64,
+        address: &str,
+        tx_suffix: u32,
+    ) {
+        let account_id = account_row_id(conn, account_uuid);
+        let mut txid = vec![0_u8; 32];
+        txid[0] = 0xAB;
+        txid[28..32].copy_from_slice(&tx_suffix.to_be_bytes());
+        let height = 10_i64 + i64::from(tx_suffix);
+
+        conn.execute(
+            "INSERT INTO transactions (txid, mined_height, min_observed_height)
+             VALUES (?1, ?2, ?2)",
+            rusqlite::params![txid, height],
+        )
+        .unwrap();
+        let transaction_id = conn.last_insert_rowid();
+
+        conn.execute(
+            "INSERT INTO transparent_received_outputs (
+                 transaction_id, output_index, account_id, address, script,
+                 value_zat, max_observed_unspent_height, address_id
+             ) VALUES (?1, 0, ?2, ?3, x'51', 1000, ?4, ?5)",
+            rusqlite::params![transaction_id, account_id, address, height, address_id],
+        )
+        .unwrap();
     }
 
     #[test]
