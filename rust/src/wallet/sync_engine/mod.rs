@@ -790,12 +790,15 @@ async fn refresh_utxos(
             } else {
                 "transparent external UTXOs recent batch".to_string()
             };
-            let received_any =
-                refresh_transparent_addresses(client, db, batch.addresses, start_height, &label)
-                    .await?;
-            if received_any {
-                mark_transparent_receive_cache_dirty(db_data_path, &account_uuid);
-            }
+            refresh_transparent_addresses(
+                client,
+                db,
+                batch.addresses,
+                start_height,
+                &label,
+                || mark_transparent_receive_cache_dirty(db_data_path, &account_uuid),
+            )
+            .await?;
             if let Err(e) = transparent_receive_cache::mark_utxo_refresh_batch_complete(
                 db_data_path,
                 network,
@@ -826,17 +829,15 @@ async fn refresh_utxos(
             .collect();
 
         if !non_external_addresses.is_empty() {
-            let received_any = refresh_transparent_addresses(
+            refresh_transparent_addresses(
                 client,
                 db,
                 non_external_addresses,
                 safety_start_height,
                 "transparent non-external UTXOs",
+                || mark_transparent_receive_cache_dirty(db_data_path, &account_uuid),
             )
             .await?;
-            if received_any {
-                mark_transparent_receive_cache_dirty(db_data_path, &account_uuid);
-            }
         }
     }
 
@@ -879,6 +880,7 @@ async fn refresh_transparent_addresses(
     addresses: Vec<String>,
     start_height: BlockHeight,
     label: &str,
+    mut mark_cache_dirty: impl FnMut(),
 ) -> Result<bool, SyncError> {
     if addresses.is_empty() {
         return Ok(false);
@@ -938,6 +940,9 @@ async fn refresh_transparent_addresses(
             db.put_received_transparent_utxo(&output)
                 .map_err(|e| SyncError::db(format!("put_received_transparent_utxo: {e}")))
         })?;
+        if !received_any {
+            mark_cache_dirty();
+        }
         received_any = true;
     }
 
