@@ -107,12 +107,18 @@ Widget _app(
   );
 }
 
-SyncState _syncedState({BigInt? orchardBalance}) => SyncState(
+SyncState _syncedState({
+  BigInt? orchardBalance,
+  BigInt? transparentBalance,
+  bool canShieldTransparentBalance = false,
+}) => SyncState(
   accountUuid: 'account-1',
   hasAccountScopedData: true,
   percentage: 1.0,
   displayPercentage: 1.0,
   orchardBalance: orchardBalance ?? BigInt.zero,
+  transparentBalance: transparentBalance ?? BigInt.zero,
+  canShieldTransparentBalance: canShieldTransparentBalance,
 );
 
 rust_sync.TransactionInfo _tx(int index) {
@@ -183,6 +189,33 @@ void main() {
     expect(find.text('Send'), findsOneWidget);
     expect(find.text('Receive'), findsOneWidget);
     expect(find.text('No activity, yet...'), findsOneWidget);
+  });
+
+  testWidgets('shows transparent balance tray with shield action', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(14312000000),
+          transparentBalance: BigInt.from(242000000),
+          canShieldTransparentBalance: true,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('mobile_home_transparent_balance_strip')),
+      findsOneWidget,
+    );
+    expect(find.text('Transparent: 2.42 ZEC'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_home_shield_balance_button')),
+      findsOneWidget,
+    );
+    expect(find.text('Shield'), findsOneWidget);
   });
 
   testWidgets('matches the Figma balance card controls and action labels', (

@@ -15,6 +15,7 @@ import '../../../../core/privacy/privacy_mask.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/sync_provider.dart';
@@ -28,6 +29,8 @@ import '../../../activity/swap_activity_row_mapper.dart';
 import '../../../activity/widgets/activity_feed.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
+import '../../services/transparent_shielding_service.dart';
+import 'mobile_keystone_shield_screen.dart';
 
 /// Mobile home tab: shielded balance card, send/receive actions, and
 /// up to ten recent activity rows — Figma `HOME` section frames
@@ -144,7 +147,7 @@ class _ImportingBackground extends StatelessWidget {
   }
 }
 
-class _HomeContent extends ConsumerWidget {
+class _HomeContent extends ConsumerStatefulWidget {
   const _HomeContent({
     required this.sync,
     required this.activeAccountUuid,
@@ -158,13 +161,80 @@ class _HomeContent extends ConsumerWidget {
   final VoidCallback onTogglePrivacyMode;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_HomeContent> createState() => _HomeContentState();
+}
+
+class _HomeContentState extends ConsumerState<_HomeContent> {
+  bool _isShieldingBalance = false;
+
+  Future<void> _shieldTransparentBalance() async {
+    if (_isShieldingBalance) return;
+
+    late final String accountUuid;
+    try {
+      accountUuid = activeShieldingAccountUuid(ref);
+    } catch (_) {
+      _showShieldToast('No active account.');
+      return;
+    }
+
+    final accountNotifier = ref.read(accountProvider.notifier);
+    if (accountNotifier.isHardwareAccount(accountUuid)) {
+      final result = await context.push<MobileKeystoneShieldResult>(
+        '/home/keystone-shield',
+      );
+      if (!mounted || result == null) return;
+      final message = result.message;
+      if (message != null && message.isNotEmpty) {
+        _showShieldToast(message);
+      } else if (result.succeeded) {
+        showAppToast(context, 'Shielding complete');
+      }
+      return;
+    }
+
+    setState(() => _isShieldingBalance = true);
+    try {
+      final result = await shieldTransparentSoftwareBalance(
+        ref: ref,
+        accountUuid: accountUuid,
+        logContext: 'MobileHome',
+      );
+      if (!mounted) return;
+      final warning = shieldBalanceBroadcastStatusMessage(result);
+      if (warning != null) {
+        _showShieldToast(warning);
+      } else {
+        showAppToast(context, 'Shielding complete');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showShieldToast(friendlyShieldBalanceError(e));
+    } finally {
+      if (mounted) {
+        setState(() => _isShieldingBalance = false);
+      }
+    }
+  }
+
+  void _showShieldToast(String message) {
+    showAppToast(context, message, iconName: AppIcons.warning);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sync = widget.sync;
+    final activeAccountUuid = widget.activeAccountUuid;
+    final privacyModeEnabled = widget.privacyModeEnabled;
     final shieldedBalance =
         sync.saplingBalance +
         sync.orchardBalance +
         sync.saplingPendingBalance +
         sync.orchardPendingBalance;
-    final hasBalance = shieldedBalance > BigInt.zero;
+    final transparentBalance =
+        sync.transparentBalance + sync.transparentPendingBalance;
+    final hasBalance =
+        shieldedBalance > BigInt.zero || transparentBalance > BigInt.zero;
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final fiatBalanceText = fiatTextForZatoshi(
       shieldedBalance,
@@ -239,8 +309,15 @@ class _HomeContent extends ConsumerWidget {
               : ZecAmount.fromZatoshi(shieldedBalance).balance.amountText,
           fiatBalanceText: shieldedFiatBalanceText,
           priceChange24hPct: priceChange24hPct,
+          transparentBalanceText: ZecAmount.fromZatoshi(
+            transparentBalance,
+          ).balance.amountText,
+          hasTransparentBalance: transparentBalance > BigInt.zero,
+          canShieldBalance: sync.canShieldTransparentBalance,
+          isShieldingBalance: _isShieldingBalance,
           privacyModeEnabled: privacyModeEnabled,
-          onTogglePrivacyMode: onTogglePrivacyMode,
+          onTogglePrivacyMode: widget.onTogglePrivacyMode,
+          onShieldBalancePressed: () => unawaited(_shieldTransparentBalance()),
         ),
         const SizedBox(height: AppSpacing.s),
         if (hasBalance)
@@ -323,20 +400,31 @@ class _BalanceCard extends StatelessWidget {
     required this.balanceText,
     required this.fiatBalanceText,
     required this.priceChange24hPct,
+    required this.transparentBalanceText,
+    required this.hasTransparentBalance,
+    required this.canShieldBalance,
+    required this.isShieldingBalance,
     required this.privacyModeEnabled,
     required this.onTogglePrivacyMode,
+    required this.onShieldBalancePressed,
   });
 
   final String balanceText;
   final String? fiatBalanceText;
   final double? priceChange24hPct;
+  final String transparentBalanceText;
+  final bool hasTransparentBalance;
+  final bool canShieldBalance;
+  final bool isShieldingBalance;
   final bool privacyModeEnabled;
   final VoidCallback onTogglePrivacyMode;
+  final VoidCallback onShieldBalancePressed;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final cardText = colors.text.homeCard;
+    final cardRadius = BorderRadius.circular(AppRadii.large);
     final roundedPriceChangePct = priceChange24hPct == null
         ? null
         : roundZecPriceChange24hPct(priceChange24hPct!);
@@ -349,88 +437,245 @@ class _BalanceCard extends StatelessWidget {
         : cardText;
 
     return Container(
-      height: 200,
-      padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
-        color: colors.background.homeCard,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        border: Border.all(
-          color: const Color(0xFFFFFFFF).withValues(alpha: 0.07),
-          width: 1.5,
-        ),
+        color: colors.background.ground,
+        borderRadius: cardRadius,
+        boxShadow: appSurfaceShadow(colors),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              AppIcon(AppIcons.shieldKeyhole, size: 20, color: cardText),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Text(
-                  'Shielded balance',
-                  style: _mobileHomeLabelMStyle.copyWith(color: cardText),
+      child: ClipRRect(
+        borderRadius: cardRadius,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 200,
+              padding: const EdgeInsets.all(AppSpacing.sm),
+              decoration: BoxDecoration(
+                color: colors.background.homeCard,
+                borderRadius: cardRadius,
+                border: Border.all(
+                  color: const Color(0xFFFFFFFF).withValues(alpha: 0.07),
+                  width: 1.5,
                 ),
               ),
-              _PrivacyEyeButton(
-                enabled: privacyModeEnabled,
-                onTap: onTogglePrivacyMode,
-              ),
-            ],
-          ),
-          const Spacer(),
-          if (fiatBalanceText != null) ...[
-            Row(
-              children: [
-                Flexible(
-                  child: Text(
-                    fiatBalanceText!,
-                    key: const ValueKey('mobile_home_balance_fiat_text'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      AppIcon(
+                        AppIcons.shieldKeyhole,
+                        size: 20,
+                        color: cardText,
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Expanded(
+                        child: Text(
+                          'Shielded balance',
+                          style: _mobileHomeLabelMStyle.copyWith(
+                            color: cardText,
+                          ),
+                        ),
+                      ),
+                      _PrivacyEyeButton(
+                        enabled: privacyModeEnabled,
+                        onTap: onTogglePrivacyMode,
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  if (fiatBalanceText != null) ...[
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            fiatBalanceText!,
+                            key: const ValueKey(
+                              'mobile_home_balance_fiat_text',
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: _mobileHomeLabelMStyle.copyWith(
+                              color: cardText.withValues(alpha: 0.8),
+                            ),
+                          ),
+                        ),
+                        if (priceChangeColor != null) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          Text(
+                            formatZecPriceChange24hPct(priceChange24hPct!),
+                            key: const ValueKey(
+                              'mobile_home_balance_price_change_text',
+                            ),
+                            style: _mobileHomeLabelMStyle.copyWith(
+                              color: priceChangeColor,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                  ],
+                  Text.rich(
+                    key: const ValueKey('mobile_home_shielded_balance'),
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: '$balanceText ',
+                          style: _mobileHomeBalanceAmountStyle.copyWith(
+                            color: cardText,
+                          ),
+                        ),
+                        TextSpan(
+                          text: kZcashDefaultCurrencyTicker,
+                          style: _mobileHomeBalanceTickerStyle.copyWith(
+                            color: cardText,
+                          ),
+                        ),
+                      ],
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: _mobileHomeLabelMStyle.copyWith(
-                      color: cardText.withValues(alpha: 0.8),
-                    ),
                   ),
-                ),
-                if (priceChangeColor != null) ...[
+                ],
+              ),
+            ),
+            if (hasTransparentBalance)
+              _MobileTransparentBalanceStrip(
+                key: const ValueKey('mobile_home_transparent_balance_strip'),
+                balanceText: transparentBalanceText,
+                canShieldBalance: canShieldBalance,
+                isShieldingBalance: isShieldingBalance,
+                privacyModeEnabled: privacyModeEnabled,
+                onShieldBalancePressed: onShieldBalancePressed,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileTransparentBalanceStrip extends StatelessWidget {
+  const _MobileTransparentBalanceStrip({
+    required this.balanceText,
+    required this.canShieldBalance,
+    required this.isShieldingBalance,
+    required this.privacyModeEnabled,
+    required this.onShieldBalancePressed,
+    super.key,
+  });
+
+  final String balanceText;
+  final bool canShieldBalance;
+  final bool isShieldingBalance;
+  final bool privacyModeEnabled;
+  final VoidCallback onShieldBalancePressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final displayedBalance = hideAmountIfPrivacyMode(
+      '$balanceText $kZcashDefaultCurrencyTicker',
+      privacyModeEnabled: privacyModeEnabled,
+    );
+
+    return SizedBox(
+      height: 57,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppIcon(
+                    AppIcons.transparentBalance,
+                    size: 20,
+                    color: colors.text.primary,
+                  ),
                   const SizedBox(width: AppSpacing.xs),
-                  Text(
-                    formatZecPriceChange24hPct(priceChange24hPct!),
-                    key: const ValueKey(
-                      'mobile_home_balance_price_change_text',
-                    ),
-                    style: _mobileHomeLabelMStyle.copyWith(
-                      color: priceChangeColor,
+                  Flexible(
+                    child: Text(
+                      'Transparent: $displayedBalance',
+                      key: const ValueKey(
+                        'mobile_home_transparent_balance_text',
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _mobileHomeLabelMStyle.copyWith(
+                        color: colors.text.primary,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ],
-              ],
+              ),
             ),
-            const SizedBox(height: AppSpacing.xs),
+            if (canShieldBalance || isShieldingBalance)
+              _MobileShieldBalanceButton(
+                enabled: canShieldBalance,
+                isLoading: isShieldingBalance,
+                onPressed: onShieldBalancePressed,
+              ),
           ],
-          Text.rich(
-            key: const ValueKey('mobile_home_shielded_balance'),
-            TextSpan(
-              children: [
-                TextSpan(
-                  text: '$balanceText ',
-                  style: _mobileHomeBalanceAmountStyle.copyWith(
-                    color: cardText,
-                  ),
-                ),
-                TextSpan(
-                  text: kZcashDefaultCurrencyTicker,
-                  style: _mobileHomeBalanceTickerStyle.copyWith(
-                    color: cardText,
-                  ),
-                ),
-              ],
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileShieldBalanceButton extends StatelessWidget {
+  const _MobileShieldBalanceButton({
+    required this.enabled,
+    required this.isLoading,
+    required this.onPressed,
+  });
+
+  final bool enabled;
+  final bool isLoading;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final isInteractive = enabled && !isLoading;
+    final contentColor = isLoading || enabled
+        ? colors.text.accent
+        : colors.text.secondary.withValues(alpha: 0.64);
+
+    return Semantics(
+      key: const ValueKey('mobile_home_shield_balance_button'),
+      button: true,
+      enabled: isInteractive,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: isInteractive ? onPressed : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xxs,
+            vertical: AppSpacing.s,
           ),
-        ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                isLoading ? 'Shielding...' : 'Shield',
+                style: _mobileHomeLabelMStyle.copyWith(color: contentColor),
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              AppIcon(
+                isLoading ? AppIcons.loader : AppIcons.chevronForward,
+                size: 16,
+                color: contentColor,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
