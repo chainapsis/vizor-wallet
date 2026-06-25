@@ -12,4 +12,8 @@ class FakeSyncNotifier extends SyncNotifier {
   void emit(SyncState next) {
     state = AsyncData(next);
   }
+
+  void setSyncState(SyncState nextState) {
+    state = AsyncData(nextState);
+  }
 }

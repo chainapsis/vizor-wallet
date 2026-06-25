@@ -24,6 +24,7 @@ import '../import/import_birthday_estimator.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_import_account_discovery_sheet.dart';
+import 'mobile_import_birthday_unknown_height_sheet.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 enum _BirthdayEntryMode { date, blockHeight }
@@ -255,10 +256,12 @@ class _MobileImportBirthdayScreenState
   /// "I can't remember" — like the desktop skip, import from the Sapling
   /// activation height so the wallet scans the whole chain rather than
   /// guessing a birthday.
-  void _skipBirthday() {
+  Future<void> _skipBirthday() async {
     if (_busy) return;
     _heightFocus.unfocus();
-    unawaited(_submit(_minHeight));
+    final confirmed = await showMobileImportBirthdayUnknownHeightSheet(context);
+    if (!mounted || !confirmed) return;
+    await _submit(_minHeight);
   }
 
   Future<void> _submit(int height) async {
@@ -462,7 +465,7 @@ class _MobileImportBirthdayScreenState
             key: const ValueKey('mobile_import_birthday_skip'),
             variant: AppButtonVariant.secondary,
             expand: true,
-            onPressed: _busy ? null : _skipBirthday,
+            onPressed: _busy ? null : () => unawaited(_skipBirthday()),
             trailing: const AppIcon(AppIcons.skip),
             child: const Text('I can’t remember'),
           ),

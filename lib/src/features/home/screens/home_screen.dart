@@ -1,7 +1,6 @@
 // ignore_for_file: unused_element, unused_field
 
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart'
@@ -13,7 +12,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../app_bootstrap.dart';
-import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/config/network_config.dart';
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -27,7 +26,6 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
-import '../../../providers/app_security_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -41,6 +39,7 @@ import '../../activity/swap_activity_row_mapper.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
+import '../services/transparent_shielding_service.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
@@ -49,15 +48,6 @@ const _homeDesktopActivationShortcuts = <ShortcutActivator, Intent>{
   SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
   SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
 };
-const shieldBalancePendingBroadcastMessage =
-    'Shielding queued for retry. Check Activity.';
-
-String? shieldBalanceBroadcastStatusMessage(
-  rust_sync.ShieldTransparentResult result,
-) {
-  if (result.status == 'broadcasted') return null;
-  return shieldBalancePendingBroadcastMessage;
-}
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -113,9 +103,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _shieldTransparentBalance() async {
     if (_isShieldingBalance) return;
 
-    final wallet = ref.read(walletProvider).value;
-    final accountUuid = wallet?.activeAccountUuid;
-    if (accountUuid == null) {
+    late final String accountUuid;
+    try {
+      accountUuid = activeShieldingAccountUuid(ref);
+    } catch (_) {
       setState(() {
         _shieldBalanceError = 'No active account.';
       });
@@ -138,88 +129,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _shieldBalanceErrorDetail = null;
     });
 
-    RpcEndpointConfig? attemptedEndpoint;
     try {
-      final sync = (ref.read(syncProvider).value ?? SyncState())
-          .scopedToAccount(accountUuid);
-      if (!sync.canShieldTransparentBalance) {
-        throw Exception(
-          'Transparent balance is too small to shield after fees.',
-        );
-      }
-
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
-      attemptedEndpoint = endpoint;
-
-      late final rust_sync.ShieldTransparentResult result;
-      late final Future<rust_sync.ShieldTransparentResult> resultFuture;
-
-      if (Platform.isMacOS) {
-        final password = ref
-            .read(appSecurityProvider.notifier)
-            .requireSessionPasswordForNativeSecretUse();
-        resultFuture = rust_sync
-            .shieldTransparentBalanceWithMacosStoredMnemonic(
-              dbPath: dbPath,
-              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              network: endpoint.networkName,
-              accountUuid: accountUuid,
-              password: password,
-            );
-      } else {
-        final mnemonicBytes = await accountNotifier.getMnemonicBytesForAccount(
-          accountUuid,
-        );
-        if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
-          throw Exception('Mnemonic not found for the active account.');
-        }
-
-        try {
-          resultFuture = rust_sync.shieldTransparentBalance(
-            dbPath: dbPath,
-            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            mnemonicBytes: mnemonicBytes,
-          );
-        } finally {
-          mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
-        }
-      }
-      result = await resultFuture;
-      log(
-        'HomeScreen: shielded transparent balance txids=${result.txids} '
-        'status=${result.status} '
-        'broadcasted=${result.broadcastedCount}/${result.totalCount} '
-        'fee=${result.feeZatoshi} shielded=${result.shieldedZatoshi}',
+      final result = await shieldTransparentSoftwareBalance(
+        ref: ref,
+        accountUuid: accountUuid,
+        logContext: 'HomeScreen',
       );
-
       final broadcastStatusMessage = shieldBalanceBroadcastStatusMessage(
         result,
       );
-      final broadcastDetailMessage = result.message?.trim();
-      if (broadcastStatusMessage != null &&
-          broadcastDetailMessage != null &&
-          broadcastDetailMessage.isNotEmpty) {
-        final switched = await ref
-            .read(rpcEndpointFailoverProvider.notifier)
-            .switchToFallbackFor(
-              broadcastDetailMessage,
-              endpoint: attemptedEndpoint,
-              operation: 'shield transparent balance broadcast',
-            );
-        if (switched) {
-          unawaited(ref.read(syncProvider.notifier).restartSync());
-        }
-      }
-
-      try {
-        await ref.read(syncProvider.notifier).refreshAfterSend();
-      } catch (e) {
-        log('HomeScreen: refreshAfterSend after shielding failed: $e');
-      }
-
       if (broadcastStatusMessage != null) {
         if (!mounted) return;
         setState(() {
@@ -227,22 +145,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           _shieldBalanceErrorDetail = null;
         });
       }
-    } catch (e, st) {
-      log('HomeScreen: shield transparent balance failed: $e\n$st');
-      final switched = await ref
-          .read(rpcEndpointFailoverProvider.notifier)
-          .switchToFallbackFor(
-            e,
-            endpoint: attemptedEndpoint,
-            operation: 'shield transparent balance',
-          );
-      if (switched) {
-        unawaited(ref.read(syncProvider.notifier).restartSync());
-      }
+    } catch (e) {
       if (!mounted) return;
       setState(() {
-        _shieldBalanceError = _friendlyShieldBalanceError(e);
-        _shieldBalanceErrorDetail = _shieldBalanceErrorDetails(e);
+        _shieldBalanceError = friendlyShieldBalanceError(e);
+        _shieldBalanceErrorDetail = shieldBalanceErrorDetails(e);
       });
     } finally {
       if (mounted) {
@@ -251,36 +158,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         });
       }
     }
-  }
-
-  String _friendlyShieldBalanceError(Object error) {
-    final message = error.toString();
-    final lower = message.toLowerCase();
-    if (lower.contains('mnemonic')) {
-      return "Secret Passphrase isn't available for this account.";
-    }
-    if (lower.contains('sync')) {
-      return 'Wait for sync to finish, then shield.';
-    }
-    if (lower.contains('insufficient') ||
-        lower.contains('threshold') ||
-        lower.contains('too small') ||
-        lower.contains('no transparent funds')) {
-      return 'Transparent balance is too small to shield after fees.';
-    }
-    if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
-      return "Couldn't broadcast your shielding transaction. Try again.";
-    }
-    return "Couldn't shield your balance. Try again.";
-  }
-
-  String? _shieldBalanceErrorDetails(Object error) {
-    final message = error.toString().trim();
-    final lower = message.toLowerCase();
-    if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
-      return null;
-    }
-    return message.isEmpty ? null : message;
   }
 
   void _closeKeystoneShieldSigning() {
