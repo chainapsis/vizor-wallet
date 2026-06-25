@@ -9,6 +9,10 @@ class FakeSyncNotifier extends SyncNotifier {
   @override
   Future<SyncState> build() async => initialState ?? SyncState();
 
+  void emit(SyncState next) {
+    state = AsyncData(next);
+  }
+
   void setSyncState(SyncState nextState) {
     state = AsyncData(nextState);
   }

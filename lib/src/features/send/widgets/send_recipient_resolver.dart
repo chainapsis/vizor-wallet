@@ -9,12 +9,12 @@ import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/models/address_book_label_lookup.dart';
 import 'send_review_layout.dart';
 
-/// Current unified and transparent address of every local account, keyed by the
-/// trimmed address. Used by send review surfaces to recognize a recipient as
-/// one of the user's own accounts without persisting addresses in [AccountInfo].
-///
-/// Address rotation caveat: only each account's CURRENT addresses are matched;
-/// an older rotated address of the same account is not recognized.
+const _selfSendTransparentLookbackLimit = 20;
+
+/// Current unified address and recent transparent receive addresses of every
+/// local account, keyed by the trimmed address. Used by send review surfaces to
+/// recognize a recipient as one of the user's own accounts without persisting
+/// addresses in [AccountInfo].
 final ownAccountAddressesProvider = FutureProvider<Map<String, AccountInfo>>((
   ref,
 ) async {
@@ -37,15 +37,16 @@ final ownAccountAddressesProvider = FutureProvider<Map<String, AccountInfo>>((
       ),
       addressKind: 'unified',
     );
-    await _addOwnAccountAddress(
+    await _addOwnAccountAddresses(
       byAddress: byAddress,
       account: account,
-      loadAddress: () => rust_wallet.getTransparentAddress(
+      loadAddresses: () => rust_wallet.getRecentTransparentReceiveAddresses(
         dbPath: dbPath,
         network: network,
         accountUuid: account.uuid,
+        limit: _selfSendTransparentLookbackLimit,
       ),
-      addressKind: 'transparent',
+      addressKind: 'transparent receive',
     );
   }
   return byAddress;
@@ -67,6 +68,29 @@ Future<void> _addOwnAccountAddress({
     // recognized as a self-transfer target for that address kind.
     log(
       'ownAccountAddresses: $addressKind address load failed for '
+      '${account.uuid}: $e',
+    );
+  }
+}
+
+Future<void> _addOwnAccountAddresses({
+  required Map<String, AccountInfo> byAddress,
+  required AccountInfo account,
+  required Future<List<String>> Function() loadAddresses,
+  required String addressKind,
+}) async {
+  try {
+    for (final rawAddress in await loadAddresses()) {
+      final address = rawAddress.trim();
+      if (address.isNotEmpty) {
+        byAddress[address] = account;
+      }
+    }
+  } catch (e) {
+    // Best-effort: an account whose address fails to load simply is not
+    // recognized as a self-transfer target for that address kind.
+    log(
+      'ownAccountAddresses: $addressKind addresses load failed for '
       '${account.uuid}: $e',
     );
   }

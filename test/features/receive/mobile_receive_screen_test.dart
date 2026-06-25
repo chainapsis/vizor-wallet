@@ -21,6 +21,7 @@ import '../../fakes/fake_sync_notifier.dart';
 
 const _shielded = 'u1tvg2412a23kshieldedaddressk64123hhq6d';
 const _transparent = 't1aWwWwqk3jYGkZc7nLGuTvuM8hDywMZCo';
+const _freshTransparent = 't1freshWwqk3jYGkZc7nLGuTvuM8hDywMZCo';
 
 const _accountState = AccountState(
   accounts: [
@@ -50,6 +51,8 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
 
 class _FakeReceiveAddressService implements ReceiveAddressService {
   var renewals = 0;
+  var transparentLoads = 0;
+  var transparentAddress = _transparent;
 
   @override
   Future<String> loadShieldedAddress({
@@ -58,8 +61,12 @@ class _FakeReceiveAddressService implements ReceiveAddressService {
   }) async => currentShieldedAddress ?? _shielded;
 
   @override
-  Future<String> loadTransparentAddress({required String accountUuid}) async =>
-      _transparent;
+  Future<String> loadTransparentReceiveAddress({
+    required String accountUuid,
+  }) async {
+    transparentLoads++;
+    return transparentAddress;
+  }
 
   @override
   Future<String> renewShieldedAddress({required String accountUuid}) async {
@@ -205,6 +212,145 @@ void main() {
     expect(copyLabel.style?.fontSize, AppTypography.labelMedium.fontSize);
   });
 
+  testWidgets('updates hidden transparent address after sync completes', (
+    tester,
+  ) async {
+    final service = _FakeReceiveAddressService();
+    await _pumpReceive(tester, service);
+
+    expect(
+      find.textContaining(_shielded.substring(0, 13), findRichText: true),
+      findsOneWidget,
+    );
+    expect(service.transparentLoads, 1);
+
+    service.transparentAddress = _freshTransparent;
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileReceiveScreen)),
+      listen: false,
+    );
+    final syncNotifier =
+        container.read(syncProvider.notifier) as FakeSyncNotifier;
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: _accountState.activeAccountUuid,
+        hasAccountScopedData: true,
+        lastSyncCompletedAt: DateTime.utc(2026, 6, 24, 12),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(service.transparentLoads, 2);
+
+    await tester.tap(find.text('Transparent'));
+    await _settle(tester);
+
+    expect(
+      find.textContaining(
+        _freshTransparent.substring(0, 13),
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Copy transparent address'), findsOneWidget);
+  });
+
+  testWidgets('updates hidden transparent address after sync fails', (
+    tester,
+  ) async {
+    final service = _FakeReceiveAddressService();
+    await _pumpReceive(tester, service);
+
+    expect(
+      find.textContaining(_shielded.substring(0, 13), findRichText: true),
+      findsOneWidget,
+    );
+    expect(service.transparentLoads, 1);
+
+    service.transparentAddress = _freshTransparent;
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileReceiveScreen)),
+      listen: false,
+    );
+    final syncNotifier =
+        container.read(syncProvider.notifier) as FakeSyncNotifier;
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: _accountState.activeAccountUuid,
+        hasAccountScopedData: true,
+        lastSyncFailedAt: DateTime.utc(2026, 6, 24, 12),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(service.transparentLoads, 2);
+
+    await tester.tap(find.text('Transparent'));
+    await _settle(tester);
+
+    expect(
+      find.textContaining(
+        _freshTransparent.substring(0, 13),
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('updates hidden transparent address after sync stops', (
+    tester,
+  ) async {
+    final service = _FakeReceiveAddressService();
+    await _pumpReceive(tester, service);
+
+    expect(
+      find.textContaining(_shielded.substring(0, 13), findRichText: true),
+      findsOneWidget,
+    );
+    expect(service.transparentLoads, 1);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileReceiveScreen)),
+      listen: false,
+    );
+    final syncNotifier =
+        container.read(syncProvider.notifier) as FakeSyncNotifier;
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: _accountState.activeAccountUuid,
+        hasAccountScopedData: true,
+        isSyncing: true,
+      ),
+    );
+    await tester.pump();
+
+    service.transparentAddress = _freshTransparent;
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: _accountState.activeAccountUuid,
+        hasAccountScopedData: true,
+        isSyncing: false,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(service.transparentLoads, 2);
+
+    await tester.tap(find.text('Transparent'));
+    await _settle(tester);
+
+    expect(
+      find.textContaining(
+        _freshTransparent.substring(0, 13),
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('swipes between shielded and transparent receive codes', (
     tester,
   ) async {
@@ -312,11 +458,31 @@ void main() {
       findsOneWidget,
     );
     expect(
+      find.textContaining(
+        'next transparent address will automatically change',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(
+        'Vizor will guide you to shield the balance',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+    expect(
       find.byWidgetPredicate(
         (widget) =>
             widget is AppIcon && widget.name == AppIcons.shieldKeyholeOutline,
       ),
       findsOneWidget,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.renew,
+      ),
+      findsAtLeastNWidgets(1),
     );
   });
 

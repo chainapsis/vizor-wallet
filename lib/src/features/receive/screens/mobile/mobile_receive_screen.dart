@@ -17,11 +17,24 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/receive_address_provider.dart';
+import '../../../../providers/sync_provider.dart';
 import '../../widgets/mobile/receive_address_info_sheet.dart';
 import '../../widgets/receive_address_widgets.dart';
 
 const _renewShieldedAddressErrorMessage =
     "We couldn't refresh your shielded address. Try again, or use your current one.";
+
+bool _shouldRefreshTransparentAddressAfterSyncUpdate(
+  SyncState previous,
+  SyncState next,
+) {
+  final completedAt = next.lastSyncCompletedAt;
+  final failedAt = next.lastSyncFailedAt;
+
+  return (previous.isSyncing && !next.isSyncing) ||
+      (completedAt != null && completedAt != previous.lastSyncCompletedAt) ||
+      (failedAt != null && failedAt != previous.lastSyncFailedAt);
+}
 
 /// Mobile receive screen — Figma `Receive` (4514:110524): pool tabs,
 /// QR with the renew control on its bottom edge, compact address line,
@@ -86,7 +99,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
       setState(() => _shieldedAddress = '');
     }
     try {
-      final transparent = await service.loadTransparentAddress(
+      final transparent = await service.loadTransparentReceiveAddress(
         accountUuid: accountUuid,
       );
       if (!mounted) return;
@@ -95,6 +108,26 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
       log('MobileReceive: ERROR loading transparent address: $e');
       if (!mounted) return;
       setState(() => _transparentAddress = '');
+    }
+  }
+
+  Future<void> _refreshTransparentReceiveAddressAfterSync() async {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+
+    try {
+      final address = await ref
+          .read(receiveAddressServiceProvider)
+          .loadTransparentReceiveAddress(accountUuid: accountUuid);
+      if (!mounted) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+        return;
+      }
+      if (_transparentAddress == address) return;
+
+      setState(() => _transparentAddress = address);
+    } catch (e) {
+      log('MobileReceive: ERROR refreshing transparent address after sync: $e');
     }
   }
 
@@ -166,6 +199,19 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(syncProvider, (previous, next) {
+      final previousState = previous?.asData?.value;
+      final nextState = next.asData?.value;
+      if (previousState != null &&
+          nextState != null &&
+          _shouldRefreshTransparentAddressAfterSyncUpdate(
+            previousState,
+            nextState,
+          )) {
+        unawaited(_refreshTransparentReceiveAddressAfterSync());
+      }
+    });
+
     final colors = context.colors;
     final accountName =
         ref.watch(accountProvider).value?.activeAccount?.name ?? '';

@@ -200,15 +200,30 @@ Future<void> ensureWalletDbMigrated({
 bool validateMnemonic({required String mnemonic}) =>
     RustLib.instance.api.crateApiWalletValidateMnemonic(mnemonic: mnemonic);
 
-/// Get the transparent address for a specific account (or first account if uuid is None).
-Future<String> getTransparentAddress({
+/// Get the next transparent receive address for a specific account.
+///
+/// This is read-only: it returns the first tracked external transparent address
+/// that has not received a transparent output.
+Future<String> getTransparentReceiveAddress({
   required String dbPath,
   required String network,
   String? accountUuid,
-}) => RustLib.instance.api.crateApiWalletGetTransparentAddress(
+}) => RustLib.instance.api.crateApiWalletGetTransparentReceiveAddress(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+);
+
+Future<List<String>> getRecentTransparentReceiveAddresses({
+  required String dbPath,
+  required String network,
+  String? accountUuid,
+  required int limit,
+}) => RustLib.instance.api.crateApiWalletGetRecentTransparentReceiveAddresses(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  limit: limit,
 );
 
 /// Result of adding an account to an existing wallet.

@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
+import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -127,6 +128,260 @@ void main() {
     );
   });
 
+  testWidgets('refreshes transparent receive address even when cached', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    late _FakeReceiveAddressService service;
+    await tester.pumpWidget(
+      _receiveHarness(
+        receiveAddressService: (ref) {
+          service = _FakeReceiveAddressService(ref);
+          return service;
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(service.transparentReceiveLoads, 0);
+
+    await tester.tap(find.text('Transparent'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(service.transparentReceiveLoads, 1);
+  });
+
+  testWidgets('disables transparent copy while cached address refreshes', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    late _DelayedTransparentReceiveAddressService service;
+    await tester.pumpWidget(
+      _receiveHarness(
+        receiveAddressService: (ref) {
+          service = _DelayedTransparentReceiveAddressService(ref);
+          return service;
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.text('Transparent'));
+    await tester.pump();
+
+    expect(service.transparentReceiveLoads, 1);
+    expect(
+      tester
+          .widget<ReceiveCopyAddressButton>(
+            find.byKey(
+              const ValueKey('receive_copy_transparent_address_button'),
+            ),
+          )
+          .enabled,
+      isFalse,
+    );
+
+    service.completeTransparentRefresh();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(
+      tester
+          .widget<ReceiveCopyAddressButton>(
+            find.byKey(
+              const ValueKey('receive_copy_transparent_address_button'),
+            ),
+          )
+          .enabled,
+      isTrue,
+    );
+  });
+
+  testWidgets('silently updates transparent address after sync completes', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    late _FakeReceiveAddressService service;
+    await tester.pumpWidget(
+      _receiveHarness(
+        receiveAddressService: (ref) {
+          service = _FakeReceiveAddressService(ref);
+          return service;
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.text('Transparent'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      _findAddressRichText('t1testtranspa ... 11111111111'),
+      findsOneWidget,
+    );
+    expect(service.transparentReceiveLoads, 1);
+
+    service.transparentReceiveAddress = _freshTransparentAddress;
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ReceiveScreen)),
+      listen: false,
+    );
+    final syncNotifier =
+        container.read(syncProvider.notifier) as FakeSyncNotifier;
+    syncNotifier.emit(
+      _syncedStateFor(
+        _bootstrap.initialAccountState,
+      ).copyWith(lastSyncCompletedAt: DateTime.utc(2026, 6, 24, 12)),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(service.transparentReceiveLoads, 2);
+    expect(
+      _findAddressRichText('t1freshtransp ... 22222222222'),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<ReceiveCopyAddressButton>(
+            find.byKey(
+              const ValueKey('receive_copy_transparent_address_button'),
+            ),
+          )
+          .enabled,
+      isTrue,
+    );
+  });
+
+  testWidgets('silently updates transparent address after sync fails', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    late _FakeReceiveAddressService service;
+    await tester.pumpWidget(
+      _receiveHarness(
+        receiveAddressService: (ref) {
+          service = _FakeReceiveAddressService(ref);
+          return service;
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.text('Transparent'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      _findAddressRichText('t1testtranspa ... 11111111111'),
+      findsOneWidget,
+    );
+    expect(service.transparentReceiveLoads, 1);
+
+    service.transparentReceiveAddress = _freshTransparentAddress;
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ReceiveScreen)),
+      listen: false,
+    );
+    final syncNotifier =
+        container.read(syncProvider.notifier) as FakeSyncNotifier;
+    syncNotifier.emit(
+      _syncedStateFor(
+        _bootstrap.initialAccountState,
+      ).copyWith(lastSyncFailedAt: DateTime.utc(2026, 6, 24, 12)),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(service.transparentReceiveLoads, 2);
+    expect(
+      _findAddressRichText('t1freshtransp ... 22222222222'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+    'silently updates transparent address after sync stops without result',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      late _FakeReceiveAddressService service;
+      await tester.pumpWidget(
+        _receiveHarness(
+          receiveAddressService: (ref) {
+            service = _FakeReceiveAddressService(ref);
+            return service;
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.text('Transparent'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        _findAddressRichText('t1testtranspa ... 11111111111'),
+        findsOneWidget,
+      );
+      expect(service.transparentReceiveLoads, 1);
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ReceiveScreen)),
+        listen: false,
+      );
+      final syncNotifier =
+          container.read(syncProvider.notifier) as FakeSyncNotifier;
+      syncNotifier.emit(
+        _syncedStateFor(
+          _bootstrap.initialAccountState,
+        ).copyWith(isSyncing: true),
+      );
+      await tester.pump();
+
+      service.transparentReceiveAddress = _freshTransparentAddress;
+      syncNotifier.emit(
+        _syncedStateFor(
+          _bootstrap.initialAccountState,
+        ).copyWith(isSyncing: false),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(service.transparentReceiveLoads, 2);
+      expect(
+        _findAddressRichText('t1freshtransp ... 22222222222'),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('uses dark receive color for renew icon and address text', (
     tester,
   ) async {
@@ -217,6 +472,42 @@ void main() {
     expect(
       tester.getSize(find.byKey(const ValueKey('receive_shielded_info_modal'))),
       const Size(312, 382),
+    );
+  });
+
+  testWidgets('explains transparent address rotation and shielding', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_receiveHarness());
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.text('Transparent'));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(_findAppIcon(AppIcons.help));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('Transparent address'), findsOneWidget);
+    expect(
+      find.textContaining('next transparent address will automatically change'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Vizor will guide you to shield the balance'),
+      findsOneWidget,
+    );
+    expect(_findAppIcon(AppIcons.renew), findsOneWidget);
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('receive_transparent_info_modal')),
+      ),
+      const Size(312, 516),
     );
   });
 
@@ -467,11 +758,16 @@ const _renewedShieldedAddress =
     'u1testrenewedshieldedaddress0000000000000000000000000000000000000000000';
 const _transparentAddress =
     't1testtransparentaddress111111111111111111111111111111111111';
+const _freshTransparentAddress =
+    't1freshtransparentaddress222222222222222222222222222222222222';
 const _accountOneAddress = 'u1accountone-stale';
 const _accountTwoAddress = 'u1accounttwo-current';
 
 class _FakeReceiveAddressService extends ReceiveAddressService {
   _FakeReceiveAddressService(super.ref);
+
+  int transparentReceiveLoads = 0;
+  String transparentReceiveAddress = _transparentAddress;
 
   @override
   Future<String> loadShieldedAddress({
@@ -487,8 +783,11 @@ class _FakeReceiveAddressService extends ReceiveAddressService {
   }
 
   @override
-  Future<String> loadTransparentAddress({required String accountUuid}) async {
-    return _transparentAddress;
+  Future<String> loadTransparentReceiveAddress({
+    required String accountUuid,
+  }) async {
+    transparentReceiveLoads++;
+    return transparentReceiveAddress;
   }
 
   @override
@@ -506,6 +805,23 @@ class _RecordingReceiveAddressService extends _FakeReceiveAddressService {
   Future<String> renewShieldedAddress({required String accountUuid}) async {
     renewedAccountUuid = accountUuid;
     return _renewedShieldedAddress;
+  }
+}
+
+class _DelayedTransparentReceiveAddressService
+    extends _FakeReceiveAddressService {
+  _DelayedTransparentReceiveAddressService(super.ref);
+
+  final _transparentRefresh = Completer<String>();
+
+  @override
+  Future<String> loadTransparentReceiveAddress({required String accountUuid}) {
+    transparentReceiveLoads++;
+    return _transparentRefresh.future;
+  }
+
+  void completeTransparentRefresh() {
+    _transparentRefresh.complete(_freshTransparentAddress);
   }
 }
 
@@ -536,7 +852,9 @@ class _RacyReceiveAddressService extends ReceiveAddressService {
   String? getCachedTransparentAddress(String accountUuid) => null;
 
   @override
-  Future<String> loadTransparentAddress({required String accountUuid}) async {
+  Future<String> loadTransparentReceiveAddress({
+    required String accountUuid,
+  }) async {
     return 't1transparent-$accountUuid';
   }
 

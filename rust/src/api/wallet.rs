@@ -1,6 +1,6 @@
 use std::panic;
 
-use crate::wallet::{keys, network::WalletNetwork};
+use crate::wallet::{keys, network::WalletNetwork, transparent_receive_cache};
 use tonic::{transport::Channel, Request};
 use zcash_client_backend::proto::service::{
     self, compact_tx_streamer_client::CompactTxStreamerClient,
@@ -678,7 +678,15 @@ pub fn delete_account(
 ) -> Result<(), String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
-        keys::delete_account(&db_path, network, &account_uuid)
+        keys::delete_account(&db_path, network, &account_uuid)?;
+        if let Err(e) = transparent_receive_cache::delete_account(&db_path, &account_uuid) {
+            log::warn!(
+                "transparent receive cache: failed to delete account {}: {}",
+                account_uuid,
+                e
+            );
+        }
+        Ok(())
     })
 }
 
@@ -726,15 +734,93 @@ pub fn validate_mnemonic(mnemonic: String) -> bool {
     keys::mnemonic_to_seed(&mnemonic).is_ok()
 }
 
-/// Get the transparent address for a specific account (or first account if uuid is None).
-pub fn get_transparent_address(
+/// Get the next transparent receive address for a specific account.
+///
+/// This is read-only: it returns the first tracked external transparent address
+/// that has not received a transparent output.
+pub fn get_transparent_receive_address(
     db_path: String,
     network: String,
     account_uuid: Option<String>,
 ) -> Result<String, String> {
     catch(|| {
-        let network = parse_network_and_migrate(&db_path, &network)?;
-        keys::get_transparent_address_from_db(&db_path, network, account_uuid.as_deref())
+        let network = keys::parse_network(&network)?;
+        if let Some(account_uuid) = account_uuid.as_deref() {
+            match transparent_receive_cache::get_clean_address(&db_path, network, account_uuid) {
+                Ok(Some(address)) => return Ok(address),
+                Ok(None) => {}
+                Err(e) => log::warn!("transparent receive cache: read failed: {e}"),
+            }
+        }
+
+        keys::ensure_db_migrated_once(&db_path, network)?;
+        match account_uuid.as_deref() {
+            Some(account_uuid) => transparent_receive_cache::refresh_account_from_wallet_db(
+                &db_path,
+                network,
+                account_uuid,
+                None,
+            ),
+            None => keys::get_transparent_receive_address_from_db(&db_path, network, None),
+        }
+    })
+}
+
+pub fn get_recent_transparent_receive_addresses(
+    db_path: String,
+    network: String,
+    account_uuid: Option<String>,
+    limit: u32,
+) -> Result<Vec<String>, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        if let Some(account_uuid) = account_uuid.as_deref() {
+            match transparent_receive_cache::get_recent_addresses(
+                &db_path,
+                network,
+                account_uuid,
+                limit,
+            ) {
+                Ok(Some(addresses)) => return Ok(addresses),
+                Ok(None) => {}
+                Err(e) => log::warn!("transparent receive cache: recent read failed: {e}"),
+            }
+        }
+
+        keys::ensure_db_migrated_once(&db_path, network)?;
+        if let Some(account_uuid) = account_uuid.as_deref() {
+            match transparent_receive_cache::refresh_account_cache_from_wallet_db(
+                &db_path,
+                network,
+                account_uuid,
+                None,
+            ) {
+                Ok(()) => match transparent_receive_cache::get_recent_addresses(
+                    &db_path,
+                    network,
+                    account_uuid,
+                    limit,
+                ) {
+                    Ok(Some(addresses)) => return Ok(addresses),
+                    Ok(None) => {}
+                    Err(e) => log::warn!(
+                        "transparent receive cache: recent read after refresh failed: {e}"
+                    ),
+                },
+                Err(e) => log::warn!(
+                    "transparent receive cache: recent refresh failed for account {}: {}",
+                    account_uuid,
+                    e
+                ),
+            }
+        }
+
+        keys::get_recent_transparent_receive_addresses_from_db(
+            &db_path,
+            network,
+            account_uuid.as_deref(),
+            limit,
+        )
     })
 }
 

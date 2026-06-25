@@ -247,7 +247,7 @@ Future<void> _createFirstWallet(WidgetTester tester) async {
 
 Future<String> _transparentAddressForAccount(String accountUuid) async {
   final dbPath = await getWalletDbPath();
-  return rust_wallet.getTransparentAddress(
+  return rust_wallet.getTransparentReceiveAddress(
     dbPath: dbPath,
     network: _network,
     accountUuid: accountUuid,
@@ -327,7 +327,9 @@ Future<void> _waitForHome(
 }) async {
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('home_desktop_balance_amount_text'))),
+    () => tester.any(
+      find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+    ),
     description: 'home balance card to render',
     timeout: timeout,
   );

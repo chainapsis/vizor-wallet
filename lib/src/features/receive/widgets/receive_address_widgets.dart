@@ -843,6 +843,11 @@ List<ReceiveAddressInfoItem> receiveAddressInfoItems(
       text:
           'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.',
     ),
+    const ReceiveAddressInfoItem(
+      iconName: AppIcons.renew,
+      text:
+          'After this address receives ZEC and Vizor syncs, your next transparent address will automatically change. Previous addresses still belong to this wallet.',
+    ),
     ReceiveAddressInfoItem(
       iconName: touchUi ? AppIcons.shieldKeyholeOutline : AppIcons.shieldAsset,
       text:

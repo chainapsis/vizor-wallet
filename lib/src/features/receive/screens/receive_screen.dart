@@ -19,11 +19,24 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/receive_address_provider.dart';
+import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../widgets/receive_address_widgets.dart';
 
 const _renewShieldedAddressErrorMessage =
     "We couldn't refresh your shielded address. Try again, or use your current one.";
+
+bool _shouldRefreshTransparentAddressAfterSyncUpdate(
+  SyncState previous,
+  SyncState next,
+) {
+  final completedAt = next.lastSyncCompletedAt;
+  final failedAt = next.lastSyncFailedAt;
+
+  return (previous.isSyncing && !next.isSyncing) ||
+      (completedAt != null && completedAt != previous.lastSyncCompletedAt) ||
+      (failedAt != null && failedAt != previous.lastSyncFailedAt);
+}
 
 class ReceiveScreen extends ConsumerStatefulWidget {
   const ReceiveScreen({super.key});
@@ -84,9 +97,8 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       _transparentAddress = cachedTransparentAddress;
     });
 
-    if (_selectedType == ReceiveAddressType.transparent &&
-        cachedTransparentAddress == null) {
-      unawaited(_loadTransparentAddress(accountUuid: accountUuid));
+    if (_selectedType == ReceiveAddressType.transparent) {
+      unawaited(_loadTransparentReceiveAddress(accountUuid: accountUuid));
     }
 
     try {
@@ -116,7 +128,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     }
   }
 
-  Future<void> _loadTransparentAddress({String? accountUuid}) async {
+  Future<void> _loadTransparentReceiveAddress({String? accountUuid}) async {
     final targetAccountUuid =
         accountUuid ?? ref.read(accountProvider).value?.activeAccountUuid;
     if (targetAccountUuid == null) return;
@@ -134,14 +146,10 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       setState(() {
         _transparentAddress = cachedAddress;
         _transparentErrorText = null;
-        _isLoadingTransparent = false;
-        _transparentLoadingAccountUuid = null;
       });
-      return;
     }
 
-    if (_isLoadingTransparent &&
-        _transparentLoadingAccountUuid == targetAccountUuid) {
+    if (_transparentLoadingAccountUuid == targetAccountUuid) {
       return;
     }
 
@@ -152,7 +160,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     });
 
     try {
-      final address = await service.loadTransparentAddress(
+      final address = await service.loadTransparentReceiveAddress(
         accountUuid: targetAccountUuid,
       );
       if (!mounted) return;
@@ -177,6 +185,32 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
         _transparentLoadingAccountUuid = null;
         _transparentErrorText = e.toString();
       });
+    }
+  }
+
+  Future<void> _refreshTransparentReceiveAddressAfterSync() async {
+    if (_selectedType != ReceiveAddressType.transparent) return;
+
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+
+    try {
+      final address = await ref
+          .read(receiveAddressServiceProvider)
+          .loadTransparentReceiveAddress(accountUuid: accountUuid);
+      if (!mounted) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+        return;
+      }
+      if (_selectedType != ReceiveAddressType.transparent) return;
+      if (_transparentAddress == address) return;
+
+      setState(() {
+        _transparentAddress = address;
+        _transparentErrorText = null;
+      });
+    } catch (e) {
+      log('Receive: ERROR refreshing transparent address after sync: $e');
     }
   }
 
@@ -232,7 +266,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
 
     setState(() => _selectedType = type);
     if (type == ReceiveAddressType.transparent) {
-      unawaited(_loadTransparentAddress());
+      unawaited(_loadTransparentReceiveAddress());
     }
   }
 
@@ -258,6 +292,18 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       final nextUuid = next.value?.activeAccountUuid;
       if (nextUuid != null && nextUuid != _activeAccountUuid) {
         unawaited(_loadAddresses());
+      }
+    });
+    ref.listen(syncProvider, (previous, next) {
+      final previousState = previous?.asData?.value;
+      final nextState = next.asData?.value;
+      if (previousState != null &&
+          nextState != null &&
+          _shouldRefreshTransparentAddressAfterSyncUpdate(
+            previousState,
+            nextState,
+          )) {
+        unawaited(_refreshTransparentReceiveAddressAfterSync());
       }
     });
 
@@ -617,7 +663,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
     final infoItems = receiveAddressInfoItems(type, touchUi: false);
     final heights = _isShielded
         ? const [63.0, 63.0, 63.0]
-        : const [42.0, 84.0, 105.0];
+        : const [42.0, 84.0, 105.0, 105.0];
     final items = [
       for (var i = 0; i < infoItems.length; i++)
         _InfoItemData(
@@ -634,7 +680,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
             : 'receive_transparent_info_modal',
       ),
       width: 312,
-      height: _isShielded ? 382 : 403,
+      height: _isShielded ? 382 : 516,
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
       decoration: BoxDecoration(
         color: colors.background.ground,
@@ -684,7 +730,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           SizedBox(
             width: 280,
-            height: _isShielded ? 205 : 247,
+            height: _isShielded ? 205 : 360,
             child: Column(
               children: [
                 for (var i = 0; i < items.length; i++) ...[

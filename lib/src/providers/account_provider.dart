@@ -31,6 +31,8 @@ const _networkKey = 'zcash_wallet_network';
 // Keep in sync with zcash_voting::storage::VotingDb::wallet_sidecar_path,
 // which appends ".voting" to the wallet DB path for sidecar persistence.
 const _votingSidecarSuffix = '.voting';
+// Keep in sync with wallet::transparent_receive_cache::RECEIVE_CACHE_SIDECAR_SUFFIX.
+const _receiveCacheSidecarSuffix = '.receive.redb';
 const _sqliteCompanionSuffixes = ['', '-journal', '-wal', '-shm'];
 
 const kWalletCreationCurrentBlockHeightErrorMessage =
@@ -900,5 +902,6 @@ List<String> walletDbCleanupPaths(String dbPath) {
   return [
     for (final target in targets)
       for (final suffix in _sqliteCompanionSuffixes) '$target$suffix',
+    '$dbPath$_receiveCacheSidecarSuffix',
   ];
 }

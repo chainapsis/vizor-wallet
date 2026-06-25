@@ -34,7 +34,7 @@ fn main() {
     )
     .expect("import regtest wallet");
 
-    let transparent_address = wallet::get_transparent_address(
+    let transparent_address = wallet::get_transparent_receive_address(
         db_path,
         "regtest".to_string(),
         Some(result.account_uuid.clone()),

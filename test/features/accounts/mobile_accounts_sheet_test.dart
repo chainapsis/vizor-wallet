@@ -95,6 +95,11 @@ class _FakeReceiveAddressService implements ReceiveAddressService {
   }
 
   @override
+  Future<String> loadTransparentReceiveAddress({
+    required String accountUuid,
+  }) async => address;
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

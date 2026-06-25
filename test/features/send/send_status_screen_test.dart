@@ -499,12 +499,22 @@ class _RustApiFake implements RustLibApi {
   }
 
   @override
-  Future<String> crateApiWalletGetTransparentAddress({
+  Future<String> crateApiWalletGetTransparentReceiveAddress({
     required String dbPath,
     required String network,
     String? accountUuid,
   }) async {
     return transparentAddress;
+  }
+
+  @override
+  Future<List<String>> crateApiWalletGetRecentTransparentReceiveAddresses({
+    required String dbPath,
+    required String network,
+    String? accountUuid,
+    required int limit,
+  }) async {
+    return [transparentAddress];
   }
 
   @override
