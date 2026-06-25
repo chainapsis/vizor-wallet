@@ -33,13 +33,14 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-Widget _app() {
+Widget _app({Future<void> Function(int height)? onHeightConfirmed}) {
   return ProviderScope(
     overrides: [appBootstrapProvider.overrideWithValue(_bootstrap())],
     child: MaterialApp(
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
-      home: const MobileImportBirthdayScreen(
-        args: ImportBirthdayArgs(mnemonic: 'stub mnemonic'),
+      home: MobileImportBirthdayScreen(
+        args: const ImportBirthdayArgs(mnemonic: 'stub mnemonic'),
+        onHeightConfirmed: onHeightConfirmed,
         loadChainMetadata: false,
       ),
     ),
@@ -174,6 +175,87 @@ void main() {
     await tester.enterText(heightField, '25a.b00');
     await tester.pump();
     expect(tester.widget<TextField>(heightField).controller!.text, '2500');
+  });
+
+  testWidgets('skip asks before importing from the earliest supported height', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 852);
+
+    int? confirmedHeight;
+    final expectedHeight = defaultRpcEndpointConfig(
+      'main',
+    ).network.saplingActivationHeight;
+
+    await tester.pumpWidget(
+      _app(onHeightConfirmed: (height) async => confirmedHeight = height),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_birthday_skip')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_import_birthday_unknown_height_sheet')),
+      findsOneWidget,
+    );
+    expect(find.text('Import from the earliest height?'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.text('Import from the earliest height?'))
+          .maxLines,
+      2,
+    );
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(
+              const ValueKey('mobile_import_birthday_unknown_height_confirm'),
+            ),
+          )
+          .variant,
+      AppButtonVariant.ghost,
+    );
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(
+              const ValueKey('mobile_import_birthday_unknown_height_cancel'),
+            ),
+          )
+          .variant,
+      AppButtonVariant.primary,
+    );
+    expect(confirmedHeight, isNull);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey('mobile_import_birthday_unknown_height_cancel'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_import_birthday_unknown_height_sheet')),
+      findsNothing,
+    );
+    expect(confirmedHeight, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_birthday_skip')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey('mobile_import_birthday_unknown_height_confirm'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      find.byKey(const ValueKey('mobile_import_birthday_unknown_height_sheet')),
+      findsNothing,
+    );
+    expect(confirmedHeight, expectedHeight);
   });
 
   testWidgets('the date field is not typeable and opens the calendar', (

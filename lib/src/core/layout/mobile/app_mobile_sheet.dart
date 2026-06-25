@@ -216,6 +216,7 @@ class MobileModalScaffold extends StatelessWidget {
     required this.child,
     this.leading,
     this.titleStyle,
+    this.titleMaxLines = 1,
     this.showTitle = true,
     this.showClose = true,
     this.bodyGap = AppSpacing.sm,
@@ -228,6 +229,7 @@ class MobileModalScaffold extends StatelessWidget {
   final Widget child;
   final Widget? leading;
   final TextStyle? titleStyle;
+  final int titleMaxLines;
   final bool showTitle;
   final bool showClose;
 
@@ -261,8 +263,8 @@ class MobileModalScaffold extends StatelessWidget {
                 ConstrainedBox(
                   constraints: const BoxConstraints(minHeight: 26),
                   child: Padding(
-                    // Clear the absolute 32px close (+ an 8px gap) so a long title
-                    // ellipsizes instead of sliding under it.
+                    // Clear the absolute 32px close (+ an 8px gap) so long
+                    // titles wrap/ellipsize instead of sliding under it.
                     padding: const EdgeInsets.only(right: 40),
                     child: Row(
                       children: [
@@ -273,7 +275,7 @@ class MobileModalScaffold extends StatelessWidget {
                         Expanded(
                           child: Text(
                             title,
-                            maxLines: 1,
+                            maxLines: titleMaxLines,
                             overflow: TextOverflow.ellipsis,
                             style:
                                 titleStyle ??
