@@ -333,6 +333,16 @@ impl TxOutput {
             self.sent_to_address
                 .clone()
                 .or_else(|| self.to_address.clone())
+        } else if self.output_pool == 0 {
+            // Received transparent outputs: surface the bare t-address. The
+            // wallet stores the account UA in `to_address`, so without this
+            // recovery the UA leaks into the receiving-address line and the
+            // desktop receipt's address-prefix heuristic mislabels a
+            // transparent->transparent receive as shielded (crimson shield +
+            // u1 address). Mirrors the `sent` pool-0 branch above.
+            self.transparent_receiver_address
+                .clone()
+                .or_else(|| self.to_address.clone())
         } else {
             self.to_address.clone()
         }
@@ -1662,6 +1672,56 @@ mod tests {
 
     fn second_test_account_uuid() -> uuid::Uuid {
         uuid::Uuid::from_u128(0x3eb4ded306b74bf2a5393f1b78d792a6)
+    }
+
+    #[test]
+    fn received_transparent_output_detail_returns_bare_t_address() {
+        // The wallet stores the account UA in `to_address` for a received
+        // transparent output; `transparent_receiver_address` holds the bare
+        // t-address recovered from the addresses table. The received detail
+        // must surface the t-address, not the UA — otherwise the desktop
+        // receipt mislabels a transparent->transparent receive as shielded
+        // (crimson shield + u1 address). Regression for that bug.
+        let t_addr = transparent_source_test_address();
+        let ua = "u1qexampleunifiedaddressexampleunifiedaddress".to_string();
+
+        let transparent_received = TxOutput {
+            txid: vec![0u8; 32],
+            output_pool: 0,
+            output_index: 0,
+            from_account_uuid: None,
+            to_account_uuid: Some(test_account_uuid().as_bytes().to_vec()),
+            to_address: Some(ua.clone()),
+            sent_to_address: None,
+            transparent_receiver_address: Some(t_addr.clone()),
+            to_key_scope: Some(0),
+            value: 1_000_000,
+            memo: None,
+        };
+        assert_eq!(
+            transparent_received.detail_address("received"),
+            Some(t_addr.clone()),
+        );
+        assert_eq!(
+            transparent_received.detail_address("receiving"),
+            Some(t_addr),
+        );
+
+        // Shielded receives (pool 2) still surface their stored address.
+        let shielded_received = TxOutput {
+            txid: vec![0u8; 32],
+            output_pool: 2,
+            output_index: 0,
+            from_account_uuid: None,
+            to_account_uuid: Some(test_account_uuid().as_bytes().to_vec()),
+            to_address: Some(ua.clone()),
+            sent_to_address: None,
+            transparent_receiver_address: None,
+            to_key_scope: Some(0),
+            value: 1_000_000,
+            memo: None,
+        };
+        assert_eq!(shielded_received.detail_address("received"), Some(ua));
     }
 
     fn fresh_history_db() -> NamedTempFile {
@@ -3422,6 +3482,65 @@ mod tests {
         assert_eq!(got.memo.as_deref(), Some("incoming memo"));
         assert_eq!(got.outputs.len(), 1);
         assert_eq!(got.outputs[0].address.as_deref(), Some("u-my-receiver"));
+    }
+
+    #[test]
+    fn detail_received_transparent_output_surfaces_bare_t_address() {
+        // End-to-end guard for BUG-1: a received transparent output stores the
+        // account unified address in to_address, but the detail must surface
+        // the bare t-address (the cached transparent receiver). Exercises the
+        // read_outputs_for_tx subquery + the detail_address received pool-0
+        // branch together (the standalone detail_address unit test only covers
+        // the in-memory half).
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD3);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            2_000_000,
+            0,
+            2_000_000,
+            false,
+            Some("2026-06-20T10:00:00Z"),
+        );
+        insert_output_with_address(
+            &db,
+            &txid,
+            0, // transparent pool
+            None,
+            Some(account),
+            2_000_000,
+            false,
+            Some("u-my-receiver"),
+            Some(0),
+        );
+        set_cached_transparent_receiver_address(
+            &db,
+            account,
+            "u-my-receiver",
+            "t-my-receiver",
+        );
+
+        let got = get_transaction_detail(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "received",
+        )
+        .unwrap();
+
+        assert_eq!(got.tx_kind, "received");
+        assert_eq!(got.outputs.len(), 1);
+        // The fix: the bare t-address, not the unified address.
+        assert_eq!(got.outputs[0].address.as_deref(), Some("t-my-receiver"));
+        assert_eq!(got.outputs[0].pool, "transparent");
     }
 
     #[test]

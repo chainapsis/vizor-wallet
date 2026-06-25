@@ -7,17 +7,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/config/zcash_explorer.dart';
+import '../../../../core/formatting/address_display.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/mobile/mobile_review_row.dart';
+import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
+import '../../../../providers/account_provider.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
 import '../../../activity/activity_row_mapper.dart'
     show formatActivityTimestamp;
+import '../../../address_book/models/address_book_contact.dart';
+import '../../../address_book/providers/address_book_provider.dart';
 import '../../services/send_flow.dart';
+import '../../widgets/send_recipient_resolver.dart';
+import '../../widgets/send_review_layout.dart' show SendReviewContactRecipient;
 import 'mobile_send_screen.dart' show MobileSaplingParamsSheet;
 
 enum _MobileSendStatusPhase { sending, pendingBroadcast, succeeded, failed }
@@ -179,6 +188,24 @@ class _MobileSendStatusScreenState
       args.addressType,
       isShielded: args.isShielded,
     );
+    // Resolve the recipient to a saved contact / own account so the To row
+    // shows a name + avatar — parity with desktop send status and the
+    // review step (a raw address right after "Alice" in review reads as a
+    // regression).
+    final namedRecipient = args.address.trim().isEmpty
+        ? null
+        : switch (sendReviewRecipientFor(
+            contacts:
+                ref.watch(addressBookProvider).value?.contacts ??
+                const <AddressBookContact>[],
+            address: args.address,
+            ownAccounts:
+                ref.watch(ownAccountAddressesProvider).value ??
+                const <String, AccountInfo>{},
+          )) {
+            SendReviewContactRecipient r => r,
+            _ => null,
+          };
 
     return PopScope<void>(
       canPop: _routePopAllowed,
@@ -216,12 +243,12 @@ class _MobileSendStatusScreenState
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _ReviewInfoRow(
+                              MobileReviewInfoRow(
                                 label: 'Amount',
                                 value: ZecAmount.fromZatoshi(
                                   args.amountZatoshi,
                                 ).activityDetail.toString(),
-                                leading: const _ZecCoinBadge(),
+                                leading: const MobileReviewZecBadge(),
                                 bottom: amountFiatText == null
                                     ? null
                                     : Text(
@@ -236,20 +263,28 @@ class _MobileSendStatusScreenState
                                       ),
                               ),
                               const SizedBox(height: AppSpacing.xs),
-                              const _FlowArrow(),
+                              const MobileReviewFlowArrow(),
                               const SizedBox(height: AppSpacing.xs),
-                              _ReviewInfoRow(
+                              MobileReviewInfoRow(
                                 label: 'To',
-                                value: _truncateAddress(args.address),
+                                value: namedRecipient != null
+                                    ? namedRecipient.name
+                                    : _truncateAddress(args.address),
                                 strikethrough:
                                     _phase == _MobileSendStatusPhase.failed,
-                                leading: _IconBadge(
-                                  child: AppIcon(
-                                    AppIcons.wallet,
-                                    size: 18,
-                                    color: colors.icon.regular,
-                                  ),
-                                ),
+                                leading: namedRecipient != null
+                                    ? AppProfilePicture(
+                                        profilePictureId:
+                                            namedRecipient.profilePictureId,
+                                        size: AppProfilePictureSize.navLarge,
+                                      )
+                                    : MobileReviewIconBadge(
+                                        child: AppIcon(
+                                          AppIcons.wallet,
+                                          size: 18,
+                                          color: colors.icon.regular,
+                                        ),
+                                      ),
                                 bottom: Row(
                                   children: [
                                     AppIcon(
@@ -263,7 +298,9 @@ class _MobileSendStatusScreenState
                                     ),
                                     const SizedBox(width: AppSpacing.xxs),
                                     Text(
-                                      recipientPoolLabel,
+                                      namedRecipient != null
+                                          ? _truncateAddress(args.address)
+                                          : recipientPoolLabel,
                                       style: AppTypography.labelMedium.copyWith(
                                         color: colors.text.secondary,
                                       ),
@@ -281,7 +318,7 @@ class _MobileSendStatusScreenState
                           timestampText: formatActivityTimestamp(
                             _completedAt ?? _startedAt,
                           ),
-                          txidText: txid == null ? null : _truncateTxid(txid),
+                          txidText: txid == null ? null : truncatedTxid(txid),
                           onOpenExplorer: txid == null
                               ? null
                               : () => unawaited(_openExplorer()),
@@ -348,11 +385,6 @@ class _MobileSendStatusScreenState
     return '${address.substring(0, 6)} ... '
         '${address.substring(address.length - 5)}';
   }
-
-  String _truncateTxid(String txid) {
-    if (txid.length <= 16) return txid;
-    return '${txid.substring(0, 8)}...${txid.substring(txid.length - 8)}';
-  }
 }
 
 String _recipientPoolLabel(String addressType, {required bool isShielded}) {
@@ -362,124 +394,6 @@ String _recipientPoolLabel(String addressType, {required bool isShielded}) {
     'transparent' => 'Transparent',
     _ => isShielded ? 'Shielded' : 'Transparent',
   };
-}
-
-class _ReviewInfoRow extends StatelessWidget {
-  const _ReviewInfoRow({
-    required this.label,
-    required this.value,
-    required this.leading,
-    this.bottom,
-    this.strikethrough = false,
-  });
-
-  final String label;
-  final String value;
-  final Widget leading;
-  final Widget? bottom;
-  final bool strikethrough;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 90),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          SizedBox(width: 40, child: Center(child: leading)),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  height: 24,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      label,
-                      style: AppTypography.labelMedium.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.headlineLarge.copyWith(
-                    color: colors.text.accent,
-                    decoration: strikethrough
-                        ? TextDecoration.lineThrough
-                        : TextDecoration.none,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                SizedBox(height: 24, child: bottom ?? const SizedBox()),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FlowArrow extends StatelessWidget {
-  const _FlowArrow();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 40,
-      child: Center(
-        child: AppIcon(
-          AppIcons.arrowDown,
-          size: AppIconSize.large,
-          color: context.colors.icon.accent,
-        ),
-      ),
-    );
-  }
-}
-
-class _ZecCoinBadge extends StatelessWidget {
-  const _ZecCoinBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppRadii.full),
-      child: Image.asset(
-        'assets/swap/tokens/zec.png',
-        width: 32,
-        height: 32,
-        fit: BoxFit.cover,
-      ),
-    );
-  }
-}
-
-class _IconBadge extends StatelessWidget {
-  const _IconBadge({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 40,
-      height: 32,
-      decoration: BoxDecoration(
-        color: context.colors.background.neutralSubtleOpacity,
-        borderRadius: BorderRadius.circular(AppRadii.full),
-      ),
-      child: Center(child: child),
-    );
-  }
 }
 
 class _DetailCard extends StatelessWidget {
@@ -552,7 +466,12 @@ class _DetailCard extends StatelessWidget {
           _ListRow(
             label: 'Tx fee',
             labelStyle: AppTypography.labelLarge,
-            value: _ValueWithIcon(text: feeText, iconName: AppIcons.help),
+            value: _ValueWithIcon(
+              text: feeText,
+              iconName: AppIcons.help,
+              iconColor: context.colors.icon.regular.withValues(alpha: 0.72),
+              onTap: () => unawaited(showMobileTxFeeInfoSheet(context)),
+            ),
           ),
         ],
       ),
@@ -606,11 +525,12 @@ class _ListRow extends StatelessWidget {
 }
 
 class _ValueWithIcon extends StatelessWidget {
-  const _ValueWithIcon({this.text, this.iconName, this.onTap});
+  const _ValueWithIcon({this.text, this.iconName, this.onTap, this.iconColor});
 
   final String? text;
   final String? iconName;
   final VoidCallback? onTap;
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -638,7 +558,11 @@ class _ValueWithIcon extends StatelessWidget {
             ),
           if (iconName != null) ...[
             const SizedBox(width: AppSpacing.xxs),
-            AppIcon(iconName!, size: 20, color: colors.icon.accent),
+            AppIcon(
+              iconName!,
+              size: 20,
+              color: iconColor ?? colors.icon.accent,
+            ),
           ],
         ],
       ),

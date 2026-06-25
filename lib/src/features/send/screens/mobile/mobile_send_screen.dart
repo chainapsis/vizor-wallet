@@ -20,7 +20,9 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
+import '../../../../core/widgets/mobile/mobile_review_row.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
+import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
@@ -54,7 +56,7 @@ class _ReviewRecipientPresentation {
     return KeyedSubtree(
       key: const ValueKey('mobile_send_review_recipient_picture'),
       child: useZecIcon
-          ? const _ReviewZecIcon()
+          ? const _ReviewWalletIcon()
           : AppProfilePicture(
               profilePictureId: profilePictureId ?? '',
               size: AppProfilePictureSize.navLarge,
@@ -63,7 +65,7 @@ class _ReviewRecipientPresentation {
   }
 
   Widget? buildVerifyLeading() {
-    if (useZecIcon) return const _ReviewZecIcon();
+    if (useZecIcon) return const _ReviewWalletIcon();
     return AppProfilePicture(
       profilePictureId: profilePictureId ?? '',
       size: AppProfilePictureSize.large,
@@ -851,49 +853,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     unawaited(_refreshReviewQuote());
   }
 
-  Future<void> _showFeeInfo() {
-    return showAppMobileSheet<void>(
-      context: context,
-      builder: (sheetContext) {
-        final colors = sheetContext.colors;
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
-            AppSpacing.base,
-            AppSpacing.sm,
-            AppSpacing.base,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Tx fee',
-                style: AppTypography.headlineSmall.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                'The network fee is set by the Zcash protocol (ZIP 317) '
-                'based on the transaction size. Vizor adds no extra fee.',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.primary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppButton(
-                variant: AppButtonVariant.secondary,
-                expand: true,
-                onPressed: () => Navigator.of(sheetContext).pop(),
-                child: const Text('Close'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
+  Future<void> _showFeeInfo() => showMobileTxFeeInfoSheet(context);
 
   void _openStatusRoute(Object extra) {
     if (widget.useRouteSteps) {
@@ -2062,6 +2022,24 @@ class _ReviewZecIcon extends StatelessWidget {
           size: 22,
           color: Color(0xFFFFFFFF),
         ),
+      ),
+    );
+  }
+}
+
+class _ReviewWalletIcon extends StatelessWidget {
+  const _ReviewWalletIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    // Neutral circular wallet badge for a raw (no-contact) recipient —
+    // reuses the shared status badge instead of the Amount row's brand ZEC
+    // coin, so the recipient leading matches the status receipts.
+    return MobileReviewIconBadge(
+      child: AppIcon(
+        AppIcons.wallet,
+        size: 18,
+        color: context.colors.icon.regular,
       ),
     );
   }

@@ -70,7 +70,7 @@ void main() {
     expect(find.text('Sent successfully'), findsOneWidget);
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('Tx ID'), findsOneWidget);
-    expect(find.text(_txid), findsOneWidget);
+    expect(find.text(truncatedTxid(_txid)), findsOneWidget);
     expect(find.text('Timestamp'), findsOneWidget);
     expect(find.text('15.12 ZEC'), findsOneWidget);
     expect(find.text(r'$1.06K'), findsOneWidget);
@@ -91,7 +91,7 @@ void main() {
     await tester.pump();
     await _flushBroadcast(tester);
 
-    await tester.tap(find.text(_txid));
+    await tester.tap(find.text(truncatedTxid(_txid)));
     await tester.pump(const Duration(milliseconds: 100));
 
     final expected = zcashExplorerTransactionUri(
@@ -136,7 +136,7 @@ void main() {
     expect(find.text('Send in progress...'), findsOneWidget);
     expect(find.text('In progress'), findsOneWidget);
     // Explorer affordance stays available like the legacy pending receipt.
-    expect(find.text(_txid), findsOneWidget);
+    expect(find.text(truncatedTxid(_txid)), findsOneWidget);
     expect(find.textContaining("didn't reach the network"), findsOneWidget);
     expect(rustApi.discardCalls, isEmpty);
   });

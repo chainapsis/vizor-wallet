@@ -14,13 +14,21 @@ import '../../../../core/privacy/privacy_mask.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
+import '../../../../core/widgets/mobile/mobile_review_row.dart';
+import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
+import '../../../address_book/models/address_book_contact.dart';
+import '../../../address_book/providers/address_book_provider.dart';
+import '../../../send/widgets/send_recipient_resolver.dart';
+import '../../../send/widgets/send_review_layout.dart'
+    show SendReviewContactRecipient;
 import '../../activity_row_mapper.dart' show formatActivityTimestamp;
 
 /// Route arguments for [MobileTransactionStatusScreen]. The row that
@@ -290,6 +298,26 @@ class _MobileTransactionStatusScreenState
     );
     final memo = detail?.memo?.trim();
 
+    // Resolve the counterparty to a saved contact / own account so the
+    // From/To row shows a name + avatar instead of a raw address — parity
+    // with the desktop receipt (sendReviewRecipientFor).
+    final contacts =
+        ref.watch(addressBookProvider).value?.contacts ??
+        const <AddressBookContact>[];
+    final ownAccounts =
+        ref.watch(ownAccountAddressesProvider).value ??
+        const <String, AccountInfo>{};
+    final namedRecipient = address == null || address.isEmpty
+        ? null
+        : switch (sendReviewRecipientFor(
+            contacts: contacts,
+            address: address,
+            ownAccounts: ownAccounts,
+          )) {
+            SendReviewContactRecipient r => r,
+            _ => null,
+          };
+
     final hasAddress = address != null && address.isNotEmpty;
     final amountBottom =
         _isIncoming && receivingAddress != null && receivingAddress.isNotEmpty
@@ -312,10 +340,10 @@ class _MobileTransactionStatusScreenState
             text: poolLabel,
           )
         : null;
-    final amountRow = _ReviewInfoRow(
+    final amountRow = MobileReviewInfoRow(
       label: 'Amount',
       value: amountText,
-      leading: const _ZecCoinBadge(),
+      leading: const MobileReviewZecBadge(),
       // With no counterparty row (shielded senders are unknown), the
       // pool tag moves under the amount — Figma `Received` keeps the
       // pool on the bottom strip.
@@ -323,17 +351,24 @@ class _MobileTransactionStatusScreenState
     );
     final addressRow = (address == null || address.isEmpty)
         ? null
-        : _ReviewInfoRow(
+        : MobileReviewInfoRow(
             label: _isIncoming ? 'From' : 'To',
-            value: _truncateAddress(address),
+            value: namedRecipient != null
+                ? namedRecipient.name
+                : _truncateAddress(address),
             strikethrough: failed,
-            leading: _IconBadge(
-              child: AppIcon(
-                AppIcons.wallet,
-                size: 18,
-                color: colors.icon.regular,
-              ),
-            ),
+            leading: namedRecipient != null
+                ? AppProfilePicture(
+                    profilePictureId: namedRecipient.profilePictureId,
+                    size: AppProfilePictureSize.navLarge,
+                  )
+                : MobileReviewIconBadge(
+                    child: AppIcon(
+                      AppIcons.wallet,
+                      size: 18,
+                      color: colors.icon.regular,
+                    ),
+                  ),
             bottom: _BottomInfoRow(
               iconName: poolLabel == null
                   ? null
@@ -341,7 +376,11 @@ class _MobileTransactionStatusScreenState
               iconColor: poolLabel == null
                   ? null
                   : _poolIconColorFor(context, poolLabel, address: address),
-              text: poolLabel,
+              // For a named counterparty the headline holds the name, so the
+              // bottom strip surfaces the (still pool-tagged) address instead.
+              text: namedRecipient != null
+                  ? _truncateAddress(address)
+                  : poolLabel,
               trailing: _GhostIconLabelButton(
                 key: const ValueKey('mobile_tx_status_show_full_address'),
                 iconName: AppIcons.eye,
@@ -355,10 +394,10 @@ class _MobileTransactionStatusScreenState
         : null;
     final unknownFromRow = unknownFromLabel == null
         ? null
-        : _ReviewInfoRow(
+        : MobileReviewInfoRow(
             label: 'From',
             value: unknownFromLabel,
-            leading: _IconBadge(
+            leading: MobileReviewIconBadge(
               child: AppIcon(
                 AppIcons.wallet,
                 size: 18,
@@ -378,14 +417,49 @@ class _MobileTransactionStatusScreenState
     // sender source -> amount, with the receiving output attached under
     // Amount (Figma `Received` 4752:75264).
     final fromRow = _isIncoming ? addressRow ?? unknownFromRow : null;
-    final reviewChildren = _isIncoming
+    // Self-shield (own transparent -> own shielded) has no external
+    // counterparty: mirror the desktop ShieldedReceiptView two-row flow,
+    // "From transparent balance" -> "Shielded balance". No Figma frame for
+    // this state yet; mobile is aligned to the (more informative) desktop
+    // shape pending one.
+    final reviewChildren = _isShielding
         ? <Widget>[
-            if (fromRow != null) ...[fromRow, const _FlowArrow()],
+            MobileReviewInfoRow(
+              label: 'Amount',
+              value: amountText,
+              leading: const MobileReviewZecBadge(),
+              bottom: _BottomInfoRow(
+                iconName: AppIcons.transparentBalance,
+                iconColor: colors.icon.muted,
+                text: 'From transparent balance',
+              ),
+            ),
+            const MobileReviewFlowArrow(),
+            MobileReviewInfoRow(
+              label: 'To',
+              value: 'Shielded balance',
+              leading: MobileReviewIconBadge(
+                child: AppIcon(
+                  AppIcons.shieldKeyholeOutline,
+                  size: 18,
+                  color: colors.icon.regular,
+                ),
+              ),
+              bottom: _BottomInfoRow(
+                iconName: AppIcons.shieldKeyhole,
+                iconColor: colors.icon.brandCrimson,
+                text: 'Shielded',
+              ),
+            ),
+          ]
+        : _isIncoming
+        ? <Widget>[
+            if (fromRow != null) ...[fromRow, const MobileReviewFlowArrow()],
             amountRow,
           ]
         : addressRow == null
         ? <Widget>[amountRow]
-        : <Widget>[amountRow, const _FlowArrow(), addressRow];
+        : <Widget>[amountRow, const MobileReviewFlowArrow(), addressRow];
 
     return Scaffold(
       backgroundColor: colors.background.window,
@@ -433,7 +507,7 @@ class _MobileTransactionStatusScreenState
                           () => _messageExpanded = !_messageExpanded,
                         ),
                         timestampText: _dateText(tx),
-                        txidText: _truncateTxid(widget.args.txidHex),
+                        txidText: truncatedTxid(widget.args.txidHex),
                         onOpenExplorer: () => unawaited(_openExplorer()),
                         feeText: _feeText(
                           tx,
@@ -566,11 +640,6 @@ class _MobileTransactionStatusScreenState
     return '${address.substring(0, 6)} ... '
         '${address.substring(address.length - 5)}';
   }
-
-  String _truncateTxid(String txid) {
-    if (txid.length <= 16) return txid;
-    return '${txid.substring(0, 8)}...${txid.substring(txid.length - 8)}';
-  }
 }
 
 class _AddressVerifyZecIcon extends StatelessWidget {
@@ -664,130 +733,6 @@ class _BottomInfoRow extends StatelessWidget {
           ],
         );
       },
-    );
-  }
-}
-
-/// One serif review row — Figma `_Reivew Info` (4265:59148): a 40px
-/// leading badge, the small grey label, the Headline L serif value, and
-/// an optional bottom strip (pool tag / show-full-address).
-class _ReviewInfoRow extends StatelessWidget {
-  const _ReviewInfoRow({
-    required this.label,
-    required this.value,
-    required this.leading,
-    this.bottom,
-    this.strikethrough = false,
-  });
-
-  final String label;
-  final String value;
-  final Widget leading;
-  final Widget? bottom;
-  final bool strikethrough;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 90),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          SizedBox(width: 40, child: Center(child: leading)),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  height: 24,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      label,
-                      style: AppTypography.labelMedium.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.headlineLarge.copyWith(
-                    color: colors.text.accent,
-                    decoration: strikethrough
-                        ? TextDecoration.lineThrough
-                        : TextDecoration.none,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                SizedBox(height: 24, child: bottom ?? const SizedBox()),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The 24px flow arrow centered under the 40px badge column.
-class _FlowArrow extends StatelessWidget {
-  const _FlowArrow();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 40,
-      child: Center(
-        child: AppIcon(
-          AppIcons.arrowDown,
-          size: AppIconSize.large,
-          color: context.colors.icon.accent,
-        ),
-      ),
-    );
-  }
-}
-
-/// The round ZEC coin — Figma `Asset Image` with the ZEC network logo.
-class _ZecCoinBadge extends StatelessWidget {
-  const _ZecCoinBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppRadii.full),
-      child: Image.asset(
-        'assets/swap/tokens/zec.png',
-        width: 32,
-        height: 32,
-        fit: BoxFit.cover,
-      ),
-    );
-  }
-}
-
-/// 40x32 rounded badge on the neutral subtle-opacity fill.
-class _IconBadge extends StatelessWidget {
-  const _IconBadge({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 40,
-      height: 32,
-      decoration: BoxDecoration(
-        color: context.colors.background.neutralSubtleOpacity,
-        borderRadius: BorderRadius.circular(AppRadii.full),
-      ),
-      child: Center(child: child),
     );
   }
 }
@@ -939,7 +884,12 @@ class _DetailCard extends StatelessWidget {
             _ListRow(
               label: 'Tx fee',
               labelStyle: AppTypography.labelLarge,
-              value: _ValueWithIcon(text: feeText, iconName: AppIcons.help),
+              value: _ValueWithIcon(
+                text: feeText,
+                iconName: AppIcons.help,
+                iconColor: context.colors.icon.regular.withValues(alpha: 0.72),
+                onTap: () => unawaited(showMobileTxFeeInfoSheet(context)),
+              ),
             ),
           ],
         ],
@@ -998,11 +948,18 @@ class _ListRow extends StatelessWidget {
 /// Right-side value: text plus an optional trailing 20px icon, padded
 /// like the Figma `Item Right` (8 left, 4 right/vertical).
 class _ValueWithIcon extends StatelessWidget {
-  const _ValueWithIcon({this.text, this.iconName, this.onTap, super.key});
+  const _ValueWithIcon({
+    this.text,
+    this.iconName,
+    this.onTap,
+    this.iconColor,
+    super.key,
+  });
 
   final String? text;
   final String? iconName;
   final VoidCallback? onTap;
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -1032,7 +989,11 @@ class _ValueWithIcon extends StatelessWidget {
             ),
           if (iconName != null) ...[
             const SizedBox(width: AppSpacing.xxs),
-            AppIcon(iconName!, size: 20, color: colors.icon.accent),
+            AppIcon(
+              iconName!,
+              size: 20,
+              color: iconColor ?? colors.icon.accent,
+            ),
           ],
         ],
       ),

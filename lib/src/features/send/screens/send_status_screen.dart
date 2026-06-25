@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/config/zcash_explorer.dart';
+import '../../../core/formatting/address_display.dart';
 import '../../../core/formatting/date_format.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -277,7 +278,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                         timestampText: formatDayMonthTime(
                           _completedAt ?? _startedAt,
                         ),
-                        txIdText: _txid,
+                        txIdText: _txid == null ? null : truncatedTxid(_txid!),
                         feeText: _formatFee(widget.args.feeZatoshi),
                         isShieldedRecipient: widget.args.isShielded,
                         recipientAddressType: widget.args.addressType,

@@ -9,7 +9,12 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
+import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
+import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
+import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -97,6 +102,8 @@ rust_sync.TransactionDetail _detail({
 Widget _app(
   rust_sync.TransactionInfo tx, {
   rust_sync.TransactionDetail? detail,
+  List<AddressBookContact> contacts = const [],
+  Map<String, AccountInfo> ownAccounts = const {},
 }) {
   return ProviderScope(
     overrides: [
@@ -106,6 +113,10 @@ Widget _app(
           SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
         ),
       ),
+      addressBookRepositoryProvider.overrideWithValue(
+        _FakeAddressBookRepository(contacts),
+      ),
+      ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
     ],
     child: MaterialApp(
       home: AppTheme(
@@ -360,6 +371,107 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Message'), findsNothing);
   });
+
+  testWidgets('received tx from a saved contact shows the contact name', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _tx(kind: 'received', fee: BigInt.zero),
+        detail: _detail(
+          kind: 'received',
+          sourceAddress: _transparentSenderAddress,
+          sourcePool: 'transparent',
+        ),
+        contacts: [
+          AddressBookContact(
+            id: 'contact-1',
+            label: 'Mom',
+            network: AddressBookNetwork.zcash,
+            address: _transparentSenderAddress,
+            profilePictureId: kDefaultProfilePictureId,
+            createdAtMs: 1,
+            updatedAtMs: 1,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The From row headline becomes the contact name; the raw address is
+    // demoted to the pool strip below (parity with the desktop receipt).
+    expect(find.text('Mom'), findsOneWidget);
+    expect(
+      find.text(
+        '${_transparentSenderAddress.substring(0, 6)} ... '
+        '${_transparentSenderAddress.substring(_transparentSenderAddress.length - 5)}',
+      ),
+      findsOneWidget,
+    );
+    // The leading badge swaps from the wallet icon to the contact's avatar —
+    // the visible half of the named-counterparty path (M1).
+    expect(find.byType(AppProfilePicture), findsOneWidget);
+  });
+
+  testWidgets('shielding tx shows the transparent -> shielded balance flow', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(_tx(kind: 'shielded', displayPool: 'shielded')),
+    );
+    await tester.pumpAndSettle();
+
+    // Two-row flow mirroring the desktop ShieldedReceiptView (no external
+    // counterparty): Amount/from-transparent above the shielded destination.
+    expect(find.text('Amount'), findsOneWidget);
+    expect(find.text('From transparent balance'), findsOneWidget);
+    expect(find.text('To'), findsOneWidget);
+    expect(find.text('Shielded balance'), findsOneWidget);
+
+    final amountY = tester.getTopLeft(find.text('Amount')).dy;
+    final toY = tester.getTopLeft(find.text('To')).dy;
+    expect(amountY, lessThan(toY));
+  });
+
+  testWidgets('tapping the tx fee help opens the fee info sheet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(_tx()));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('ZIP 317'), findsNothing);
+
+    // The Tx fee help glyph renders in the muted icon tint the session added:
+    // icon.regular @ 0.72 alpha, NOT the default accent color.
+    final helpIcon = tester.widget<AppIcon>(
+      find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.help,
+      ),
+    );
+    final iconColors = AppThemeData.light.colors.icon;
+    expect(helpIcon.color, isNotNull);
+    expect(helpIcon.color, isNot(iconColors.accent));
+    expect(helpIcon.color, iconColors.regular.withValues(alpha: 0.72));
+    expect(helpIcon.color!.a, closeTo(0.72, 0.005));
+
+    // The fee value wraps the help icon in a tap target wired to the shared
+    // fee-info bottom sheet.
+    await tester.tap(find.text('0.00015 ZEC'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('ZIP 317'), findsOneWidget);
+  });
+}
+
+class _FakeAddressBookRepository implements AddressBookRepository {
+  _FakeAddressBookRepository([this._contacts = const []]);
+
+  final List<AddressBookContact> _contacts;
+
+  @override
+  Future<List<AddressBookContact>> loadContacts() async => _contacts;
+
+  @override
+  Future<void> saveContacts(List<AddressBookContact> contacts) async {}
 }
 
 Future<void> _loadAppFonts() async {

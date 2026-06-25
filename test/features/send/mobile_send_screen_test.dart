@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
@@ -1267,6 +1268,27 @@ void main() {
         find.byKey(const ValueKey('mobile_send_review_recipient_picture')),
       ),
       const Size(40, 40),
+    );
+    // M4b: a raw (no-contact) recipient gets the neutral wallet badge
+    // (AppIcons.wallet), not the brand ZEC currency coin
+    // (AppIcons.zcashCurrency).
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_send_review_recipient_picture')),
+        matching: find.byWidgetPredicate(
+          (w) => w is AppIcon && w.name == AppIcons.wallet,
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_send_review_recipient_picture')),
+        matching: find.byWidgetPredicate(
+          (w) => w is AppIcon && w.name == AppIcons.zcashCurrency,
+        ),
+      ),
+      findsNothing,
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_review_wrap'))),
