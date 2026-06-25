@@ -758,8 +758,127 @@ fn delete_account_rows(db_path: &str, account_id: AccountUuid) -> Result<(), Str
     )
     .map_err(|e| format!("Failed to delete account: {e}"))?;
 
+    // Restore the "below the wallet birthday = Ignored" invariant for any
+    // historical scan range that only the just-deleted account required. See
+    // `prune_orphaned_scan_ranges_in_conn` for the full rationale (VZR-89).
+    prune_orphaned_scan_ranges_in_conn(&tx)
+        .map_err(|e| format!("Failed to prune orphaned scan ranges after deletion: {e}"))?;
+
     tx.commit()
         .map_err(|e| format!("Failed to commit account deletion: {e}"))
+}
+
+/// Demote orphaned historical scan ranges that lie below the remaining
+/// accounts' minimum birthday back to `Ignored`.
+///
+/// librustzcash never garbage-collects `scan_queue` when an account is deleted
+/// (neither upstream `delete_account` nor our `delete_account_rows`), and
+/// importing an account with an old birthday force-rescans the whole chain,
+/// demoting already-`Scanned` history to `Historic`. When that imported account
+/// is later removed, the historical range it required is left pending in
+/// `scan_queue` even though no remaining account needs it. The sync engine's
+/// progress denominator is the sum of all pending ranges, so that orphan pins
+/// progress near 0% and wastes hours re-scanning irrelevant blocks (VZR-89).
+///
+/// This restores the normal "below the wallet birthday = `Ignored`" invariant:
+/// EVERY non-`Ignored` range strictly below `MIN(birthday_height)` is set to
+/// `Ignored` — both leftover `Historic` (never-scanned orphan) AND leftover
+/// `Scanned` ranges. The `Scanned` case matters: a deleted old-birthday account
+/// that was only partially synced leaves a `Scanned` range below the surviving
+/// birthday, and librustzcash's `block_fully_scanned` takes the *first*
+/// `Scanned` range starting at/below the birthday and reports its end as the
+/// wallet's fully-scanned height. If that leftover `Scanned` range is left in
+/// place, an `Ignored` gap above it pins the fully-scanned height there forever
+/// and sync can never complete (`ensure_complete_scan_state` blocks it). Scan
+/// ranges are disjoint, so at most one range straddles the birthday; it is split
+/// so the portion at/above the birthday keeps its priority. Ranges at/above the
+/// birthday (including the live chain-tip gap) are never touched.
+///
+/// Idempotent and a no-op for healthy wallets (their sub-birthday range is
+/// already `Ignored`), so it is safe to call on every sync start as a rescue
+/// for wallets already stuck by a pre-fix deletion. Returns the number of
+/// `scan_queue` rows whose coverage was demoted (a split counts once).
+fn prune_orphaned_scan_ranges_in_conn(conn: &rusqlite::Connection) -> rusqlite::Result<usize> {
+    // scan_queue priority code for `Ignored` (zcash_client_backend ScanPriority).
+    // We demote anything ABOVE this (Scanned=10, Historic=20, ...) that sits
+    // below the birthday, so the whole sub-birthday region becomes uniformly
+    // Ignored — matching the shape librustzcash produces for a fresh wallet.
+    const PRIORITY_IGNORED: i64 = 0;
+
+    let min_birthday: Option<i64> =
+        conn.query_row("SELECT MIN(birthday_height) FROM accounts", [], |row| {
+            row.get(0)
+        })?;
+    let Some(min_birthday) = min_birthday else {
+        // No accounts remain (full reset handles that path); nothing to prune.
+        return Ok(0);
+    };
+
+    let mut demoted = 0usize;
+
+    // Split the single non-Ignored range (if any) that straddles the birthday:
+    // [start, min_birthday) becomes Ignored, [min_birthday, end) keeps priority.
+    let straddling_start: Option<i64> = conn
+        .query_row(
+            "SELECT block_range_start FROM scan_queue \
+             WHERE block_range_start < :b AND block_range_end > :b AND priority > :ignored \
+             LIMIT 1",
+            named_params![":b": min_birthday, ":ignored": PRIORITY_IGNORED],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    if let Some(start) = straddling_start {
+        // Shrink the existing row to [min_birthday, end), preserving its
+        // priority. Ranges are disjoint, so `min_birthday` is free as a new
+        // start bound (no other row can start at or span it).
+        conn.execute(
+            "UPDATE scan_queue SET block_range_start = :b WHERE block_range_start = :start",
+            named_params![":b": min_birthday, ":start": start],
+        )?;
+        // Insert the below-birthday remainder as Ignored. `start` was just
+        // freed, and `min_birthday` is free as an end bound (disjoint invariant).
+        conn.execute(
+            "INSERT INTO scan_queue (block_range_start, block_range_end, priority) \
+             VALUES (:start, :b, :ignored)",
+            named_params![":start": start, ":b": min_birthday, ":ignored": PRIORITY_IGNORED],
+        )?;
+        demoted += 1;
+    }
+
+    // Demote every non-Ignored range that lies entirely below the birthday
+    // (orphaned Historic AND leftover Scanned from a deleted account's partial
+    // sync) so no Scanned range remains below the birthday to confuse
+    // `block_fully_scanned`.
+    demoted += conn.execute(
+        "UPDATE scan_queue SET priority = :ignored \
+         WHERE block_range_end <= :b AND priority > :ignored",
+        named_params![":ignored": PRIORITY_IGNORED, ":b": min_birthday],
+    )?;
+
+    Ok(demoted)
+}
+
+/// Path-based wrapper around [`prune_orphaned_scan_ranges_in_conn`] for callers
+/// that are not already inside a wallet-DB write transaction (e.g. the sync
+/// engine's startup rescue pass). Acquires the wallet-DB write lock, runs the
+/// prune in its own transaction, and commits. Returns the number of ranges
+/// demoted.
+pub fn prune_orphaned_scan_ranges(db_path: &str) -> Result<usize, String> {
+    with_wallet_db_write_lock("keys.prune_orphaned_scan_ranges", || {
+        let mut conn = rusqlite::Connection::open(db_path)
+            .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
+        conn.busy_timeout(ACCOUNT_MUTATION_DB_BUSY_TIMEOUT)
+            .map_err(|e| format!("Failed to configure wallet DB busy timeout: {e}"))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Failed to begin scan-queue prune transaction: {e}"))?;
+        let demoted = prune_orphaned_scan_ranges_in_conn(&tx)
+            .map_err(|e| format!("Failed to prune orphaned scan ranges: {e}"))?;
+        tx.commit()
+            .map_err(|e| format!("Failed to commit scan-queue prune: {e}"))?;
+        Ok(demoted)
+    })
 }
 
 /// Parse an account UUID string into AccountUuid.
@@ -1569,6 +1688,570 @@ mod tests {
         let accounts = list_accounts(db_path_str, WalletNetwork::Main).unwrap();
         assert_eq!(accounts.len(), 1);
         assert!(accounts.iter().all(|account| account.uuid != second_uuid));
+    }
+
+    // --- VZR-89: orphaned scan-range pruning -------------------------------
+
+    fn scan_min_birthday(db_path: &str) -> i64 {
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.query_row("SELECT MIN(birthday_height) FROM accounts", [], |r| {
+            r.get(0)
+        })
+        .unwrap()
+    }
+
+    fn pending_scan_coverage_below(db_path: &str, height: i64) -> bool {
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM scan_queue \
+             WHERE block_range_start < :h AND priority > 10)",
+            named_params![":h": height],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    fn pending_scan_coverage_at_or_above(db_path: &str, height: i64) -> bool {
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM scan_queue \
+             WHERE block_range_end > :h AND priority > 10)",
+            named_params![":h": height],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    /// Reproduces the issue #272 / VZR-89 sequence end-to-end: an existing
+    /// recent-birthday wallet, an additional import with an old (Sapling
+    /// activation) birthday that force-rescans the whole chain, then deletion
+    /// of that import. After deletion no pending scan range may remain below the
+    /// surviving account's birthday, while its own near-tip range is preserved.
+    #[test]
+    fn test_delete_account_prunes_orphaned_scan_ranges_below_birthday() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let existing_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &existing_seed,
+            Some(2_400_000),
+            "existing",
+        )
+        .unwrap();
+        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
+
+        // Capture the surviving account's birthday BEFORE the import: this is
+        // the threshold the orphan must end up below. (MIN(birthday) read after
+        // the import would include the imported account's old birthday.)
+        let surviving_birthday = scan_min_birthday(db_path_str);
+
+        let imported_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let (imported_uuid, _) = add_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "imported-old",
+            &imported_seed,
+            Some(419_200),
+        )
+        .unwrap();
+
+        // Sanity: importing the old-birthday account force-rescanned the chain,
+        // queuing pending (Historic) coverage below the surviving birthday.
+        assert!(
+            pending_scan_coverage_below(db_path_str, surviving_birthday),
+            "old-birthday import should queue a historical range below the existing birthday",
+        );
+
+        delete_account(db_path_str, WalletNetwork::Main, &imported_uuid).unwrap();
+
+        assert!(
+            !pending_scan_coverage_below(db_path_str, surviving_birthday),
+            "deleting the old-birthday account must prune the orphaned historical scan range",
+        );
+        assert!(
+            pending_scan_coverage_at_or_above(db_path_str, surviving_birthday),
+            "the surviving account's own near-tip scan range must be preserved",
+        );
+    }
+
+    /// Directly exercises the standalone rescue used at sync start: a wallet
+    /// already stuck by a pre-fix deletion (orphaned pending ranges injected
+    /// below the birthday, including one straddling range) is healed by
+    /// `prune_orphaned_scan_ranges`, and the pass is idempotent.
+    #[test]
+    fn test_prune_orphaned_scan_ranges_rescues_stuck_wallet_and_splits_straddling() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            Some(2_400_000),
+            "existing",
+        )
+        .unwrap();
+        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
+
+        let min_birthday = scan_min_birthday(db_path_str);
+        let below_start = min_birthday - 2_000_000;
+        let below_end = min_birthday - 1_000_000;
+        let straddle_end = min_birthday + 50_000;
+        let tip_end = min_birthday + 100_000;
+
+        // Simulate the leftover stuck state explicitly so the test does not
+        // depend on the on-delete pruning: a fully-below Historic orphan, a
+        // Historic range straddling the birthday, and a legitimate near-tip
+        // ChainTip range above the birthday.
+        {
+            let conn = rusqlite::Connection::open(db_path_str).unwrap();
+            conn.execute("DELETE FROM scan_queue", []).unwrap();
+            conn.execute(
+                "INSERT INTO scan_queue (block_range_start, block_range_end, priority) \
+                 VALUES (:s, :e, 20)",
+                named_params![":s": below_start, ":e": below_end],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO scan_queue (block_range_start, block_range_end, priority) \
+                 VALUES (:s, :e, 20)",
+                named_params![":s": below_end, ":e": straddle_end],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO scan_queue (block_range_start, block_range_end, priority) \
+                 VALUES (:s, :e, 50)",
+                named_params![":s": straddle_end, ":e": tip_end],
+            )
+            .unwrap();
+        }
+
+        let demoted = prune_orphaned_scan_ranges(db_path_str).unwrap();
+        assert!(
+            demoted >= 1,
+            "expected to demote at least the straddling range"
+        );
+
+        // Rescue: nothing pending remains below the birthday.
+        assert!(!pending_scan_coverage_below(db_path_str, min_birthday));
+
+        let conn = rusqlite::Connection::open(db_path_str).unwrap();
+        // Straddling range split: [birthday, straddle_end) preserved as Historic.
+        let upper_kept: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM scan_queue \
+                 WHERE block_range_start = :b AND block_range_end = :e AND priority = 20)",
+                named_params![":b": min_birthday, ":e": straddle_end],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(upper_kept, "split must keep [birthday, end) as Historic");
+        // ...and its below-birthday remainder became Ignored.
+        let lower_ignored: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM scan_queue \
+                 WHERE block_range_start = :s AND block_range_end = :b AND priority = 0)",
+                named_params![":s": below_end, ":b": min_birthday],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            lower_ignored,
+            "split must Ignore the [start, birthday) remainder"
+        );
+        // Near-tip range above the birthday is untouched.
+        let tip_untouched: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM scan_queue \
+                 WHERE block_range_start = :s AND block_range_end = :e AND priority = 50)",
+                named_params![":s": straddle_end, ":e": tip_end],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(tip_untouched, "ranges above the birthday must be preserved");
+        drop(conn);
+
+        // Idempotent: a second pass demotes nothing.
+        assert_eq!(prune_orphaned_scan_ranges(db_path_str).unwrap(), 0);
+    }
+
+    fn scan_queue_snapshot(db_path: &str) -> Vec<(i64, i64, i64)> {
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT block_range_start, block_range_end, priority \
+                 FROM scan_queue ORDER BY block_range_start",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap();
+        rows.map(|r| r.unwrap()).collect()
+    }
+
+    /// The prune must be a strict no-op on a healthy, librustzcash-produced
+    /// wallet (one that never imported+deleted an old-birthday account): its
+    /// sub-birthday range is already `Ignored`, so nothing is pending below the
+    /// birthday. This pins the docstring's "no-op for healthy wallets" contract
+    /// directly, since the prune runs on every sync start for every user.
+    #[test]
+    fn test_prune_orphaned_scan_ranges_is_noop_on_healthy_wallet() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            Some(2_400_000),
+            "healthy",
+        )
+        .unwrap();
+        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
+
+        let before = scan_queue_snapshot(db_path_str);
+        let demoted = prune_orphaned_scan_ranges(db_path_str).unwrap();
+        let after = scan_queue_snapshot(db_path_str);
+
+        assert_eq!(
+            demoted, 0,
+            "a healthy wallet has no pending coverage below its birthday to demote",
+        );
+        assert_eq!(
+            before, after,
+            "scan_queue must be byte-for-byte unchanged on a healthy wallet",
+        );
+    }
+
+    fn lowest_scanned_range_start(db_path: &str) -> Option<i64> {
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.query_row(
+            "SELECT block_range_start FROM scan_queue \
+             WHERE priority = 10 ORDER BY block_range_start ASC LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .optional()
+        .unwrap()
+    }
+
+    /// Regression for the real-device failure: a deleted old-birthday account
+    /// that was only PARTIALLY synced leaves a `Scanned` range below the
+    /// surviving account's birthday. The prune must demote that leftover
+    /// `Scanned` range to `Ignored` too — otherwise librustzcash's
+    /// `block_fully_scanned` keys off it (first Scanned range) and, with the
+    /// Ignored gap the prune creates above it, pins the fully-scanned height
+    /// there forever, blocking sync completion
+    /// ("fully scanned height N below wallet DB chain tip").
+    #[test]
+    fn test_prune_orphaned_scan_ranges_demotes_leftover_scanned_below_birthday() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            Some(2_400_000),
+            "surviving",
+        )
+        .unwrap();
+        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
+
+        let birthday = scan_min_birthday(db_path_str);
+
+        // Reproduce the post-delete state from a partially-synced old-birthday
+        // import: a leftover Scanned range below the birthday, plus a Historic
+        // remainder that straddles the birthday.
+        {
+            let conn = rusqlite::Connection::open(db_path_str).unwrap();
+            conn.execute("DELETE FROM scan_queue", []).unwrap();
+            conn.execute(
+                "INSERT INTO scan_queue (block_range_start, block_range_end, priority) \
+                 VALUES (419200, 746400, 10)", // Scanned, fully below birthday
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO scan_queue (block_range_start, block_range_end, priority) \
+                 VALUES (746400, 2500001, 20)", // Historic, straddles the birthday
+                [],
+            )
+            .unwrap();
+        }
+
+        // Before the fix this leftover Scanned range was left in place.
+        assert_eq!(lowest_scanned_range_start(db_path_str), Some(419200));
+
+        let demoted = prune_orphaned_scan_ranges(db_path_str).unwrap();
+        assert!(demoted >= 1);
+
+        // KEY: no Scanned range may remain below the birthday — otherwise
+        // block_fully_scanned would pin the fully-scanned height to its end.
+        match lowest_scanned_range_start(db_path_str) {
+            None => {}
+            Some(start) => assert!(
+                start >= birthday,
+                "a Scanned range must not remain below the birthday (found start {start} < {birthday})",
+            ),
+        }
+        // The whole sub-birthday region is now Ignored; no pending coverage below.
+        assert!(!pending_scan_coverage_below(db_path_str, birthday));
+        // The straddle's at/above-birthday portion is preserved as pending.
+        assert!(pending_scan_coverage_at_or_above(db_path_str, birthday));
+
+        // Idempotent.
+        assert_eq!(prune_orphaned_scan_ranges(db_path_str).unwrap(), 0);
+    }
+
+    /// Adversarial probe for state S14: the single straddling range is a
+    /// HIGH-priority range (FoundNote=40), not Historic/Scanned. This exercises
+    /// the load-bearing split-vs-demote dispatch on the straddler: the straddle
+    /// SELECT uses `priority > Ignored`, so FoundNote must be caught by the
+    /// split (preserving the above-birthday FoundNote coverage the survivor
+    /// still needs), NOT blanket-demoted (which would Ignore a real note-bearing
+    /// range above the birthday). The below-birthday remainder — a note-discovery
+    /// hint that belonged only to the deleted account — is correctly Ignored.
+    #[test]
+    fn test_prune_splits_high_priority_foundnote_straddler_preserving_above_birthday() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            Some(2_400_000),
+            "surviving",
+        )
+        .unwrap();
+        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
+
+        let birthday = scan_min_birthday(db_path_str);
+        let straddle_start = birthday - 50_000;
+        let straddle_end = birthday + 50_000; // B + x, x = 50_000
+
+        // State S14: a single FoundNote (priority 40) range straddling the
+        // birthday and NO leftover Scanned range. (A note straddling B could be
+        // queued by OpenAdjacent/FoundNote propagation or a Verify lookahead
+        // belonging to the now-deleted old-birthday account.)
+        {
+            let conn = rusqlite::Connection::open(db_path_str).unwrap();
+            conn.execute("DELETE FROM scan_queue", []).unwrap();
+            conn.execute(
+                "INSERT INTO scan_queue (block_range_start, block_range_end, priority) \
+                 VALUES (:s, :e, 40)",
+                named_params![":s": straddle_start, ":e": straddle_end],
+            )
+            .unwrap();
+        }
+
+        let demoted = prune_orphaned_scan_ranges(db_path_str).unwrap();
+        assert_eq!(demoted, 1, "the straddler split counts exactly once");
+
+        let conn = rusqlite::Connection::open(db_path_str).unwrap();
+        // EXACT post-prune scan_queue: [straddle_start, B) pri=0, [B, B+x) pri=40.
+        let rows: Vec<(i64, i64, i64)> = conn
+            .prepare(
+                "SELECT block_range_start, block_range_end, priority \
+                 FROM scan_queue ORDER BY block_range_start ASC",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                (straddle_start, birthday, 0), // below-B remainder -> Ignored
+                (birthday, straddle_end, 40),  // at/above-B portion -> FoundNote kept
+            ],
+            "split must demote only the below-birthday remainder and preserve \
+             the high-priority FoundNote coverage at/above the birthday",
+        );
+
+        // The above-birthday FoundNote portion must NOT have been blanket-demoted:
+        // it is the survivor's real note-discovery work and must remain pending.
+        assert!(
+            pending_scan_coverage_at_or_above(db_path_str, birthday),
+            "the FoundNote portion above the birthday must survive as pending",
+        );
+        // No pending coverage below the birthday (the deleted account's hint is gone).
+        assert!(!pending_scan_coverage_below(db_path_str, birthday));
+        // No Scanned range below the birthday => block_fully_scanned will not be
+        // pinned to a stale low height (it returns None here, summary falls back
+        // to birthday-1, and the FoundNote range remains as legitimate work).
+        match lowest_scanned_range_start(db_path_str) {
+            None => {}
+            Some(start) => assert!(start >= birthday),
+        }
+
+        // Idempotent: a second pass changes nothing.
+        assert_eq!(prune_orphaned_scan_ranges(db_path_str).unwrap(), 0);
+    }
+
+    /// State S7 — the exact real-device VZR-89 shape: a deleted lower-birthday
+    /// (Imported) account that synced PAST the surviving (higher) birthday before
+    /// deletion leaves a `Scanned` range that STRADDLES the risen birthday. The
+    /// split must keep `[B, end)` as `Scanned` (real blocks back it) and Ignore
+    /// only `[start, B)`, so the lowest `Scanned` range starts at/above the
+    /// birthday and `block_fully_scanned` is not pinned below it. Distinct from
+    /// the FoundNote straddler test: here the kept upper half is `Scanned` — the
+    /// exact priority `block_fully_scanned` keys off.
+    #[test]
+    fn test_prune_splits_scanned_straddler_keeps_upper_half_scanned() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            Some(2_400_000),
+            "surviving",
+        )
+        .unwrap();
+        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
+
+        let birthday = scan_min_birthday(db_path_str);
+        let straddle_start = birthday - 1_000_000; // below B
+        let straddle_end = birthday + 30_000; // above B
+
+        {
+            let conn = rusqlite::Connection::open(db_path_str).unwrap();
+            conn.execute("DELETE FROM scan_queue", []).unwrap();
+            // Scanned range straddling the risen birthday.
+            conn.execute(
+                "INSERT INTO scan_queue (block_range_start, block_range_end, priority) \
+                 VALUES (:s, :e, 10)",
+                named_params![":s": straddle_start, ":e": straddle_end],
+            )
+            .unwrap();
+            // Pending remainder up to the tip (legitimate work above the birthday).
+            conn.execute(
+                "INSERT INTO scan_queue (block_range_start, block_range_end, priority) \
+                 VALUES (:s, 2500001, 20)",
+                named_params![":s": straddle_end],
+            )
+            .unwrap();
+        }
+
+        // Before the fix the lowest Scanned range started below the birthday.
+        assert_eq!(
+            lowest_scanned_range_start(db_path_str),
+            Some(straddle_start)
+        );
+
+        let demoted = prune_orphaned_scan_ranges(db_path_str).unwrap();
+        assert!(demoted >= 1);
+
+        let conn = rusqlite::Connection::open(db_path_str).unwrap();
+        // [B, straddle_end) stays Scanned ...
+        let upper_scanned: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM scan_queue \
+                 WHERE block_range_start = :b AND block_range_end = :e AND priority = 10)",
+                named_params![":b": birthday, ":e": straddle_end],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            upper_scanned,
+            "the split must keep [birthday, end) as Scanned"
+        );
+        // ... and [start, B) became Ignored.
+        let lower_ignored: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM scan_queue \
+                 WHERE block_range_start = :s AND block_range_end = :b AND priority = 0)",
+                named_params![":s": straddle_start, ":b": birthday],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            lower_ignored,
+            "the below-birthday half of the Scanned straddler must be Ignored",
+        );
+        drop(conn);
+
+        // KEY: no Scanned range remains below the birthday, so block_fully_scanned
+        // keys off [B, end) rather than a stale low height.
+        assert!(lowest_scanned_range_start(db_path_str).unwrap() >= birthday);
+        assert!(!pending_scan_coverage_below(db_path_str, birthday));
+        assert!(pending_scan_coverage_at_or_above(db_path_str, birthday));
+
+        // Idempotent.
+        assert_eq!(prune_orphaned_scan_ranges(db_path_str).unwrap(), 0);
+    }
+
+    /// Codex follow-up: proves the rescue prune must run AFTER `update_chain_tip`.
+    /// When the blocks table's `max_scanned` sits BELOW the surviving birthday
+    /// (a deleted account that synced only a low region left a scanned block
+    /// there), librustzcash's `update_chain_tip` anchors new ranges at
+    /// `max_scanned + 1` WITHOUT clamping to the birthday, so it re-creates
+    /// sub-birthday pending work. A prune that ran only before `update_chain_tip`
+    /// would miss it; the prune run afterwards demotes it.
+    #[test]
+    fn test_prune_cleans_subbirthday_range_recreated_by_update_chain_tip() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            Some(2_400_000),
+            "survivor",
+        )
+        .unwrap();
+        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
+        let birthday = scan_min_birthday(db_path_str);
+
+        // Simulate a deleted account's leftover scanned block BELOW the birthday:
+        // a single blocks-table row at 746399 makes max_scanned < birthday.
+        {
+            let conn = rusqlite::Connection::open(db_path_str).unwrap();
+            conn.execute(
+                "INSERT INTO blocks (height, hash, time, sapling_tree) \
+                 VALUES (746399, X'00', 0, X'')",
+                [],
+            )
+            .unwrap();
+        }
+
+        // Re-run update_chain_tip (as the sync does). With max_scanned (746399)
+        // below the birthday, it re-creates sub-birthday pending work anchored at
+        // max_scanned + 1, NOT clamped to the birthday.
+        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
+        assert!(
+            pending_scan_coverage_below(db_path_str, birthday),
+            "update_chain_tip should re-create sub-birthday pending work from max_scanned+1",
+        );
+
+        // The rescue prune, run AFTER update_chain_tip, must demote it.
+        prune_orphaned_scan_ranges(db_path_str).unwrap();
+        assert!(
+            !pending_scan_coverage_below(db_path_str, birthday),
+            "prune after update_chain_tip must demote the re-created sub-birthday range",
+        );
+        assert!(pending_scan_coverage_at_or_above(db_path_str, birthday));
     }
 
     #[test]

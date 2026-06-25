@@ -1,10 +1,133 @@
 mod common;
 
 use common::{
-    add_account_with_birthday, create_wallet, current_tip_height, ensure_regtest_up,
-    exclusive_regtest, fund_wallet, get_balance, get_transaction_history, history_txids,
-    list_accounts, mine_blocks, positive_history_count, sync_wallet, unique_account_uuids,
+    add_account_with_birthday, create_wallet, create_wallet_with_birthday, current_tip_height,
+    ensure_regtest_up, exclusive_regtest, fund_wallet, get_balance, get_transaction_history,
+    has_pending_scan_below, history_txids, inject_orphaned_historic_below,
+    inject_orphaned_scanned_below, list_accounts, min_account_birthday, mine_blocks,
+    positive_history_count, sync_wallet, unique_account_uuids,
 };
+
+/// VZR-89 rescue path: a wallet already stuck by a PRE-FIX account deletion
+/// (an orphaned pending Historic range left below the surviving birthday) must
+/// be healed automatically by the sync-start rescue hook in `run_sync_inner` —
+/// the user only has to update and re-sync, no reinstall.
+///
+/// Regtest fully scans its short chain, so the orphan cannot be produced by a
+/// real import+delete here (it would all become `Scanned`); we inject the
+/// orphan directly to mimic the mainnet-scale stuck state, then drive the real
+/// sync entry point and assert it is pruned. The on-delete prevention path is
+/// covered by the in-crate unit tests.
+#[test]
+#[ignore = "requires Dockerized zcashd/lightwalletd regtest services"]
+fn sync_start_rescues_wallet_stuck_by_orphaned_historical_scan_range() {
+    let _guard = exclusive_regtest();
+    ensure_regtest_up();
+
+    // A normal, recent-birthday wallet, funded and synced to the tip.
+    let birthday = current_tip_height();
+    let (main_dir, wallet) = create_wallet_with_birthday("Primary", Some(birthday));
+    let main_db = main_dir.path().join("zcash_wallet.db");
+    fund_wallet(&wallet.unified_address, "1.0");
+    mine_blocks(10);
+    sync_wallet(&main_db);
+
+    let balance_before = get_balance(&main_db, &wallet.account_uuid);
+    assert!(
+        balance_before.spendable >= 100_000_000,
+        "primary should hold its funds before the rescue, got {}",
+        balance_before.spendable
+    );
+
+    let h = min_account_birthday(&main_db);
+    assert!(
+        h > 1,
+        "test needs a birthday above genesis to have a sub-birthday range, got {h}"
+    );
+
+    // Simulate the pre-fix stuck state: an orphaned pending Historic range below
+    // the surviving birthday that no account needs.
+    let flipped = inject_orphaned_historic_below(&main_db, h);
+    assert!(
+        flipped >= 1,
+        "expected to inject at least one orphaned historic range below birthday {h}"
+    );
+    assert!(
+        has_pending_scan_below(&main_db, h),
+        "sanity: the injected orphan must be present before the rescue sync"
+    );
+
+    // The sync-start rescue hook must demote the orphan on the next sync.
+    sync_wallet(&main_db);
+
+    assert!(
+        !has_pending_scan_below(&main_db, h),
+        "sync start must prune the orphaned historical scan range below the birthday"
+    );
+    let balance_after = get_balance(&main_db, &wallet.account_uuid);
+    assert_eq!(
+        balance_after.spendable, balance_before.spendable,
+        "the rescue prune must not disturb the wallet balance"
+    );
+}
+
+/// VZR-89 regression (real-device #272 retest): import an old-birthday account
+/// on a build WITHOUT the fix, partially sync, delete it, then open a build WITH
+/// the fix. The deleted account leaves a `Scanned` range below the surviving
+/// birthday; librustzcash's `block_fully_scanned` keys off that leftover Scanned
+/// range and, with the Ignored gap above it, pins the fully-scanned height there
+/// — `ensure_complete_scan_state` then blocks completion forever
+/// ("fully scanned height N below wallet DB chain tip"). The rescue prune must
+/// demote the leftover Scanned range so sync completes.
+///
+/// Regtest fully scans its short chain (so a real partial scan can't be left
+/// behind), so we inject the leftover Scanned-below-birthday state directly and
+/// then drive the real sync entry point: without the fix `sync_wallet` errors
+/// at completion and panics; with the fix it completes.
+#[test]
+#[ignore = "requires Dockerized zcashd/lightwalletd regtest services"]
+fn sync_completes_when_deleted_account_left_scanned_range_below_birthday() {
+    let _guard = exclusive_regtest();
+    ensure_regtest_up();
+
+    let birthday = current_tip_height();
+    let (main_dir, wallet) = create_wallet_with_birthday("Primary", Some(birthday));
+    let main_db = main_dir.path().join("zcash_wallet.db");
+    fund_wallet(&wallet.unified_address, "1.0");
+    mine_blocks(10);
+    sync_wallet(&main_db);
+
+    let balance_before = get_balance(&main_db, &wallet.account_uuid);
+    assert!(
+        balance_before.spendable >= 100_000_000,
+        "primary should hold its funds before the retest, got {}",
+        balance_before.spendable
+    );
+
+    let h = min_account_birthday(&main_db);
+    assert!(h > 2, "need room for a sub-birthday range, got {h}");
+
+    // Plant a leftover Scanned range below the birthday + an Ignored gap, exactly
+    // the shape a partially-synced-then-deleted old-birthday account leaves.
+    inject_orphaned_scanned_below(&main_db, h);
+
+    // Drive the real sync entry point. Without the fix this returns a
+    // "fully scanned height ... below wallet DB chain tip" error and the
+    // `.expect` inside `sync_wallet` panics, failing the test.
+    sync_wallet(&main_db);
+
+    // Sync completed cleanly, no Scanned range left below the birthday, balance
+    // intact.
+    assert!(
+        !has_pending_scan_below(&main_db, h),
+        "no pending coverage should remain below the birthday after the rescue",
+    );
+    let balance_after = get_balance(&main_db, &wallet.account_uuid);
+    assert_eq!(
+        balance_after.spendable, balance_before.spendable,
+        "the rescue prune must not disturb the wallet balance",
+    );
+}
 
 #[test]
 #[ignore = "requires Dockerized zcashd/lightwalletd regtest services"]
