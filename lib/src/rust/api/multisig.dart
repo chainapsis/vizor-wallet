@@ -6,7 +6,9 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `multisig_identity_from_keys`, `normalize_backup_passphrase`, `random_word_index`
+// These functions are ignored because they are not marked as `pub`: `block_on`, `classify_client_status`, `clean_label`, `client_error`, `decode_b64`, `ensure_auth_owner`, `hash_bytes_b64`, `hash_group_public_package`, `map_auth_session`, `map_auth_update_from_session`, `map_auth_update_from_tokens`, `map_participant`, `map_session`, `map_tokens`, `multisig_identity_from_keys`, `normalize_backup_passphrase`, `random_word_index`, `refresh_error_allows_resume`, `restore_participant_identity`, `resume_participant_auth_session`, `status_code_allows_resume`, `structured_multisig_error`, `vault_address_from_group_public_package`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ApiMultisigErrorBody`, `ApiMultisigErrorKind`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `eq`, `fmt`, `fmt`
 
 ApiMultisigThresholdParams validateMultisigThreshold({
   required int threshold,
@@ -38,6 +40,281 @@ String normalizeMultisigBackupPassword({
   generated: generated,
 );
 
+Future<ApiMultisigBackupArtifact> createMultisigShareBackup({
+  required String network,
+  required String sessionId,
+  required String participantId,
+  required int threshold,
+  required int participantCount,
+  required String rosterHash,
+  required String admissionSecretKey,
+  required String deliverySecretKey,
+  required String keyPackageB64,
+  required String groupPublicPackageJson,
+  required String passphrase,
+}) => RustLib.instance.api.crateApiMultisigCreateMultisigShareBackup(
+  network: network,
+  sessionId: sessionId,
+  participantId: participantId,
+  threshold: threshold,
+  participantCount: participantCount,
+  rosterHash: rosterHash,
+  admissionSecretKey: admissionSecretKey,
+  deliverySecretKey: deliverySecretKey,
+  keyPackageB64: keyPackageB64,
+  groupPublicPackageJson: groupPublicPackageJson,
+  passphrase: passphrase,
+);
+
+Future<ApiMultisigBackupVerification> verifyMultisigShareBackup({
+  required String network,
+  required String artifactJson,
+  required String passphrase,
+  required String expectedSessionId,
+  required String expectedParticipantId,
+  required int expectedThreshold,
+  required int expectedParticipantCount,
+  required String expectedRosterHash,
+  required String expectedGroupPublicPackageHash,
+}) => RustLib.instance.api.crateApiMultisigVerifyMultisigShareBackup(
+  network: network,
+  artifactJson: artifactJson,
+  passphrase: passphrase,
+  expectedSessionId: expectedSessionId,
+  expectedParticipantId: expectedParticipantId,
+  expectedThreshold: expectedThreshold,
+  expectedParticipantCount: expectedParticipantCount,
+  expectedRosterHash: expectedRosterHash,
+  expectedGroupPublicPackageHash: expectedGroupPublicPackageHash,
+);
+
+Future<ApiMultisigAuthSession> createMultisigSession({
+  required String coordinatorUrl,
+  required String admissionSecretKey,
+  required String deliverySecretKey,
+  String? label,
+}) => RustLib.instance.api.crateApiMultisigCreateMultisigSession(
+  coordinatorUrl: coordinatorUrl,
+  admissionSecretKey: admissionSecretKey,
+  deliverySecretKey: deliverySecretKey,
+  label: label,
+);
+
+Future<ApiMultisigAuthSession> joinMultisigSession({
+  required String coordinatorUrl,
+  required String sessionId,
+  required String admissionSecretKey,
+  required String deliverySecretKey,
+  String? label,
+}) => RustLib.instance.api.crateApiMultisigJoinMultisigSession(
+  coordinatorUrl: coordinatorUrl,
+  sessionId: sessionId,
+  admissionSecretKey: admissionSecretKey,
+  deliverySecretKey: deliverySecretKey,
+  label: label,
+);
+
+Future<ApiMultisigTokens> refreshMultisigAuth({
+  required String coordinatorUrl,
+  required String refreshToken,
+}) => RustLib.instance.api.crateApiMultisigRefreshMultisigAuth(
+  coordinatorUrl: coordinatorUrl,
+  refreshToken: refreshToken,
+);
+
+Future<ApiMultisigAuthUpdate> refreshOrResumeMultisigAuth({
+  required String coordinatorUrl,
+  required String sessionId,
+  required String participantId,
+  required String refreshToken,
+  required String admissionSecretKey,
+  required String deliverySecretKey,
+}) => RustLib.instance.api.crateApiMultisigRefreshOrResumeMultisigAuth(
+  coordinatorUrl: coordinatorUrl,
+  sessionId: sessionId,
+  participantId: participantId,
+  refreshToken: refreshToken,
+  admissionSecretKey: admissionSecretKey,
+  deliverySecretKey: deliverySecretKey,
+);
+
+Future<ApiMultisigAuthSession> resumeMultisigParticipant({
+  required String coordinatorUrl,
+  required String sessionId,
+  required String admissionSecretKey,
+  required String deliverySecretKey,
+}) => RustLib.instance.api.crateApiMultisigResumeMultisigParticipant(
+  coordinatorUrl: coordinatorUrl,
+  sessionId: sessionId,
+  admissionSecretKey: admissionSecretKey,
+  deliverySecretKey: deliverySecretKey,
+);
+
+Future<ApiMultisigSession> getMultisigSession({
+  required String coordinatorUrl,
+  required String sessionId,
+  required String accessToken,
+}) => RustLib.instance.api.crateApiMultisigGetMultisigSession(
+  coordinatorUrl: coordinatorUrl,
+  sessionId: sessionId,
+  accessToken: accessToken,
+);
+
+Future<ApiMultisigSession> lockMultisigSession({
+  required String coordinatorUrl,
+  required String sessionId,
+  required String accessToken,
+  required int threshold,
+}) => RustLib.instance.api.crateApiMultisigLockMultisigSession(
+  coordinatorUrl: coordinatorUrl,
+  sessionId: sessionId,
+  accessToken: accessToken,
+  threshold: threshold,
+);
+
+class ApiMultisigAuthSession {
+  final String sessionId;
+  final String participantId;
+  final String accessToken;
+  final String refreshToken;
+  final String admissionSecretKey;
+  final String admissionPublicKey;
+  final String deliverySecretKey;
+  final String deliveryPublicKey;
+  final BigInt accessTokenExpiresAt;
+  final BigInt refreshTokenExpiresAt;
+  final String state;
+  final ApiMultisigParticipant participant;
+
+  const ApiMultisigAuthSession({
+    required this.sessionId,
+    required this.participantId,
+    required this.accessToken,
+    required this.refreshToken,
+    required this.admissionSecretKey,
+    required this.admissionPublicKey,
+    required this.deliverySecretKey,
+    required this.deliveryPublicKey,
+    required this.accessTokenExpiresAt,
+    required this.refreshTokenExpiresAt,
+    required this.state,
+    required this.participant,
+  });
+
+  @override
+  int get hashCode =>
+      sessionId.hashCode ^
+      participantId.hashCode ^
+      accessToken.hashCode ^
+      refreshToken.hashCode ^
+      admissionSecretKey.hashCode ^
+      admissionPublicKey.hashCode ^
+      deliverySecretKey.hashCode ^
+      deliveryPublicKey.hashCode ^
+      accessTokenExpiresAt.hashCode ^
+      refreshTokenExpiresAt.hashCode ^
+      state.hashCode ^
+      participant.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiMultisigAuthSession &&
+          runtimeType == other.runtimeType &&
+          sessionId == other.sessionId &&
+          participantId == other.participantId &&
+          accessToken == other.accessToken &&
+          refreshToken == other.refreshToken &&
+          admissionSecretKey == other.admissionSecretKey &&
+          admissionPublicKey == other.admissionPublicKey &&
+          deliverySecretKey == other.deliverySecretKey &&
+          deliveryPublicKey == other.deliveryPublicKey &&
+          accessTokenExpiresAt == other.accessTokenExpiresAt &&
+          refreshTokenExpiresAt == other.refreshTokenExpiresAt &&
+          state == other.state &&
+          participant == other.participant;
+}
+
+class ApiMultisigAuthUpdate {
+  final String sessionId;
+  final String participantId;
+  final String accessToken;
+  final String refreshToken;
+  final String admissionPublicKey;
+  final String deliverySecretKey;
+  final String deliveryPublicKey;
+  final BigInt accessTokenExpiresAt;
+  final BigInt refreshTokenExpiresAt;
+  final bool resumed;
+
+  const ApiMultisigAuthUpdate({
+    required this.sessionId,
+    required this.participantId,
+    required this.accessToken,
+    required this.refreshToken,
+    required this.admissionPublicKey,
+    required this.deliverySecretKey,
+    required this.deliveryPublicKey,
+    required this.accessTokenExpiresAt,
+    required this.refreshTokenExpiresAt,
+    required this.resumed,
+  });
+
+  @override
+  int get hashCode =>
+      sessionId.hashCode ^
+      participantId.hashCode ^
+      accessToken.hashCode ^
+      refreshToken.hashCode ^
+      admissionPublicKey.hashCode ^
+      deliverySecretKey.hashCode ^
+      deliveryPublicKey.hashCode ^
+      accessTokenExpiresAt.hashCode ^
+      refreshTokenExpiresAt.hashCode ^
+      resumed.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiMultisigAuthUpdate &&
+          runtimeType == other.runtimeType &&
+          sessionId == other.sessionId &&
+          participantId == other.participantId &&
+          accessToken == other.accessToken &&
+          refreshToken == other.refreshToken &&
+          admissionPublicKey == other.admissionPublicKey &&
+          deliverySecretKey == other.deliverySecretKey &&
+          deliveryPublicKey == other.deliveryPublicKey &&
+          accessTokenExpiresAt == other.accessTokenExpiresAt &&
+          refreshTokenExpiresAt == other.refreshTokenExpiresAt &&
+          resumed == other.resumed;
+}
+
+class ApiMultisigBackupArtifact {
+  final String artifactJson;
+  final String backupHash;
+  final String vaultAddress;
+
+  const ApiMultisigBackupArtifact({
+    required this.artifactJson,
+    required this.backupHash,
+    required this.vaultAddress,
+  });
+
+  @override
+  int get hashCode =>
+      artifactJson.hashCode ^ backupHash.hashCode ^ vaultAddress.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiMultisigBackupArtifact &&
+          runtimeType == other.runtimeType &&
+          artifactJson == other.artifactJson &&
+          backupHash == other.backupHash &&
+          vaultAddress == other.vaultAddress;
+}
+
 class ApiMultisigBackupPassword {
   final String displayPassword;
   final String canonicalPassword;
@@ -61,6 +338,116 @@ class ApiMultisigBackupPassword {
           displayPassword == other.displayPassword &&
           canonicalPassword == other.canonicalPassword &&
           checksum == other.checksum;
+}
+
+class ApiMultisigBackupVerification {
+  final String backupHash;
+  final String vaultAddress;
+  final String sessionId;
+  final String participantId;
+  final int threshold;
+  final int participantCount;
+  final String rosterHash;
+  final String admissionSecretKey;
+  final String admissionPublicKey;
+  final String deliverySecretKey;
+  final String deliveryPublicKey;
+  final String keyPackageB64;
+  final String groupPublicPackageJson;
+  final String groupPublicPackageHash;
+
+  const ApiMultisigBackupVerification({
+    required this.backupHash,
+    required this.vaultAddress,
+    required this.sessionId,
+    required this.participantId,
+    required this.threshold,
+    required this.participantCount,
+    required this.rosterHash,
+    required this.admissionSecretKey,
+    required this.admissionPublicKey,
+    required this.deliverySecretKey,
+    required this.deliveryPublicKey,
+    required this.keyPackageB64,
+    required this.groupPublicPackageJson,
+    required this.groupPublicPackageHash,
+  });
+
+  @override
+  int get hashCode =>
+      backupHash.hashCode ^
+      vaultAddress.hashCode ^
+      sessionId.hashCode ^
+      participantId.hashCode ^
+      threshold.hashCode ^
+      participantCount.hashCode ^
+      rosterHash.hashCode ^
+      admissionSecretKey.hashCode ^
+      admissionPublicKey.hashCode ^
+      deliverySecretKey.hashCode ^
+      deliveryPublicKey.hashCode ^
+      keyPackageB64.hashCode ^
+      groupPublicPackageJson.hashCode ^
+      groupPublicPackageHash.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiMultisigBackupVerification &&
+          runtimeType == other.runtimeType &&
+          backupHash == other.backupHash &&
+          vaultAddress == other.vaultAddress &&
+          sessionId == other.sessionId &&
+          participantId == other.participantId &&
+          threshold == other.threshold &&
+          participantCount == other.participantCount &&
+          rosterHash == other.rosterHash &&
+          admissionSecretKey == other.admissionSecretKey &&
+          admissionPublicKey == other.admissionPublicKey &&
+          deliverySecretKey == other.deliverySecretKey &&
+          deliveryPublicKey == other.deliveryPublicKey &&
+          keyPackageB64 == other.keyPackageB64 &&
+          groupPublicPackageJson == other.groupPublicPackageJson &&
+          groupPublicPackageHash == other.groupPublicPackageHash;
+}
+
+class ApiMultisigParticipant {
+  final String participantId;
+  final String? label;
+  final String admissionPublicKey;
+  final String deliveryPublicKey;
+  final BigInt joinedAt;
+  final bool dkgCompleted;
+
+  const ApiMultisigParticipant({
+    required this.participantId,
+    this.label,
+    required this.admissionPublicKey,
+    required this.deliveryPublicKey,
+    required this.joinedAt,
+    required this.dkgCompleted,
+  });
+
+  @override
+  int get hashCode =>
+      participantId.hashCode ^
+      label.hashCode ^
+      admissionPublicKey.hashCode ^
+      deliveryPublicKey.hashCode ^
+      joinedAt.hashCode ^
+      dkgCompleted.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiMultisigParticipant &&
+          runtimeType == other.runtimeType &&
+          participantId == other.participantId &&
+          label == other.label &&
+          admissionPublicKey == other.admissionPublicKey &&
+          deliveryPublicKey == other.deliveryPublicKey &&
+          joinedAt == other.joinedAt &&
+          dkgCompleted == other.dkgCompleted;
 }
 
 class ApiMultisigParticipantIdentity {
@@ -94,6 +481,57 @@ class ApiMultisigParticipantIdentity {
           deliveryPublicKey == other.deliveryPublicKey;
 }
 
+class ApiMultisigSession {
+  final String sessionId;
+  final String state;
+  final String creatorParticipantId;
+  final int? threshold;
+  final String? rosterHash;
+  final String? groupPublicPackageHash;
+  final List<ApiMultisigParticipant> participants;
+  final BigInt createdAt;
+  final BigInt updatedAt;
+
+  const ApiMultisigSession({
+    required this.sessionId,
+    required this.state,
+    required this.creatorParticipantId,
+    this.threshold,
+    this.rosterHash,
+    this.groupPublicPackageHash,
+    required this.participants,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  @override
+  int get hashCode =>
+      sessionId.hashCode ^
+      state.hashCode ^
+      creatorParticipantId.hashCode ^
+      threshold.hashCode ^
+      rosterHash.hashCode ^
+      groupPublicPackageHash.hashCode ^
+      participants.hashCode ^
+      createdAt.hashCode ^
+      updatedAt.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiMultisigSession &&
+          runtimeType == other.runtimeType &&
+          sessionId == other.sessionId &&
+          state == other.state &&
+          creatorParticipantId == other.creatorParticipantId &&
+          threshold == other.threshold &&
+          rosterHash == other.rosterHash &&
+          groupPublicPackageHash == other.groupPublicPackageHash &&
+          participants == other.participants &&
+          createdAt == other.createdAt &&
+          updatedAt == other.updatedAt;
+}
+
 class ApiMultisigThresholdParams {
   final int threshold;
   final int participantCount;
@@ -113,4 +551,43 @@ class ApiMultisigThresholdParams {
           runtimeType == other.runtimeType &&
           threshold == other.threshold &&
           participantCount == other.participantCount;
+}
+
+class ApiMultisigTokens {
+  final String sessionId;
+  final String participantId;
+  final String accessToken;
+  final String refreshToken;
+  final BigInt accessTokenExpiresAt;
+  final BigInt refreshTokenExpiresAt;
+
+  const ApiMultisigTokens({
+    required this.sessionId,
+    required this.participantId,
+    required this.accessToken,
+    required this.refreshToken,
+    required this.accessTokenExpiresAt,
+    required this.refreshTokenExpiresAt,
+  });
+
+  @override
+  int get hashCode =>
+      sessionId.hashCode ^
+      participantId.hashCode ^
+      accessToken.hashCode ^
+      refreshToken.hashCode ^
+      accessTokenExpiresAt.hashCode ^
+      refreshTokenExpiresAt.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiMultisigTokens &&
+          runtimeType == other.runtimeType &&
+          sessionId == other.sessionId &&
+          participantId == other.participantId &&
+          accessToken == other.accessToken &&
+          refreshToken == other.refreshToken &&
+          accessTokenExpiresAt == other.accessTokenExpiresAt &&
+          refreshTokenExpiresAt == other.refreshTokenExpiresAt;
 }

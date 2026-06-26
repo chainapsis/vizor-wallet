@@ -14,8 +14,13 @@ const _newPassword = 'Newpass1!';
 const _wrongPassword = 'Wrongpass1!';
 const _accountUuid = 'test-account';
 const _mnemonicKey = 'zcash_account_mnemonic_test-account';
+const _multisigMaterialKey = 'zcash_multisig_material_test-account';
+const _multisigPendingSessionKey =
+    'zcash_multisig_pending_session_session-1:participant-1';
 const _externalEncryptedKey = 'external_encrypted_key';
 const _mnemonic = 'abandon abandon abandon abandon abandon abandon';
+const _multisigMaterial = '{"sessionId":"session-1"}';
+const _multisigPendingSession = '{"participantId":"participant-1"}';
 
 const _passwordVerifierKey = 'zcash_password_verifier';
 const _passwordVerifierSaltKey = 'zcash_password_verifier_salt';
@@ -140,6 +145,50 @@ void main() {
       );
     },
   );
+
+  test('multisig secrets round-trip, require unlock, and delete', () async {
+    await store.configurePassword(_oldPassword);
+
+    await store.writeMultisigMaterial(_accountUuid, _multisigMaterial);
+    await store.writeMultisigPendingSession(
+      'session-1:participant-1',
+      _multisigPendingSession,
+    );
+
+    expect(await store.readMultisigMaterial(_accountUuid), _multisigMaterial);
+    expect(await store.readAllMultisigMaterials(), {
+      _accountUuid: _multisigMaterial,
+    });
+    expect(
+      await store.readMultisigPendingSession('session-1:participant-1'),
+      _multisigPendingSession,
+    );
+    expect(await store.readAllMultisigPendingSessions(), {
+      'session-1:participant-1': _multisigPendingSession,
+    });
+
+    store.clearSessionPassword();
+    expect(
+      await store.readMultisigMaterial(
+        _accountUuid,
+        requireUnlockedSession: true,
+      ),
+      isNull,
+    );
+    expect(
+      await store.readAllMultisigPendingSessions(requireUnlockedSession: true),
+      isEmpty,
+    );
+
+    expect(await store.verifyPassword(_oldPassword), isTrue);
+    await store.deleteMultisigMaterial(_accountUuid);
+    await store.deleteMultisigPendingSession('session-1:participant-1');
+    expect(await store.readMultisigMaterial(_accountUuid), isNull);
+    expect(
+      await store.readMultisigPendingSession('session-1:participant-1'),
+      isNull,
+    );
+  });
 
   test('deleteVotingHotkeysForAccount only clears matching account', () async {
     await store.configurePassword(_oldPassword);
@@ -302,6 +351,11 @@ void main() {
       roundId: 'round-1',
       hotkey: const [1, 2, 3],
     );
+    await store.writeMultisigMaterial(_accountUuid, _multisigMaterial);
+    await store.writeMultisigPendingSession(
+      'session-1:participant-1',
+      _multisigPendingSession,
+    );
     await store.writeSecretString(_externalEncryptedKey, 'external secret');
     final externalPayload = await store.readPlain(_externalEncryptedKey);
 
@@ -319,6 +373,11 @@ void main() {
         roundId: 'round-1',
       ),
       const [1, 2, 3],
+    );
+    expect(await store.readMultisigMaterial(_accountUuid), _multisigMaterial);
+    expect(
+      await store.readMultisigPendingSession('session-1:participant-1'),
+      _multisigPendingSession,
     );
   });
 
@@ -338,6 +397,30 @@ void main() {
     expect(await store.verifyPasswordOnly(_newPassword), isFalse);
     expect(await store.verifyPassword(_oldPassword), isTrue);
     expect(await store.readPlain(_mnemonicKey), 'not encrypted json');
+  });
+
+  test('changePassword rejects unreadable multisig secret payloads', () async {
+    await store.configurePassword(_oldPassword);
+    await store.writeString(_multisigMaterialKey, 'not encrypted json');
+
+    await expectLater(
+      () => store.changePassword(
+        currentPassword: _oldPassword,
+        newPassword: _newPassword,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    await store.delete(_multisigMaterialKey);
+    await store.writeString(_multisigPendingSessionKey, 'not encrypted json');
+
+    await expectLater(
+      () => store.changePassword(
+        currentPassword: _oldPassword,
+        newPassword: _newPassword,
+      ),
+      throwsA(isA<StateError>()),
+    );
   });
 
   test('changePassword rolls back if the verifier write fails', () async {

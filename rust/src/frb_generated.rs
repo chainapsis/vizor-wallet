@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -468550685;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1769890758;
 
 // Section: executor
 
@@ -511,6 +511,102 @@ fn wire__crate__api__voting__confirm_vote_submission_impl(
                         api_proposal_id,
                         api_tx_hash,
                         api_events_json,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__multisig__create_multisig_session_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "create_multisig_session",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_coordinator_url = <String>::sse_decode(&mut deserializer);
+            let api_admission_secret_key = <String>::sse_decode(&mut deserializer);
+            let api_delivery_secret_key = <String>::sse_decode(&mut deserializer);
+            let api_label = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::multisig::create_multisig_session(
+                        api_coordinator_url,
+                        api_admission_secret_key,
+                        api_delivery_secret_key,
+                        api_label,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__multisig__create_multisig_share_backup_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "create_multisig_share_backup",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_network = <String>::sse_decode(&mut deserializer);
+            let api_session_id = <String>::sse_decode(&mut deserializer);
+            let api_participant_id = <String>::sse_decode(&mut deserializer);
+            let api_threshold = <u16>::sse_decode(&mut deserializer);
+            let api_participant_count = <u16>::sse_decode(&mut deserializer);
+            let api_roster_hash = <String>::sse_decode(&mut deserializer);
+            let api_admission_secret_key = <String>::sse_decode(&mut deserializer);
+            let api_delivery_secret_key = <String>::sse_decode(&mut deserializer);
+            let api_key_package_b64 = <String>::sse_decode(&mut deserializer);
+            let api_group_public_package_json = <String>::sse_decode(&mut deserializer);
+            let api_passphrase = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::multisig::create_multisig_share_backup(
+                        api_network,
+                        api_session_id,
+                        api_participant_id,
+                        api_threshold,
+                        api_participant_count,
+                        api_roster_hash,
+                        api_admission_secret_key,
+                        api_delivery_secret_key,
+                        api_key_package_b64,
+                        api_group_public_package_json,
+                        api_passphrase,
                     )?;
                     Ok(output_ok)
                 })())
@@ -1949,6 +2045,45 @@ fn wire__crate__api__wallet__get_lightwalletd_chain_name_impl(
         },
     )
 }
+fn wire__crate__api__multisig__get_multisig_session_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_multisig_session",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_coordinator_url = <String>::sse_decode(&mut deserializer);
+            let api_session_id = <String>::sse_decode(&mut deserializer);
+            let api_access_token = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::multisig::get_multisig_session(
+                        api_coordinator_url,
+                        api_session_id,
+                        api_access_token,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__sync__get_next_available_address_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -2811,6 +2946,49 @@ fn wire__crate__api__sync__is_sync_running_impl(
         },
     )
 }
+fn wire__crate__api__multisig__join_multisig_session_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "join_multisig_session",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_coordinator_url = <String>::sse_decode(&mut deserializer);
+            let api_session_id = <String>::sse_decode(&mut deserializer);
+            let api_admission_secret_key = <String>::sse_decode(&mut deserializer);
+            let api_delivery_secret_key = <String>::sse_decode(&mut deserializer);
+            let api_label = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::multisig::join_multisig_session(
+                        api_coordinator_url,
+                        api_session_id,
+                        api_admission_secret_key,
+                        api_delivery_secret_key,
+                        api_label,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__voting__last_moment_buffer_seconds_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -2874,6 +3052,47 @@ fn wire__crate__api__wallet__list_accounts_impl(
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::wallet::list_accounts(api_db_path, api_network)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__multisig__lock_multisig_session_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "lock_multisig_session",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_coordinator_url = <String>::sse_decode(&mut deserializer);
+            let api_session_id = <String>::sse_decode(&mut deserializer);
+            let api_access_token = <String>::sse_decode(&mut deserializer);
+            let api_threshold = <u16>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::multisig::lock_multisig_session(
+                        api_coordinator_url,
+                        api_session_id,
+                        api_access_token,
+                        api_threshold,
+                    )?;
                     Ok(output_ok)
                 })())
             }
@@ -3546,6 +3765,88 @@ fn wire__crate__api__sync__redact_pczt_for_signer_impl(
         },
     )
 }
+fn wire__crate__api__multisig__refresh_multisig_auth_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "refresh_multisig_auth",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_coordinator_url = <String>::sse_decode(&mut deserializer);
+            let api_refresh_token = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::multisig::refresh_multisig_auth(
+                        api_coordinator_url,
+                        api_refresh_token,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__multisig__refresh_or_resume_multisig_auth_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "refresh_or_resume_multisig_auth",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_coordinator_url = <String>::sse_decode(&mut deserializer);
+            let api_session_id = <String>::sse_decode(&mut deserializer);
+            let api_participant_id = <String>::sse_decode(&mut deserializer);
+            let api_refresh_token = <String>::sse_decode(&mut deserializer);
+            let api_admission_secret_key = <String>::sse_decode(&mut deserializer);
+            let api_delivery_secret_key = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::multisig::refresh_or_resume_multisig_auth(
+                        api_coordinator_url,
+                        api_session_id,
+                        api_participant_id,
+                        api_refresh_token,
+                        api_admission_secret_key,
+                        api_delivery_secret_key,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__keystone__reset_ur_session_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -3765,6 +4066,47 @@ fn wire__crate__api__multisig__restore_multisig_participant_identity_impl(
                 )?;
                 Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__api__multisig__resume_multisig_participant_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "resume_multisig_participant",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_coordinator_url = <String>::sse_decode(&mut deserializer);
+            let api_session_id = <String>::sse_decode(&mut deserializer);
+            let api_admission_secret_key = <String>::sse_decode(&mut deserializer);
+            let api_delivery_secret_key = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::multisig::resume_multisig_participant(
+                        api_coordinator_url,
+                        api_session_id,
+                        api_admission_secret_key,
+                        api_delivery_secret_key,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
         },
     )
 }
@@ -4609,6 +4951,57 @@ fn wire__crate__api__multisig__validate_multisig_threshold_impl(
         },
     )
 }
+fn wire__crate__api__multisig__verify_multisig_share_backup_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "verify_multisig_share_backup",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_network = <String>::sse_decode(&mut deserializer);
+            let api_artifact_json = <String>::sse_decode(&mut deserializer);
+            let api_passphrase = <String>::sse_decode(&mut deserializer);
+            let api_expected_session_id = <String>::sse_decode(&mut deserializer);
+            let api_expected_participant_id = <String>::sse_decode(&mut deserializer);
+            let api_expected_threshold = <u16>::sse_decode(&mut deserializer);
+            let api_expected_participant_count = <u16>::sse_decode(&mut deserializer);
+            let api_expected_roster_hash = <String>::sse_decode(&mut deserializer);
+            let api_expected_group_public_package_hash = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::multisig::verify_multisig_share_backup(
+                        api_network,
+                        api_artifact_json,
+                        api_passphrase,
+                        api_expected_session_id,
+                        api_expected_participant_id,
+                        api_expected_threshold,
+                        api_expected_participant_count,
+                        api_expected_roster_hash,
+                        api_expected_group_public_package_hash,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__voting__vote_commitment_wire_json_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -5201,6 +5594,81 @@ impl SseDecode for crate::api::sync::ApiMempoolTxEvent {
     }
 }
 
+impl SseDecode for crate::api::multisig::ApiMultisigAuthSession {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sessionId = <String>::sse_decode(deserializer);
+        let mut var_participantId = <String>::sse_decode(deserializer);
+        let mut var_accessToken = <String>::sse_decode(deserializer);
+        let mut var_refreshToken = <String>::sse_decode(deserializer);
+        let mut var_admissionSecretKey = <String>::sse_decode(deserializer);
+        let mut var_admissionPublicKey = <String>::sse_decode(deserializer);
+        let mut var_deliverySecretKey = <String>::sse_decode(deserializer);
+        let mut var_deliveryPublicKey = <String>::sse_decode(deserializer);
+        let mut var_accessTokenExpiresAt = <u64>::sse_decode(deserializer);
+        let mut var_refreshTokenExpiresAt = <u64>::sse_decode(deserializer);
+        let mut var_state = <String>::sse_decode(deserializer);
+        let mut var_participant =
+            <crate::api::multisig::ApiMultisigParticipant>::sse_decode(deserializer);
+        return crate::api::multisig::ApiMultisigAuthSession {
+            session_id: var_sessionId,
+            participant_id: var_participantId,
+            access_token: var_accessToken,
+            refresh_token: var_refreshToken,
+            admission_secret_key: var_admissionSecretKey,
+            admission_public_key: var_admissionPublicKey,
+            delivery_secret_key: var_deliverySecretKey,
+            delivery_public_key: var_deliveryPublicKey,
+            access_token_expires_at: var_accessTokenExpiresAt,
+            refresh_token_expires_at: var_refreshTokenExpiresAt,
+            state: var_state,
+            participant: var_participant,
+        };
+    }
+}
+
+impl SseDecode for crate::api::multisig::ApiMultisigAuthUpdate {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sessionId = <String>::sse_decode(deserializer);
+        let mut var_participantId = <String>::sse_decode(deserializer);
+        let mut var_accessToken = <String>::sse_decode(deserializer);
+        let mut var_refreshToken = <String>::sse_decode(deserializer);
+        let mut var_admissionPublicKey = <String>::sse_decode(deserializer);
+        let mut var_deliverySecretKey = <String>::sse_decode(deserializer);
+        let mut var_deliveryPublicKey = <String>::sse_decode(deserializer);
+        let mut var_accessTokenExpiresAt = <u64>::sse_decode(deserializer);
+        let mut var_refreshTokenExpiresAt = <u64>::sse_decode(deserializer);
+        let mut var_resumed = <bool>::sse_decode(deserializer);
+        return crate::api::multisig::ApiMultisigAuthUpdate {
+            session_id: var_sessionId,
+            participant_id: var_participantId,
+            access_token: var_accessToken,
+            refresh_token: var_refreshToken,
+            admission_public_key: var_admissionPublicKey,
+            delivery_secret_key: var_deliverySecretKey,
+            delivery_public_key: var_deliveryPublicKey,
+            access_token_expires_at: var_accessTokenExpiresAt,
+            refresh_token_expires_at: var_refreshTokenExpiresAt,
+            resumed: var_resumed,
+        };
+    }
+}
+
+impl SseDecode for crate::api::multisig::ApiMultisigBackupArtifact {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_artifactJson = <String>::sse_decode(deserializer);
+        let mut var_backupHash = <String>::sse_decode(deserializer);
+        let mut var_vaultAddress = <String>::sse_decode(deserializer);
+        return crate::api::multisig::ApiMultisigBackupArtifact {
+            artifact_json: var_artifactJson,
+            backup_hash: var_backupHash,
+            vault_address: var_vaultAddress,
+        };
+    }
+}
+
 impl SseDecode for crate::api::multisig::ApiMultisigBackupPassword {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5211,6 +5679,62 @@ impl SseDecode for crate::api::multisig::ApiMultisigBackupPassword {
             display_password: var_displayPassword,
             canonical_password: var_canonicalPassword,
             checksum: var_checksum,
+        };
+    }
+}
+
+impl SseDecode for crate::api::multisig::ApiMultisigBackupVerification {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_backupHash = <String>::sse_decode(deserializer);
+        let mut var_vaultAddress = <String>::sse_decode(deserializer);
+        let mut var_sessionId = <String>::sse_decode(deserializer);
+        let mut var_participantId = <String>::sse_decode(deserializer);
+        let mut var_threshold = <u16>::sse_decode(deserializer);
+        let mut var_participantCount = <u16>::sse_decode(deserializer);
+        let mut var_rosterHash = <String>::sse_decode(deserializer);
+        let mut var_admissionSecretKey = <String>::sse_decode(deserializer);
+        let mut var_admissionPublicKey = <String>::sse_decode(deserializer);
+        let mut var_deliverySecretKey = <String>::sse_decode(deserializer);
+        let mut var_deliveryPublicKey = <String>::sse_decode(deserializer);
+        let mut var_keyPackageB64 = <String>::sse_decode(deserializer);
+        let mut var_groupPublicPackageJson = <String>::sse_decode(deserializer);
+        let mut var_groupPublicPackageHash = <String>::sse_decode(deserializer);
+        return crate::api::multisig::ApiMultisigBackupVerification {
+            backup_hash: var_backupHash,
+            vault_address: var_vaultAddress,
+            session_id: var_sessionId,
+            participant_id: var_participantId,
+            threshold: var_threshold,
+            participant_count: var_participantCount,
+            roster_hash: var_rosterHash,
+            admission_secret_key: var_admissionSecretKey,
+            admission_public_key: var_admissionPublicKey,
+            delivery_secret_key: var_deliverySecretKey,
+            delivery_public_key: var_deliveryPublicKey,
+            key_package_b64: var_keyPackageB64,
+            group_public_package_json: var_groupPublicPackageJson,
+            group_public_package_hash: var_groupPublicPackageHash,
+        };
+    }
+}
+
+impl SseDecode for crate::api::multisig::ApiMultisigParticipant {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_participantId = <String>::sse_decode(deserializer);
+        let mut var_label = <Option<String>>::sse_decode(deserializer);
+        let mut var_admissionPublicKey = <String>::sse_decode(deserializer);
+        let mut var_deliveryPublicKey = <String>::sse_decode(deserializer);
+        let mut var_joinedAt = <u64>::sse_decode(deserializer);
+        let mut var_dkgCompleted = <bool>::sse_decode(deserializer);
+        return crate::api::multisig::ApiMultisigParticipant {
+            participant_id: var_participantId,
+            label: var_label,
+            admission_public_key: var_admissionPublicKey,
+            delivery_public_key: var_deliveryPublicKey,
+            joined_at: var_joinedAt,
+            dkg_completed: var_dkgCompleted,
         };
     }
 }
@@ -5231,6 +5755,33 @@ impl SseDecode for crate::api::multisig::ApiMultisigParticipantIdentity {
     }
 }
 
+impl SseDecode for crate::api::multisig::ApiMultisigSession {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sessionId = <String>::sse_decode(deserializer);
+        let mut var_state = <String>::sse_decode(deserializer);
+        let mut var_creatorParticipantId = <String>::sse_decode(deserializer);
+        let mut var_threshold = <Option<u16>>::sse_decode(deserializer);
+        let mut var_rosterHash = <Option<String>>::sse_decode(deserializer);
+        let mut var_groupPublicPackageHash = <Option<String>>::sse_decode(deserializer);
+        let mut var_participants =
+            <Vec<crate::api::multisig::ApiMultisigParticipant>>::sse_decode(deserializer);
+        let mut var_createdAt = <u64>::sse_decode(deserializer);
+        let mut var_updatedAt = <u64>::sse_decode(deserializer);
+        return crate::api::multisig::ApiMultisigSession {
+            session_id: var_sessionId,
+            state: var_state,
+            creator_participant_id: var_creatorParticipantId,
+            threshold: var_threshold,
+            roster_hash: var_rosterHash,
+            group_public_package_hash: var_groupPublicPackageHash,
+            participants: var_participants,
+            created_at: var_createdAt,
+            updated_at: var_updatedAt,
+        };
+    }
+}
+
 impl SseDecode for crate::api::multisig::ApiMultisigThresholdParams {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5239,6 +5790,26 @@ impl SseDecode for crate::api::multisig::ApiMultisigThresholdParams {
         return crate::api::multisig::ApiMultisigThresholdParams {
             threshold: var_threshold,
             participant_count: var_participantCount,
+        };
+    }
+}
+
+impl SseDecode for crate::api::multisig::ApiMultisigTokens {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sessionId = <String>::sse_decode(deserializer);
+        let mut var_participantId = <String>::sse_decode(deserializer);
+        let mut var_accessToken = <String>::sse_decode(deserializer);
+        let mut var_refreshToken = <String>::sse_decode(deserializer);
+        let mut var_accessTokenExpiresAt = <u64>::sse_decode(deserializer);
+        let mut var_refreshTokenExpiresAt = <u64>::sse_decode(deserializer);
+        return crate::api::multisig::ApiMultisigTokens {
+            session_id: var_sessionId,
+            participant_id: var_participantId,
+            access_token: var_accessToken,
+            refresh_token: var_refreshToken,
+            access_token_expires_at: var_accessTokenExpiresAt,
+            refresh_token_expires_at: var_refreshTokenExpiresAt,
         };
     }
 }
@@ -5696,6 +6267,20 @@ impl SseDecode for Vec<crate::api::wallet::AccountInfo> {
         let mut ans_ = vec![];
         for idx_ in 0..len_ {
             ans_.push(<crate::api::wallet::AccountInfo>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::multisig::ApiMultisigParticipant> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::multisig::ApiMultisigParticipant>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -6195,6 +6780,17 @@ impl SseDecode for Option<zcash_voting::wire::SignedVoteCommitmentsView> {
             return Some(<zcash_voting::wire::SignedVoteCommitmentsView>::sse_decode(
                 deserializer,
             ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<u16> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<u16>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -7085,95 +7681,104 @@ fn pde_ffi_dispatcher_primary_impl(
 10 => wire__crate__api__voting__clear_recovery_state_impl(port, ptr, rust_vec_len, data_len),
 11 => wire__crate__api__voting__confirm_delegation_submission_impl(port, ptr, rust_vec_len, data_len),
 12 => wire__crate__api__voting__confirm_vote_submission_impl(port, ptr, rust_vec_len, data_len),
-13 => wire__crate__api__sync__create_pczt_from_proposal_impl(port, ptr, rust_vec_len, data_len),
-14 => wire__crate__api__sync__create_shield_transparent_pczt_impl(port, ptr, rust_vec_len, data_len),
-15 => wire__crate__api__wallet__create_wallet_impl(port, ptr, rust_vec_len, data_len),
-16 => wire__crate__api__keystone__decode_accounts_from_cbor_impl(port, ptr, rust_vec_len, data_len),
-17 => wire__crate__api__keystone__decode_accounts_ur_impl(port, ptr, rust_vec_len, data_len),
-18 => wire__crate__api__keystone__decode_pczt_from_cbor_impl(port, ptr, rust_vec_len, data_len),
-19 => wire__crate__api__keystone__decode_ur_part_impl(port, ptr, rust_vec_len, data_len),
-20 => wire__crate__api__keystone__decode_ur_to_pczt_impl(port, ptr, rust_vec_len, data_len),
-21 => wire__crate__api__sync__decrypt_and_store_transaction_impl(port, ptr, rust_vec_len, data_len),
-22 => wire__crate__api__secret__decrypt_secret_payload_impl(port, ptr, rust_vec_len, data_len),
-23 => wire__crate__api__voting__delegation_submission_wire_json_impl(port, ptr, rust_vec_len, data_len),
-24 => wire__crate__api__wallet__delete_account_impl(port, ptr, rust_vec_len, data_len),
-25 => wire__crate__api__voting__delete_skipped_bundles_impl(port, ptr, rust_vec_len, data_len),
-26 => wire__crate__api__voting__delete_voting_account_state_impl(port, ptr, rust_vec_len, data_len),
-27 => wire__crate__api__secret__derive_secret_password_verifier_impl(port, ptr, rust_vec_len, data_len),
-28 => wire__crate__api__sync__discard_proposal_impl(port, ptr, rust_vec_len, data_len),
-29 => wire__crate__api__wallet__discover_software_wallet_import_accounts_impl(port, ptr, rust_vec_len, data_len),
-30 => wire__crate__api__keystone__encode_pczt_to_ur_impl(port, ptr, rust_vec_len, data_len),
-31 => wire__crate__api__keystone__encode_pczt_ur_parts_impl(port, ptr, rust_vec_len, data_len),
-32 => wire__crate__api__secret__encrypt_secret_payload_impl(port, ptr, rust_vec_len, data_len),
-33 => wire__crate__api__wallet__ensure_wallet_db_migrated_impl(port, ptr, rust_vec_len, data_len),
-34 => wire__crate__api__sync__estimate_fee_impl(port, ptr, rust_vec_len, data_len),
-35 => wire__crate__api__sync__estimate_send_max_impl(port, ptr, rust_vec_len, data_len),
-36 => wire__crate__api__sync__execute_proposal_impl(port, ptr, rust_vec_len, data_len),
-37 => wire__crate__api__sync__execute_proposal_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
-38 => wire__crate__api__sync__extract_and_broadcast_pczt_impl(port, ptr, rust_vec_len, data_len),
-42 => wire__crate__api__voting__generate_van_witness_impl(port, ptr, rust_vec_len, data_len),
-43 => wire__crate__api__voting__generate_voting_hotkey_impl(port, ptr, rust_vec_len, data_len),
-44 => wire__crate__api__sync__get_balance_impl(port, ptr, rust_vec_len, data_len),
-45 => wire__crate__api__sync__get_block_time_impl(port, ptr, rust_vec_len, data_len),
-47 => wire__crate__api__sync__get_export_birthday_height_impl(port, ptr, rust_vec_len, data_len),
-48 => wire__crate__api__voting__get_keystone_signatures_impl(port, ptr, rust_vec_len, data_len),
-49 => wire__crate__api__wallet__get_latest_block_height_impl(port, ptr, rust_vec_len, data_len),
-50 => wire__crate__api__wallet__get_lightwalletd_chain_name_impl(port, ptr, rust_vec_len, data_len),
-51 => wire__crate__api__sync__get_next_available_address_impl(port, ptr, rust_vec_len, data_len),
-52 => wire__crate__api__sync__get_next_subtree_indices_impl(port, ptr, rust_vec_len, data_len),
-53 => wire__crate__api__sync__get_previous_transaction_count_for_address_impl(port, ptr, rust_vec_len, data_len),
-54 => wire__crate__api__wallet__get_recent_transparent_receive_addresses_impl(port, ptr, rust_vec_len, data_len),
-55 => wire__crate__api__voting__get_round_plan_impl(port, ptr, rust_vec_len, data_len),
-56 => wire__crate__api__voting__get_round_recovery_state_impl(port, ptr, rust_vec_len, data_len),
-57 => wire__crate__api__sync__get_shield_transparent_status_impl(port, ptr, rust_vec_len, data_len),
-59 => wire__crate__api__sync__get_sync_status_impl(port, ptr, rust_vec_len, data_len),
-60 => wire__crate__api__sync__get_transaction_data_requests_impl(port, ptr, rust_vec_len, data_len),
-62 => wire__crate__api__sync__get_transaction_history_impl(port, ptr, rust_vec_len, data_len),
-63 => wire__crate__api__wallet__get_transparent_receive_address_impl(port, ptr, rust_vec_len, data_len),
-64 => wire__crate__api__wallet__get_unified_address_impl(port, ptr, rust_vec_len, data_len),
-66 => wire__crate__api__wallet__import_hardware_account_impl(port, ptr, rust_vec_len, data_len),
-67 => wire__crate__api__wallet__import_software_wallet_with_account_discovery_impl(port, ptr, rust_vec_len, data_len),
-68 => wire__crate__api__wallet__import_wallet_impl(port, ptr, rust_vec_len, data_len),
-69 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-75 => wire__crate__api__wallet__list_accounts_impl(port, ptr, rust_vec_len, data_len),
-76 => wire__crate__api__voting__mark_delegation_submitted_impl(port, ptr, rust_vec_len, data_len),
-77 => wire__crate__api__voting__mark_share_confirmed_impl(port, ptr, rust_vec_len, data_len),
-78 => wire__crate__api__voting__mark_vote_submitted_impl(port, ptr, rust_vec_len, data_len),
-80 => wire__crate__api__voting__next_share_tracking_delay_seconds_impl(port, ptr, rust_vec_len, data_len),
-82 => wire__crate__api__voting__parse_signed_voting_pczt_impl(port, ptr, rust_vec_len, data_len),
-83 => wire__crate__api__voting__plan_share_submissions_impl(port, ptr, rust_vec_len, data_len),
-84 => wire__crate__api__voting__precompute_delegation_pir_impl(port, ptr, rust_vec_len, data_len),
-85 => wire__crate__api__wallet__preview_software_account_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
-86 => wire__crate__api__sync__propose_send_impl(port, ptr, rust_vec_len, data_len),
-87 => wire__crate__api__sync__put_subtree_roots_impl(port, ptr, rust_vec_len, data_len),
-88 => wire__crate__api__voting__record_share_delegation_impl(port, ptr, rust_vec_len, data_len),
-89 => wire__crate__api__voting__recover_vote_commitment_impl(port, ptr, rust_vec_len, data_len),
-90 => wire__crate__api__voting__recovered_vote_share_wire_json_impl(port, ptr, rust_vec_len, data_len),
-91 => wire__crate__api__sync__redact_pczt_for_signer_impl(port, ptr, rust_vec_len, data_len),
-93 => wire__crate__api__voting__reset_vote_tree_impl(port, ptr, rust_vec_len, data_len),
-94 => wire__crate__api__voting__reset_voting_session_state_impl(port, ptr, rust_vec_len, data_len),
-95 => wire__crate__api__voting__resolve_static_voting_config_impl(port, ptr, rust_vec_len, data_len),
-96 => wire__crate__api__voting__resolve_voting_config_impl(port, ptr, rust_vec_len, data_len),
-98 => wire__crate__api__sync__rewind_to_height_impl(port, ptr, rust_vec_len, data_len),
-99 => wire__crate__api__sync__run_full_sync_blocking_impl(port, ptr, rust_vec_len, data_len),
-100 => wire__crate__api__sync__scan_blocks_impl(port, ptr, rust_vec_len, data_len),
-101 => wire__crate__api__voting__set_ballot_intent_impl(port, ptr, rust_vec_len, data_len),
-103 => wire__crate__api__sync__set_transaction_status_impl(port, ptr, rust_vec_len, data_len),
-104 => wire__crate__api__voting__setup_delegation_bundles_impl(port, ptr, rust_vec_len, data_len),
-105 => wire__crate__api__voting__share_tracking_flags_impl(port, ptr, rust_vec_len, data_len),
-106 => wire__crate__api__sync__shield_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
-107 => wire__crate__api__sync__shield_transparent_balance_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
-108 => wire__crate__api__sync__start_full_sync_impl(port, ptr, rust_vec_len, data_len),
-109 => wire__crate__api__sync__start_mempool_observer_impl(port, ptr, rust_vec_len, data_len),
-111 => wire__crate__api__voting__store_keystone_signature_impl(port, ptr, rust_vec_len, data_len),
-112 => wire__crate__api__sync__suggest_scan_ranges_impl(port, ptr, rust_vec_len, data_len),
-113 => wire__crate__api__voting__sync_vote_tree_impl(port, ptr, rust_vec_len, data_len),
-114 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
-115 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
-116 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
-119 => wire__crate__api__voting__vote_commitment_wire_json_impl(port, ptr, rust_vec_len, data_len),
-120 => wire__crate__api__voting__vote_share_wire_json_impl(port, ptr, rust_vec_len, data_len),
-122 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
+13 => wire__crate__api__multisig__create_multisig_session_impl(port, ptr, rust_vec_len, data_len),
+14 => wire__crate__api__multisig__create_multisig_share_backup_impl(port, ptr, rust_vec_len, data_len),
+15 => wire__crate__api__sync__create_pczt_from_proposal_impl(port, ptr, rust_vec_len, data_len),
+16 => wire__crate__api__sync__create_shield_transparent_pczt_impl(port, ptr, rust_vec_len, data_len),
+17 => wire__crate__api__wallet__create_wallet_impl(port, ptr, rust_vec_len, data_len),
+18 => wire__crate__api__keystone__decode_accounts_from_cbor_impl(port, ptr, rust_vec_len, data_len),
+19 => wire__crate__api__keystone__decode_accounts_ur_impl(port, ptr, rust_vec_len, data_len),
+20 => wire__crate__api__keystone__decode_pczt_from_cbor_impl(port, ptr, rust_vec_len, data_len),
+21 => wire__crate__api__keystone__decode_ur_part_impl(port, ptr, rust_vec_len, data_len),
+22 => wire__crate__api__keystone__decode_ur_to_pczt_impl(port, ptr, rust_vec_len, data_len),
+23 => wire__crate__api__sync__decrypt_and_store_transaction_impl(port, ptr, rust_vec_len, data_len),
+24 => wire__crate__api__secret__decrypt_secret_payload_impl(port, ptr, rust_vec_len, data_len),
+25 => wire__crate__api__voting__delegation_submission_wire_json_impl(port, ptr, rust_vec_len, data_len),
+26 => wire__crate__api__wallet__delete_account_impl(port, ptr, rust_vec_len, data_len),
+27 => wire__crate__api__voting__delete_skipped_bundles_impl(port, ptr, rust_vec_len, data_len),
+28 => wire__crate__api__voting__delete_voting_account_state_impl(port, ptr, rust_vec_len, data_len),
+29 => wire__crate__api__secret__derive_secret_password_verifier_impl(port, ptr, rust_vec_len, data_len),
+30 => wire__crate__api__sync__discard_proposal_impl(port, ptr, rust_vec_len, data_len),
+31 => wire__crate__api__wallet__discover_software_wallet_import_accounts_impl(port, ptr, rust_vec_len, data_len),
+32 => wire__crate__api__keystone__encode_pczt_to_ur_impl(port, ptr, rust_vec_len, data_len),
+33 => wire__crate__api__keystone__encode_pczt_ur_parts_impl(port, ptr, rust_vec_len, data_len),
+34 => wire__crate__api__secret__encrypt_secret_payload_impl(port, ptr, rust_vec_len, data_len),
+35 => wire__crate__api__wallet__ensure_wallet_db_migrated_impl(port, ptr, rust_vec_len, data_len),
+36 => wire__crate__api__sync__estimate_fee_impl(port, ptr, rust_vec_len, data_len),
+37 => wire__crate__api__sync__estimate_send_max_impl(port, ptr, rust_vec_len, data_len),
+38 => wire__crate__api__sync__execute_proposal_impl(port, ptr, rust_vec_len, data_len),
+39 => wire__crate__api__sync__execute_proposal_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
+40 => wire__crate__api__sync__extract_and_broadcast_pczt_impl(port, ptr, rust_vec_len, data_len),
+44 => wire__crate__api__voting__generate_van_witness_impl(port, ptr, rust_vec_len, data_len),
+45 => wire__crate__api__voting__generate_voting_hotkey_impl(port, ptr, rust_vec_len, data_len),
+46 => wire__crate__api__sync__get_balance_impl(port, ptr, rust_vec_len, data_len),
+47 => wire__crate__api__sync__get_block_time_impl(port, ptr, rust_vec_len, data_len),
+49 => wire__crate__api__sync__get_export_birthday_height_impl(port, ptr, rust_vec_len, data_len),
+50 => wire__crate__api__voting__get_keystone_signatures_impl(port, ptr, rust_vec_len, data_len),
+51 => wire__crate__api__wallet__get_latest_block_height_impl(port, ptr, rust_vec_len, data_len),
+52 => wire__crate__api__wallet__get_lightwalletd_chain_name_impl(port, ptr, rust_vec_len, data_len),
+53 => wire__crate__api__multisig__get_multisig_session_impl(port, ptr, rust_vec_len, data_len),
+54 => wire__crate__api__sync__get_next_available_address_impl(port, ptr, rust_vec_len, data_len),
+55 => wire__crate__api__sync__get_next_subtree_indices_impl(port, ptr, rust_vec_len, data_len),
+56 => wire__crate__api__sync__get_previous_transaction_count_for_address_impl(port, ptr, rust_vec_len, data_len),
+57 => wire__crate__api__wallet__get_recent_transparent_receive_addresses_impl(port, ptr, rust_vec_len, data_len),
+58 => wire__crate__api__voting__get_round_plan_impl(port, ptr, rust_vec_len, data_len),
+59 => wire__crate__api__voting__get_round_recovery_state_impl(port, ptr, rust_vec_len, data_len),
+60 => wire__crate__api__sync__get_shield_transparent_status_impl(port, ptr, rust_vec_len, data_len),
+62 => wire__crate__api__sync__get_sync_status_impl(port, ptr, rust_vec_len, data_len),
+63 => wire__crate__api__sync__get_transaction_data_requests_impl(port, ptr, rust_vec_len, data_len),
+65 => wire__crate__api__sync__get_transaction_history_impl(port, ptr, rust_vec_len, data_len),
+66 => wire__crate__api__wallet__get_transparent_receive_address_impl(port, ptr, rust_vec_len, data_len),
+67 => wire__crate__api__wallet__get_unified_address_impl(port, ptr, rust_vec_len, data_len),
+69 => wire__crate__api__wallet__import_hardware_account_impl(port, ptr, rust_vec_len, data_len),
+70 => wire__crate__api__wallet__import_software_wallet_with_account_discovery_impl(port, ptr, rust_vec_len, data_len),
+71 => wire__crate__api__wallet__import_wallet_impl(port, ptr, rust_vec_len, data_len),
+72 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+77 => wire__crate__api__multisig__join_multisig_session_impl(port, ptr, rust_vec_len, data_len),
+79 => wire__crate__api__wallet__list_accounts_impl(port, ptr, rust_vec_len, data_len),
+80 => wire__crate__api__multisig__lock_multisig_session_impl(port, ptr, rust_vec_len, data_len),
+81 => wire__crate__api__voting__mark_delegation_submitted_impl(port, ptr, rust_vec_len, data_len),
+82 => wire__crate__api__voting__mark_share_confirmed_impl(port, ptr, rust_vec_len, data_len),
+83 => wire__crate__api__voting__mark_vote_submitted_impl(port, ptr, rust_vec_len, data_len),
+85 => wire__crate__api__voting__next_share_tracking_delay_seconds_impl(port, ptr, rust_vec_len, data_len),
+87 => wire__crate__api__voting__parse_signed_voting_pczt_impl(port, ptr, rust_vec_len, data_len),
+88 => wire__crate__api__voting__plan_share_submissions_impl(port, ptr, rust_vec_len, data_len),
+89 => wire__crate__api__voting__precompute_delegation_pir_impl(port, ptr, rust_vec_len, data_len),
+90 => wire__crate__api__wallet__preview_software_account_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
+91 => wire__crate__api__sync__propose_send_impl(port, ptr, rust_vec_len, data_len),
+92 => wire__crate__api__sync__put_subtree_roots_impl(port, ptr, rust_vec_len, data_len),
+93 => wire__crate__api__voting__record_share_delegation_impl(port, ptr, rust_vec_len, data_len),
+94 => wire__crate__api__voting__recover_vote_commitment_impl(port, ptr, rust_vec_len, data_len),
+95 => wire__crate__api__voting__recovered_vote_share_wire_json_impl(port, ptr, rust_vec_len, data_len),
+96 => wire__crate__api__sync__redact_pczt_for_signer_impl(port, ptr, rust_vec_len, data_len),
+97 => wire__crate__api__multisig__refresh_multisig_auth_impl(port, ptr, rust_vec_len, data_len),
+98 => wire__crate__api__multisig__refresh_or_resume_multisig_auth_impl(port, ptr, rust_vec_len, data_len),
+100 => wire__crate__api__voting__reset_vote_tree_impl(port, ptr, rust_vec_len, data_len),
+101 => wire__crate__api__voting__reset_voting_session_state_impl(port, ptr, rust_vec_len, data_len),
+102 => wire__crate__api__voting__resolve_static_voting_config_impl(port, ptr, rust_vec_len, data_len),
+103 => wire__crate__api__voting__resolve_voting_config_impl(port, ptr, rust_vec_len, data_len),
+105 => wire__crate__api__multisig__resume_multisig_participant_impl(port, ptr, rust_vec_len, data_len),
+106 => wire__crate__api__sync__rewind_to_height_impl(port, ptr, rust_vec_len, data_len),
+107 => wire__crate__api__sync__run_full_sync_blocking_impl(port, ptr, rust_vec_len, data_len),
+108 => wire__crate__api__sync__scan_blocks_impl(port, ptr, rust_vec_len, data_len),
+109 => wire__crate__api__voting__set_ballot_intent_impl(port, ptr, rust_vec_len, data_len),
+111 => wire__crate__api__sync__set_transaction_status_impl(port, ptr, rust_vec_len, data_len),
+112 => wire__crate__api__voting__setup_delegation_bundles_impl(port, ptr, rust_vec_len, data_len),
+113 => wire__crate__api__voting__share_tracking_flags_impl(port, ptr, rust_vec_len, data_len),
+114 => wire__crate__api__sync__shield_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
+115 => wire__crate__api__sync__shield_transparent_balance_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
+116 => wire__crate__api__sync__start_full_sync_impl(port, ptr, rust_vec_len, data_len),
+117 => wire__crate__api__sync__start_mempool_observer_impl(port, ptr, rust_vec_len, data_len),
+119 => wire__crate__api__voting__store_keystone_signature_impl(port, ptr, rust_vec_len, data_len),
+120 => wire__crate__api__sync__suggest_scan_ranges_impl(port, ptr, rust_vec_len, data_len),
+121 => wire__crate__api__voting__sync_vote_tree_impl(port, ptr, rust_vec_len, data_len),
+122 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
+123 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
+124 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
+127 => wire__crate__api__multisig__verify_multisig_share_backup_impl(port, ptr, rust_vec_len, data_len),
+128 => wire__crate__api__voting__vote_commitment_wire_json_impl(port, ptr, rust_vec_len, data_len),
+129 => wire__crate__api__voting__vote_share_wire_json_impl(port, ptr, rust_vec_len, data_len),
+131 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
 }
@@ -7187,49 +7792,49 @@ fn pde_ffi_dispatcher_sync_impl(
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
         8 => wire__crate__api__sync__cancel_full_sync_impl(ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__wallet__generate_mnemonic_impl(ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__multisig__generate_multisig_backup_password_impl(
+        41 => wire__crate__api__wallet__generate_mnemonic_impl(ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__multisig__generate_multisig_backup_password_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        41 => wire__crate__api__multisig__generate_multisig_participant_identity_impl(
+        43 => wire__crate__api__multisig__generate_multisig_participant_identity_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        46 => wire__crate__api__sync__get_blocks_dir_impl(ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__sync__get_sync_mode_impl(ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__sync__get_transaction_detail_impl(ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
-        70 => wire__crate__api__voting__is_last_moment_impl(ptr, rust_vec_len, data_len),
-        71 => wire__crate__api__sync__is_mempool_observer_running_impl(ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__sync__is_sync_cancel_requested_impl(ptr, rust_vec_len, data_len),
-        73 => wire__crate__api__sync__is_sync_running_impl(ptr, rust_vec_len, data_len),
-        74 => {
+        48 => wire__crate__api__sync__get_blocks_dir_impl(ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__sync__get_sync_mode_impl(ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__sync__get_transaction_detail_impl(ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__voting__is_last_moment_impl(ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__sync__is_mempool_observer_running_impl(ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__sync__is_sync_cancel_requested_impl(ptr, rust_vec_len, data_len),
+        76 => wire__crate__api__sync__is_sync_running_impl(ptr, rust_vec_len, data_len),
+        78 => {
             wire__crate__api__voting__last_moment_buffer_seconds_impl(ptr, rust_vec_len, data_len)
         }
-        79 => wire__crate__api__wallet__mnemonic_word_list_impl(ptr, rust_vec_len, data_len),
-        81 => wire__crate__api__multisig__normalize_multisig_backup_password_impl(
+        84 => wire__crate__api__wallet__mnemonic_word_list_impl(ptr, rust_vec_len, data_len),
+        86 => wire__crate__api__multisig__normalize_multisig_backup_password_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        92 => wire__crate__api__keystone__reset_ur_session_impl(ptr, rust_vec_len, data_len),
-        97 => wire__crate__api__multisig__restore_multisig_participant_identity_impl(
+        99 => wire__crate__api__keystone__reset_ur_session_impl(ptr, rust_vec_len, data_len),
+        104 => wire__crate__api__multisig__restore_multisig_participant_identity_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        102 => wire__crate__api__sync__set_sync_mode_impl(ptr, rust_vec_len, data_len),
-        110 => wire__crate__api__sync__stop_mempool_observer_impl(ptr, rust_vec_len, data_len),
-        117 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
-        118 => wire__crate__api__multisig__validate_multisig_threshold_impl(
+        110 => wire__crate__api__sync__set_sync_mode_impl(ptr, rust_vec_len, data_len),
+        118 => wire__crate__api__sync__stop_mempool_observer_impl(ptr, rust_vec_len, data_len),
+        125 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
+        126 => wire__crate__api__multisig__validate_multisig_threshold_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        121 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
+        130 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -7347,6 +7952,88 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::ApiMempoolTxEvent>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::multisig::ApiMultisigAuthSession {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.session_id.into_into_dart().into_dart(),
+            self.participant_id.into_into_dart().into_dart(),
+            self.access_token.into_into_dart().into_dart(),
+            self.refresh_token.into_into_dart().into_dart(),
+            self.admission_secret_key.into_into_dart().into_dart(),
+            self.admission_public_key.into_into_dart().into_dart(),
+            self.delivery_secret_key.into_into_dart().into_dart(),
+            self.delivery_public_key.into_into_dart().into_dart(),
+            self.access_token_expires_at.into_into_dart().into_dart(),
+            self.refresh_token_expires_at.into_into_dart().into_dart(),
+            self.state.into_into_dart().into_dart(),
+            self.participant.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::multisig::ApiMultisigAuthSession
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::multisig::ApiMultisigAuthSession>
+    for crate::api::multisig::ApiMultisigAuthSession
+{
+    fn into_into_dart(self) -> crate::api::multisig::ApiMultisigAuthSession {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::multisig::ApiMultisigAuthUpdate {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.session_id.into_into_dart().into_dart(),
+            self.participant_id.into_into_dart().into_dart(),
+            self.access_token.into_into_dart().into_dart(),
+            self.refresh_token.into_into_dart().into_dart(),
+            self.admission_public_key.into_into_dart().into_dart(),
+            self.delivery_secret_key.into_into_dart().into_dart(),
+            self.delivery_public_key.into_into_dart().into_dart(),
+            self.access_token_expires_at.into_into_dart().into_dart(),
+            self.refresh_token_expires_at.into_into_dart().into_dart(),
+            self.resumed.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::multisig::ApiMultisigAuthUpdate
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::multisig::ApiMultisigAuthUpdate>
+    for crate::api::multisig::ApiMultisigAuthUpdate
+{
+    fn into_into_dart(self) -> crate::api::multisig::ApiMultisigAuthUpdate {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::multisig::ApiMultisigBackupArtifact {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.artifact_json.into_into_dart().into_dart(),
+            self.backup_hash.into_into_dart().into_dart(),
+            self.vault_address.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::multisig::ApiMultisigBackupArtifact
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::multisig::ApiMultisigBackupArtifact>
+    for crate::api::multisig::ApiMultisigBackupArtifact
+{
+    fn into_into_dart(self) -> crate::api::multisig::ApiMultisigBackupArtifact {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::multisig::ApiMultisigBackupPassword {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -7365,6 +8052,64 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::multisig::ApiMultisigBackupPa
     for crate::api::multisig::ApiMultisigBackupPassword
 {
     fn into_into_dart(self) -> crate::api::multisig::ApiMultisigBackupPassword {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::multisig::ApiMultisigBackupVerification {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.backup_hash.into_into_dart().into_dart(),
+            self.vault_address.into_into_dart().into_dart(),
+            self.session_id.into_into_dart().into_dart(),
+            self.participant_id.into_into_dart().into_dart(),
+            self.threshold.into_into_dart().into_dart(),
+            self.participant_count.into_into_dart().into_dart(),
+            self.roster_hash.into_into_dart().into_dart(),
+            self.admission_secret_key.into_into_dart().into_dart(),
+            self.admission_public_key.into_into_dart().into_dart(),
+            self.delivery_secret_key.into_into_dart().into_dart(),
+            self.delivery_public_key.into_into_dart().into_dart(),
+            self.key_package_b64.into_into_dart().into_dart(),
+            self.group_public_package_json.into_into_dart().into_dart(),
+            self.group_public_package_hash.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::multisig::ApiMultisigBackupVerification
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::multisig::ApiMultisigBackupVerification>
+    for crate::api::multisig::ApiMultisigBackupVerification
+{
+    fn into_into_dart(self) -> crate::api::multisig::ApiMultisigBackupVerification {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::multisig::ApiMultisigParticipant {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.participant_id.into_into_dart().into_dart(),
+            self.label.into_into_dart().into_dart(),
+            self.admission_public_key.into_into_dart().into_dart(),
+            self.delivery_public_key.into_into_dart().into_dart(),
+            self.joined_at.into_into_dart().into_dart(),
+            self.dkg_completed.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::multisig::ApiMultisigParticipant
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::multisig::ApiMultisigParticipant>
+    for crate::api::multisig::ApiMultisigParticipant
+{
+    fn into_into_dart(self) -> crate::api::multisig::ApiMultisigParticipant {
         self
     }
 }
@@ -7392,6 +8137,34 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::multisig::ApiMultisigParticip
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::multisig::ApiMultisigSession {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.session_id.into_into_dart().into_dart(),
+            self.state.into_into_dart().into_dart(),
+            self.creator_participant_id.into_into_dart().into_dart(),
+            self.threshold.into_into_dart().into_dart(),
+            self.roster_hash.into_into_dart().into_dart(),
+            self.group_public_package_hash.into_into_dart().into_dart(),
+            self.participants.into_into_dart().into_dart(),
+            self.created_at.into_into_dart().into_dart(),
+            self.updated_at.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::multisig::ApiMultisigSession
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::multisig::ApiMultisigSession>
+    for crate::api::multisig::ApiMultisigSession
+{
+    fn into_into_dart(self) -> crate::api::multisig::ApiMultisigSession {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::multisig::ApiMultisigThresholdParams {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -7409,6 +8182,31 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::multisig::ApiMultisigThreshol
     for crate::api::multisig::ApiMultisigThresholdParams
 {
     fn into_into_dart(self) -> crate::api::multisig::ApiMultisigThresholdParams {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::multisig::ApiMultisigTokens {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.session_id.into_into_dart().into_dart(),
+            self.participant_id.into_into_dart().into_dart(),
+            self.access_token.into_into_dart().into_dart(),
+            self.refresh_token.into_into_dart().into_dart(),
+            self.access_token_expires_at.into_into_dart().into_dart(),
+            self.refresh_token_expires_at.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::multisig::ApiMultisigTokens
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::multisig::ApiMultisigTokens>
+    for crate::api::multisig::ApiMultisigTokens
+{
+    fn into_into_dart(self) -> crate::api::multisig::ApiMultisigTokens {
         self
     }
 }
@@ -9163,12 +9961,87 @@ impl SseEncode for crate::api::sync::ApiMempoolTxEvent {
     }
 }
 
+impl SseEncode for crate::api::multisig::ApiMultisigAuthSession {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.session_id, serializer);
+        <String>::sse_encode(self.participant_id, serializer);
+        <String>::sse_encode(self.access_token, serializer);
+        <String>::sse_encode(self.refresh_token, serializer);
+        <String>::sse_encode(self.admission_secret_key, serializer);
+        <String>::sse_encode(self.admission_public_key, serializer);
+        <String>::sse_encode(self.delivery_secret_key, serializer);
+        <String>::sse_encode(self.delivery_public_key, serializer);
+        <u64>::sse_encode(self.access_token_expires_at, serializer);
+        <u64>::sse_encode(self.refresh_token_expires_at, serializer);
+        <String>::sse_encode(self.state, serializer);
+        <crate::api::multisig::ApiMultisigParticipant>::sse_encode(self.participant, serializer);
+    }
+}
+
+impl SseEncode for crate::api::multisig::ApiMultisigAuthUpdate {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.session_id, serializer);
+        <String>::sse_encode(self.participant_id, serializer);
+        <String>::sse_encode(self.access_token, serializer);
+        <String>::sse_encode(self.refresh_token, serializer);
+        <String>::sse_encode(self.admission_public_key, serializer);
+        <String>::sse_encode(self.delivery_secret_key, serializer);
+        <String>::sse_encode(self.delivery_public_key, serializer);
+        <u64>::sse_encode(self.access_token_expires_at, serializer);
+        <u64>::sse_encode(self.refresh_token_expires_at, serializer);
+        <bool>::sse_encode(self.resumed, serializer);
+    }
+}
+
+impl SseEncode for crate::api::multisig::ApiMultisigBackupArtifact {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.artifact_json, serializer);
+        <String>::sse_encode(self.backup_hash, serializer);
+        <String>::sse_encode(self.vault_address, serializer);
+    }
+}
+
 impl SseEncode for crate::api::multisig::ApiMultisigBackupPassword {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.display_password, serializer);
         <String>::sse_encode(self.canonical_password, serializer);
         <String>::sse_encode(self.checksum, serializer);
+    }
+}
+
+impl SseEncode for crate::api::multisig::ApiMultisigBackupVerification {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.backup_hash, serializer);
+        <String>::sse_encode(self.vault_address, serializer);
+        <String>::sse_encode(self.session_id, serializer);
+        <String>::sse_encode(self.participant_id, serializer);
+        <u16>::sse_encode(self.threshold, serializer);
+        <u16>::sse_encode(self.participant_count, serializer);
+        <String>::sse_encode(self.roster_hash, serializer);
+        <String>::sse_encode(self.admission_secret_key, serializer);
+        <String>::sse_encode(self.admission_public_key, serializer);
+        <String>::sse_encode(self.delivery_secret_key, serializer);
+        <String>::sse_encode(self.delivery_public_key, serializer);
+        <String>::sse_encode(self.key_package_b64, serializer);
+        <String>::sse_encode(self.group_public_package_json, serializer);
+        <String>::sse_encode(self.group_public_package_hash, serializer);
+    }
+}
+
+impl SseEncode for crate::api::multisig::ApiMultisigParticipant {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.participant_id, serializer);
+        <Option<String>>::sse_encode(self.label, serializer);
+        <String>::sse_encode(self.admission_public_key, serializer);
+        <String>::sse_encode(self.delivery_public_key, serializer);
+        <u64>::sse_encode(self.joined_at, serializer);
+        <bool>::sse_encode(self.dkg_completed, serializer);
     }
 }
 
@@ -9182,11 +10055,41 @@ impl SseEncode for crate::api::multisig::ApiMultisigParticipantIdentity {
     }
 }
 
+impl SseEncode for crate::api::multisig::ApiMultisigSession {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.session_id, serializer);
+        <String>::sse_encode(self.state, serializer);
+        <String>::sse_encode(self.creator_participant_id, serializer);
+        <Option<u16>>::sse_encode(self.threshold, serializer);
+        <Option<String>>::sse_encode(self.roster_hash, serializer);
+        <Option<String>>::sse_encode(self.group_public_package_hash, serializer);
+        <Vec<crate::api::multisig::ApiMultisigParticipant>>::sse_encode(
+            self.participants,
+            serializer,
+        );
+        <u64>::sse_encode(self.created_at, serializer);
+        <u64>::sse_encode(self.updated_at, serializer);
+    }
+}
+
 impl SseEncode for crate::api::multisig::ApiMultisigThresholdParams {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <u16>::sse_encode(self.threshold, serializer);
         <u16>::sse_encode(self.participant_count, serializer);
+    }
+}
+
+impl SseEncode for crate::api::multisig::ApiMultisigTokens {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.session_id, serializer);
+        <String>::sse_encode(self.participant_id, serializer);
+        <String>::sse_encode(self.access_token, serializer);
+        <String>::sse_encode(self.refresh_token, serializer);
+        <u64>::sse_encode(self.access_token_expires_at, serializer);
+        <u64>::sse_encode(self.refresh_token_expires_at, serializer);
     }
 }
 
@@ -9506,6 +10409,16 @@ impl SseEncode for Vec<crate::api::wallet::AccountInfo> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::wallet::AccountInfo>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::multisig::ApiMultisigParticipant> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::multisig::ApiMultisigParticipant>::sse_encode(item, serializer);
         }
     }
 }
@@ -9887,6 +10800,16 @@ impl SseEncode for Option<zcash_voting::wire::SignedVoteCommitmentsView> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <zcash_voting::wire::SignedVoteCommitmentsView>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<u16> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <u16>::sse_encode(value, serializer);
         }
     }
 }

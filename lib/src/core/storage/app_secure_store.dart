@@ -33,6 +33,8 @@ const _accountMnemonicKeyPrefix = 'zcash_account_mnemonic_';
 const _accountMnemonicMigrationCompleteKey =
     'zcash_mnemonic_storage_migrated_v1';
 const _votingHotkeyKeyPrefix = 'zcash_account_voting_hotkey_';
+const _multisigMaterialKeyPrefix = 'zcash_multisig_material_';
+const _multisigPendingSessionKeyPrefix = 'zcash_multisig_pending_session_';
 const _e2eUseFirstUnlockMnemonicKeychain = bool.fromEnvironment(
   'ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN',
 );
@@ -205,6 +207,96 @@ class AppSecureStore {
     });
   }
 
+  Future<String?> readMultisigMaterial(
+    String accountUuid, {
+    bool requireUnlockedSession = false,
+  }) {
+    return _secretMutationLock.run(() async {
+      if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
+      final key = _multisigMaterialKey(accountUuid);
+      final raw = await _runStorageOperation(
+        'read multisig material "$accountUuid"',
+        () => _storage.read(key: key),
+      );
+      return _decryptStoredSecretString(
+        raw,
+        key: key,
+        requireUnlockedSession: requireUnlockedSession,
+      );
+    });
+  }
+
+  Future<String?> readMultisigPendingSession(
+    String sessionStorageId, {
+    bool requireUnlockedSession = false,
+  }) {
+    return _secretMutationLock.run(() async {
+      if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
+      final key = _multisigPendingSessionKey(sessionStorageId);
+      final raw = await _runStorageOperation(
+        'read multisig pending session "$sessionStorageId"',
+        () => _storage.read(key: key),
+      );
+      return _decryptStoredSecretString(
+        raw,
+        key: key,
+        requireUnlockedSession: requireUnlockedSession,
+      );
+    });
+  }
+
+  Future<Map<String, String>> readAllMultisigMaterials({
+    bool requireUnlockedSession = false,
+  }) {
+    return _secretMutationLock.run(() async {
+      if (_shouldSkipLockedSecretRead(requireUnlockedSession)) {
+        return const <String, String>{};
+      }
+      final storedValues = await _runStorageOperation(
+        'read all multisig materials',
+        _storage.readAll,
+      );
+      final result = <String, String>{};
+      for (final entry in storedValues.entries) {
+        if (!entry.key.startsWith(_multisigMaterialKeyPrefix)) continue;
+        final clearText = await _decryptStoredSecretString(
+          entry.value,
+          key: entry.key,
+          requireUnlockedSession: requireUnlockedSession,
+        );
+        if (clearText == null) continue;
+        result[_multisigAccountUuidFromKey(entry.key)] = clearText;
+      }
+      return result;
+    });
+  }
+
+  Future<Map<String, String>> readAllMultisigPendingSessions({
+    bool requireUnlockedSession = false,
+  }) {
+    return _secretMutationLock.run(() async {
+      if (_shouldSkipLockedSecretRead(requireUnlockedSession)) {
+        return const <String, String>{};
+      }
+      final storedValues = await _runStorageOperation(
+        'read all multisig pending sessions',
+        _storage.readAll,
+      );
+      final result = <String, String>{};
+      for (final entry in storedValues.entries) {
+        if (!entry.key.startsWith(_multisigPendingSessionKeyPrefix)) continue;
+        final clearText = await _decryptStoredSecretString(
+          entry.value,
+          key: entry.key,
+          requireUnlockedSession: requireUnlockedSession,
+        );
+        if (clearText == null) continue;
+        result[_multisigPendingSessionIdFromKey(entry.key)] = clearText;
+      }
+      return result;
+    });
+  }
+
   /// Reads the voting hotkey for an account and round.
   ///
   /// Hotkeys are session secrets, so callers must have an unlocked wallet
@@ -246,6 +338,33 @@ class AppSecureStore {
         () async => _mnemonicStorage.write(
           key: _accountMnemonicKey(accountUuid),
           value: await _encryptSecretString(mnemonic),
+        ),
+      );
+    });
+  }
+
+  Future<void> writeMultisigMaterial(String accountUuid, String materialJson) {
+    return _secretMutationLock.run(() async {
+      await _runStorageOperation(
+        'write multisig material "$accountUuid"',
+        () async => _storage.write(
+          key: _multisigMaterialKey(accountUuid),
+          value: await _encryptSecretString(materialJson),
+        ),
+      );
+    });
+  }
+
+  Future<void> writeMultisigPendingSession(
+    String sessionStorageId,
+    String sessionJson,
+  ) {
+    return _secretMutationLock.run(() async {
+      await _runStorageOperation(
+        'write multisig pending session "$sessionStorageId"',
+        () async => _storage.write(
+          key: _multisigPendingSessionKey(sessionStorageId),
+          value: await _encryptSecretString(sessionJson),
         ),
       );
     });
@@ -311,6 +430,16 @@ class AppSecureStore {
       });
       return;
     }
+    if (key.startsWith(_multisigMaterialKeyPrefix) ||
+        key.startsWith(_multisigPendingSessionKeyPrefix)) {
+      await _secretMutationLock.run(() async {
+        await _runStorageOperation(
+          'delete "$key"',
+          () => _storage.delete(key: key),
+        );
+      });
+      return;
+    }
     await _runStorageOperation(
       'delete "$key"',
       () => _storage.delete(key: key),
@@ -325,6 +454,25 @@ class AppSecureStore {
         () => _mnemonicStorage.delete(key: key),
       );
       await _deleteLegacyAccountMnemonicBestEffort(key);
+    });
+  }
+
+  Future<void> deleteMultisigMaterial(String accountUuid) {
+    return _secretMutationLock.run(() async {
+      await _runStorageOperation(
+        'delete multisig material "$accountUuid"',
+        () => _storage.delete(key: _multisigMaterialKey(accountUuid)),
+      );
+    });
+  }
+
+  Future<void> deleteMultisigPendingSession(String sessionStorageId) {
+    return _secretMutationLock.run(() async {
+      await _runStorageOperation(
+        'delete multisig pending session "$sessionStorageId"',
+        () =>
+            _storage.delete(key: _multisigPendingSessionKey(sessionStorageId)),
+      );
     });
   }
 
@@ -481,6 +629,43 @@ class AppSecureStore {
       );
       for (final entry in votingHotkeyValues.entries) {
         if (!entry.key.startsWith(_votingHotkeyKeyPrefix)) continue;
+
+        if (!_isEncryptedPayload(entry.value)) {
+          throw StateError(
+            'Failed to parse secure-storage value for "${entry.key}".',
+          );
+        }
+
+        final clearText = await _decryptPayloadBytesForKey(
+          entry.key,
+          entry.value,
+          currentPassword,
+          secretSaltBase64,
+        );
+        final rotatedValue = await _encryptBytesWithPassword(
+          clearText,
+          newPassword,
+          secretSaltBase64,
+        );
+        rotatedSecrets.add(
+          _PasswordRotationEntry(key: entry.key, rotatedValue: rotatedValue),
+        );
+        rollbackSecrets.add(
+          _PasswordRotationRollbackEntry(
+            key: entry.key,
+            originalValue: entry.value,
+          ),
+        );
+      }
+      final multisigMaterialValues = await _runStorageOperation(
+        'read all multisig secrets',
+        _storage.readAll,
+      );
+      for (final entry in multisigMaterialValues.entries) {
+        if (!entry.key.startsWith(_multisigMaterialKeyPrefix) &&
+            !entry.key.startsWith(_multisigPendingSessionKeyPrefix)) {
+          continue;
+        }
 
         if (!_isEncryptedPayload(entry.value)) {
           throw StateError(
@@ -1009,6 +1194,18 @@ bool _isAccountMnemonicKey(String key) =>
 
 String _accountMnemonicKey(String accountUuid) =>
     '$_accountMnemonicKeyPrefix$accountUuid';
+
+String _multisigMaterialKey(String accountUuid) =>
+    '$_multisigMaterialKeyPrefix$accountUuid';
+
+String _multisigAccountUuidFromKey(String key) =>
+    key.substring(_multisigMaterialKeyPrefix.length);
+
+String _multisigPendingSessionKey(String sessionStorageId) =>
+    '$_multisigPendingSessionKeyPrefix$sessionStorageId';
+
+String _multisigPendingSessionIdFromKey(String key) =>
+    key.substring(_multisigPendingSessionKeyPrefix.length);
 
 String _mnemonicSecureStoreServiceForNetwork(String networkName) {
   return '${_macOsSecureStoreServiceForNetwork(networkName)}.mnemonic';

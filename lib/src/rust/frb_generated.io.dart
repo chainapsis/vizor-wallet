@@ -70,9 +70,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiMempoolTxEvent dco_decode_api_mempool_tx_event(dynamic raw);
 
   @protected
+  ApiMultisigAuthSession dco_decode_api_multisig_auth_session(dynamic raw);
+
+  @protected
+  ApiMultisigAuthUpdate dco_decode_api_multisig_auth_update(dynamic raw);
+
+  @protected
+  ApiMultisigBackupArtifact dco_decode_api_multisig_backup_artifact(
+    dynamic raw,
+  );
+
+  @protected
   ApiMultisigBackupPassword dco_decode_api_multisig_backup_password(
     dynamic raw,
   );
+
+  @protected
+  ApiMultisigBackupVerification dco_decode_api_multisig_backup_verification(
+    dynamic raw,
+  );
+
+  @protected
+  ApiMultisigParticipant dco_decode_api_multisig_participant(dynamic raw);
 
   @protected
   ApiMultisigParticipantIdentity dco_decode_api_multisig_participant_identity(
@@ -80,9 +99,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiMultisigSession dco_decode_api_multisig_session(dynamic raw);
+
+  @protected
   ApiMultisigThresholdParams dco_decode_api_multisig_threshold_params(
     dynamic raw,
   );
+
+  @protected
+  ApiMultisigTokens dco_decode_api_multisig_tokens(dynamic raw);
 
   @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
@@ -136,6 +161,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SignedVoteCommitmentsView dco_decode_box_autoadd_signed_vote_commitments_view(
     dynamic raw,
   );
+
+  @protected
+  int dco_decode_box_autoadd_u_16(dynamic raw);
 
   @protected
   int dco_decode_box_autoadd_u_32(dynamic raw);
@@ -225,6 +253,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AccountInfo> dco_decode_list_account_info(dynamic raw);
+
+  @protected
+  List<ApiMultisigParticipant> dco_decode_list_api_multisig_participant(
+    dynamic raw,
+  );
 
   @protected
   List<AuthenticatedRound> dco_decode_list_authenticated_round(dynamic raw);
@@ -372,6 +405,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   SignedVoteCommitmentsView?
   dco_decode_opt_box_autoadd_signed_vote_commitments_view(dynamic raw);
+
+  @protected
+  int? dco_decode_opt_box_autoadd_u_16(dynamic raw);
 
   @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
@@ -600,7 +636,32 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiMultisigAuthSession sse_decode_api_multisig_auth_session(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiMultisigAuthUpdate sse_decode_api_multisig_auth_update(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiMultisigBackupArtifact sse_decode_api_multisig_backup_artifact(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiMultisigBackupPassword sse_decode_api_multisig_backup_password(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiMultisigBackupVerification sse_decode_api_multisig_backup_verification(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiMultisigParticipant sse_decode_api_multisig_participant(
     SseDeserializer deserializer,
   );
 
@@ -610,7 +671,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiMultisigSession sse_decode_api_multisig_session(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiMultisigThresholdParams sse_decode_api_multisig_threshold_params(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiMultisigTokens sse_decode_api_multisig_tokens(
     SseDeserializer deserializer,
   );
 
@@ -678,6 +749,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SignedVoteCommitmentsView sse_decode_box_autoadd_signed_vote_commitments_view(
     SseDeserializer deserializer,
   );
+
+  @protected
+  int sse_decode_box_autoadd_u_16(SseDeserializer deserializer);
 
   @protected
   int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
@@ -795,6 +869,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AccountInfo> sse_decode_list_account_info(SseDeserializer deserializer);
+
+  @protected
+  List<ApiMultisigParticipant> sse_decode_list_api_multisig_participant(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<AuthenticatedRound> sse_decode_list_authenticated_round(
@@ -978,6 +1057,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_opt_box_autoadd_signed_vote_commitments_view(
     SseDeserializer deserializer,
   );
+
+  @protected
+  int? sse_decode_opt_box_autoadd_u_16(SseDeserializer deserializer);
 
   @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
@@ -1253,8 +1335,38 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_multisig_auth_session(
+    ApiMultisigAuthSession self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_multisig_auth_update(
+    ApiMultisigAuthUpdate self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_multisig_backup_artifact(
+    ApiMultisigBackupArtifact self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_multisig_backup_password(
     ApiMultisigBackupPassword self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_multisig_backup_verification(
+    ApiMultisigBackupVerification self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_multisig_participant(
+    ApiMultisigParticipant self,
     SseSerializer serializer,
   );
 
@@ -1265,8 +1377,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_multisig_session(
+    ApiMultisigSession self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_multisig_threshold_params(
     ApiMultisigThresholdParams self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_multisig_tokens(
+    ApiMultisigTokens self,
     SseSerializer serializer,
   );
 
@@ -1344,6 +1468,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     SignedVoteCommitmentsView self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_box_autoadd_u_16(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
@@ -1486,6 +1613,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_account_info(
     List<AccountInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_multisig_participant(
+    List<ApiMultisigParticipant> self,
     SseSerializer serializer,
   );
 
@@ -1716,6 +1849,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     SignedVoteCommitmentsView? self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_16(int? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
