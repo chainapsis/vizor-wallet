@@ -7,6 +7,7 @@
 // ignore_for_file: argument_type_not_assignable
 
 import 'api/keystone.dart';
+import 'api/multisig.dart';
 import 'api/secret.dart';
 import 'api/simple.dart';
 import 'api/sync.dart';
@@ -69,6 +70,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiMempoolTxEvent dco_decode_api_mempool_tx_event(dynamic raw);
+
+  @protected
+  ApiMultisigBackupPassword dco_decode_api_multisig_backup_password(
+    dynamic raw,
+  );
+
+  @protected
+  ApiMultisigParticipantIdentity dco_decode_api_multisig_participant_identity(
+    dynamic raw,
+  );
+
+  @protected
+  ApiMultisigThresholdParams dco_decode_api_multisig_threshold_params(
+    dynamic raw,
+  );
 
   @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
@@ -480,6 +496,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   TxDataRequest dco_decode_tx_data_request(dynamic raw);
 
   @protected
+  int dco_decode_u_16(dynamic raw);
+
+  @protected
   int dco_decode_u_32(dynamic raw);
 
   @protected
@@ -579,6 +598,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiMempoolTxEvent sse_decode_api_mempool_tx_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiMultisigBackupPassword sse_decode_api_multisig_backup_password(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiMultisigParticipantIdentity sse_decode_api_multisig_participant_identity(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiMultisigThresholdParams sse_decode_api_multisig_threshold_params(
     SseDeserializer deserializer,
   );
 
@@ -1090,6 +1124,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   TxDataRequest sse_decode_tx_data_request(SseDeserializer deserializer);
 
   @protected
+  int sse_decode_u_16(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_u_32(SseDeserializer deserializer);
 
   @protected
@@ -1214,6 +1251,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_mempool_tx_event(
     ApiMempoolTxEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_multisig_backup_password(
+    ApiMultisigBackupPassword self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_multisig_participant_identity(
+    ApiMultisigParticipantIdentity self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_multisig_threshold_params(
+    ApiMultisigThresholdParams self,
     SseSerializer serializer,
   );
 
@@ -1843,6 +1898,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_tx_data_request(TxDataRequest self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_u_16(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);
