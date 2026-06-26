@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/local_test_profile.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -356,6 +357,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
           outputParamsPath: args.needsSaplingParams
               ? saplingParams.outputPath
               : null,
+          localTestProfile: zcashLocalTestProfile(),
         );
       } else {
         final mnemonicBytes = await accountNotifier.getMnemonicBytesForAccount(
@@ -405,7 +407,9 @@ Future<SendBroadcastOutcome> runSendBroadcast({
           .switchToFallbackFor(
             broadcastMessageForFallback,
             endpoint: endpoint,
-            operation: isHardware ? 'keystone send broadcast' : 'send broadcast',
+            operation: isHardware
+                ? 'keystone send broadcast'
+                : 'send broadcast',
           );
       if (switched) {
         unawaited(ref.read(syncProvider.notifier).restartSync());

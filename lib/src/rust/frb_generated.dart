@@ -330,6 +330,7 @@ abstract class RustLibApi extends BaseApi {
     required String password,
     String? spendParamsPath,
     String? outputParamsPath,
+    String? localTestProfile,
   });
 
   Future<ExtractAndBroadcastPcztResult> crateApiSyncExtractAndBroadcastPczt({
@@ -754,6 +755,7 @@ abstract class RustLibApi extends BaseApi {
     required String network,
     required String accountUuid,
     required String password,
+    String? localTestProfile,
   });
 
   Stream<ApiSyncProgressEvent> crateApiSyncStartFullSync({
@@ -2377,6 +2379,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String password,
     String? spendParamsPath,
     String? outputParamsPath,
+    String? localTestProfile,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -2389,6 +2392,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(password, serializer);
           sse_encode_opt_String(spendParamsPath, serializer);
           sse_encode_opt_String(outputParamsPath, serializer);
+          sse_encode_opt_String(localTestProfile, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -2409,6 +2413,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           password,
           spendParamsPath,
           outputParamsPath,
+          localTestProfile,
         ],
         apiImpl: this,
       ),
@@ -2427,6 +2432,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "password",
           "spendParamsPath",
           "outputParamsPath",
+          "localTestProfile",
         ],
       );
 
@@ -5127,6 +5133,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String network,
     required String accountUuid,
     required String password,
+    String? localTestProfile,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -5137,6 +5144,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(password, serializer);
+          sse_encode_opt_String(localTestProfile, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -5150,7 +5158,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         ),
         constMeta:
             kCrateApiSyncShieldTransparentBalanceWithMacosStoredMnemonicConstMeta,
-        argValues: [dbPath, lightwalletdUrl, network, accountUuid, password],
+        argValues: [
+          dbPath,
+          lightwalletdUrl,
+          network,
+          accountUuid,
+          password,
+          localTestProfile,
+        ],
         apiImpl: this,
       ),
     );
@@ -5166,6 +5181,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "network",
           "accountUuid",
           "password",
+          "localTestProfile",
         ],
       );
 

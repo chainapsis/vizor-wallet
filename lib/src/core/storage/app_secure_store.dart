@@ -14,6 +14,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../config/local_test_profile.dart';
 import '../config/network_config.dart';
 import '../security/password_policy.dart';
 import '../../rust/api/secret.dart' as rust_secret;
@@ -75,6 +76,9 @@ class AppSecureStore {
 
   static FlutterSecureStorage _defaultStorage() {
     final service = secureStoreServiceForNetwork(kZcashDefaultNetworkName);
+    final macOsService = _macOsSecureStoreServiceForNetwork(
+      kZcashDefaultNetworkName,
+    );
     return FlutterSecureStorage(
       iOptions: IOSOptions(
         accountName: service,
@@ -84,7 +88,7 @@ class AppSecureStore {
           ? AndroidOptions.defaultOptions
           : AndroidOptions(sharedPreferencesName: service),
       mOptions: MacOsOptions(
-        accountName: service,
+        accountName: macOsService,
         accessibility: KeychainAccessibility.first_unlock,
         usesDataProtectionKeychain: true,
       ),
@@ -997,6 +1001,9 @@ class AppSecureStore {
 bool get _usesSeparateMacOsMnemonicStorage =>
     !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
 
+bool get _usesMacOsLocalTestProfile =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+
 bool _isAccountMnemonicKey(String key) =>
     key.startsWith(_accountMnemonicKeyPrefix);
 
@@ -1004,7 +1011,13 @@ String _accountMnemonicKey(String accountUuid) =>
     '$_accountMnemonicKeyPrefix$accountUuid';
 
 String _mnemonicSecureStoreServiceForNetwork(String networkName) {
-  return '${secureStoreServiceForNetwork(networkName)}.mnemonic';
+  return '${_macOsSecureStoreServiceForNetwork(networkName)}.mnemonic';
+}
+
+String _macOsSecureStoreServiceForNetwork(String networkName) {
+  final service = secureStoreServiceForNetwork(networkName);
+  if (!_usesMacOsLocalTestProfile) return service;
+  return applyLocalTestProfileToServiceName(service);
 }
 
 class _AccountMnemonicMigrationResult {

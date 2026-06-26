@@ -754,9 +754,11 @@ pub fn execute_proposal_with_macos_stored_mnemonic(
     password: String,
     spend_params_path: Option<String>,
     output_params_path: Option<String>,
+    local_test_profile: Option<String>,
 ) -> Result<ExecuteProposalResult, String> {
     catch(|| {
         let password = Zeroizing::new(password.into_bytes());
+        let local_test_profile = local_test_profile.map(|profile| profile.trim().to_string());
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         let r = rt.block_on(wallet_sync::execute_proposal_with_seed_loader(
             &db_path,
@@ -768,6 +770,7 @@ pub fn execute_proposal_with_macos_stored_mnemonic(
                     network,
                     &account_id.expose_uuid().to_string(),
                     password,
+                    local_test_profile.as_deref(),
                 )
             },
             spend_params_path.as_deref(),
@@ -864,11 +867,18 @@ pub fn shield_transparent_balance_with_macos_stored_mnemonic(
     network: String,
     account_uuid: String,
     password: String,
+    local_test_profile: Option<String>,
 ) -> Result<ShieldTransparentResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let password = Zeroizing::new(password.into_bytes());
-        let seed = secret_store::seed_from_macos_stored_mnemonic(network, &account_uuid, password)?;
+        let local_test_profile = local_test_profile.map(|profile| profile.trim().to_string());
+        let seed = secret_store::seed_from_macos_stored_mnemonic(
+            network,
+            &account_uuid,
+            password,
+            local_test_profile.as_deref(),
+        )?;
 
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         let r = rt.block_on(wallet_sync::shield_transparent_balance(

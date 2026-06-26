@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/local_test_profile.dart';
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
@@ -84,6 +85,7 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
         network: endpoint.networkName,
         accountUuid: accountUuid,
         password: password,
+        localTestProfile: zcashLocalTestProfile(),
       );
     } else {
       final accountNotifier = ref.read(accountProvider.notifier);

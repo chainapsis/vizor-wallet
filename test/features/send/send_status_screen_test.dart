@@ -467,6 +467,7 @@ class _RustApiFake implements RustLibApi {
     required String password,
     String? spendParamsPath,
     String? outputParamsPath,
+    String? localTestProfile,
   }) {
     return _execute();
   }

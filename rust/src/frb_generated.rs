@@ -1464,6 +1464,7 @@ fn wire__crate__api__sync__execute_proposal_with_macos_stored_mnemonic_impl(
             let api_password = <String>::sse_decode(&mut deserializer);
             let api_spend_params_path = <Option<String>>::sse_decode(&mut deserializer);
             let api_output_params_path = <Option<String>>::sse_decode(&mut deserializer);
+            let api_local_test_profile = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -1475,6 +1476,7 @@ fn wire__crate__api__sync__execute_proposal_with_macos_stored_mnemonic_impl(
                         api_password,
                         api_spend_params_path,
                         api_output_params_path,
+                        api_local_test_profile,
                     )?;
                     Ok(output_ok)
                 })())
@@ -4166,6 +4168,7 @@ fn wire__crate__api__sync__shield_transparent_balance_with_macos_stored_mnemonic
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
+            let api_local_test_profile = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -4176,6 +4179,7 @@ fn wire__crate__api__sync__shield_transparent_balance_with_macos_stored_mnemonic
                             api_network,
                             api_account_uuid,
                             api_password,
+                            api_local_test_profile,
                         )?;
                     Ok(output_ok)
                 })())

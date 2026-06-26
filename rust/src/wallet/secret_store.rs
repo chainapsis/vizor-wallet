@@ -10,16 +10,19 @@ pub fn seed_from_macos_stored_mnemonic(
     network: WalletNetwork,
     account_uuid: &str,
     password: Zeroizing<Vec<u8>>,
+    local_test_profile: Option<&str>,
 ) -> Result<SecretVec<u8>, String> {
     let account_key = account_mnemonic_key(account_uuid);
     let salt_raw = macos_read_secure_store_value(
-        &secure_store_service_for_network(network),
+        &secure_store_service_for_network(network, local_test_profile)?,
         SECURE_STORE_SALT_KEY,
     )?
     .ok_or_else(|| "Secure storage salt not found".to_string())?;
-    let payload_raw =
-        macos_read_secure_store_value(&mnemonic_store_service_for_network(network), &account_key)?
-            .ok_or_else(|| "Mnemonic not found for account".to_string())?;
+    let payload_raw = macos_read_secure_store_value(
+        &mnemonic_store_service_for_network(network, local_test_profile)?,
+        &account_key,
+    )?
+    .ok_or_else(|| "Mnemonic not found for account".to_string())?;
 
     let salt = secret_payload::decode_base64(salt_raw.as_slice(), "secure storage salt")?;
     drop(salt_raw);
@@ -36,20 +39,64 @@ pub fn seed_from_macos_stored_mnemonic(
     Ok(seed)
 }
 
-fn secure_store_service_for_network(network: WalletNetwork) -> String {
-    match network {
+fn secure_store_service_for_network(
+    network: WalletNetwork,
+    local_test_profile: Option<&str>,
+) -> Result<String, String> {
+    let service = match network {
         WalletNetwork::Main => "com.keplr.vizor.secure_store".to_string(),
         WalletNetwork::Test => "com.keplr.vizor.test.secure_store".to_string(),
         WalletNetwork::Regtest => "com.keplr.vizor.regtest.secure_store".to_string(),
-    }
+    };
+    apply_local_test_profile_to_service_name(service, local_test_profile)
 }
 
-fn mnemonic_store_service_for_network(network: WalletNetwork) -> String {
-    format!("{}.mnemonic", secure_store_service_for_network(network))
+fn mnemonic_store_service_for_network(
+    network: WalletNetwork,
+    local_test_profile: Option<&str>,
+) -> Result<String, String> {
+    Ok(format!(
+        "{}.mnemonic",
+        secure_store_service_for_network(network, local_test_profile)?
+    ))
 }
 
 fn account_mnemonic_key(account_uuid: &str) -> String {
     format!("{ACCOUNT_MNEMONIC_KEY_PREFIX}{account_uuid}")
+}
+
+fn apply_local_test_profile_to_service_name(
+    service: String,
+    local_test_profile: Option<&str>,
+) -> Result<String, String> {
+    if let Some(profile) = normalize_local_test_profile(local_test_profile)? {
+        return Ok(format!("{service}.local.{profile}"));
+    }
+
+    Ok(service)
+}
+
+fn normalize_local_test_profile(raw: Option<&str>) -> Result<Option<String>, String> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+
+    let profile = trimmed.to_ascii_lowercase();
+    let mut chars = profile.chars();
+    let first_valid = chars.next().is_some_and(|ch| ch.is_ascii_alphanumeric());
+    let rest_valid = chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-');
+    if profile.len() > 32 || !first_valid || !rest_valid {
+        return Err(
+            "ZCASH_LOCAL_TEST_PROFILE must start with a letter or digit and contain only letters, digits, underscores, or hyphens."
+                .to_string(),
+        );
+    }
+
+    Ok(Some(profile))
 }
 
 #[cfg(target_os = "macos")]
@@ -95,4 +142,42 @@ fn macos_read_secure_store_value(
     _key: &str,
 ) -> Result<Option<Zeroizing<Vec<u8>>>, String> {
     Err("macOS stored mnemonic path is unsupported on this platform".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_test_profile_suffixes_service_when_supplied() {
+        assert_eq!(
+            apply_local_test_profile_to_service_name(
+                "com.keplr.vizor.regtest.secure_store".to_string(),
+                Some(" Alice-1 ")
+            )
+            .unwrap(),
+            "com.keplr.vizor.regtest.secure_store.local.alice-1"
+        );
+    }
+
+    #[test]
+    fn local_test_profile_ignores_empty_profile() {
+        assert_eq!(
+            apply_local_test_profile_to_service_name(
+                "com.keplr.vizor.secure_store".to_string(),
+                Some(" ")
+            )
+            .unwrap(),
+            "com.keplr.vizor.secure_store"
+        );
+    }
+
+    #[test]
+    fn local_test_profile_rejects_unsafe_profile() {
+        assert!(apply_local_test_profile_to_service_name(
+            "com.keplr.vizor.secure_store".to_string(),
+            Some("../alice")
+        )
+        .is_err());
+    }
 }

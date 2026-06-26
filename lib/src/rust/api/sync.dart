@@ -282,6 +282,7 @@ Future<ExecuteProposalResult> executeProposalWithMacosStoredMnemonic({
   required String password,
   String? spendParamsPath,
   String? outputParamsPath,
+  String? localTestProfile,
 }) => RustLib.instance.api.crateApiSyncExecuteProposalWithMacosStoredMnemonic(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
@@ -290,6 +291,7 @@ Future<ExecuteProposalResult> executeProposalWithMacosStoredMnemonic({
   password: password,
   spendParamsPath: spendParamsPath,
   outputParamsPath: outputParamsPath,
+  localTestProfile: localTestProfile,
 );
 
 /// Dry-run transparent shielding without creating or broadcasting a transaction.
@@ -341,6 +343,7 @@ shieldTransparentBalanceWithMacosStoredMnemonic({
   required String network,
   required String accountUuid,
   required String password,
+  String? localTestProfile,
 }) => RustLib.instance.api
     .crateApiSyncShieldTransparentBalanceWithMacosStoredMnemonic(
       dbPath: dbPath,
@@ -348,6 +351,7 @@ shieldTransparentBalanceWithMacosStoredMnemonic({
       network: network,
       accountUuid: accountUuid,
       password: password,
+      localTestProfile: localTestProfile,
     );
 
 Future<String> getNextAvailableAddress({
