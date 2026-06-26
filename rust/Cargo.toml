@@ -42,8 +42,14 @@ rand_core = "0.6"
 # Proofs
 zcash_proofs = "0.28"
 
+# Multisig coordinator SDK
+zcash-multisig-sdk = { path = "/Users/junghwanyun/zcash-multisig/crates/sdk" }
+zcash-multisig-core = { path = "/Users/junghwanyun/zcash-multisig/crates/core" }
+reddsa = { version = "0.5.2", features = ["frost"] }
+
 # Key generation
 bip0039 = "0.12"
+diceware_wordlists = "1.2.3"
 
 # Serialization
 nonempty = "0.11"
@@ -57,12 +63,15 @@ zeroize = "1"
 aes = { version = "0.8", features = ["zeroize"] }
 aes-gcm = { version = "0.10", features = ["zeroize"] }
 base64 = "0.22"
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
 pbkdf2 = "0.12"
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
 
 # Random number generation
 rand = "0.8"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
 
 # Async runtime & gRPC
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
