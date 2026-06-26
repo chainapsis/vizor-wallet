@@ -63,17 +63,20 @@ void VerifyDeviceOwner(
   }
   switch (error) {
     case ERROR_LOGON_FAILURE:
-    case ERROR_PASSWORD_EXPIRED:
-    case ERROR_INVALID_LOGON_HOURS:
-      // Wrong / unusable password - let the user retry.
+      // Wrong password - let the user retry.
       result->Success(flutter::EncodableValue(false));
       return;
     case ERROR_ACCOUNT_RESTRICTION:
     case ERROR_ACCOUNT_DISABLED:
     case ERROR_NO_SUCH_USER:
-      // No validatable account password: blank-password local account, or a
-      // passwordless / Microsoft-account sign-in. The Dart layer surfaces a
-      // graceful "can't verify" state instead of a hard failure.
+    case ERROR_PASSWORD_EXPIRED:
+    case ERROR_PASSWORD_MUST_CHANGE:
+    case ERROR_INVALID_LOGON_HOURS:
+      // No usable account password: a blank-password local account, a
+      // passwordless / Microsoft-account sign-in, or a correct-but-unusable
+      // password (expired, must-change, or outside permitted logon hours).
+      // The Dart layer surfaces a graceful "can't verify" state instead of a
+      // misleading "wrong password" retry the user could never satisfy.
       result->Error("unavailable",
                     "This Windows account can't be verified by password.");
       return;
