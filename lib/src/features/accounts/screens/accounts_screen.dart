@@ -14,6 +14,7 @@ import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
+import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_context_menu.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -283,6 +284,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                   onSendZec: _sendZec,
                   onEditAccount: _showEditAccountModal,
                   onRemoveAccount: _showRemoveAccountModal,
+                  onOpenMultisig: () => context.go('/multisig'),
                   initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
                 ),
               ),
@@ -505,6 +507,7 @@ class _AccountsPane extends StatelessWidget {
     required this.onSendZec,
     required this.onEditAccount,
     required this.onRemoveAccount,
+    required this.onOpenMultisig,
     required this.initialOpenMenuAccountUuid,
   });
 
@@ -515,6 +518,7 @@ class _AccountsPane extends StatelessWidget {
   final ValueChanged<AccountInfo> onSendZec;
   final ValueChanged<AccountInfo> onEditAccount;
   final ValueChanged<AccountInfo> onRemoveAccount;
+  final VoidCallback onOpenMultisig;
   final String? initialOpenMenuAccountUuid;
 
   @override
@@ -549,6 +553,18 @@ class _AccountsPane extends StatelessWidget {
                 onEditAccount: onEditAccount,
                 onRemoveAccount: onRemoveAccount,
                 initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Align(
+                alignment: Alignment.center,
+                child: AppButton(
+                  key: const ValueKey('accounts_multisig_setup_button'),
+                  onPressed: onOpenMultisig,
+                  variant: AppButtonVariant.secondary,
+                  size: AppButtonSize.medium,
+                  leading: const AppIcon(AppIcons.users),
+                  child: const Text('Multisig setup'),
+                ),
               ),
             ],
           ),
