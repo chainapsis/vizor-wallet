@@ -7,6 +7,7 @@ const kWalletResetDeviceAuthRequiredMessage =
     'Device authentication is required to reset Vizor.';
 const kWalletResetDeviceAuthFailedMessage =
     "Couldn't verify device ownership. Please try again.";
+const kWalletResetFailedMessage = "Couldn't reset Vizor. Please try again.";
 
 final deviceOwnerAuthProvider = Provider<DeviceOwnerAuth>(
   (ref) => DeviceOwnerAuth(),

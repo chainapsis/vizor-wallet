@@ -122,6 +122,9 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
       if (!mounted) return;
       setState(() {
         _isResetting = false;
+        // Auth already succeeded; the wipe itself failed. Surface it instead of
+        // silently falling back to the default status line.
+        _error = kWalletResetFailedMessage;
       });
     }
   }
