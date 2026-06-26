@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -25,13 +26,21 @@ class DeviceOwnerAuth {
   DeviceOwnerAuth({
     @visibleForTesting MethodChannel? channel,
     @visibleForTesting bool? requiresAppProvidedCredentialOverride,
+    @visibleForTesting Duration verifyTimeout = const Duration(minutes: 3),
   }) : _channel =
            channel ?? const MethodChannel('com.zcash.wallet/device_owner_auth'),
        _requiresAppProvidedCredentialOverride =
-           requiresAppProvidedCredentialOverride;
+           requiresAppProvidedCredentialOverride,
+       _verifyTimeout = verifyTimeout;
 
   final MethodChannel _channel;
   final bool? _requiresAppProvidedCredentialOverride;
+
+  // Safety net for a native side that never replies: the Android < 30
+  // confirm-credential path drops its result if the activity is recreated
+  // while the system prompt is up, which would otherwise hang the reset flow
+  // forever. Generous so a slow-but-legitimate credential entry never trips it.
+  final Duration _verifyTimeout;
 
   bool get _platformSupported =>
       !kIsWeb &&
@@ -72,7 +81,15 @@ class DeviceOwnerAuth {
       if (password != null) {
         args['password'] = password;
       }
-      return await _channel.invokeMethod<bool>('verify', args) == true;
+      return await _channel
+              .invokeMethod<bool>('verify', args)
+              .timeout(_verifyTimeout) ==
+          true;
+    } on TimeoutException {
+      // The native side never replied; fail closed instead of hanging.
+      throw const DeviceOwnerAuthException(
+        DeviceOwnerAuthErrorKind.unavailable,
+      );
     } on MissingPluginException {
       throw const DeviceOwnerAuthException(
         DeviceOwnerAuthErrorKind.unavailable,

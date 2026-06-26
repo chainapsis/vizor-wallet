@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/services/device_owner_auth.dart';
@@ -70,6 +72,28 @@ void main() {
             (e) => e.kind,
             'kind',
             DeviceOwnerAuthErrorKind.failed,
+          ),
+        ),
+      );
+    });
+
+    test('a native reply that never arrives times out as unavailable', () async {
+      // Simulates the Android < 30 lost-result hang: the handler never replies.
+      messenger.setMockMethodCallHandler(
+        channel,
+        (call) => Completer<Object?>().future,
+      );
+      final auth = DeviceOwnerAuth(
+        channel: channel,
+        verifyTimeout: const Duration(milliseconds: 50),
+      );
+      await expectLater(
+        auth.verify(reason: 'r'),
+        throwsA(
+          isA<DeviceOwnerAuthException>().having(
+            (e) => e.kind,
+            'kind',
+            DeviceOwnerAuthErrorKind.unavailable,
           ),
         ),
       );
