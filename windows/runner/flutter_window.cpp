@@ -61,8 +61,11 @@ void VerifyDeviceOwner(
   }
 
   HANDLE token = nullptr;
+  // INTERACTIVE (not NETWORK) so a domain/Entra account can still be validated
+  // from cached credentials when the device is offline / off the domain network;
+  // NETWORK logon does not use cached credentials. Local accounts are unaffected.
   const BOOL ok = ::LogonUserW(username.c_str(), domain.c_str(),
-                               password.c_str(), LOGON32_LOGON_NETWORK,
+                               password.c_str(), LOGON32_LOGON_INTERACTIVE,
                                LOGON32_PROVIDER_DEFAULT, &token);
   const DWORD error = ok ? ERROR_SUCCESS : ::GetLastError();
   if (token != nullptr) {
