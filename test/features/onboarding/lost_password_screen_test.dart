@@ -403,6 +403,11 @@ void main() {
     expect(find.text('Incorrect password. Try again.'), findsOneWidget);
     // The dialog stays open so the user can retry.
     expect(find.text('Confirm reset Vizor'), findsOneWidget);
+
+    await tester.enterText(find.byType(EditableText), 'corrected');
+    await tester.pump();
+
+    expect(find.text('Incorrect password. Try again.'), findsNothing);
   });
 
   testWidgets('windows account-password dialog reports an unverifiable account', (
@@ -450,6 +455,14 @@ void main() {
     // pops true.
     expect(find.text('Confirm reset Vizor'), findsOneWidget);
     expect(dialogResult, isNull);
+
+    await tester.enterText(find.byType(EditableText), 'changed');
+    await tester.pump();
+
+    expect(
+      find.text("This Windows account can't be verified by password."),
+      findsNothing,
+    );
   });
 
   testWidgets('lost-password on Windows uses the account-password dialog', (

@@ -43,9 +43,21 @@ class _WindowsAccountPasswordDialogState
   static const double _cardWidth = 396;
 
   @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_handlePasswordChanged);
+  }
+
+  @override
   void dispose() {
+    _controller.removeListener(_handlePasswordChanged);
     _controller.dispose();
     super.dispose();
+  }
+
+  void _handlePasswordChanged() {
+    if (_error == null || _verifying) return;
+    setState(() => _error = null);
   }
 
   Future<void> _submit() async {
