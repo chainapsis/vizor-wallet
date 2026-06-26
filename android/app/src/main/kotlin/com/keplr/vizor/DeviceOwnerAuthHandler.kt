@@ -22,7 +22,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  * pattern) exclusively, never BIOMETRIC_*. This does not touch the wallet
  * passcode escrow. Android 11+ shows the device-credential BiometricPrompt;
  * Android 10 and lower use the system device credential confirmation intent
- * because a DEVICE_CREDENTIAL-only BiometricPrompt is not supported there.
+ * because a DEVICE_CREDENTIAL-only BiometricPrompt is not supported there. Since
+ * that intent would otherwise accept an enrolled fingerprint/face, the gate fails
+ * closed on those versions when any biometric is enrolled.
  */
 class DeviceOwnerAuthHandler(private val activity: FragmentActivity) {
     private var pendingCredentialResult: MethodChannel.Result? = null
@@ -110,6 +112,22 @@ class DeviceOwnerAuthHandler(private val activity: FragmentActivity) {
         val keyguard = activity.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
         if (keyguard?.isDeviceSecure != true) {
             result.error("unavailable", "Device credential is not configured.", null)
+            return
+        }
+        // Passcode-only by design: createConfirmDeviceCredentialIntent also accepts
+        // an enrolled fingerprint/face, which this gate must never allow, and API < 30
+        // has no credential-only confirmation API. Fail closed when any biometric is
+        // enrolled.
+        if (BiometricManager.from(activity)
+                .canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) ==
+            BiometricManager.BIOMETRIC_SUCCESS
+        ) {
+            result.error(
+                "unavailable",
+                "Passcode-only verification isn't available on this Android version " +
+                    "while biometrics are enrolled.",
+                null
+            )
             return
         }
         if (pendingCredentialResult != null) {
