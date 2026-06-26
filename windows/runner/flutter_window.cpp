@@ -65,7 +65,7 @@ void VerifyDeviceOwner(
     case ERROR_LOGON_FAILURE:
     case ERROR_PASSWORD_EXPIRED:
     case ERROR_INVALID_LOGON_HOURS:
-      // Wrong / unusable password — let the user retry.
+      // Wrong / unusable password - let the user retry.
       result->Success(flutter::EncodableValue(false));
       return;
     case ERROR_ACCOUNT_RESTRICTION:
