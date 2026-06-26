@@ -137,6 +137,11 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
   /// dialog reports its own inline errors and resolves to false on cancel.
   Future<bool> _verifyDeviceOwner() {
     final auth = ref.read(deviceOwnerAuthProvider);
+    if (!auth.hasOsResetGate) {
+      // Linux: no OS device-owner auth is available on the portable AppImage
+      // build, so the on-screen countdown + explicit confirm is the only gate.
+      return Future.value(true);
+    }
     if (auth.requiresAppProvidedCredential) {
       return showWindowsAccountPasswordDialog(context);
     }

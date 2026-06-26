@@ -18,8 +18,10 @@ class _FakeDeviceOwnerAuth extends DeviceOwnerAuth {
   _FakeDeviceOwnerAuth({
     required this.result,
     bool requiresAppProvidedCredential = false,
+    bool hasOsResetGate = true,
   }) : super(
          requiresAppProvidedCredentialOverride: requiresAppProvidedCredential,
+         hasOsResetGateOverride: hasOsResetGate,
        );
 
   final bool result;
@@ -164,6 +166,43 @@ void main() {
     expect(auth.calls, 1);
     expect(find.text(kWalletResetDeviceAuthRequiredMessage), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('lost-password on Linux resets without an OS auth gate', (
+    tester,
+  ) async {
+    // Linux has no OS device-owner gate (polkit can't be registered on the
+    // portable AppImage build); the on-screen confirm is the only gate.
+    final auth = _FakeDeviceOwnerAuth(result: false, hasOsResetGate: false);
+    var resetCalls = 0;
+
+    tester.view.physicalSize = const Size(1080, 720);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [deviceOwnerAuthProvider.overrideWithValue(auth)],
+        child: MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.light,
+            child: LostPasswordScreen(
+              initialCountdownSeconds: 0,
+              countdownEnabled: false,
+              onReset: () async => resetCalls += 1,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Reset Vizor'));
+    await tester.pumpAndSettle();
+
+    // The OS prompt is never invoked, and the reset still proceeds.
+    expect(auth.calls, 0);
+    expect(resetCalls, 1);
   });
 
   testWidgets('forgot-passcode helper does not wipe when auth is cancelled', (

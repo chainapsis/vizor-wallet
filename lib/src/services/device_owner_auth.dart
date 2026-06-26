@@ -26,15 +26,18 @@ class DeviceOwnerAuth {
   DeviceOwnerAuth({
     @visibleForTesting MethodChannel? channel,
     @visibleForTesting bool? requiresAppProvidedCredentialOverride,
+    @visibleForTesting bool? hasOsResetGateOverride,
     @visibleForTesting Duration verifyTimeout = const Duration(minutes: 3),
   }) : _channel =
            channel ?? const MethodChannel('com.zcash.wallet/device_owner_auth'),
        _requiresAppProvidedCredentialOverride =
            requiresAppProvidedCredentialOverride,
+       _hasOsResetGateOverride = hasOsResetGateOverride,
        _verifyTimeout = verifyTimeout;
 
   final MethodChannel _channel;
   final bool? _requiresAppProvidedCredentialOverride;
+  final bool? _hasOsResetGateOverride;
 
   // Safety net for a native side that never replies: the Android < 30
   // confirm-credential path drops its result if the activity is recreated
@@ -61,6 +64,15 @@ class DeviceOwnerAuth {
   /// [verify] is called without a [password].
   bool get requiresAppProvidedCredential =>
       _requiresAppProvidedCredentialOverride ?? (!kIsWeb && Platform.isWindows);
+
+  /// Whether this platform exposes an OS device-owner auth gate used before a
+  /// wallet reset. False on Linux: the only available mechanism (polkit) needs
+  /// a system-installed policy that the portable AppImage build cannot
+  /// register, and polkit cannot exclude biometrics anyway, so the Linux reset
+  /// relies on the in-app confirmation (the countdown on the reset screen)
+  /// instead of an OS prompt. Callers must not claim OS verification on Linux.
+  bool get hasOsResetGate =>
+      _hasOsResetGateOverride ?? (!kIsWeb && !Platform.isLinux);
 
   /// Returns true only when the OS confirms the device owner.
   ///
