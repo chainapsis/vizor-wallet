@@ -169,9 +169,9 @@ class _SettingsSeedPhraseScreenState
         return;
       }
 
-      if (activeAccount.isHardware) {
+      if (!activeAccount.supportsSeedPhraseReveal) {
         throw const _SeedPhraseUnavailableException(
-          'Secret passphrase is not available for hardware accounts.',
+          'Secret passphrase is not available for this account.',
         );
       }
 

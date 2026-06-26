@@ -652,6 +652,30 @@ pub fn import_hardware_account(
     })
 }
 
+/// Import a multisig group account using the completed DKG group public package.
+pub fn import_multisig_account(
+    db_path: String,
+    network: String,
+    name: String,
+    group_public_package_json: String,
+    birthday_height: Option<u64>,
+) -> Result<AccountCreationResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let (account_uuid, unified_address) = keys::import_multisig_account(
+            &db_path,
+            network,
+            &name,
+            &group_public_package_json,
+            birthday_height,
+        )?;
+        Ok(AccountCreationResult {
+            account_uuid,
+            unified_address,
+        })
+    })
+}
+
 /// List all accounts in the wallet database.
 pub fn list_accounts(db_path: String, network: String) -> Result<Vec<AccountInfo>, String> {
     catch(|| {

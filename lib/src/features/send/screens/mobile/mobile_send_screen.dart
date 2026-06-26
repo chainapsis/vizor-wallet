@@ -870,9 +870,15 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (_isResolvingMax || (_isMaxMode && !_hasCurrentMaxQuote)) return;
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
-    final isHardware = ref
-        .read(accountProvider.notifier)
-        .isHardwareAccount(accountUuid);
+    final accountNotifier = ref.read(accountProvider.notifier);
+    final isHardware = accountNotifier.isHardwareAccount(accountUuid);
+    if (accountNotifier.isMultisigAccount(accountUuid)) {
+      setState(() {
+        _phase = _SendPhase.failed;
+        _error = multisigSigningUnsupportedText;
+      });
+      return;
+    }
     final amountZatoshi = parseZecAmount(_amountText.trim());
     if (amountZatoshi == null || amountZatoshi <= BigInt.zero) return;
 

@@ -390,12 +390,20 @@ AccountInfo mergeBootstrappedAccountInfo({
 }) {
   // Rust is authoritative for account existence/address. Dart secure storage
   // owns UI metadata that Rust does not update, so preserve it across relaunch.
+  final storedKind = storedAccount?.kind;
+  final kind = storedKind == AccountKind.multisig
+      ? AccountKind.multisig
+      : (rustAccount.isHardware || storedKind == AccountKind.hardware
+            ? AccountKind.hardware
+            : AccountKind.software);
   return AccountInfo(
     uuid: rustAccount.uuid,
     name: storedAccount?.name ?? rustAccount.name,
     order: storedAccount?.order ?? order,
-    // Rust can recover Keystone accounts when older stored metadata lost this bit.
-    isHardware: (storedAccount?.isHardware ?? false) || rustAccount.isHardware,
+    // Rust can recover Keystone accounts when older stored metadata lost this
+    // bit. Multisig is preserved from Dart metadata because the Rust account DB
+    // only stores the imported UFVK.
+    kind: kind,
     isSeedAnchor: rustAccount.isSeedAnchor,
     profilePictureId: normalizeProfilePictureId(
       storedAccount?.profilePictureId ?? kDefaultProfilePictureId,

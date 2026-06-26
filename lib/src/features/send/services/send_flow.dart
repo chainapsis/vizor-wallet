@@ -23,6 +23,8 @@ import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import 'sapling_params.dart';
 
+const multisigSigningUnsupportedText = 'Multisig signing is not available yet.';
+
 /// Route-extra payload for the review/status legs of the send flow.
 class SendReviewArgs {
   const SendReviewArgs({
@@ -309,6 +311,9 @@ Future<SendBroadcastOutcome> runSendBroadcast({
     final isHardware = accountNotifier.isHardwareAccount(
       args.proposalAccountUuid,
     );
+    final isMultisig = accountNotifier.isMultisigAccount(
+      args.proposalAccountUuid,
+    );
 
     late final String txids;
     late final bool broadcastComplete;
@@ -339,6 +344,12 @@ Future<SendBroadcastOutcome> runSendBroadcast({
           ? null
           : _pcztBroadcastStatusMessage(result);
       broadcastMessageForFallback = result.message;
+    } else if (isMultisig) {
+      return SendBroadcastOutcome(
+        phase: SendBroadcastPhase.failed,
+        proposalConsumed: proposalConsumed,
+        error: multisigSigningUnsupportedText,
+      );
     } else {
       late final rust_sync.ExecuteProposalResult result;
       if (Platform.isMacOS) {

@@ -21,6 +21,8 @@ import 'swap_zec_staging_address_service.dart';
 
 export 'swap_provider_config.dart';
 
+const _multisigSwapUnsupportedText = 'Multisig signing is not available yet.';
+
 final swapInitialIntentsProvider = Provider<List<SwapIntent>>((ref) {
   return const [];
 });
@@ -481,9 +483,9 @@ class SwapNotifier extends Notifier<SwapState> {
     }
     final quoteExpiresAt = quote.quoteExpiresAt;
     if (quoteExpiresAt != null &&
-        !DateTime.now()
-            .toUtc()
-            .isBefore(quoteExpiresAt.subtract(const Duration(seconds: 5)))) {
+        !DateTime.now().toUtc().isBefore(
+          quoteExpiresAt.subtract(const Duration(seconds: 5)),
+        )) {
       log('Swap: start blocked; quote expired at $quoteExpiresAt');
       expireReviewQuote();
       return false;
@@ -523,9 +525,17 @@ class SwapNotifier extends Notifier<SwapState> {
       );
       return false;
     }
-    final activeAccountIsHardware = ref
-        .read(accountProvider.notifier)
-        .isActiveAccountHardware;
+    final accountNotifier = ref.read(accountProvider.notifier);
+    final activeAccountIsHardware = accountNotifier.isActiveAccountHardware;
+    final activeAccountIsMultisig = accountNotifier.isActiveAccountMultisig;
+    if (activeAccountIsMultisig && quote.direction.sendsZec) {
+      log('Swap: start blocked; multisig ZEC deposit signing unsupported');
+      state = state.copyWith(
+        startSubmitting: false,
+        statusError: _multisigSwapUnsupportedText,
+      );
+      return false;
+    }
     if (quote.direction.sendsZec) {
       try {
         await ref
@@ -571,9 +581,7 @@ class SwapNotifier extends Notifier<SwapState> {
     );
     if (activeAccountIsHardware && quote.direction.sendsZec) {
       const nextAction = 'Sign and send the ZEC deposit with Keystone.';
-      intent = intent.copyWith(
-        nextAction: nextAction,
-      );
+      intent = intent.copyWith(nextAction: nextAction);
     }
     log(
       'Swap: start saved intent=${_shortSwapValue(intent.id)} '

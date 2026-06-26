@@ -144,6 +144,21 @@ Future<AccountCreationResult> importHardwareAccount({
   birthdayHeight: birthdayHeight,
 );
 
+/// Import a multisig group account using the completed DKG group public package.
+Future<AccountCreationResult> importMultisigAccount({
+  required String dbPath,
+  required String network,
+  required String name,
+  required String groupPublicPackageJson,
+  BigInt? birthdayHeight,
+}) => RustLib.instance.api.crateApiWalletImportMultisigAccount(
+  dbPath: dbPath,
+  network: network,
+  name: name,
+  groupPublicPackageJson: groupPublicPackageJson,
+  birthdayHeight: birthdayHeight,
+);
+
 /// List all accounts in the wallet database.
 Future<List<AccountInfo>> listAccounts({
   required String dbPath,

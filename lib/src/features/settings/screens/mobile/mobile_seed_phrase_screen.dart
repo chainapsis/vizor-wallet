@@ -230,8 +230,8 @@ class _MobileSeedPhraseScreenState
     String? mnemonic;
     if (account == null) {
       revealError = 'No active account is selected.';
-    } else if (account.isHardware) {
-      revealError = 'Secret passphrase is not available for hardware accounts.';
+    } else if (!account.supportsSeedPhraseReveal) {
+      revealError = 'Secret passphrase is not available for this account.';
     } else {
       mnemonic = await ref
           .read(accountProvider.notifier)

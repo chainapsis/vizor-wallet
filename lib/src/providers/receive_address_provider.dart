@@ -94,7 +94,9 @@ class ReceiveAddressService {
     final dbPath = await getWalletDbPath();
     final network = _network;
     final accountNotifier = _ref.read(accountProvider.notifier);
-    final addressRequest = accountNotifier.isHardwareAccount(accountUuid)
+    final addressRequest =
+        accountNotifier.isHardwareAccount(accountUuid) ||
+            accountNotifier.isMultisigAccount(accountUuid)
         ? ReceiveAddressRequest.orchard
         : ReceiveAddressRequest.shielded;
 

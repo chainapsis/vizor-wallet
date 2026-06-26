@@ -12,7 +12,7 @@ flutter_rust_bridge = "=2.11.1"
 # Zcash core
 zcash_primitives = "0.28"
 zcash_address = "0.12"
-zcash_keys = { version = "0.14", features = ["orchard"] }
+zcash_keys = { version = "0.14", features = ["orchard", "unstable-frost"] }
 zcash_protocol = "0.9"
 transparent = { package = "zcash_transparent", version = "0.8" }
 zcash_script = "0.4.3"

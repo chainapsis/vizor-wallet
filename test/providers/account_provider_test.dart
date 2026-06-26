@@ -148,6 +148,30 @@ void main() {
     },
   );
 
+  test('mnemonic access is limited to software accounts', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrapWithAccountKinds()),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(accountProvider.future);
+    final notifier = container.read(accountProvider.notifier);
+
+    expect(notifier.accountHasLocalMnemonic('software-account'), isTrue);
+    expect(notifier.accountHasLocalMnemonic('hardware-account'), isFalse);
+    expect(notifier.accountHasLocalMnemonic('multisig-account'), isFalse);
+    expect(notifier.isSoftwareAccount('multisig-account'), isFalse);
+    expect(notifier.isMultisigAccount('multisig-account'), isTrue);
+    expect(await notifier.getMnemonicForAccount('multisig-account'), isNull);
+    expect(
+      await notifier.getMnemonicBytesForAccount('multisig-account'),
+      isNull,
+    );
+  });
+
   test('voting submission guard tracks multiple active jobs', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -199,6 +223,39 @@ void main() {
     );
     expect(container.read(votingSubmissionGuardProvider), isEmpty);
   });
+}
+
+AppBootstrapState _bootstrapWithAccountKinds() {
+  const accountState = AccountState(
+    accounts: [
+      AccountInfo(uuid: 'software-account', name: 'Software', order: 0),
+      AccountInfo(
+        uuid: 'hardware-account',
+        name: 'Keystone',
+        order: 1,
+        kind: AccountKind.hardware,
+      ),
+      AccountInfo(
+        uuid: 'multisig-account',
+        name: 'Family vault',
+        order: 2,
+        kind: AccountKind.multisig,
+      ),
+    ],
+    activeAccountUuid: 'software-account',
+  );
+  return AppBootstrapState(
+    initialLocation: '/home',
+    initialAccountState: accountState,
+    initialSyncSnapshot: AppSyncSnapshot.emptyForAccount('software-account'),
+    network: kZcashDefaultNetworkName,
+    rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+    themeMode: ThemeMode.system,
+    privacyModeEnabled: false,
+    isPasswordConfigured: true,
+    isUnlocked: true,
+    passwordRotationRecoveryFailed: false,
+  );
 }
 
 AppBootstrapState _bootstrapWithAccounts() {

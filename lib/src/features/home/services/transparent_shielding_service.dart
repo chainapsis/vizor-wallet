@@ -16,6 +16,8 @@ import '../../../rust/api/sync.dart' as rust_sync;
 
 const shieldBalancePendingBroadcastMessage =
     'Shielding queued for retry. Check Activity.';
+const softwareSigningUnavailableText =
+    'Software signing is not available for this account.';
 
 String? shieldBalanceBroadcastStatusMessage(
   rust_sync.ShieldTransparentResult result,
@@ -28,6 +30,9 @@ String friendlyShieldBalanceError(Object error) {
   final message = error.toString();
   final lower = message.toLowerCase();
   if (lower.contains('mnemonic')) {
+    return "Secret Passphrase isn't available for this account.";
+  }
+  if (lower.contains('software signing')) {
     return "Secret Passphrase isn't available for this account.";
   }
   if (lower.contains('sync')) {
@@ -67,6 +72,10 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
     if (!sync.canShieldTransparentBalance) {
       throw Exception('Transparent balance is too small to shield after fees.');
     }
+    final accountNotifier = ref.read(accountProvider.notifier);
+    if (!accountNotifier.isSoftwareAccount(accountUuid)) {
+      throw StateError(softwareSigningUnavailableText);
+    }
 
     final dbPath = await getWalletDbPath();
     final endpoint = ref.read(rpcEndpointFailoverProvider).current;
@@ -88,7 +97,6 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
         localTestProfile: zcashLocalTestProfile(),
       );
     } else {
-      final accountNotifier = ref.read(accountProvider.notifier);
       final mnemonicBytes = await accountNotifier.getMnemonicBytesForAccount(
         accountUuid,
       );

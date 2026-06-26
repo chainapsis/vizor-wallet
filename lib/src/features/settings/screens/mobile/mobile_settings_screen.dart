@@ -50,7 +50,7 @@ class MobileSettingsScreen extends ConsumerWidget {
     );
     final settingsValueColor = context.colors.text.accent;
     final settingsChevronColor = context.colors.icon.accent;
-    final seedPhraseEnabled = account != null && !account.isHardware;
+    final seedPhraseEnabled = account?.supportsSeedPhraseReveal ?? false;
 
     return SafeArea(
       bottom: false,

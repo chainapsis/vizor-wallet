@@ -13,6 +13,9 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../domain/swap_contract.dart';
 import '../models/swap_deposit_broadcast_result.dart';
 
+const _softwareSigningUnavailableText =
+    'Software signing is not available for this account.';
+
 final swapDepositSenderProvider = Provider<SwapDepositSender>((ref) {
   return RustSwapDepositSender(ref);
 });
@@ -112,6 +115,11 @@ class RustSwapDepositSender implements SwapDepositSender {
         'proposal=${proposal.proposalId}',
       );
 
+      final accountNotifier = _ref.read(accountProvider.notifier);
+      if (!accountNotifier.isSoftwareAccount(accountUuid)) {
+        throw StateError(_softwareSigningUnavailableText);
+      }
+
       if (Platform.isMacOS) {
         final password = _ref
             .read(appSecurityProvider.notifier)
@@ -125,9 +133,9 @@ class RustSwapDepositSender implements SwapDepositSender {
           localTestProfile: zcashLocalTestProfile(),
         );
       } else {
-        final mnemonicBytes = await _ref
-            .read(accountProvider.notifier)
-            .getMnemonicBytesForAccount(accountUuid);
+        final mnemonicBytes = await accountNotifier.getMnemonicBytesForAccount(
+          accountUuid,
+        );
         if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
           throw StateError('Mnemonic not found for the active account');
         }

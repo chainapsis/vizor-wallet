@@ -17,6 +17,7 @@ use zcash_keys::{
     encoding::encode_transparent_address,
     keys::{ReceiverRequirement, UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
 };
+use zcash_multisig::keys::GroupPublicPackage;
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{BlockHeight, NetworkConstants, NetworkUpgrade, Parameters};
 use zeroize::Zeroizing;
@@ -34,6 +35,7 @@ use crate::wallet::{
 pub(crate) const DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE: &str =
     "This account is already in your wallet.";
 const DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE: &str = "This Keystone account is already in your wallet.";
+const DUPLICATE_MULTISIG_ACCOUNT_MESSAGE: &str = "This multisig account is already in your wallet.";
 const MIN_MNEMONIC_WORD_COUNT: usize = 12;
 const MAX_MNEMONIC_WORD_COUNT: usize = 24;
 const MNEMONIC_WORD_COUNT_STEP: usize = 3;
@@ -425,6 +427,74 @@ pub fn import_hardware_account(
         addr_str
     );
     Ok((uuid_str, addr_str))
+}
+
+/// Import a multisig group account using its synthetic Orchard FVK.
+///
+/// The FROST signing share is stored outside `WalletDb`; this import gives the
+/// normal sync/balance pipeline the group UFVK so it can scan received notes.
+pub fn import_multisig_account(
+    db_path: &str,
+    network: WalletNetwork,
+    name: &str,
+    group_public_package_json: &str,
+    birthday_height: Option<u64>,
+) -> Result<(String, String), String> {
+    ensure_db_migrated_once(db_path, network)?;
+    let birthday = make_birthday(network, birthday_height);
+    let (ufvk, addr_str) = multisig_ufvk_and_address(network, group_public_package_json)?;
+
+    let purpose = AccountPurpose::Spending { derivation: None };
+    let account_id = with_wallet_db_write_lock("keys.import_multisig_account", || {
+        let mut db = open_wallet_db_for_mutation(db_path, network)?;
+        let account = db
+            .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
+            .map_err(|e| {
+                map_account_import_error(
+                    e,
+                    DUPLICATE_MULTISIG_ACCOUNT_MESSAGE,
+                    "Failed to import multisig account",
+                )
+            })?;
+        Ok::<_, String>(account.id())
+    })?;
+
+    let uuid_str = account_id.expose_uuid().to_string();
+    log::info!(
+        "Imported multisig account: uuid={}, address={}",
+        uuid_str,
+        addr_str
+    );
+    Ok((uuid_str, addr_str))
+}
+
+fn multisig_ufvk_and_address(
+    network: WalletNetwork,
+    group_public_package_json: &str,
+) -> Result<(UnifiedFullViewingKey, String), String> {
+    let group: GroupPublicPackage = serde_json::from_str(group_public_package_json)
+        .map_err(|e| format!("Failed to parse multisig group public package: {e}"))?;
+    let fvk_bytes: [u8; 96] = group
+        .orchard_fvk
+        .as_slice()
+        .try_into()
+        .map_err(|_| "Multisig group Orchard FVK must be 96 bytes")?;
+    let orchard_fvk = orchard::keys::FullViewingKey::from_bytes(&fvk_bytes)
+        .ok_or_else(|| "Failed to parse multisig Orchard FVK".to_string())?;
+    let ufvk = UnifiedFullViewingKey::from_orchard_fvk(orchard_fvk)
+        .map_err(|e| format!("Failed to build multisig UFVK: {e:?}"))?;
+
+    let (ua, _di) = ufvk
+        .default_address(orchard_address_request())
+        .map_err(|e| format!("Failed to derive multisig address: {e}"))?;
+    let orchard = ua
+        .orchard()
+        .ok_or_else(|| "Multisig UFVK did not produce an Orchard receiver".to_string())?;
+    let raw_address = orchard.to_raw_address_bytes();
+    if raw_address.as_slice() != group.orchard_address_raw.as_slice() {
+        return Err("Multisig group address does not match its Orchard FVK".to_string());
+    }
+    Ok((ufvk, ua.encode(&network)))
 }
 
 /// Init DB + create first account as Derived (so seed relevance checks pass on future migrations).

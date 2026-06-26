@@ -112,6 +112,32 @@ void main() {
     expect(merged.name, 'Stored Keystone');
   });
 
+  test('mergeBootstrappedAccountInfo preserves stored multisig metadata', () {
+    const rustAccount = AccountInfo(
+      uuid: 'account-4',
+      name: 'Rust imported account',
+      order: 1,
+      isHardware: true,
+    );
+    const storedAccount = AccountInfo(
+      uuid: 'account-4',
+      name: 'Family vault',
+      order: 1,
+      kind: AccountKind.multisig,
+    );
+
+    final merged = mergeBootstrappedAccountInfo(
+      rustAccount: rustAccount,
+      storedAccount: storedAccount,
+      order: 1,
+    );
+
+    expect(merged.kind, AccountKind.multisig);
+    expect(merged.isMultisig, isTrue);
+    expect(merged.isHardware, isFalse);
+    expect(merged.name, 'Family vault');
+  });
+
   test('empty bootstrap has no password rotation recovery failure', () {
     expect(AppBootstrapState.empty.passwordRotationRecoveryFailed, isFalse);
   });

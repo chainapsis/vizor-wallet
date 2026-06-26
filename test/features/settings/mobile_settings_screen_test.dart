@@ -48,6 +48,20 @@ const _hardwareAccountState = AccountState(
   activeAddress: 'u1settingsaddress',
 );
 
+const _multisigAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'account-1',
+      name: 'Family vault',
+      order: 0,
+      profilePictureId: kDefaultProfilePictureId,
+      kind: AccountKind.multisig,
+    ),
+  ],
+  activeAccountUuid: 'account-1',
+  activeAddress: 'u1settingsaddress',
+);
+
 AppBootstrapState _bootstrap([AccountState accountState = _accountState]) =>
     AppBootstrapState(
       initialLocation: '/settings',
@@ -254,6 +268,26 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(_app(accountState: _hardwareAccountState));
+    await tester.pump();
+
+    final rowFinder = find.byKey(const ValueKey('mobile_settings_seed_row'));
+    final row = tester.widget<MobileListRow>(rowFinder);
+    final label = tester.widget<Text>(find.text('Secret Passphrase'));
+    final chevron = _chevronIn(
+      tester,
+      const ValueKey('mobile_settings_seed_row'),
+    );
+
+    expect(row.enabled, isFalse);
+    expect(row.onTap, isNull);
+    expect(label.style?.color, AppThemeData.dark.colors.text.disabled);
+    expect(chevron.color, AppThemeData.dark.colors.icon.disabled);
+  });
+
+  testWidgets('multisig accounts disable the secret passphrase row', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(accountState: _multisigAccountState));
     await tester.pump();
 
     final rowFinder = find.byKey(const ValueKey('mobile_settings_seed_row'));
