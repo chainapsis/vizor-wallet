@@ -63,6 +63,23 @@ void main() {
       );
     });
 
+    test(
+      '"no_local_credential" platform error throws noLocalCredential',
+      () async {
+        mockResult((_) => throw PlatformException(code: 'no_local_credential'));
+        await expectLater(
+          build().verify(reason: 'r'),
+          throwsA(
+            isA<DeviceOwnerAuthException>().having(
+              (e) => e.kind,
+              'kind',
+              DeviceOwnerAuthErrorKind.noLocalCredential,
+            ),
+          ),
+        );
+      },
+    );
+
     test('any other platform error throws failed', () async {
       mockResult((_) => throw PlatformException(code: 'boom'));
       await expectLater(
@@ -116,7 +133,7 @@ void main() {
   });
 
   group('verify argument contract', () {
-    test('omits password when none is provided', () async {
+    test('sends only the reason to the platform channel', () async {
       MethodCall? captured;
       mockResult((call) {
         captured = call;
@@ -127,17 +144,6 @@ void main() {
       final args = captured!.arguments as Map;
       expect(args['reason'], 'why');
       expect(args.containsKey('password'), isFalse);
-    });
-
-    test('forwards password when provided (Windows credential path)', () async {
-      MethodCall? captured;
-      mockResult((call) {
-        captured = call;
-        return true;
-      });
-      await build().verify(reason: 'why', password: 'hunter2');
-      final args = captured!.arguments as Map;
-      expect(args['password'], 'hunter2');
     });
   });
 }

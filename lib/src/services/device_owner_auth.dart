@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-enum DeviceOwnerAuthErrorKind { unavailable, failed }
+enum DeviceOwnerAuthErrorKind { unavailable, failed, noLocalCredential }
 
 class DeviceOwnerAuthException implements Exception {
   const DeviceOwnerAuthException(this.kind, [this.message]);
@@ -25,18 +25,14 @@ class DeviceOwnerAuthException implements Exception {
 class DeviceOwnerAuth {
   DeviceOwnerAuth({
     @visibleForTesting MethodChannel? channel,
-    @visibleForTesting bool? requiresAppProvidedCredentialOverride,
     @visibleForTesting bool? hasOsResetGateOverride,
     @visibleForTesting Duration verifyTimeout = const Duration(minutes: 3),
   }) : _channel =
            channel ?? const MethodChannel('com.zcash.wallet/device_owner_auth'),
-       _requiresAppProvidedCredentialOverride =
-           requiresAppProvidedCredentialOverride,
        _hasOsResetGateOverride = hasOsResetGateOverride,
        _verifyTimeout = verifyTimeout;
 
   final MethodChannel _channel;
-  final bool? _requiresAppProvidedCredentialOverride;
   final bool? _hasOsResetGateOverride;
 
   // Safety net for a native side that never replies: the Android < 30
@@ -53,18 +49,6 @@ class DeviceOwnerAuth {
           Platform.isLinux ||
           Platform.isWindows);
 
-  /// Whether the app must collect the OS credential itself before calling
-  /// [verify], instead of the OS presenting its own prompt.
-  ///
-  /// True only on Windows: there is no Windows consent API that requires the
-  /// device PIN/password while excluding Windows Hello biometrics, so the reset
-  /// gate renders its own password field and we validate the typed Windows
-  /// account password via `LogonUser` (which a biometric can never satisfy).
-  /// iOS/macOS/Android/Linux present a native passcode prompt instead, so
-  /// [verify] is called without a [password].
-  bool get requiresAppProvidedCredential =>
-      _requiresAppProvidedCredentialOverride ?? (!kIsWeb && Platform.isWindows);
-
   /// Whether this platform exposes an OS device-owner auth gate used before a
   /// wallet reset. False on Linux: the only available mechanism (polkit) needs
   /// a system-installed policy that the portable AppImage build cannot
@@ -78,10 +62,11 @@ class DeviceOwnerAuth {
   ///
   /// A user cancellation returns false. Missing platform support, missing
   /// device credentials, or platform errors throw [DeviceOwnerAuthException].
+  /// If the local OS/account cannot provide any usable credential for the reset
+  /// guard, [DeviceOwnerAuthErrorKind.noLocalCredential] lets callers fall back
+  /// to their own non-auth confirmation flow.
   ///
-  /// [password] is only consumed when [requiresAppProvidedCredential] is true
-  /// (Windows); on the OS-prompt platforms it is ignored.
-  Future<bool> verify({required String reason, String? password}) async {
+  Future<bool> verify({required String reason}) async {
     if (!_platformSupported) {
       throw const DeviceOwnerAuthException(
         DeviceOwnerAuthErrorKind.unavailable,
@@ -89,12 +74,8 @@ class DeviceOwnerAuth {
     }
 
     try {
-      final args = <String, Object?>{'reason': reason};
-      if (password != null) {
-        args['password'] = password;
-      }
       return await _channel
-              .invokeMethod<bool>('verify', args)
+              .invokeMethod<bool>('verify', <String, Object?>{'reason': reason})
               .timeout(_verifyTimeout) ==
           true;
     } on TimeoutException {
@@ -110,6 +91,7 @@ class DeviceOwnerAuth {
       if (e.code == 'cancelled') return false;
       final kind = switch (e.code) {
         'unavailable' => DeviceOwnerAuthErrorKind.unavailable,
+        'no_local_credential' => DeviceOwnerAuthErrorKind.noLocalCredential,
         _ => DeviceOwnerAuthErrorKind.failed,
       };
       throw DeviceOwnerAuthException(kind, e.message);

@@ -1,20 +1,28 @@
 #include "flutter_window.h"
 
 #include <flutter/standard_method_codec.h>
+#include <roapi.h>
 #include <shellapi.h>
+#include <UserConsentVerifierInterop.h>
 #include <windows.h>
-#include <lmcons.h>
-#define SECURITY_WIN32
-#include <security.h>
+#include <windows.security.credentials.ui.h>
+#include <wincred.h>
+#include <wrl.h>
 
+#include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "flutter/generated_plugin_registrant.h"
 #include "utils.h"
 #include "velopack_update.h"
 
 namespace {
+
+namespace credentials_ui = ABI::Windows::Security::Credentials::UI;
+namespace foundation = ABI::Windows::Foundation;
+namespace wrl = Microsoft::WRL;
 
 std::wstring StringArg(const flutter::EncodableValue* arguments,
                        const char* key) {
@@ -30,80 +38,341 @@ std::wstring StringArg(const flutter::EncodableValue* arguments,
   return Utf16FromUtf8(std::get<std::string>(it->second));
 }
 
-// Passcode/password-only by design: this NEVER invokes Windows Hello. There is
-// no Windows consent API that requires the device password while excluding Hello
-// biometrics, so the reset gate collects the Windows account password in the
-// Flutter UI and we validate it here with LogonUserW. LogonUserW consumes a
-// plaintext password and can never be satisfied by a face/fingerprint, so the
-// biometrics-excluded guarantee holds by construction.
-void VerifyDeviceOwner(
-    std::wstring password,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-  // Resolve the SAM-compatible name (domain + separator + user) so the check
-  // works for domain-joined accounts, not just a same-named local SAM account.
-  // A local account yields COMPUTERNAME\user, which LogonUser validates against
-  // the local DB exactly as L"." did; a domain account yields the real logon
-  // domain so DOMAIN\user can authenticate.
-  wchar_t qualified[UNLEN + DNLEN + 2];
-  ULONG qualified_length = ARRAYSIZE(qualified);
-  if (!::GetUserNameExW(NameSamCompatible, qualified, &qualified_length)) {
-    result->Error("failed", "Could not resolve the current Windows user.");
+class ScopedHString {
+ public:
+  explicit ScopedHString(const std::wstring& value) {
+    hr_ = ::WindowsCreateString(value.c_str(),
+                                static_cast<UINT32>(value.size()), &value_);
+  }
+
+  ~ScopedHString() {
+    if (value_ != nullptr) {
+      ::WindowsDeleteString(value_);
+    }
+  }
+
+  ScopedHString(const ScopedHString&) = delete;
+  ScopedHString& operator=(const ScopedHString&) = delete;
+
+  HRESULT hr() const { return hr_; }
+  HSTRING get() const { return value_; }
+
+ private:
+  HSTRING value_ = nullptr;
+  HRESULT hr_ = E_FAIL;
+};
+
+using VerificationResult =
+    credentials_ui::UserConsentVerificationResult;
+using VerificationOperation =
+    foundation::IAsyncOperation<VerificationResult>;
+using VerificationCompletedHandler =
+    foundation::IAsyncOperationCompletedHandler<VerificationResult>;
+using MethodResult =
+    flutter::MethodResult<flutter::EncodableValue>;
+using MethodResultPtr = std::unique_ptr<MethodResult>;
+using SharedMethodResult = std::shared_ptr<MethodResultPtr>;
+
+void CompleteVerificationError(SharedMethodResult result,
+                               const std::string& code,
+                               const std::string& message) {
+  if (result == nullptr || *result == nullptr) {
     return;
   }
+  (*result)->Error(code, message);
+  result->reset();
+}
 
-  std::wstring qualified_name(qualified);
-  std::wstring domain = L".";
-  std::wstring username = qualified_name;
-  if (const size_t separator = qualified_name.find(L'\\');
-      separator != std::wstring::npos) {
-    domain = qualified_name.substr(0, separator);
-    username = qualified_name.substr(separator + 1);
+class ScopedHandle {
+ public:
+  explicit ScopedHandle(HANDLE handle = nullptr) : handle_(handle) {}
+
+  ~ScopedHandle() {
+    if (handle_ != nullptr) {
+      ::CloseHandle(handle_);
+    }
   }
 
-  HANDLE token = nullptr;
-  // INTERACTIVE (not NETWORK) so a domain/Entra account can still be validated
-  // from cached credentials when the device is offline / off the domain network;
-  // NETWORK logon does not use cached credentials. Local accounts are unaffected.
-  const BOOL ok = ::LogonUserW(username.c_str(), domain.c_str(),
-                               password.c_str(), LOGON32_LOGON_INTERACTIVE,
-                               LOGON32_PROVIDER_DEFAULT, &token);
-  const DWORD error = ok ? ERROR_SUCCESS : ::GetLastError();
-  if (token != nullptr) {
-    ::CloseHandle(token);
-  }
-  if (!password.empty()) {
-    // Best-effort: scrubs only this by-value copy. The inbound EncodableMap
-    // string and any UTF-8->UTF-16 conversion temporary are not scrubbed
-    // (defense-in-depth limitation, not a threat-model gap).
-    ::SecureZeroMemory(password.data(), password.size() * sizeof(wchar_t));
+  ScopedHandle(const ScopedHandle&) = delete;
+  ScopedHandle& operator=(const ScopedHandle&) = delete;
+
+  HANDLE get() const { return handle_; }
+  HANDLE* put() { return &handle_; }
+
+ private:
+  HANDLE handle_ = nullptr;
+};
+
+bool ReadTokenUserSid(HANDLE token, std::vector<BYTE>* sid) {
+  DWORD token_user_size = 0;
+  ::GetTokenInformation(token, TokenUser, nullptr, 0, &token_user_size);
+  if (::GetLastError() != ERROR_INSUFFICIENT_BUFFER ||
+      token_user_size == 0) {
+    return false;
   }
 
+  std::vector<BYTE> token_user_buffer(token_user_size);
+  if (!::GetTokenInformation(token, TokenUser, token_user_buffer.data(),
+                             token_user_size, &token_user_size)) {
+    return false;
+  }
+
+  const auto* token_user =
+      reinterpret_cast<const TOKEN_USER*>(token_user_buffer.data());
+  const DWORD sid_size = ::GetLengthSid(token_user->User.Sid);
+  sid->resize(sid_size);
+  return ::CopySid(sid_size, sid->data(), token_user->User.Sid) != FALSE;
+}
+
+bool IsCurrentUserToken(HANDLE token) {
+  ScopedHandle current_token;
+  if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY,
+                          current_token.put())) {
+    return false;
+  }
+
+  std::vector<BYTE> current_sid;
+  std::vector<BYTE> candidate_sid;
+  if (!ReadTokenUserSid(current_token.get(), &current_sid) ||
+      !ReadTokenUserSid(token, &candidate_sid)) {
+    return false;
+  }
+
+  return ::EqualSid(current_sid.data(), candidate_sid.data()) != FALSE;
+}
+
+enum class PasswordVerificationResult {
+  kVerified,
+  kWrongCredential,
+  kUnavailable,
+};
+
+PasswordVerificationResult VerifyPasswordForCurrentUser(
+    const std::wstring& username,
+    const std::wstring& domain,
+    const std::wstring& password) {
+  std::wstring logon_username = username;
+  std::wstring logon_domain = domain;
+  if (logon_domain.empty()) {
+    if (const size_t separator = logon_username.find(L'\\');
+        separator != std::wstring::npos) {
+      logon_domain = logon_username.substr(0, separator);
+      logon_username = logon_username.substr(separator + 1);
+    } else if (logon_username.find(L'@') == std::wstring::npos) {
+      logon_domain = L".";
+    }
+  }
+
+  ScopedHandle token;
+  const BOOL ok = ::LogonUserW(
+      logon_username.c_str(),
+      logon_domain.empty() ? nullptr : logon_domain.c_str(), password.c_str(),
+      LOGON32_LOGON_INTERACTIVE, LOGON32_PROVIDER_DEFAULT, token.put());
   if (ok) {
-    result->Success(flutter::EncodableValue(true));
-    return;
+    return IsCurrentUserToken(token.get())
+               ? PasswordVerificationResult::kVerified
+               : PasswordVerificationResult::kWrongCredential;
   }
-  switch (error) {
+
+  switch (::GetLastError()) {
     case ERROR_LOGON_FAILURE:
-      // Wrong password - let the user retry.
-      result->Success(flutter::EncodableValue(false));
-      return;
+    case ERROR_NO_SUCH_USER:
+      return PasswordVerificationResult::kWrongCredential;
     case ERROR_ACCOUNT_RESTRICTION:
     case ERROR_ACCOUNT_DISABLED:
-    case ERROR_NO_SUCH_USER:
     case ERROR_PASSWORD_EXPIRED:
     case ERROR_PASSWORD_MUST_CHANGE:
     case ERROR_INVALID_LOGON_HOURS:
-      // No usable account password: a blank-password local account, a
-      // passwordless / Microsoft-account sign-in, or a correct-but-unusable
-      // password (expired, must-change, or outside permitted logon hours).
-      // The Dart layer surfaces a graceful "can't verify" state instead of a
-      // misleading "wrong password" retry the user could never satisfy.
-      result->Error("unavailable",
-                    "This Windows account can't be verified by password.");
+      return PasswordVerificationResult::kUnavailable;
+    default:
+      return PasswordVerificationResult::kUnavailable;
+  }
+}
+
+void CompleteNoLocalCredential(SharedMethodResult result) {
+  CompleteVerificationError(
+      result, "no_local_credential",
+      "Windows local credential verification is not available.");
+}
+
+void PromptForWindowsPassword(HWND window,
+                              SharedMethodResult result) {
+  DWORD auth_error = ERROR_SUCCESS;
+  for (;;) {
+    CREDUI_INFOW ui_info = {};
+    ui_info.cbSize = sizeof(ui_info);
+    ui_info.hwndParent = window;
+    ui_info.pszCaptionText = L"Confirm reset Vizor";
+    ui_info.pszMessageText =
+        L"Enter your Windows account password to reset Vizor.";
+
+    ULONG auth_package = 0;
+    LPVOID auth_buffer = nullptr;
+    ULONG auth_buffer_size = 0;
+    BOOL save = FALSE;
+    const DWORD prompt_result = ::CredUIPromptForWindowsCredentialsW(
+        &ui_info, auth_error, &auth_package, nullptr, 0, &auth_buffer,
+        &auth_buffer_size, &save, CREDUIWIN_GENERIC);
+    if (prompt_result == ERROR_CANCELLED) {
+      if (*result != nullptr) {
+        (*result)->Success(flutter::EncodableValue(false));
+        result->reset();
+      }
+      return;
+    }
+    if (prompt_result != ERROR_SUCCESS || auth_buffer == nullptr) {
+      CompleteNoLocalCredential(result);
+      return;
+    }
+
+    std::vector<wchar_t> username(CREDUI_MAX_USERNAME_LENGTH + 1);
+    std::vector<wchar_t> domain(CREDUI_MAX_DOMAIN_TARGET_LENGTH + 1);
+    std::vector<wchar_t> password(CREDUI_MAX_PASSWORD_LENGTH + 1);
+    DWORD username_length = static_cast<DWORD>(username.size());
+    DWORD domain_length = static_cast<DWORD>(domain.size());
+    DWORD password_length = static_cast<DWORD>(password.size());
+    const BOOL unpacked = ::CredUnPackAuthenticationBufferW(
+        0, auth_buffer, auth_buffer_size, username.data(), &username_length,
+        domain.data(), &domain_length, password.data(), &password_length);
+    ::SecureZeroMemory(auth_buffer, auth_buffer_size);
+    ::CoTaskMemFree(auth_buffer);
+
+    if (!unpacked) {
+      CompleteNoLocalCredential(result);
+      return;
+    }
+
+    const PasswordVerificationResult verification =
+        VerifyPasswordForCurrentUser(username.data(), domain.data(),
+                                     password.data());
+    ::SecureZeroMemory(password.data(),
+                       password.size() * sizeof(wchar_t));
+
+    if (verification == PasswordVerificationResult::kVerified) {
+      if (*result != nullptr) {
+        (*result)->Success(flutter::EncodableValue(true));
+        result->reset();
+      }
+      return;
+    }
+    if (verification == PasswordVerificationResult::kUnavailable) {
+      CompleteNoLocalCredential(result);
+      return;
+    }
+
+    auth_error = ERROR_LOGON_FAILURE;
+  }
+}
+
+void CompleteVerification(SharedMethodResult result,
+                          HWND window,
+                          VerificationResult verification_result) {
+  if (result == nullptr || *result == nullptr) {
+    return;
+  }
+
+  switch (verification_result) {
+    case credentials_ui::UserConsentVerificationResult_Verified:
+      (*result)->Success(flutter::EncodableValue(true));
+      break;
+    case credentials_ui::UserConsentVerificationResult_Canceled:
+      (*result)->Success(flutter::EncodableValue(false));
+      break;
+    case credentials_ui::UserConsentVerificationResult_RetriesExhausted:
+      (*result)->Error("failed", "Device authentication failed.");
+      break;
+    case credentials_ui::UserConsentVerificationResult_DeviceNotPresent:
+    case credentials_ui::UserConsentVerificationResult_NotConfiguredForUser:
+    case credentials_ui::UserConsentVerificationResult_DisabledByPolicy:
+    case credentials_ui::UserConsentVerificationResult_DeviceBusy:
+      PromptForWindowsPassword(window, result);
       return;
     default:
-      result->Error("failed", "Device authentication failed.");
-      return;
+      (*result)->Error("failed", "Device authentication failed.");
+      break;
+  }
+  result->reset();
+}
+
+void VerifyDeviceOwner(
+    HWND window,
+    std::wstring reason,
+    MethodResultPtr result) {
+  if (window == nullptr) {
+    result->Error("unavailable", "Windows device authentication is unavailable.");
+    return;
+  }
+
+  if (reason.empty()) {
+    reason = L"Confirm reset Vizor";
+  }
+
+  ScopedHString message(reason);
+  if (FAILED(message.hr())) {
+    result->Error("failed", "Device authentication failed.");
+    return;
+  }
+
+  ScopedHString class_name(
+      RuntimeClass_Windows_Security_Credentials_UI_UserConsentVerifier);
+  if (FAILED(class_name.hr())) {
+    result->Error("failed", "Device authentication failed.");
+    return;
+  }
+
+  wrl::ComPtr<IUserConsentVerifierInterop> verifier;
+  HRESULT hr = ::RoGetActivationFactory(class_name.get(),
+                                        IID_PPV_ARGS(&verifier));
+  if (FAILED(hr) || !verifier) {
+    PromptForWindowsPassword(
+        window, std::make_shared<MethodResultPtr>(std::move(result)));
+    return;
+  }
+
+  wrl::ComPtr<VerificationOperation> operation;
+  hr = verifier->RequestVerificationForWindowAsync(
+      window, message.get(), IID_PPV_ARGS(&operation));
+  if (FAILED(hr) || !operation) {
+    PromptForWindowsPassword(
+        window, std::make_shared<MethodResultPtr>(std::move(result)));
+    return;
+  }
+
+  auto shared_result = std::make_shared<MethodResultPtr>(std::move(result));
+  auto completed = wrl::Callback<VerificationCompletedHandler>(
+      [shared_result, window](VerificationOperation* completed_operation,
+                              AsyncStatus status) -> HRESULT {
+        if (status == Completed) {
+          VerificationResult verification_result =
+              credentials_ui::UserConsentVerificationResult_Canceled;
+          const HRESULT result_hr =
+              completed_operation->GetResults(&verification_result);
+          if (FAILED(result_hr)) {
+            CompleteVerificationError(shared_result, "failed",
+                                      "Device authentication failed.");
+          } else {
+            CompleteVerification(shared_result, window, verification_result);
+          }
+        } else if (status == Canceled) {
+          if (*shared_result != nullptr) {
+            (*shared_result)->Success(flutter::EncodableValue(false));
+            shared_result->reset();
+          }
+        } else {
+          PromptForWindowsPassword(window, shared_result);
+        }
+        return S_OK;
+      });
+  if (!completed) {
+    CompleteVerificationError(shared_result, "failed",
+                              "Device authentication failed.");
+    return;
+  }
+
+  hr = operation->put_Completed(completed.Get());
+  if (FAILED(hr)) {
+    CompleteVerificationError(shared_result, "failed",
+                              "Device authentication failed.");
   }
 }
 
@@ -153,12 +422,12 @@ bool FlutterWindow::OnCreate() {
           "com.zcash.wallet/device_owner_auth",
           &flutter::StandardMethodCodec::GetInstance());
   device_owner_auth_channel_->SetMethodCallHandler(
-      [](const auto& call, auto result) {
+      [this](const auto& call, auto result) {
         if (call.method_name() != "verify") {
           result->NotImplemented();
           return;
         }
-        VerifyDeviceOwner(StringArg(call.arguments(), "password"),
+        VerifyDeviceOwner(GetHandle(), StringArg(call.arguments(), "reason"),
                           std::move(result));
       });
   velopack_update_channel_ =

@@ -14,7 +14,6 @@ import '../../providers/device_owner_auth_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../services/device_owner_auth.dart';
 import 'shared/onboarding_auth_shell.dart';
-import 'windows_account_password_dialog.dart';
 
 class LostPasswordScreen extends ConsumerStatefulWidget {
   const LostPasswordScreen({
@@ -45,8 +44,9 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
   @override
   void initState() {
     super.initState();
-    _remainingSeconds =
-        widget.initialCountdownSeconds < 0 ? 0 : widget.initialCountdownSeconds;
+    _remainingSeconds = widget.initialCountdownSeconds < 0
+        ? 0
+        : widget.initialCountdownSeconds;
     if (widget.countdownEnabled && _remainingSeconds > 0) {
       _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
@@ -112,10 +112,9 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
       if (!mounted) return;
       setState(() {
         _isResetting = false;
-        _error =
-            e.kind == DeviceOwnerAuthErrorKind.unavailable
-                ? kWalletResetDeviceAuthRequiredMessage
-                : kWalletResetDeviceAuthFailedMessage;
+        _error = e.kind == DeviceOwnerAuthErrorKind.unavailable
+            ? kWalletResetDeviceAuthRequiredMessage
+            : kWalletResetDeviceAuthFailedMessage;
       });
     } catch (e, st) {
       log('LostPasswordScreen._handleReset: ERROR: $e\n$st');
@@ -131,21 +130,27 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
 
   /// Proves device ownership before wiping the wallet.
   ///
-  /// On iOS/macOS/Android/Linux the OS shows its own passcode prompt. On
-  /// Windows there is no consent API that excludes Windows Hello, so we collect
-  /// the Windows account password ourselves and validate it via LogonUser; that
-  /// dialog reports its own inline errors and resolves to false on cancel.
-  Future<bool> _verifyDeviceOwner() {
+  /// On supported platforms the OS shows its own device-owner prompt. Windows
+  /// first tries Windows Hello/PIN, then falls back to account password. If no
+  /// usable local credential exists, reset falls back to the on-screen confirm.
+  Future<bool> _verifyDeviceOwner() async {
     final auth = ref.read(deviceOwnerAuthProvider);
     if (!auth.hasOsResetGate) {
       // Linux: no OS device-owner auth is available on the portable AppImage
       // build, so the on-screen countdown + explicit confirm is the only gate.
       return Future.value(true);
     }
-    if (auth.requiresAppProvidedCredential) {
-      return showWindowsAccountPasswordDialog(context);
+    try {
+      return await verifyDeviceOwnerForWalletReset(ref);
+    } on DeviceOwnerAuthException catch (e, st) {
+      if (e.kind == DeviceOwnerAuthErrorKind.noLocalCredential) {
+        log(
+          'LostPasswordScreen._verifyDeviceOwner no local credential: $e\n$st',
+        );
+        return true;
+      }
+      rethrow;
     }
-    return verifyDeviceOwnerForWalletReset(ref);
   }
 
   Future<void> _resetWallet() async {
@@ -219,10 +224,9 @@ class _LostPasswordContent extends StatelessWidget {
     final strongStyle = AppTypography.bodyMediumStrong.copyWith(
       color: colors.text.accent,
     );
-    final buttonLabel =
-        remainingSeconds > 0
-            ? 'Reset after ${remainingSeconds}s...'
-            : 'Reset Vizor';
+    final buttonLabel = remainingSeconds > 0
+        ? 'Reset after ${remainingSeconds}s...'
+        : 'Reset Vizor';
     final statusText = error ?? 'This cannot be undone.';
 
     return Column(
