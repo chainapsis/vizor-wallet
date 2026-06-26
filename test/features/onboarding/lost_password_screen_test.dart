@@ -366,6 +366,53 @@ void main() {
     expect(find.text('Confirm reset Vizor'), findsOneWidget);
   });
 
+  testWidgets('windows account-password dialog reports an unverifiable account', (
+    tester,
+  ) async {
+    final auth = _ThrowingDeviceOwnerAuth();
+    bool? dialogResult;
+
+    await tester.pumpWidget(
+      AppTheme(
+        data: AppThemeData.light,
+        child: ProviderScope(
+          overrides: [deviceOwnerAuthProvider.overrideWithValue(auth)],
+          child: MaterialApp(
+            home: Builder(
+              builder:
+                  (context) => Center(
+                    child: TextButton(
+                      onPressed: () async {
+                        dialogResult = await showWindowsAccountPasswordDialog(
+                          context,
+                        );
+                      },
+                      child: const Text('open'),
+                    ),
+                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(EditableText), 'whatever');
+    await tester.tap(find.text('Confirm reset'));
+    await tester.pumpAndSettle();
+
+    expect(auth.calls, 1);
+    expect(
+      find.text("This Windows account can't be verified by password."),
+      findsOneWidget,
+    );
+    // The unavailable branch must not confirm: the dialog stays open and never
+    // pops true.
+    expect(find.text('Confirm reset Vizor'), findsOneWidget);
+    expect(dialogResult, isNull);
+  });
+
   testWidgets('lost-password on Windows uses the account-password dialog', (
     tester,
   ) async {
