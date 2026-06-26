@@ -1,8 +1,9 @@
 # User-Facing Release Notes
 
 This directory stores the canonical user-facing changelog for each Vizor
-release. These notes are used by Sparkle on macOS and may also be reused by
-GitHub Releases or future platform release flows.
+release. These notes are used by the desktop release flow across Windows,
+Linux, and macOS, with Sparkle consuming them on macOS. They may also be reused
+by GitHub Releases or future platform release flows.
 
 ## File Naming
 
@@ -20,6 +21,16 @@ release/vX.Y.Z
 
 Do not create platform-specific, mainnet-specific, or testnet-specific files
 unless the release process is explicitly changed to support them.
+
+## Platform Scope
+
+Unless a release request explicitly says otherwise, draft release notes for the
+desktop app across Windows, Linux, and macOS. Include only changes that desktop
+users can observe or need to know about.
+
+Exclude mobile-only features, mobile-only UI polish, internal refactors,
+tests, CI/CD changes, dependency bumps, and implementation details unless they
+directly affect the desktop user experience.
 
 ## Format
 
@@ -75,10 +86,11 @@ release_notes/vX.Y.Z.md following release_notes/README.md.
 If GitHub pull requests are available, also review the merged PRs in that range
 for additional user-facing context.
 
-Include only user-facing changes. Exclude internal implementation details,
-refactors, CI/CD changes, Fastlane changes, and dependency bumps unless they
-directly affect users. Omit minor fixes that are unlikely to matter to users.
-Keep the notes concise and in English.
+Include only desktop user-facing changes. Exclude mobile-only changes,
+internal implementation details, refactors, CI/CD changes, Fastlane changes,
+and dependency bumps unless they directly affect desktop users. Omit minor
+fixes that are unlikely to matter to desktop release-note readers. Keep the
+notes concise and in English.
 ```
 
 Review the generated file manually before tagging the release.

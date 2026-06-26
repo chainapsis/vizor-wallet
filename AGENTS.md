@@ -166,6 +166,9 @@ decorative QR treatments to codes that Keystone devices need to scan.
 
 When asked to prepare user-facing release notes or a changelog for a release,
 read `release_notes/README.md` and create `release_notes/vX.Y.Z.md`.
+Unless the request explicitly says otherwise, draft desktop release notes for
+Windows, Linux, and macOS from desktop user-facing changes only. Exclude
+mobile-only changes.
 
 ### clear-app.sh
 
