@@ -30,7 +30,8 @@ class _FakeDeviceOwnerAuth extends DeviceOwnerAuth {
 }
 
 class _ThrowingDeviceOwnerAuth extends DeviceOwnerAuth {
-  _ThrowingDeviceOwnerAuth([this.kind = DeviceOwnerAuthErrorKind.unavailable]);
+  _ThrowingDeviceOwnerAuth([this.kind = DeviceOwnerAuthErrorKind.unavailable])
+    : super(hasOsResetGateOverride: true);
 
   final DeviceOwnerAuthErrorKind kind;
   var calls = 0;
