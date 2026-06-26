@@ -689,6 +689,23 @@ class MultisigPendingSessionsNotifier
     state = const AsyncData(<MultisigPendingSession>[]);
   }
 
+  Future<void> applyAuthUpdate(rust_multisig.ApiMultisigAuthUpdate update) async {
+    final sessions = [...await _currentSessions()];
+    final index = sessions.indexWhere(
+      (entry) =>
+          entry.sessionId == update.sessionId &&
+          entry.participantId == update.participantId,
+    );
+    if (index >= 0) {
+      final refreshed = sessions[index].applyAuthUpdate(update);
+      sessions[index] = refreshed;
+      _sortSessions(sessions);
+      await _store.write(refreshed);
+      state = AsyncData(sessions);
+    }
+    await _applyAuthUpdateToAccountMaterials(update);
+  }
+
   Future<MultisigPendingSession> _sessionWithFreshAccess(
     FutureOr<MultisigPendingSession> pendingFuture, {
     bool force = false,

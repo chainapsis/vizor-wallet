@@ -240,6 +240,10 @@ final multisigAccountMaterialStoreProvider =
       (ref) => MultisigAccountMaterialStore(AppSecureStore.instance),
     );
 
+bool multisigMaterialBackupCompleted(MultisigAccountMaterial material) {
+  return material.localBackupCompletedAt != null;
+}
+
 String _readRequiredIdentityString(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is! String || value.trim().isEmpty) {

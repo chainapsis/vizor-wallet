@@ -5,6 +5,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -16,6 +17,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
+import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -31,6 +33,7 @@ const _invalidAddress = 'not-an-address';
 
 var _proposeSendSucceeds = false;
 Completer<ProposalResult>? _proposeSendCompleter;
+int _proposeSendCalls = 0;
 int _estimateSendMaxCalls = 0;
 String? _lastEstimateSendMaxToAddress;
 String? _lastEstimateSendMaxMemo;
@@ -107,6 +110,7 @@ class _RustApiFake implements RustLibApi {
     required BigInt amountZatoshi,
     String? memo,
   }) async {
+    _proposeSendCalls++;
     final completer = _proposeSendCompleter;
     if (completer != null) return completer.future;
     if (!_proposeSendSucceeds) {
@@ -181,6 +185,7 @@ Widget _app({
   MobileSendScanner? openScanner,
   String? initialRecipient,
   MobileSendAddressValidator? validateAddress,
+  List<Override> overrides = const [],
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -210,6 +215,7 @@ Widget _app({
         _FakeAddressBookRepository(contacts),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
+      ...overrides,
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -404,6 +410,7 @@ void main() {
   setUp(() {
     _proposeSendSucceeds = false;
     _proposeSendCompleter = null;
+    _proposeSendCalls = 0;
     _estimateSendMaxCalls = 0;
     _lastEstimateSendMaxToAddress = null;
     _lastEstimateSendMaxMemo = null;
@@ -516,6 +523,37 @@ void main() {
       find.byKey(const ValueKey('mobile_send_continue')),
     );
     expect(continueButton.onPressed, isNotNull);
+  });
+
+  testWidgets('multisig account is blocked on mobile send', (tester) async {
+    _proposeSendSucceeds = true;
+
+    await tester.pumpWidget(
+      _app(
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Family vault',
+              order: 0,
+              kind: AccountKind.multisig,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _toReviewStep(tester);
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Send failed'), findsNWidgets(2)); // nav title + headline
+    expect(find.text(multisigSigningUnsupportedText), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile_send_try_again')), findsOneWidget);
+    expect(_proposeSendCalls, 0);
   });
 
   testWidgets('route pop is allowed only on the first recipient step', (

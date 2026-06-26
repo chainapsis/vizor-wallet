@@ -22,6 +22,7 @@ import 'account_models.dart';
 import 'app_security_provider.dart';
 import 'multisig_account_material_provider.dart';
 import 'multisig_pending_session_provider.dart';
+import 'multisig_signing_request_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
 import 'voting/voting_submission_guard_provider.dart';
@@ -498,6 +499,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       } catch (e, st) {
         log(
           'removeAccount: failed to delete multisig material for $uuid: $e\n$st',
+        );
+      }
+      try {
+        await ref
+            .read(multisigSigningRequestsProvider.notifier)
+            .deleteForAccount(uuid);
+      } catch (e, st) {
+        log(
+          'removeAccount: failed to delete multisig signing requests for '
+          '$uuid: $e\n$st',
         );
       }
     }

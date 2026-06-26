@@ -46,6 +46,96 @@ abstract class MultisigCoordinatorService {
     required String accessToken,
     required int threshold,
   });
+
+  Future<rust_multisig.ApiPreparedMultisigSigningRequest>
+  prepareSigningRequest({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String requestSeed,
+    required List<String> selectedParticipantIds,
+    required List<int> pcztBytes,
+    required bool needsSaplingParams,
+    required String amountZatoshi,
+    required String feeZatoshi,
+    required String recipientAddress,
+    String? memo,
+  });
+
+  Future<rust_multisig.ApiMultisigSigningRequest> submitPreparedSigningRequest({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String accessToken,
+    required String pcztHash,
+    required String requestJson,
+    required String idempotencyKey,
+  });
+
+  Future<rust_multisig.ApiMultisigSigningInbox> getSigningInbox({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String deliverySecretKey,
+    required int after,
+  });
+
+  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound1({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required List<String> selectedParticipantIds,
+    required List<int> pcztBytes,
+    required String keyPackageB64,
+    String? localStateJson,
+  });
+
+  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound2({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String deliverySecretKey,
+    required List<String> selectedParticipantIds,
+    required List<int> pcztBytes,
+    required String keyPackageB64,
+    String? localStateJson,
+  });
+
+  Future<rust_multisig.ApiMultisigSignedPczt> aggregateSignedPczt({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String deliverySecretKey,
+    required List<String> selectedParticipantIds,
+    required List<int> pcztBytes,
+    required String groupPublicPackageJson,
+    String? localStateJson,
+  });
+
+  Future<rust_multisig.ApiMultisigSigningAdvance> postBroadcastResult({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required List<String> selectedParticipantIds,
+    required String pcztHash,
+    required String txid,
+    String? localStateJson,
+  });
 }
 
 class RustMultisigCoordinatorService implements MultisigCoordinatorService {
@@ -145,6 +235,192 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
       sessionId: sessionId,
       accessToken: accessToken,
       threshold: threshold,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiPreparedMultisigSigningRequest>
+  prepareSigningRequest({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String requestSeed,
+    required List<String> selectedParticipantIds,
+    required List<int> pcztBytes,
+    required bool needsSaplingParams,
+    required String amountZatoshi,
+    required String feeZatoshi,
+    required String recipientAddress,
+    String? memo,
+  }) {
+    return rust_multisig.prepareMultisigSigningRequest(
+      coordinatorUrl: coordinatorUrl,
+      sessionId: sessionId,
+      participantId: participantId,
+      accessToken: accessToken,
+      rosterHash: rosterHash,
+      requestSeed: requestSeed,
+      selectedParticipantIds: selectedParticipantIds,
+      pcztBytes: pcztBytes,
+      needsSaplingParams: needsSaplingParams,
+      amountZatoshi: amountZatoshi,
+      feeZatoshi: feeZatoshi,
+      recipientAddress: recipientAddress,
+      memo: memo,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningRequest> submitPreparedSigningRequest({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String accessToken,
+    required String pcztHash,
+    required String requestJson,
+    required String idempotencyKey,
+  }) {
+    return rust_multisig.submitPreparedMultisigSigningRequest(
+      coordinatorUrl: coordinatorUrl,
+      sessionId: sessionId,
+      accessToken: accessToken,
+      pcztHash: pcztHash,
+      requestJson: requestJson,
+      idempotencyKey: idempotencyKey,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningInbox> getSigningInbox({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String deliverySecretKey,
+    required int after,
+  }) {
+    return rust_multisig.getMultisigSigningInbox(
+      coordinatorUrl: coordinatorUrl,
+      sessionId: sessionId,
+      participantId: participantId,
+      accessToken: accessToken,
+      rosterHash: rosterHash,
+      deliverySecretKey: deliverySecretKey,
+      after: after,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound1({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required List<String> selectedParticipantIds,
+    required List<int> pcztBytes,
+    required String keyPackageB64,
+    String? localStateJson,
+  }) {
+    return rust_multisig.submitMultisigSigningRound1(
+      coordinatorUrl: coordinatorUrl,
+      sessionId: sessionId,
+      signingRequestId: signingRequestId,
+      participantId: participantId,
+      accessToken: accessToken,
+      rosterHash: rosterHash,
+      selectedParticipantIds: selectedParticipantIds,
+      pcztBytes: pcztBytes,
+      keyPackageB64: keyPackageB64,
+      localStateJson: localStateJson,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound2({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String deliverySecretKey,
+    required List<String> selectedParticipantIds,
+    required List<int> pcztBytes,
+    required String keyPackageB64,
+    String? localStateJson,
+  }) {
+    return rust_multisig.submitMultisigSigningRound2(
+      coordinatorUrl: coordinatorUrl,
+      sessionId: sessionId,
+      signingRequestId: signingRequestId,
+      participantId: participantId,
+      accessToken: accessToken,
+      rosterHash: rosterHash,
+      deliverySecretKey: deliverySecretKey,
+      selectedParticipantIds: selectedParticipantIds,
+      pcztBytes: pcztBytes,
+      keyPackageB64: keyPackageB64,
+      localStateJson: localStateJson,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSignedPczt> aggregateSignedPczt({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String deliverySecretKey,
+    required List<String> selectedParticipantIds,
+    required List<int> pcztBytes,
+    required String groupPublicPackageJson,
+    String? localStateJson,
+  }) {
+    return rust_multisig.aggregateMultisigSignedPczt(
+      coordinatorUrl: coordinatorUrl,
+      sessionId: sessionId,
+      signingRequestId: signingRequestId,
+      participantId: participantId,
+      accessToken: accessToken,
+      rosterHash: rosterHash,
+      deliverySecretKey: deliverySecretKey,
+      selectedParticipantIds: selectedParticipantIds,
+      pcztBytes: pcztBytes,
+      groupPublicPackageJson: groupPublicPackageJson,
+      localStateJson: localStateJson,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningAdvance> postBroadcastResult({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required List<String> selectedParticipantIds,
+    required String pcztHash,
+    required String txid,
+    String? localStateJson,
+  }) {
+    return rust_multisig.postMultisigBroadcastResult(
+      coordinatorUrl: coordinatorUrl,
+      sessionId: sessionId,
+      signingRequestId: signingRequestId,
+      participantId: participantId,
+      accessToken: accessToken,
+      rosterHash: rosterHash,
+      selectedParticipantIds: selectedParticipantIds,
+      pcztHash: pcztHash,
+      txid: txid,
+      localStateJson: localStateJson,
     );
   }
 }

@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -10,6 +13,8 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/multisig_account_material_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_signing_request_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
@@ -454,6 +459,55 @@ void main() {
     expect(rustApi.proposeSendCalls, 0);
   });
 
+  testWidgets('multisig send opens review before creating a request', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    final requestStore = _FakeSigningRequestStore();
+    final materialStore = _FakeMultisigMaterialStore()
+      ..put(_multisigMaterial());
+    final proposalService = _FakeMultisigProposalService();
+
+    await tester.pumpWidget(
+      _sendHarness(
+        bootstrap: _multisigBootstrap,
+        spendableBalance: BigInt.from(2000000000),
+        prefill: const SendPrefillArgs(
+          id: 'multisig-send',
+          source: 'ZIP-321',
+          address: _shieldedAddress,
+          amountText: '0.5',
+          memoText: 'Family memo',
+        ),
+        overrides: [
+          multisigSigningRequestStoreProvider.overrideWithValue(requestStore),
+          multisigAccountMaterialStoreProvider.overrideWithValue(materialStore),
+          multisigSendProposalServiceProvider.overrideWithValue(
+            proposalService,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Review'));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+
+    await tester.pumpAndSettle();
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(proposalService.createCalls, isEmpty);
+    expect(proposalService.discardCalls, isEmpty);
+    expect(requestStore.records, isEmpty);
+    expect(find.text('Send review'), findsOneWidget);
+  });
+
   testWidgets('hardware TEX address explains unsupported state before amount', (
     tester,
   ) async {
@@ -498,6 +552,7 @@ Widget _sendHarness({
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
   BigInt? transparentBalance,
+  List<Override> overrides = const [],
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -506,7 +561,10 @@ Widget _sendHarness({
         path: '/send',
         builder: (_, _) => SendScreen(prefill: prefill),
       ),
-      GoRoute(path: '/send/review', builder: (_, _) => const SizedBox.shrink()),
+      GoRoute(
+        path: '/send/review',
+        builder: (_, _) => const Text('Send review'),
+      ),
     ],
   );
 
@@ -522,6 +580,7 @@ Widget _sendHarness({
       ),
       if (addressBookRepository != null)
         addressBookRepositoryProvider.overrideWithValue(addressBookRepository),
+      ...overrides,
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -609,6 +668,30 @@ final _hardwareBootstrap = AppBootstrapState(
         name: 'Keystone',
         order: 0,
         isHardware: true,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1activeaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: kZcashDefaultNetworkName,
+  rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+final _multisigBootstrap = AppBootstrapState(
+  initialLocation: '/send',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Family vault',
+        order: 0,
+        kind: AccountKind.multisig,
       ),
     ],
     activeAccountUuid: 'account-1',
@@ -728,6 +811,135 @@ class _RustApiFake implements RustLibApi {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeSigningRequestStore implements MultisigSigningRequestStore {
+  List<MultisigSigningRequestRecord> records = <MultisigSigningRequestRecord>[];
+
+  @override
+  Future<List<MultisigSigningRequestRecord>> readAll({
+    bool requireUnlockedSession = true,
+  }) async {
+    return records;
+  }
+
+  @override
+  Future<void> writeAll(List<MultisigSigningRequestRecord> records) async {
+    this.records = records;
+  }
+
+  @override
+  Future<void> clearAll() async {
+    records = <MultisigSigningRequestRecord>[];
+  }
+}
+
+class _FakeMultisigMaterialStore implements MultisigAccountMaterialStore {
+  final materials = <String, MultisigAccountMaterial>{};
+
+  void put(MultisigAccountMaterial material) {
+    materials[material.accountUuid] = material;
+  }
+
+  @override
+  Future<MultisigAccountMaterial?> read(
+    String accountUuid, {
+    bool requireUnlockedSession = true,
+  }) async {
+    return materials[accountUuid];
+  }
+
+  @override
+  Future<List<MultisigAccountMaterial>> readAll({
+    bool requireUnlockedSession = true,
+  }) async {
+    return materials.values.toList(growable: false);
+  }
+
+  @override
+  Future<void> write(MultisigAccountMaterial material) async {
+    materials[material.accountUuid] = material;
+  }
+
+  @override
+  Future<void> delete(String accountUuid) async {
+    materials.remove(accountUuid);
+  }
+}
+
+class _FakeMultisigProposalService implements MultisigSendProposalService {
+  final createCalls = <String>[];
+  final discardCalls = <String>[];
+
+  @override
+  Future<Uint8List> createPcztFromProposal({
+    required String dbPath,
+    required String network,
+    required BigInt proposalId,
+    required String sendFlowId,
+  }) async {
+    createCalls.add('$proposalId|$network|$dbPath');
+    return Uint8List.fromList([1, 2, 3]);
+  }
+
+  @override
+  Future<Uint8List> addProofsToPczt({
+    required List<int> pcztBytes,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  }) async {
+    return Uint8List.fromList(pcztBytes);
+  }
+
+  @override
+  Future<ExtractAndBroadcastPcztResult> extractAndBroadcastPczt({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required List<int> pcztWithProofsBytes,
+    required List<int> pcztWithSignaturesBytes,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  }) async {
+    return const ExtractAndBroadcastPcztResult(txid: 'txid', status: 'success');
+  }
+
+  @override
+  Future<void> discardProposal({
+    required BigInt proposalId,
+    required String sendFlowId,
+  }) async {
+    discardCalls.add('$proposalId|$sendFlowId');
+  }
+}
+
+const _multisigIdentity = MultisigParticipantIdentity(
+  admissionSecretKey: 'admission-secret',
+  admissionPublicKey: 'admission-public',
+  deliverySecretKey: 'delivery-secret',
+  deliveryPublicKey: 'delivery-public',
+);
+
+MultisigAccountMaterial _multisigMaterial() {
+  return const MultisigAccountMaterial(
+    accountUuid: 'account-1',
+    sessionId: 'session-1',
+    participantId: 'participant-1',
+    coordinatorUrl: 'https://coordinator.example',
+    rosterHash: 'roster',
+    groupPublicPackageHash: 'group',
+    threshold: 2,
+    participantCount: 3,
+    identity: _multisigIdentity,
+    keyPackageB64: 'key-package',
+    groupPublicPackageJson: '{"group":true}',
+    vaultAddress: 'uregtest1example',
+    accessToken: 'access-token',
+    refreshToken: 'refresh-token',
+    accessTokenExpiresAt: 10,
+    refreshTokenExpiresAt: 20,
+    localBackupCompletedAt: 30,
+  );
 }
 
 const _shieldedAddress =

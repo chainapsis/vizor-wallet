@@ -151,6 +151,12 @@ String friendlyProposeSendError(String raw) {
       lower.contains('send flow mismatch')) {
     return 'Transaction expired before it could be sent. Try again.';
   }
+  if (lower.contains('multisig material not found')) {
+    return 'Multisig setup material is missing for this account.';
+  }
+  if (lower.contains('confirm the local multisig backup')) {
+    return 'Confirm the local multisig backup before creating a signing request.';
+  }
   return 'Send failed. Try again.';
 }
 

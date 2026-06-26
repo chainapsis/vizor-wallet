@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -716,5 +718,152 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
   }) async {
     lockCalls.add('$sessionId|$accessToken|$threshold');
     return lockResponse;
+  }
+
+  @override
+  Future<rust_multisig.ApiPreparedMultisigSigningRequest>
+  prepareSigningRequest({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String requestSeed,
+    required List<String> selectedParticipantIds,
+    required List<int> pcztBytes,
+    required bool needsSaplingParams,
+    required String amountZatoshi,
+    required String feeZatoshi,
+    required String recipientAddress,
+    String? memo,
+  }) async {
+    return rust_multisig.ApiPreparedMultisigSigningRequest(
+      signingRequestId: 'signing-request',
+      sessionId: sessionId,
+      requesterParticipantId: participantId,
+      selectedParticipantIds: selectedParticipantIds,
+      requestJson: '{}',
+      idempotencyKey: 'idempotency',
+      pcztHash: 'pczt-hash',
+      createdAt: BigInt.one,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningRequest> submitPreparedSigningRequest({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String accessToken,
+    required String pcztHash,
+    required String requestJson,
+    required String idempotencyKey,
+  }) async {
+    return rust_multisig.ApiMultisigSigningRequest(
+      signingRequestId: 'signing-request',
+      sessionId: sessionId,
+      requesterParticipantId: 'participant-1',
+      selectedParticipantIds: const <String>['participant-1'],
+      state: 'open',
+      createdAt: BigInt.one,
+      updatedAt: BigInt.from(2),
+      pcztHash: pcztHash,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningInbox> getSigningInbox({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String deliverySecretKey,
+    required int after,
+  }) async {
+    return const rust_multisig.ApiMultisigSigningInbox(
+      cursor: 0,
+      messages: <rust_multisig.ApiMultisigSigningMessage>[],
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound1({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required List<String> selectedParticipantIds,
+    required List<int> pcztBytes,
+    required String keyPackageB64,
+    String? localStateJson,
+  }) async {
+    return const rust_multisig.ApiMultisigSigningAdvance(
+      localStateJson: '{}',
+      detail: 'submitted',
+      submitted: true,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound2({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String deliverySecretKey,
+    required List<String> selectedParticipantIds,
+    required List<int> pcztBytes,
+    required String keyPackageB64,
+    String? localStateJson,
+  }) async {
+    return const rust_multisig.ApiMultisigSigningAdvance(
+      localStateJson: '{}',
+      detail: 'submitted',
+      submitted: true,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSignedPczt> aggregateSignedPczt({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String deliverySecretKey,
+    required List<String> selectedParticipantIds,
+    required List<int> pcztBytes,
+    required String groupPublicPackageJson,
+    String? localStateJson,
+  }) async {
+    return rust_multisig.ApiMultisigSignedPczt(
+      localStateJson: '{}',
+      signedPcztBytes: Uint8List.fromList(pcztBytes),
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningAdvance> postBroadcastResult({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required List<String> selectedParticipantIds,
+    required String pcztHash,
+    required String txid,
+    String? localStateJson,
+  }) async {
+    return const rust_multisig.ApiMultisigSigningAdvance(
+      localStateJson: '{}',
+      detail: 'submitted',
+      submitted: true,
+    );
   }
 }

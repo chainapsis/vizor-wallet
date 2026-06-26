@@ -43,6 +43,7 @@ class SendReviewScreen extends ConsumerStatefulWidget {
 class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   bool _discardScheduled = false;
   bool _handoffToKeystone = false;
+  bool _handoffToMultisig = false;
   bool _keystoneProposalConsumed = false;
   bool _showSaplingParamsPrompt = false;
   bool _messageExpanded = false;
@@ -70,7 +71,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     if (promptCompleter != null && !promptCompleter.isCompleted) {
       promptCompleter.complete(false);
     }
-    if (!_handoffToKeystone) {
+    if (!_handoffToKeystone && !_handoffToMultisig) {
       _scheduleDiscard();
     }
     super.dispose();
@@ -103,6 +104,15 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   Future<void> _handleSend() async {
+    final isMultisig = ref
+        .read(accountProvider.notifier)
+        .isMultisigAccount(widget.args.proposalAccountUuid);
+    if (isMultisig) {
+      _handoffToMultisig = true;
+      await context.push('/multisig/sign/request', extra: widget.args);
+      return;
+    }
+
     final isHardware = ref
         .read(accountProvider.notifier)
         .isHardwareAccount(widget.args.proposalAccountUuid);
@@ -283,6 +293,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     final isHardware = ref
         .read(accountProvider.notifier)
         .isHardwareAccount(widget.args.proposalAccountUuid);
+    final isMultisig = ref
+        .read(accountProvider.notifier)
+        .isMultisigAccount(widget.args.proposalAccountUuid);
     final keystonePhase = _keystonePhase;
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ??
@@ -326,9 +339,13 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                 memoExpanded: _messageExpanded,
                 confirmLabel: isHardware
                     ? 'Confirm with Keystone'
+                    : isMultisig
+                    ? 'Request signatures'
                     : 'Confirm & send',
                 confirmLeadingIconName: isHardware
                     ? AppIcons.qr
+                    : isMultisig
+                    ? AppIcons.users
                     : AppIcons.plane,
                 onConfirm: () => unawaited(_handleSend()),
                 onCancel: _handleCancel,

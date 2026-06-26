@@ -35,6 +35,7 @@ const _accountMnemonicMigrationCompleteKey =
 const _votingHotkeyKeyPrefix = 'zcash_account_voting_hotkey_';
 const _multisigMaterialKeyPrefix = 'zcash_multisig_material_';
 const _multisigPendingSessionKeyPrefix = 'zcash_multisig_pending_session_';
+const _multisigSigningRequestsKeyPrefix = 'zcash_multisig_signing_requests_';
 const _e2eUseFirstUnlockMnemonicKeychain = bool.fromEnvironment(
   'ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN',
 );
@@ -431,7 +432,8 @@ class AppSecureStore {
       return;
     }
     if (key.startsWith(_multisigMaterialKeyPrefix) ||
-        key.startsWith(_multisigPendingSessionKeyPrefix)) {
+        key.startsWith(_multisigPendingSessionKeyPrefix) ||
+        key.startsWith(_multisigSigningRequestsKeyPrefix)) {
       await _secretMutationLock.run(() async {
         await _runStorageOperation(
           'delete "$key"',
@@ -663,7 +665,8 @@ class AppSecureStore {
       );
       for (final entry in multisigMaterialValues.entries) {
         if (!entry.key.startsWith(_multisigMaterialKeyPrefix) &&
-            !entry.key.startsWith(_multisigPendingSessionKeyPrefix)) {
+            !entry.key.startsWith(_multisigPendingSessionKeyPrefix) &&
+            !entry.key.startsWith(_multisigSigningRequestsKeyPrefix)) {
           continue;
         }
 

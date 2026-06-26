@@ -48,6 +48,9 @@ import 'src/features/onboarding/storage_unavailable_screen.dart';
 import 'src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
+import 'src/features/multisig/screens/multisig_signing_detail_screen.dart';
+import 'src/features/multisig/screens/multisig_signing_home_screen.dart';
+import 'src/features/multisig/screens/multisig_signing_request_screen.dart';
 import 'src/features/multisig/screens/multisig_sessions_screen.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/send/models/send_prefill_args.dart';
@@ -717,7 +720,34 @@ List<RouteBase> _desktopRoutes() => [
   ),
   GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
   GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
-  GoRoute(path: '/multisig', builder: (_, _) => const MultisigSessionsScreen()),
+  GoRoute(
+    path: '/multisig',
+    builder: (_, _) => const MultisigSigningHomeScreen(),
+  ),
+  GoRoute(
+    path: '/multisig/setup',
+    builder: (_, _) => const MultisigSessionsScreen(),
+  ),
+  GoRoute(
+    path: '/multisig/sign/request',
+    builder: (_, state) {
+      final args = state.extra;
+      if (args is! SendReviewArgs) return const SendScreen();
+      return MultisigSigningRequestScreen(args: args);
+    },
+  ),
+  GoRoute(
+    path: '/multisig/sign/:signingRequestId',
+    builder: (_, state) {
+      final signingRequestId = state.pathParameters['signingRequestId'];
+      if (signingRequestId == null || signingRequestId.isEmpty) {
+        return const MultisigSigningHomeScreen();
+      }
+      return MultisigSigningDetailScreen(
+        signingRequestId: Uri.decodeComponent(signingRequestId),
+      );
+    },
+  ),
   GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
   GoRoute(
     path: '/settings/secret-passphrase',

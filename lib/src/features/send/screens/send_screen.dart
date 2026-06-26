@@ -683,13 +683,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         });
         return;
       }
-      if (ref.read(accountProvider.notifier).isMultisigAccount(accountUuid)) {
-        setState(() {
-          _error = multisigSigningUnsupportedText;
-          _isSending = false;
-        });
-        return;
-      }
       final reviewArgs = await proposeSendTransfer(
         ref: ref,
         loadDbPath: ref.read(sendWalletDbPathProvider),

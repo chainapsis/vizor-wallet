@@ -104,12 +104,37 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiMultisigSession dco_decode_api_multisig_session(dynamic raw);
 
   @protected
+  ApiMultisigSignedPczt dco_decode_api_multisig_signed_pczt(dynamic raw);
+
+  @protected
+  ApiMultisigSigningAdvance dco_decode_api_multisig_signing_advance(
+    dynamic raw,
+  );
+
+  @protected
+  ApiMultisigSigningInbox dco_decode_api_multisig_signing_inbox(dynamic raw);
+
+  @protected
+  ApiMultisigSigningMessage dco_decode_api_multisig_signing_message(
+    dynamic raw,
+  );
+
+  @protected
+  ApiMultisigSigningRequest dco_decode_api_multisig_signing_request(
+    dynamic raw,
+  );
+
+  @protected
   ApiMultisigThresholdParams dco_decode_api_multisig_threshold_params(
     dynamic raw,
   );
 
   @protected
   ApiMultisigTokens dco_decode_api_multisig_tokens(dynamic raw);
+
+  @protected
+  ApiPreparedMultisigSigningRequest
+  dco_decode_api_prepared_multisig_signing_request(dynamic raw);
 
   @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
@@ -258,6 +283,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ApiMultisigParticipant> dco_decode_list_api_multisig_participant(
+    dynamic raw,
+  );
+
+  @protected
+  List<ApiMultisigSigningMessage> dco_decode_list_api_multisig_signing_message(
     dynamic raw,
   );
 
@@ -678,12 +708,43 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiMultisigSignedPczt sse_decode_api_multisig_signed_pczt(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiMultisigSigningAdvance sse_decode_api_multisig_signing_advance(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiMultisigSigningInbox sse_decode_api_multisig_signing_inbox(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiMultisigSigningMessage sse_decode_api_multisig_signing_message(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiMultisigSigningRequest sse_decode_api_multisig_signing_request(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiMultisigThresholdParams sse_decode_api_multisig_threshold_params(
     SseDeserializer deserializer,
   );
 
   @protected
   ApiMultisigTokens sse_decode_api_multisig_tokens(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiPreparedMultisigSigningRequest
+  sse_decode_api_prepared_multisig_signing_request(
     SseDeserializer deserializer,
   );
 
@@ -874,6 +935,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ApiMultisigParticipant> sse_decode_list_api_multisig_participant(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ApiMultisigSigningMessage> sse_decode_list_api_multisig_signing_message(
     SseDeserializer deserializer,
   );
 
@@ -1385,6 +1451,36 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_multisig_signed_pczt(
+    ApiMultisigSignedPczt self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_multisig_signing_advance(
+    ApiMultisigSigningAdvance self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_multisig_signing_inbox(
+    ApiMultisigSigningInbox self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_multisig_signing_message(
+    ApiMultisigSigningMessage self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_multisig_signing_request(
+    ApiMultisigSigningRequest self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_multisig_threshold_params(
     ApiMultisigThresholdParams self,
     SseSerializer serializer,
@@ -1393,6 +1489,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_multisig_tokens(
     ApiMultisigTokens self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_prepared_multisig_signing_request(
+    ApiPreparedMultisigSigningRequest self,
     SseSerializer serializer,
   );
 
@@ -1621,6 +1723,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_api_multisig_participant(
     List<ApiMultisigParticipant> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_multisig_signing_message(
+    List<ApiMultisigSigningMessage> self,
     SseSerializer serializer,
   );
 
