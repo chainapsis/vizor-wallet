@@ -103,6 +103,7 @@ set(VELOPACK_LIBC_IMPLIB "${VELOPACK_LIBC_ROOT}/lib/velopack_libc_win_x64_msvc.d
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "advapi32.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "secur32.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "bcrypt.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "crypt32.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")

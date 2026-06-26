@@ -4,6 +4,8 @@
 #include <shellapi.h>
 #include <windows.h>
 #include <lmcons.h>
+#define SECURITY_WIN32
+#include <security.h>
 
 #include <optional>
 #include <string>
@@ -37,18 +39,31 @@ std::wstring StringArg(const flutter::EncodableValue* arguments,
 void VerifyDeviceOwner(
     std::wstring password,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-  wchar_t username[UNLEN + 1];
-  DWORD username_length = UNLEN + 1;
-  if (!::GetUserNameW(username, &username_length)) {
+  // Resolve the SAM-compatible name (domain + separator + user) so the check
+  // works for domain-joined accounts, not just a same-named local SAM account.
+  // A local account yields COMPUTERNAME\user, which LogonUser validates against
+  // the local DB exactly as L"." did; a domain account yields the real logon
+  // domain so DOMAIN\user can authenticate.
+  wchar_t qualified[UNLEN + DNLEN + 2];
+  ULONG qualified_length = ARRAYSIZE(qualified);
+  if (!::GetUserNameExW(NameSamCompatible, qualified, &qualified_length)) {
     result->Error("failed", "Could not resolve the current Windows user.");
     return;
   }
 
+  std::wstring qualified_name(qualified);
+  std::wstring domain = L".";
+  std::wstring username = qualified_name;
+  if (const size_t separator = qualified_name.find(L'\\');
+      separator != std::wstring::npos) {
+    domain = qualified_name.substr(0, separator);
+    username = qualified_name.substr(separator + 1);
+  }
+
   HANDLE token = nullptr;
-  // L"." validates against the local account database only.
-  const BOOL ok =
-      ::LogonUserW(username, L".", password.c_str(), LOGON32_LOGON_NETWORK,
-                   LOGON32_PROVIDER_DEFAULT, &token);
+  const BOOL ok = ::LogonUserW(username.c_str(), domain.c_str(),
+                               password.c_str(), LOGON32_LOGON_NETWORK,
+                               LOGON32_PROVIDER_DEFAULT, &token);
   const DWORD error = ok ? ERROR_SUCCESS : ::GetLastError();
   if (token != nullptr) {
     ::CloseHandle(token);
