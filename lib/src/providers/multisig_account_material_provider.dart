@@ -86,6 +86,7 @@ class MultisigAccountMaterial {
   final List<String> localBackupDestinations;
 
   MultisigAccountMaterial copyWith({
+    MultisigParticipantIdentity? identity,
     String? accessToken,
     String? refreshToken,
     int? accessTokenExpiresAt,
@@ -104,7 +105,7 @@ class MultisigAccountMaterial {
       groupPublicPackageHash: groupPublicPackageHash,
       threshold: threshold,
       participantCount: participantCount,
-      identity: identity,
+      identity: identity ?? this.identity,
       keyPackageB64: keyPackageB64,
       groupPublicPackageJson: groupPublicPackageJson,
       vaultAddress: vaultAddress,

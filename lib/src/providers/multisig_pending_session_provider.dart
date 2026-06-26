@@ -1,15 +1,24 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/storage/app_secure_store.dart';
 import '../rust/api/multisig.dart' as rust_multisig;
+import 'app_security_provider.dart';
 import 'multisig_account_material_provider.dart';
+import 'multisig_coordinator_service.dart';
 
 const kDefaultMultisigCoordinatorUrl = String.fromEnvironment(
   'ZCASH_MULTISIG_COORDINATOR_URL',
   defaultValue: 'http://127.0.0.1:3001',
 );
+
+const _accessTokenRefreshSkewSeconds = 30;
+
+typedef MultisigNow = DateTime Function();
+
+final multisigNowProvider = Provider<MultisigNow>((ref) => DateTime.now);
 
 enum MultisigPendingRole {
   creator,
@@ -266,6 +275,36 @@ class MultisigPendingSession {
     );
   }
 
+  MultisigPendingSession applyAuthSession(
+    rust_multisig.ApiMultisigAuthSession value,
+  ) {
+    final participant = MultisigPendingParticipant.fromApi(value.participant);
+    final nextParticipants = [...participants];
+    final participantIndex = nextParticipants.indexWhere(
+      (entry) => entry.participantId == participant.participantId,
+    );
+    if (participantIndex >= 0) {
+      nextParticipants[participantIndex] = participant;
+    } else {
+      nextParticipants.add(participant);
+    }
+    return copyWith(
+      state: value.state,
+      accessToken: value.accessToken,
+      refreshToken: value.refreshToken,
+      identity: MultisigParticipantIdentity(
+        admissionSecretKey: value.admissionSecretKey,
+        admissionPublicKey: value.admissionPublicKey,
+        deliverySecretKey: value.deliverySecretKey,
+        deliveryPublicKey: value.deliveryPublicKey,
+      ),
+      accessTokenExpiresAt: value.accessTokenExpiresAt.toInt(),
+      refreshTokenExpiresAt: value.refreshTokenExpiresAt.toInt(),
+      participants: nextParticipants,
+      updatedLocallyAt: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
   Map<String, Object?> toJson() => {
     'sessionId': sessionId,
     'participantId': participantId,
@@ -482,6 +521,341 @@ final multisigPendingSessionStoreProvider =
     Provider<MultisigPendingSessionStore>(
       (ref) => MultisigPendingSessionStore(AppSecureStore.instance),
     );
+
+class MultisigPendingSessionsNotifier
+    extends AsyncNotifier<List<MultisigPendingSession>> {
+  MultisigPendingSessionStore get _store =>
+      ref.read(multisigPendingSessionStoreProvider);
+
+  MultisigAccountMaterialStore get _materialStore =>
+      ref.read(multisigAccountMaterialStoreProvider);
+
+  MultisigCoordinatorService get _coordinator =>
+      ref.read(multisigCoordinatorServiceProvider);
+
+  @override
+  FutureOr<List<MultisigPendingSession>> build() {
+    final security = ref.watch(appSecurityProvider);
+    if (security.requiresUnlock) return const <MultisigPendingSession>[];
+    return _load();
+  }
+
+  Future<MultisigPendingSession> createSession({
+    String coordinatorUrl = kDefaultMultisigCoordinatorUrl,
+    String? label,
+  }) async {
+    final cleanUrl = _cleanRequired(coordinatorUrl, 'coordinator URL');
+    final cleanLabel = _cleanOptional(label);
+    final identity = _coordinator.generateParticipantIdentity();
+    final auth = await _coordinator.createSession(
+      coordinatorUrl: cleanUrl,
+      identity: identity,
+      label: cleanLabel,
+    );
+    final pending = MultisigPendingSession.fromAuth(
+      auth: auth,
+      role: MultisigPendingRole.creator,
+      coordinatorUrl: cleanUrl,
+      label: cleanLabel,
+    );
+    await upsert(pending);
+    return pending;
+  }
+
+  Future<MultisigPendingSession> joinSession({
+    required String sessionId,
+    String coordinatorUrl = kDefaultMultisigCoordinatorUrl,
+    String? label,
+  }) async {
+    final cleanUrl = _cleanRequired(coordinatorUrl, 'coordinator URL');
+    final cleanSessionId = _cleanRequired(sessionId, 'session ID');
+    final cleanLabel = _cleanOptional(label);
+    final identity = _coordinator.generateParticipantIdentity();
+    final auth = await _coordinator.joinSession(
+      coordinatorUrl: cleanUrl,
+      sessionId: cleanSessionId,
+      identity: identity,
+      label: cleanLabel,
+    );
+    _validateSessionOwner(
+      expectedSessionId: cleanSessionId,
+      returnedSessionId: auth.sessionId,
+    );
+    final pending = MultisigPendingSession.fromAuth(
+      auth: auth,
+      role: MultisigPendingRole.participant,
+      coordinatorUrl: cleanUrl,
+      label: cleanLabel,
+    );
+    await upsert(pending);
+    return pending;
+  }
+
+  Future<MultisigPendingSession> refreshSession(String storageId) async {
+    final pending = await _sessionWithFreshAccess(
+      await _requireSession(storageId),
+    );
+    final session = await _coordinator.getSession(
+      coordinatorUrl: pending.coordinatorUrl,
+      sessionId: pending.sessionId,
+      accessToken: pending.accessToken,
+    );
+    _validateSessionOwner(
+      expectedSessionId: pending.sessionId,
+      returnedSessionId: session.sessionId,
+    );
+    final updated = pending.applySession(session);
+    await upsert(updated);
+    return updated;
+  }
+
+  Future<MultisigPendingSession> refreshAuth(String storageId) {
+    return _sessionWithFreshAccess(_requireSession(storageId), force: true);
+  }
+
+  Future<MultisigPendingSession> resumeParticipant(String storageId) async {
+    final stored = await _requireSession(storageId);
+    final auth = await _coordinator.resumeParticipant(
+      coordinatorUrl: stored.coordinatorUrl,
+      sessionId: stored.sessionId,
+      admissionSecretKey: stored.identity.admissionSecretKey,
+      deliverySecretKey: stored.identity.deliverySecretKey,
+    );
+    _validateAuthOwner(
+      expectedSessionId: stored.sessionId,
+      expectedParticipantId: stored.participantId,
+      returnedSessionId: auth.sessionId,
+      returnedParticipantId: auth.participantId,
+    );
+    final updated = stored.applyAuthSession(auth);
+    await upsert(updated);
+    return updated;
+  }
+
+  Future<MultisigPendingSession> lockSession({
+    required String storageId,
+    required int threshold,
+  }) async {
+    if (threshold <= 0) {
+      throw ArgumentError.value(threshold, 'threshold', 'must be positive');
+    }
+    final pending = await _sessionWithFreshAccess(
+      await _requireSession(storageId),
+    );
+    final session = await _coordinator.lockSession(
+      coordinatorUrl: pending.coordinatorUrl,
+      sessionId: pending.sessionId,
+      accessToken: pending.accessToken,
+      threshold: threshold,
+    );
+    _validateSessionOwner(
+      expectedSessionId: pending.sessionId,
+      returnedSessionId: session.sessionId,
+    );
+    final updated = pending.applySession(session);
+    await upsert(updated);
+    return updated;
+  }
+
+  Future<void> upsert(MultisigPendingSession session) async {
+    final sessions = [...await _currentSessions()];
+    final index = sessions.indexWhere(
+      (entry) => entry.storageId == session.storageId,
+    );
+    if (index >= 0) {
+      sessions[index] = session;
+    } else {
+      sessions.add(session);
+    }
+    _sortSessions(sessions);
+    await _store.write(session);
+    state = AsyncData(sessions);
+  }
+
+  Future<void> delete(String storageId) async {
+    final sessions = [...await _currentSessions()];
+    final target = _findSession(sessions, storageId);
+    if (target == null) return;
+    await _store.delete(target);
+    sessions.removeWhere((entry) => entry.storageId == target.storageId);
+    state = AsyncData(sessions);
+  }
+
+  Future<void> clearAll() async {
+    final sessions = await _currentSessions();
+    for (final session in sessions) {
+      await _store.delete(session);
+    }
+    state = const AsyncData(<MultisigPendingSession>[]);
+  }
+
+  Future<MultisigPendingSession> _sessionWithFreshAccess(
+    FutureOr<MultisigPendingSession> pendingFuture, {
+    bool force = false,
+  }) async {
+    final pending = await pendingFuture;
+    if (!force && _hasFreshAccess(pending)) return pending;
+
+    final update = await _coordinator.refreshOrResumeAuth(
+      coordinatorUrl: pending.coordinatorUrl,
+      sessionId: pending.sessionId,
+      participantId: pending.participantId,
+      refreshToken: pending.refreshToken,
+      admissionSecretKey: pending.identity.admissionSecretKey,
+      deliverySecretKey: pending.identity.deliverySecretKey,
+    );
+    _validateAuthOwner(
+      expectedSessionId: pending.sessionId,
+      expectedParticipantId: pending.participantId,
+      returnedSessionId: update.sessionId,
+      returnedParticipantId: update.participantId,
+    );
+
+    final refreshed = pending.applyAuthUpdate(update);
+    await upsert(refreshed);
+    await _applyAuthUpdateToAccountMaterials(update);
+    return refreshed;
+  }
+
+  Future<void> _applyAuthUpdateToAccountMaterials(
+    rust_multisig.ApiMultisigAuthUpdate update,
+  ) async {
+    final materials = await _materialStore.readAll();
+    for (final material in materials) {
+      if (material.sessionId != update.sessionId ||
+          material.participantId != update.participantId) {
+        continue;
+      }
+      await _materialStore.write(
+        material.copyWith(
+          identity: MultisigParticipantIdentity(
+            admissionSecretKey: material.identity.admissionSecretKey,
+            admissionPublicKey: update.admissionPublicKey,
+            deliverySecretKey: update.deliverySecretKey,
+            deliveryPublicKey: update.deliveryPublicKey,
+          ),
+          accessToken: update.accessToken,
+          refreshToken: update.refreshToken,
+          accessTokenExpiresAt: update.accessTokenExpiresAt.toInt(),
+          refreshTokenExpiresAt: update.refreshTokenExpiresAt.toInt(),
+        ),
+      );
+    }
+  }
+
+  bool _hasFreshAccess(MultisigPendingSession session) {
+    final nowSeconds =
+        ref.read(multisigNowProvider)().millisecondsSinceEpoch ~/ 1000;
+    return session.accessTokenExpiresAt >
+        nowSeconds + _accessTokenRefreshSkewSeconds;
+  }
+
+  Future<MultisigPendingSession> _requireSession(String storageId) async {
+    final session = _findSession(await _currentSessions(), storageId);
+    if (session == null) {
+      throw StateError('Multisig pending session not found.');
+    }
+    return session;
+  }
+
+  Future<List<MultisigPendingSession>> _currentSessions() async {
+    final current = state.value;
+    if (current != null) return current;
+    return _load();
+  }
+
+  Future<List<MultisigPendingSession>> _load() async {
+    final sessions = [...await _store.readAll()];
+    _sortSessions(sessions);
+    return sessions;
+  }
+}
+
+final multisigPendingSessionsProvider =
+    AsyncNotifierProvider<
+      MultisigPendingSessionsNotifier,
+      List<MultisigPendingSession>
+    >(MultisigPendingSessionsNotifier.new);
+
+MultisigPendingSession? latestPendingMultisigSession(
+  List<MultisigPendingSession> sessions,
+) {
+  for (final session in sessions) {
+    if (session.isPending) return session;
+  }
+  return null;
+}
+
+MultisigPendingSession? multisigSessionByStorageId(
+  List<MultisigPendingSession> sessions,
+  String storageId,
+) {
+  for (final session in sessions) {
+    if (session.storageId == storageId) return session;
+  }
+  return null;
+}
+
+MultisigPendingSession? multisigSessionById(
+  List<MultisigPendingSession> sessions,
+  String sessionId,
+) {
+  for (final session in sessions) {
+    if (session.sessionId == sessionId) return session;
+  }
+  return null;
+}
+
+bool multisigSessionNeedsLocalSetup(MultisigPendingSession session) {
+  return session.state != 'failed';
+}
+
+MultisigPendingSession? _findSession(
+  List<MultisigPendingSession> sessions,
+  String storageIdOrSessionId,
+) {
+  return multisigSessionByStorageId(sessions, storageIdOrSessionId) ??
+      multisigSessionById(sessions, storageIdOrSessionId);
+}
+
+void _sortSessions(List<MultisigPendingSession> sessions) {
+  sessions.sort((a, b) => b.updatedLocallyAt.compareTo(a.updatedLocallyAt));
+}
+
+String _cleanRequired(String value, String label) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) throw FormatException('Missing multisig $label.');
+  return trimmed;
+}
+
+String? _cleanOptional(String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  return trimmed;
+}
+
+void _validateAuthOwner({
+  required String expectedSessionId,
+  required String expectedParticipantId,
+  required String returnedSessionId,
+  required String returnedParticipantId,
+}) {
+  if (returnedSessionId != expectedSessionId ||
+      returnedParticipantId != expectedParticipantId) {
+    throw StateError('Multisig auth response belongs to a different session.');
+  }
+}
+
+void _validateSessionOwner({
+  required String expectedSessionId,
+  required String returnedSessionId,
+}) {
+  if (returnedSessionId != expectedSessionId) {
+    throw StateError(
+      'Multisig session response belongs to a different session.',
+    );
+  }
+}
 
 MultisigParticipantIdentity _readIdentity(Object? value) {
   if (value is! Map) {
