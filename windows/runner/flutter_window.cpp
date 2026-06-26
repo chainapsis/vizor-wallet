@@ -54,6 +54,9 @@ void VerifyDeviceOwner(
     ::CloseHandle(token);
   }
   if (!password.empty()) {
+    // Best-effort: scrubs only this by-value copy. The inbound EncodableMap
+    // string and any UTF-8->UTF-16 conversion temporary are not scrubbed
+    // (defense-in-depth limitation, not a threat-model gap).
     ::SecureZeroMemory(password.data(), password.size() * sizeof(wchar_t));
   }
 

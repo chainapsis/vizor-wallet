@@ -213,6 +213,8 @@ final class DeviceOwnerAuthHandler {
     switch call.method {
     case "verify":
       let args = call.arguments as? [String: Any]
+      // Fallback mirrors the Dart canonical `kWalletResetDeviceAuthReason`; the
+      // Dart side always sends `reason`, so this default is defensive only.
       let reason = (args?["reason"] as? String) ?? "Confirm reset Vizor"
       verify(reason: reason, result: result)
     default:
@@ -238,6 +240,8 @@ final class DeviceOwnerAuthHandler {
       .devicePasscode,
       &accessControlError
     ) else {
+      // Consume the +1-retained CFError so the failure path doesn't leak it.
+      _ = accessControlError?.takeRetainedValue()
       result(FlutterError(
         code: "unavailable",
         message: "Device passcode is not configured.",

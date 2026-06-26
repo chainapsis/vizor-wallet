@@ -29,6 +29,8 @@ class DeviceOwnerAuthHandler(private val activity: FragmentActivity) {
 
     fun handle(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
+            // Fallback mirrors the Dart canonical kWalletResetDeviceAuthReason;
+            // the Dart side always sends "reason", so this default is defensive only.
             "verify" -> verify(
                 call.argument<String>("reason") ?: "Confirm reset Vizor",
                 result
