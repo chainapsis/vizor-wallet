@@ -393,9 +393,12 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     final syncNotifier = ref.read(syncProvider.notifier);
     try {
       if (isLastAccount) {
-        await runWithSyncPausedForAccountMutation(ref, () async {
+        // runWithSyncPausedForWalletReset clears the cached DB path in its
+        // finally (so a reset that throws after deleting the DB can't strand a
+        // stale path) and applies the WalletResetException.dbDeleted resume
+        // guard. The escrow drop stays on the success path.
+        await runWithSyncPausedForWalletReset(ref, () async {
           await accountNotifier.resetWallet();
-          syncNotifier.clearCachedWalletDbPath();
           try {
             await ref.read(biometricUnlockProvider.notifier).disable();
           } catch (e, st) {
@@ -403,7 +406,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
               'MobileAccounts: biometric cleanup after reset failed: $e\n$st',
             );
           }
-        }, resumeAfterMutation: false);
+        });
         if (!mounted) return;
         router.go('/welcome');
       } else {

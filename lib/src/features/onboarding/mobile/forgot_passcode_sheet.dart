@@ -202,9 +202,16 @@ Future<bool> resetWalletForForgottenPasscode(WidgetRef ref) async {
 
   final syncNotifier = ref.read(syncProvider.notifier);
   await syncNotifier.clearSensitiveStateForLock();
-  await ref.read(accountProvider.notifier).resetWallet();
-  syncNotifier.clearCachedWalletDbPath();
-  // The escrowed passcode belongs to the wiped wallet — drop it.
+  try {
+    await ref.read(accountProvider.notifier).resetWallet();
+  } finally {
+    // Always drop the cached DB path so the next sync re-resolves the freshly
+    // generated name, even if the reset threw after deleting the DB.
+    syncNotifier.clearCachedWalletDbPath();
+  }
+  // The escrowed passcode belongs to the wiped wallet - drop it. Runs only on a
+  // successful wipe: a failed reset leaves the wallet (and its escrow) intact,
+  // and that escrow is a forgetful user's only remaining way back in.
   await ref.read(biometricUnlockProvider.notifier).disable();
   return true;
 }
