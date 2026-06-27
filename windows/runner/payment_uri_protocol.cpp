@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <shellapi.h>
+#include <shlobj.h>
 
 #include <algorithm>
 #include <cwctype>
@@ -81,7 +82,7 @@ std::wstring ReadDefaultCommand() {
 }
 
 void NotifyAssociationChanged() {
-  ::ShellChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+  ::SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 }
 
 }  // namespace
