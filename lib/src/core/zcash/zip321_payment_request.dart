@@ -165,6 +165,7 @@ const _recognizedParamNames = {
   'memo',
   'req-asset',
 };
+const _maxMemoBase64UrlLength = 684; // ceil(512 / 3) * 4
 
 class Zip321Payment {
   const Zip321Payment({
@@ -262,6 +263,9 @@ void _validateBase64Url(String value, String label) {
 
 ({String? text, bool isBinary}) _parseMemo(String value) {
   _validateBase64Url(value, 'memo');
+  if (value.length > _maxMemoBase64UrlLength) {
+    throw const Zip321ParseException('ZIP-321 memo exceeds 512 bytes.');
+  }
   final bytes = _decodeBase64UrlBytes(value, 'memo');
   if (bytes.length > 512) {
     throw const Zip321ParseException('ZIP-321 memo exceeds 512 bytes.');

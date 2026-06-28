@@ -68,4 +68,21 @@ void main() {
       ),
     );
   });
+
+  test('rejects oversized memo before base64 decoding', () {
+    final oversizedMemo = 'A' * 685;
+
+    expect(
+      () => Zip321PaymentRequest.parse(
+        'zcash:ztestsapling10yy2ex5dcqkclhc7z7yrnjq2z6feyjad56ptwlfgmy77dmaqqrl9gyhprdx59qgmsnyfska2kez?memo=$oversizedMemo',
+      ),
+      throwsA(
+        isA<Zip321ParseException>().having(
+          (e) => e.message,
+          'message',
+          'ZIP-321 memo exceeds 512 bytes.',
+        ),
+      ),
+    );
+  });
 }
