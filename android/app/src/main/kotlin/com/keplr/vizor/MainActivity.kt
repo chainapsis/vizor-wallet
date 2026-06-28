@@ -147,6 +147,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     private fun capturePaymentUri(intent: Intent?) {
         if (intent == null || intent.action != Intent.ACTION_VIEW) return
+        if ((intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return
         val data = intent.data ?: return
         if (!"zcash".equals(data.scheme, ignoreCase = true)) return
         pendingPaymentUris.add(intent.dataString ?: data.toString())
