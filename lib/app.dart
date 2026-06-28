@@ -938,14 +938,9 @@ class _PaymentUriLinkListenerState
       throw Zip321ParseException(request.unsupportedReason!);
     }
     final payment = request.primaryPayment;
-    return SendPrefillArgs(
+    return sendPrefillArgsFromZip321Payment(
       id: 'payment-uri-${++_paymentSequence}',
-      source: 'zcash-uri',
-      address: payment.address,
-      amountText: payment.amount,
-      memoText: payment.memoText,
-      label: payment.label,
-      message: payment.message,
+      payment: payment,
     );
   }
 
@@ -992,6 +987,14 @@ class _PaymentUriLinkListenerState
     // too would clobber it. Defer and let the unlock screen claim it.
     if (widget.router.state.matchedLocation == '/unlock') return;
 
+    if (paymentUriBlockedAtLocation(widget.router.state.matchedLocation)) {
+      ref.read(paymentUriPrefillProvider.notifier).clear();
+      _showPaymentUriMessage(
+        'Finish or cancel your current send before opening another payment link.',
+      );
+      return;
+    }
+
     ref.read(paymentUriPrefillProvider.notifier).clear();
     widget.router.go('/send', extra: prefill);
   }
@@ -1007,6 +1010,10 @@ class _PaymentUriLinkListenerState
       );
     });
   }
+}
+
+bool paymentUriBlockedAtLocation(String matchedLocation) {
+  return matchedLocation == '/send' || matchedLocation.startsWith('/send/');
 }
 
 class _WindowsUpdateStartupCheck extends ConsumerStatefulWidget {
