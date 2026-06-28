@@ -14,6 +14,8 @@ namespace {
 constexpr wchar_t kProtocolKeyPath[] = L"Software\\Classes\\zcash";
 constexpr wchar_t kProtocolCommandKeyPath[] =
     L"Software\\Classes\\zcash\\shell\\open\\command";
+constexpr wchar_t kEffectiveProtocolCommandKeyPath[] =
+    L"zcash\\shell\\open\\command";
 
 struct RegistryKey {
   HKEY value = nullptr;
@@ -63,15 +65,16 @@ void SetStringValue(HKEY key, const wchar_t* name, const std::wstring& value) {
 std::wstring ReadDefaultCommand() {
   DWORD type = 0;
   DWORD size = 0;
-  if (::RegGetValueW(HKEY_CURRENT_USER, kProtocolCommandKeyPath, nullptr,
-                     RRF_RT_REG_SZ, &type, nullptr, &size) != ERROR_SUCCESS ||
+  if (::RegGetValueW(HKEY_CLASSES_ROOT, kEffectiveProtocolCommandKeyPath,
+                     nullptr, RRF_RT_REG_SZ, &type, nullptr, &size) !=
+          ERROR_SUCCESS ||
       size == 0) {
     return L"";
   }
 
   std::wstring value(size / sizeof(wchar_t), L'\0');
-  if (::RegGetValueW(HKEY_CURRENT_USER, kProtocolCommandKeyPath, nullptr,
-                     RRF_RT_REG_SZ, &type, value.data(), &size) !=
+  if (::RegGetValueW(HKEY_CLASSES_ROOT, kEffectiveProtocolCommandKeyPath,
+                     nullptr, RRF_RT_REG_SZ, &type, value.data(), &size) !=
       ERROR_SUCCESS) {
     return L"";
   }

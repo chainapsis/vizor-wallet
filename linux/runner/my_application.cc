@@ -12,6 +12,7 @@
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  GtkWindow* main_window;
   FlMethodChannel* payment_uri_channel;
   GPtrArray* pending_payment_uris;
   gboolean payment_uri_dart_ready;
@@ -104,7 +105,7 @@ static void register_payment_uri_channel(MyApplication* self, FlView* view) {
       FL_METHOD_CODEC(codec));
   fl_method_channel_set_method_call_handler(self->payment_uri_channel,
                                             payment_uri_method_call_cb,
-                                            g_object_ref(self), g_object_unref);
+                                            self, nullptr);
 }
 
 // Implements GApplication::activate.
@@ -113,9 +114,17 @@ static void my_application_activate(GApplication* application) {
   register_icon_theme_paths();
   gtk_window_set_default_icon_name(APP_ICON_NAME);
 
+  if (self->main_window != nullptr) {
+    gtk_window_present(self->main_window);
+    return;
+  }
+
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
   gtk_window_set_icon_name(window, APP_ICON_NAME);
+  self->main_window = window;
+  g_object_add_weak_pointer(G_OBJECT(window),
+                            reinterpret_cast<gpointer*>(&self->main_window));
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu
@@ -171,6 +180,19 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
+// Implements GApplication::open. Reached only on the primary instance, when a
+// later process forwards zcash: links over D-Bus.
+static void my_application_open(GApplication* application, GFile** files,
+                                gint n_files, const gchar* /*hint*/) {
+  MyApplication* self = MY_APPLICATION(application);
+  for (gint i = 0; i < n_files; ++i) {
+    g_autofree gchar* uri = g_file_get_uri(files[i]);
+    add_pending_payment_uri(self, uri);
+  }
+  flush_pending_payment_uris(self);
+  g_application_activate(application);
+}
+
 // Implements GApplication::local_command_line.
 static gboolean my_application_local_command_line(GApplication* application,
                                                   gchar*** arguments,
@@ -179,10 +201,6 @@ static gboolean my_application_local_command_line(GApplication* application,
   // Strip out the first argument as it is the binary name.
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   self->dart_entrypoint_arguments = g_strdupv(*arguments + 1);
-  for (gchar** argument = self->dart_entrypoint_arguments;
-       argument != nullptr && *argument != nullptr; ++argument) {
-    add_pending_payment_uri(self, *argument);
-  }
 
   g_autoptr(GError) error = nullptr;
   if (!g_application_register(application, nullptr, &error)) {
@@ -191,6 +209,28 @@ static gboolean my_application_local_command_line(GApplication* application,
     return TRUE;
   }
 
+  if (g_application_get_is_remote(application)) {
+    g_autoptr(GPtrArray) files = g_ptr_array_new_with_free_func(g_object_unref);
+    for (gchar** argument = self->dart_entrypoint_arguments;
+         argument != nullptr && *argument != nullptr; ++argument) {
+      if (is_zcash_uri(*argument)) {
+        g_ptr_array_add(files, g_file_new_for_uri(*argument));
+      }
+    }
+    if (files->len > 0) {
+      g_application_open(application, reinterpret_cast<GFile**>(files->pdata),
+                         static_cast<gint>(files->len), "");
+    } else {
+      g_application_activate(application);
+    }
+    *exit_status = 0;
+    return TRUE;
+  }
+
+  for (gchar** argument = self->dart_entrypoint_arguments;
+       argument != nullptr && *argument != nullptr; ++argument) {
+    add_pending_payment_uri(self, *argument);
+  }
   g_application_activate(application);
   *exit_status = 0;
 
@@ -226,6 +266,7 @@ static void my_application_dispose(GObject* object) {
 
 static void my_application_class_init(MyApplicationClass* klass) {
   G_APPLICATION_CLASS(klass)->activate = my_application_activate;
+  G_APPLICATION_CLASS(klass)->open = my_application_open;
   G_APPLICATION_CLASS(klass)->local_command_line =
       my_application_local_command_line;
   G_APPLICATION_CLASS(klass)->startup = my_application_startup;
@@ -234,6 +275,7 @@ static void my_application_class_init(MyApplicationClass* klass) {
 }
 
 static void my_application_init(MyApplication* self) {
+  self->main_window = nullptr;
   self->pending_payment_uris = g_ptr_array_new_with_free_func(g_free);
   self->payment_uri_dart_ready = FALSE;
 }
@@ -247,5 +289,5 @@ MyApplication* my_application_new() {
 
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID, "flags",
-                                     G_APPLICATION_NON_UNIQUE, nullptr));
+                                     G_APPLICATION_HANDLES_OPEN, nullptr));
 }
