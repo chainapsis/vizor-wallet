@@ -414,11 +414,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     _addressFocus.addListener(_handleAddressFocusChanged);
     _amountFocus.addListener(_handleAmountFocusChanged);
     final initial = widget.initialRecipient;
+    var hasInitialAddressType = false;
     if (initial != null && initial.trim().isNotEmpty) {
       _addressController.text = initial.trim();
       final initialAddressType = widget.initialAddressType?.trim();
       if (initialAddressType != null && initialAddressType.isNotEmpty) {
         _addressType = initialAddressType;
+        hasInitialAddressType = true;
       } else {
         unawaited(_validateAddress());
       }
@@ -438,7 +440,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       // step; if the prefilled address validates as invalid, bounce back to the
       // recipient step instead of letting the user continue past the error.
       _amountJumpPendingAddressCheck =
-          !widget.initialReview && widget.initialRecipient != null;
+          !widget.initialReview &&
+          widget.initialRecipient != null &&
+          !hasInitialAddressType;
       _amountText = widget.initialAmount?.trim() ?? '';
       _amountInputMode = widget.initialAmountInputMode;
       _fiatAmountText = widget.initialFiatAmount?.trim() ?? '';
@@ -1115,6 +1119,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   bool get _amountReady =>
       !_isResolvingMax &&
+      _hasValidAddress &&
+      !_amountJumpPendingAddressCheck &&
       _amountError == null &&
       (!_amountInputIsUsd || ref.read(zecLiveUsdUnitPriceProvider) != null) &&
       (parseZecAmount(_amountText.trim()) ?? BigInt.zero) > BigInt.zero &&
