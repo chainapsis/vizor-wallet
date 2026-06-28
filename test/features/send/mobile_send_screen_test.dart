@@ -180,7 +180,12 @@ Widget _app({
   EdgeInsets viewPadding = EdgeInsets.zero,
   MobileSendScanner? openScanner,
   String? initialRecipient,
+  String? initialAmount,
+  bool initialAmountReady = false,
+  BigInt? initialFeeZatoshi,
+  String? initialMemo,
   MobileSendAddressValidator? validateAddress,
+  MobileSendFeeEstimator? estimateFee,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -191,7 +196,12 @@ Widget _app({
           loadWalletDbPath: () async => '/tmp/zcash-test',
           openScanner: openScanner ?? (_) async => null,
           initialRecipient: initialRecipient,
+          initialAmount: initialAmount,
+          initialAmountReady: initialAmountReady,
+          initialFeeZatoshi: initialFeeZatoshi,
+          initialMemo: initialMemo,
           validateAddress: validateAddress,
+          estimateFee: estimateFee,
         ),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
@@ -1245,6 +1255,50 @@ void main() {
     // Once the re-validation settles, 1.5 ZEC is spendable again.
     await tester.pumpAndSettle();
     expect(find.text('Finish & review'), findsOneWidget);
+  });
+
+  testWidgets('prefilled amount waits for recipient validation before review', (
+    tester,
+  ) async {
+    final validation = Completer<AddressValidationResult>();
+
+    await tester.pumpWidget(
+      _app(
+        initialRecipient: _shieldedAddress,
+        initialAmount: '1.5',
+        initialAmountReady: true,
+        initialFeeZatoshi: BigInt.from(10000),
+        initialMemo: 'shielded memo',
+        validateAddress: ({required address}) => validation.future,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter amount'), findsOneWidget);
+    final pendingReview = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_review_button')),
+    );
+    expect(pendingReview.onPressed, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pump();
+    expect(find.text('Review Send'), findsNothing);
+
+    validation.complete(
+      const AddressValidationResult(isValid: true, addressType: 'unified'),
+    );
+    await tester.pumpAndSettle();
+
+    final readyReview = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_review_button')),
+    );
+    expect(readyReview.onPressed, isNotNull);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(find.text('shielded memo'), findsOneWidget);
   });
 
   testWidgets('review shows the receipt and the shielded memo entry', (

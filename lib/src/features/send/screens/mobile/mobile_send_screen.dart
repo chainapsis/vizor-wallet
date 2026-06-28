@@ -331,11 +331,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     super.initState();
     _addressFocus.addListener(_handleAddressFocusChanged);
     final initial = widget.initialRecipient;
+    var hasInitialAddressType = false;
     if (initial != null && initial.trim().isNotEmpty) {
       _addressController.text = initial.trim();
       final initialAddressType = widget.initialAddressType?.trim();
       if (initialAddressType != null && initialAddressType.isNotEmpty) {
         _addressType = initialAddressType;
+        hasInitialAddressType = true;
       } else {
         unawaited(_validateAddress());
       }
@@ -355,7 +357,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       // step; if the prefilled address validates as invalid, bounce back to the
       // recipient step instead of letting the user continue past the error.
       _amountJumpPendingAddressCheck =
-          !widget.initialReview && widget.initialRecipient != null;
+          !widget.initialReview &&
+          widget.initialRecipient != null &&
+          !hasInitialAddressType;
       _amountText = widget.initialAmount?.trim() ?? '';
       _amountController.text = _amountText;
       _isMaxMode = widget.initialMaxMode;
@@ -809,6 +813,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   bool get _amountReady =>
       !_isResolvingMax &&
+      _hasValidAddress &&
+      !_amountJumpPendingAddressCheck &&
+      !_isHardwareTexRecipient &&
       _amountError == null &&
       (parseZecAmount(_amountText.trim()) ?? BigInt.zero) > BigInt.zero &&
       (!_isMaxMode || _hasCurrentMaxQuote);
