@@ -76,6 +76,27 @@ using MethodResult =
 using MethodResultPtr = std::unique_ptr<MethodResult>;
 using SharedMethodResult = std::shared_ptr<MethodResultPtr>;
 
+// Restores and foregrounds the primary window. Shared by the single-instance
+// activation message and the forwarded-payment-URI WM_COPYDATA handler so both
+// present the window identically, including the taskbar-flash fallback for when
+// Windows refuses the foreground change.
+void PresentPrimaryWindow(HWND hwnd) {
+  if (::IsIconic(hwnd)) {
+    ::ShowWindow(hwnd, SW_RESTORE);
+  } else {
+    ::ShowWindow(hwnd, SW_SHOW);
+  }
+  ::BringWindowToTop(hwnd);
+  if (::SetForegroundWindow(hwnd) == 0) {
+    FLASHWINFO flash_info = {};
+    flash_info.cbSize = sizeof(flash_info);
+    flash_info.hwnd = hwnd;
+    flash_info.dwFlags = FLASHW_TRAY | FLASHW_TIMERNOFG;
+    flash_info.uCount = 3;
+    ::FlashWindowEx(&flash_info);
+  }
+}
+
 void CompleteVerificationError(SharedMethodResult result,
                                const std::string& code,
                                const std::string& message) {
@@ -490,20 +511,7 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
   if (activation_message_ != 0 && message == activation_message_) {
-    if (::IsIconic(hwnd)) {
-      ::ShowWindow(hwnd, SW_RESTORE);
-    } else {
-      ::ShowWindow(hwnd, SW_SHOW);
-    }
-    ::BringWindowToTop(hwnd);
-    if (::SetForegroundWindow(hwnd) == 0) {
-      FLASHWINFO flash_info = {};
-      flash_info.cbSize = sizeof(flash_info);
-      flash_info.hwnd = hwnd;
-      flash_info.dwFlags = FLASHW_TRAY | FLASHW_TIMERNOFG;
-      flash_info.uCount = 3;
-      ::FlashWindowEx(&flash_info);
-    }
+    PresentPrimaryWindow(hwnd);
     return kSingleInstanceActivationAcknowledged;
   }
 
@@ -511,6 +519,7 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     std::string payment_uri;
     if (TryReadPaymentUriCopyData(lparam, &payment_uri)) {
       pending_payment_uris_.push_back(std::move(payment_uri));
+      PresentPrimaryWindow(hwnd);
       FlushPendingPaymentUris();
       return TRUE;
     }

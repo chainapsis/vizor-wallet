@@ -112,6 +112,7 @@ BOOL CALLBACK ForwardToMatchingWindow(HWND hwnd, LPARAM lparam) {
     return TRUE;
   }
 
+  ::AllowSetForegroundWindow(process_id);
   context->delivered = SendPaymentUris(hwnd, *context->uris);
   return context->delivered ? FALSE : TRUE;
 }
