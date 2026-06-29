@@ -83,6 +83,13 @@ abstract class MultisigCoordinatorService {
     required int after,
   });
 
+  Future<rust_multisig.ApiMultisigSessionEvents> getSessionEvents({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String accessToken,
+    required int after,
+  });
+
   Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound1({
     required String coordinatorUrl,
     required String sessionId,
@@ -308,6 +315,21 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
       accessToken: accessToken,
       rosterHash: rosterHash,
       deliverySecretKey: deliverySecretKey,
+      after: after,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSessionEvents> getSessionEvents({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String accessToken,
+    required int after,
+  }) {
+    return rust_multisig.getMultisigSessionEvents(
+      coordinatorUrl: coordinatorUrl,
+      sessionId: sessionId,
+      accessToken: accessToken,
       after: after,
     );
   }

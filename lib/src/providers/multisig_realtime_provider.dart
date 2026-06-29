@@ -7,7 +7,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
-import '../core/storage/app_secure_store.dart';
 import '../rust/api/multisig.dart' as rust_multisig;
 import 'app_security_provider.dart';
 import 'multisig_account_material_provider.dart';
@@ -16,11 +15,6 @@ import 'multisig_pending_session_provider.dart';
 import 'multisig_signing_request_provider.dart';
 
 const _realtimeAccessRefreshSkewSeconds = 30;
-const _multisigRealtimeCursorKeyPrefix = 'zcash_multisig_realtime_cursor_v1_';
-
-final multisigRealtimeCursorStoreProvider = Provider(
-  (ref) => MultisigRealtimeCursorStore(AppSecureStore.instance),
-);
 
 final multisigRealtimeProvider =
     NotifierProvider<MultisigRealtimeNotifier, MultisigRealtimeState>(
@@ -177,91 +171,6 @@ class MultisigRealtimeTarget {
       refreshTokenExpiresAt: freshTarget.refreshTokenExpiresAt,
       accountUuid: accountUuid ?? this.accountUuid,
     );
-  }
-}
-
-class MultisigRealtimeCursor {
-  const MultisigRealtimeCursor({this.eventsCursor = 0, this.inboxCursor = 0});
-
-  final int eventsCursor;
-  final int inboxCursor;
-
-  MultisigRealtimeCursor copyWith({int? eventsCursor, int? inboxCursor}) {
-    return MultisigRealtimeCursor(
-      eventsCursor: eventsCursor ?? this.eventsCursor,
-      inboxCursor: inboxCursor ?? this.inboxCursor,
-    );
-  }
-
-  Map<String, Object?> toJson() => {
-    'eventsCursor': eventsCursor,
-    'inboxCursor': inboxCursor,
-  };
-
-  static MultisigRealtimeCursor fromJson(Map<String, Object?> json) {
-    return MultisigRealtimeCursor(
-      eventsCursor: _readOptionalInt(json['eventsCursor']) ?? 0,
-      inboxCursor: _readOptionalInt(json['inboxCursor']) ?? 0,
-    );
-  }
-}
-
-class MultisigRealtimeCursorStore {
-  const MultisigRealtimeCursorStore(this._storage);
-
-  final AppSecureStore _storage;
-
-  Future<MultisigRealtimeCursor> read(String storageId) async {
-    final raw = await _storage.readPlain(_cursorKey(storageId));
-    if (raw == null || raw.trim().isEmpty) {
-      return const MultisigRealtimeCursor();
-    }
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map) return const MultisigRealtimeCursor();
-    return MultisigRealtimeCursor.fromJson(decoded.cast<String, Object?>());
-  }
-
-  Future<void> write(String storageId, MultisigRealtimeCursor cursor) {
-    return _storage.writePlain(
-      _cursorKey(storageId),
-      jsonEncode(cursor.toJson()),
-    );
-  }
-
-  Future<void> recordSignal(
-    String storageId,
-    MultisigRealtimeSignal signal,
-  ) async {
-    final cursor = signal.cursor;
-    if (cursor == null) return;
-
-    final current = await read(storageId);
-    final next = switch (signal.type) {
-      MultisigRealtimeSignalType.eventsAvailable => current.copyWith(
-        eventsCursor: math.max(current.eventsCursor, cursor),
-      ),
-      MultisigRealtimeSignalType.inboxAvailable => current.copyWith(
-        inboxCursor: math.max(current.inboxCursor, cursor),
-      ),
-      _ => current,
-    };
-    if (next.eventsCursor == current.eventsCursor &&
-        next.inboxCursor == current.inboxCursor) {
-      return;
-    }
-    await write(storageId, next);
-  }
-
-  Future<void> clear(String storageId) {
-    return _storage.delete(_cursorKey(storageId));
-  }
-
-  Future<void> clearAll() {
-    return _storage.deletePlainKeysWithPrefix(_multisigRealtimeCursorKeyPrefix);
-  }
-
-  String _cursorKey(String storageId) {
-    return '$_multisigRealtimeCursorKeyPrefix$storageId';
   }
 }
 
@@ -439,7 +348,7 @@ class MultisigRealtimeNotifier extends Notifier<MultisigRealtimeState> {
     if (accountUuid != null) {
       _refreshAccount(accountUuid);
     } else {
-      _refreshSession(target.storageId);
+      _refreshSessionFromEvents(target.storageId);
     }
   }
 
@@ -450,20 +359,12 @@ class MultisigRealtimeNotifier extends Notifier<MultisigRealtimeState> {
     final target = connection.target;
     if (signal.sessionId != target.sessionId) return;
 
-    try {
-      await ref
-          .read(multisigRealtimeCursorStoreProvider)
-          .recordSignal(target.storageId, signal);
-    } catch (e, st) {
-      log('MultisigRealtime: failed to store cursor: $e\n$st');
-    }
-
     switch (signal.type) {
       case MultisigRealtimeSignalType.sessionChanged:
-      case MultisigRealtimeSignalType.eventsAvailable:
       case MultisigRealtimeSignalType.repairSessionChanged:
+      case MultisigRealtimeSignalType.eventsAvailable:
         if (target.accountUuid == null) {
-          _refreshSession(target.storageId);
+          _refreshSessionFromEvents(target.storageId);
         }
       case MultisigRealtimeSignalType.inboxAvailable:
       case MultisigRealtimeSignalType.signingRequestChanged:
@@ -474,7 +375,7 @@ class MultisigRealtimeNotifier extends Notifier<MultisigRealtimeState> {
     }
   }
 
-  void _refreshSession(String storageId) {
+  void _refreshSessionFromEvents(String storageId) {
     final existing = _sessionRefreshes[storageId];
     if (existing != null) return;
 
@@ -484,9 +385,9 @@ class MultisigRealtimeNotifier extends Notifier<MultisigRealtimeState> {
           try {
             await ref
                 .read(multisigPendingSessionsProvider.notifier)
-                .refreshSession(storageId);
+                .refreshSessionFromEvents(storageId);
           } catch (e, st) {
-            log('MultisigRealtime: session refresh failed: $e\n$st');
+            log('MultisigRealtime: session events refresh failed: $e\n$st');
           }
         })().whenComplete(() {
           if (identical(_sessionRefreshes[storageId], refresh)) {

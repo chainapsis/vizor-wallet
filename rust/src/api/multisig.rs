@@ -135,6 +135,20 @@ pub struct ApiMultisigCreateAdvance {
     pub group_public_package_hash: Option<String>,
 }
 
+pub struct ApiMultisigSessionEvents {
+    pub cursor: i64,
+    pub events: Vec<ApiMultisigSessionEvent>,
+}
+
+pub struct ApiMultisigSessionEvent {
+    pub cursor: i64,
+    pub session_id: String,
+    pub kind: String,
+    pub actor_participant_id: Option<String>,
+    pub payload_json: String,
+    pub created_at: u64,
+}
+
 pub struct ApiMultisigSigningRequest {
     pub signing_request_id: String,
     pub session_id: String,
@@ -1261,6 +1275,37 @@ pub fn get_multisig_signing_inbox(
         Ok(ApiMultisigSigningInbox {
             cursor: inbox.cursor,
             messages,
+        })
+    })
+}
+
+pub fn get_multisig_session_events(
+    coordinator_url: String,
+    session_id: String,
+    access_token: String,
+    after: i64,
+) -> Result<ApiMultisigSessionEvents, String> {
+    block_on(async move {
+        let client = Coordinator2Client::new(coordinator_url);
+        let events = client
+            .events(&session_id, &access_token, after)
+            .await
+            .map_err(client_error)?;
+        let mapped = events
+            .events
+            .into_iter()
+            .map(|event| ApiMultisigSessionEvent {
+                cursor: event.cursor,
+                session_id: event.session_id,
+                kind: event.kind,
+                actor_participant_id: event.actor_participant_id,
+                payload_json: event.payload_json,
+                created_at: event.created_at,
+            })
+            .collect();
+        Ok(ApiMultisigSessionEvents {
+            cursor: events.cursor,
+            events: mapped,
         })
     })
 }

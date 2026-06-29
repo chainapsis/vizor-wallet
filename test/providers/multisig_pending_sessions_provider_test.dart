@@ -6,6 +6,7 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/multisig_account_material_provider.dart';
 import 'package:zcash_wallet/src/providers/multisig_coordinator_service.dart';
 import 'package:zcash_wallet/src/providers/multisig_pending_session_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_realtime_cursor_store.dart';
 import 'package:zcash_wallet/src/rust/api/multisig.dart' as rust_multisig;
 
 void main() {
@@ -223,6 +224,72 @@ void main() {
 
     expect(store.sessions[session.storageId]!.state, 'collecting');
   });
+
+  test(
+    'refreshSessionFromEvents advances cursor after canonical refresh',
+    () async {
+      final store = _FakePendingSessionStore();
+      final session = _pendingSession(accessTokenExpiresAt: 2000);
+      store.put(session);
+      final cursorStore = _FakeRealtimeCursorStore()
+        ..cursors[session.storageId] = const MultisigRealtimeCursor(
+          eventsCursor: 7,
+        );
+      final service = _FakeMultisigCoordinatorService(
+        eventsCursor: 12,
+        sessionResponse: _apiSession(state: 'locked', threshold: 2),
+      );
+      final container = _container(
+        store: store,
+        service: service,
+        cursorStore: cursorStore,
+      );
+      addTearDown(container.dispose);
+
+      final refreshed = await container
+          .read(multisigPendingSessionsProvider.notifier)
+          .refreshSessionFromEvents(session.storageId);
+
+      expect(service.eventsCalls, ['session-1|7']);
+      expect(service.getCalls, ['session-1|access-token']);
+      expect(refreshed.state, 'locked');
+      expect(store.sessions[session.storageId]!.threshold, 2);
+      expect(cursorStore.cursors[session.storageId]?.eventsCursor, 12);
+    },
+  );
+
+  test(
+    'refreshSessionFromEvents does not advance cursor when events fail',
+    () async {
+      final store = _FakePendingSessionStore();
+      final session = _pendingSession(accessTokenExpiresAt: 2000);
+      store.put(session);
+      final cursorStore = _FakeRealtimeCursorStore()
+        ..cursors[session.storageId] = const MultisigRealtimeCursor(
+          eventsCursor: 7,
+        );
+      final service = _FakeMultisigCoordinatorService(
+        eventsError: StateError('network down'),
+      );
+      final container = _container(
+        store: store,
+        service: service,
+        cursorStore: cursorStore,
+      );
+      addTearDown(container.dispose);
+
+      await expectLater(
+        container
+            .read(multisigPendingSessionsProvider.notifier)
+            .refreshSessionFromEvents(session.storageId),
+        throwsA(anything),
+      );
+
+      expect(service.eventsCalls, ['session-1|7']);
+      expect(service.getCalls, isEmpty);
+      expect(cursorStore.cursors[session.storageId]?.eventsCursor, 7);
+    },
+  );
 
   test(
     'expired auth refresh updates pending session and account material',
@@ -447,6 +514,7 @@ ProviderContainer _container({
   _FakePendingSessionStore? store,
   _FakeAccountMaterialStore? materialStore,
   _FakeMultisigCoordinatorService? service,
+  _FakeRealtimeCursorStore? cursorStore,
   bool isUnlocked = true,
 }) {
   return ProviderContainer(
@@ -462,6 +530,9 @@ ProviderContainer _container({
       ),
       multisigCoordinatorServiceProvider.overrideWithValue(
         service ?? _FakeMultisigCoordinatorService(),
+      ),
+      multisigRealtimeCursorStoreProvider.overrideWithValue(
+        cursorStore ?? _FakeRealtimeCursorStore(),
       ),
       multisigNowProvider.overrideWithValue(
         () => DateTime.fromMillisecondsSinceEpoch(1000 * 1000),
@@ -785,6 +856,44 @@ class _FakeAccountMaterialStore implements MultisigAccountMaterialStore {
   }
 }
 
+class _FakeRealtimeCursorStore implements MultisigRealtimeCursorStore {
+  final cursors = <String, MultisigRealtimeCursor>{};
+
+  @override
+  Future<MultisigRealtimeCursor> read(String storageId) async {
+    return cursors[storageId] ?? const MultisigRealtimeCursor();
+  }
+
+  @override
+  Future<void> write(String storageId, MultisigRealtimeCursor cursor) async {
+    cursors[storageId] = cursor;
+  }
+
+  @override
+  Future<void> advanceInboxCursor(String storageId, int cursor) async {
+    final current = await read(storageId);
+    if (cursor <= current.inboxCursor) return;
+    await write(storageId, current.copyWith(inboxCursor: cursor));
+  }
+
+  @override
+  Future<void> advanceEventsCursor(String storageId, int cursor) async {
+    final current = await read(storageId);
+    if (cursor <= current.eventsCursor) return;
+    await write(storageId, current.copyWith(eventsCursor: cursor));
+  }
+
+  @override
+  Future<void> clear(String storageId) async {
+    cursors.remove(storageId);
+  }
+
+  @override
+  Future<void> clearAll() async {
+    cursors.clear();
+  }
+}
+
 class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
   _FakeMultisigCoordinatorService({
     rust_multisig.ApiMultisigAuthSession? createResponse,
@@ -793,6 +902,8 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
     rust_multisig.ApiMultisigAuthSession? resumeResponse,
     rust_multisig.ApiMultisigSession? sessionResponse,
     rust_multisig.ApiMultisigSession? lockResponse,
+    this.eventsCursor = 0,
+    this.eventsError,
   }) : createResponse = createResponse ?? _apiAuthSession(),
        joinResponse =
            joinResponse ??
@@ -811,6 +922,8 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
   final rust_multisig.ApiMultisigAuthSession resumeResponse;
   final rust_multisig.ApiMultisigSession sessionResponse;
   final rust_multisig.ApiMultisigSession lockResponse;
+  final int eventsCursor;
+  final Object? eventsError;
 
   final createCalls = <String>[];
   final joinCalls = <String>[];
@@ -818,6 +931,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
   final resumeCalls = <String>[];
   final getCalls = <String>[];
   final lockCalls = <String>[];
+  final eventsCalls = <String>[];
 
   @override
   rust_multisig.ApiMultisigParticipantIdentity generateParticipantIdentity() {
@@ -879,6 +993,22 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
   }) async {
     getCalls.add('$sessionId|$accessToken');
     return sessionResponse;
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSessionEvents> getSessionEvents({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String accessToken,
+    required int after,
+  }) async {
+    eventsCalls.add('$sessionId|$after');
+    final error = eventsError;
+    if (error != null) throw error;
+    return rust_multisig.ApiMultisigSessionEvents(
+      cursor: eventsCursor,
+      events: const <rust_multisig.ApiMultisigSessionEvent>[],
+    );
   }
 
   @override

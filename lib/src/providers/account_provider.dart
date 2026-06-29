@@ -496,14 +496,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
     if (target.isMultisig) {
       try {
-        await ref.read(multisigAccountMaterialStoreProvider).delete(uuid);
-        ref.invalidate(multisigAccountMaterialsProvider);
-      } catch (e, st) {
-        log(
-          'removeAccount: failed to delete multisig material for $uuid: $e\n$st',
-        );
-      }
-      try {
         await ref
             .read(multisigSigningRequestsProvider.notifier)
             .deleteForAccount(uuid);
@@ -511,6 +503,14 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         log(
           'removeAccount: failed to delete multisig signing requests for '
           '$uuid: $e\n$st',
+        );
+      }
+      try {
+        await ref.read(multisigAccountMaterialStoreProvider).delete(uuid);
+        ref.invalidate(multisigAccountMaterialsProvider);
+      } catch (e, st) {
+        log(
+          'removeAccount: failed to delete multisig material for $uuid: $e\n$st',
         );
       }
     }

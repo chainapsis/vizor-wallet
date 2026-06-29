@@ -254,6 +254,18 @@ Future<ApiMultisigSigningInbox> getMultisigSigningInbox({
   after: after,
 );
 
+Future<ApiMultisigSessionEvents> getMultisigSessionEvents({
+  required String coordinatorUrl,
+  required String sessionId,
+  required String accessToken,
+  required PlatformInt64 after,
+}) => RustLib.instance.api.crateApiMultisigGetMultisigSessionEvents(
+  coordinatorUrl: coordinatorUrl,
+  sessionId: sessionId,
+  accessToken: accessToken,
+  after: after,
+);
+
 Future<ApiMultisigSigningAdvance> submitMultisigSigningRound1({
   required String coordinatorUrl,
   required String sessionId,
@@ -771,6 +783,63 @@ class ApiMultisigSession {
           participants == other.participants &&
           createdAt == other.createdAt &&
           updatedAt == other.updatedAt;
+}
+
+class ApiMultisigSessionEvent {
+  final PlatformInt64 cursor;
+  final String sessionId;
+  final String kind;
+  final String? actorParticipantId;
+  final String payloadJson;
+  final BigInt createdAt;
+
+  const ApiMultisigSessionEvent({
+    required this.cursor,
+    required this.sessionId,
+    required this.kind,
+    this.actorParticipantId,
+    required this.payloadJson,
+    required this.createdAt,
+  });
+
+  @override
+  int get hashCode =>
+      cursor.hashCode ^
+      sessionId.hashCode ^
+      kind.hashCode ^
+      actorParticipantId.hashCode ^
+      payloadJson.hashCode ^
+      createdAt.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiMultisigSessionEvent &&
+          runtimeType == other.runtimeType &&
+          cursor == other.cursor &&
+          sessionId == other.sessionId &&
+          kind == other.kind &&
+          actorParticipantId == other.actorParticipantId &&
+          payloadJson == other.payloadJson &&
+          createdAt == other.createdAt;
+}
+
+class ApiMultisigSessionEvents {
+  final PlatformInt64 cursor;
+  final List<ApiMultisigSessionEvent> events;
+
+  const ApiMultisigSessionEvents({required this.cursor, required this.events});
+
+  @override
+  int get hashCode => cursor.hashCode ^ events.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiMultisigSessionEvents &&
+          runtimeType == other.runtimeType &&
+          cursor == other.cursor &&
+          events == other.events;
 }
 
 class ApiMultisigSignedPczt {

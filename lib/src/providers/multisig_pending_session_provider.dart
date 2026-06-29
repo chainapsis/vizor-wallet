@@ -9,6 +9,7 @@ import 'app_security_provider.dart';
 import 'multisig_account_material_provider.dart';
 import 'multisig_coordinator_service.dart';
 import 'multisig_operation_error.dart';
+import 'multisig_realtime_cursor_store.dart';
 
 const kDefaultMultisigCoordinatorUrl = String.fromEnvironment(
   'ZCASH_MULTISIG_COORDINATOR_URL',
@@ -755,6 +756,9 @@ class MultisigPendingSessionsNotifier
   MultisigCoordinatorService get _coordinator =>
       ref.read(multisigCoordinatorServiceProvider);
 
+  MultisigRealtimeCursorStore get _cursorStore =>
+      ref.read(multisigRealtimeCursorStoreProvider);
+
   @override
   FutureOr<List<MultisigPendingSession>> build() {
     final security = ref.watch(appSecurityProvider);
@@ -828,6 +832,37 @@ class MultisigPendingSessionsNotifier
     );
     final updated = pending.applySession(session);
     await upsert(updated);
+    return updated;
+  }
+
+  Future<MultisigPendingSession> refreshSessionFromEvents(
+    String storageId,
+  ) async {
+    final pending = await _sessionWithFreshAccess(
+      await _requireSession(storageId),
+    );
+    final cursor = await _cursorStore.read(pending.storageId);
+    final events = await _coordinator.getSessionEvents(
+      coordinatorUrl: pending.coordinatorUrl,
+      sessionId: pending.sessionId,
+      accessToken: pending.accessToken,
+      after: cursor.eventsCursor,
+    );
+    final session = await _coordinator.getSession(
+      coordinatorUrl: pending.coordinatorUrl,
+      sessionId: pending.sessionId,
+      accessToken: pending.accessToken,
+    );
+    _validateSessionOwner(
+      expectedSessionId: pending.sessionId,
+      returnedSessionId: session.sessionId,
+    );
+    final updated = pending.applySession(session);
+    await upsert(updated);
+    await _cursorStore.advanceEventsCursor(
+      pending.storageId,
+      events.cursor.toInt(),
+    );
     return updated;
   }
 

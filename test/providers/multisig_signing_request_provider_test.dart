@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/multisig_account_material_provider.dart';
 import 'package:zcash_wallet/src/providers/multisig_coordinator_service.dart';
+import 'package:zcash_wallet/src/providers/multisig_pending_session_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_realtime_cursor_store.dart';
 import 'package:zcash_wallet/src/providers/multisig_signing_request_provider.dart';
 import 'package:zcash_wallet/src/rust/api/multisig.dart' as rust_multisig;
 import 'package:zcash_wallet/src/rust/api/sync.dart';
@@ -288,13 +290,80 @@ void main() {
     },
   );
 
+  test('refreshForAccount catches up from stored inbox cursor', () async {
+    final requestStore = _FakeSigningRequestStore();
+    final materialStore = _FakeAccountMaterialStore()
+      ..put(_accountMaterial(accessTokenExpiresAt: 9999999999));
+    final cursorStore = _FakeRealtimeCursorStore()
+      ..cursors['session-1:participant-1'] = const MultisigRealtimeCursor(
+        inboxCursor: 5,
+      );
+    final coordinator = _FakeCoordinatorService(
+      inboxCursor: 8,
+      inboxMessages: [_txRequestMessage(signingRequestId: 'signing-request')],
+    );
+    final container = _container(
+      requestStore: requestStore,
+      materialStore: materialStore,
+      coordinatorService: coordinator,
+      cursorStore: cursorStore,
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(multisigSigningRequestsProvider.notifier)
+        .refreshForAccount('account-1');
+
+    expect(coordinator.inboxCalls, ['session-1|participant-1|5']);
+    expect(requestStore.records.single.signingRequestId, 'signing-request');
+    expect(cursorStore.cursors['session-1:participant-1']?.inboxCursor, 8);
+  });
+
+  test(
+    'refreshForAccount does not advance cursor when inbox fetch fails',
+    () async {
+      final materialStore = _FakeAccountMaterialStore()
+        ..put(_accountMaterial(accessTokenExpiresAt: 9999999999));
+      final cursorStore = _FakeRealtimeCursorStore()
+        ..cursors['session-1:participant-1'] = const MultisigRealtimeCursor(
+          inboxCursor: 5,
+        );
+      final coordinator = _FakeCoordinatorService(
+        inboxError: StateError('network down'),
+      );
+      final container = _container(
+        materialStore: materialStore,
+        coordinatorService: coordinator,
+        cursorStore: cursorStore,
+      );
+      addTearDown(container.dispose);
+
+      await expectLater(
+        container
+            .read(multisigSigningRequestsProvider.notifier)
+            .refreshForAccount('account-1'),
+        throwsA(anything),
+      );
+
+      expect(coordinator.inboxCalls, ['session-1|participant-1|5']);
+      expect(cursorStore.cursors['session-1:participant-1']?.inboxCursor, 5);
+    },
+  );
+
   test('deletes draft records for a removed account', () async {
     final requestStore = _FakeSigningRequestStore()
       ..records = [
         _record(accountUuid: 'account-1', sendFlowId: 'flow-1'),
         _record(accountUuid: 'account-2', sendFlowId: 'flow-2'),
       ];
-    final container = _container(requestStore: requestStore);
+    final cursorStore = _FakeRealtimeCursorStore()
+      ..cursors['session-1:participant-1'] = const MultisigRealtimeCursor(
+        inboxCursor: 5,
+      );
+    final container = _container(
+      requestStore: requestStore,
+      cursorStore: cursorStore,
+    );
     addTearDown(container.dispose);
 
     await container
@@ -304,7 +373,37 @@ void main() {
     expect(requestStore.records.map((record) => record.accountUuid), [
       'account-2',
     ]);
+    expect(cursorStore.cursors.containsKey('session-1:participant-1'), isFalse);
   });
+
+  test(
+    'deleteForAccount clears cursor from material without records',
+    () async {
+      final requestStore = _FakeSigningRequestStore();
+      final materialStore = _FakeAccountMaterialStore()
+        ..put(_accountMaterial());
+      final cursorStore = _FakeRealtimeCursorStore()
+        ..cursors['session-1:participant-1'] = const MultisigRealtimeCursor(
+          inboxCursor: 5,
+        );
+      final container = _container(
+        requestStore: requestStore,
+        materialStore: materialStore,
+        cursorStore: cursorStore,
+      );
+      addTearDown(container.dispose);
+
+      await container
+          .read(multisigSigningRequestsProvider.notifier)
+          .deleteForAccount('account-1');
+
+      expect(requestStore.records, isEmpty);
+      expect(
+        cursorStore.cursors.containsKey('session-1:participant-1'),
+        isFalse,
+      );
+    },
+  );
 }
 
 ProviderContainer _container({
@@ -312,10 +411,14 @@ ProviderContainer _container({
   _FakeAccountMaterialStore? materialStore,
   _FakeProposalService? proposalService,
   _FakeCoordinatorService? coordinatorService,
+  _FakeRealtimeCursorStore? cursorStore,
 }) {
   return ProviderContainer(
     overrides: [
       appSecurityProvider.overrideWith(() => _FakeAppSecurityNotifier()),
+      multisigPendingSessionsProvider.overrideWith(
+        () => _FakePendingSessionsNotifier(),
+      ),
       multisigSigningRequestStoreProvider.overrideWithValue(
         requestStore ?? _FakeSigningRequestStore(),
       ),
@@ -328,6 +431,9 @@ ProviderContainer _container({
       multisigCoordinatorServiceProvider.overrideWithValue(
         coordinatorService ?? _FakeCoordinatorService(),
       ),
+      multisigRealtimeCursorStoreProvider.overrideWithValue(
+        cursorStore ?? _FakeRealtimeCursorStore(),
+      ),
     ],
   );
 }
@@ -336,6 +442,13 @@ class _FakeAppSecurityNotifier extends AppSecurityNotifier {
   @override
   AppSecurityState build() {
     return const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+  }
+}
+
+class _FakePendingSessionsNotifier extends MultisigPendingSessionsNotifier {
+  @override
+  Future<List<MultisigPendingSession>> build() async {
+    return const <MultisigPendingSession>[];
   }
 }
 
@@ -390,6 +503,44 @@ class _FakeAccountMaterialStore implements MultisigAccountMaterialStore {
   @override
   Future<void> delete(String accountUuid) async {
     materials.remove(accountUuid);
+  }
+}
+
+class _FakeRealtimeCursorStore implements MultisigRealtimeCursorStore {
+  final cursors = <String, MultisigRealtimeCursor>{};
+
+  @override
+  Future<MultisigRealtimeCursor> read(String storageId) async {
+    return cursors[storageId] ?? const MultisigRealtimeCursor();
+  }
+
+  @override
+  Future<void> write(String storageId, MultisigRealtimeCursor cursor) async {
+    cursors[storageId] = cursor;
+  }
+
+  @override
+  Future<void> advanceInboxCursor(String storageId, int cursor) async {
+    final current = await read(storageId);
+    if (cursor <= current.inboxCursor) return;
+    await write(storageId, current.copyWith(inboxCursor: cursor));
+  }
+
+  @override
+  Future<void> advanceEventsCursor(String storageId, int cursor) async {
+    final current = await read(storageId);
+    if (cursor <= current.eventsCursor) return;
+    await write(storageId, current.copyWith(eventsCursor: cursor));
+  }
+
+  @override
+  Future<void> clear(String storageId) async {
+    cursors.remove(storageId);
+  }
+
+  @override
+  Future<void> clearAll() async {
+    cursors.clear();
   }
 }
 
@@ -448,12 +599,16 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
     this.failPrepareOnce = false,
     this.submitPreparedError,
     this.inboxMessages = const <rust_multisig.ApiMultisigSigningMessage>[],
+    this.inboxCursor = 0,
+    this.inboxError,
     this.round1Response,
   });
 
   bool failPrepareOnce;
   final Object? submitPreparedError;
   final List<rust_multisig.ApiMultisigSigningMessage> inboxMessages;
+  final int inboxCursor;
+  final Object? inboxError;
   final rust_multisig.ApiMultisigSigningAdvance? round1Response;
   final prepareCalls = <String>[];
   final submitCalls = <String>[];
@@ -529,8 +684,10 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
     required int after,
   }) async {
     inboxCalls.add('$sessionId|$participantId|$after');
+    final error = inboxError;
+    if (error != null) throw error;
     return rust_multisig.ApiMultisigSigningInbox(
-      cursor: 0,
+      cursor: inboxCursor,
       messages: inboxMessages,
     );
   }

@@ -14,6 +14,7 @@ import 'multisig_account_material_provider.dart';
 import 'multisig_coordinator_service.dart';
 import 'multisig_operation_error.dart';
 import 'multisig_pending_session_provider.dart';
+import 'multisig_realtime_cursor_store.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
 import 'sync_provider.dart';
@@ -438,6 +439,9 @@ class MultisigSigningRequestsNotifier
   MultisigSendProposalService get _proposalService =>
       ref.read(multisigSendProposalServiceProvider);
 
+  MultisigRealtimeCursorStore get _cursorStore =>
+      ref.read(multisigRealtimeCursorStoreProvider);
+
   final Map<String, Future<void>> _refreshesByAccount = {};
 
   @override
@@ -715,17 +719,33 @@ class MultisigSigningRequestsNotifier
 
   Future<void> deleteForAccount(String accountUuid) async {
     final current = await _currentRecords();
+    final cursorStorageIds = <String>{
+      for (final record in current)
+        if (record.accountUuid == accountUuid)
+          '${record.sessionId}:${record.localParticipantId}',
+    };
+    try {
+      final material = await _materialStore.read(accountUuid);
+      if (material != null) {
+        cursorStorageIds.add(material.storageId);
+      }
+    } catch (_) {}
     final next = [
       for (final record in current)
         if (record.accountUuid != accountUuid) record,
     ];
-    if (next.length == current.length) return;
-    await _save(next);
+    if (next.length != current.length) {
+      await _save(next);
+    }
+    for (final storageId in cursorStorageIds) {
+      await _cursorStore.clear(storageId);
+    }
     state = AsyncData(_sorted(next));
   }
 
   Future<void> clearAll() async {
     await _store.clearAll();
+    await _cursorStore.clearAll();
     state = const AsyncData(<MultisigSigningRequestRecord>[]);
   }
 
@@ -1017,6 +1037,7 @@ class MultisigSigningRequestsNotifier
   Future<void> _refreshForAccountWithMaterial(
     MultisigAccountMaterial material,
   ) async {
+    final storedCursor = await _cursorStore.read(material.storageId);
     final inbox = await _coordinator.getSigningInbox(
       coordinatorUrl: material.coordinatorUrl,
       sessionId: material.sessionId,
@@ -1024,7 +1045,7 @@ class MultisigSigningRequestsNotifier
       accessToken: material.accessToken,
       rosterHash: material.rosterHash,
       deliverySecretKey: material.identity.deliverySecretKey,
-      after: 0,
+      after: storedCursor.inboxCursor,
     );
     final records = [...await _currentRecords()];
     var changed = false;
@@ -1087,6 +1108,10 @@ class MultisigSigningRequestsNotifier
       await _save(records);
       state = AsyncData(_sorted(records));
     }
+    await _cursorStore.advanceInboxCursor(
+      material.storageId,
+      inbox.cursor.toInt(),
+    );
   }
 
   Future<MultisigAccountMaterial> _materialForAccount(
