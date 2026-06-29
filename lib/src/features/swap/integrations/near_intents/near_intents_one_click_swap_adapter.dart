@@ -724,10 +724,13 @@ class NearIntentsOneClickSwapAdapter
     required _OneClickToken receiveToken,
   }) {
     final actual = response.quoteRequest;
+    final actualSwapType = actual.swapTypeRaw?.trim().toUpperCase();
+    final hasMismatchedSwapType = actualSwapType == null
+        ? actual.mode != expectedMode
+        : actualSwapType != expectedMode.oneClickSwapType;
     if (actual.originAsset != expectedOriginAsset ||
         actual.destinationAsset != expectedDestinationAsset ||
-        actual.swapTypeRaw?.trim().toUpperCase() !=
-            expectedMode.oneClickSwapType) {
+        hasMismatchedSwapType) {
       throw OneClickApiException(
         '1Click quote response did not match the requested route',
         operation: 'quote',

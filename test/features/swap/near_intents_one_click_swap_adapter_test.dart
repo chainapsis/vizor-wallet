@@ -266,6 +266,39 @@ void main() {
     );
   });
 
+  test('quote accepts exact-input response without a swap type echo', () async {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', _tokens),
+      _FakeResponse.post(
+        '/v0/quote',
+        _quoteResponse(
+          originAsset: 'nep141:zec.omft.near',
+          destinationAsset: 'nep141:usdc.example',
+          amountInFormatted: '1.5',
+          amountOutFormatted: '105.25',
+          minAmountOut: '104750000',
+          depositAddress: 't1deposit',
+          includeQuoteRequestSwapType: false,
+          status: null,
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    final quote = await provider.quote(
+      const SwapQuoteRequest(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        sellAmount: 1.5,
+        sellAmountText: '1.5',
+        destination: '0xrecipient',
+        refundAddress: 'u1refund',
+      ),
+    );
+
+    expect(quote.mode, SwapQuoteMode.exactInput);
+  });
+
   test(
     'quote rejects response with mismatched quoteRequest amount echo',
     () async {
@@ -2017,6 +2050,7 @@ Map<String, Object?> _quoteResponse({
   String quoteDeadline = '2026-05-07T12:00:00Z',
   String timeWhenInactive = '2026-05-07T10:08:00Z',
   int? slippageTolerance = 100,
+  bool includeQuoteRequestSwapType = true,
   String? quoteRequestSwapType,
   String? quoteRequestAmount,
   String quoteRequestRefundTo = 'u1refund',
@@ -2036,7 +2070,8 @@ Map<String, Object?> _quoteResponse({
     'signature': 'quote-signature',
     'quoteRequest': {
       'dry': false,
-      'swapType': quoteRequestSwapType ?? swapType,
+      if (includeQuoteRequestSwapType)
+        'swapType': quoteRequestSwapType ?? swapType,
       'slippageTolerance': ?slippageTolerance,
       'originAsset': originAsset,
       'depositType': 'ORIGIN_CHAIN',
