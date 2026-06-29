@@ -407,6 +407,8 @@ class _SigningDetailContent extends StatelessWidget {
                       ? 'Submit your Round 1 commitment before Round 2.'
                       : !round1Complete
                       ? 'Round 2 opens after every selected signer submits Round 1.'
+                      : round2Complete
+                      ? 'Every selected signer has submitted Round 2.'
                       : round2Done
                       ? 'Your signature share was submitted.'
                       : 'Submit your signature share for this transaction.',
@@ -417,6 +419,7 @@ class _SigningDetailContent extends StatelessWidget {
                             localSelected &&
                             round1Done &&
                             round1Complete &&
+                            !round2Complete &&
                             !round2Done &&
                             !request.isBroadcasted
                         ? onRound2
