@@ -33,10 +33,12 @@ class MultisigSessionScreen extends ConsumerStatefulWidget {
 
 class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
   Timer? _refreshTimer;
+  Timer? _createAdvanceTimer;
   bool _isRefreshing = false;
   bool _isLocking = false;
   bool _isAdvancingCreate = false;
   bool _isConfirmingBackup = false;
+  bool _createAutoAdvanceEnabled = false;
   int? _selectedThreshold;
   String? _error;
   MultisigCreateAdvanceResult? _createProgress;
@@ -63,7 +65,36 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _createAdvanceTimer?.cancel();
     super.dispose();
+  }
+
+  MultisigPendingSession? _currentSession() {
+    final sessions = ref.read(multisigPendingSessionsProvider).value;
+    if (sessions == null) return null;
+    return multisigSessionByStorageId(sessions, widget.sessionStorageId) ??
+        multisigSessionById(sessions, widget.sessionStorageId);
+  }
+
+  void _scheduleCreateAdvancePoll() {
+    _createAdvanceTimer?.cancel();
+    if (!_createAutoAdvanceEnabled) return;
+    _createAdvanceTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted || !_createAutoAdvanceEnabled) return;
+      if (_isRefreshing ||
+          _isLocking ||
+          _isAdvancingCreate ||
+          _isConfirmingBackup) {
+        _scheduleCreateAdvancePoll();
+        return;
+      }
+      final session = _currentSession();
+      if (session == null || session.state != 'request_create') {
+        _createAutoAdvanceEnabled = false;
+        return;
+      }
+      unawaited(_advanceCreate(session, automatic: true));
+    });
   }
 
   Future<void> _refresh({bool silent = false}) async {
@@ -77,10 +108,14 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
           .read(multisigPendingSessionsProvider.notifier)
           .refreshSession(widget.sessionStorageId);
       if (!mounted) return;
+      final session = _currentSession();
       setState(() {
         _isRefreshing = false;
         _error = null;
       });
+      if (session?.state == 'request_create' && _createAutoAdvanceEnabled) {
+        _scheduleCreateAdvancePoll();
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -112,9 +147,14 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
     }
   }
 
-  Future<void> _advanceCreate(MultisigPendingSession session) async {
+  Future<void> _advanceCreate(
+    MultisigPendingSession session, {
+    bool automatic = false,
+  }) async {
     if (_isAdvancingCreate) return;
+    _createAdvanceTimer?.cancel();
     setState(() {
+      if (!automatic) _createAutoAdvanceEnabled = true;
       _isAdvancingCreate = true;
       _error = null;
     });
@@ -125,12 +165,15 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
       if (!mounted) return;
       setState(() {
         _isAdvancingCreate = false;
+        _createAutoAdvanceEnabled = progress.session.state == 'request_create';
         _createProgress = progress;
         _error = null;
       });
+      _scheduleCreateAdvancePoll();
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        _createAutoAdvanceEnabled = false;
         _isAdvancingCreate = false;
         _error = friendlyMultisigError(e);
       });
@@ -295,6 +338,7 @@ class _SessionContent extends StatelessWidget {
         selectedThreshold != null;
     final showBackupPanel = session.state == 'ready';
     return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xl),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
