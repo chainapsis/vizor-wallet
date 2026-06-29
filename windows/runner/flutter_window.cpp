@@ -75,6 +75,15 @@ using MethodResult =
 using MethodResultPtr = std::unique_ptr<MethodResult>;
 using SharedMethodResult = std::shared_ptr<MethodResultPtr>;
 
+void PresentWindowForPaymentUri(HWND hwnd) {
+  if (::IsIconic(hwnd)) {
+    ::ShowWindow(hwnd, SW_RESTORE);
+  } else {
+    ::ShowWindow(hwnd, SW_SHOW);
+  }
+  ::SetForegroundWindow(hwnd);
+}
+
 void CompleteVerificationError(SharedMethodResult result,
                                const std::string& code,
                                const std::string& message) {
@@ -491,6 +500,7 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     std::string payment_uri;
     if (TryReadPaymentUriCopyData(lparam, &payment_uri)) {
       pending_payment_uris_.push_back(std::move(payment_uri));
+      PresentWindowForPaymentUri(hwnd);
       FlushPendingPaymentUris();
       return TRUE;
     }
