@@ -800,7 +800,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// account so stale or mismatched share material cannot create an orphan DB
   /// account.
   Future<void> finalizeMultisigAccount(
-    String sessionId, {
+    String sessionStorageId, {
     required String backupArtifactJson,
     required String backupPassphrase,
     required int birthdayHeight,
@@ -810,15 +810,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final materialStore = ref.read(multisigAccountMaterialStoreProvider);
       final materialized = await materialStore.readAll();
       final currentAccounts = state.value?.accounts ?? const <AccountInfo>[];
-      for (final material in materialized) {
-        if (material.sessionId == sessionId &&
-            currentAccounts.any(
-              (account) => account.uuid == material.accountUuid,
-            )) {
-          await switchAccount(material.accountUuid);
-          return;
-        }
-      }
       if (birthdayHeight <= 0) {
         throw ArgumentError.value(
           birthdayHeight,
@@ -831,9 +822,21 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         multisigPendingSessionsProvider.notifier,
       );
       final sessions = await ref.read(multisigPendingSessionsProvider.future);
-      final storedSession = multisigSessionById(sessions, sessionId);
+      final storedSession =
+          multisigSessionByStorageId(sessions, sessionStorageId) ??
+          multisigSessionById(sessions, sessionStorageId);
       if (storedSession == null) {
         throw StateError('Multisig session not found.');
+      }
+      for (final material in materialized) {
+        if (material.sessionId == storedSession.sessionId &&
+            material.participantId == storedSession.participantId &&
+            currentAccounts.any(
+              (account) => account.uuid == material.accountUuid,
+            )) {
+          await switchAccount(material.accountUuid);
+          return;
+        }
       }
       final session = await pendingNotifier.refreshSession(
         storedSession.storageId,

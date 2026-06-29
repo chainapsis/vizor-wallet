@@ -340,15 +340,18 @@ void main() {
     final next = _pendingSession(sessionId: 'next');
 
     expect(
-      latestLocalMultisigSetupSession([materialized, next], {'materialized'}),
+      latestLocalMultisigSetupSession(
+        [materialized, next],
+        {materialized.storageId},
+      ),
       same(next),
     );
     expect(
-      latestLocalMultisigSetupSession([materialized], {'materialized'}),
+      latestLocalMultisigSetupSession([materialized], {materialized.storageId}),
       isNull,
     );
     expect(
-      multisigSessionNeedsLocalSetup(materialized, {'materialized'}),
+      multisigSessionNeedsLocalSetup(materialized, {materialized.storageId}),
       isFalse,
     );
     expect(
@@ -356,6 +359,31 @@ void main() {
         _pendingSession(sessionId: 'failed').copyWith(state: 'failed'),
       ),
       isFalse,
+    );
+  });
+
+  test('local setup helper treats participants in one session separately', () {
+    final participant1 = _pendingSession(
+      sessionId: 'shared-session',
+      participantId: 'participant-1',
+      updatedLocallyAt: 100,
+    );
+    final participant2 = _pendingSession(
+      sessionId: 'shared-session',
+      participantId: 'participant-2',
+      updatedLocallyAt: 200,
+    );
+
+    expect(
+      latestLocalMultisigSetupSession(
+        [participant1, participant2],
+        {participant1.storageId},
+      ),
+      same(participant2),
+    );
+    expect(
+      multisigSessionNeedsLocalSetup(participant2, {participant1.storageId}),
+      isTrue,
     );
   });
 }

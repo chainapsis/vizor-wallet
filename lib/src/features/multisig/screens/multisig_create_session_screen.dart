@@ -8,6 +8,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/multisig_operation_error.dart';
 import '../../../providers/multisig_pending_session_provider.dart';
 import '../widgets/multisig_flow_scaffold.dart';
 import '../widgets/multisig_setup_security_gate.dart';
@@ -75,12 +76,12 @@ class _MultisigCreateSessionScreenState
             ),
       );
       if (!mounted) return;
-      context.go('/multisig/session/${Uri.encodeComponent(pending.sessionId)}');
+      context.go('/multisig/session/${Uri.encodeComponent(pending.storageId)}');
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isSubmitting = false;
-        _submitError = e.toString();
+        _submitError = friendlyMultisigError(e);
       });
     }
   }

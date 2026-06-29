@@ -656,6 +656,8 @@ MultisigFinalizeArgs? _multisigFinalizeArgsFromExtra(Object? extra) {
       extra.multisigBackupArtifactJson != null &&
       extra.multisigBackupPassphrase != null) {
     return MultisigFinalizeArgs(
+      sessionStorageId:
+          extra.multisigSessionStorageId ?? extra.requiredMultisigSessionId,
       sessionId: extra.requiredMultisigSessionId,
       backupArtifactJson: extra.requiredMultisigBackupArtifactJson,
       backupPassphrase: extra.requiredMultisigBackupPassphrase,
@@ -790,28 +792,30 @@ List<RouteBase> _desktopRoutes() => [
     ),
   ),
   GoRoute(
-    path: '/multisig/session/:sessionId/birthday',
+    path: '/multisig/session/:sessionStorageId/birthday',
     redirect: (_, state) {
-      final sessionId = state.pathParameters['sessionId'];
+      final sessionStorageId = state.pathParameters['sessionStorageId'];
       final args = _multisigFinalizeArgsFromExtra(state.extra);
-      if (sessionId != null &&
-          sessionId.isNotEmpty &&
+      if (sessionStorageId != null &&
+          sessionStorageId.isNotEmpty &&
           args != null &&
-          args.sessionId == Uri.decodeComponent(sessionId)) {
+          args.sessionStorageId == Uri.decodeComponent(sessionStorageId)) {
         return null;
       }
-      if (sessionId == null || sessionId.isEmpty) return '/welcome';
-      return '/multisig/session/$sessionId';
+      if (sessionStorageId == null || sessionStorageId.isEmpty) {
+        return '/welcome';
+      }
+      return '/multisig/session/$sessionStorageId';
     },
     pageBuilder: (context, state) {
-      final sessionId = state.pathParameters['sessionId'] ?? '';
+      final sessionStorageId = state.pathParameters['sessionStorageId'] ?? '';
       final finalizeArgs = _multisigFinalizeArgsFromExtra(state.extra)!;
       return CustomTransitionPage<void>(
         key: state.pageKey,
         transitionDuration: kOnboardingForwardDuration,
         reverseTransitionDuration: kOnboardingReverseDuration,
         child: MultisigBirthdayScreen(
-          sessionId: Uri.decodeComponent(sessionId),
+          sessionStorageId: Uri.decodeComponent(sessionStorageId),
           finalizeArgs: finalizeArgs,
         ),
         transitionsBuilder: _onboardingFadeTransition,
@@ -819,14 +823,16 @@ List<RouteBase> _desktopRoutes() => [
     },
   ),
   GoRoute(
-    path: '/multisig/session/:sessionId',
+    path: '/multisig/session/:sessionStorageId',
     pageBuilder: (context, state) {
-      final sessionId = state.pathParameters['sessionId'] ?? '';
+      final sessionStorageId = state.pathParameters['sessionStorageId'] ?? '';
       return CustomTransitionPage<void>(
         key: state.pageKey,
         transitionDuration: kOnboardingForwardDuration,
         reverseTransitionDuration: kOnboardingReverseDuration,
-        child: MultisigSessionScreen(sessionId: Uri.decodeComponent(sessionId)),
+        child: MultisigSessionScreen(
+          sessionStorageId: Uri.decodeComponent(sessionStorageId),
+        ),
         transitionsBuilder: _onboardingFadeTransition,
       );
     },

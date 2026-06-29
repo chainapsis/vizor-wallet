@@ -15,15 +15,16 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../providers/multisig_operation_error.dart';
 import '../../../providers/multisig_pending_session_provider.dart';
 import '../models/multisig_finalize_args.dart';
 import '../widgets/multisig_backup_wizard.dart';
 import '../widgets/multisig_flow_scaffold.dart';
 
 class MultisigSessionScreen extends ConsumerStatefulWidget {
-  const MultisigSessionScreen({required this.sessionId, super.key});
+  const MultisigSessionScreen({required this.sessionStorageId, super.key});
 
-  final String sessionId;
+  final String sessionStorageId;
 
   @override
   ConsumerState<MultisigSessionScreen> createState() =>
@@ -74,7 +75,7 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
     try {
       await ref
           .read(multisigPendingSessionsProvider.notifier)
-          .refreshSession(widget.sessionId);
+          .refreshSession(widget.sessionStorageId);
       if (!mounted) return;
       setState(() {
         _isRefreshing = false;
@@ -84,7 +85,7 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
       if (!mounted) return;
       setState(() {
         _isRefreshing = false;
-        if (!silent) _error = e.toString();
+        if (!silent) _error = friendlyMultisigError(e);
       });
     }
   }
@@ -106,7 +107,7 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
       if (!mounted) return;
       setState(() {
         _isLocking = false;
-        _error = e.toString();
+        _error = friendlyMultisigError(e);
       });
     }
   }
@@ -131,7 +132,7 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
       if (!mounted) return;
       setState(() {
         _isAdvancingCreate = false;
-        _error = e.toString();
+        _error = friendlyMultisigError(e);
       });
     }
   }
@@ -157,8 +158,9 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
       }
       if (!mounted) return;
       context.go(
-        '/multisig/session/${Uri.encodeComponent(session.sessionId)}/birthday',
+        '/multisig/session/${Uri.encodeComponent(session.storageId)}/birthday',
         extra: MultisigFinalizeArgs(
+          sessionStorageId: session.storageId,
           sessionId: session.sessionId,
           backupArtifactJson: completion.backupArtifactJson,
           backupPassphrase: completion.backupPassphrase,
@@ -168,7 +170,7 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
       if (!mounted) return;
       setState(() {
         _isConfirmingBackup = false;
-        _error = e.toString();
+        _error = friendlyMultisigError(e);
       });
     }
   }
@@ -186,7 +188,14 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
     final sessionsAsync = ref.watch(multisigPendingSessionsProvider);
     final session = sessionsAsync.value == null
         ? null
-        : multisigSessionById(sessionsAsync.value!, widget.sessionId);
+        : multisigSessionByStorageId(
+                sessionsAsync.value!,
+                widget.sessionStorageId,
+              ) ??
+              multisigSessionById(
+                sessionsAsync.value!,
+                widget.sessionStorageId,
+              );
     final participantsCount = session?.participants.length ?? 0;
     if (session != null && _selectedThreshold == null) {
       final maxThreshold = participantsCount <= 0 ? 1 : participantsCount;

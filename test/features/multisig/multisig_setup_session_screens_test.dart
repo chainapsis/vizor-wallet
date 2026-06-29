@@ -50,7 +50,7 @@ void main() {
       expect(security.rollbackCalls, 0);
       expect(coordinator.createCalls, hasLength(1));
       expect(store.sessions.values.single.sessionId, 'session-1');
-      expect(find.text('session:session-1'), findsOneWidget);
+      expect(find.text('session:session-1:participant-1'), findsOneWidget);
     },
   );
 
@@ -123,7 +123,7 @@ void main() {
       expect(security.unlockCalls, 0);
       expect(coordinator.createCalls, hasLength(1));
       expect(store.sessions.values.single.sessionId, 'session-1');
-      expect(find.text('session:session-1'), findsOneWidget);
+      expect(find.text('session:session-1:participant-1'), findsOneWidget);
     },
   );
 
@@ -164,7 +164,7 @@ void main() {
     expect(security.commitCalls, 0);
     expect(coordinator.joinCalls, hasLength(1));
     expect(store.sessions.values.single.sessionId, 'session-join');
-    expect(find.text('session:session-join'), findsOneWidget);
+    expect(find.text('session:session-join:participant-2'), findsOneWidget);
   });
 }
 
@@ -186,9 +186,10 @@ Widget _harness({
         builder: (_, _) => const MultisigJoinSessionScreen(),
       ),
       GoRoute(
-        path: '/multisig/session/:sessionId',
-        builder: (_, state) =>
-            Text('session:${state.pathParameters['sessionId']}'),
+        path: '/multisig/session/:sessionStorageId',
+        builder: (_, state) => Text(
+          'session:${Uri.decodeComponent(state.pathParameters['sessionStorageId'] ?? '')}',
+        ),
       ),
     ],
   );

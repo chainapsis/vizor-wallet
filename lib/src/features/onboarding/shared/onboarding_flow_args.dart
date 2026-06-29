@@ -34,6 +34,7 @@ class SetPasswordScreenArgs {
     this.keystoneUfvk,
     this.keystoneSeedFingerprint,
     this.keystoneZip32Index,
+    this.multisigSessionStorageId,
     this.multisigSessionId,
     this.multisigBackupArtifactJson,
     this.multisigBackupPassphrase,
@@ -69,6 +70,7 @@ class SetPasswordScreenArgs {
        );
 
   const SetPasswordScreenArgs.multisigFinalize({
+    required String sessionStorageId,
     required String sessionId,
     required String backupArtifactJson,
     required String backupPassphrase,
@@ -76,6 +78,7 @@ class SetPasswordScreenArgs {
   }) : this._(
          flow: SetPasswordFlow.multisigFinalize,
          birthdayHeight: birthdayHeight,
+         multisigSessionStorageId: sessionStorageId,
          multisigSessionId: sessionId,
          multisigBackupArtifactJson: backupArtifactJson,
          multisigBackupPassphrase: backupPassphrase,
@@ -89,6 +92,7 @@ class SetPasswordScreenArgs {
   final String? keystoneUfvk;
   final List<int>? keystoneSeedFingerprint;
   final int? keystoneZip32Index;
+  final String? multisigSessionStorageId;
   final String? multisigSessionId;
   final String? multisigBackupArtifactJson;
   final String? multisigBackupPassphrase;
@@ -102,6 +106,7 @@ class SetPasswordScreenArgs {
   String get requiredKeystoneUfvk => keystoneUfvk!;
   List<int> get requiredKeystoneSeedFingerprint => keystoneSeedFingerprint!;
   int get requiredKeystoneZip32Index => keystoneZip32Index!;
+  String get requiredMultisigSessionStorageId => multisigSessionStorageId!;
   String get requiredMultisigSessionId => multisigSessionId!;
   String get requiredMultisigBackupArtifactJson => multisigBackupArtifactJson!;
   String get requiredMultisigBackupPassphrase => multisigBackupPassphrase!;
@@ -111,7 +116,7 @@ class SetPasswordScreenArgs {
     SetPasswordFlow.importWallet => '/import/birthday',
     SetPasswordFlow.importKeystone => '/onboarding/keystone/birthday',
     SetPasswordFlow.multisigFinalize =>
-      '/multisig/session/${Uri.encodeComponent(requiredMultisigSessionId)}/birthday',
+      '/multisig/session/${Uri.encodeComponent(requiredMultisigSessionStorageId)}/birthday',
   };
 
   Object get backRouteExtra => switch (flow) {

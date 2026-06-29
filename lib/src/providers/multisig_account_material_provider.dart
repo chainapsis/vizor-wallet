@@ -86,6 +86,8 @@ class MultisigAccountMaterial {
   final int? localBackupVerifiedAt;
   final List<String> localBackupDestinations;
 
+  String get storageId => '$sessionId:$participantId';
+
   MultisigAccountMaterial copyWith({
     MultisigParticipantIdentity? identity,
     String? accessToken,
@@ -252,10 +254,10 @@ bool multisigMaterialBackupCompleted(MultisigAccountMaterial material) {
   return material.localBackupCompletedAt != null;
 }
 
-Set<String> materializedMultisigSessionIds(
+Set<String> materializedMultisigSessionStorageIds(
   Iterable<MultisigAccountMaterial> materials,
 ) {
-  return materials.map((material) => material.sessionId).toSet();
+  return materials.map((material) => material.storageId).toSet();
 }
 
 String _readRequiredIdentityString(Map<String, Object?> json, String key) {

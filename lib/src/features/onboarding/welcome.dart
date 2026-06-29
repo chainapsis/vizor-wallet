@@ -407,12 +407,15 @@ class _MainWelcomeContent extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final sessions = ref.watch(multisigPendingSessionsProvider).value;
     final materials = ref.watch(multisigAccountMaterialsProvider).value;
-    final materializedSessionIds = materials == null
+    final materializedSessionStorageIds = materials == null
         ? null
-        : materializedMultisigSessionIds(materials);
-    final pending = sessions == null || materializedSessionIds == null
+        : materializedMultisigSessionStorageIds(materials);
+    final pending = sessions == null || materializedSessionStorageIds == null
         ? null
-        : latestLocalMultisigSetupSession(sessions, materializedSessionIds);
+        : latestLocalMultisigSetupSession(
+            sessions,
+            materializedSessionStorageIds,
+          );
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -516,7 +519,7 @@ class _PendingMultisigCard extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => context.go(
-          '/multisig/session/${Uri.encodeComponent(session.sessionId)}',
+          '/multisig/session/${Uri.encodeComponent(session.storageId)}',
         ),
         child: Container(
           width: 320,

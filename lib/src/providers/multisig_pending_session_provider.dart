@@ -943,10 +943,13 @@ MultisigPendingSession? latestPendingMultisigSession(
 
 MultisigPendingSession? latestLocalMultisigSetupSession(
   List<MultisigPendingSession> sessions, [
-  Set<String> materializedSessionIds = const <String>{},
+  Set<String> materializedSessionStorageIds = const <String>{},
 ]) {
   for (final session in sessions) {
-    if (multisigSessionNeedsLocalSetup(session, materializedSessionIds)) {
+    if (multisigSessionNeedsLocalSetup(
+      session,
+      materializedSessionStorageIds,
+    )) {
       return session;
     }
   }
@@ -975,10 +978,10 @@ MultisigPendingSession? multisigSessionById(
 
 bool multisigSessionNeedsLocalSetup(
   MultisigPendingSession session, [
-  Set<String> materializedSessionIds = const <String>{},
+  Set<String> materializedSessionStorageIds = const <String>{},
 ]) {
   return session.state != 'failed' &&
-      !materializedSessionIds.contains(session.sessionId);
+      !materializedSessionStorageIds.contains(session.storageId);
 }
 
 bool multisigLocalBackupCompleted(MultisigPendingSession session) {

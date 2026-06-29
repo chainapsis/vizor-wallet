@@ -1088,10 +1088,8 @@ class MultisigSigningRequestsNotifier
   ) async {
     if (multisigMaterialBackupCompleted(material)) return;
     final sessions = await ref.read(multisigPendingSessionsProvider.future);
-    final session = multisigSessionById(sessions, material.sessionId);
-    if (session == null ||
-        session.participantId != material.participantId ||
-        !session.localBackupCompleted) {
+    final session = multisigSessionByStorageId(sessions, material.storageId);
+    if (session == null || !session.localBackupCompleted) {
       throw StateError(
         'Confirm the local multisig backup before signing with this account.',
       );

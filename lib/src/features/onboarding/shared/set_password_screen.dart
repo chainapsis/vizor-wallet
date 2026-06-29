@@ -118,10 +118,15 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                 final sessions = await ref.read(
                   multisigPendingSessionsProvider.future,
                 );
-                final session = multisigSessionById(
-                  sessions,
-                  args.requiredMultisigSessionId,
-                );
+                final session =
+                    multisigSessionByStorageId(
+                      sessions,
+                      args.requiredMultisigSessionStorageId,
+                    ) ??
+                    multisigSessionById(
+                      sessions,
+                      args.requiredMultisigSessionStorageId,
+                    );
                 if (session == null) {
                   throw StateError('Multisig session not found.');
                 }
@@ -131,7 +136,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                   );
                 }
                 await accountNotifier.finalizeMultisigAccount(
-                  session.sessionId,
+                  session.storageId,
                   backupArtifactJson: args.requiredMultisigBackupArtifactJson,
                   backupPassphrase: args.requiredMultisigBackupPassphrase,
                   birthdayHeight: args.importBirthdayHeight,

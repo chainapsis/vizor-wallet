@@ -27,12 +27,12 @@ enum _MultisigBirthdaySubmitPhase { idle, stoppingSync, importing }
 
 class MultisigBirthdayScreen extends ConsumerStatefulWidget {
   const MultisigBirthdayScreen({
-    required this.sessionId,
+    required this.sessionStorageId,
     required this.finalizeArgs,
     super.key,
   });
 
-  final String sessionId;
+  final String sessionStorageId;
   final MultisigFinalizeArgs finalizeArgs;
 
   @override
@@ -257,8 +257,11 @@ class _MultisigBirthdayScreenState
 
     try {
       final sessions = await ref.read(multisigPendingSessionsProvider.future);
-      final session = multisigSessionById(sessions, widget.sessionId);
+      final session =
+          multisigSessionByStorageId(sessions, widget.sessionStorageId) ??
+          multisigSessionById(sessions, widget.sessionStorageId);
       if (session == null ||
+          session.storageId != widget.finalizeArgs.sessionStorageId ||
           session.sessionId != widget.finalizeArgs.sessionId) {
         router.go('/welcome');
         return;
@@ -280,6 +283,7 @@ class _MultisigBirthdayScreenState
         router.go(
           '/multisig/set-password',
           extra: SetPasswordScreenArgs.multisigFinalize(
+            sessionStorageId: session.storageId,
             sessionId: session.sessionId,
             backupArtifactJson: widget.finalizeArgs.backupArtifactJson,
             backupPassphrase: widget.finalizeArgs.backupPassphrase,
@@ -295,7 +299,7 @@ class _MultisigBirthdayScreenState
         ref,
         () async {
           await accountNotifier.finalizeMultisigAccount(
-            session.sessionId,
+            session.storageId,
             backupArtifactJson: widget.finalizeArgs.backupArtifactJson,
             backupPassphrase: widget.finalizeArgs.backupPassphrase,
             birthdayHeight: birthdayHeight,
