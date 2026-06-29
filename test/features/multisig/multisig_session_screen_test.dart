@@ -6,6 +6,7 @@ import 'package:zcash_wallet/src/features/multisig/screens/multisig_session_scre
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/multisig_account_material_provider.dart';
 import 'package:zcash_wallet/src/providers/multisig_pending_session_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_realtime_provider.dart';
 
 void main() {
   testWidgets('start create keeps advancing while create is in progress', (
@@ -24,6 +25,9 @@ void main() {
           multisigPendingSessionsProvider.overrideWith(() => notifier),
           multisigPendingSessionSummariesProvider.overrideWith(
             (ref) async => const <MultisigPendingSessionSummary>[],
+          ),
+          multisigRealtimeProvider.overrideWith(
+            () => _NoopMultisigRealtimeNotifier(),
           ),
         ],
         child: MaterialApp(
@@ -57,6 +61,22 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
+}
+
+class _NoopMultisigRealtimeNotifier extends MultisigRealtimeNotifier {
+  @override
+  MultisigRealtimeState build() => const MultisigRealtimeState();
+
+  @override
+  MultisigRealtimeLease acquire(
+    MultisigRealtimeTarget target, {
+    required String reason,
+  }) {
+    return MultisigRealtimeLease.noop();
+  }
+
+  @override
+  void updateTarget(MultisigRealtimeTarget target) {}
 }
 
 class _UnlockedAppSecurityNotifier extends AppSecurityNotifier {

@@ -14,7 +14,9 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/multisig_account_material_provider.dart';
 import '../../../providers/multisig_operation_error.dart';
+import '../../../providers/multisig_realtime_provider.dart';
 import '../../../providers/multisig_signing_request_provider.dart';
 import '../../send/services/sapling_params.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
@@ -38,6 +40,8 @@ class _MultisigSigningDetailScreenState
   String? _error;
   bool _showSaplingParamsPrompt = false;
   Completer<bool>? _saplingParamsPrompt;
+  MultisigRealtimeLease? _realtimeLease;
+  String? _realtimeKey;
 
   @override
   void initState() {
@@ -51,6 +55,7 @@ class _MultisigSigningDetailScreenState
 
   @override
   void dispose() {
+    _releaseRealtimeLease();
     final completer = _saplingParamsPrompt;
     if (completer != null && !completer.isCompleted) {
       completer.complete(false);
@@ -174,9 +179,40 @@ class _MultisigSigningDetailScreenState
     });
   }
 
+  void _syncRealtimeLease(MultisigAccountMaterial? material) {
+    if (material == null) {
+      _releaseRealtimeLease();
+      return;
+    }
+
+    final target = MultisigRealtimeTarget.fromAccountMaterial(material);
+    final key = target.connectionKey;
+    final notifier = ref.read(multisigRealtimeProvider.notifier);
+    if (_realtimeKey == key) {
+      notifier.updateTarget(target);
+      return;
+    }
+
+    _releaseRealtimeLease();
+    _realtimeKey = key;
+    _realtimeLease = notifier.acquire(target, reason: 'signing-detail');
+  }
+
+  void _releaseRealtimeLease() {
+    _realtimeLease?.dispose();
+    _realtimeLease = null;
+    _realtimeKey = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final materials = ref.watch(multisigAccountMaterialsProvider).value;
+    final activeMaterial = _materialForAccount(materials, accountUuid);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncRealtimeLease(activeMaterial);
+    });
     final requests =
         ref.watch(multisigSigningRequestsProvider).value ??
         const <MultisigSigningRequestRecord>[];
@@ -227,6 +263,17 @@ class _MultisigSigningDetailScreenState
       ),
     );
   }
+}
+
+MultisigAccountMaterial? _materialForAccount(
+  List<MultisigAccountMaterial>? materials,
+  String? accountUuid,
+) {
+  if (accountUuid == null || materials == null) return null;
+  for (final material in materials) {
+    if (material.accountUuid == accountUuid) return material;
+  }
+  return null;
 }
 
 class _SigningDetailContent extends StatelessWidget {

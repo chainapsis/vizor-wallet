@@ -13,6 +13,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/multisig_account_material_provider.dart';
+import '../../../providers/multisig_realtime_provider.dart';
 import '../../../providers/multisig_signing_request_provider.dart';
 
 class MultisigSigningHomeScreen extends ConsumerStatefulWidget {
@@ -27,6 +28,8 @@ class _MultisigSigningHomeScreenState
     extends ConsumerState<MultisigSigningHomeScreen> {
   bool _refreshing = false;
   String? _refreshError;
+  MultisigRealtimeLease? _realtimeLease;
+  String? _realtimeKey;
 
   @override
   void initState() {
@@ -36,6 +39,12 @@ class _MultisigSigningHomeScreenState
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
       unawaited(_refresh());
     });
+  }
+
+  @override
+  void dispose() {
+    _releaseRealtimeLease();
+    super.dispose();
   }
 
   Future<void> _refresh() async {
@@ -69,6 +78,31 @@ class _MultisigSigningHomeScreenState
     }
   }
 
+  void _syncRealtimeLease(MultisigAccountMaterial? material) {
+    if (material == null) {
+      _releaseRealtimeLease();
+      return;
+    }
+
+    final target = MultisigRealtimeTarget.fromAccountMaterial(material);
+    final key = target.connectionKey;
+    final notifier = ref.read(multisigRealtimeProvider.notifier);
+    if (_realtimeKey == key) {
+      notifier.updateTarget(target);
+      return;
+    }
+
+    _releaseRealtimeLease();
+    _realtimeKey = key;
+    _realtimeLease = notifier.acquire(target, reason: 'signing-home');
+  }
+
+  void _releaseRealtimeLease() {
+    _realtimeLease?.dispose();
+    _realtimeLease = null;
+    _realtimeKey = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final accountState = ref.watch(accountProvider).value;
@@ -82,6 +116,10 @@ class _MultisigSigningHomeScreenState
       materialsAsync.value,
       accountUuid,
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncRealtimeLease(isMultisig ? activeMaterial : null);
+    });
     final requests = [
       for (final request
           in requestsAsync.value ?? const <MultisigSigningRequestRecord>[])
@@ -303,27 +341,13 @@ class _SessionIdBadge extends StatelessWidget {
             horizontal: AppSpacing.xs,
             vertical: AppSpacing.xxs,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Session ID',
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              Flexible(
-                child: Text(
-                  displayValue,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.text.primary,
-                  ),
-                ),
-              ),
-            ],
+          child: Text(
+            'Session ID: $displayValue',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.labelMedium.copyWith(
+              color: colors.text.primary,
+            ),
           ),
         ),
       ),

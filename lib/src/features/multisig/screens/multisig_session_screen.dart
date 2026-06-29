@@ -18,6 +18,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/multisig_operation_error.dart';
 import '../../../providers/multisig_pending_session_provider.dart';
+import '../../../providers/multisig_realtime_provider.dart';
 import '../models/multisig_finalize_args.dart';
 import '../widgets/multisig_backup_wizard.dart';
 import '../widgets/multisig_onboarding_flow.dart';
@@ -44,6 +45,8 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
   int? _selectedThreshold;
   String? _error;
   MultisigCreateAdvanceResult? _createProgress;
+  MultisigRealtimeLease? _realtimeLease;
+  String? _realtimeKey;
 
   @override
   void initState() {
@@ -68,6 +71,7 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
 
   @override
   void dispose() {
+    _releaseRealtimeLease();
     _refreshTimer?.cancel();
     _createAdvanceTimer?.cancel();
     super.dispose();
@@ -230,6 +234,31 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
     ).showSnackBar(const SnackBar(content: Text('Session ID copied.')));
   }
 
+  void _syncRealtimeLease(MultisigPendingSession? session, bool isUnlocked) {
+    if (!isUnlocked || session == null || !session.isPending) {
+      _releaseRealtimeLease();
+      return;
+    }
+
+    final target = MultisigRealtimeTarget.fromPendingSession(session);
+    final key = target.connectionKey;
+    final notifier = ref.read(multisigRealtimeProvider.notifier);
+    if (_realtimeKey == key) {
+      notifier.updateTarget(target);
+      return;
+    }
+
+    _releaseRealtimeLease();
+    _realtimeKey = key;
+    _realtimeLease = notifier.acquire(target, reason: 'setup');
+  }
+
+  void _releaseRealtimeLease() {
+    _realtimeLease?.dispose();
+    _realtimeLease = null;
+    _realtimeKey = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final security = ref.watch(appSecurityProvider);
@@ -256,6 +285,10 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
           session.threshold ?? (participantsCount >= 2 ? 2 : 1);
       _selectedThreshold = defaultThreshold.clamp(1, maxThreshold).toInt();
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncRealtimeLease(session, security.isUnlocked);
+    });
 
     final refreshButton = session == null || !security.isUnlocked
         ? null
