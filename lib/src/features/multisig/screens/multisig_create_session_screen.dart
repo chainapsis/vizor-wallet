@@ -7,8 +7,10 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../providers/app_security_provider.dart';
 import '../../../providers/multisig_pending_session_provider.dart';
 import '../widgets/multisig_flow_scaffold.dart';
+import '../widgets/multisig_setup_security_gate.dart';
 
 class MultisigCreateSessionScreen extends ConsumerStatefulWidget {
   const MultisigCreateSessionScreen({super.key});
@@ -22,6 +24,7 @@ class _MultisigCreateSessionScreenState
     extends ConsumerState<MultisigCreateSessionScreen> {
   late final TextEditingController _coordinatorController;
   late final TextEditingController _labelController;
+  final _securityGateController = MultisigSetupSecurityGateController();
   bool _isSubmitting = false;
   bool _showValidation = false;
   String? _submitError;
@@ -39,13 +42,15 @@ class _MultisigCreateSessionScreenState
   void dispose() {
     _coordinatorController.dispose();
     _labelController.dispose();
+    _securityGateController.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     if (_isSubmitting) return;
     final coordinatorUrl = _coordinatorController.text.trim();
-    if (coordinatorUrl.isEmpty) {
+    final security = ref.read(appSecurityProvider);
+    if (coordinatorUrl.isEmpty || !_securityGateController.isValid(security)) {
       setState(() {
         _showValidation = true;
         _submitError = null;
@@ -59,12 +64,16 @@ class _MultisigCreateSessionScreenState
     });
 
     try {
-      final pending = await ref
-          .read(multisigPendingSessionsProvider.notifier)
-          .createSession(
-            coordinatorUrl: coordinatorUrl,
-            label: _labelController.text,
-          );
+      final pending = await _securityGateController.runWithOpenSession(
+        ref: ref,
+        security: security,
+        action: () => ref
+            .read(multisigPendingSessionsProvider.notifier)
+            .createSession(
+              coordinatorUrl: coordinatorUrl,
+              label: _labelController.text,
+            ),
+      );
       if (!mounted) return;
       context.go('/multisig/session/${Uri.encodeComponent(pending.sessionId)}');
     } catch (e) {
@@ -78,6 +87,7 @@ class _MultisigCreateSessionScreenState
 
   @override
   Widget build(BuildContext context) {
+    final security = ref.watch(appSecurityProvider);
     return MultisigFlowScaffold(
       title: 'Create multisig setup',
       subtitle: 'Start a coordinator session and share the session ID.',
@@ -116,6 +126,21 @@ class _MultisigCreateSessionScreenState
                 showClearButton: true,
                 onSubmitted: (_) => _submit(),
               ),
+              if (_securityGateController.requiresInput(security)) ...[
+                const SizedBox(height: AppSpacing.sm),
+                MultisigSetupSecurityGate(
+                  controller: _securityGateController,
+                  security: security,
+                  showValidation: _showValidation,
+                  enabled: !_isSubmitting,
+                  onChanged: () {
+                    setState(() {
+                      _submitError = null;
+                    });
+                  },
+                  onSubmitted: _submit,
+                ),
+              ],
               if (_submitError != null) ...[
                 const SizedBox(height: AppSpacing.md),
                 _ErrorText(message: _submitError!),
