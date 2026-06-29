@@ -26,6 +26,7 @@ void main() {
           localParticipantId: 'participant-b',
           selectedParticipantIds: const ['participant-a', 'participant-b'],
           round1ParticipantIds: const ['participant-b'],
+          localStateJson: '{"round1_sent":true}',
         ),
       ]),
     );
@@ -36,6 +37,34 @@ void main() {
     expect(find.text('Waiting'), findsOneWidget);
     expect(
       find.text('No signing requests are waiting on others.'),
+      findsNothing,
+    );
+  });
+
+  testWidgets('shows completed shares as ready without local Round 2 state', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _harness([
+        _record(
+          signingRequestId: 'request-ready',
+          requesterParticipantId: 'participant-a',
+          localParticipantId: 'participant-b',
+          selectedParticipantIds: const ['participant-a', 'participant-b'],
+          round1ParticipantIds: const ['participant-a', 'participant-b'],
+          round2ParticipantIds: const ['participant-a', 'participant-b'],
+        ),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ready to broadcast'), findsOneWidget);
+    expect(find.text('Ready'), findsOneWidget);
+    expect(
+      find.text('No completed signatures are ready to broadcast.'),
       findsNothing,
     );
   });
@@ -142,6 +171,7 @@ MultisigSigningRequestRecord _record({
   required List<String> selectedParticipantIds,
   List<String> round1ParticipantIds = const <String>[],
   List<String> round2ParticipantIds = const <String>[],
+  String? localStateJson,
 }) {
   return MultisigSigningRequestRecord(
     signingRequestId: signingRequestId,
@@ -162,5 +192,6 @@ MultisigSigningRequestRecord _record({
     updatedAt: 1,
     round1ParticipantIds: round1ParticipantIds,
     round2ParticipantIds: round2ParticipantIds,
+    localStateJson: localStateJson,
   );
 }

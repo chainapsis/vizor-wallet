@@ -290,6 +290,107 @@ void main() {
     },
   );
 
+  test('retries round submission after unauthorized advance detail', () async {
+    final requestStore = _FakeSigningRequestStore()
+      ..records = [_submittedRecord(signingRequestId: 'signing-request')];
+    final materialStore = _FakeAccountMaterialStore()
+      ..put(
+        _accountMaterial(
+          localBackupCompletedAt: 10,
+          accessTokenExpiresAt: 9999999999,
+        ),
+      );
+    final coordinator = _FakeCoordinatorService(
+      failRound1UnauthorizedOnce: true,
+    );
+    final container = _container(
+      requestStore: requestStore,
+      materialStore: materialStore,
+      coordinatorService: coordinator,
+    );
+    addTearDown(container.dispose);
+
+    final updated = await container
+        .read(multisigSigningRequestsProvider.notifier)
+        .submitRound1(requestStore.records.single);
+
+    expect(coordinator.refreshCalls, ['session-1|participant-1|refresh-token']);
+    expect(coordinator.round1AccessTokens, ['access-token', 'new-access']);
+    expect(updated.round1ParticipantIds, ['participant-1']);
+    expect(updated.localRound1Submitted, isTrue);
+  });
+
+  test('submitRound2 requires local Round 1 signing state', () async {
+    final requestStore = _FakeSigningRequestStore()
+      ..records = [
+        _submittedRecord(signingRequestId: 'signing-request').copyWith(
+          localStateJson: jsonEncode({'round1_sent': false}),
+          round1ParticipantIds: const ['participant-1', 'participant-2'],
+        ),
+      ];
+    final materialStore = _FakeAccountMaterialStore()
+      ..put(
+        _accountMaterial(
+          localBackupCompletedAt: 10,
+          accessTokenExpiresAt: 9999999999,
+        ),
+      );
+    final coordinator = _FakeCoordinatorService();
+    final container = _container(
+      requestStore: requestStore,
+      materialStore: materialStore,
+      coordinatorService: coordinator,
+    );
+    addTearDown(container.dispose);
+
+    await expectLater(
+      container
+          .read(multisigSigningRequestsProvider.notifier)
+          .submitRound2(requestStore.records.single),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'Submit Round 1 before Round 2.',
+        ),
+      ),
+    );
+
+    expect(coordinator.round2Calls, isEmpty);
+  });
+
+  test('aggregateSignedPczt can recover without local Round 2 state', () async {
+    final requestStore = _FakeSigningRequestStore()
+      ..records = [
+        _submittedRecord(signingRequestId: 'signing-request').copyWith(
+          round1ParticipantIds: const ['participant-1', 'participant-2'],
+          round2ParticipantIds: const ['participant-1', 'participant-2'],
+        ),
+      ];
+    final materialStore = _FakeAccountMaterialStore()
+      ..put(
+        _accountMaterial(
+          localBackupCompletedAt: 10,
+          accessTokenExpiresAt: 9999999999,
+        ),
+      );
+    final coordinator = _FakeCoordinatorService();
+    final container = _container(
+      requestStore: requestStore,
+      materialStore: materialStore,
+      coordinatorService: coordinator,
+    );
+    addTearDown(container.dispose);
+
+    final updated = await container
+        .read(multisigSigningRequestsProvider.notifier)
+        .aggregateSignedPczt(requestStore.records.single);
+
+    expect(coordinator.aggregateCalls, ['signing-request|participant-1']);
+    expect(updated.signedPcztB64, 'BAUG');
+    expect(updated.localStateJson, '{"signed_pczt_b64":true}');
+  });
+
   test('refreshForAccount catches up from stored inbox cursor', () async {
     final requestStore = _FakeSigningRequestStore();
     final materialStore = _FakeAccountMaterialStore()
@@ -450,6 +551,11 @@ class _FakePendingSessionsNotifier extends MultisigPendingSessionsNotifier {
   Future<List<MultisigPendingSession>> build() async {
     return const <MultisigPendingSession>[];
   }
+
+  @override
+  Future<void> applyAuthUpdate(
+    rust_multisig.ApiMultisigAuthUpdate update,
+  ) async {}
 }
 
 class _FakeSigningRequestStore implements MultisigSigningRequestStore {
@@ -602,9 +708,11 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
     this.inboxCursor = 0,
     this.inboxError,
     this.round1Response,
+    this.failRound1UnauthorizedOnce = false,
   });
 
   bool failPrepareOnce;
+  bool failRound1UnauthorizedOnce;
   final Object? submitPreparedError;
   final List<rust_multisig.ApiMultisigSigningMessage> inboxMessages;
   final int inboxCursor;
@@ -614,6 +722,34 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
   final submitCalls = <String>[];
   final inboxCalls = <String>[];
   final round1Calls = <String>[];
+  final round1AccessTokens = <String>[];
+  final round2Calls = <String>[];
+  final aggregateCalls = <String>[];
+  final refreshCalls = <String>[];
+
+  @override
+  Future<rust_multisig.ApiMultisigAuthUpdate> refreshOrResumeAuth({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String participantId,
+    required String refreshToken,
+    required String admissionSecretKey,
+    required String deliverySecretKey,
+  }) async {
+    refreshCalls.add('$sessionId|$participantId|$refreshToken');
+    return rust_multisig.ApiMultisigAuthUpdate(
+      sessionId: 'session-1',
+      participantId: 'participant-1',
+      accessToken: 'new-access',
+      refreshToken: 'new-refresh',
+      admissionPublicKey: 'new-admission-public',
+      deliverySecretKey: 'new-delivery-secret',
+      deliveryPublicKey: 'new-delivery-public',
+      accessTokenExpiresAt: BigInt.from(9999999999),
+      refreshTokenExpiresAt: BigInt.from(9999999999),
+      resumed: false,
+    );
+  }
 
   @override
   Future<rust_multisig.ApiPreparedMultisigSigningRequest>
@@ -706,12 +842,65 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
     String? localStateJson,
   }) async {
     round1Calls.add('$signingRequestId|$participantId');
+    round1AccessTokens.add(accessToken);
+    if (failRound1UnauthorizedOnce && accessToken == 'access-token') {
+      failRound1UnauthorizedOnce = false;
+      return rust_multisig.ApiMultisigSigningAdvance(
+        localStateJson: '{"round1_sent":false}',
+        detail:
+            'Network error while submitting Round 1: ${_structuredError('unauthorized', 'access token expired', 401)}',
+        submitted: false,
+      );
+    }
     return round1Response ??
         const rust_multisig.ApiMultisigSigningAdvance(
-          localStateJson: '{"round1":true}',
+          localStateJson: '{"round1_sent":true}',
           detail: 'Round 1 submitted.',
           submitted: true,
         );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound2({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String deliverySecretKey,
+    required List<String> selectedParticipantIds,
+    required List<int> pcztBytes,
+    required String keyPackageB64,
+    String? localStateJson,
+  }) async {
+    round2Calls.add('$signingRequestId|$participantId');
+    return const rust_multisig.ApiMultisigSigningAdvance(
+      localStateJson: '{"round2_sent":true}',
+      detail: 'Round 2 submitted.',
+      submitted: true,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSignedPczt> aggregateSignedPczt({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String deliverySecretKey,
+    required List<String> selectedParticipantIds,
+    required List<int> pcztBytes,
+    required String groupPublicPackageJson,
+    String? localStateJson,
+  }) async {
+    aggregateCalls.add('$signingRequestId|$participantId');
+    return rust_multisig.ApiMultisigSignedPczt(
+      localStateJson: '{"signed_pczt_b64":true}',
+      signedPcztBytes: Uint8List.fromList([4, 5, 6]),
+    );
   }
 
   @override
@@ -856,13 +1045,15 @@ rust_multisig.ApiMultisigSigningMessage _txRequestMessage({
 }
 
 Exception _structuredConflict(String message) {
-  return Exception(
-    jsonEncode({
-      'marker': 'zcash_wallet_multisig_error_v1',
-      'kind': 'conflict',
-      'message': message,
-      'httpStatus': 409,
-      'retryable': true,
-    }),
-  );
+  return Exception(_structuredError('conflict', message, 409));
+}
+
+String _structuredError(String kind, String message, int httpStatus) {
+  return jsonEncode({
+    'marker': 'zcash_wallet_multisig_error_v1',
+    'kind': kind,
+    'message': message,
+    'httpStatus': httpStatus,
+    'retryable': true,
+  });
 }

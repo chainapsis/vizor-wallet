@@ -129,12 +129,36 @@ class MultisigSigningRequestRecord {
   bool get isReviewOnly =>
       !localParticipantSelected && requesterParticipantId != localParticipantId;
   bool get isBroadcasted => hasBroadcastTxid && broadcastResultSent;
+  bool get localRound1Submitted => _localSigningStateBool('round1_sent');
+  bool get localRound2Submitted => _localSigningStateBool('round2_sent');
+  int get round1SelectedParticipantCount =>
+      _selectedParticipantCount(round1ParticipantIds);
+  int get round2SelectedParticipantCount =>
+      _selectedParticipantCount(round2ParticipantIds);
+  bool get round1Complete =>
+      round1SelectedParticipantCount >= selectedParticipantIds.length;
+  bool get round2Complete =>
+      round2SelectedParticipantCount >= selectedParticipantIds.length;
   bool get readyToBroadcast =>
-      !isBroadcasted &&
-      localParticipantSelected &&
-      round2ParticipantIds.length >= selectedParticipantIds.length;
+      !isBroadcasted && localParticipantSelected && round2Complete;
 
   String get shortSigningRequestId => _shortId(signingRequestId);
+
+  bool _localSigningStateBool(String key) {
+    final raw = localStateJson;
+    if (raw == null || raw.trim().isEmpty) return false;
+    try {
+      final decoded = jsonDecode(raw);
+      return decoded is Map && decoded[key] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  int _selectedParticipantCount(List<String> participantIds) {
+    final selected = selectedParticipantIds.toSet();
+    return participantIds.where(selected.contains).toSet().length;
+  }
 
   Map<String, Object?> toJson() => {
     'signingRequestId': signingRequestId,
@@ -891,6 +915,9 @@ class MultisigSigningRequestsNotifier
     MultisigSigningRequestRecord record,
     MultisigAccountMaterial material,
   ) async {
+    if (!record.localRound1Submitted) {
+      throw StateError('Submit Round 1 before Round 2.');
+    }
     final result = await _coordinator.submitSigningRound2(
       coordinatorUrl: material.coordinatorUrl,
       sessionId: record.sessionId,
@@ -1146,13 +1173,16 @@ class MultisigSigningRequestsNotifier
     } catch (e) {
       final parsed = MultisigOperationException.from(e);
       if (!parsed.isUnauthorized) {
+        if (e is StateError) rethrow;
         throw parsed;
       }
       final refreshed = await _materialWithFreshAccess(material, force: true);
       try {
         return await operation(refreshed);
       } catch (retryError) {
-        throw MultisigOperationException.from(retryError);
+        final parsed = MultisigOperationException.from(retryError);
+        if (retryError is StateError && !parsed.isUnauthorized) rethrow;
+        throw parsed;
       }
     }
   }

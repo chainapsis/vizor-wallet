@@ -302,18 +302,10 @@ class _SigningDetailContent extends StatelessWidget {
     final colors = context.colors;
     final localSelected = request.localParticipantSelected;
     final reviewOnly = request.isReviewOnly;
-    final round1Done = request.round1ParticipantIds.contains(
-      request.localParticipantId,
-    );
-    final round2Done = request.round2ParticipantIds.contains(
-      request.localParticipantId,
-    );
-    final round1Complete =
-        request.round1ParticipantIds.length >=
-        request.selectedParticipantIds.length;
-    final round2Complete =
-        request.round2ParticipantIds.length >=
-        request.selectedParticipantIds.length;
+    final round1Done = request.localRound1Submitted;
+    final round2Done = request.localRound2Submitted;
+    final round1Complete = request.round1Complete;
+    final round2Complete = request.round2Complete;
     final coordinatorSubmitted = request.coordinatorSubmitted;
     final busy = busyAction != null;
     final amount = ZecAmount.fromZatoshi(
@@ -378,7 +370,7 @@ class _SigningDetailContent extends StatelessWidget {
                 _StepPanel(
                   title: 'Round 1',
                   count:
-                      '${request.round1ParticipantIds.length}/${request.selectedParticipantIds.length}',
+                      '${request.round1SelectedParticipantCount}/${request.selectedParticipantIds.length}',
                   body: !coordinatorSubmitted
                       ? 'Submit the request to the coordinator before signing.'
                       : round1Done
@@ -408,9 +400,11 @@ class _SigningDetailContent extends StatelessWidget {
                 _StepPanel(
                   title: 'Round 2',
                   count:
-                      '${request.round2ParticipantIds.length}/${request.selectedParticipantIds.length}',
+                      '${request.round2SelectedParticipantCount}/${request.selectedParticipantIds.length}',
                   body: !coordinatorSubmitted
                       ? 'Submit the request to the coordinator before signing.'
+                      : !round1Done
+                      ? 'Submit your Round 1 commitment before Round 2.'
                       : !round1Complete
                       ? 'Round 2 opens after every selected signer submits Round 1.'
                       : round2Done
@@ -421,6 +415,7 @@ class _SigningDetailContent extends StatelessWidget {
                         !busy &&
                             coordinatorSubmitted &&
                             localSelected &&
+                            round1Done &&
                             round1Complete &&
                             !round2Done &&
                             !request.isBroadcasted

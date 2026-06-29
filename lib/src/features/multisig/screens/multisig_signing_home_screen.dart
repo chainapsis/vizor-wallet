@@ -288,14 +288,11 @@ class _MultisigSigningHomeScreenState
         request.isBroadcasted) {
       return false;
     }
-    if (!request.round1ParticipantIds.contains(localParticipantId)) {
+    if (request.readyToBroadcast) return false;
+    if (!request.localRound1Submitted) {
       return true;
     }
-    final round1Complete =
-        request.round1ParticipantIds.length >=
-        request.selectedParticipantIds.length;
-    return round1Complete &&
-        !request.round2ParticipantIds.contains(localParticipantId);
+    return request.round1Complete && !request.localRound2Submitted;
   }
 
   bool _waitingOnOtherSigners(
@@ -307,8 +304,7 @@ class _MultisigSigningHomeScreenState
     if (!request.selectedParticipantIds.contains(localParticipantId)) {
       return false;
     }
-    return request.round1ParticipantIds.contains(localParticipantId) ||
-        request.round2ParticipantIds.contains(localParticipantId);
+    return request.localRound1Submitted || request.localRound2Submitted;
   }
 }
 
@@ -406,12 +402,7 @@ class _RequestRow extends StatelessWidget {
         : request.readyToBroadcast
         ? 'Ready'
         : request.localParticipantSelected &&
-              (request.round1ParticipantIds.contains(
-                    request.localParticipantId,
-                  ) ||
-                  request.round2ParticipantIds.contains(
-                    request.localParticipantId,
-                  ))
+              (request.localRound1Submitted || request.localRound2Submitted)
         ? 'Waiting'
         : 'Requested';
 
@@ -457,12 +448,12 @@ class _RequestRow extends StatelessWidget {
                 else ...[
                   _ProgressPill(
                     label:
-                        'R1 ${request.round1ParticipantIds.length}/${request.selectedParticipantIds.length}',
+                        'R1 ${request.round1SelectedParticipantCount}/${request.selectedParticipantIds.length}',
                   ),
                   const SizedBox(width: AppSpacing.xxs),
                   _ProgressPill(
                     label:
-                        'R2 ${request.round2ParticipantIds.length}/${request.selectedParticipantIds.length}',
+                        'R2 ${request.round2SelectedParticipantCount}/${request.selectedParticipantIds.length}',
                   ),
                 ],
                 const SizedBox(width: AppSpacing.sm),

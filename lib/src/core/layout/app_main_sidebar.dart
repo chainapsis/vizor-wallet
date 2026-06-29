@@ -485,26 +485,18 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
           )) {
         continue;
       }
-      final round1Done = request.round1ParticipantIds.contains(
-        request.localParticipantId,
-      );
-      final round1Complete =
-          request.round1ParticipantIds.length >=
-          request.selectedParticipantIds.length;
-      final round2Done = request.round2ParticipantIds.contains(
-        request.localParticipantId,
-      );
-      final round2Complete =
-          request.round2ParticipantIds.length >=
-          request.selectedParticipantIds.length;
+      final round1Done = request.localRound1Submitted;
+      final round1Complete = request.round1Complete;
+      final round2Done = request.localRound2Submitted;
+      final round2Complete = request.round2Complete;
 
-      if (request.coordinatorSubmitted && !round1Done) {
+      if (round2Complete) {
+        count++;
+      } else if (request.coordinatorSubmitted && !round1Done) {
         count++;
       } else if (request.coordinatorSubmitted &&
           round1Complete &&
           !round2Done) {
-        count++;
-      } else if (round2Complete) {
         count++;
       }
     }
