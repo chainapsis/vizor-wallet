@@ -49,6 +49,47 @@ void main() {
     expect(sessions.map((entry) => entry.sessionId), ['locked-session']);
   });
 
+  test(
+    'exposes pending session summaries while the wallet is locked',
+    () async {
+      final store = _FakePendingSessionStore()
+        ..put(_pendingSession(sessionId: 'locked-session'));
+      final container = _container(store: store, isUnlocked: false);
+      addTearDown(container.dispose);
+
+      expect(
+        await container.read(multisigPendingSessionsProvider.future),
+        isEmpty,
+      );
+
+      final summaries = await container.read(
+        multisigPendingSessionSummariesProvider.future,
+      );
+
+      expect(summaries, hasLength(1));
+      expect(summaries.single.storageId, 'locked-session:participant-1');
+      expect(summaries.single.sessionId, 'locked-session');
+    },
+  );
+
+  test(
+    'ignores stale summaries after the encrypted pending session is gone',
+    () async {
+      final session = _pendingSession(sessionId: 'stale-session');
+      final store = _FakePendingSessionStore()
+        ..summaries[session.storageId] =
+            MultisigPendingSessionSummary.fromSession(session);
+      final container = _container(store: store, isUnlocked: false);
+      addTearDown(container.dispose);
+
+      final summaries = await container.read(
+        multisigPendingSessionSummariesProvider.future,
+      );
+
+      expect(summaries, isEmpty);
+    },
+  );
+
   test('creates a session with a generated identity and stores it', () async {
     final store = _FakePendingSessionStore();
     final service = _FakeMultisigCoordinatorService();
@@ -73,6 +114,7 @@ void main() {
       'https://coordinator.example|Family vault|${_apiIdentity.admissionSecretKey}',
     ]);
     expect(store.sessions[created.storageId], same(created));
+    expect(store.summaries[created.storageId]?.label, 'Family vault');
     expect(
       container.read(multisigPendingSessionsProvider).value,
       contains(same(created)),
@@ -99,6 +141,7 @@ void main() {
       'https://coordinator.example|session-join|Signer 2|${_apiIdentity.deliverySecretKey}',
     ]);
     expect(store.sessions[joined.storageId], same(joined));
+    expect(store.summaries[joined.storageId]?.label, 'Signer 2');
   });
 
   test('joinSession rejects session owner mismatch before storing', () async {
@@ -332,6 +375,7 @@ void main() {
     await container.read(multisigPendingSessionsProvider.notifier).clearAll();
 
     expect(store.sessions, isEmpty);
+    expect(store.summaries, isEmpty);
     expect(container.read(multisigPendingSessionsProvider).value, isEmpty);
   });
 
@@ -359,6 +403,17 @@ void main() {
         _pendingSession(sessionId: 'failed').copyWith(state: 'failed'),
       ),
       isFalse,
+    );
+
+    expect(
+      latestLocalMultisigSetupSummary(
+        [
+          MultisigPendingSessionSummary.fromSession(materialized),
+          MultisigPendingSessionSummary.fromSession(next),
+        ],
+        {materialized.storageId},
+      )?.storageId,
+      next.storageId,
     );
   });
 
@@ -596,6 +651,7 @@ rust_multisig.ApiMultisigSession _apiSession({
 
 class _FakePendingSessionStore implements MultisigPendingSessionStore {
   final sessions = <String, MultisigPendingSession>{};
+  final summaries = <String, MultisigPendingSessionSummary>{};
   final createStates = <String, String>{};
 
   void put(MultisigPendingSession session) {
@@ -623,6 +679,41 @@ class _FakePendingSessionStore implements MultisigPendingSessionStore {
   }
 
   @override
+  Future<List<MultisigPendingSessionSummary>> readAllSummaries() async {
+    final result = <MultisigPendingSessionSummary>[];
+    final summarizedIds = <String>{};
+    for (final summary in summaries.values) {
+      if (!sessions.containsKey(summary.storageId)) continue;
+      result.add(summary);
+      summarizedIds.add(summary.storageId);
+    }
+    for (final session in sessions.values) {
+      if (summarizedIds.contains(session.storageId)) continue;
+      result.add(
+        MultisigPendingSessionSummary.fromStorageId(session.storageId),
+      );
+    }
+    return result;
+  }
+
+  @override
+  Future<void> writeSummary(MultisigPendingSession session) async {
+    summaries[session.storageId] = MultisigPendingSessionSummary.fromSession(
+      session,
+    );
+  }
+
+  @override
+  Future<void> rebuildSummaries(
+    Iterable<MultisigPendingSession> sessions,
+  ) async {
+    summaries.clear();
+    for (final session in sessions) {
+      await writeSummary(session);
+    }
+  }
+
+  @override
   Future<void> delete(MultisigPendingSession session) async {
     sessions.remove(session.storageId);
   }
@@ -630,6 +721,16 @@ class _FakePendingSessionStore implements MultisigPendingSessionStore {
   @override
   Future<void> deleteByStorageId(String storageId) async {
     sessions.remove(storageId);
+  }
+
+  @override
+  Future<void> deleteSummary(String storageId) async {
+    summaries.remove(storageId);
+  }
+
+  @override
+  Future<void> deleteAllSummaries() async {
+    summaries.clear();
   }
 
   @override

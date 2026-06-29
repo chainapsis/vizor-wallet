@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/multisig/screens/multisig_session_screen.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/multisig_account_material_provider.dart';
 import 'package:zcash_wallet/src/providers/multisig_pending_session_provider.dart';
 
@@ -17,7 +18,13 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appSecurityProvider.overrideWith(
+            () => _UnlockedAppSecurityNotifier(),
+          ),
           multisigPendingSessionsProvider.overrideWith(() => notifier),
+          multisigPendingSessionSummariesProvider.overrideWith(
+            (ref) async => const <MultisigPendingSessionSummary>[],
+          ),
         ],
         child: MaterialApp(
           home: AppTheme(
@@ -50,6 +57,13 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
+}
+
+class _UnlockedAppSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() {
+    return const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+  }
 }
 
 class _FakePendingSessionsNotifier extends MultisigPendingSessionsNotifier {

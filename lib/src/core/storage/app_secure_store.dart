@@ -35,6 +35,8 @@ const _accountMnemonicMigrationCompleteKey =
 const _votingHotkeyKeyPrefix = 'zcash_account_voting_hotkey_';
 const _multisigMaterialKeyPrefix = 'zcash_multisig_material_';
 const _multisigPendingSessionKeyPrefix = 'zcash_multisig_pending_session_';
+const _multisigPendingSessionSummaryKeyPrefix =
+    'zcash_multisig_pending_summary_';
 const _multisigSigningRequestsKeyPrefix = 'zcash_multisig_signing_requests_';
 const _e2eUseFirstUnlockMnemonicKeychain = bool.fromEnvironment(
   'ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN',
@@ -298,6 +300,36 @@ class AppSecureStore {
     });
   }
 
+  Future<String?> readMultisigPendingSessionSummary(String sessionStorageId) {
+    return readPlain(_multisigPendingSessionSummaryKey(sessionStorageId));
+  }
+
+  Future<Map<String, String>> readAllMultisigPendingSessionSummaries() async {
+    final storedValues = await _runStorageOperation(
+      'read all multisig pending session summaries',
+      _storage.readAll,
+    );
+    final result = <String, String>{};
+    for (final entry in storedValues.entries) {
+      if (!entry.key.startsWith(_multisigPendingSessionSummaryKeyPrefix)) {
+        continue;
+      }
+      result[_multisigPendingSessionSummaryIdFromKey(entry.key)] = entry.value;
+    }
+    return result;
+  }
+
+  Future<List<String>> listMultisigPendingSessionStorageIds() async {
+    final storedValues = await _runStorageOperation(
+      'list multisig pending session ids',
+      _storage.readAll,
+    );
+    return storedValues.keys
+        .where((key) => key.startsWith(_multisigPendingSessionKeyPrefix))
+        .map(_multisigPendingSessionIdFromKey)
+        .toList(growable: false);
+  }
+
   /// Reads the voting hotkey for an account and round.
   ///
   /// Hotkeys are session secrets, so callers must have an unlocked wallet
@@ -369,6 +401,16 @@ class AppSecureStore {
         ),
       );
     });
+  }
+
+  Future<void> writeMultisigPendingSessionSummary(
+    String sessionStorageId,
+    String summaryJson,
+  ) {
+    return writePlain(
+      _multisigPendingSessionSummaryKey(sessionStorageId),
+      summaryJson,
+    );
   }
 
   /// Stores a voting hotkey as an encrypted secret for an account and round.
@@ -476,6 +518,14 @@ class AppSecureStore {
             _storage.delete(key: _multisigPendingSessionKey(sessionStorageId)),
       );
     });
+  }
+
+  Future<void> deleteMultisigPendingSessionSummary(String sessionStorageId) {
+    return delete(_multisigPendingSessionSummaryKey(sessionStorageId));
+  }
+
+  Future<void> deleteAllMultisigPendingSessionSummaries() {
+    return deletePlainKeysWithPrefix(_multisigPendingSessionSummaryKeyPrefix);
   }
 
   Future<void> deleteAll() {
@@ -1209,6 +1259,12 @@ String _multisigPendingSessionKey(String sessionStorageId) =>
 
 String _multisigPendingSessionIdFromKey(String key) =>
     key.substring(_multisigPendingSessionKeyPrefix.length);
+
+String _multisigPendingSessionSummaryKey(String sessionStorageId) =>
+    '$_multisigPendingSessionSummaryKeyPrefix$sessionStorageId';
+
+String _multisigPendingSessionSummaryIdFromKey(String key) =>
+    key.substring(_multisigPendingSessionSummaryKeyPrefix.length);
 
 String _mnemonicSecureStoreServiceForNetwork(String networkName) {
   return '${_macOsSecureStoreServiceForNetwork(networkName)}.mnemonic';

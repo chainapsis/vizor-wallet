@@ -979,6 +979,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         Error.throwWithStackTrace(e, st);
       }
 
+      try {
+        await pendingNotifier.delete(session.storageId);
+      } catch (e, st) {
+        log(
+          'finalizeMultisigAccount: failed to delete pending session '
+          '${session.storageId}: $e\n$st',
+        );
+      }
+
       log(
         'finalizeMultisigAccount: uuid=$importedAccountUuid, '
         'session=${session.sessionId}',

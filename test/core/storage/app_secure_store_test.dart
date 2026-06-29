@@ -17,6 +17,7 @@ const _mnemonicKey = 'zcash_account_mnemonic_test-account';
 const _multisigMaterialKey = 'zcash_multisig_material_test-account';
 const _multisigPendingSessionKey =
     'zcash_multisig_pending_session_session-1:participant-1';
+const _multisigPendingSummary = '{"sessionId":"session-1"}';
 const _externalEncryptedKey = 'external_encrypted_key';
 const _mnemonic = 'abandon abandon abandon abandon abandon abandon';
 const _multisigMaterial = '{"sessionId":"session-1"}';
@@ -154,6 +155,10 @@ void main() {
       'session-1:participant-1',
       _multisigPendingSession,
     );
+    await store.writeMultisigPendingSessionSummary(
+      'session-1:participant-1',
+      _multisigPendingSummary,
+    );
 
     expect(await store.readMultisigMaterial(_accountUuid), _multisigMaterial);
     expect(await store.readAllMultisigMaterials(), {
@@ -166,6 +171,16 @@ void main() {
     expect(await store.readAllMultisigPendingSessions(), {
       'session-1:participant-1': _multisigPendingSession,
     });
+    expect(
+      await store.readMultisigPendingSessionSummary('session-1:participant-1'),
+      _multisigPendingSummary,
+    );
+    expect(await store.readAllMultisigPendingSessionSummaries(), {
+      'session-1:participant-1': _multisigPendingSummary,
+    });
+    expect(await store.listMultisigPendingSessionStorageIds(), [
+      'session-1:participant-1',
+    ]);
 
     store.clearSessionPassword();
     expect(
@@ -179,13 +194,22 @@ void main() {
       await store.readAllMultisigPendingSessions(requireUnlockedSession: true),
       isEmpty,
     );
+    expect(
+      await store.readMultisigPendingSessionSummary('session-1:participant-1'),
+      _multisigPendingSummary,
+    );
 
     expect(await store.verifyPassword(_oldPassword), isTrue);
     await store.deleteMultisigMaterial(_accountUuid);
     await store.deleteMultisigPendingSession('session-1:participant-1');
+    await store.deleteMultisigPendingSessionSummary('session-1:participant-1');
     expect(await store.readMultisigMaterial(_accountUuid), isNull);
     expect(
       await store.readMultisigPendingSession('session-1:participant-1'),
+      isNull,
+    );
+    expect(
+      await store.readMultisigPendingSessionSummary('session-1:participant-1'),
       isNull,
     );
   });

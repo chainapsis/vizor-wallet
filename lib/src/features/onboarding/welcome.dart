@@ -405,15 +405,15 @@ class _MainWelcomeContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sessions = ref.watch(multisigPendingSessionsProvider).value;
+    final summaries = ref.watch(multisigPendingSessionSummariesProvider).value;
     final materials = ref.watch(multisigAccountMaterialsProvider).value;
     final materializedSessionStorageIds = materials == null
-        ? null
+        ? const <String>{}
         : materializedMultisigSessionStorageIds(materials);
-    final pending = sessions == null || materializedSessionStorageIds == null
+    final pending = summaries == null
         ? null
-        : latestLocalMultisigSetupSession(
-            sessions,
+        : latestLocalMultisigSetupSummary(
+            summaries,
             materializedSessionStorageIds,
           );
 
@@ -423,7 +423,7 @@ class _MainWelcomeContent extends ConsumerWidget {
         const _TitleBlock(),
         const SizedBox(height: AppSpacing.base),
         if (pending != null) ...[
-          _PendingMultisigCard(session: pending),
+          _PendingMultisigCard(summary: pending),
           const SizedBox(height: AppSpacing.md),
         ],
         const _WelcomeButtonsWrap(),
@@ -507,9 +507,9 @@ class _WelcomeButtonsWrap extends StatelessWidget {
 }
 
 class _PendingMultisigCard extends StatelessWidget {
-  const _PendingMultisigCard({required this.session});
+  const _PendingMultisigCard({required this.summary});
 
-  final MultisigPendingSession session;
+  final MultisigPendingSessionSummary summary;
 
   @override
   Widget build(BuildContext context) {
@@ -519,7 +519,7 @@ class _PendingMultisigCard extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => context.go(
-          '/multisig/session/${Uri.encodeComponent(session.storageId)}',
+          '/multisig/session/${Uri.encodeComponent(summary.storageId)}',
         ),
         child: Container(
           width: 320,
@@ -561,7 +561,7 @@ class _PendingMultisigCard extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      session.shortSessionId,
+                      summary.shortSessionId,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelMedium.copyWith(
                         color: colors.text.secondary,

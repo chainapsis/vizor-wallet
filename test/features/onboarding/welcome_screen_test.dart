@@ -4,11 +4,14 @@ import 'package:flutter/material.dart' show MaterialApp, TextButton;
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter/widgets.dart' show Text, ValueKey, Widget;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
+import 'package:zcash_wallet/src/providers/multisig_account_material_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_pending_session_provider.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -79,6 +82,38 @@ void main() {
     );
   });
 
+  testWidgets('shows pending multisig summary without full session state', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _welcomeScreen(
+        overrides: [
+          multisigPendingSessionSummariesProvider.overrideWith((ref) async {
+            return const [
+              MultisigPendingSessionSummary(
+                storageId: 'session-1:participant-1',
+                sessionId: 'session-1',
+                participantId: 'participant-1',
+                role: MultisigPendingRole.creator,
+                label: 'Family vault',
+                state: 'collecting',
+                updatedLocallyAt: 20,
+              ),
+            ];
+          }),
+          multisigAccountMaterialsProvider.overrideWith((ref) async {
+            return const <MultisigAccountMaterial>[];
+          }),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Continue multisig setup'), findsOneWidget);
+    expect(find.text('session-1'), findsOneWidget);
+  });
+
   testWidgets('Back returns to the pushed accounts route', (tester) async {
     await _setDesktopViewport(tester);
     final router = GoRouter(
@@ -127,10 +162,14 @@ Future<void> _setDesktopViewport(WidgetTester tester) async {
   });
 }
 
-Widget _welcomeScreen({bool showBackButton = false}) {
+Widget _welcomeScreen({
+  bool showBackButton = false,
+  List<Override> overrides = const [],
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      ...overrides,
     ],
     child: MaterialApp(
       home: AppTheme(

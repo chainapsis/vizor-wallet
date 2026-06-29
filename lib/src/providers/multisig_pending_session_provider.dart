@@ -488,6 +488,118 @@ class MultisigPendingSession {
   }
 }
 
+class MultisigPendingSessionSummary {
+  const MultisigPendingSessionSummary({
+    required this.storageId,
+    required this.sessionId,
+    required this.participantId,
+    required this.state,
+    required this.updatedLocallyAt,
+    this.role,
+    this.label,
+  });
+
+  final String storageId;
+  final String sessionId;
+  final String participantId;
+  final MultisigPendingRole? role;
+  final String? label;
+  final String state;
+  final int updatedLocallyAt;
+
+  bool get isPending => state != 'ready' && state != 'failed';
+
+  String get displayLabel {
+    final trimmed = label?.trim();
+    if (trimmed != null && trimmed.isNotEmpty) return trimmed;
+    return 'Multisig session';
+  }
+
+  String get shortSessionId => sessionId.length <= 12
+      ? sessionId
+      : '${sessionId.substring(0, 6)}...${sessionId.substring(sessionId.length - 6)}';
+
+  Map<String, Object?> toJson() => {
+    'storageId': storageId,
+    'sessionId': sessionId,
+    'participantId': participantId,
+    'role': role?.name,
+    'label': label,
+    'state': state,
+    'updatedLocallyAt': updatedLocallyAt,
+  };
+
+  String toStorageJson() => jsonEncode(toJson());
+
+  static MultisigPendingSessionSummary fromSession(
+    MultisigPendingSession session,
+  ) {
+    return MultisigPendingSessionSummary(
+      storageId: session.storageId,
+      sessionId: session.sessionId,
+      participantId: session.participantId,
+      role: session.role,
+      label: session.label,
+      state: session.state,
+      updatedLocallyAt: session.updatedLocallyAt,
+    );
+  }
+
+  static MultisigPendingSessionSummary fromStorageId(String storageId) {
+    final separator = storageId.indexOf(':');
+    final sessionId = separator < 0
+        ? storageId
+        : storageId.substring(0, separator);
+    final participantId = separator < 0
+        ? ''
+        : storageId.substring(separator + 1);
+    return MultisigPendingSessionSummary(
+      storageId: storageId,
+      sessionId: sessionId,
+      participantId: participantId,
+      state: 'unknown',
+      updatedLocallyAt: 0,
+    );
+  }
+
+  static MultisigPendingSessionSummary fromJson(Map<String, Object?> json) {
+    final roleText = json['role'] as String?;
+    return MultisigPendingSessionSummary(
+      storageId: _readRequiredString(
+        json,
+        'storageId',
+        'Multisig pending session summary',
+      ),
+      sessionId: _readRequiredString(
+        json,
+        'sessionId',
+        'Multisig pending session summary',
+      ),
+      participantId: _readRequiredString(
+        json,
+        'participantId',
+        'Multisig pending session summary',
+      ),
+      role: roleText == null ? null : MultisigPendingRole.parse(roleText),
+      label: json['label'] as String?,
+      state: _readRequiredString(
+        json,
+        'state',
+        'Multisig pending session summary',
+      ),
+      updatedLocallyAt: _readRequiredInt(
+        json,
+        'updatedLocallyAt',
+        'Multisig pending session summary',
+      ),
+    );
+  }
+
+  static MultisigPendingSessionSummary fromStorageJson(String raw) {
+    return fromJson(Map<String, Object?>.from(jsonDecode(raw) as Map));
+  }
+}
+
 class MultisigCreateAdvanceResult {
   const MultisigCreateAdvanceResult({
     required this.session,
@@ -549,11 +661,50 @@ class MultisigPendingSessionStore {
         .toList(growable: false);
   }
 
+  Future<List<MultisigPendingSessionSummary>> readAllSummaries() async {
+    final encryptedSessionIds =
+        (await _storage.listMultisigPendingSessionStorageIds()).toSet();
+    final raw = await _storage.readAllMultisigPendingSessionSummaries();
+    final summaries = <MultisigPendingSessionSummary>[];
+    final summarizedIds = <String>{};
+    for (final entry in raw.entries) {
+      if (!encryptedSessionIds.contains(entry.key)) continue;
+      final summary = MultisigPendingSessionSummary.fromStorageJson(
+        entry.value,
+      );
+      if (summary.storageId != entry.key) continue;
+      summaries.add(summary);
+      summarizedIds.add(summary.storageId);
+    }
+    for (final storageId in encryptedSessionIds) {
+      if (summarizedIds.contains(storageId)) continue;
+      summaries.add(MultisigPendingSessionSummary.fromStorageId(storageId));
+    }
+    return summaries;
+  }
+
   Future<void> write(MultisigPendingSession session) {
     return _storage.writeMultisigPendingSession(
       session.storageId,
       session.toStorageJson(),
     );
+  }
+
+  Future<void> writeSummary(MultisigPendingSession session) {
+    final summary = MultisigPendingSessionSummary.fromSession(session);
+    return _storage.writeMultisigPendingSessionSummary(
+      summary.storageId,
+      summary.toStorageJson(),
+    );
+  }
+
+  Future<void> rebuildSummaries(
+    Iterable<MultisigPendingSession> sessions,
+  ) async {
+    await _storage.deleteAllMultisigPendingSessionSummaries();
+    for (final session in sessions) {
+      await writeSummary(session);
+    }
   }
 
   Future<void> delete(MultisigPendingSession session) {
@@ -562,6 +713,14 @@ class MultisigPendingSessionStore {
 
   Future<void> deleteByStorageId(String storageId) {
     return _storage.deleteMultisigPendingSession(storageId);
+  }
+
+  Future<void> deleteSummary(String storageId) {
+    return _storage.deleteMultisigPendingSessionSummary(storageId);
+  }
+
+  Future<void> deleteAllSummaries() {
+    return _storage.deleteAllMultisigPendingSessionSummaries();
   }
 
   Future<String?> readCreateState(MultisigPendingSession session) {
@@ -802,6 +961,8 @@ class MultisigPendingSessionsNotifier
     }
     _sortSessions(sessions);
     await _store.write(session);
+    await _store.writeSummary(session);
+    ref.invalidate(multisigPendingSessionSummariesProvider);
     state = AsyncData(sessions);
   }
 
@@ -811,7 +972,9 @@ class MultisigPendingSessionsNotifier
     if (target == null) return;
     await _store.deleteCreateState(target);
     await _store.delete(target);
+    await _store.deleteSummary(target.storageId);
     sessions.removeWhere((entry) => entry.storageId == target.storageId);
+    ref.invalidate(multisigPendingSessionSummariesProvider);
     state = AsyncData(sessions);
   }
 
@@ -821,6 +984,8 @@ class MultisigPendingSessionsNotifier
       await _store.deleteCreateState(session);
       await _store.delete(session);
     }
+    await _store.deleteAllSummaries();
+    ref.invalidate(multisigPendingSessionSummariesProvider);
     state = const AsyncData(<MultisigPendingSession>[]);
   }
 
@@ -838,6 +1003,8 @@ class MultisigPendingSessionsNotifier
       sessions[index] = refreshed;
       _sortSessions(sessions);
       await _store.write(refreshed);
+      await _store.writeSummary(refreshed);
+      ref.invalidate(multisigPendingSessionSummariesProvider);
       state = AsyncData(sessions);
     }
     await _applyAuthUpdateToAccountMaterials(update);
@@ -922,6 +1089,7 @@ class MultisigPendingSessionsNotifier
   Future<List<MultisigPendingSession>> _load() async {
     final sessions = [...await _store.readAll()];
     _sortSessions(sessions);
+    await _store.rebuildSummaries(sessions);
     return sessions;
   }
 }
@@ -931,6 +1099,17 @@ final multisigPendingSessionsProvider =
       MultisigPendingSessionsNotifier,
       List<MultisigPendingSession>
     >(MultisigPendingSessionsNotifier.new);
+
+final multisigPendingSessionSummariesProvider =
+    FutureProvider<List<MultisigPendingSessionSummary>>((ref) async {
+      final summaries = [
+        ...await ref
+            .watch(multisigPendingSessionStoreProvider)
+            .readAllSummaries(),
+      ];
+      _sortSessionSummaries(summaries);
+      return summaries;
+    });
 
 MultisigPendingSession? latestPendingMultisigSession(
   List<MultisigPendingSession> sessions,
@@ -951,6 +1130,21 @@ MultisigPendingSession? latestLocalMultisigSetupSession(
       materializedSessionStorageIds,
     )) {
       return session;
+    }
+  }
+  return null;
+}
+
+MultisigPendingSessionSummary? latestLocalMultisigSetupSummary(
+  List<MultisigPendingSessionSummary> summaries, [
+  Set<String> materializedSessionStorageIds = const <String>{},
+]) {
+  for (final summary in summaries) {
+    if (multisigSessionSummaryNeedsLocalSetup(
+      summary,
+      materializedSessionStorageIds,
+    )) {
+      return summary;
     }
   }
   return null;
@@ -984,6 +1178,14 @@ bool multisigSessionNeedsLocalSetup(
       !materializedSessionStorageIds.contains(session.storageId);
 }
 
+bool multisigSessionSummaryNeedsLocalSetup(
+  MultisigPendingSessionSummary summary, [
+  Set<String> materializedSessionStorageIds = const <String>{},
+]) {
+  return summary.state != 'failed' &&
+      !materializedSessionStorageIds.contains(summary.storageId);
+}
+
 bool multisigLocalBackupCompleted(MultisigPendingSession session) {
   return session.localBackupCompleted &&
       session.localBackupHash != null &&
@@ -1000,6 +1202,10 @@ MultisigPendingSession? _findSession(
 
 void _sortSessions(List<MultisigPendingSession> sessions) {
   sessions.sort((a, b) => b.updatedLocallyAt.compareTo(a.updatedLocallyAt));
+}
+
+void _sortSessionSummaries(List<MultisigPendingSessionSummary> summaries) {
+  summaries.sort((a, b) => b.updatedLocallyAt.compareTo(a.updatedLocallyAt));
 }
 
 String _createStateKey(MultisigPendingSession session) {

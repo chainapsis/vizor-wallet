@@ -264,6 +264,7 @@ class _FakeAppSecurityNotifier extends AppSecurityNotifier {
 
 class _FakePendingSessionStore implements MultisigPendingSessionStore {
   final sessions = <String, MultisigPendingSession>{};
+  final summaries = <String, MultisigPendingSessionSummary>{};
   final createStates = <String, String>{};
 
   @override
@@ -287,6 +288,41 @@ class _FakePendingSessionStore implements MultisigPendingSessionStore {
   }
 
   @override
+  Future<List<MultisigPendingSessionSummary>> readAllSummaries() async {
+    final result = <MultisigPendingSessionSummary>[];
+    final summarizedIds = <String>{};
+    for (final summary in summaries.values) {
+      if (!sessions.containsKey(summary.storageId)) continue;
+      result.add(summary);
+      summarizedIds.add(summary.storageId);
+    }
+    for (final session in sessions.values) {
+      if (summarizedIds.contains(session.storageId)) continue;
+      result.add(
+        MultisigPendingSessionSummary.fromStorageId(session.storageId),
+      );
+    }
+    return result;
+  }
+
+  @override
+  Future<void> writeSummary(MultisigPendingSession session) async {
+    summaries[session.storageId] = MultisigPendingSessionSummary.fromSession(
+      session,
+    );
+  }
+
+  @override
+  Future<void> rebuildSummaries(
+    Iterable<MultisigPendingSession> sessions,
+  ) async {
+    summaries.clear();
+    for (final session in sessions) {
+      await writeSummary(session);
+    }
+  }
+
+  @override
   Future<void> delete(MultisigPendingSession session) async {
     sessions.remove(session.storageId);
   }
@@ -294,6 +330,16 @@ class _FakePendingSessionStore implements MultisigPendingSessionStore {
   @override
   Future<void> deleteByStorageId(String storageId) async {
     sessions.remove(storageId);
+  }
+
+  @override
+  Future<void> deleteSummary(String storageId) async {
+    summaries.remove(storageId);
+  }
+
+  @override
+  Future<void> deleteAllSummaries() async {
+    summaries.clear();
   }
 
   @override

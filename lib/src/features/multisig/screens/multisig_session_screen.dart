@@ -15,11 +15,13 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../providers/app_security_provider.dart';
 import '../../../providers/multisig_operation_error.dart';
 import '../../../providers/multisig_pending_session_provider.dart';
 import '../models/multisig_finalize_args.dart';
 import '../widgets/multisig_backup_wizard.dart';
 import '../widgets/multisig_flow_scaffold.dart';
+import '../widgets/multisig_setup_security_gate.dart';
 
 class MultisigSessionScreen extends ConsumerStatefulWidget {
   const MultisigSessionScreen({required this.sessionStorageId, super.key});
@@ -48,10 +50,12 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (!ref.read(appSecurityProvider).isUnlocked) return;
       _refresh();
     });
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted ||
+          !ref.read(appSecurityProvider).isUnlocked ||
           _isRefreshing ||
           _isLocking ||
           _isAdvancingCreate ||
@@ -228,7 +232,9 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final security = ref.watch(appSecurityProvider);
     final sessionsAsync = ref.watch(multisigPendingSessionsProvider);
+    final summaries = ref.watch(multisigPendingSessionSummariesProvider).value;
     final session = sessionsAsync.value == null
         ? null
         : multisigSessionByStorageId(
@@ -239,6 +245,10 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
                 sessionsAsync.value!,
                 widget.sessionStorageId,
               );
+    final summary = summaries == null
+        ? null
+        : _summaryByStorageId(summaries, widget.sessionStorageId) ??
+              _summaryBySessionId(summaries, widget.sessionStorageId);
     final participantsCount = session?.participants.length ?? 0;
     if (session != null && _selectedThreshold == null) {
       final maxThreshold = participantsCount <= 0 ? 1 : participantsCount;
@@ -249,11 +259,12 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
 
     return MultisigFlowScaffold(
       title: 'Multisig setup',
-      subtitle: session == null
-          ? 'Session state is stored locally after create or join.'
-          : session.displayLabel,
+      subtitle:
+          session?.displayLabel ??
+          summary?.displayLabel ??
+          'Session state is stored locally after create or join.',
       iconName: AppIcons.users,
-      trailing: session == null
+      trailing: session == null || !security.isUnlocked
           ? null
           : AppButton(
               onPressed: _isRefreshing ? null : () => _refresh(),
@@ -268,32 +279,149 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
                   : const AppIcon(AppIcons.sync),
               child: const Text('Refresh'),
             ),
-      child: sessionsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => _EmptyState(message: error.toString()),
-        data: (_) {
-          if (session == null) {
-            return const _EmptyState(message: 'Session not found.');
-          }
-          return _SessionContent(
-            session: session,
-            selectedThreshold: _selectedThreshold,
-            isLocking: _isLocking,
-            isAdvancingCreate: _isAdvancingCreate,
-            isConfirmingBackup: _isConfirmingBackup,
-            createProgress: _createProgress,
-            error: _error,
-            onThresholdChanged: (value) {
-              if (value == null) return;
-              setState(() => _selectedThreshold = value);
-            },
-            onCopySessionId: () => _copySessionId(session.sessionId),
-            onLockRoster: () => _lockRoster(session),
-            onAdvanceCreate: () => _advanceCreate(session),
-            onConfirmBackup: (completion) =>
-                _confirmBackup(session, completion),
-          );
-        },
+      child: !security.isUnlocked
+          ? _UnlockSessionContent(
+              onUnlocked: () async {
+                ref.invalidate(multisigPendingSessionsProvider);
+                ref.invalidate(multisigPendingSessionSummariesProvider);
+                await ref.read(multisigPendingSessionsProvider.future);
+              },
+            )
+          : sessionsAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, _) => _EmptyState(message: error.toString()),
+              data: (_) {
+                if (session == null) {
+                  return const _EmptyState(message: 'Session not found.');
+                }
+                return _SessionContent(
+                  session: session,
+                  selectedThreshold: _selectedThreshold,
+                  isLocking: _isLocking,
+                  isAdvancingCreate: _isAdvancingCreate,
+                  isConfirmingBackup: _isConfirmingBackup,
+                  createProgress: _createProgress,
+                  error: _error,
+                  onThresholdChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _selectedThreshold = value);
+                  },
+                  onCopySessionId: () => _copySessionId(session.sessionId),
+                  onLockRoster: () => _lockRoster(session),
+                  onAdvanceCreate: () => _advanceCreate(session),
+                  onConfirmBackup: (completion) =>
+                      _confirmBackup(session, completion),
+                );
+              },
+            ),
+    );
+  }
+}
+
+class _UnlockSessionContent extends ConsumerStatefulWidget {
+  const _UnlockSessionContent({required this.onUnlocked});
+
+  final Future<void> Function() onUnlocked;
+
+  @override
+  ConsumerState<_UnlockSessionContent> createState() =>
+      _UnlockSessionContentState();
+}
+
+class _UnlockSessionContentState extends ConsumerState<_UnlockSessionContent> {
+  final _securityGateController = MultisigSetupSecurityGateController();
+  bool _showValidation = false;
+  bool _isSubmitting = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _securityGateController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
+    final security = ref.read(appSecurityProvider);
+    if (!_securityGateController.isValid(security)) {
+      setState(() {
+        _showValidation = true;
+        _error = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _error = null;
+    });
+
+    try {
+      await _securityGateController.runWithOpenSession(
+        ref: ref,
+        security: security,
+        action: widget.onUnlocked,
+      );
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSubmitting = false;
+        _error = friendlyMultisigError(e);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final security = ref.watch(appSecurityProvider);
+    final colors = context.colors;
+    return SingleChildScrollView(
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              MultisigSetupSecurityGate(
+                controller: _securityGateController,
+                security: security,
+                showValidation: _showValidation,
+                enabled: !_isSubmitting,
+                onChanged: () {
+                  setState(() {
+                    _error = null;
+                  });
+                },
+                onSubmitted: _submit,
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  _error!,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: colors.text.destructive,
+                  ),
+                ),
+              ],
+              const SizedBox(height: AppSpacing.lg),
+              AppButton(
+                onPressed: _isSubmitting ? null : _submit,
+                minWidth: 180,
+                leading: _isSubmitting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const AppIcon(AppIcons.lock),
+                child: Text(_isSubmitting ? 'Unlocking...' : 'Continue'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -552,6 +680,26 @@ class _ProgressStep extends StatelessWidget {
       ),
     );
   }
+}
+
+MultisigPendingSessionSummary? _summaryByStorageId(
+  List<MultisigPendingSessionSummary> summaries,
+  String storageId,
+) {
+  for (final summary in summaries) {
+    if (summary.storageId == storageId) return summary;
+  }
+  return null;
+}
+
+MultisigPendingSessionSummary? _summaryBySessionId(
+  List<MultisigPendingSessionSummary> summaries,
+  String sessionId,
+) {
+  for (final summary in summaries) {
+    if (summary.sessionId == sessionId) return summary;
+  }
+  return null;
 }
 
 class _ParticipantsPanel extends StatelessWidget {
