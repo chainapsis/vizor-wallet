@@ -741,8 +741,11 @@ class NearIntentsOneClickSwapAdapter
     final amountFieldName = expectedMode == SwapQuoteMode.exactInput
         ? 'amountIn'
         : 'amountOut';
+    final expectedFixedAmount = BigInt.parse(expectedFixedAmountBaseUnits);
     if (_parseQuoteResponseBaseUnits(amountField, amountFieldName) !=
-        BigInt.parse(expectedFixedAmountBaseUnits)) {
+            expectedFixedAmount ||
+        _parseQuoteResponseBaseUnits(actual.amount, 'quoteRequest.amount') !=
+            expectedFixedAmount) {
       throw OneClickApiException(
         '1Click quote response did not match the requested amount',
         operation: 'quote',

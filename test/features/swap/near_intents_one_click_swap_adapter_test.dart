@@ -267,6 +267,50 @@ void main() {
   });
 
   test(
+    'quote rejects response with mismatched quoteRequest amount echo',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.post(
+          '/v0/quote',
+          _quoteResponse(
+            originAsset: 'nep141:zec.omft.near',
+            destinationAsset: 'nep141:usdc.example',
+            amountIn: '150000000',
+            amountInFormatted: '1.5',
+            amountOutFormatted: '105.25',
+            minAmountOut: '104750000',
+            depositAddress: 't1deposit',
+            quoteRequestAmount: '100000000',
+            status: null,
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+      await expectLater(
+        provider.quote(
+          const SwapQuoteRequest(
+            direction: SwapDirection.zecToExternal,
+            externalAsset: SwapAsset.usdc,
+            sellAmount: 1.5,
+            sellAmountText: '1.5',
+            destination: '0xrecipient',
+            refundAddress: 'u1refund',
+          ),
+        ),
+        throwsA(
+          isA<OneClickApiException>().having(
+            (error) => error.message,
+            'message',
+            '1Click quote response did not match the requested amount',
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
     'quote rejects mismatched sell formatted and base-unit amounts',
     () async {
       final transport = _FakeOneClickTransport([
@@ -1974,6 +2018,7 @@ Map<String, Object?> _quoteResponse({
   String timeWhenInactive = '2026-05-07T10:08:00Z',
   int? slippageTolerance = 100,
   String? quoteRequestSwapType,
+  String? quoteRequestAmount,
   String quoteRequestRefundTo = 'u1refund',
   String quoteRequestRecipient = '0xrecipient',
   Map<String, Object?>? swapDetails,
@@ -1996,7 +2041,7 @@ Map<String, Object?> _quoteResponse({
       'originAsset': originAsset,
       'depositType': 'ORIGIN_CHAIN',
       'destinationAsset': destinationAsset,
-      'amount': resolvedQuoteRequestAmount,
+      'amount': quoteRequestAmount ?? resolvedQuoteRequestAmount,
       'refundTo': quoteRequestRefundTo,
       'refundType': 'ORIGIN_CHAIN',
       'recipient': quoteRequestRecipient,
