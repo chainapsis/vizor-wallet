@@ -111,6 +111,8 @@ class MobileSendAmountArgs {
     required this.sendFlowId,
     required this.recipient,
     required this.addressType,
+    this.memo,
+    this.preserveMemoWhitespace = false,
     this.contactLabel,
     this.contactPictureId,
   });
@@ -118,6 +120,8 @@ class MobileSendAmountArgs {
   final String sendFlowId;
   final String recipient;
   final String addressType;
+  final String? memo;
+  final bool preserveMemoWhitespace;
   final String? contactLabel;
   final String? contactPictureId;
 }
@@ -131,6 +135,7 @@ class MobileSendReviewDraftArgs {
     this.feeZatoshi,
     this.isMaxMode = false,
     this.memo,
+    this.preserveMemoWhitespace = false,
     this.contactLabel,
     this.contactPictureId,
   });
@@ -142,6 +147,7 @@ class MobileSendReviewDraftArgs {
   final BigInt? feeZatoshi;
   final bool isMaxMode;
   final String? memo;
+  final bool preserveMemoWhitespace;
   final String? contactLabel;
   final String? contactPictureId;
 }
@@ -159,6 +165,8 @@ class MobileSendAmountScreen extends StatelessWidget {
       initialSendFlowId: args.sendFlowId,
       initialRecipient: args.recipient,
       initialAddressType: args.addressType,
+      initialMemo: args.memo,
+      preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
     );
@@ -184,6 +192,7 @@ class MobileSendReviewScreen extends StatelessWidget {
       refreshReviewFeeOnInit: true,
       initialMaxMode: args.isMaxMode,
       initialMemo: args.memo,
+      preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
     );
@@ -242,6 +251,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.initialMaxMode = false,
     this.refreshReviewFeeOnInit = false,
     this.initialMemo,
+    this.preserveInitialMemoWhitespace = false,
     this.initialContactLabel,
     this.initialContactPictureId,
     this.initialRecipientFocused = false,
@@ -267,6 +277,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   final bool initialMaxMode;
   final bool refreshReviewFeeOnInit;
   final String? initialMemo;
+  final bool preserveInitialMemoWhitespace;
   final String? initialSendFlowId;
   final bool useRouteSteps;
 
@@ -320,6 +331,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   // Review state.
   String _memo = '';
+  bool _preserveMemoWhitespace = false;
   BigInt? _feeZatoshi;
   int _feeSeq = 0;
 
@@ -348,8 +360,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     _contactPictureId = widget.initialContactPictureId;
     final initialMemo = widget.initialMemo;
-    if (initialMemo != null && initialMemo.trim().isNotEmpty) {
-      _memo = initialMemo.trim();
+    if (initialMemo != null) {
+      final memo = widget.preserveInitialMemoWhitespace
+          ? initialMemo
+          : initialMemo.trim();
+      if (memo.isNotEmpty) {
+        _memo = memo;
+        _preserveMemoWhitespace = widget.preserveInitialMemoWhitespace;
+      }
     }
     if (widget.initialAmountStep || widget.initialAmount != null) {
       _step = widget.initialReview ? _SendStep.review : _SendStep.amount;
@@ -566,6 +584,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             sendFlowId: _sendFlowId,
             recipient: _addressController.text.trim(),
             addressType: _addressType,
+            memo: _memo,
+            preserveMemoWhitespace: _preserveMemoWhitespace,
             contactLabel: _contactLabel,
             contactPictureId: _contactPictureId,
           ),
@@ -835,6 +855,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             feeZatoshi: _feeZatoshi,
             isMaxMode: _isMaxMode && _hasCurrentMaxQuote,
             memo: _memo,
+            preserveMemoWhitespace: _preserveMemoWhitespace,
             contactLabel: _contactLabel,
             contactPictureId: _contactPictureId,
           ),
@@ -849,7 +870,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   // ── Review step ────────────────────────────────────────────────────
 
-  String get _effectiveMemo => _isShieldedAddress ? _memo.trim() : '';
+  String get _effectiveMemo {
+    if (!_isShieldedAddress) return '';
+    return _preserveMemoWhitespace ? _memo : _memo.trim();
+  }
 
   Future<void> _refreshReviewQuote() {
     if (_isMaxMode) return _resolveMaxEstimate();
@@ -889,7 +913,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       builder: (_) => _MemoSheet(initial: _memo),
     );
     if (next == null || !mounted) return;
-    setState(() => _memo = next);
+    setState(() {
+      _memo = next;
+      _preserveMemoWhitespace = false;
+    });
     unawaited(_refreshReviewQuote());
   }
 
@@ -1879,7 +1906,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   const SizedBox(height: AppSpacing.base),
                   _ReviewWrap(
                     isShielded: _isShieldedAddress,
-                    memo: _memo.trim(),
+                    memo: _effectiveMemo,
                     feeText: feeText,
                     onMemoTap: () => unawaited(_editMemo()),
                     onFeeInfoTap: () => unawaited(_showFeeInfo()),

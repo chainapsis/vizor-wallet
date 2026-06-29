@@ -34,6 +34,8 @@ Completer<ProposalResult>? _proposeSendCompleter;
 int _estimateSendMaxCalls = 0;
 String? _lastEstimateSendMaxToAddress;
 String? _lastEstimateSendMaxMemo;
+String? _lastProposeToAddress;
+String? _lastProposeMemo;
 _SendMaxEstimateBuilder? _sendMaxEstimateBuilder;
 
 typedef _SendMaxEstimateBuilder =
@@ -107,6 +109,8 @@ class _RustApiFake implements RustLibApi {
     required BigInt amountZatoshi,
     String? memo,
   }) async {
+    _lastProposeToAddress = toAddress;
+    _lastProposeMemo = memo;
     final completer = _proposeSendCompleter;
     if (completer != null) return completer.future;
     if (!_proposeSendSucceeds) {
@@ -236,7 +240,11 @@ Widget _app({
   );
 }
 
-Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
+Widget _sendFlowRouterApp({
+  MobileSendFeeEstimator? estimateFee,
+  String? initialMemo,
+  bool preserveInitialMemoWhitespace = false,
+}) {
   final router = GoRouter(
     initialLocation: '/home',
     routes: [
@@ -254,6 +262,8 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
           useRouteSteps: true,
           loadWalletDbPath: () async => '/tmp/zcash-test',
           openScanner: (_) async => null,
+          initialMemo: initialMemo,
+          preserveInitialMemoWhitespace: preserveInitialMemoWhitespace,
           estimateFee: estimateFee,
         ),
       ),
@@ -267,6 +277,8 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
             initialSendFlowId: args.sendFlowId,
             initialRecipient: args.recipient,
             initialAddressType: args.addressType,
+            initialMemo: args.memo,
+            preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
             initialContactLabel: args.contactLabel,
             initialContactPictureId: args.contactPictureId,
             loadWalletDbPath: () async => '/tmp/zcash-test',
@@ -291,6 +303,7 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
             refreshReviewFeeOnInit: true,
             initialMaxMode: args.isMaxMode,
             initialMemo: args.memo,
+            preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
             initialContactLabel: args.contactLabel,
             initialContactPictureId: args.contactPictureId,
             loadWalletDbPath: () async => '/tmp/zcash-test',
@@ -417,6 +430,8 @@ void main() {
     _estimateSendMaxCalls = 0;
     _lastEstimateSendMaxToAddress = null;
     _lastEstimateSendMaxMemo = null;
+    _lastProposeToAddress = null;
+    _lastProposeMemo = null;
     _sendMaxEstimateBuilder = null;
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
@@ -576,6 +591,30 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pumpAndSettle();
     expect(find.text('Select Recipient'), findsOneWidget);
+  });
+
+  testWidgets('route-step mode preserves ZIP-321 memo whitespace on propose', (
+    tester,
+  ) async {
+    const rawMemo = '  shielded memo  ';
+
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        initialMemo: rawMemo,
+        preserveInitialMemoWhitespace: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
+
+    await _toReviewStep(tester);
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(_lastProposeToAddress, _shieldedAddress);
+    expect(_lastProposeMemo, rawMemo);
   });
 
   testWidgets('route-step review refreshes the fee on entry', (tester) async {

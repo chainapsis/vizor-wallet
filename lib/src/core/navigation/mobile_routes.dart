@@ -129,6 +129,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
                 prefill?.address ?? (extra is String ? extra : null),
             initialAmount: prefill?.amountText,
             initialMemo: prefill?.memoText,
+            preserveInitialMemoWhitespace: prefill?.preserveMemoText ?? false,
           ),
         );
       },

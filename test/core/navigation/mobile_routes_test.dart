@@ -151,7 +151,8 @@ void main() {
             source: 'zcash-uri',
             address: 'u1routeraddress',
             amountText: '0.25',
-            memoText: 'coffee',
+            memoText: '  coffee  ',
+            preserveMemoText: true,
           ),
         ),
       );
@@ -165,7 +166,8 @@ void main() {
       );
       expect(sendScreen.initialRecipient, 'u1routeraddress');
       expect(sendScreen.initialAmount, '0.25');
-      expect(sendScreen.initialMemo, 'coffee');
+      expect(sendScreen.initialMemo, '  coffee  ');
+      expect(sendScreen.preserveInitialMemoWhitespace, isTrue);
     },
   );
 

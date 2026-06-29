@@ -194,6 +194,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool _isMaxMode = false;
   bool _isResolvingMax = false;
   bool _programmaticAmountEdit = false;
+  bool _programmaticMemoEdit = false;
+  bool _preserveMemoWhitespace = false;
   _MaxQuote? _maxQuote;
   Timer? _maxDebounceTimer;
   int _addressSeq = 0;
@@ -233,6 +235,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   }
 
   void _handleMemoChanged() {
+    if (!_programmaticMemoEdit) {
+      _preserveMemoWhitespace = false;
+    }
     if (_memoController.text.isNotEmpty && !_messageExpanded) {
       _messageExpanded = true;
     }
@@ -277,9 +282,15 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _amountController.text = prefill.amountText!;
       _amountError = null;
     }
-    if (prefill.memoText != null && prefill.memoText!.isNotEmpty) {
-      _memoController.text = prefill.memoText!;
+    final memoText = prefill.memoText;
+    if (memoText != null && memoText.isNotEmpty) {
+      _preserveMemoWhitespace = prefill.preserveMemoText;
+      _programmaticMemoEdit = true;
+      _memoController.text = memoText;
+      _programmaticMemoEdit = false;
       _messageExpanded = true;
+    } else {
+      _preserveMemoWhitespace = false;
     }
     _isMaxMode = false;
     _isResolvingMax = false;
@@ -324,6 +335,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         _addressType = nextAddressType;
         if (_isTransparentLikeType(nextAddressType)) {
           _messageExpanded = false;
+          _preserveMemoWhitespace = false;
         }
       });
       if (_isTransparentLikeType(nextAddressType) &&
@@ -397,8 +409,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool _isTransparentLikeType(String addressType) =>
       addressType == 'transparent' || addressType == 'tex';
 
-  String get _effectiveMemo =>
-      _isTransparentLikeAddress ? '' : _memoController.text.trim();
+  String get _effectiveMemo {
+    if (_isTransparentLikeAddress) return '';
+    final memo = _memoController.text;
+    return _preserveMemoWhitespace ? memo : memo.trim();
+  }
 
   BigInt get _availableBalanceForCurrentAddress => widget.spendableBalance;
   String get _insufficientBalanceText =>
