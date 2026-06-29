@@ -20,7 +20,7 @@ import '../../../providers/multisig_operation_error.dart';
 import '../../../providers/multisig_pending_session_provider.dart';
 import '../models/multisig_finalize_args.dart';
 import '../widgets/multisig_backup_wizard.dart';
-import '../widgets/multisig_flow_scaffold.dart';
+import '../widgets/multisig_onboarding_flow.dart';
 import '../widgets/multisig_setup_security_gate.dart';
 
 class MultisigSessionScreen extends ConsumerStatefulWidget {
@@ -257,63 +257,95 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
       _selectedThreshold = defaultThreshold.clamp(1, maxThreshold).toInt();
     }
 
-    return MultisigFlowScaffold(
-      title: 'Multisig setup',
-      subtitle:
-          session?.displayLabel ??
-          summary?.displayLabel ??
-          'Session state is stored locally after create or join.',
-      iconName: AppIcons.users,
-      trailing: session == null || !security.isUnlocked
-          ? null
-          : AppButton(
-              onPressed: _isRefreshing ? null : () => _refresh(),
-              variant: AppButtonVariant.ghost,
-              size: AppButtonSize.medium,
-              leading: _isRefreshing
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const AppIcon(AppIcons.sync),
-              child: const Text('Refresh'),
-            ),
-      child: !security.isUnlocked
-          ? _UnlockSessionContent(
-              onUnlocked: () async {
-                ref.invalidate(multisigPendingSessionsProvider);
-                ref.invalidate(multisigPendingSessionSummariesProvider);
-                await ref.read(multisigPendingSessionsProvider.future);
-              },
-            )
-          : sessionsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => _EmptyState(message: error.toString()),
-              data: (_) {
-                if (session == null) {
-                  return const _EmptyState(message: 'Session not found.');
-                }
-                return _SessionContent(
-                  session: session,
-                  selectedThreshold: _selectedThreshold,
-                  isLocking: _isLocking,
-                  isAdvancingCreate: _isAdvancingCreate,
-                  isConfirmingBackup: _isConfirmingBackup,
-                  createProgress: _createProgress,
-                  error: _error,
-                  onThresholdChanged: (value) {
-                    if (value == null) return;
-                    setState(() => _selectedThreshold = value);
-                  },
-                  onCopySessionId: () => _copySessionId(session.sessionId),
-                  onLockRoster: () => _lockRoster(session),
-                  onAdvanceCreate: () => _advanceCreate(session),
-                  onConfirmBackup: (completion) =>
-                      _confirmBackup(session, completion),
-                );
-              },
-            ),
+    final refreshButton = session == null || !security.isUnlocked
+        ? null
+        : AppButton(
+            onPressed: _isRefreshing ? null : () => _refresh(),
+            variant: AppButtonVariant.ghost,
+            size: AppButtonSize.medium,
+            leading: _isRefreshing
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const AppIcon(AppIcons.sync),
+            child: const Text('Refresh'),
+          );
+
+    final content = !security.isUnlocked
+        ? _UnlockSessionContent(
+            onUnlocked: () async {
+              ref.invalidate(multisigPendingSessionsProvider);
+              ref.invalidate(multisigPendingSessionSummariesProvider);
+              await ref.read(multisigPendingSessionsProvider.future);
+            },
+          )
+        : sessionsAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, _) => _EmptyState(message: error.toString()),
+            data: (_) {
+              if (session == null) {
+                return const _EmptyState(message: 'Session not found.');
+              }
+              return _SessionContent(
+                session: session,
+                selectedThreshold: _selectedThreshold,
+                isLocking: _isLocking,
+                isAdvancingCreate: _isAdvancingCreate,
+                isConfirmingBackup: _isConfirmingBackup,
+                createProgress: _createProgress,
+                error: _error,
+                onThresholdChanged: (value) {
+                  if (value == null) return;
+                  setState(() => _selectedThreshold = value);
+                },
+                onCopySessionId: () => _copySessionId(session.sessionId),
+                onLockRoster: () => _lockRoster(session),
+                onAdvanceCreate: () => _advanceCreate(session),
+                onConfirmBackup: (completion) =>
+                    _confirmBackup(session, completion),
+              );
+            },
+          );
+
+    return MultisigOnboardingTrailingPane(
+      backTarget: const OnboardingBackTarget.route(
+        label: 'Connect multisig',
+        routePath: '/multisig/connect',
+      ),
+      bodyPadding: const EdgeInsets.fromLTRB(32, 24, 32, 32),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: MultisigOnboardingTitle(
+                      title: 'Multisig setup',
+                      subtitle:
+                          session?.displayLabel ??
+                          summary?.displayLabel ??
+                          'Session state is stored locally after create or join.',
+                      iconName: AppIcons.users,
+                    ),
+                  ),
+                  if (refreshButton != null) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    refreshButton,
+                  ],
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Expanded(child: content),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -10,7 +10,7 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/multisig_operation_error.dart';
 import '../../../providers/multisig_pending_session_provider.dart';
-import '../widgets/multisig_flow_scaffold.dart';
+import '../widgets/multisig_onboarding_flow.dart';
 import '../widgets/multisig_setup_security_gate.dart';
 
 class MultisigCreateSessionScreen extends ConsumerStatefulWidget {
@@ -89,79 +89,106 @@ class _MultisigCreateSessionScreenState
   @override
   Widget build(BuildContext context) {
     final security = ref.watch(appSecurityProvider);
-    return MultisigFlowScaffold(
-      title: 'Create multisig setup',
-      subtitle: 'Start a coordinator session and share the session ID.',
-      iconName: AppIcons.users,
-      child: SingleChildScrollView(
-        child: Align(
-          alignment: Alignment.topLeft,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                AppTextField(
-                  label: 'Coordinator',
-                  controller: _coordinatorController,
-                  hintText: kDefaultMultisigCoordinatorUrl,
-                  leading: const AppIcon(AppIcons.endpoint),
-                  showClearButton: true,
-                  tone:
-                      _showValidation &&
-                          _coordinatorController.text.trim().isEmpty
-                      ? AppTextFieldTone.destructive
-                      : AppTextFieldTone.neutral,
-                  messageText:
-                      _showValidation &&
-                          _coordinatorController.text.trim().isEmpty
-                      ? 'Enter a coordinator URL.'
-                      : null,
-                  onSubmitted: (_) => _submit(),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                AppTextField(
-                  label: 'Your label',
-                  controller: _labelController,
-                  hintText: 'Optional',
-                  leading: const AppIcon(AppIcons.user),
-                  showClearButton: true,
-                  onSubmitted: (_) => _submit(),
-                ),
-                if (_securityGateController.requiresInput(security)) ...[
-                  const SizedBox(height: AppSpacing.sm),
-                  MultisigSetupSecurityGate(
-                    controller: _securityGateController,
-                    security: security,
-                    showValidation: _showValidation,
-                    enabled: !_isSubmitting,
-                    onChanged: () {
-                      setState(() {
-                        _submitError = null;
-                      });
-                    },
-                    onSubmitted: _submit,
+    return MultisigOnboardingTrailingPane(
+      backTarget: const OnboardingBackTarget.route(
+        label: 'Connect multisig',
+        routePath: '/multisig/connect',
+      ),
+      bodyPadding: const EdgeInsets.fromLTRB(32, 24, 32, 32),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const MultisigOnboardingTitle(
+                title: 'Create multisig setup',
+                subtitle:
+                    'Start a coordinator session and share the session ID.',
+                iconName: AppIcons.users,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          AppTextField(
+                            label: 'Coordinator',
+                            controller: _coordinatorController,
+                            hintText: kDefaultMultisigCoordinatorUrl,
+                            leading: const AppIcon(AppIcons.endpoint),
+                            showClearButton: true,
+                            tone:
+                                _showValidation &&
+                                    _coordinatorController.text.trim().isEmpty
+                                ? AppTextFieldTone.destructive
+                                : AppTextFieldTone.neutral,
+                            messageText:
+                                _showValidation &&
+                                    _coordinatorController.text.trim().isEmpty
+                                ? 'Enter a coordinator URL.'
+                                : null,
+                            onSubmitted: (_) => _submit(),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          AppTextField(
+                            label: 'Your label',
+                            controller: _labelController,
+                            hintText: 'Optional',
+                            leading: const AppIcon(AppIcons.user),
+                            showClearButton: true,
+                            onSubmitted: (_) => _submit(),
+                          ),
+                          if (_securityGateController.requiresInput(
+                            security,
+                          )) ...[
+                            const SizedBox(height: AppSpacing.sm),
+                            MultisigSetupSecurityGate(
+                              controller: _securityGateController,
+                              security: security,
+                              showValidation: _showValidation,
+                              enabled: !_isSubmitting,
+                              onChanged: () {
+                                setState(() {
+                                  _submitError = null;
+                                });
+                              },
+                              onSubmitted: _submit,
+                            ),
+                          ],
+                          if (_submitError != null) ...[
+                            const SizedBox(height: AppSpacing.md),
+                            _ErrorText(message: _submitError!),
+                          ],
+                          const SizedBox(height: AppSpacing.lg),
+                          AppButton(
+                            onPressed: _isSubmitting ? null : _submit,
+                            minWidth: 220,
+                            leading: _isSubmitting
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const AppIcon(AppIcons.addNew),
+                            child: Text(
+                              _isSubmitting ? 'Creating...' : 'Create session',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ],
-                if (_submitError != null) ...[
-                  const SizedBox(height: AppSpacing.md),
-                  _ErrorText(message: _submitError!),
-                ],
-                const SizedBox(height: AppSpacing.lg),
-                AppButton(
-                  onPressed: _isSubmitting ? null : _submit,
-                  minWidth: 220,
-                  leading: _isSubmitting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const AppIcon(AppIcons.addNew),
-                  child: Text(_isSubmitting ? 'Creating...' : 'Create session'),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

@@ -19,7 +19,7 @@ import '../../onboarding/import/import_birthday_unknown_height_modal.dart';
 import '../../onboarding/shared/onboarding_error_messages.dart';
 import '../../onboarding/shared/onboarding_flow_args.dart';
 import '../models/multisig_finalize_args.dart';
-import '../widgets/multisig_flow_scaffold.dart';
+import '../widgets/multisig_onboarding_flow.dart';
 
 enum MultisigBirthdayTab { date, blockHeight }
 
@@ -392,15 +392,43 @@ class _MultisigBirthdayScreenState
             : 'Continue',
     };
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        MultisigFlowScaffold(
-          title: 'Wallet birthday',
-          subtitle: 'Choose when this multisig wallet should start scanning.',
-          iconName: AppIcons.block,
+    final overlay = _isUnknownBirthdayConfirmOpen
+        ? ImportBirthdayUnknownHeightModal(
+            onConfirm: _confirmUnknownBirthday,
+            onCancel: _dismissUnknownBirthdayConfirmation,
+          )
+        : _isCalendarOpen
+        ? ImportBirthdayCalendarOverlay(
+            initialMonth: _calendarInitialDate ?? calendarLastDate,
+            selectedDate: _selectedDate,
+            firstDate: calendarFirstDate,
+            lastDate: calendarLastDate,
+            onDismiss: _dismissCalendar,
+            onDateSelected: _handleCalendarDateSelected,
+          )
+        : null;
+
+    return MultisigOnboardingTrailingPane(
+      backTarget: OnboardingBackTarget.route(
+        label: 'Multisig setup',
+        routePath:
+            '/multisig/session/${Uri.encodeComponent(widget.sessionStorageId)}',
+      ),
+      overlay: overlay,
+      bodyPadding: const EdgeInsets.fromLTRB(32, 24, 32, 32),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const MultisigOnboardingTitle(
+                title: 'Wallet birthday',
+                subtitle:
+                    'Choose when this multisig wallet should start scanning.',
+                iconName: AppIcons.block,
+              ),
+              const SizedBox(height: AppSpacing.lg),
               Expanded(
                 child: Center(
                   child: SizedBox(
@@ -477,21 +505,7 @@ class _MultisigBirthdayScreenState
             ],
           ),
         ),
-        if (_isUnknownBirthdayConfirmOpen)
-          ImportBirthdayUnknownHeightModal(
-            onConfirm: _confirmUnknownBirthday,
-            onCancel: _dismissUnknownBirthdayConfirmation,
-          )
-        else if (_isCalendarOpen)
-          ImportBirthdayCalendarOverlay(
-            initialMonth: _calendarInitialDate ?? calendarLastDate,
-            selectedDate: _selectedDate,
-            firstDate: calendarFirstDate,
-            lastDate: calendarLastDate,
-            onDismiss: _dismissCalendar,
-            onDateSelected: _handleCalendarDateSelected,
-          ),
-      ],
+      ),
     );
   }
 }

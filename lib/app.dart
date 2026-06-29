@@ -50,12 +50,14 @@ import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/multisig/models/multisig_finalize_args.dart';
 import 'src/features/multisig/screens/multisig_birthday_screen.dart';
+import 'src/features/multisig/screens/multisig_connect_screen.dart';
 import 'src/features/multisig/screens/multisig_create_session_screen.dart';
 import 'src/features/multisig/screens/multisig_join_session_screen.dart';
 import 'src/features/multisig/screens/multisig_session_screen.dart';
 import 'src/features/multisig/screens/multisig_signing_detail_screen.dart';
 import 'src/features/multisig/screens/multisig_signing_home_screen.dart';
 import 'src/features/multisig/screens/multisig_signing_request_screen.dart';
+import 'src/features/multisig/widgets/multisig_onboarding_flow.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
@@ -267,6 +269,7 @@ String? appRedirect({
   final requiresUnlock = hasWallet && !isUnlocked;
   final currentPath = state.uri.path;
   final isMultisigOnboarding =
+      currentPath == '/multisig/connect' ||
       currentPath == '/multisig/create' ||
       currentPath == '/multisig/join' ||
       currentPath == '/multisig/set-password' ||
@@ -749,99 +752,125 @@ List<RouteBase> _desktopRoutes() => [
   ),
   GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
   GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
-  GoRoute(
-    path: '/multisig/create',
-    pageBuilder: (context, state) => CustomTransitionPage<void>(
+  ShellRoute(
+    pageBuilder: (context, state, child) => CustomTransitionPage<void>(
       key: state.pageKey,
       transitionDuration: kOnboardingForwardDuration,
       reverseTransitionDuration: kOnboardingReverseDuration,
-      child: const MultisigCreateSessionScreen(),
-      transitionsBuilder: _onboardingFadeTransition,
+      child: MultisigOnboardingShell(
+        activeStep: multisigOnboardingStepFromLocation(state.matchedLocation),
+        child: child,
+      ),
+      transitionsBuilder: (_, _, _, child) => child,
     ),
-  ),
-  GoRoute(
-    path: '/multisig/join',
-    pageBuilder: (context, state) => CustomTransitionPage<void>(
-      key: state.pageKey,
-      transitionDuration: kOnboardingForwardDuration,
-      reverseTransitionDuration: kOnboardingReverseDuration,
-      child: const MultisigJoinSessionScreen(),
-      transitionsBuilder: _onboardingFadeTransition,
-    ),
-  ),
-  GoRoute(
-    path: '/multisig/set-password',
-    redirect: (_, state) {
-      final args = state.extra;
-      if (args is SetPasswordScreenArgs &&
-          args.flow == SetPasswordFlow.multisigFinalize &&
-          args.requiredMultisigSessionId.isNotEmpty &&
-          args.requiredMultisigBackupArtifactJson.isNotEmpty &&
-          args.requiredMultisigBackupPassphrase.isNotEmpty &&
-          args.birthdayHeight != null) {
-        return null;
-      }
-      return '/welcome';
-    },
-    pageBuilder: (context, state) => CustomTransitionPage<void>(
-      key: state.pageKey,
-      transitionDuration: kOnboardingForwardDuration,
-      reverseTransitionDuration: kOnboardingReverseDuration,
-      child: SetPasswordScreen(args: state.extra as SetPasswordScreenArgs),
-      transitionsBuilder: _onboardingFadeTransition,
-    ),
-  ),
-  GoRoute(
-    path: '/multisig/session/:sessionStorageId/birthday',
-    redirect: (_, state) {
-      final sessionStorageId = state.pathParameters['sessionStorageId'];
-      final args = _multisigFinalizeArgsFromExtra(state.extra);
-      if (sessionStorageId != null &&
-          sessionStorageId.isNotEmpty &&
-          args != null &&
-          args.sessionStorageId == Uri.decodeComponent(sessionStorageId)) {
-        return null;
-      }
-      if (sessionStorageId == null || sessionStorageId.isEmpty) {
-        return '/welcome';
-      }
-      return '/multisig/session/$sessionStorageId';
-    },
-    pageBuilder: (context, state) {
-      final sessionStorageId = state.pathParameters['sessionStorageId'] ?? '';
-      final finalizeArgs = _multisigFinalizeArgsFromExtra(state.extra)!;
-      return CustomTransitionPage<void>(
-        key: state.pageKey,
-        transitionDuration: kOnboardingForwardDuration,
-        reverseTransitionDuration: kOnboardingReverseDuration,
-        child: MultisigBirthdayScreen(
-          sessionStorageId: Uri.decodeComponent(sessionStorageId),
-          finalizeArgs: finalizeArgs,
+    routes: [
+      GoRoute(
+        path: '/multisig/connect',
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: const MultisigConnectScreen(),
+          transitionsBuilder: _onboardingFadeTransition,
         ),
-        transitionsBuilder: _onboardingFadeTransition,
-      );
-    },
-  ),
-  GoRoute(
-    path: '/multisig/session/:sessionStorageId',
-    pageBuilder: (context, state) {
-      final sessionStorageId = state.pathParameters['sessionStorageId'] ?? '';
-      return CustomTransitionPage<void>(
-        key: state.pageKey,
-        transitionDuration: kOnboardingForwardDuration,
-        reverseTransitionDuration: kOnboardingReverseDuration,
-        child: MultisigSessionScreen(
-          sessionStorageId: Uri.decodeComponent(sessionStorageId),
+      ),
+      GoRoute(
+        path: '/multisig/create',
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: const MultisigCreateSessionScreen(),
+          transitionsBuilder: _onboardingFadeTransition,
         ),
-        transitionsBuilder: _onboardingFadeTransition,
-      );
-    },
+      ),
+      GoRoute(
+        path: '/multisig/join',
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: const MultisigJoinSessionScreen(),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
+      GoRoute(
+        path: '/multisig/set-password',
+        redirect: (_, state) {
+          final args = state.extra;
+          if (args is SetPasswordScreenArgs &&
+              args.flow == SetPasswordFlow.multisigFinalize &&
+              args.requiredMultisigSessionId.isNotEmpty &&
+              args.requiredMultisigBackupArtifactJson.isNotEmpty &&
+              args.requiredMultisigBackupPassphrase.isNotEmpty &&
+              args.birthdayHeight != null) {
+            return null;
+          }
+          return '/welcome';
+        },
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: SetPasswordScreen(args: state.extra as SetPasswordScreenArgs),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
+      GoRoute(
+        path: '/multisig/session/:sessionStorageId/birthday',
+        redirect: (_, state) {
+          final sessionStorageId = state.pathParameters['sessionStorageId'];
+          final args = _multisigFinalizeArgsFromExtra(state.extra);
+          if (sessionStorageId != null &&
+              sessionStorageId.isNotEmpty &&
+              args != null &&
+              args.sessionStorageId == Uri.decodeComponent(sessionStorageId)) {
+            return null;
+          }
+          if (sessionStorageId == null || sessionStorageId.isEmpty) {
+            return '/welcome';
+          }
+          return '/multisig/session/$sessionStorageId';
+        },
+        pageBuilder: (context, state) {
+          final sessionStorageId =
+              state.pathParameters['sessionStorageId'] ?? '';
+          final finalizeArgs = _multisigFinalizeArgsFromExtra(state.extra)!;
+          return CustomTransitionPage<void>(
+            key: state.pageKey,
+            transitionDuration: kOnboardingForwardDuration,
+            reverseTransitionDuration: kOnboardingReverseDuration,
+            child: MultisigBirthdayScreen(
+              sessionStorageId: Uri.decodeComponent(sessionStorageId),
+              finalizeArgs: finalizeArgs,
+            ),
+            transitionsBuilder: _onboardingFadeTransition,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/multisig/session/:sessionStorageId',
+        pageBuilder: (context, state) {
+          final sessionStorageId =
+              state.pathParameters['sessionStorageId'] ?? '';
+          return CustomTransitionPage<void>(
+            key: state.pageKey,
+            transitionDuration: kOnboardingForwardDuration,
+            reverseTransitionDuration: kOnboardingReverseDuration,
+            child: MultisigSessionScreen(
+              sessionStorageId: Uri.decodeComponent(sessionStorageId),
+            ),
+            transitionsBuilder: _onboardingFadeTransition,
+          );
+        },
+      ),
+    ],
   ),
   GoRoute(
     path: '/multisig',
     builder: (_, _) => const MultisigSigningHomeScreen(),
   ),
-  GoRoute(path: '/multisig/setup', redirect: (_, _) => '/multisig/create'),
+  GoRoute(path: '/multisig/setup', redirect: (_, _) => '/multisig/connect'),
   GoRoute(
     path: '/multisig/sign/request',
     builder: (_, state) {

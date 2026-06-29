@@ -10,8 +10,6 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
-import 'package:zcash_wallet/src/providers/multisig_account_material_provider.dart';
-import 'package:zcash_wallet/src/providers/multisig_pending_session_provider.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -82,36 +80,22 @@ void main() {
     );
   });
 
-  testWidgets('shows pending multisig summary without full session state', (
-    tester,
-  ) async {
+  testWidgets('shows one multisig connect entry from welcome', (tester) async {
     await _setDesktopViewport(tester);
-    await tester.pumpWidget(
-      _welcomeScreen(
-        overrides: [
-          multisigPendingSessionSummariesProvider.overrideWith((ref) async {
-            return const [
-              MultisigPendingSessionSummary(
-                storageId: 'session-1:participant-1',
-                sessionId: 'session-1',
-                participantId: 'participant-1',
-                role: MultisigPendingRole.creator,
-                label: 'Family vault',
-                state: 'collecting',
-                updatedLocallyAt: 20,
-              ),
-            ];
-          }),
-          multisigAccountMaterialsProvider.overrideWith((ref) async {
-            return const <MultisigAccountMaterial>[];
-          }),
-        ],
-      ),
-    );
-    await tester.pump();
+    await tester.pumpWidget(_welcomeScreen());
 
-    expect(find.text('Continue multisig setup'), findsOneWidget);
-    expect(find.text('session-1'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('welcome_connect_multisig_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('welcome_create_multisig_button')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('welcome_join_multisig_button')),
+      findsNothing,
+    );
   });
 
   testWidgets('Back returns to the pushed accounts route', (tester) async {

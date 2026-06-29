@@ -6,6 +6,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/multisig/screens/multisig_create_session_screen.dart';
 import 'package:zcash_wallet/src/features/multisig/screens/multisig_join_session_screen.dart';
+import 'package:zcash_wallet/src/features/multisig/widgets/multisig_onboarding_flow.dart';
 import 'package:zcash_wallet/src/features/multisig/widgets/multisig_setup_security_gate.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/multisig_coordinator_service.dart';
@@ -177,19 +178,27 @@ Widget _harness({
   final router = GoRouter(
     initialLocation: initialLocation,
     routes: [
-      GoRoute(
-        path: '/multisig/create',
-        builder: (_, _) => const MultisigCreateSessionScreen(),
-      ),
-      GoRoute(
-        path: '/multisig/join',
-        builder: (_, _) => const MultisigJoinSessionScreen(),
-      ),
-      GoRoute(
-        path: '/multisig/session/:sessionStorageId',
-        builder: (_, state) => Text(
-          'session:${Uri.decodeComponent(state.pathParameters['sessionStorageId'] ?? '')}',
+      ShellRoute(
+        builder: (_, state, child) => MultisigOnboardingShell(
+          activeStep: multisigOnboardingStepFromLocation(state.matchedLocation),
+          child: child,
         ),
+        routes: [
+          GoRoute(
+            path: '/multisig/create',
+            builder: (_, _) => const MultisigCreateSessionScreen(),
+          ),
+          GoRoute(
+            path: '/multisig/join',
+            builder: (_, _) => const MultisigJoinSessionScreen(),
+          ),
+          GoRoute(
+            path: '/multisig/session/:sessionStorageId',
+            builder: (_, state) => Text(
+              'session:${Uri.decodeComponent(state.pathParameters['sessionStorageId'] ?? '')}',
+            ),
+          ),
+        ],
       ),
     ],
   );

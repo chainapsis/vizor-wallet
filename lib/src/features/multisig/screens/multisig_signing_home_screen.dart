@@ -135,7 +135,7 @@ class _MultisigSigningHomeScreenState
                   Text('Multisig', style: AppTypography.displaySmall),
                   const Spacer(),
                   AppButton(
-                    onPressed: () => context.go('/multisig/create'),
+                    onPressed: () => context.go('/multisig/connect'),
                     variant: AppButtonVariant.secondary,
                     leading: const AppIcon(AppIcons.cog),
                     child: const Text('Setup'),

@@ -9,8 +9,6 @@ import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/app_pane_modal_overlay.dart';
 import '../../core/widgets/app_tooltip.dart';
-import '../../providers/multisig_account_material_provider.dart';
-import '../../providers/multisig_pending_session_provider.dart';
 import '../settings/widgets/custom_endpoint_settings_panel.dart';
 import 'shared/onboarding_welcome_art.dart';
 
@@ -400,32 +398,16 @@ class _LegalFooterSpace extends StatelessWidget {
   }
 }
 
-class _MainWelcomeContent extends ConsumerWidget {
+class _MainWelcomeContent extends StatelessWidget {
   const _MainWelcomeContent();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final summaries = ref.watch(multisigPendingSessionSummariesProvider).value;
-    final materials = ref.watch(multisigAccountMaterialsProvider).value;
-    final materializedSessionStorageIds = materials == null
-        ? const <String>{}
-        : materializedMultisigSessionStorageIds(materials);
-    final pending = summaries == null
-        ? null
-        : latestLocalMultisigSetupSummary(
-            summaries,
-            materializedSessionStorageIds,
-          );
-
+  Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const _TitleBlock(),
         const SizedBox(height: AppSpacing.base),
-        if (pending != null) ...[
-          _PendingMultisigCard(summary: pending),
-          const SizedBox(height: AppSpacing.md),
-        ],
         const _WelcomeButtonsWrap(),
       ],
     );
@@ -485,101 +467,14 @@ class _WelcomeButtonsWrap extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.s),
         AppButton(
-          key: const ValueKey('welcome_create_multisig_button'),
-          onPressed: () => context.go('/multisig/create'),
+          key: const ValueKey('welcome_connect_multisig_button'),
+          onPressed: () => context.go('/multisig/connect'),
           variant: AppButtonVariant.ghost,
           minWidth: _welcomeActionWidth,
           leading: const AppIcon(AppIcons.users, size: 18),
-          child: const Text('Create multisig'),
-        ),
-        const SizedBox(height: AppSpacing.s),
-        AppButton(
-          key: const ValueKey('welcome_join_multisig_button'),
-          onPressed: () => context.go('/multisig/join'),
-          variant: AppButtonVariant.ghost,
-          minWidth: _welcomeActionWidth,
-          leading: const AppIcon(AppIcons.link, size: 18),
-          child: const Text('Join multisig'),
+          child: const Text('Connect multisig'),
         ),
       ],
-    );
-  }
-}
-
-class _PendingMultisigCard extends StatelessWidget {
-  const _PendingMultisigCard({required this.summary});
-
-  final MultisigPendingSessionSummary summary;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => context.go(
-          '/multisig/session/${Uri.encodeComponent(summary.storageId)}',
-        ),
-        child: Container(
-          width: 320,
-          padding: const EdgeInsets.all(AppSpacing.sm),
-          decoration: BoxDecoration(
-            color: colors.background.raised,
-            borderRadius: BorderRadius.circular(AppRadii.xSmall),
-            border: Border.all(color: colors.border.subtle),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: colors.state.selectedOpacity,
-                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
-                ),
-                child: Center(
-                  child: AppIcon(
-                    AppIcons.users,
-                    size: 20,
-                    color: colors.icon.accent,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Continue multisig setup',
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.primary,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      summary.shortSessionId,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelMedium.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              AppIcon(
-                AppIcons.chevronForward,
-                size: 18,
-                color: colors.icon.accent,
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
