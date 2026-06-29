@@ -9,6 +9,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
+import '../../../providers/device_owner_auth_provider.dart';
 import '../../../providers/sync_provider.dart';
 
 const kForgotPasscodeLastWarningArmDelay = Duration(seconds: 3);
@@ -119,9 +120,8 @@ class _ForgotPasscodeLastWarningContentState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final resetLabel = _armed
-        ? 'Reset Vizor'
-        : 'Reset after ${_remainingSeconds}s...';
+    final resetLabel =
+        _armed ? 'Reset Vizor' : 'Reset after ${_remainingSeconds}s...';
     return MobileModalScaffold(
       title: 'Are you sure?',
       onClose: () => Navigator.of(context).pop(false),
@@ -196,11 +196,22 @@ class _ModalButtonLabel extends StatelessWidget {
 /// recovery without the passcode is wiping the wallet and importing
 /// again. The caller routes to `/welcome` on success and owns error
 /// presentation.
-Future<void> resetWalletForForgottenPasscode(WidgetRef ref) async {
+Future<bool> resetWalletForForgottenPasscode(WidgetRef ref) async {
+  final verified = await verifyDeviceOwnerForWalletReset(ref);
+  if (!verified) return false;
+
   final syncNotifier = ref.read(syncProvider.notifier);
   await syncNotifier.clearSensitiveStateForLock();
-  await ref.read(accountProvider.notifier).resetWallet();
-  syncNotifier.clearCachedWalletDbPath();
-  // The escrowed passcode belongs to the wiped wallet — drop it.
+  try {
+    await ref.read(accountProvider.notifier).resetWallet();
+  } finally {
+    // Always drop the cached DB path so the next sync re-resolves the freshly
+    // generated name, even if the reset threw after deleting the DB.
+    syncNotifier.clearCachedWalletDbPath();
+  }
+  // The escrowed passcode belongs to the wiped wallet - drop it. Runs only on a
+  // successful wipe: a failed reset leaves the wallet (and its escrow) intact,
+  // and that escrow is a forgetful user's only remaining way back in.
   await ref.read(biometricUnlockProvider.notifier).disable();
+  return true;
 }

@@ -1,5 +1,7 @@
 import Cocoa
 import FlutterMacOS
+import LocalAuthentication
+import Security
 import desktop_window_bootstrap
 
 private func appWindowBackgroundColor(for brightness: String) -> NSColor {
@@ -520,6 +522,83 @@ final class CameraPermissionSettingsChannel {
   }
 }
 
+final class DeviceOwnerAuthChannel {
+  private static var channel: FlutterMethodChannel?
+
+  static func register(messenger: FlutterBinaryMessenger) {
+    let methodChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/device_owner_auth",
+      binaryMessenger: messenger
+    )
+    channel = methodChannel
+    methodChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "verify":
+        let arguments = call.arguments as? [String: Any]
+        // Fallback mirrors the Dart canonical `kWalletResetDeviceAuthReason`;
+        // the Dart side always sends `reason`, so this default is defensive only.
+        let reason = (arguments?["reason"] as? String) ?? "Confirm reset Vizor"
+        verify(reason: reason, result: result)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  private static func verify(reason: String, result: @escaping FlutterResult) {
+    // Passcode-only by design: this destructive gate must never be satisfied
+    // by a Touch ID glance. There is no LAPolicy that accepts the device
+    // passcode while skipping biometry, so instead of
+    // `.deviceOwnerAuthentication` (biometry-first) we evaluate a
+    // `.devicePasscode`-constrained access control, which only ever presents
+    // the device password entry.
+    var accessControlError: Unmanaged<CFError>?
+    guard let accessControl = SecAccessControlCreateWithFlags(
+      nil,
+      kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
+      .devicePasscode,
+      &accessControlError
+    ) else {
+      // Consume the +1-retained CFError so the failure path doesn't leak it.
+      _ = accessControlError?.takeRetainedValue()
+      result(FlutterError(
+        code: "unavailable",
+        message: "Device passcode is not configured.",
+        details: nil
+      ))
+      return
+    }
+
+    let context = LAContext()
+    context.evaluateAccessControl(
+      accessControl,
+      operation: .useItem,
+      localizedReason: reason
+    ) { success, error in
+      DispatchQueue.main.async {
+        if success {
+          result(true)
+          return
+        }
+
+        guard let laError = error as? LAError else {
+          result(FlutterError(code: "failed", message: error?.localizedDescription, details: nil))
+          return
+        }
+
+        switch laError.code {
+        case .userCancel, .systemCancel, .appCancel:
+          result(false)
+        case .passcodeNotSet, .biometryNotAvailable, .biometryNotEnrolled:
+          result(FlutterError(code: "unavailable", message: laError.localizedDescription, details: nil))
+        default:
+          result(FlutterError(code: "failed", message: laError.localizedDescription, details: nil))
+        }
+      }
+    }
+  }
+}
+
 class MainFlutterWindow: NSWindow {
   private let vizorWindowToolbarDelegate = VizorWindowToolbarDelegate()
   private var vizorWindowToolbar: NSToolbar?
@@ -551,6 +630,9 @@ class MainFlutterWindow: NSWindow {
       messenger: flutterViewController.engine.binaryMessenger
     )
     CameraPermissionSettingsChannel.register(
+      messenger: flutterViewController.engine.binaryMessenger
+    )
+    DeviceOwnerAuthChannel.register(
       messenger: flutterViewController.engine.binaryMessenger
     )
     RegisterGeneratedPlugins(registry: flutterViewController)

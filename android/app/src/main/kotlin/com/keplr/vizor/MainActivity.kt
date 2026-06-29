@@ -10,6 +10,8 @@ import io.flutter.plugin.common.MethodChannel
 
 // FlutterFragmentActivity: BiometricPrompt requires a FragmentActivity host.
 class MainActivity : FlutterFragmentActivity() {
+    private lateinit var deviceOwnerAuthHandler: DeviceOwnerAuthHandler
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(
@@ -28,6 +30,13 @@ class MainActivity : FlutterFragmentActivity() {
             BiometricUnlockHandler.CHANNEL
         ).setMethodCallHandler { call, result ->
             biometricUnlockHandler.handle(call, result)
+        }
+        deviceOwnerAuthHandler = DeviceOwnerAuthHandler(this)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DeviceOwnerAuthHandler.CHANNEL
+        ).setMethodCallHandler { call, result ->
+            deviceOwnerAuthHandler.handle(call, result)
         }
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -66,6 +75,16 @@ class MainActivity : FlutterFragmentActivity() {
         return window.decorView.performHapticFeedback(
             android.view.HapticFeedbackConstants.REJECT
         )
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (
+            ::deviceOwnerAuthHandler.isInitialized &&
+            deviceOwnerAuthHandler.onActivityResult(requestCode, resultCode)
+        ) {
+            return
+        }
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     private fun openAppSettings(): Boolean {

@@ -198,3 +198,84 @@ final class BiometricUnlockHandler {
     }
   }
 }
+
+/// Device-owner verification for destructive local actions.
+///
+/// This is separate from biometric unlock: it never reads the wallet passcode
+/// escrow, and it intentionally requires the device passcode only — Face ID /
+/// Touch ID are never offered for this destructive gate.
+final class DeviceOwnerAuthHandler {
+  static let shared = DeviceOwnerAuthHandler()
+
+  private init() {}
+
+  func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "verify":
+      let args = call.arguments as? [String: Any]
+      // Fallback mirrors the Dart canonical `kWalletResetDeviceAuthReason`; the
+      // Dart side always sends `reason`, so this default is defensive only.
+      let reason = (args?["reason"] as? String) ?? "Confirm reset Vizor"
+      verify(reason: reason, result: result)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func verify(reason: String, result: @escaping FlutterResult) {
+    // Passcode-only by design: this destructive gate must never be satisfied
+    // by a Face ID / Touch ID glance. There is no LAPolicy that accepts the
+    // device passcode while skipping biometry, so instead of
+    // `.deviceOwnerAuthentication` (biometry-first) we evaluate a
+    // `.devicePasscode`-constrained access control, which only ever presents
+    // the device passcode entry.
+    //
+    // NOTE: the iOS Simulator cannot present `.devicePasscode` UI, so this
+    // path only completes on a real device. On the simulator the evaluation
+    // fails fast (no prompt), which fails safe — the wallet is never wiped.
+    var accessControlError: Unmanaged<CFError>?
+    guard let accessControl = SecAccessControlCreateWithFlags(
+      nil,
+      kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
+      .devicePasscode,
+      &accessControlError
+    ) else {
+      // Consume the +1-retained CFError so the failure path doesn't leak it.
+      _ = accessControlError?.takeRetainedValue()
+      result(FlutterError(
+        code: "unavailable",
+        message: "Device passcode is not configured.",
+        details: nil
+      ))
+      return
+    }
+
+    let context = LAContext()
+    context.evaluateAccessControl(
+      accessControl,
+      operation: .useItem,
+      localizedReason: reason
+    ) { success, error in
+      DispatchQueue.main.async {
+        if success {
+          result(true)
+          return
+        }
+
+        guard let laError = error as? LAError else {
+          result(FlutterError(code: "failed", message: error?.localizedDescription, details: nil))
+          return
+        }
+
+        switch laError.code {
+        case .userCancel, .systemCancel, .appCancel:
+          result(false)
+        case .passcodeNotSet, .biometryNotAvailable, .biometryNotEnrolled:
+          result(FlutterError(code: "unavailable", message: laError.localizedDescription, details: nil))
+        default:
+          result(FlutterError(code: "failed", message: laError.localizedDescription, details: nil))
+        }
+      }
+    }
+  }
+}

@@ -13,9 +13,11 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
+import '../../../providers/device_owner_auth_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/biometric_unlock.dart';
+import '../../../services/device_owner_auth.dart';
 import 'forgot_passcode_sheet.dart';
 import 'mobile_passcode_screen.dart' show kMobilePasscodeLength;
 import 'passcode_widgets.dart';
@@ -211,7 +213,26 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     setState(() => _submitting = true);
     final router = GoRouter.of(context);
     try {
-      await resetWalletForForgottenPasscode(ref);
+      final didReset = await resetWalletForForgottenPasscode(ref);
+      if (!mounted) return;
+      if (!didReset) {
+        setState(() {
+          _submitting = false;
+          _error = null;
+        });
+        return;
+      }
+    } on DeviceOwnerAuthException catch (e, st) {
+      log('MobileUnlockScreen._resetWallet auth failed: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error =
+            e.kind == DeviceOwnerAuthErrorKind.unavailable
+                ? kWalletResetDeviceAuthRequiredMessage
+                : kWalletResetDeviceAuthFailedMessage;
+      });
+      return;
     } catch (e, st) {
       log('MobileUnlockScreen._resetWallet: ERROR: $e\n$st');
       if (!mounted) return;

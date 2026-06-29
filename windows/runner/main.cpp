@@ -1,5 +1,6 @@
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <roapi.h>
 #include <windows.h>
 
 #include "flutter_window.h"
@@ -16,9 +17,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     CreateAndAttachConsole();
   }
 
-  // Initialize COM, so that it is available for use in the library and/or
+  // Initialize WinRT/COM, so that it is available for use in the library and/or
   // plugins.
-  ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  const HRESULT ro_init = ::RoInitialize(RO_INIT_SINGLETHREADED);
+  const bool ro_initialized = SUCCEEDED(ro_init);
 
   flutter::DartProject project(L"data");
 
@@ -41,6 +43,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     ::DispatchMessage(&msg);
   }
 
-  ::CoUninitialize();
+  if (ro_initialized) {
+    ::RoUninitialize();
+  }
   return EXIT_SUCCESS;
 }
