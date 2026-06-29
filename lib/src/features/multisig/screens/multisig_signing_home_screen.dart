@@ -12,6 +12,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/multisig_account_material_provider.dart';
 import '../../../providers/multisig_signing_request_provider.dart';
 
 class MultisigSigningHomeScreen extends ConsumerStatefulWidget {
@@ -76,6 +77,11 @@ class _MultisigSigningHomeScreenState
         accountUuid != null &&
         ref.read(accountProvider.notifier).isMultisigAccount(accountUuid);
     final requestsAsync = ref.watch(multisigSigningRequestsProvider);
+    final materialsAsync = ref.watch(multisigAccountMaterialsProvider);
+    final activeMaterial = _materialForAccount(
+      materialsAsync.value,
+      accountUuid,
+    );
     final requests = [
       for (final request
           in requestsAsync.value ?? const <MultisigSigningRequestRecord>[])
@@ -133,6 +139,16 @@ class _MultisigSigningHomeScreenState
                   const AppIcon(AppIcons.users, size: AppIconSize.large),
                   const SizedBox(width: AppSpacing.xs),
                   Text('Multisig', style: AppTypography.displaySmall),
+                  if (isMultisig) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    Flexible(
+                      fit: FlexFit.loose,
+                      child: _SessionIdBadge(
+                        sessionId: activeMaterial?.sessionId,
+                        isLoading: materialsAsync.isLoading,
+                      ),
+                    ),
+                  ],
                   const Spacer(),
                   AppButton(
                     onPressed: () => context.go('/multisig/connect'),
@@ -209,6 +225,17 @@ class _MultisigSigningHomeScreenState
     );
   }
 
+  MultisigAccountMaterial? _materialForAccount(
+    List<MultisigAccountMaterial>? materials,
+    String? accountUuid,
+  ) {
+    if (accountUuid == null || materials == null) return null;
+    for (final material in materials) {
+      if (material.accountUuid == accountUuid) return material;
+    }
+    return null;
+  }
+
   String _localParticipantId(List<MultisigSigningRequestRecord> requests) {
     if (requests.isEmpty) return '';
     return requests.first.localParticipantId;
@@ -244,6 +271,63 @@ class _MultisigSigningHomeScreenState
     }
     return request.round1ParticipantIds.contains(localParticipantId) ||
         request.round2ParticipantIds.contains(localParticipantId);
+  }
+}
+
+class _SessionIdBadge extends StatelessWidget {
+  const _SessionIdBadge({required this.sessionId, required this.isLoading});
+
+  final String? sessionId;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final value = sessionId?.trim();
+    final displayValue = value == null || value.isEmpty
+        ? isLoading
+              ? 'Loading'
+              : 'Unavailable'
+        : value;
+
+    return Tooltip(
+      message: value == null || value.isEmpty ? displayValue : value,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.surface.input,
+          border: Border.all(color: colors.border.subtle),
+          borderRadius: BorderRadius.circular(AppRadii.full),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xs,
+            vertical: AppSpacing.xxs,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Session ID',
+                style: AppTypography.labelMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              Flexible(
+                child: Text(
+                  displayValue,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.text.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
