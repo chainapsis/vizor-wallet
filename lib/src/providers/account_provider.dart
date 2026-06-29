@@ -496,6 +496,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     if (target.isMultisig) {
       try {
         await ref.read(multisigAccountMaterialStoreProvider).delete(uuid);
+        ref.invalidate(multisigAccountMaterialsProvider);
       } catch (e, st) {
         log(
           'removeAccount: failed to delete multisig material for $uuid: $e\n$st',
@@ -934,6 +935,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             localBackupDestinations: session.localBackupDestinations,
           ),
         );
+        ref.invalidate(multisigAccountMaterialsProvider);
 
         final newAccount = AccountInfo(
           uuid: importedAccountUuid,
@@ -1129,6 +1131,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }) async {
     try {
       await materialStore.delete(accountUuid);
+      ref.invalidate(multisigAccountMaterialsProvider);
     } catch (e, st) {
       log(
         'finalizeMultisigAccount: failed to rollback material for '

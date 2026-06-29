@@ -93,6 +93,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiMultisigCreateAdvance dco_decode_api_multisig_create_advance(dynamic raw);
+
+  @protected
   ApiMultisigParticipant dco_decode_api_multisig_participant(dynamic raw);
 
   @protected
@@ -689,6 +692,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiMultisigBackupVerification sse_decode_api_multisig_backup_verification(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiMultisigCreateAdvance sse_decode_api_multisig_create_advance(
     SseDeserializer deserializer,
   );
 
@@ -1429,6 +1437,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_multisig_backup_verification(
     ApiMultisigBackupVerification self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_multisig_create_advance(
+    ApiMultisigCreateAdvance self,
     SseSerializer serializer,
   );
 

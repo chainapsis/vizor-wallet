@@ -1,4 +1,4 @@
-enum SetPasswordFlow { create, importWallet, importKeystone }
+enum SetPasswordFlow { create, importWallet, importKeystone, multisigFinalize }
 
 class CreateSecretPassphraseArgs {
   const CreateSecretPassphraseArgs({required this.mnemonic});
@@ -34,6 +34,9 @@ class SetPasswordScreenArgs {
     this.keystoneUfvk,
     this.keystoneSeedFingerprint,
     this.keystoneZip32Index,
+    this.multisigSessionId,
+    this.multisigBackupArtifactJson,
+    this.multisigBackupPassphrase,
   });
 
   const SetPasswordScreenArgs.create({required String mnemonic})
@@ -65,6 +68,19 @@ class SetPasswordScreenArgs {
          keystoneZip32Index: zip32Index,
        );
 
+  const SetPasswordScreenArgs.multisigFinalize({
+    required String sessionId,
+    required String backupArtifactJson,
+    required String backupPassphrase,
+    required int birthdayHeight,
+  }) : this._(
+         flow: SetPasswordFlow.multisigFinalize,
+         birthdayHeight: birthdayHeight,
+         multisigSessionId: sessionId,
+         multisigBackupArtifactJson: backupArtifactJson,
+         multisigBackupPassphrase: backupPassphrase,
+       );
+
   final SetPasswordFlow flow;
   final String? mnemonic;
   final int? birthdayHeight;
@@ -73,6 +89,9 @@ class SetPasswordScreenArgs {
   final String? keystoneUfvk;
   final List<int>? keystoneSeedFingerprint;
   final int? keystoneZip32Index;
+  final String? multisigSessionId;
+  final String? multisigBackupArtifactJson;
+  final String? multisigBackupPassphrase;
 
   bool get isImport => flow == SetPasswordFlow.importWallet;
   bool get isKeystoneImport => flow == SetPasswordFlow.importKeystone;
@@ -83,11 +102,16 @@ class SetPasswordScreenArgs {
   String get requiredKeystoneUfvk => keystoneUfvk!;
   List<int> get requiredKeystoneSeedFingerprint => keystoneSeedFingerprint!;
   int get requiredKeystoneZip32Index => keystoneZip32Index!;
+  String get requiredMultisigSessionId => multisigSessionId!;
+  String get requiredMultisigBackupArtifactJson => multisigBackupArtifactJson!;
+  String get requiredMultisigBackupPassphrase => multisigBackupPassphrase!;
 
   String get backRoutePath => switch (flow) {
     SetPasswordFlow.create => '/onboarding/secret-passphrase',
     SetPasswordFlow.importWallet => '/import/birthday',
     SetPasswordFlow.importKeystone => '/onboarding/keystone/birthday',
+    SetPasswordFlow.multisigFinalize =>
+      '/multisig/session/${Uri.encodeComponent(requiredMultisigSessionId)}/birthday',
   };
 
   Object get backRouteExtra => switch (flow) {
@@ -100,5 +124,6 @@ class SetPasswordScreenArgs {
       selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
     ),
     SetPasswordFlow.importKeystone => this,
+    SetPasswordFlow.multisigFinalize => this,
   };
 }

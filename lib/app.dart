@@ -48,10 +48,14 @@ import 'src/features/onboarding/storage_unavailable_screen.dart';
 import 'src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
+import 'src/features/multisig/models/multisig_finalize_args.dart';
+import 'src/features/multisig/screens/multisig_birthday_screen.dart';
+import 'src/features/multisig/screens/multisig_create_session_screen.dart';
+import 'src/features/multisig/screens/multisig_join_session_screen.dart';
+import 'src/features/multisig/screens/multisig_session_screen.dart';
 import 'src/features/multisig/screens/multisig_signing_detail_screen.dart';
 import 'src/features/multisig/screens/multisig_signing_home_screen.dart';
 import 'src/features/multisig/screens/multisig_signing_request_screen.dart';
-import 'src/features/multisig/screens/multisig_sessions_screen.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
@@ -261,11 +265,18 @@ String? appRedirect({
   final hasWallet = wallet?.hasWallet ?? bootstrap.hasWallet;
   final isUnlocked = security.isUnlocked || bootstrap.isUnlocked;
   final requiresUnlock = hasWallet && !isUnlocked;
+  final currentPath = state.uri.path;
+  final isMultisigOnboarding =
+      currentPath == '/multisig/create' ||
+      currentPath == '/multisig/join' ||
+      currentPath == '/multisig/set-password' ||
+      currentPath.startsWith('/multisig/session/');
   final isOnboarding =
       state.matchedLocation == '/welcome' ||
       state.matchedLocation == '/add-account' ||
       state.matchedLocation.startsWith('/onboarding/') ||
-      state.matchedLocation.startsWith('/import');
+      state.matchedLocation.startsWith('/import') ||
+      isMultisigOnboarding;
   final isPublicLegal =
       state.matchedLocation == '/terms' || state.matchedLocation == '/privacy';
   // The uninstall flow ends with hasWallet == false on purpose; keep the
@@ -637,6 +648,22 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
   ),
 ];
 
+MultisigFinalizeArgs? _multisigFinalizeArgsFromExtra(Object? extra) {
+  if (extra is MultisigFinalizeArgs) return extra;
+  if (extra is SetPasswordScreenArgs &&
+      extra.flow == SetPasswordFlow.multisigFinalize &&
+      extra.multisigSessionId != null &&
+      extra.multisigBackupArtifactJson != null &&
+      extra.multisigBackupPassphrase != null) {
+    return MultisigFinalizeArgs(
+      sessionId: extra.requiredMultisigSessionId,
+      backupArtifactJson: extra.requiredMultisigBackupArtifactJson,
+      backupPassphrase: extra.requiredMultisigBackupPassphrase,
+    );
+  }
+  return null;
+}
+
 /// Main application routes for the desktop (large-form-factor) tree.
 List<RouteBase> _desktopRoutes() => [
   GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
@@ -721,13 +748,94 @@ List<RouteBase> _desktopRoutes() => [
   GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
   GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
   GoRoute(
+    path: '/multisig/create',
+    pageBuilder: (context, state) => CustomTransitionPage<void>(
+      key: state.pageKey,
+      transitionDuration: kOnboardingForwardDuration,
+      reverseTransitionDuration: kOnboardingReverseDuration,
+      child: const MultisigCreateSessionScreen(),
+      transitionsBuilder: _onboardingFadeTransition,
+    ),
+  ),
+  GoRoute(
+    path: '/multisig/join',
+    pageBuilder: (context, state) => CustomTransitionPage<void>(
+      key: state.pageKey,
+      transitionDuration: kOnboardingForwardDuration,
+      reverseTransitionDuration: kOnboardingReverseDuration,
+      child: const MultisigJoinSessionScreen(),
+      transitionsBuilder: _onboardingFadeTransition,
+    ),
+  ),
+  GoRoute(
+    path: '/multisig/set-password',
+    redirect: (_, state) {
+      final args = state.extra;
+      if (args is SetPasswordScreenArgs &&
+          args.flow == SetPasswordFlow.multisigFinalize &&
+          args.requiredMultisigSessionId.isNotEmpty &&
+          args.requiredMultisigBackupArtifactJson.isNotEmpty &&
+          args.requiredMultisigBackupPassphrase.isNotEmpty &&
+          args.birthdayHeight != null) {
+        return null;
+      }
+      return '/welcome';
+    },
+    pageBuilder: (context, state) => CustomTransitionPage<void>(
+      key: state.pageKey,
+      transitionDuration: kOnboardingForwardDuration,
+      reverseTransitionDuration: kOnboardingReverseDuration,
+      child: SetPasswordScreen(args: state.extra as SetPasswordScreenArgs),
+      transitionsBuilder: _onboardingFadeTransition,
+    ),
+  ),
+  GoRoute(
+    path: '/multisig/session/:sessionId/birthday',
+    redirect: (_, state) {
+      final sessionId = state.pathParameters['sessionId'];
+      final args = _multisigFinalizeArgsFromExtra(state.extra);
+      if (sessionId != null &&
+          sessionId.isNotEmpty &&
+          args != null &&
+          args.sessionId == Uri.decodeComponent(sessionId)) {
+        return null;
+      }
+      if (sessionId == null || sessionId.isEmpty) return '/welcome';
+      return '/multisig/session/$sessionId';
+    },
+    pageBuilder: (context, state) {
+      final sessionId = state.pathParameters['sessionId'] ?? '';
+      final finalizeArgs = _multisigFinalizeArgsFromExtra(state.extra)!;
+      return CustomTransitionPage<void>(
+        key: state.pageKey,
+        transitionDuration: kOnboardingForwardDuration,
+        reverseTransitionDuration: kOnboardingReverseDuration,
+        child: MultisigBirthdayScreen(
+          sessionId: Uri.decodeComponent(sessionId),
+          finalizeArgs: finalizeArgs,
+        ),
+        transitionsBuilder: _onboardingFadeTransition,
+      );
+    },
+  ),
+  GoRoute(
+    path: '/multisig/session/:sessionId',
+    pageBuilder: (context, state) {
+      final sessionId = state.pathParameters['sessionId'] ?? '';
+      return CustomTransitionPage<void>(
+        key: state.pageKey,
+        transitionDuration: kOnboardingForwardDuration,
+        reverseTransitionDuration: kOnboardingReverseDuration,
+        child: MultisigSessionScreen(sessionId: Uri.decodeComponent(sessionId)),
+        transitionsBuilder: _onboardingFadeTransition,
+      );
+    },
+  ),
+  GoRoute(
     path: '/multisig',
     builder: (_, _) => const MultisigSigningHomeScreen(),
   ),
-  GoRoute(
-    path: '/multisig/setup',
-    builder: (_, _) => const MultisigSessionsScreen(),
-  ),
+  GoRoute(path: '/multisig/setup', redirect: (_, _) => '/multisig/create'),
   GoRoute(
     path: '/multisig/sign/request',
     builder: (_, state) {

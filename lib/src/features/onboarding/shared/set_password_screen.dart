@@ -11,6 +11,7 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/password_text_field.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/multisig_pending_session_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../create/onboarding_split_view.dart';
@@ -113,6 +114,28 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                   zip32Index: args.requiredKeystoneZip32Index,
                   birthdayHeight: args.importBirthdayHeight,
                 );
+              case SetPasswordFlow.multisigFinalize:
+                final sessions = await ref.read(
+                  multisigPendingSessionsProvider.future,
+                );
+                final session = multisigSessionById(
+                  sessions,
+                  args.requiredMultisigSessionId,
+                );
+                if (session == null) {
+                  throw StateError('Multisig session not found.');
+                }
+                if (!multisigLocalBackupCompleted(session)) {
+                  throw StateError(
+                    'Confirm the local multisig backup before creating this account.',
+                  );
+                }
+                await accountNotifier.finalizeMultisigAccount(
+                  session.sessionId,
+                  backupArtifactJson: args.requiredMultisigBackupArtifactJson,
+                  backupPassphrase: args.requiredMultisigBackupPassphrase,
+                  birthdayHeight: args.importBirthdayHeight,
+                );
             }
           },
           onStoppingSync: () {
@@ -195,6 +218,10 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         backTarget: backTarget,
         child: content,
       ),
+      SetPasswordFlow.multisigFinalize => OnboardingTrailingPane(
+        backTarget: backTarget,
+        child: content,
+      ),
     };
   }
 
@@ -204,6 +231,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       ImportOnboardingStep.walletBirthdayHeight.label,
     SetPasswordFlow.importKeystone =>
       KeystoneOnboardingStep.walletBirthdayHeight.label,
+    SetPasswordFlow.multisigFinalize => 'Wallet Birthday Height',
   };
 }
 

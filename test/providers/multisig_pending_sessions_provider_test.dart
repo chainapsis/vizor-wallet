@@ -334,6 +334,30 @@ void main() {
     expect(store.sessions, isEmpty);
     expect(container.read(multisigPendingSessionsProvider).value, isEmpty);
   });
+
+  test('local setup helper skips materialized sessions', () {
+    final materialized = _pendingSession(sessionId: 'materialized');
+    final next = _pendingSession(sessionId: 'next');
+
+    expect(
+      latestLocalMultisigSetupSession([materialized, next], {'materialized'}),
+      same(next),
+    );
+    expect(
+      latestLocalMultisigSetupSession([materialized], {'materialized'}),
+      isNull,
+    );
+    expect(
+      multisigSessionNeedsLocalSetup(materialized, {'materialized'}),
+      isFalse,
+    );
+    expect(
+      multisigSessionNeedsLocalSetup(
+        _pendingSession(sessionId: 'failed').copyWith(state: 'failed'),
+      ),
+      isFalse,
+    );
+  });
 }
 
 ProviderContainer _container({
@@ -544,6 +568,7 @@ rust_multisig.ApiMultisigSession _apiSession({
 
 class _FakePendingSessionStore implements MultisigPendingSessionStore {
   final sessions = <String, MultisigPendingSession>{};
+  final createStates = <String, String>{};
 
   void put(MultisigPendingSession session) {
     sessions[session.storageId] = session;
@@ -577,6 +602,24 @@ class _FakePendingSessionStore implements MultisigPendingSessionStore {
   @override
   Future<void> deleteByStorageId(String storageId) async {
     sessions.remove(storageId);
+  }
+
+  @override
+  Future<String?> readCreateState(MultisigPendingSession session) async {
+    return createStates[session.storageId];
+  }
+
+  @override
+  Future<void> writeCreateState(
+    MultisigPendingSession session,
+    String localStateJson,
+  ) async {
+    createStates[session.storageId] = localStateJson;
+  }
+
+  @override
+  Future<void> deleteCreateState(MultisigPendingSession session) async {
+    createStates.remove(session.storageId);
   }
 }
 

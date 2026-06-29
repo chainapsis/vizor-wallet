@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/storage/app_secure_store.dart';
+import 'app_security_provider.dart';
 
 class MultisigParticipantIdentity {
   const MultisigParticipantIdentity({
@@ -240,8 +241,21 @@ final multisigAccountMaterialStoreProvider =
       (ref) => MultisigAccountMaterialStore(AppSecureStore.instance),
     );
 
+final multisigAccountMaterialsProvider =
+    FutureProvider<List<MultisigAccountMaterial>>((ref) {
+      final security = ref.watch(appSecurityProvider);
+      if (security.requiresUnlock) return const <MultisigAccountMaterial>[];
+      return ref.watch(multisigAccountMaterialStoreProvider).readAll();
+    });
+
 bool multisigMaterialBackupCompleted(MultisigAccountMaterial material) {
   return material.localBackupCompletedAt != null;
+}
+
+Set<String> materializedMultisigSessionIds(
+  Iterable<MultisigAccountMaterial> materials,
+) {
+  return materials.map((material) => material.sessionId).toSet();
 }
 
 String _readRequiredIdentityString(Map<String, Object?> json, String key) {

@@ -8,7 +8,7 @@ use pczt::roles::low_level_signer::Signer as LowLevelSigner;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use reddsa::frost::redpallas::{
-    keys::KeyPackage,
+    keys::{dkg as frost_dkg, KeyPackage},
     rerandomized::Randomizer,
     round1::{SigningCommitments, SigningNonces},
     round2::SignatureShare,
@@ -18,8 +18,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zcash_multisig::{
     address::group_address_ua,
+    dkg::{dkg_part1, dkg_part2, dkg_part3, parse_dkg_round1, parse_dkg_round2, DkgRound2Msg},
     injector::inject_orchard_signature,
-    keys::GroupPublicPackage,
+    keys::{build_group_public_package, GroupPublicPackage},
     signer::{
         aggregate, extract_alpha, make_signing_package, parse_round1_msg, parse_round2_msg,
         public_key_package_from_group_package, round1_commit, round1_msg, round2_msg, round2_sign,
@@ -118,6 +119,20 @@ pub struct ApiMultisigSession {
     pub participants: Vec<ApiMultisigParticipant>,
     pub created_at: u64,
     pub updated_at: u64,
+}
+
+pub struct ApiMultisigCreateAdvance {
+    pub session: ApiMultisigSession,
+    pub local_state_json: String,
+    pub phase: String,
+    pub detail: String,
+    pub waiting_for_participant_ids: Vec<String>,
+    pub round1_count: u32,
+    pub round2_count: u32,
+    pub dkg_complete_submitted: bool,
+    pub key_package_b64: Option<String>,
+    pub group_public_package_json: Option<String>,
+    pub group_public_package_hash: Option<String>,
 }
 
 pub struct ApiMultisigSigningRequest {
@@ -355,6 +370,84 @@ impl LocalSigningState {
 struct SigningInboxMessages {
     round1: BTreeMap<String, TxRound1Body>,
     round2: BTreeMap<String, TxRound2Body>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LocalCreateState {
+    version: u8,
+    session_id: String,
+    participant_id: String,
+    #[serde(default)]
+    roster_hash: Option<String>,
+    #[serde(default)]
+    threshold: Option<u16>,
+    #[serde(default)]
+    inbox_cursor: i64,
+    #[serde(default)]
+    roster: Vec<LocalRosterParticipant>,
+    #[serde(default)]
+    broadcast_seed_b64: Option<String>,
+    #[serde(default)]
+    seed_sent_to: BTreeSet<String>,
+    #[serde(default)]
+    round1_secret_b64: Option<String>,
+    #[serde(default)]
+    round1_messages: BTreeMap<String, RoundMsg>,
+    #[serde(default)]
+    round1_sent_to: BTreeSet<String>,
+    #[serde(default)]
+    round2_secret_b64: Option<String>,
+    #[serde(default)]
+    outbound_round2: BTreeMap<String, DkgRound2Msg>,
+    #[serde(default)]
+    round2_sent_to: BTreeSet<String>,
+    #[serde(default)]
+    round2_messages: BTreeMap<String, DkgRound2Msg>,
+    #[serde(default)]
+    outbound_messages: BTreeMap<String, EncryptedMessageReq>,
+    #[serde(default)]
+    key_package_b64: Option<String>,
+    #[serde(default)]
+    group_public_package_json: Option<String>,
+    #[serde(default)]
+    group_public_package_hash: Option<String>,
+    #[serde(default)]
+    dkg_complete_submitted: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LocalRosterParticipant {
+    participant_id: String,
+    delivery_public_key: String,
+    dkg_identifier_hex: String,
+}
+
+impl LocalCreateState {
+    fn new(session_id: String, participant_id: String) -> Self {
+        Self {
+            version: 1,
+            session_id,
+            participant_id,
+            roster_hash: None,
+            threshold: None,
+            inbox_cursor: 0,
+            roster: Vec::new(),
+            broadcast_seed_b64: None,
+            seed_sent_to: BTreeSet::new(),
+            round1_secret_b64: None,
+            round1_messages: BTreeMap::new(),
+            round1_sent_to: BTreeSet::new(),
+            round2_secret_b64: None,
+            outbound_round2: BTreeMap::new(),
+            round2_sent_to: BTreeSet::new(),
+            round2_messages: BTreeMap::new(),
+            outbound_messages: BTreeMap::new(),
+            key_package_b64: None,
+            group_public_package_json: None,
+            group_public_package_hash: None,
+            dkg_complete_submitted: false,
+        }
+    }
 }
 
 #[flutter_rust_bridge::frb(sync)]
@@ -701,6 +794,248 @@ pub fn lock_multisig_session(
             .map_err(client_error)?;
 
         Ok(map_session(session))
+    })
+}
+
+pub fn advance_multisig_create(
+    coordinator_url: String,
+    session_id: String,
+    participant_id: String,
+    access_token: String,
+    admission_secret_key: String,
+    delivery_secret_key: String,
+    local_state_json: Option<String>,
+) -> Result<ApiMultisigCreateAdvance, String> {
+    block_on(async move {
+        let client = Coordinator2Client::new(coordinator_url);
+        let mut session = client
+            .get_session(&session_id, &access_token)
+            .await
+            .map_err(client_error)?;
+
+        let mut state = parse_create_state(local_state_json, &session_id, &participant_id)?;
+        if session.state.as_str() != "request_create" {
+            return create_progress(
+                session,
+                state,
+                session_state_phase("Session is not in create stage."),
+                Vec::new(),
+            );
+        }
+
+        sync_locked_roster(&mut state, &session)?;
+        let roster_hash = state
+            .roster_hash
+            .clone()
+            .ok_or_else(|| "Locked session is missing roster hash.".to_string())?;
+        let threshold = state
+            .threshold
+            .ok_or_else(|| "Locked session is missing threshold.".to_string())?;
+        let delivery = DeliveryKeypair::from_secret_b64(&delivery_secret_key)
+            .map_err(|err| format!("Invalid delivery secret key: {err}"))?;
+        let seed_issuer = seed_issuer_participant_id(&session)?;
+
+        if let Some(progress) = poll_create_inbox(
+            &client,
+            &access_token,
+            &mut state,
+            &delivery,
+            &roster_hash,
+            &seed_issuer,
+        )
+        .await?
+        {
+            return create_progress(session, state, progress, Vec::new());
+        }
+
+        if state.broadcast_seed_b64.is_none() {
+            if participant_id == seed_issuer {
+                let mut seed = [0u8; 32];
+                OsRng.fill_bytes(&mut seed);
+                state.broadcast_seed_b64 = Some(URL_SAFE_NO_PAD.encode(seed));
+            } else {
+                return create_progress(
+                    session,
+                    state,
+                    "Waiting for the shared DKG seed.".to_string(),
+                    vec![seed_issuer],
+                );
+            }
+        }
+
+        if participant_id == seed_issuer {
+            let seed = decode_b64_32(
+                state
+                    .broadcast_seed_b64
+                    .as_deref()
+                    .ok_or_else(|| "Missing broadcast seed.".to_string())?,
+                "broadcast seed",
+            )?;
+            for recipient in state.roster.clone() {
+                if recipient.participant_id == participant_id
+                    || state.seed_sent_to.contains(&recipient.participant_id)
+                {
+                    continue;
+                }
+                if let Err(e) = post_create_message_with_outbox(
+                    &mut state,
+                    &client,
+                    &access_token,
+                    &roster_hash,
+                    &participant_id,
+                    &recipient,
+                    "dkg_broadcast_seed",
+                    &seed,
+                )
+                .await
+                {
+                    return create_progress(
+                        session,
+                        state,
+                        format!("Network error while sending DKG seed: {e}"),
+                        vec![recipient.participant_id],
+                    );
+                }
+                state.seed_sent_to.insert(recipient.participant_id);
+            }
+        }
+
+        ensure_dkg_round1(&mut state, &participant_id, threshold)?;
+        for recipient in state.roster.clone() {
+            if recipient.participant_id == participant_id
+                || state.round1_sent_to.contains(&recipient.participant_id)
+            {
+                continue;
+            }
+            let own_round1 = state
+                .round1_messages
+                .get(&participant_id)
+                .ok_or_else(|| "Missing local DKG round1 message.".to_string())?;
+            let payload = serde_json::to_vec(own_round1).map_err(|e| e.to_string())?;
+            if let Err(e) = post_create_message_with_outbox(
+                &mut state,
+                &client,
+                &access_token,
+                &roster_hash,
+                &participant_id,
+                &recipient,
+                "dkg_round1",
+                &payload,
+            )
+            .await
+            {
+                return create_progress(
+                    session,
+                    state,
+                    format!("Network error while sending DKG round 1: {e}"),
+                    vec![recipient.participant_id],
+                );
+            }
+            state.round1_sent_to.insert(recipient.participant_id);
+        }
+
+        let missing_round1 = missing_round1_participants(&state);
+        if !missing_round1.is_empty() {
+            return create_progress(
+                session,
+                state,
+                "Waiting for DKG round 1 messages.".to_string(),
+                missing_round1,
+            );
+        }
+
+        ensure_dkg_round2(&mut state)?;
+        for recipient in state.roster.clone() {
+            if recipient.participant_id == participant_id
+                || state.round2_sent_to.contains(&recipient.participant_id)
+            {
+                continue;
+            }
+            let msg = state
+                .outbound_round2
+                .get(&recipient.participant_id)
+                .ok_or_else(|| "Missing outbound DKG round 2 message.".to_string())?;
+            let payload = serde_json::to_vec(msg).map_err(|e| e.to_string())?;
+            if let Err(e) = post_create_message_with_outbox(
+                &mut state,
+                &client,
+                &access_token,
+                &roster_hash,
+                &participant_id,
+                &recipient,
+                "dkg_round2",
+                &payload,
+            )
+            .await
+            {
+                return create_progress(
+                    session,
+                    state,
+                    format!("Network error while sending DKG round 2: {e}"),
+                    vec![recipient.participant_id],
+                );
+            }
+            state.round2_sent_to.insert(recipient.participant_id);
+        }
+
+        let missing_round2 = missing_round2_participants(&state, &participant_id);
+        if !missing_round2.is_empty() {
+            return create_progress(
+                session,
+                state,
+                "Waiting for DKG round 2 messages.".to_string(),
+                missing_round2,
+            );
+        }
+
+        ensure_dkg_finalized(&mut state)?;
+        if !state.dkg_complete_submitted {
+            let admission = AdmissionKey::from_secret_b64(&admission_secret_key)
+                .map_err(|err| format!("Invalid admission secret key: {err}"))?;
+            let group_hash = state
+                .group_public_package_hash
+                .clone()
+                .ok_or_else(|| "Missing group public package hash.".to_string())?;
+            let req = admission.dkg_complete_request(
+                &session_id,
+                &participant_id,
+                roster_hash,
+                group_hash,
+            );
+            match client
+                .mark_dkg_complete(&session_id, &access_token, &req)
+                .await
+            {
+                Ok(updated) => {
+                    session = updated;
+                    state.dkg_complete_submitted = true;
+                }
+                Err(e) => {
+                    return create_progress(
+                        session,
+                        state,
+                        format!(
+                            "Network error while submitting DKG completion: {}",
+                            client_error(e)
+                        ),
+                        Vec::new(),
+                    );
+                }
+            }
+        }
+
+        let waiting = session
+            .participants
+            .iter()
+            .filter(|participant| !participant.dkg_completed)
+            .map(|participant| participant.participant_id.clone())
+            .collect();
+        create_progress(
+            session,
+            state,
+            "Your create step is complete.".to_string(),
+            waiting,
+        )
     })
 }
 
@@ -1929,6 +2264,469 @@ fn round_action_msg<'a>(
         .ok_or_else(|| format!("{label} message is missing action {action_idx}."))
 }
 
+fn parse_create_state(
+    local_state_json: Option<String>,
+    session_id: &str,
+    participant_id: &str,
+) -> Result<LocalCreateState, String> {
+    let Some(raw) = local_state_json.filter(|value| !value.trim().is_empty()) else {
+        return Ok(LocalCreateState::new(
+            session_id.to_string(),
+            participant_id.to_string(),
+        ));
+    };
+    let mut state: LocalCreateState = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    if state.session_id != session_id || state.participant_id != participant_id {
+        return Ok(LocalCreateState::new(
+            session_id.to_string(),
+            participant_id.to_string(),
+        ));
+    }
+    state.version = 1;
+    Ok(state)
+}
+
+fn sync_locked_roster(state: &mut LocalCreateState, session: &SessionResp) -> Result<(), String> {
+    let roster_hash = session
+        .roster_hash
+        .clone()
+        .ok_or_else(|| "Session roster is not locked.".to_string())?;
+    let threshold = session
+        .threshold
+        .ok_or_else(|| "Session threshold is not locked.".to_string())?;
+    if state
+        .roster_hash
+        .as_deref()
+        .is_some_and(|value| value != roster_hash)
+    {
+        return Err("Stored create state belongs to a different roster.".to_string());
+    }
+
+    let mut participants = session.participants.clone();
+    participants.sort_by(|a, b| {
+        a.joined_at
+            .cmp(&b.joined_at)
+            .then_with(|| a.participant_id.cmp(&b.participant_id))
+    });
+    if participants.len() < 2 {
+        return Err("DKG requires at least two participants.".to_string());
+    }
+    if participants.len() > u8::MAX as usize {
+        return Err("Too many participants for this DKG identifier mapping.".to_string());
+    }
+    if !participants
+        .iter()
+        .any(|participant| participant.participant_id == state.participant_id)
+    {
+        return Err("Local participant is not in the locked roster.".to_string());
+    }
+
+    state.roster_hash = Some(roster_hash);
+    state.threshold = Some(threshold);
+    state.roster = participants
+        .iter()
+        .enumerate()
+        .map(|(idx, participant)| {
+            let identifier = dkg_identifier((idx + 1) as u8)?;
+            Ok(LocalRosterParticipant {
+                participant_id: participant.participant_id.clone(),
+                delivery_public_key: participant.delivery_public_key.clone(),
+                dkg_identifier_hex: hex::encode(identifier.serialize()),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(())
+}
+
+async fn poll_create_inbox(
+    client: &Coordinator2Client,
+    access_token: &str,
+    state: &mut LocalCreateState,
+    delivery: &DeliveryKeypair,
+    roster_hash: &str,
+    seed_issuer: &str,
+) -> Result<Option<String>, String> {
+    let inbox = client
+        .inbox(&state.session_id, access_token, state.inbox_cursor)
+        .await
+        .map_err(client_error)?;
+    let mut cursor = state.inbox_cursor;
+    for message in inbox.messages {
+        if !matches!(
+            message.kind.as_str(),
+            "dkg_broadcast_seed" | "dkg_round1" | "dkg_round2"
+        ) {
+            cursor = message.cursor;
+            continue;
+        }
+        let plaintext = decrypt_create_message(state, delivery, roster_hash, &message)?;
+        match message.kind.as_str() {
+            "dkg_broadcast_seed" => {
+                if message.from_participant_id != seed_issuer {
+                    return Ok(Some(
+                        "Received DKG seed from an unexpected participant.".to_string(),
+                    ));
+                }
+                if plaintext.len() != 32 {
+                    return Ok(Some("Received invalid DKG seed.".to_string()));
+                }
+                let seed_b64 = URL_SAFE_NO_PAD.encode(&plaintext);
+                if let Some(existing) = &state.broadcast_seed_b64 {
+                    if existing != &seed_b64 {
+                        return Ok(Some("Received conflicting DKG seed.".to_string()));
+                    }
+                } else {
+                    state.broadcast_seed_b64 = Some(seed_b64);
+                }
+            }
+            "dkg_round1" => {
+                let msg: RoundMsg =
+                    serde_json::from_slice(&plaintext).map_err(|e| e.to_string())?;
+                let sender = roster_entry(state, &message.from_participant_id)?;
+                if msg.identifier_hex != sender.dkg_identifier_hex {
+                    return Ok(Some(
+                        "Received DKG round 1 with an unexpected identifier.".to_string(),
+                    ));
+                }
+                if let Some(existing) = state.round1_messages.get(&message.from_participant_id) {
+                    if serde_json::to_vec(existing).map_err(|e| e.to_string())?
+                        != serde_json::to_vec(&msg).map_err(|e| e.to_string())?
+                    {
+                        return Ok(Some(
+                            "Received conflicting DKG round 1 message.".to_string(),
+                        ));
+                    }
+                } else {
+                    state
+                        .round1_messages
+                        .insert(message.from_participant_id.clone(), msg);
+                }
+            }
+            "dkg_round2" => {
+                let msg: DkgRound2Msg =
+                    serde_json::from_slice(&plaintext).map_err(|e| e.to_string())?;
+                let sender = roster_entry(state, &message.from_participant_id)?;
+                if msg.sender_hex != sender.dkg_identifier_hex {
+                    return Ok(Some(
+                        "Received DKG round 2 with an unexpected sender.".to_string(),
+                    ));
+                }
+                let own = own_roster_entry(state)?;
+                if msg.target_hex != own.dkg_identifier_hex {
+                    return Ok(Some(
+                        "Received DKG round 2 message for another participant.".to_string(),
+                    ));
+                }
+                if let Some(existing) = state.round2_messages.get(&message.from_participant_id) {
+                    if serde_json::to_vec(existing).map_err(|e| e.to_string())?
+                        != serde_json::to_vec(&msg).map_err(|e| e.to_string())?
+                    {
+                        return Ok(Some(
+                            "Received conflicting DKG round 2 message.".to_string(),
+                        ));
+                    }
+                } else {
+                    state
+                        .round2_messages
+                        .insert(message.from_participant_id.clone(), msg);
+                }
+            }
+            _ => {}
+        }
+        cursor = message.cursor;
+    }
+    state.inbox_cursor = inbox.cursor.max(cursor);
+    Ok(None)
+}
+
+fn seed_issuer_participant_id(session: &SessionResp) -> Result<String, String> {
+    if session
+        .participants
+        .iter()
+        .any(|participant| participant.participant_id == session.creator_participant_id)
+    {
+        return Ok(session.creator_participant_id.clone());
+    }
+    session
+        .participants
+        .iter()
+        .min_by(|a, b| {
+            a.joined_at
+                .cmp(&b.joined_at)
+                .then_with(|| a.participant_id.cmp(&b.participant_id))
+        })
+        .map(|participant| participant.participant_id.clone())
+        .ok_or_else(|| "Session has no participants.".to_string())
+}
+
+fn ensure_dkg_round1(
+    state: &mut LocalCreateState,
+    participant_id: &str,
+    threshold: u16,
+) -> Result<(), String> {
+    if state.round1_secret_b64.is_some() && state.round1_messages.contains_key(participant_id) {
+        return Ok(());
+    }
+    let own = own_roster_entry(state)?;
+    let identifier = identifier_from_hex(&own.dkg_identifier_hex)?;
+    let (secret, msg) =
+        dkg_part1(identifier, state.roster.len() as u16, threshold).map_err(|e| e.to_string())?;
+    let secret_bytes = secret
+        .serialize()
+        .map_err(|e| format!("round1 secret serialize: {e:?}"))?;
+    state.round1_secret_b64 = Some(URL_SAFE_NO_PAD.encode(secret_bytes));
+    state
+        .round1_messages
+        .insert(participant_id.to_string(), msg);
+    Ok(())
+}
+
+fn ensure_dkg_round2(state: &mut LocalCreateState) -> Result<(), String> {
+    if state.round2_secret_b64.is_some() && !state.outbound_round2.is_empty() {
+        return Ok(());
+    }
+    let own = own_roster_entry(state)?;
+    let own_id = identifier_from_hex(&own.dkg_identifier_hex)?;
+    let all_round1 = all_dkg_round1_packages(state)?;
+    let others = without_identifier(&all_round1, own_id);
+    let secret_bytes = decode_b64(
+        state
+            .round1_secret_b64
+            .as_deref()
+            .ok_or_else(|| "Missing local DKG round1 secret.".to_string())?,
+        "round1 secret",
+    )?;
+    let secret = frost_dkg::round1::SecretPackage::deserialize(&secret_bytes)
+        .map_err(|e| format!("round1 secret deserialize: {e:?}"))?;
+    let (round2_secret, msgs) = dkg_part2(secret, &others).map_err(|e| e.to_string())?;
+    let secret_bytes = round2_secret
+        .serialize()
+        .map_err(|e| format!("round2 secret serialize: {e:?}"))?;
+    state.round2_secret_b64 = Some(URL_SAFE_NO_PAD.encode(secret_bytes));
+    let participant_by_hex: BTreeMap<String, String> = state
+        .roster
+        .iter()
+        .map(|participant| {
+            (
+                participant.dkg_identifier_hex.clone(),
+                participant.participant_id.clone(),
+            )
+        })
+        .collect();
+    state.outbound_round2.clear();
+    for msg in msgs {
+        let target = participant_by_hex
+            .get(&msg.target_hex)
+            .ok_or_else(|| "DKG round 2 target is not in roster.".to_string())?;
+        state.outbound_round2.insert(target.clone(), msg);
+    }
+    Ok(())
+}
+
+fn ensure_dkg_finalized(state: &mut LocalCreateState) -> Result<(), String> {
+    if state.key_package_b64.is_some()
+        && state.group_public_package_json.is_some()
+        && state.group_public_package_hash.is_some()
+    {
+        return Ok(());
+    }
+    let own = own_roster_entry(state)?;
+    let own_id = identifier_from_hex(&own.dkg_identifier_hex)?;
+    let all_round1 = all_dkg_round1_packages(state)?;
+    let others_round1 = without_identifier(&all_round1, own_id);
+    let round2_secret_bytes = decode_b64(
+        state
+            .round2_secret_b64
+            .as_deref()
+            .ok_or_else(|| "Missing local DKG round2 secret.".to_string())?,
+        "round2 secret",
+    )?;
+    let round2_secret = frost_dkg::round2::SecretPackage::deserialize(&round2_secret_bytes)
+        .map_err(|e| format!("round2 secret deserialize: {e:?}"))?;
+    let mut round2_packages = BTreeMap::new();
+    for msg in state.round2_messages.values() {
+        let (sender, package) = parse_dkg_round2(msg).map_err(|e| e.to_string())?;
+        round2_packages.insert(sender, package);
+    }
+    let (key_package, public_package) =
+        dkg_part3(&round2_secret, &others_round1, &round2_packages).map_err(|e| e.to_string())?;
+    if key_package.identifier().serialize()
+        != identifier_from_hex(&own.dkg_identifier_hex)?.serialize()
+    {
+        return Err("Final DKG key package belongs to another participant.".to_string());
+    }
+    let seed = decode_b64_32(
+        state
+            .broadcast_seed_b64
+            .as_deref()
+            .ok_or_else(|| "Missing broadcast seed.".to_string())?,
+        "broadcast seed",
+    )?;
+    let group = build_group_public_package(
+        &public_package,
+        ThresholdParams::new(
+            state
+                .threshold
+                .ok_or_else(|| "Missing threshold.".to_string())?,
+            state.roster.len() as u16,
+        )
+        .map_err(|e| e.to_string())?,
+        seed,
+    )
+    .map_err(|e| e.to_string())?;
+    let group_json = serde_json::to_string(&group).map_err(|e| e.to_string())?;
+    let group_hash = hash_group_public_package(&group)?;
+    let key_package_bytes = key_package
+        .serialize()
+        .map_err(|e| format!("key package serialize: {e:?}"))?;
+    state.key_package_b64 = Some(URL_SAFE_NO_PAD.encode(key_package_bytes));
+    state.group_public_package_json = Some(group_json);
+    state.group_public_package_hash = Some(group_hash);
+    Ok(())
+}
+
+fn all_dkg_round1_packages(
+    state: &LocalCreateState,
+) -> Result<BTreeMap<Identifier, frost_dkg::round1::Package>, String> {
+    state
+        .round1_messages
+        .values()
+        .map(|msg| parse_dkg_round1(msg).map_err(|e| e.to_string()))
+        .collect()
+}
+
+fn without_identifier<T: Clone>(
+    map: &BTreeMap<Identifier, T>,
+    own: Identifier,
+) -> BTreeMap<Identifier, T> {
+    map.iter()
+        .filter(|(identifier, _)| **identifier != own)
+        .map(|(identifier, value)| (*identifier, value.clone()))
+        .collect()
+}
+
+fn missing_round1_participants(state: &LocalCreateState) -> Vec<String> {
+    state
+        .roster
+        .iter()
+        .filter(|participant| {
+            !state
+                .round1_messages
+                .contains_key(&participant.participant_id)
+        })
+        .map(|participant| participant.participant_id.clone())
+        .collect()
+}
+
+fn missing_round2_participants(state: &LocalCreateState, participant_id: &str) -> Vec<String> {
+    state
+        .roster
+        .iter()
+        .filter(|participant| participant.participant_id != participant_id)
+        .filter(|participant| {
+            !state
+                .round2_messages
+                .contains_key(&participant.participant_id)
+        })
+        .map(|participant| participant.participant_id.clone())
+        .collect()
+}
+
+fn own_roster_entry(state: &LocalCreateState) -> Result<LocalRosterParticipant, String> {
+    roster_entry(state, &state.participant_id)
+}
+
+fn roster_entry(
+    state: &LocalCreateState,
+    participant_id: &str,
+) -> Result<LocalRosterParticipant, String> {
+    state
+        .roster
+        .iter()
+        .find(|participant| participant.participant_id == participant_id)
+        .cloned()
+        .ok_or_else(|| "Participant is missing from roster.".to_string())
+}
+
+async fn post_create_message_with_outbox(
+    state: &mut LocalCreateState,
+    client: &Coordinator2Client,
+    access_token: &str,
+    roster_hash: &str,
+    from_participant_id: &str,
+    recipient: &LocalRosterParticipant,
+    kind: &str,
+    plaintext: &[u8],
+) -> Result<(), String> {
+    let key = idempotency_key(
+        "session-message",
+        &[
+            &state.session_id,
+            kind,
+            from_participant_id,
+            &recipient.participant_id,
+        ],
+    );
+    let envelope = if let Some(envelope) = state.outbound_messages.get(&key) {
+        envelope.clone()
+    } else {
+        let ctx = E2eContext {
+            session_id: &state.session_id,
+            roster_hash: Some(roster_hash),
+            kind,
+            from_participant_id,
+            to_participant_id: Some(&recipient.participant_id),
+            related_id: None,
+        };
+        let envelope = encrypt_for(&recipient.delivery_public_key, &ctx, plaintext)
+            .map_err(|e| e.to_string())?;
+        state
+            .outbound_messages
+            .insert(key.clone(), envelope.clone());
+        envelope
+    };
+    client
+        .post_message_with_idempotency(&state.session_id, access_token, &key, &envelope)
+        .await
+        .map_err(client_error)?;
+    state.outbound_messages.remove(&key);
+    Ok(())
+}
+
+fn decrypt_create_message(
+    state: &LocalCreateState,
+    delivery: &DeliveryKeypair,
+    roster_hash: &str,
+    message: &MessageResp,
+) -> Result<Vec<u8>, String> {
+    if message.session_id != state.session_id {
+        return Err("Message belongs to another session.".to_string());
+    }
+    if message
+        .to_participant_id
+        .as_deref()
+        .is_some_and(|target| target != state.participant_id)
+    {
+        return Err("Message is addressed to another participant.".to_string());
+    }
+    let ctx = E2eContext {
+        session_id: &message.session_id,
+        roster_hash: Some(roster_hash),
+        kind: &message.kind,
+        from_participant_id: &message.from_participant_id,
+        to_participant_id: message.to_participant_id.as_deref(),
+        related_id: message.related_id.as_deref(),
+    };
+    delivery
+        .decrypt(
+            &ctx,
+            &message.ephemeral_public_key,
+            &message.nonce,
+            &message.ciphertext,
+        )
+        .map_err(|_| "Failed to decrypt multisig DKG message.".to_string())
+}
+
 fn decrypt_signing_message(
     session_id: &str,
     participant_id: &str,
@@ -1983,6 +2781,17 @@ fn hash_group_public_package(value: &impl Serialize) -> Result<String, String> {
     Ok(URL_SAFE_NO_PAD.encode(h.finalize()))
 }
 
+fn dkg_identifier(index: u8) -> Result<Identifier, String> {
+    let mut bytes = [0u8; 32];
+    bytes[0] = index;
+    Identifier::deserialize(&bytes).map_err(|e| format!("identifier deserialize: {e:?}"))
+}
+
+fn identifier_from_hex(value: &str) -> Result<Identifier, String> {
+    let bytes = hex::decode(value).map_err(|e| format!("identifier hex decode: {e}"))?;
+    Identifier::deserialize(&bytes).map_err(|e| format!("identifier deserialize: {e:?}"))
+}
+
 fn hash_bytes_b64(value: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(value);
@@ -2031,6 +2840,59 @@ fn decode_b64(value: &str, label: &str) -> Result<Vec<u8>, String> {
     URL_SAFE_NO_PAD
         .decode(value)
         .map_err(|e| format!("Invalid {label}: {e}"))
+}
+
+fn decode_b64_32(value: &str, label: &str) -> Result<[u8; 32], String> {
+    decode_b64(value, label)?
+        .try_into()
+        .map_err(|_| format!("Invalid {label}: expected 32 bytes"))
+}
+
+fn session_state_phase(message: &str) -> String {
+    message.to_string()
+}
+
+fn create_progress(
+    session: SessionResp,
+    state: LocalCreateState,
+    detail: String,
+    waiting_for_participant_ids: Vec<String>,
+) -> Result<ApiMultisigCreateAdvance, String> {
+    let phase = if session.state.as_str() != "request_create" {
+        session.state.as_str().to_string()
+    } else if state.dkg_complete_submitted
+        || session
+            .participants
+            .iter()
+            .find(|participant| participant.participant_id == state.participant_id)
+            .is_some_and(|participant| participant.dkg_completed)
+    {
+        "dkg_complete".to_string()
+    } else if state.broadcast_seed_b64.is_none() {
+        "waiting_for_seed".to_string()
+    } else if state.round1_messages.len() < state.roster.len() {
+        "waiting_for_round1".to_string()
+    } else if state.round2_messages.len() + 1 < state.roster.len() {
+        "waiting_for_round2".to_string()
+    } else if state.group_public_package_hash.is_some() {
+        "finalized".to_string()
+    } else {
+        "in_progress".to_string()
+    };
+    let local_state_json = serde_json::to_string(&state).map_err(|e| e.to_string())?;
+    Ok(ApiMultisigCreateAdvance {
+        session: map_session(session),
+        local_state_json,
+        phase,
+        detail,
+        waiting_for_participant_ids,
+        round1_count: state.round1_messages.len() as u32,
+        round2_count: state.round2_messages.len() as u32,
+        dkg_complete_submitted: state.dkg_complete_submitted,
+        key_package_b64: state.key_package_b64,
+        group_public_package_json: state.group_public_package_json,
+        group_public_package_hash: state.group_public_package_hash,
+    })
 }
 
 #[cfg(test)]

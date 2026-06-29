@@ -14,6 +14,7 @@ const kDefaultMultisigCoordinatorUrl = String.fromEnvironment(
   defaultValue: 'http://127.0.0.1:3001',
 );
 
+const _multisigCreateStateStoragePrefix = 'zcash_multisig_create_state_v1_';
 const _accessTokenRefreshSkewSeconds = 30;
 
 typedef MultisigNow = DateTime Function();
@@ -139,6 +140,8 @@ class MultisigPendingSession {
     this.creatorParticipantId,
     this.threshold,
     this.rosterHash,
+    this.keyPackageB64,
+    this.groupPublicPackageJson,
     this.groupPublicPackageHash,
   });
 
@@ -156,6 +159,8 @@ class MultisigPendingSession {
   final String? creatorParticipantId;
   final int? threshold;
   final String? rosterHash;
+  final String? keyPackageB64;
+  final String? groupPublicPackageJson;
   final String? groupPublicPackageHash;
   final List<MultisigPendingParticipant> participants;
   final int createdAt;
@@ -194,6 +199,8 @@ class MultisigPendingSession {
     String? creatorParticipantId,
     int? threshold,
     String? rosterHash,
+    String? keyPackageB64,
+    String? groupPublicPackageJson,
     String? groupPublicPackageHash,
     List<MultisigPendingParticipant>? participants,
     int? createdAt,
@@ -222,6 +229,9 @@ class MultisigPendingSession {
       creatorParticipantId: creatorParticipantId ?? this.creatorParticipantId,
       threshold: threshold ?? this.threshold,
       rosterHash: rosterHash ?? this.rosterHash,
+      keyPackageB64: keyPackageB64 ?? this.keyPackageB64,
+      groupPublicPackageJson:
+          groupPublicPackageJson ?? this.groupPublicPackageJson,
       groupPublicPackageHash:
           groupPublicPackageHash ?? this.groupPublicPackageHash,
       participants: participants ?? this.participants,
@@ -320,6 +330,8 @@ class MultisigPendingSession {
     'creatorParticipantId': creatorParticipantId,
     'threshold': threshold,
     'rosterHash': rosterHash,
+    'keyPackageB64': keyPackageB64,
+    'groupPublicPackageJson': groupPublicPackageJson,
     'groupPublicPackageHash': groupPublicPackageHash,
     'participants': participants.map((entry) => entry.toJson()).toList(),
     'createdAt': createdAt,
@@ -401,6 +413,8 @@ class MultisigPendingSession {
       creatorParticipantId: json['creatorParticipantId'] as String?,
       threshold: _readNullableInt(json['threshold']),
       rosterHash: json['rosterHash'] as String?,
+      keyPackageB64: json['keyPackageB64'] as String?,
+      groupPublicPackageJson: json['groupPublicPackageJson'] as String?,
       groupPublicPackageHash: json['groupPublicPackageHash'] as String?,
       participants: participants,
       createdAt: _readRequiredInt(
@@ -473,6 +487,39 @@ class MultisigPendingSession {
   }
 }
 
+class MultisigCreateAdvanceResult {
+  const MultisigCreateAdvanceResult({
+    required this.session,
+    required this.phase,
+    required this.detail,
+    required this.waitingForParticipantIds,
+    required this.round1Count,
+    required this.round2Count,
+    required this.dkgCompleteSubmitted,
+    this.keyPackageB64,
+    this.groupPublicPackageJson,
+    this.groupPublicPackageHash,
+  });
+
+  final MultisigPendingSession session;
+  final String phase;
+  final String detail;
+  final List<String> waitingForParticipantIds;
+  final int round1Count;
+  final int round2Count;
+  final bool dkgCompleteSubmitted;
+  final String? keyPackageB64;
+  final String? groupPublicPackageJson;
+  final String? groupPublicPackageHash;
+
+  List<MultisigPendingParticipant> get waitingForParticipants {
+    final waiting = waitingForParticipantIds.toSet();
+    return session.participants
+        .where((participant) => waiting.contains(participant.participantId))
+        .toList(growable: false);
+  }
+}
+
 class MultisigPendingSessionStore {
   const MultisigPendingSessionStore(this._storage);
 
@@ -514,6 +561,21 @@ class MultisigPendingSessionStore {
 
   Future<void> deleteByStorageId(String storageId) {
     return _storage.deleteMultisigPendingSession(storageId);
+  }
+
+  Future<String?> readCreateState(MultisigPendingSession session) {
+    return _storage.readPlain(_createStateKey(session));
+  }
+
+  Future<void> writeCreateState(
+    MultisigPendingSession session,
+    String localStateJson,
+  ) {
+    return _storage.writePlain(_createStateKey(session), localStateJson);
+  }
+
+  Future<void> deleteCreateState(MultisigPendingSession session) {
+    return _storage.delete(_createStateKey(session));
   }
 }
 
@@ -609,8 +671,78 @@ class MultisigPendingSessionsNotifier
     return updated;
   }
 
+  Future<MultisigCreateAdvanceResult> advanceCreate(String storageId) async {
+    final pending = await _sessionWithFreshAccess(
+      await _requireSession(storageId),
+    );
+    final localStateJson = await _store.readCreateState(pending);
+    final advanced = await rust_multisig.advanceMultisigCreate(
+      coordinatorUrl: pending.coordinatorUrl,
+      sessionId: pending.sessionId,
+      participantId: pending.participantId,
+      accessToken: pending.accessToken,
+      admissionSecretKey: pending.identity.admissionSecretKey,
+      deliverySecretKey: pending.identity.deliverySecretKey,
+      localStateJson: localStateJson,
+    );
+    await _store.writeCreateState(pending, advanced.localStateJson);
+    final updated = pending
+        .applySession(advanced.session)
+        .copyWith(
+          keyPackageB64: advanced.keyPackageB64,
+          groupPublicPackageJson: advanced.groupPublicPackageJson,
+          groupPublicPackageHash:
+              advanced.groupPublicPackageHash ??
+              advanced.session.groupPublicPackageHash,
+        );
+    await upsert(updated);
+    if (updated.state == 'ready') {
+      await _store.deleteCreateState(updated);
+    }
+    return MultisigCreateAdvanceResult(
+      session: updated,
+      phase: advanced.phase,
+      detail: advanced.detail,
+      waitingForParticipantIds: advanced.waitingForParticipantIds,
+      round1Count: advanced.round1Count.toInt(),
+      round2Count: advanced.round2Count.toInt(),
+      dkgCompleteSubmitted: advanced.dkgCompleteSubmitted,
+      keyPackageB64: advanced.keyPackageB64,
+      groupPublicPackageJson: advanced.groupPublicPackageJson,
+      groupPublicPackageHash: advanced.groupPublicPackageHash,
+    );
+  }
+
   Future<MultisigPendingSession> refreshAuth(String storageId) {
     return _sessionWithFreshAccess(_requireSession(storageId), force: true);
+  }
+
+  Future<MultisigPendingSession> markLocalBackupVerified({
+    required String storageId,
+    required String backupHash,
+    required List<String> destinations,
+  }) async {
+    final stored = await _requireSession(storageId);
+    final cleanHash = backupHash.trim();
+    final cleanDestinations = destinations
+        .map((entry) => entry.trim())
+        .where((entry) => entry.isNotEmpty)
+        .toList(growable: false);
+    if (cleanHash.isEmpty || cleanDestinations.isEmpty) {
+      throw StateError('Verified backup evidence is missing.');
+    }
+    final now = ref.read(multisigNowProvider)().millisecondsSinceEpoch;
+    final updated = stored.copyWith(
+      localBackupCompleted: true,
+      localBackupCompletedAt: now,
+      localBackupVersion: 2,
+      localBackupHash: cleanHash,
+      localBackupVerifiedAt: now,
+      localBackupDestinations: cleanDestinations,
+      updatedLocallyAt: now,
+    );
+    await upsert(updated);
+    return updated;
   }
 
   Future<MultisigPendingSession> resumeParticipant(String storageId) async {
@@ -676,6 +808,7 @@ class MultisigPendingSessionsNotifier
     final sessions = [...await _currentSessions()];
     final target = _findSession(sessions, storageId);
     if (target == null) return;
+    await _store.deleteCreateState(target);
     await _store.delete(target);
     sessions.removeWhere((entry) => entry.storageId == target.storageId);
     state = AsyncData(sessions);
@@ -684,12 +817,15 @@ class MultisigPendingSessionsNotifier
   Future<void> clearAll() async {
     final sessions = await _currentSessions();
     for (final session in sessions) {
+      await _store.deleteCreateState(session);
       await _store.delete(session);
     }
     state = const AsyncData(<MultisigPendingSession>[]);
   }
 
-  Future<void> applyAuthUpdate(rust_multisig.ApiMultisigAuthUpdate update) async {
+  Future<void> applyAuthUpdate(
+    rust_multisig.ApiMultisigAuthUpdate update,
+  ) async {
     final sessions = [...await _currentSessions()];
     final index = sessions.indexWhere(
       (entry) =>
@@ -757,6 +893,7 @@ class MultisigPendingSessionsNotifier
           refreshTokenExpiresAt: update.refreshTokenExpiresAt.toInt(),
         ),
       );
+      ref.invalidate(multisigAccountMaterialsProvider);
     }
   }
 
@@ -803,6 +940,18 @@ MultisigPendingSession? latestPendingMultisigSession(
   return null;
 }
 
+MultisigPendingSession? latestLocalMultisigSetupSession(
+  List<MultisigPendingSession> sessions, [
+  Set<String> materializedSessionIds = const <String>{},
+]) {
+  for (final session in sessions) {
+    if (multisigSessionNeedsLocalSetup(session, materializedSessionIds)) {
+      return session;
+    }
+  }
+  return null;
+}
+
 MultisigPendingSession? multisigSessionByStorageId(
   List<MultisigPendingSession> sessions,
   String storageId,
@@ -823,8 +972,18 @@ MultisigPendingSession? multisigSessionById(
   return null;
 }
 
-bool multisigSessionNeedsLocalSetup(MultisigPendingSession session) {
-  return session.state != 'failed';
+bool multisigSessionNeedsLocalSetup(
+  MultisigPendingSession session, [
+  Set<String> materializedSessionIds = const <String>{},
+]) {
+  return session.state != 'failed' &&
+      !materializedSessionIds.contains(session.sessionId);
+}
+
+bool multisigLocalBackupCompleted(MultisigPendingSession session) {
+  return session.localBackupCompleted &&
+      session.localBackupHash != null &&
+      session.localBackupDestinations.isNotEmpty;
 }
 
 MultisigPendingSession? _findSession(
@@ -837,6 +996,10 @@ MultisigPendingSession? _findSession(
 
 void _sortSessions(List<MultisigPendingSession> sessions) {
   sessions.sort((a, b) => b.updatedLocallyAt.compareTo(a.updatedLocallyAt));
+}
+
+String _createStateKey(MultisigPendingSession session) {
+  return '$_multisigCreateStateStoragePrefix${session.storageId}';
 }
 
 String _cleanRequired(String value, String label) {

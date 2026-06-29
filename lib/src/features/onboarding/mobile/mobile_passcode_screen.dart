@@ -135,6 +135,8 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                 zip32Index: args.requiredKeystoneZip32Index,
                 birthdayHeight: args.importBirthdayHeight,
               );
+            case SetPasswordFlow.multisigFinalize:
+              throw StateError('Multisig setup is not available on mobile.');
           }
         });
 
