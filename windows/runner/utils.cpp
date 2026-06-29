@@ -8,12 +8,10 @@
 #include <cctype>
 #include <iostream>
 
-namespace {
-
 bool IsZcashUri(const std::string& value) {
   constexpr char prefix[] = "zcash:";
   constexpr size_t prefix_length = sizeof(prefix) - 1;
-  if (value.size() < prefix_length) {
+  if (value.size() < prefix_length || value.size() > kMaxZcashUriBytes) {
     return false;
   }
 
@@ -28,8 +26,6 @@ bool IsZcashUri(const std::string& value) {
   }
   return true;
 }
-
-}  // namespace
 
 void CreateAndAttachConsole() {
   if (::AllocConsole()) {

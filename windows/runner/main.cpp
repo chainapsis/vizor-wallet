@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include "flutter_window.h"
+#include "payment_uri_handoff.h"
 #include "payment_uri_protocol.h"
 #include "utils.h"
 #include "velopack_uninstall.h"
@@ -32,6 +33,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
       GetCommandLineArguments();
   std::vector<std::string> initial_payment_uris =
       GetZcashUriArguments(command_line_arguments);
+  if (ForwardPaymentUrisToRunningInstance(initial_payment_uris)) {
+    if (ro_initialized) {
+      ::RoUninitialize();
+    }
+    return EXIT_SUCCESS;
+  }
 
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
