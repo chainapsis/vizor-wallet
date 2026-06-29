@@ -13,6 +13,7 @@ class RunnerTests: XCTestCase {
     FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
 
     XCTAssertTrue(harness.markedInstalled)
+    XCTAssertFalse(harness.cleanupPending)
     XCTAssertTrue(harness.deletedServices.isEmpty)
   }
 
@@ -24,6 +25,7 @@ class RunnerTests: XCTestCase {
     FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
 
     XCTAssertTrue(harness.markedInstalled)
+    XCTAssertFalse(harness.cleanupPending)
     XCTAssertTrue(harness.deletedServices.isEmpty)
   }
 
@@ -35,6 +37,7 @@ class RunnerTests: XCTestCase {
     FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
 
     XCTAssertTrue(harness.markedInstalled)
+    XCTAssertFalse(harness.cleanupPending)
     XCTAssertEqual(
       harness.deletedServices,
       FreshInstallKeychainCleaner.servicesToClear
@@ -48,6 +51,7 @@ class RunnerTests: XCTestCase {
     FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
 
     XCTAssertFalse(harness.markedInstalled)
+    XCTAssertFalse(harness.cleanupPending)
     XCTAssertTrue(harness.deletedServices.isEmpty)
   }
 
@@ -58,10 +62,11 @@ class RunnerTests: XCTestCase {
     FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
 
     XCTAssertFalse(harness.markedInstalled)
+    XCTAssertFalse(harness.cleanupPending)
     XCTAssertTrue(harness.deletedServices.isEmpty)
   }
 
-  func testFreshInstallCleanerDefersSentinelWhenDeleteFails() {
+  func testFreshInstallCleanerDefersOnlyWhenSecureStoreDeleteFails() {
     let harness = FreshInstallCleanerHarness()
     harness.lookup = .found("zcash_wallet_deleted.db")
     harness.walletDbExists = false
@@ -73,6 +78,85 @@ class RunnerTests: XCTestCase {
     FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
 
     XCTAssertFalse(harness.markedInstalled)
+    XCTAssertTrue(harness.cleanupPending)
+    XCTAssertEqual(
+      harness.deletedServices,
+      FreshInstallKeychainCleaner.servicesToClear
+    )
+  }
+
+  func testFreshInstallCleanerCompletesWhenOnlyNonAnchorDeleteFails() {
+    let harness = FreshInstallCleanerHarness()
+    harness.lookup = .found("zcash_wallet_deleted.db")
+    harness.walletDbExists = false
+    harness.deleteStatuses = [
+      FreshInstallKeychainCleaner.servicesToClear[0]: errSecAuthFailed,
+    ]
+
+    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+
+    XCTAssertTrue(harness.markedInstalled)
+    XCTAssertFalse(harness.cleanupPending)
+    XCTAssertEqual(
+      harness.deletedServices,
+      FreshInstallKeychainCleaner.servicesToClear
+    )
+  }
+
+  func testFreshInstallCleanerClearsPendingWhenNoWalletKeychainExists() {
+    let harness = FreshInstallCleanerHarness()
+    harness.cleanupPending = true
+    harness.lookup = .missing
+
+    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+
+    XCTAssertTrue(harness.markedInstalled)
+    XCTAssertFalse(harness.cleanupPending)
+    XCTAssertTrue(harness.deletedServices.isEmpty)
+  }
+
+  func testFreshInstallCleanerClearsPendingWhenCurrentWalletDbStillExists() {
+    let harness = FreshInstallCleanerHarness()
+    harness.cleanupPending = true
+    harness.lookup = .found("zcash_wallet_existing.db")
+    harness.walletDbExists = true
+
+    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+
+    XCTAssertTrue(harness.markedInstalled)
+    XCTAssertFalse(harness.cleanupPending)
+    XCTAssertTrue(harness.deletedServices.isEmpty)
+  }
+
+  func testFreshInstallCleanerRetriesPendingCleanupWhenWalletDbIsGone() {
+    let harness = FreshInstallCleanerHarness()
+    harness.cleanupPending = true
+    harness.lookup = .found("zcash_wallet_deleted.db")
+    harness.walletDbExists = false
+
+    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+
+    XCTAssertTrue(harness.markedInstalled)
+    XCTAssertFalse(harness.cleanupPending)
+    XCTAssertEqual(
+      harness.deletedServices,
+      FreshInstallKeychainCleaner.servicesToClear
+    )
+  }
+
+  func testFreshInstallCleanerKeepsPendingWhenSecureStoreDeleteFails() {
+    let harness = FreshInstallCleanerHarness()
+    harness.cleanupPending = true
+    harness.lookup = .found("zcash_wallet_deleted.db")
+    harness.walletDbExists = false
+    harness.deleteStatuses = [
+      FreshInstallKeychainCleaner.servicesToClear[1]: errSecAuthFailed,
+    ]
+
+    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+
+    XCTAssertFalse(harness.markedInstalled)
+    XCTAssertTrue(harness.cleanupPending)
     XCTAssertEqual(
       harness.deletedServices,
       FreshInstallKeychainCleaner.servicesToClear
@@ -82,12 +166,14 @@ class RunnerTests: XCTestCase {
   func testFreshInstallCleanerDoesNothingWhenSentinelAlreadyExists() {
     let harness = FreshInstallCleanerHarness()
     harness.hasSentinel = true
+    harness.cleanupPending = true
     harness.lookup = .found("zcash_wallet_deleted.db")
     harness.walletDbExists = false
 
     FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
 
     XCTAssertFalse(harness.markedInstalled)
+    XCTAssertTrue(harness.cleanupPending)
     XCTAssertTrue(harness.deletedServices.isEmpty)
   }
 
@@ -96,6 +182,7 @@ class RunnerTests: XCTestCase {
 private final class FreshInstallCleanerHarness {
   var hasSentinel = false
   var markedInstalled = false
+  var cleanupPending = false
   var lookup: KeychainDbNameLookup = .missing
   var walletDbExists = false
   var deleteStatuses: [String: OSStatus] = [:]
@@ -110,6 +197,15 @@ private final class FreshInstallCleanerHarness {
       markInstallSentinel: {
         self.markedInstalled = true
         self.hasSentinel = true
+      },
+      hasCleanupPending: {
+        self.cleanupPending
+      },
+      markCleanupPending: {
+        self.cleanupPending = true
+      },
+      clearCleanupPending: {
+        self.cleanupPending = false
       },
       readWalletDbName: {
         self.lookup
