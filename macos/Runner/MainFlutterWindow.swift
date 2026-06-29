@@ -638,7 +638,26 @@ final class PaymentUriChannel {
     }
     pendingURLs.append(contentsOf: urlStrings)
     flushPendingURLs()
+    presentMainWindow()
+  }
+
+  private static func presentMainWindow() {
     NSApp.activate(ignoringOtherApps: true)
+    guard let window = mainWindowForPaymentUri() else {
+      return
+    }
+    if window.isMiniaturized {
+      window.deminiaturize(nil)
+    }
+    window.makeKeyAndOrderFront(nil)
+  }
+
+  private static func mainWindowForPaymentUri() -> NSWindow? {
+    return NSApp.mainWindow as? MainFlutterWindow
+      ?? NSApp.keyWindow as? MainFlutterWindow
+      ?? NSApp.windows.compactMap { $0 as? MainFlutterWindow }.first
+      ?? NSApp.mainWindow
+      ?? NSApp.keyWindow
   }
 
   private static func flushPendingURLs() {
