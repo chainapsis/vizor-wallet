@@ -32,39 +32,8 @@ SendPrefillArgs sendPrefillArgsFromZip321Payment({
     source: 'zcash-uri',
     address: payment.address,
     amountText: payment.amount,
-    memoText: payment.memoText == null
-        ? null
-        : sanitizePaymentUriMemoText(payment.memoText!),
+    memoText: payment.memoText,
     label: payment.label,
     message: payment.message,
   );
 }
-
-String sanitizePaymentUriMemoText(String value) {
-  return String.fromCharCodes(
-    value.runes.where((codePoint) => !_isUnsafeDisplayControl(codePoint)),
-  );
-}
-
-bool _isUnsafeDisplayControl(int codePoint) {
-  if (_bidiControlCodePoints.contains(codePoint)) return true;
-  if (codePoint < 0x20) {
-    return codePoint != 0x09 && codePoint != 0x0A && codePoint != 0x0D;
-  }
-  return codePoint >= 0x7F && codePoint <= 0x9F;
-}
-
-const _bidiControlCodePoints = <int>{
-  0x061C,
-  0x200E,
-  0x200F,
-  0x202A,
-  0x202B,
-  0x202C,
-  0x202D,
-  0x202E,
-  0x2066,
-  0x2067,
-  0x2068,
-  0x2069,
-};

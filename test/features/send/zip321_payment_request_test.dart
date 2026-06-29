@@ -85,4 +85,22 @@ void main() {
       ),
     );
   });
+
+  test('rejects text memo with unsupported control characters', () {
+    final rawMemo = 'Pay \u202Eevil\u202C\u0001 now';
+    final memo = base64Url.encode(utf8.encode(rawMemo)).replaceAll('=', '');
+
+    expect(
+      () => Zip321PaymentRequest.parse(
+        'zcash:ztestsapling10yy2ex5dcqkclhc7z7yrnjq2z6feyjad56ptwlfgmy77dmaqqrl9gyhprdx59qgmsnyfska2kez?memo=$memo',
+      ),
+      throwsA(
+        isA<Zip321ParseException>().having(
+          (e) => e.message,
+          'message',
+          'ZIP-321 memo contains unsupported control characters.',
+        ),
+      ),
+    );
+  });
 }
