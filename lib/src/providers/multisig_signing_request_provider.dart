@@ -789,23 +789,30 @@ class MultisigSigningRequestsNotifier
         idempotencyKey.trim().isEmpty) {
       throw StateError('Prepared multisig signing request is missing.');
     }
-    return _withAuthRetry(material, (freshMaterial) async {
-      final signing = await _coordinator.submitPreparedSigningRequest(
-        coordinatorUrl: freshMaterial.coordinatorUrl,
-        sessionId: record.sessionId,
-        accessToken: freshMaterial.accessToken,
-        pcztHash: record.pcztHash,
-        requestJson: requestJson,
-        idempotencyKey: idempotencyKey,
-      );
-      final updated = record.copyWith(
-        state: signing.state,
-        coordinatorSubmitted: true,
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-      );
-      await _upsert(updated);
-      return updated;
-    });
+    try {
+      return await _withAuthRetry(material, (freshMaterial) async {
+        final signing = await _coordinator.submitPreparedSigningRequest(
+          coordinatorUrl: freshMaterial.coordinatorUrl,
+          sessionId: record.sessionId,
+          accessToken: freshMaterial.accessToken,
+          pcztHash: record.pcztHash,
+          requestJson: requestJson,
+          idempotencyKey: idempotencyKey,
+        );
+        final updated = record.copyWith(
+          state: signing.state,
+          coordinatorSubmitted: true,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        );
+        await _upsert(updated);
+        return updated;
+      });
+    } catch (e) {
+      final parsed = MultisigOperationException.from(e);
+      final recovered = await _recoverPreparedCreateConflict(record, parsed);
+      if (recovered != null) return recovered;
+      throw parsed;
+    }
   }
 
   Future<MultisigSigningRequestRecord> _submitRound1WithMaterial(
@@ -835,6 +842,9 @@ class MultisigSigningRequestsNotifier
     );
     await _upsert(updated);
     if (!result.submitted) {
+      if (multisigErrorLooksIdempotencyInProgress(result.detail)) {
+        return updated;
+      }
       throw StateError(result.detail);
     }
     await refreshForAccount(record.accountUuid);
@@ -869,6 +879,9 @@ class MultisigSigningRequestsNotifier
     );
     await _upsert(updated);
     if (!result.submitted) {
+      if (multisigErrorLooksIdempotencyInProgress(result.detail)) {
+        return updated;
+      }
       throw StateError(result.detail);
     }
     await refreshForAccount(record.accountUuid);
@@ -974,6 +987,9 @@ class MultisigSigningRequestsNotifier
     );
     await _upsert(updated);
     if (!notified.submitted) {
+      if (multisigErrorLooksIdempotencyInProgress(notified.detail)) {
+        return updated;
+      }
       throw StateError(notified.detail);
     }
     try {
@@ -1102,6 +1118,31 @@ class MultisigSigningRequestsNotifier
     }
   }
 
+  Future<MultisigSigningRequestRecord?> _recoverPreparedCreateConflict(
+    MultisigSigningRequestRecord record,
+    MultisigOperationException error,
+  ) async {
+    if (error.isIdempotencyInProgress) {
+      await _refreshForAccountSilently(record.accountUuid);
+      return await _findRecordOrNull(record.signingRequestId) ?? record;
+    }
+
+    if (!error.isDuplicateSigningRequestId) return null;
+
+    await _refreshForAccountSilently(record.accountUuid);
+    final refreshed = await _findRecordOrNull(record.signingRequestId);
+    if (refreshed == null) return null;
+    if (refreshed.pcztHash != record.pcztHash) return null;
+    if (!refreshed.coordinatorSubmitted) return null;
+    return refreshed;
+  }
+
+  Future<void> _refreshForAccountSilently(String accountUuid) async {
+    try {
+      await refreshForAccount(accountUuid);
+    } catch (_) {}
+  }
+
   Future<MultisigAccountMaterial> _materialWithFreshAccess(
     MultisigAccountMaterial material, {
     bool force = false,
@@ -1218,10 +1259,16 @@ class MultisigSigningRequestsNotifier
     String signingRequestId, {
     required MultisigSigningRequestRecord fallback,
   }) async {
+    return await _findRecordOrNull(signingRequestId) ?? fallback;
+  }
+
+  Future<MultisigSigningRequestRecord?> _findRecordOrNull(
+    String signingRequestId,
+  ) async {
     for (final record in await _currentRecords()) {
       if (record.signingRequestId == signingRequestId) return record;
     }
-    return fallback;
+    return null;
   }
 
   Future<MultisigSigningRequestRecord?> _recordForSendFlow(

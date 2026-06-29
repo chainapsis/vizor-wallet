@@ -8,6 +8,7 @@ import '../rust/api/multisig.dart' as rust_multisig;
 import 'app_security_provider.dart';
 import 'multisig_account_material_provider.dart';
 import 'multisig_coordinator_service.dart';
+import 'multisig_operation_error.dart';
 
 const kDefaultMultisigCoordinatorUrl = String.fromEnvironment(
   'ZCASH_MULTISIG_COORDINATOR_URL',
@@ -702,7 +703,7 @@ class MultisigPendingSessionsNotifier
     return MultisigCreateAdvanceResult(
       session: updated,
       phase: advanced.phase,
-      detail: advanced.detail,
+      detail: normalizeMultisigProgressDetail(advanced.detail),
       waitingForParticipantIds: advanced.waitingForParticipantIds,
       round1Count: advanced.round1Count.toInt(),
       round2Count: advanced.round2Count.toInt(),

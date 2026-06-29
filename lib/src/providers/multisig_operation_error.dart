@@ -22,6 +22,12 @@ class MultisigOperationException implements Exception {
   bool get isUnauthorized => kind == 'unauthorized' || httpStatus == 401;
   bool get isConflict => kind == 'conflict' || httpStatus == 409;
   bool get isRateLimited => kind == 'rate_limited' || httpStatus == 429;
+  bool get isIdempotencyInProgress =>
+      isConflict && multisigErrorLooksIdempotencyInProgress(rawMessage);
+  bool get isDuplicateSigningRequestId =>
+      isConflict && _lowerRaw.contains('signing_request_id already exists');
+
+  String get _lowerRaw => rawMessage.toLowerCase();
 
   static MultisigOperationException from(Object error) {
     if (error is MultisigOperationException) return error;
@@ -33,6 +39,17 @@ class MultisigOperationException implements Exception {
 
   @override
   String toString() => message;
+}
+
+bool multisigErrorLooksIdempotencyInProgress(Object error) {
+  return multisigRawErrorText(
+    error,
+  ).toLowerCase().contains('idempotency-key request is still in progress');
+}
+
+String normalizeMultisigProgressDetail(String detail) {
+  if (!multisigErrorLooksIdempotencyInProgress(detail)) return detail;
+  return 'Previous request is still being processed. Try again in a moment.';
 }
 
 String friendlyMultisigError(Object error) {
@@ -67,9 +84,10 @@ String friendlyMultisigError(Object error) {
       'Session expired. The app tried to reconnect; refresh and try again.',
     'forbidden' => 'This account is not allowed to perform that action.',
     'conflict' => 'Coordinator state changed. Refresh and try again.',
-    'rate_limited' => parsed.retryAfterSeconds == null
-        ? 'Too many requests. Wait a moment and try again.'
-        : 'Too many requests. Try again in ${parsed.retryAfterSeconds} seconds.',
+    'rate_limited' =>
+      parsed.retryAfterSeconds == null
+          ? 'Too many requests. Wait a moment and try again.'
+          : 'Too many requests. Try again in ${parsed.retryAfterSeconds} seconds.',
     'network' => 'Network connection lost. Progress was saved; try again.',
     'server' => 'Multisig coordinator failed. Progress was saved; try again.',
     _ => parsed.message,

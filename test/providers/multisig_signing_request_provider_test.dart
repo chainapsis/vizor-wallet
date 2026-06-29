@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -176,6 +177,117 @@ void main() {
     },
   );
 
+  test(
+    'recovers duplicate signing request when refresh finds the submitted request',
+    () async {
+      final requestStore = _FakeSigningRequestStore()
+        ..records = [_preparedRecord(sendFlowId: 'flow-1')];
+      final materialStore = _FakeAccountMaterialStore()
+        ..put(
+          _accountMaterial(
+            localBackupCompletedAt: 10,
+            accessTokenExpiresAt: 9999999999,
+          ),
+        );
+      final coordinator = _FakeCoordinatorService(
+        submitPreparedError: _structuredConflict(
+          'signing_request_id already exists',
+        ),
+        inboxMessages: [_txRequestMessage(signingRequestId: 'signing-request')],
+      );
+      final container = _container(
+        requestStore: requestStore,
+        materialStore: materialStore,
+        coordinatorService: coordinator,
+      );
+      addTearDown(container.dispose);
+
+      final submitted = await container
+          .read(multisigSigningRequestsProvider.notifier)
+          .submitPreparedRequest(requestStore.records.single);
+
+      expect(coordinator.submitCalls, ['signing-request|idempotency']);
+      expect(coordinator.inboxCalls, ['session-1|participant-1|0']);
+      expect(submitted.signingRequestId, 'signing-request');
+      expect(submitted.coordinatorSubmitted, isTrue);
+      expect(submitted.pcztHash, 'pczt-hash');
+      expect(requestStore.records.single.coordinatorSubmitted, isTrue);
+    },
+  );
+
+  test(
+    'keeps prepared signing request pending while idempotent submit is in progress',
+    () async {
+      final requestStore = _FakeSigningRequestStore()
+        ..records = [_preparedRecord(sendFlowId: 'flow-1')];
+      final materialStore = _FakeAccountMaterialStore()
+        ..put(
+          _accountMaterial(
+            localBackupCompletedAt: 10,
+            accessTokenExpiresAt: 9999999999,
+          ),
+        );
+      final coordinator = _FakeCoordinatorService(
+        submitPreparedError: _structuredConflict(
+          'Idempotency-Key request is still in progress',
+        ),
+      );
+      final container = _container(
+        requestStore: requestStore,
+        materialStore: materialStore,
+        coordinatorService: coordinator,
+      );
+      addTearDown(container.dispose);
+
+      final submitted = await container
+          .read(multisigSigningRequestsProvider.notifier)
+          .submitPreparedRequest(requestStore.records.single);
+
+      expect(coordinator.submitCalls, ['signing-request|idempotency']);
+      expect(submitted.signingRequestId, 'signing-request');
+      expect(submitted.coordinatorSubmitted, isFalse);
+      expect(requestStore.records.single.coordinatorSubmitted, isFalse);
+    },
+  );
+
+  test(
+    'does not surface idempotent round submission still in progress',
+    () async {
+      final requestStore = _FakeSigningRequestStore()
+        ..records = [_submittedRecord(signingRequestId: 'signing-request')];
+      final materialStore = _FakeAccountMaterialStore()
+        ..put(
+          _accountMaterial(
+            localBackupCompletedAt: 10,
+            accessTokenExpiresAt: 9999999999,
+          ),
+        );
+      final coordinator = _FakeCoordinatorService(
+        round1Response: const rust_multisig.ApiMultisigSigningAdvance(
+          localStateJson: '{"outbound":true}',
+          detail:
+              'Network error while submitting Round 1: {"marker":"zcash_wallet_multisig_error_v1","kind":"conflict","message":"Idempotency-Key request is still in progress","httpStatus":409,"retryable":true}',
+          submitted: false,
+        ),
+      );
+      final container = _container(
+        requestStore: requestStore,
+        materialStore: materialStore,
+        coordinatorService: coordinator,
+      );
+      addTearDown(container.dispose);
+
+      final updated = await container
+          .read(multisigSigningRequestsProvider.notifier)
+          .submitRound1(requestStore.records.single);
+
+      expect(coordinator.round1Calls, ['signing-request|participant-1']);
+      expect(updated.localStateJson, '{"outbound":true}');
+      expect(updated.round1ParticipantIds, isEmpty);
+      expect(requestStore.records.single.localStateJson, '{"outbound":true}');
+    },
+  );
+
   test('deletes draft records for a removed account', () async {
     final requestStore = _FakeSigningRequestStore()
       ..records = [
@@ -332,11 +444,21 @@ class _FakeProposalService implements MultisigSendProposalService {
 }
 
 class _FakeCoordinatorService implements MultisigCoordinatorService {
-  _FakeCoordinatorService({this.failPrepareOnce = false});
+  _FakeCoordinatorService({
+    this.failPrepareOnce = false,
+    this.submitPreparedError,
+    this.inboxMessages = const <rust_multisig.ApiMultisigSigningMessage>[],
+    this.round1Response,
+  });
 
   bool failPrepareOnce;
+  final Object? submitPreparedError;
+  final List<rust_multisig.ApiMultisigSigningMessage> inboxMessages;
+  final rust_multisig.ApiMultisigSigningAdvance? round1Response;
   final prepareCalls = <String>[];
   final submitCalls = <String>[];
+  final inboxCalls = <String>[];
+  final round1Calls = <String>[];
 
   @override
   Future<rust_multisig.ApiPreparedMultisigSigningRequest>
@@ -382,6 +504,8 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
     required String idempotencyKey,
   }) async {
     submitCalls.add('signing-request|$idempotencyKey');
+    final error = submitPreparedError;
+    if (error != null) throw error;
     return rust_multisig.ApiMultisigSigningRequest(
       signingRequestId: 'signing-request',
       sessionId: sessionId,
@@ -392,6 +516,45 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
       updatedAt: BigInt.from(43),
       pcztHash: pcztHash,
     );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningInbox> getSigningInbox({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String deliverySecretKey,
+    required int after,
+  }) async {
+    inboxCalls.add('$sessionId|$participantId|$after');
+    return rust_multisig.ApiMultisigSigningInbox(
+      cursor: 0,
+      messages: inboxMessages,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound1({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required List<String> selectedParticipantIds,
+    required List<int> pcztBytes,
+    required String keyPackageB64,
+    String? localStateJson,
+  }) async {
+    round1Calls.add('$signingRequestId|$participantId');
+    return round1Response ??
+        const rust_multisig.ApiMultisigSigningAdvance(
+          localStateJson: '{"round1":true}',
+          detail: 'Round 1 submitted.',
+          submitted: true,
+        );
   }
 
   @override
@@ -452,5 +615,97 @@ MultisigSigningRequestRecord _record({
     createdAt: 1,
     updatedAt: 1,
     sendFlowId: sendFlowId,
+  );
+}
+
+MultisigSigningRequestRecord _preparedRecord({required String sendFlowId}) {
+  return MultisigSigningRequestRecord(
+    signingRequestId: 'signing-request',
+    accountUuid: 'account-1',
+    sessionId: 'session-1',
+    localParticipantId: 'participant-1',
+    requesterParticipantId: 'participant-1',
+    selectedParticipantIds: const <String>['participant-1', 'participant-2'],
+    pcztB64: 'AQID',
+    pcztHash: 'pczt-hash',
+    needsSaplingParams: false,
+    amountZatoshi: '1000',
+    feeZatoshi: '100',
+    recipientAddress: 'u1recipient',
+    addressType: 'unified',
+    state: 'requested',
+    createdAt: 1,
+    updatedAt: 1,
+    sendFlowId: sendFlowId,
+    coordinatorSubmitted: false,
+    createRequestJson: '{"request":true}',
+    createRequestIdempotencyKey: 'idempotency',
+  );
+}
+
+MultisigSigningRequestRecord _submittedRecord({
+  required String signingRequestId,
+}) {
+  return MultisigSigningRequestRecord(
+    signingRequestId: signingRequestId,
+    accountUuid: 'account-1',
+    sessionId: 'session-1',
+    localParticipantId: 'participant-1',
+    requesterParticipantId: 'participant-1',
+    selectedParticipantIds: const <String>['participant-1', 'participant-2'],
+    pcztB64: 'AQID',
+    pcztHash: 'pczt-hash',
+    needsSaplingParams: false,
+    amountZatoshi: '1000',
+    feeZatoshi: '100',
+    recipientAddress: 'u1recipient',
+    addressType: 'unified',
+    state: 'open',
+    createdAt: 1,
+    updatedAt: 1,
+    coordinatorSubmitted: true,
+  );
+}
+
+rust_multisig.ApiMultisigSigningMessage _txRequestMessage({
+  required String signingRequestId,
+}) {
+  return rust_multisig.ApiMultisigSigningMessage(
+    cursor: 1,
+    messageId: 'message-1',
+    sessionId: 'session-1',
+    kind: 'tx_request',
+    fromParticipantId: 'participant-1',
+    toParticipantId: 'participant-1',
+    relatedId: signingRequestId,
+    plaintextJson: jsonEncode({
+      'version': 1,
+      'kind': 'tx_request',
+      'signingRequestId': signingRequestId,
+      'sessionId': 'session-1',
+      'requesterParticipantId': 'participant-1',
+      'selectedParticipantIds': ['participant-1', 'participant-2'],
+      'pcztB64': 'AQID',
+      'pcztHash': 'pczt-hash',
+      'needsSaplingParams': false,
+      'amountZatoshi': '1000',
+      'feeZatoshi': '100',
+      'recipientAddress': 'u1recipient',
+      'addressType': 'unified',
+      'createdAt': 42,
+    }),
+    createdAt: BigInt.from(43),
+  );
+}
+
+Exception _structuredConflict(String message) {
+  return Exception(
+    jsonEncode({
+      'marker': 'zcash_wallet_multisig_error_v1',
+      'kind': 'conflict',
+      'message': message,
+      'httpStatus': 409,
+      'retryable': true,
+    }),
   );
 }
