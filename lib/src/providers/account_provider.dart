@@ -394,6 +394,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       prev.copyWith(activeAccountUuid: uuid, activeAddress: address),
     );
 
+    unawaited(_refreshMultisigSigningRequestsForAccount(uuid));
     log('switchAccount: switched to $uuid');
   }
 
@@ -727,6 +728,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         activeAddress: address,
       ),
     );
+    unawaited(_refreshMultisigSigningRequestsForAccount(accountUuid));
   }
 
   void updateActiveAddressForAccount(String accountUuid, String address) {
@@ -958,6 +960,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             activeAddress: address,
           ),
         );
+        unawaited(
+          _refreshMultisigSigningRequestsForAccount(importedAccountUuid),
+        );
       } catch (e, st) {
         var importedAccountRemoved = true;
         final accountUuid = importedAccountUuid;
@@ -1016,6 +1021,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   bool isMultisigAccount(String uuid) {
     return _accountByUuid(uuid)?.isMultisig ?? false;
+  }
+
+  Future<void> _refreshMultisigSigningRequestsForAccount(String uuid) async {
+    if (!isMultisigAccount(uuid)) return;
+    try {
+      await ref
+          .read(multisigSigningRequestsProvider.notifier)
+          .refreshForAccount(uuid);
+    } catch (e, st) {
+      log(
+        'AccountNotifier: failed to refresh multisig signing requests for '
+        '$uuid: $e\n$st',
+      );
+    }
   }
 
   bool get isActiveAccountSoftware {

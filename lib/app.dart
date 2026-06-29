@@ -81,9 +81,11 @@ import 'src/features/voting/screens/voting_review_screen.dart';
 import 'src/features/voting/screens/voting_software_account_guard.dart';
 import 'src/features/voting/screens/voting_status_screen.dart';
 import 'src/features/voting/screens/voting_submission_confirmation_screen.dart';
+import 'src/providers/account_provider.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
 import 'src/providers/linux_update_provider.dart';
+import 'src/providers/multisig_signing_request_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/wallet_provider.dart';
@@ -1014,26 +1016,28 @@ class ZcashWalletApp extends ConsumerWidget {
           // events over empty regions while descendant GestureDetectors
           // (buttons, TextFields) win the gesture arena first, keeping
           // focused buttons focused when re-clicked.
-          child: _LinuxUpdateNoticeListener(
-            child: _WindowsUpdateStartupCheck(
-              child: _WindowsUpdatePromptHost(
-                router: router,
-                child: _RpcEndpointFailoverToastListener(
-                  child: _DesktopOpaqueWindowBackground(
-                    child: GestureDetector(
-                      onTap: () {
-                        // Leaf-only: skip when the primary focus is a
-                        // `FocusScopeNode` rather than a concrete `FocusNode`.
-                        // Unfocusing the scope itself strips the scope's
-                        // "most-recently-focused child" memory, which leaves the
-                        // next Tab with no deterministic starting point.
-                        final primary = FocusManager.instance.primaryFocus;
-                        if (primary != null && primary is! FocusScopeNode) {
-                          primary.unfocus();
-                        }
-                      },
-                      behavior: HitTestBehavior.translucent,
-                      child: child!,
+          child: _MultisigSigningRefreshHost(
+            child: _LinuxUpdateNoticeListener(
+              child: _WindowsUpdateStartupCheck(
+                child: _WindowsUpdatePromptHost(
+                  router: router,
+                  child: _RpcEndpointFailoverToastListener(
+                    child: _DesktopOpaqueWindowBackground(
+                      child: GestureDetector(
+                        onTap: () {
+                          // Leaf-only: skip when the primary focus is a
+                          // `FocusScopeNode` rather than a concrete `FocusNode`.
+                          // Unfocusing the scope itself strips the scope's
+                          // "most-recently-focused child" memory, which leaves
+                          // the next Tab with no deterministic starting point.
+                          final primary = FocusManager.instance.primaryFocus;
+                          if (primary != null && primary is! FocusScopeNode) {
+                            primary.unfocus();
+                          }
+                        },
+                        behavior: HitTestBehavior.translucent,
+                        child: child!,
+                      ),
                     ),
                   ),
                 ),
@@ -1044,6 +1048,55 @@ class ZcashWalletApp extends ConsumerWidget {
       },
     );
   }
+}
+
+class _MultisigSigningRefreshHost extends ConsumerStatefulWidget {
+  const _MultisigSigningRefreshHost({required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<_MultisigSigningRefreshHost> createState() =>
+      _MultisigSigningRefreshHostState();
+}
+
+class _MultisigSigningRefreshHostState
+    extends ConsumerState<_MultisigSigningRefreshHost> {
+  AppLifecycleListener? _lifecycleListener;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycleListener = AppLifecycleListener(
+      onResume: () => unawaited(_refreshActiveMultisigRequests()),
+    );
+  }
+
+  @override
+  void dispose() {
+    _lifecycleListener?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshActiveMultisigRequests() async {
+    if (ref.read(appSecurityProvider).requiresUnlock) return;
+    final accountState = ref.read(accountProvider).value;
+    final accountUuid = accountState?.activeAccountUuid;
+    if (accountUuid == null) return;
+    if (!ref.read(accountProvider.notifier).isMultisigAccount(accountUuid)) {
+      return;
+    }
+    try {
+      await ref
+          .read(multisigSigningRequestsProvider.notifier)
+          .refreshForAccount(accountUuid);
+    } catch (e, st) {
+      log('MultisigSigningRefreshHost: refresh failed: $e\n$st');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _WindowsUpdateStartupCheck extends ConsumerStatefulWidget {

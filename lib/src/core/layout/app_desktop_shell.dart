@@ -225,6 +225,7 @@ class AppSidebarItem extends StatelessWidget {
     required this.label,
     this.iconName,
     this.leading,
+    this.trailing,
     this.active = false,
     this.onTap,
     this.leadingGap = AppSpacing.sm,
@@ -236,6 +237,7 @@ class AppSidebarItem extends StatelessWidget {
   final String label;
   final String? iconName;
   final Widget? leading;
+  final Widget? trailing;
   final bool active;
   final VoidCallback? onTap;
   final double leadingGap;
@@ -283,6 +285,10 @@ class AppSidebarItem extends StatelessWidget {
               style: AppTypography.labelLarge.copyWith(color: textColor),
             ),
           ),
+          if (trailing != null) ...[
+            const SizedBox(width: AppSpacing.xs),
+            trailing!,
+          ],
         ],
       ),
     );

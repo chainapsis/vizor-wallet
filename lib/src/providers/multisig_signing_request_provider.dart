@@ -438,6 +438,8 @@ class MultisigSigningRequestsNotifier
   MultisigSendProposalService get _proposalService =>
       ref.read(multisigSendProposalServiceProvider);
 
+  final Map<String, Future<void>> _refreshesByAccount = {};
+
   @override
   FutureOr<List<MultisigSigningRequestRecord>> build() {
     final security = ref.watch(appSecurityProvider);
@@ -690,7 +692,21 @@ class MultisigSigningRequestsNotifier
     });
   }
 
-  Future<void> refreshForAccount(String accountUuid) async {
+  Future<void> refreshForAccount(String accountUuid) {
+    final existing = _refreshesByAccount[accountUuid];
+    if (existing != null) return existing;
+
+    late final Future<void> refresh;
+    refresh = _refreshForAccount(accountUuid).whenComplete(() {
+      if (identical(_refreshesByAccount[accountUuid], refresh)) {
+        _refreshesByAccount.remove(accountUuid);
+      }
+    });
+    _refreshesByAccount[accountUuid] = refresh;
+    return refresh;
+  }
+
+  Future<void> _refreshForAccount(String accountUuid) async {
     final material = await _materialWithFreshAccess(
       await _materialForAccount(accountUuid),
     );

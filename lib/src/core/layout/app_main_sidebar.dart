@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import '../../../main.dart' show log;
 import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
+import '../../providers/multisig_signing_request_provider.dart';
 import '../../providers/privacy_mode_provider.dart';
 import '../../providers/receive_address_provider.dart';
 import '../../providers/sync_provider.dart';
@@ -333,6 +334,13 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       privacyModeEnabled: privacyModeEnabled,
     );
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
+    final isActiveMultisig = activeAccount?.isMultisig ?? false;
+    final multisigRequests =
+        ref.watch(multisigSigningRequestsProvider).value ??
+        const <MultisigSigningRequestRecord>[];
+    final multisigActionCount = isActiveMultisig && activeAccountUuid != null
+        ? _multisigActionCount(multisigRequests, activeAccountUuid)
+        : 0;
 
     return AppDesktopSidebarSurface(
       glass: true,
@@ -391,6 +399,21 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       active: _homeShouldBeActive,
                       onTap: isImporting ? null : () => _navigateTo('/home'),
                     ),
+                    if (isActiveMultisig) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      AppSidebarItem(
+                        key: const ValueKey('sidebar_multisig_button'),
+                        label: 'Multisig',
+                        iconName: AppIcons.users,
+                        active: _matches('/multisig'),
+                        trailing: multisigActionCount > 0
+                            ? _SidebarCountBadge(count: multisigActionCount)
+                            : null,
+                        onTap: isImporting
+                            ? null
+                            : () => _navigateTo('/multisig'),
+                      ),
+                    ],
                     if (swapFeatureEnabled) ...[
                       const SizedBox(height: AppSpacing.xs),
                       AppSidebarItem(
@@ -445,6 +468,74 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  int _multisigActionCount(
+    List<MultisigSigningRequestRecord> requests,
+    String activeAccountUuid,
+  ) {
+    var count = 0;
+    for (final request in requests) {
+      if (request.accountUuid != activeAccountUuid ||
+          request.isBroadcasted ||
+          !request.selectedParticipantIds.contains(
+            request.localParticipantId,
+          )) {
+        continue;
+      }
+      final round1Done = request.round1ParticipantIds.contains(
+        request.localParticipantId,
+      );
+      final round1Complete =
+          request.round1ParticipantIds.length >=
+          request.selectedParticipantIds.length;
+      final round2Done = request.round2ParticipantIds.contains(
+        request.localParticipantId,
+      );
+      final round2Complete =
+          request.round2ParticipantIds.length >=
+          request.selectedParticipantIds.length;
+
+      if (request.coordinatorSubmitted && !round1Done) {
+        count++;
+      } else if (request.coordinatorSubmitted &&
+          round1Complete &&
+          !round2Done) {
+        count++;
+      } else if (round2Complete) {
+        count++;
+      }
+    }
+    return count;
+  }
+}
+
+class _SidebarCountBadge extends StatelessWidget {
+  const _SidebarCountBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final label = count > 99 ? '99+' : count.toString();
+    return Container(
+      constraints: const BoxConstraints(minWidth: 18),
+      height: 18,
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      decoration: BoxDecoration(
+        color: colors.navPanel.badgeBg,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        label,
+        style: AppTypography.labelSmall.copyWith(
+          color: colors.text.inverse,
+          height: 1,
+        ),
       ),
     );
   }

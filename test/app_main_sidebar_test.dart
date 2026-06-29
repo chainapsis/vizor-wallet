@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_signing_request_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
@@ -61,6 +62,37 @@ void main() {
     expect(find.text('Receive'), findsNothing);
     expect(find.text('Address book'), findsNothing);
     expect(find.text('About Vizor'), findsNothing);
+  });
+
+  testWidgets('sidebar shows Multisig action badge for multisig account', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        _syncedSyncState,
+        accountState: _multisigAccountState,
+        signingRequests: [_actionableMultisigRequest()],
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('sidebar_multisig_button')),
+      findsOneWidget,
+    );
+    expect(find.text('Multisig'), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
+
+    final multisigItem = tester.widget<AppSidebarItem>(
+      find.byKey(const ValueKey('sidebar_multisig_button')),
+    );
+    expect(multisigItem.active, isFalse);
+    expect(multisigItem.onTap, isNotNull);
+
+    await tester.tap(find.byKey(const ValueKey('sidebar_multisig_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('multisig route'), findsOneWidget);
   });
 
   testWidgets('sidebar keeps Home active and clickable on send routes', (
@@ -643,6 +675,7 @@ Widget _sidebarHarness(
   AppThemeData themeData = AppThemeData.light,
   bool swapEnabled = true,
   AccountState? accountState,
+  List<MultisigSigningRequestRecord> signingRequests = const [],
   String initialLocation = '/home',
   bool disableAnimations = true,
 }) {
@@ -684,6 +717,13 @@ Widget _sidebarHarness(
         builder: (_, _) => const AppDesktopShell(
           sidebar: AppMainSidebar(),
           pane: AppDesktopPane(child: Text('voting')),
+        ),
+      ),
+      GoRoute(
+        path: '/multisig',
+        builder: (_, _) => const AppDesktopShell(
+          sidebar: AppMainSidebar(),
+          pane: AppDesktopPane(child: Text('multisig route')),
         ),
       ),
       GoRoute(
@@ -731,6 +771,9 @@ Widget _sidebarHarness(
       appBootstrapProvider.overrideWithValue(bootstrap),
       syncProvider.overrideWith(() => _FakeSyncNotifier(syncState)),
       swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
+      multisigSigningRequestsProvider.overrideWith(
+        () => _FakeMultisigSigningRequestsNotifier(signingRequests),
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -778,6 +821,42 @@ const _multiAccountState = AccountState(
   activeAccountUuid: 'account-1',
   activeAddress: 'u1accountsaddress',
 );
+
+const _multisigAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'account-1',
+      name: 'Primary Vault',
+      order: 0,
+      kind: AccountKind.multisig,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+  ],
+  activeAccountUuid: 'account-1',
+  activeAddress: 'u1accountsaddress',
+);
+
+MultisigSigningRequestRecord _actionableMultisigRequest() {
+  return const MultisigSigningRequestRecord(
+    signingRequestId: 'request-1',
+    accountUuid: 'account-1',
+    sessionId: 'session-1',
+    localParticipantId: 'alice',
+    requesterParticipantId: 'bob',
+    selectedParticipantIds: ['alice', 'bob'],
+    pcztB64: 'pczt',
+    pcztHash: 'hash',
+    needsSaplingParams: false,
+    amountZatoshi: '1000',
+    feeZatoshi: '100',
+    recipientAddress: 'u1recipient',
+    addressType: 'unified',
+    state: 'pending',
+    createdAt: 1,
+    updatedAt: 1,
+    coordinatorSubmitted: true,
+  );
+}
 
 const _manyAccountState = AccountState(
   accounts: [
@@ -854,4 +933,17 @@ class _FakeSyncNotifier extends SyncNotifier {
 
   @override
   Future<SyncState> build() async => initialState;
+}
+
+class _FakeMultisigSigningRequestsNotifier
+    extends MultisigSigningRequestsNotifier {
+  _FakeMultisigSigningRequestsNotifier(this.initialRecords);
+
+  final List<MultisigSigningRequestRecord> initialRecords;
+
+  @override
+  List<MultisigSigningRequestRecord> build() => initialRecords;
+
+  @override
+  Future<void> refreshForAccount(String accountUuid) async {}
 }
