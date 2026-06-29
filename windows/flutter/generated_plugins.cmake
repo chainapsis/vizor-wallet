@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   desktop_window_bootstrap
+  file_selector_windows
   flutter_secure_storage_windows
   mobile_scanner
   screen_retriever_windows

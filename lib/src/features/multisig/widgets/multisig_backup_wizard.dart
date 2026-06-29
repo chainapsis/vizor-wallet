@@ -201,12 +201,19 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
       _error = null;
     });
     try {
-      final saved = await writeMultisigBackupFile(
+      final saved = await ref.read(multisigBackupFileWriterProvider)(
         suggestedName: defaultMultisigBackupFileName(
           backupHash: artifact.backupHash,
         ),
         artifactJson: artifact.artifactJson,
       );
+      if (saved == null) {
+        if (!mounted) return;
+        setState(() {
+          _isSaving = false;
+        });
+        return;
+      }
       final source = _backupSource(widget.session);
       final verified = await rust_multisig.verifyMultisigShareBackup(
         network: ref.read(rpcEndpointProvider).networkName,

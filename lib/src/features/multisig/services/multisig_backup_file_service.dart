@@ -1,6 +1,20 @@
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+typedef MultisigBackupFileWriter =
+    Future<MultisigBackupFileSaveResult?> Function({
+      required String suggestedName,
+      required String artifactJson,
+    });
+
+typedef MultisigBackupSavePathPicker =
+    Future<String?> Function({required String suggestedName});
+
+final multisigBackupFileWriterProvider = Provider<MultisigBackupFileWriter>(
+  (ref) => writeMultisigBackupFile,
+);
 
 class MultisigBackupFileSaveResult {
   const MultisigBackupFileSaveResult({
@@ -12,6 +26,18 @@ class MultisigBackupFileSaveResult {
   final String artifactJson;
 }
 
+class MultisigBackupFileSaveException implements Exception {
+  const MultisigBackupFileSaveException([this.cause]);
+
+  final Object? cause;
+
+  static const message =
+      'Could not save the backup file. Choose a writable location and try again.';
+
+  @override
+  String toString() => message;
+}
+
 String defaultMultisigBackupFileName({
   required String backupHash,
   DateTime? now,
@@ -21,16 +47,41 @@ String defaultMultisigBackupFileName({
   return 'vizor-multisig-backup-$timestamp-$suffix.vizorbackup';
 }
 
-Future<MultisigBackupFileSaveResult> writeMultisigBackupFile({
+Future<MultisigBackupFileSaveResult?> writeMultisigBackupFile({
   required String suggestedName,
   required String artifactJson,
+  MultisigBackupSavePathPicker? pickSavePath,
 }) async {
-  final dir =
-      await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
-  final file = File('${dir.path}/$suggestedName');
-  await file.writeAsString(artifactJson);
-  final readBack = await file.readAsString();
-  return MultisigBackupFileSaveResult(path: file.path, artifactJson: readBack);
+  final picker = pickSavePath ?? pickMultisigBackupSavePath;
+
+  try {
+    final path = await picker(suggestedName: suggestedName);
+    if (path == null) return null;
+
+    final file = File(path);
+    await file.writeAsString(artifactJson);
+    final readBack = await file.readAsString();
+    return MultisigBackupFileSaveResult(
+      path: file.path,
+      artifactJson: readBack,
+    );
+  } catch (e) {
+    throw MultisigBackupFileSaveException(e);
+  }
+}
+
+Future<String?> pickMultisigBackupSavePath({
+  required String suggestedName,
+}) async {
+  final location = await getSaveLocation(
+    acceptedTypeGroups: const [
+      XTypeGroup(label: 'Vizor backup', extensions: ['vizorbackup']),
+    ],
+    suggestedName: suggestedName,
+    confirmButtonText: 'Save',
+    canCreateDirectories: true,
+  );
+  return location?.path;
 }
 
 String _backupFileTimestamp(DateTime value) {
