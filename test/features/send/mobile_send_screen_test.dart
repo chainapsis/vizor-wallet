@@ -1025,7 +1025,14 @@ void main() {
       find.byKey(const ValueKey('mobile_send_amount_input')),
     );
     expect(emptyAmountInput.focusNode?.hasFocus, isTrue);
-    expect(emptyAmountInput.decoration?.hintText, '0');
+    expect(emptyAmountInput.decoration?.hintText, isNull);
+    final zecHintPadding = emptyAmountInput.decoration?.hint as Padding?;
+    expect(zecHintPadding, isA<Padding>());
+    expect(zecHintPadding!.padding, const EdgeInsetsDirectional.only(end: 3));
+    final zecHintText = zecHintPadding.child as Text?;
+    expect(zecHintText, isA<Text>());
+    expect(zecHintText!.data, '0');
+    expect(zecHintText.textAlign, TextAlign.right);
     expect(
       emptyAmountInput.keyboardType,
       const TextInputType.numberWithOptions(decimal: true),

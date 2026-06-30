@@ -207,6 +207,7 @@ const _kMobileSendAmountFieldHeight = 164.0;
 const _kMobileSendAmountBalanceRowHeight = 44.0;
 const _kMobileSendAmountInputHeight = 64.0;
 const _kMobileSendAmountMetaHeight = 20.0;
+const _kMobileSendAmountZecHintEndInset = 3.0;
 const _kMobileSendAmountFontSize = 48.0;
 const _kMobileSendAmountLineHeightPx = 40.0;
 const _kMobileSendAmountUnitFontSize = 38.0;
@@ -1882,6 +1883,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final colors = context.colors;
     final activeText = _amountInputIsUsd ? _fiatAmountText : _amountText;
     final inputWidth = _amountInputWidth(activeText, amountStyle);
+    final hintStyle = amountStyle.copyWith(color: colors.text.disabled);
     final inputFormatters = [
       const CommaToDotInputFormatter(),
       _DecimalAmountInputFormatter(
@@ -1919,10 +1921,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               inputFormatters: inputFormatters,
               maxLines: 1,
               style: amountStyle,
-              decoration: InputDecoration.collapsed(
-                hintText: '0',
-                hintStyle: amountStyle.copyWith(color: colors.text.disabled),
-              ),
+              decoration: _amountInputDecoration(hintStyle),
             ),
           ),
           if (!_amountInputIsUsd) ...[
@@ -1930,6 +1929,22 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             Text('ZEC', style: amountUnitStyle),
           ],
         ],
+      ),
+    );
+  }
+
+  InputDecoration _amountInputDecoration(TextStyle hintStyle) {
+    if (_amountInputIsUsd) {
+      return InputDecoration.collapsed(hintText: '0', hintStyle: hintStyle);
+    }
+
+    return InputDecoration.collapsed(
+      hintText: null,
+      hint: Padding(
+        padding: const EdgeInsetsDirectional.only(
+          end: _kMobileSendAmountZecHintEndInset,
+        ),
+        child: Text('0', style: hintStyle, textAlign: TextAlign.right),
       ),
     );
   }

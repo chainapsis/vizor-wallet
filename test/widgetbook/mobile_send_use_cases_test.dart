@@ -146,7 +146,10 @@ void main() {
     final amountInput = tester.widget<TextField>(
       find.byKey(const ValueKey('mobile_send_amount_input')),
     );
-    expect(amountInput.decoration?.hintText, '0');
+    expect(amountInput.decoration?.hintText, isNull);
+    final zecHintPadding = amountInput.decoration?.hint as Padding?;
+    expect(zecHintPadding, isA<Padding>());
+    expect(zecHintPadding!.padding, const EdgeInsetsDirectional.only(end: 3));
     expect(
       amountInput.keyboardType,
       const TextInputType.numberWithOptions(decimal: true),
