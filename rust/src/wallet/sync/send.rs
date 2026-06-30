@@ -5426,8 +5426,10 @@ mod tests {
             ReceiverRequirement::Require,
         )
         .unwrap();
-        let (ua, _) = db
-            .get_next_available_address(account_id, ua_request)
+        // Use the account's existing default address (no allocation) so the test
+        // setup doesn't trip the transparent gap limit on a fresh account.
+        let ua = db
+            .get_last_generated_address_matching(account_id, ua_request)
             .unwrap()
             .unwrap();
         let taddr = *ua.transparent().unwrap();
@@ -5840,8 +5842,10 @@ mod tests {
             ReceiverRequirement::Require,
         )
         .unwrap();
-        let (ua, _) = db
-            .get_next_available_address(account_id, ua_request)
+        // Use the account's existing default address (no allocation) so the test
+        // setup doesn't trip the transparent gap limit on a fresh account.
+        let ua = db
+            .get_last_generated_address_matching(account_id, ua_request)
             .unwrap()
             .unwrap();
         let taddr = *ua.transparent().unwrap();
