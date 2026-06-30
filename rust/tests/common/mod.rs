@@ -150,6 +150,15 @@ pub fn get_balance(db_path: &Path, account_uuid: &str) -> sync_api::WalletBalanc
     .expect("get_balance")
 }
 
+pub fn transparent_receive_address(db_path: &Path, account_uuid: &str) -> String {
+    wallet_api::get_transparent_receive_address(
+        path_str(db_path),
+        REGTEST_NETWORK.into(),
+        Some(account_uuid.into()),
+    )
+    .expect("get_transparent_receive_address")
+}
+
 pub fn get_transaction_history(
     db_path: &Path,
     account_uuid: &str,
@@ -239,6 +248,24 @@ pub fn execute_send(
     to_address: &str,
     amount_zatoshi: u64,
 ) -> String {
+    execute_send_with_source(
+        db_path,
+        sender_account_uuid,
+        sender_mnemonic,
+        to_address,
+        amount_zatoshi,
+        None,
+    )
+}
+
+pub fn execute_send_with_source(
+    db_path: &Path,
+    sender_account_uuid: &str,
+    sender_mnemonic: &str,
+    to_address: &str,
+    amount_zatoshi: u64,
+    send_source: Option<&str>,
+) -> String {
     let send_flow_id = "regtest-send-flow";
     let proposal = sync_api::propose_send(
         path_str(db_path),
@@ -248,6 +275,7 @@ pub fn execute_send(
         to_address.into(),
         amount_zatoshi,
         None,
+        send_source.map(str::to_string),
     )
     .expect("propose_send");
 
