@@ -11,6 +11,7 @@ import '../../core/widgets/app_text_field.dart';
 import '../../core/widgets/password_text_field.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
+import '../../providers/payment_uri_prefill_provider.dart';
 import '../../providers/router_refresh_provider.dart';
 import '../../providers/sync_provider.dart';
 import 'shared/onboarding_auth_shell.dart';
@@ -71,7 +72,17 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
         await syncNotifier.refreshAfterUnlock();
         await syncNotifier.startSyncAnyway();
         if (!mounted) return;
-        context.go('/home');
+        // Claim the payment-URI prefill (parked while locked) only now, after
+        // the post-unlock work has succeeded. Claiming earlier would drop the
+        // payment if any of the awaits above threw or this screen unmounted —
+        // the prefill would already be cleared with no way to recover it.
+        final pendingPrefill =
+            ref.read(paymentUriPrefillProvider.notifier).takeIfFresh();
+        if (pendingPrefill != null) {
+          context.go('/send', extra: pendingPrefill);
+        } else {
+          context.go('/home');
+        }
       });
     } catch (e, st) {
       log('UnlockScreen._submit: ERROR: $e\n$st');
@@ -201,6 +212,7 @@ class _UnlockContent extends StatelessWidget {
               width: _fieldWidth,
               height: _fieldGroupHeight,
               child: PasswordTextField(
+                key: const ValueKey('unlock_password_field'),
                 label: 'Password',
                 hintText: 'Enter password',
                 showLabel: false,
@@ -224,6 +236,7 @@ class _UnlockContent extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 AppButton(
+                  key: const ValueKey('unlock_submit_button'),
                   onPressed: canSubmit ? onSubmit : null,
                   variant: AppButtonVariant.primary,
                   minWidth: _buttonWidth,

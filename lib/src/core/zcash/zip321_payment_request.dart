@@ -165,6 +165,7 @@ const _recognizedParamNames = {
   'memo',
   'req-asset',
 };
+const _maxMemoBase64UrlLength = 684; // ceil(512 / 3) * 4
 
 class Zip321Payment {
   const Zip321Payment({
@@ -262,16 +263,51 @@ void _validateBase64Url(String value, String label) {
 
 ({String? text, bool isBinary}) _parseMemo(String value) {
   _validateBase64Url(value, 'memo');
+  if (value.length > _maxMemoBase64UrlLength) {
+    throw const Zip321ParseException('ZIP-321 memo exceeds 512 bytes.');
+  }
   final bytes = _decodeBase64UrlBytes(value, 'memo');
   if (bytes.length > 512) {
     throw const Zip321ParseException('ZIP-321 memo exceeds 512 bytes.');
   }
   try {
-    return (text: utf8.decode(bytes, allowMalformed: false), isBinary: false);
+    final text = utf8.decode(bytes, allowMalformed: false);
+    if (_containsUnsupportedMemoText(text)) {
+      throw const Zip321ParseException(
+        'ZIP-321 memo contains unsupported control characters.',
+      );
+    }
+    return (text: text, isBinary: false);
   } on FormatException {
     return (text: null, isBinary: true);
   }
 }
+
+bool _containsUnsupportedMemoText(String value) =>
+    value.runes.any(_isUnsupportedMemoCodePoint);
+
+bool _isUnsupportedMemoCodePoint(int codePoint) {
+  if (_bidiControlCodePoints.contains(codePoint)) return true;
+  if (codePoint < 0x20) {
+    return codePoint != 0x09 && codePoint != 0x0A && codePoint != 0x0D;
+  }
+  return codePoint >= 0x7F && codePoint <= 0x9F;
+}
+
+const _bidiControlCodePoints = <int>{
+  0x061C,
+  0x200E,
+  0x200F,
+  0x202A,
+  0x202B,
+  0x202C,
+  0x202D,
+  0x202E,
+  0x2066,
+  0x2067,
+  0x2068,
+  0x2069,
+};
 
 List<int> _decodeBase64UrlBytes(String value, String label) {
   final normalized = value.padRight(

@@ -45,8 +45,26 @@ class SendScreen extends ConsumerStatefulWidget {
 }
 
 class _SendScreenState extends ConsumerState<SendScreen> {
+  SendPrefillArgs? _retainedPrefill;
+
+  @override
+  void initState() {
+    super.initState();
+    _retainedPrefill = widget.prefill;
+  }
+
+  @override
+  void didUpdateWidget(covariant SendScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final prefill = widget.prefill;
+    if (prefill != null) {
+      _retainedPrefill = prefill;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final prefill = widget.prefill ?? _retainedPrefill;
     final walletAsync = ref.watch(walletProvider);
     final accountState = ref.watch(accountProvider).value;
     final activeAccountUuid = accountState?.activeAccountUuid;
@@ -61,12 +79,12 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     final spendableBalance = sync.spendableBalance;
 
     return _SendComposeBody(
-      key: ValueKey('$activeAccountUuid:${widget.prefill?.fingerprint ?? ''}'),
+      key: ValueKey('$activeAccountUuid:${prefill?.fingerprint ?? ''}'),
       walletAsync: walletAsync,
       activeAccountUuid: activeAccountUuid,
       activeAccountIsHardware: activeAccountIsHardware,
       spendableBalance: spendableBalance,
-      prefill: widget.prefill,
+      prefill: prefill,
     );
   }
 }
@@ -176,11 +194,14 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool _isMaxMode = false;
   bool _isResolvingMax = false;
   bool _programmaticAmountEdit = false;
+  bool _programmaticMemoEdit = false;
+  bool _preserveMemoWhitespace = false;
   _MaxQuote? _maxQuote;
   Timer? _maxDebounceTimer;
   int _addressSeq = 0;
   int _maxSeq = 0;
   int _validateSeq = 0;
+  String? _appliedPrefillFingerprint;
 
   @override
   void initState() {
@@ -193,23 +214,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
-    });
-  }
-
-  void _applyPrefill(SendPrefillArgs? prefill) {
-    if (prefill == null) return;
-    _addressController.text = prefill.address;
-    if (prefill.amountText != null) {
-      _amountController.text = prefill.amountText!;
-      _amountError = null;
-    }
-    if (prefill.memoText != null && prefill.memoText!.isNotEmpty) {
-      _memoController.text = prefill.memoText!;
-      _messageExpanded = true;
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(_validateAddress());
     });
   }
 
@@ -231,6 +235,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   }
 
   void _handleMemoChanged() {
+    if (!_programmaticMemoEdit) {
+      _preserveMemoWhitespace = false;
+    }
     if (_memoController.text.isNotEmpty && !_messageExpanded) {
       _messageExpanded = true;
     }
@@ -264,9 +271,41 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     _handleAddressChanged();
   }
 
+  void _applyPrefill(SendPrefillArgs? prefill) {
+    if (prefill == null || _appliedPrefillFingerprint == prefill.fingerprint) {
+      return;
+    }
+    _appliedPrefillFingerprint = prefill.fingerprint;
+    _maxDebounceTimer?.cancel();
+    _addressController.text = prefill.address;
+    if (prefill.amountText != null) {
+      _amountController.text = prefill.amountText!;
+      _amountError = null;
+    }
+    final memoText = prefill.memoText;
+    if (memoText != null && memoText.isNotEmpty) {
+      _preserveMemoWhitespace = prefill.preserveMemoText;
+      _programmaticMemoEdit = true;
+      _memoController.text = memoText;
+      _programmaticMemoEdit = false;
+      _messageExpanded = true;
+    } else {
+      _preserveMemoWhitespace = false;
+    }
+    _isMaxMode = false;
+    _isResolvingMax = false;
+    _maxQuote = null;
+    _error = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_validateAddress());
+    });
+  }
+
   @override
   void didUpdateWidget(covariant _SendComposeBody oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _applyPrefill(widget.prefill);
     if (oldWidget.spendableBalance != widget.spendableBalance) {
       if (_isMaxMode) {
         _scheduleMaxEstimate(immediate: true);
@@ -296,6 +335,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         _addressType = nextAddressType;
         if (_isTransparentLikeType(nextAddressType)) {
           _messageExpanded = false;
+          _preserveMemoWhitespace = false;
         }
       });
       if (_isTransparentLikeType(nextAddressType) &&
@@ -369,8 +409,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool _isTransparentLikeType(String addressType) =>
       addressType == 'transparent' || addressType == 'tex';
 
-  String get _effectiveMemo =>
-      _isTransparentLikeAddress ? '' : _memoController.text.trim();
+  String get _effectiveMemo {
+    if (_isTransparentLikeAddress) return '';
+    final memo = _memoController.text;
+    return _preserveMemoWhitespace ? memo : memo.trim();
+  }
 
   BigInt get _availableBalanceForCurrentAddress => widget.spendableBalance;
   String get _insufficientBalanceText =>

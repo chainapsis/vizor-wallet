@@ -16,6 +16,7 @@ import '../../features/swap/models/swap_activity_navigation.dart';
 import '../../features/swap/screens/mobile/mobile_swap_review_screen.dart';
 import '../../features/send/services/send_flow.dart'
     show KeystoneBroadcastArgs, SendReviewArgs;
+import '../../features/send/models/send_prefill_args.dart';
 import '../../features/send/screens/mobile/mobile_send_screen.dart';
 import '../../features/send/screens/mobile/mobile_send_status_screen.dart';
 import '../../features/about/screens/mobile/mobile_about_screens.dart';
@@ -114,11 +115,21 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       path: '/send',
       pageBuilder: (context, state) {
         final extra = state.extra;
+        // A ZIP-321 payment URI arrives as SendPrefillArgs (address + amount +
+        // memo); other callers still pass a bare recipient string. Unpack the
+        // prefill so the multi-step mobile flow lands on the address step (or
+        // the amount step when the URI carried an amount) with the fields
+        // populated, matching the desktop /send prefill behaviour.
+        final prefill = extra is SendPrefillArgs ? extra : null;
         return CupertinoPage(
           key: state.pageKey,
           child: MobileSendScreen(
             useRouteSteps: true,
-            initialRecipient: extra is String ? extra : null,
+            initialRecipient:
+                prefill?.address ?? (extra is String ? extra : null),
+            initialAmount: prefill?.amountText,
+            initialMemo: prefill?.memoText,
+            preserveInitialMemoWhitespace: prefill?.preserveMemoText ?? false,
           ),
         );
       },

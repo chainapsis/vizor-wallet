@@ -11,6 +11,9 @@ import io.flutter.plugin.common.MethodChannel
 // FlutterFragmentActivity: BiometricPrompt requires a FragmentActivity host.
 class MainActivity : FlutterFragmentActivity() {
     private lateinit var deviceOwnerAuthHandler: DeviceOwnerAuthHandler
+    private var paymentUriChannel: MethodChannel? = null
+    private val pendingPaymentUris = mutableListOf<String>()
+    private var paymentUriDartReady = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -64,6 +67,29 @@ class MainActivity : FlutterFragmentActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        paymentUriChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            PAYMENT_URI_CHANNEL
+        ).apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "takePendingUris" -> {
+                        val uris = pendingPaymentUris.toList()
+                        pendingPaymentUris.clear()
+                        result.success(uris)
+                    }
+                    "ready" -> {
+                        paymentUriDartReady = true
+                        flushPendingPaymentUris()
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
+        // A zcash: link that cold-starts Vizor arrives as the launch intent.
+        capturePaymentUri(intent)
     }
 
     /** REJECT is the platform's error haptic; older APIs report
@@ -111,9 +137,35 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // singleTop launchMode: a zcash: link tapped while Vizor is already
+        // running is delivered here instead of through a fresh launch intent.
+        setIntent(intent)
+        capturePaymentUri(intent)
+    }
+
+    private fun capturePaymentUri(intent: Intent?) {
+        if (intent == null || intent.action != Intent.ACTION_VIEW) return
+        if ((intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return
+        val data = intent.data ?: return
+        if (!"zcash".equals(data.scheme, ignoreCase = true)) return
+        pendingPaymentUris.add(intent.dataString ?: data.toString())
+        flushPendingPaymentUris()
+    }
+
+    private fun flushPendingPaymentUris() {
+        if (!paymentUriDartReady || pendingPaymentUris.isEmpty()) return
+        val channel = paymentUriChannel ?: return
+        val uris = pendingPaymentUris.toList()
+        pendingPaymentUris.clear()
+        channel.invokeMethod("onUris", uris)
+    }
+
     companion object {
         private const val CAMERA_PERMISSION_CHANNEL = "com.zcash.wallet/camera_permission"
         private const val HAPTICS_CHANNEL = "com.zcash.wallet/haptics"
         private const val PRIVACY_SHIELD_CHANNEL = "com.zcash.wallet/privacy_shield"
+        private const val PAYMENT_URI_CHANNEL = "com.zcash.wallet/payment_uri"
     }
 }

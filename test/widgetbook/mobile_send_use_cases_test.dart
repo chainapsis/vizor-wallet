@@ -63,7 +63,7 @@ void main() {
       );
       expect(
         find.byKey(const ValueKey('mobile_send_address_field_placeholder')),
-        findsOneWidget,
+        findsNothing,
       );
       expect(
         tester.getSize(find.byKey(const ValueKey('mobile_send_address_field'))),

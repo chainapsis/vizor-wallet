@@ -20,6 +20,7 @@ import 'src/core/theme/legacy_material_theme.dart';
 import 'src/core/widgets/app_button.dart';
 import 'src/core/widgets/app_icon.dart';
 import 'src/core/widgets/network_fallback_toast.dart';
+import 'src/core/zcash/zip321_payment_request.dart';
 import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'src/features/activity/screens/swap_activity_detail_screen.dart';
@@ -49,8 +50,8 @@ import 'src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/receive/screens/receive_screen.dart';
-import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
+import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/send_review_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
 import 'src/features/send/screens/send_status_screen.dart';
@@ -76,9 +77,11 @@ import 'src/providers/app_security_provider.dart';
 import 'src/providers/linux_update_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
+import 'src/providers/payment_uri_prefill_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
 import 'src/rust/frb_generated.dart';
+import 'src/services/payment_uri_service.dart';
 
 void log(String message) => debugPrint('[zcash] $message');
 
@@ -843,22 +846,25 @@ class ZcashWalletApp extends ConsumerWidget {
             child: _WindowsUpdateStartupCheck(
               child: _WindowsUpdatePromptHost(
                 router: router,
-                child: _RpcEndpointFailoverToastListener(
-                  child: _DesktopOpaqueWindowBackground(
-                    child: GestureDetector(
-                      onTap: () {
-                        // Leaf-only: skip when the primary focus is a
-                        // `FocusScopeNode` rather than a concrete `FocusNode`.
-                        // Unfocusing the scope itself strips the scope's
-                        // "most-recently-focused child" memory, which leaves the
-                        // next Tab with no deterministic starting point.
-                        final primary = FocusManager.instance.primaryFocus;
-                        if (primary != null && primary is! FocusScopeNode) {
-                          primary.unfocus();
-                        }
-                      },
-                      behavior: HitTestBehavior.translucent,
-                      child: child!,
+                child: _PaymentUriLinkListener(
+                  router: router,
+                  child: _RpcEndpointFailoverToastListener(
+                    child: _DesktopOpaqueWindowBackground(
+                      child: GestureDetector(
+                        onTap: () {
+                          // Leaf-only: skip when the primary focus is a
+                          // `FocusScopeNode` rather than a concrete `FocusNode`.
+                          // Unfocusing the scope itself strips the scope's
+                          // "most-recently-focused child" memory, which leaves the
+                          // next Tab with no deterministic starting point.
+                          final primary = FocusManager.instance.primaryFocus;
+                          if (primary != null && primary is! FocusScopeNode) {
+                            primary.unfocus();
+                          }
+                        },
+                        behavior: HitTestBehavior.translucent,
+                        child: child!,
+                      ),
                     ),
                   ),
                 ),
@@ -869,6 +875,145 @@ class ZcashWalletApp extends ConsumerWidget {
       },
     );
   }
+}
+
+class _PaymentUriLinkListener extends ConsumerStatefulWidget {
+  const _PaymentUriLinkListener({required this.router, required this.child});
+
+  final GoRouter router;
+  final Widget child;
+
+  @override
+  ConsumerState<_PaymentUriLinkListener> createState() =>
+      _PaymentUriLinkListenerState();
+}
+
+class _PaymentUriLinkListenerState
+    extends ConsumerState<_PaymentUriLinkListener> {
+  StreamSubscription<String>? _subscription;
+  var _paymentSequence = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(PaymentUriService.initialize());
+    _subscription = PaymentUriService.uriStream.listen(_handlePaymentUri);
+  }
+
+  @override
+  void dispose() {
+    unawaited(_subscription?.cancel());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen<AsyncValue<WalletState>>(walletProvider, (_, _) {
+      _schedulePendingDrain();
+    });
+    // No appSecurityProvider listener: the unlock screens own the post-unlock
+    // navigation for a parked prefill (claim + go to /send). Draining here on
+    // unlock too would race and clobber that navigation. The wallet listener
+    // still covers the loading -> loaded transition.
+    return widget.child;
+  }
+
+  void _handlePaymentUri(String rawUri) {
+    try {
+      ref.read(paymentUriPrefillProvider.notifier).set(_prefillFromUri(rawUri));
+      _schedulePendingDrain();
+    } on Zip321ParseException catch (e) {
+      // Do not clear here: a failed parse of THIS link must not wipe a prefill
+      // already parked from an earlier valid link.
+      _showPaymentUriMessage(e.message);
+    } catch (e) {
+      log('Payment URI: failed to parse: $e');
+      _showPaymentUriMessage('Payment link could not be opened.');
+    }
+  }
+
+  SendPrefillArgs _prefillFromUri(String rawUri) {
+    final request = Zip321PaymentRequest.parse(rawUri);
+    if (!request.isSupported) {
+      throw Zip321ParseException(request.unsupportedReason!);
+    }
+    final payment = request.primaryPayment;
+    return sendPrefillArgsFromZip321Payment(
+      id: 'payment-uri-${++_paymentSequence}',
+      payment: payment,
+    );
+  }
+
+  void _schedulePendingDrain() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _drainPendingPrefill();
+    });
+  }
+
+  void _drainPendingPrefill() {
+    final prefill = ref.read(paymentUriPrefillProvider);
+    if (prefill == null) return;
+
+    final bootstrap = ref.read(appBootstrapProvider);
+    if (bootstrap.hasBlockingFailure) return;
+
+    final walletAsync = ref.read(walletProvider);
+    if (walletAsync.isLoading && walletAsync.value == null) return;
+    if (walletAsync.hasError) return;
+
+    final wallet = walletAsync.value;
+    final hasWallet = wallet?.hasWallet ?? bootstrap.hasWallet;
+    if (!hasWallet) {
+      ref.read(paymentUriPrefillProvider.notifier).clear();
+      widget.router.go('/welcome');
+      _showPaymentUriMessage(
+        'Set up or import a wallet before opening payment links.',
+      );
+      return;
+    }
+
+    final security = ref.read(appSecurityProvider);
+    if (!security.isUnlocked) {
+      // Leave the prefill parked in paymentUriPrefillProvider. The unlock flow
+      // claims it and routes to /send, so the payment intent is not lost when
+      // the link is opened while the wallet is locked.
+      widget.router.go('/unlock');
+      return;
+    }
+
+    // A link that arrives mid-unlock (wallet already unlocked but still on the
+    // unlock screen) is delivered by the unlock flow itself; navigating here
+    // too would clobber it. Defer and let the unlock screen claim it.
+    if (widget.router.state.matchedLocation == '/unlock') return;
+
+    if (paymentUriBlockedAtLocation(widget.router.state.matchedLocation)) {
+      ref.read(paymentUriPrefillProvider.notifier).clear();
+      _showPaymentUriMessage(
+        'Finish or cancel your current send before opening another payment link.',
+      );
+      return;
+    }
+
+    ref.read(paymentUriPrefillProvider.notifier).clear();
+    widget.router.go('/send', extra: prefill);
+  }
+
+  void _showPaymentUriMessage(String message) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(content: Text(message), duration: const Duration(seconds: 4)),
+      );
+    });
+  }
+}
+
+bool paymentUriBlockedAtLocation(String matchedLocation) {
+  return matchedLocation == '/send' || matchedLocation.startsWith('/send/');
 }
 
 class _WindowsUpdateStartupCheck extends ConsumerStatefulWidget {

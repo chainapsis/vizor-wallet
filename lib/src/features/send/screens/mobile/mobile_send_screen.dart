@@ -111,6 +111,8 @@ class MobileSendAmountArgs {
     required this.sendFlowId,
     required this.recipient,
     required this.addressType,
+    this.memo,
+    this.preserveMemoWhitespace = false,
     this.contactLabel,
     this.contactPictureId,
   });
@@ -118,6 +120,8 @@ class MobileSendAmountArgs {
   final String sendFlowId;
   final String recipient;
   final String addressType;
+  final String? memo;
+  final bool preserveMemoWhitespace;
   final String? contactLabel;
   final String? contactPictureId;
 }
@@ -131,6 +135,7 @@ class MobileSendReviewDraftArgs {
     this.feeZatoshi,
     this.isMaxMode = false,
     this.memo,
+    this.preserveMemoWhitespace = false,
     this.contactLabel,
     this.contactPictureId,
   });
@@ -142,6 +147,7 @@ class MobileSendReviewDraftArgs {
   final BigInt? feeZatoshi;
   final bool isMaxMode;
   final String? memo;
+  final bool preserveMemoWhitespace;
   final String? contactLabel;
   final String? contactPictureId;
 }
@@ -159,6 +165,8 @@ class MobileSendAmountScreen extends StatelessWidget {
       initialSendFlowId: args.sendFlowId,
       initialRecipient: args.recipient,
       initialAddressType: args.addressType,
+      initialMemo: args.memo,
+      preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
     );
@@ -184,6 +192,7 @@ class MobileSendReviewScreen extends StatelessWidget {
       refreshReviewFeeOnInit: true,
       initialMaxMode: args.isMaxMode,
       initialMemo: args.memo,
+      preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
     );
@@ -242,6 +251,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.initialMaxMode = false,
     this.refreshReviewFeeOnInit = false,
     this.initialMemo,
+    this.preserveInitialMemoWhitespace = false,
     this.initialContactLabel,
     this.initialContactPictureId,
     this.initialRecipientFocused = false,
@@ -267,6 +277,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   final bool initialMaxMode;
   final bool refreshReviewFeeOnInit;
   final String? initialMemo;
+  final bool preserveInitialMemoWhitespace;
   final String? initialSendFlowId;
   final bool useRouteSteps;
 
@@ -296,6 +307,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   late final String _sendFlowId = widget.initialSendFlowId ?? newSendFlowId();
 
   var _step = _SendStep.recipient;
+  // True when a ZIP-321 prefill jumped straight to the amount step while the
+  // address is still validating; lets us bounce back to the recipient step if
+  // the prefilled address turns out invalid (see _maybeFallBackToRecipientStep).
+  var _amountJumpPendingAddressCheck = false;
   var _phase = _SendPhase.compose;
   var _isConfirmingSend = false;
 
@@ -316,6 +331,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   // Review state.
   String _memo = '';
+  bool _preserveMemoWhitespace = false;
   BigInt? _feeZatoshi;
   int _feeSeq = 0;
 
@@ -327,11 +343,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     super.initState();
     _addressFocus.addListener(_handleAddressFocusChanged);
     final initial = widget.initialRecipient;
+    var hasInitialAddressType = false;
     if (initial != null && initial.trim().isNotEmpty) {
       _addressController.text = initial.trim();
       final initialAddressType = widget.initialAddressType?.trim();
       if (initialAddressType != null && initialAddressType.isNotEmpty) {
         _addressType = initialAddressType;
+        hasInitialAddressType = true;
       } else {
         unawaited(_validateAddress());
       }
@@ -342,11 +360,24 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     _contactPictureId = widget.initialContactPictureId;
     final initialMemo = widget.initialMemo;
-    if (initialMemo != null && initialMemo.trim().isNotEmpty) {
-      _memo = initialMemo.trim();
+    if (initialMemo != null) {
+      final memo = widget.preserveInitialMemoWhitespace
+          ? initialMemo
+          : initialMemo.trim();
+      if (memo.isNotEmpty) {
+        _memo = memo;
+        _preserveMemoWhitespace = widget.preserveInitialMemoWhitespace;
+      }
     }
     if (widget.initialAmountStep || widget.initialAmount != null) {
       _step = widget.initialReview ? _SendStep.review : _SendStep.amount;
+      // A ZIP-321 payment URI can prefill the amount and skip to the amount
+      // step; if the prefilled address validates as invalid, bounce back to the
+      // recipient step instead of letting the user continue past the error.
+      _amountJumpPendingAddressCheck =
+          !widget.initialReview &&
+          widget.initialRecipient != null &&
+          !hasInitialAddressType;
       _amountText = widget.initialAmount?.trim() ?? '';
       _amountController.text = _amountText;
       _isMaxMode = widget.initialMaxMode;
@@ -418,6 +449,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _step == _SendStep.recipient &&
       _addressFocus.hasFocus;
 
+  // Null-safe route-pop check: the go_router context.canPop() extension calls
+  // GoRouter.of, which throws when there's no GoRouter in context (e.g.
+  // widgetbook galleries rendering this screen bare). maybeOf returns null there.
+  bool get _canPopRoute => GoRouter.maybeOf(context)?.canPop() ?? false;
+
   bool get _routePopAllowed =>
       _phase == _SendPhase.compose &&
       (widget.useRouteSteps || _step == _SendStep.recipient) &&
@@ -443,13 +479,32 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             address: address,
           );
       if (!mounted || seq != _addressSeq) return;
-      setState(
-        () => _addressType = result.isValid ? result.addressType : 'invalid',
-      );
+      setState(() {
+        _addressType = result.isValid ? result.addressType : 'invalid';
+        _maybeFallBackToRecipientStep();
+      });
     } catch (e) {
       log('MobileSend: address validation error: $e');
       if (!mounted || seq != _addressSeq) return;
-      setState(() => _addressType = 'error');
+      setState(() {
+        _addressType = 'error';
+        _maybeFallBackToRecipientStep();
+      });
+    }
+  }
+
+  /// A ZIP-321 payment URI can jump straight to the amount step with the
+  /// address + amount prefilled. If the prefilled address then validates as
+  /// definitively invalid, fall back to the recipient step so the address error
+  /// is shown instead of letting the user continue past it. Only `'invalid'`
+  /// (validation ran and rejected the address) triggers this — a transient
+  /// `'error'` (validation itself failed, e.g. offline) is left alone and is
+  /// re-checked downstream at review/send. Runs once, for the initial prefill.
+  void _maybeFallBackToRecipientStep() {
+    if (!_amountJumpPendingAddressCheck) return;
+    _amountJumpPendingAddressCheck = false;
+    if (_step == _SendStep.amount && _addressType == 'invalid') {
+      _step = _SendStep.recipient;
     }
   }
 
@@ -529,6 +584,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             sendFlowId: _sendFlowId,
             recipient: _addressController.text.trim(),
             addressType: _addressType,
+            memo: _memo,
+            preserveMemoWhitespace: _preserveMemoWhitespace,
             contactLabel: _contactLabel,
             contactPictureId: _contactPictureId,
           ),
@@ -776,6 +833,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   bool get _amountReady =>
       !_isResolvingMax &&
+      _hasValidAddress &&
+      !_amountJumpPendingAddressCheck &&
+      !_isHardwareTexRecipient &&
       _amountError == null &&
       (parseZecAmount(_amountText.trim()) ?? BigInt.zero) > BigInt.zero &&
       (!_isMaxMode || _hasCurrentMaxQuote);
@@ -795,6 +855,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             feeZatoshi: _feeZatoshi,
             isMaxMode: _isMaxMode && _hasCurrentMaxQuote,
             memo: _memo,
+            preserveMemoWhitespace: _preserveMemoWhitespace,
             contactLabel: _contactLabel,
             contactPictureId: _contactPictureId,
           ),
@@ -809,7 +870,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   // ── Review step ────────────────────────────────────────────────────
 
-  String get _effectiveMemo => _isShieldedAddress ? _memo.trim() : '';
+  String get _effectiveMemo {
+    if (!_isShieldedAddress) return '';
+    return _preserveMemoWhitespace ? _memo : _memo.trim();
+  }
 
   Future<void> _refreshReviewQuote() {
     if (_isMaxMode) return _resolveMaxEstimate();
@@ -849,7 +913,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       builder: (_) => _MemoSheet(initial: _memo),
     );
     if (next == null || !mounted) return;
-    setState(() => _memo = next);
+    setState(() {
+      _memo = next;
+      _preserveMemoWhitespace = false;
+    });
     unawaited(_refreshReviewQuote());
   }
 
@@ -971,11 +1038,27 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     switch (_step) {
       case _SendStep.recipient:
-        context.pop();
+        // First compose step: pop to wherever we came from, or fall back to
+        // /home when there's nothing to pop. A payment-URI deep link can make
+        // /send the navigation root, leaving the back button with nowhere to go.
+        if (_canPopRoute) {
+          context.pop();
+        } else {
+          context.go('/home');
+        }
       case _SendStep.amount:
         _amountFocus.unfocus();
         if (widget.useRouteSteps) {
-          context.pop();
+          if (_canPopRoute) {
+            // Normal flow: amount is a pushed /send/amount page — pop it back
+            // to the recipient page.
+            context.pop();
+          } else {
+            // A prefilled-amount deep link landed on the amount step of the
+            // root /send route (no page to pop), so popping is a dead end.
+            // Step back to recipient in place; the address is already filled.
+            setState(() => _step = _SendStep.recipient);
+          }
           return;
         }
         setState(() => _step = _SendStep.recipient);
@@ -1823,7 +1906,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   const SizedBox(height: AppSpacing.base),
                   _ReviewWrap(
                     isShielded: _isShieldedAddress,
-                    memo: _memo.trim(),
+                    memo: _effectiveMemo,
                     feeText: feeText,
                     onMemoTap: () => unawaited(_editMemo()),
                     onFeeInfoTap: () => unawaited(_showFeeInfo()),

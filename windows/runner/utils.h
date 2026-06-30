@@ -1,8 +1,11 @@
 #ifndef RUNNER_UTILS_H_
 #define RUNNER_UTILS_H_
 
+#include <cstddef>
 #include <string>
 #include <vector>
+
+constexpr size_t kMaxZcashUriBytes = 16 * 1024;
 
 // Creates a console for the process, and redirects stdout and stderr to
 // it for both the runner and the Flutter library.
@@ -19,5 +22,13 @@ std::wstring Utf16FromUtf8(const std::string& utf8_string);
 // Gets the command line arguments passed in as a std::vector<std::string>,
 // encoded in UTF-8. Returns an empty std::vector<std::string> on failure.
 std::vector<std::string> GetCommandLineArguments();
+
+// Extracts zcash: payment URIs from command-line arguments.
+std::vector<std::string> GetZcashUriArguments(
+    const std::vector<std::string>& arguments);
+
+// Returns whether |value| is a zcash: URI small enough to forward through the
+// native launch-URI bridge.
+bool IsZcashUri(const std::string& value);
 
 #endif  // RUNNER_UTILS_H_

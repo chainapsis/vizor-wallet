@@ -15,6 +15,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/device_owner_auth_provider.dart';
+import '../../../providers/payment_uri_prefill_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/biometric_unlock.dart';
@@ -213,7 +214,16 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         await syncNotifier.refreshAfterUnlock();
         await syncNotifier.startSyncAnyway();
         if (!mounted) return;
-        context.go('/home');
+        // Claim the payment-URI prefill (parked while locked) only now, after
+        // the post-unlock work has succeeded. Claiming earlier would drop the
+        // payment if any of the awaits above threw or this screen unmounted.
+        final pendingPrefill =
+            ref.read(paymentUriPrefillProvider.notifier).takeIfFresh();
+        if (pendingPrefill != null) {
+          context.go('/send', extra: pendingPrefill);
+        } else {
+          context.go('/home');
+        }
       });
     } catch (e, st) {
       log('MobileUnlockScreen._submit: ERROR: $e\n$st');

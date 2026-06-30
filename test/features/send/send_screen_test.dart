@@ -78,6 +78,38 @@ void main() {
     expect(find.byKey(const ValueKey('send_review_button')), findsOneWidget);
   });
 
+  testWidgets('preserves ZIP-321 memo whitespace when proposing send', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    const rawMemo = '  Donation note  ';
+    await tester.pumpWidget(
+      _sendHarness(
+        prefill: const SendPrefillArgs(
+          id: 'zip321-whitespace',
+          source: 'zcash-uri',
+          address: _shieldedAddress,
+          amountText: '1.25',
+          memoText: rawMemo,
+          preserveMemoText: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeMemo, rawMemo);
+  });
+
   testWidgets('contacts label fills the send address from zcash contacts', (
     tester,
   ) async {
