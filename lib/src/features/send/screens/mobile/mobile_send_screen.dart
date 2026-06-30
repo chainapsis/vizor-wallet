@@ -1899,10 +1899,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_amountInputIsUsd) ...[
-            Text(
-              r'$',
-              style: amountUnitStyle.copyWith(color: colors.text.secondary),
-            ),
+            Text(r'$', style: amountUnitStyle),
             const SizedBox(width: AppSpacing.xs),
           ],
           SizedBox(

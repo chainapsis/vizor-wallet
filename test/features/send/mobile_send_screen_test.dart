@@ -1076,6 +1076,11 @@ void main() {
     );
     expect(amountText.style?.fontSize, 48);
     expect(amountText.style?.height, 40 / 48);
+    final zecUnitText = tester.widget<Text>(find.text('ZEC'));
+    expect(
+      zecUnitText.style?.color,
+      AppThemeData.light.colors.text.destructive.withValues(alpha: 0.5),
+    );
 
     await _enterAmount(tester, '1.5');
     expect(find.text('Not enough ZEC'), findsNothing);
@@ -1176,6 +1181,34 @@ void main() {
     expect(find.text('Review Send'), findsOneWidget);
     expect(find.text('1.50 ZEC'), findsOneWidget);
   });
+
+  testWidgets(
+    'USD input error applies destructive color to the dollar prefix',
+    (tester) async {
+      await tester.pumpWidget(_app());
+      await tester.pumpAndSettle();
+      await _toAmountStep(tester, _shieldedAddress);
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_send_amount_mode_toggle')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_send_amount_input')),
+        '400',
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Not enough ZEC'), findsNothing);
+      expect(find.text('Enter amount to continue'), findsOneWidget);
+      final dollarPrefix = tester.widget<Text>(find.text(r'$'));
+      expect(
+        dollarPrefix.style?.color,
+        AppThemeData.light.colors.text.destructive.withValues(alpha: 0.5),
+      );
+    },
+  );
 
   testWidgets('Max in USD mode keeps USD mode and syncs the display amount', (
     tester,
