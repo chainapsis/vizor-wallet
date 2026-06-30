@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart' show MaterialApp, TextField;
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -152,6 +153,10 @@ void main() {
     expect(zecHintPadding!.padding, const EdgeInsetsDirectional.only(end: 3.7));
     expect(amountInput.showCursor, isFalse);
     expect(
+      find.byKey(const ValueKey('mobile_send_amount_empty_cursor')),
+      findsOneWidget,
+    );
+    expect(
       amountInput.keyboardType,
       const TextInputType.numberWithOptions(decimal: true),
     );
@@ -183,6 +188,49 @@ void main() {
       bottomKey: const ValueKey('mobile_send_amount_recipient_block'),
       gap: AppSpacing.md,
     );
+  });
+
+  testWidgets('mobile send amount empty cursor matches typed native cursor', (
+    tester,
+  ) async {
+    await _pumpMobileSendUseCase(
+      tester,
+      buildMobileSendAmountEmptyUseCase,
+      devicePixelRatio: 3,
+    );
+
+    final inputFinder = find.byKey(const ValueKey('mobile_send_amount_input'));
+    final emptyCursorFinder = find.byKey(
+      const ValueKey('mobile_send_amount_empty_cursor'),
+    );
+    final emptyCursorRect = tester.getRect(emptyCursorFinder);
+
+    await tester.enterText(inputFinder, '0');
+    await tester.pump();
+
+    expect(emptyCursorFinder, findsNothing);
+    final editable = _findRenderEditable(
+      tester.renderObject(find.byType(EditableText)),
+    );
+    final typedCursorRect = _globalCaretRect(editable, 1);
+    expect(emptyCursorRect.center.dx, closeTo(typedCursorRect.center.dx, 0.75));
+  });
+
+  testWidgets('mobile send amount empty cursor does not shift amount layout', (
+    tester,
+  ) async {
+    await _pumpMobileSendUseCase(tester, buildMobileSendAmountEmptyUseCase);
+
+    final inputFinder = find.byKey(const ValueKey('mobile_send_amount_input'));
+    final zecFinder = find.text('ZEC');
+    final emptyInputRect = tester.getRect(inputFinder);
+    final emptyZecRect = tester.getRect(zecFinder);
+
+    await tester.enterText(inputFinder, '0');
+    await tester.pump();
+
+    expect(tester.getRect(inputFinder), _closeRect(emptyInputRect));
+    expect(tester.getRect(zecFinder), _closeRect(emptyZecRect));
   });
 
   testWidgets('mobile send amount error use case renders visual error state', (
@@ -344,12 +392,24 @@ Rect _rectForKey(WidgetTester tester, ValueKey<String> key) {
   return tester.getRect(finder);
 }
 
+Matcher _closeRect(Rect expected) {
+  return isA<Rect>()
+      .having((rect) => rect.left, 'left', closeTo(expected.left, 0.01))
+      .having((rect) => rect.top, 'top', closeTo(expected.top, 0.01))
+      .having((rect) => rect.width, 'width', closeTo(expected.width, 0.01))
+      .having((rect) => rect.height, 'height', closeTo(expected.height, 0.01));
+}
+
 Future<void> _pumpMobileSendUseCase(
   WidgetTester tester,
-  WidgetBuilder builder,
-) async {
-  tester.view.physicalSize = const Size(393, 852);
-  tester.view.devicePixelRatio = 1;
+  WidgetBuilder builder, {
+  double devicePixelRatio = 1,
+}) async {
+  tester.view.physicalSize = Size(
+    393 * devicePixelRatio,
+    852 * devicePixelRatio,
+  );
+  tester.view.devicePixelRatio = devicePixelRatio;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 
@@ -364,4 +424,20 @@ Future<void> _pumpMobileSendUseCase(
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 300));
   await tester.pump(const Duration(milliseconds: 300));
+}
+
+Rect _globalCaretRect(RenderEditable editable, int offset) {
+  final caretLocal = editable.getLocalRectForCaret(
+    TextPosition(offset: offset),
+  );
+  return editable.localToGlobal(caretLocal.topLeft) & caretLocal.size;
+}
+
+RenderEditable _findRenderEditable(RenderObject root) {
+  if (root is RenderEditable) return root;
+  RenderEditable? found;
+  root.visitChildren((child) {
+    found ??= _findRenderEditable(child);
+  });
+  return found!;
 }

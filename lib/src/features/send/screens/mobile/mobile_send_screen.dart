@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart'
-    show InputDecoration, Scaffold, TextField;
+    show InputDecoration, Scaffold, TextField, Theme;
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -338,6 +339,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   void initState() {
     super.initState();
     _addressFocus.addListener(_handleAddressFocusChanged);
+    _amountFocus.addListener(_handleAmountFocusChanged);
     final initial = widget.initialRecipient;
     if (initial != null && initial.trim().isNotEmpty) {
       _addressController.text = initial.trim();
@@ -396,6 +398,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   @override
   void dispose() {
     _addressFocus.removeListener(_handleAddressFocusChanged);
+    _amountFocus.removeListener(_handleAmountFocusChanged);
     _addressController.dispose();
     _addressFocus.dispose();
     _amountController.dispose();
@@ -444,6 +447,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _addressType == 'unified' || _addressType == 'sapling';
 
   void _handleAddressFocusChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _handleAmountFocusChanged() {
     if (mounted) setState(() {});
   }
 
@@ -1887,6 +1894,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final activeText = _amountInputIsUsd ? _fiatAmountText : _amountText;
     final inputWidth = _amountInputWidth(activeText, amountStyle);
     final showAmountCursor = _amountInputIsUsd || activeText.trim().isNotEmpty;
+    final showEmptyZecCursor =
+        !_amountInputIsUsd &&
+        activeText.trim().isEmpty &&
+        _amountFocus.hasFocus;
     final hintStyle = amountStyle.copyWith(color: colors.text.disabled);
     final usdPrefixStyle = amountUnitStyle.copyWith(
       fontSize: _kMobileSendAmountUsdPrefixFontSize,
@@ -1921,26 +1932,40 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           ],
           SizedBox(
             width: inputWidth,
-            child: TextField(
-              key: const ValueKey('mobile_send_amount_input'),
-              controller: _amountController,
-              focusNode: _amountFocus,
-              autofocus: true,
-              onChanged: _handleAmountChanged,
-              onSubmitted: (_) => _amountFocus.unfocus(),
-              onTapOutside: (_) => _amountFocus.unfocus(),
-              textAlign: _amountInputIsUsd ? TextAlign.left : TextAlign.right,
-              textAlignVertical: TextAlignVertical.center,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              textInputAction: TextInputAction.done,
-              inputFormatters: inputFormatters,
-              maxLines: 1,
-              style: amountStyle,
-              showCursor: showAmountCursor,
-              cursorColor: colors.text.accent,
-              decoration: _amountInputDecoration(hintStyle),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                TextField(
+                  key: const ValueKey('mobile_send_amount_input'),
+                  controller: _amountController,
+                  focusNode: _amountFocus,
+                  autofocus: true,
+                  onChanged: _handleAmountChanged,
+                  onSubmitted: (_) => _amountFocus.unfocus(),
+                  onTapOutside: (_) => _amountFocus.unfocus(),
+                  textAlign: _amountInputIsUsd
+                      ? TextAlign.left
+                      : TextAlign.right,
+                  textAlignVertical: TextAlignVertical.center,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  textInputAction: TextInputAction.done,
+                  inputFormatters: inputFormatters,
+                  maxLines: 1,
+                  style: amountStyle,
+                  showCursor: showAmountCursor,
+                  cursorColor: colors.text.accent,
+                  decoration: _amountInputDecoration(hintStyle),
+                ),
+                if (showEmptyZecCursor)
+                  Positioned.fill(
+                    child: _MobileSendAmountEmptyCursor(
+                      style: amountStyle,
+                      color: colors.text.accent,
+                    ),
+                  ),
+              ],
             ),
           ),
           if (!_amountInputIsUsd) ...[
@@ -2279,6 +2304,158 @@ class _AmountPriceLoadingBar extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MobileSendAmountEmptyCursor extends StatefulWidget {
+  const _MobileSendAmountEmptyCursor({
+    required this.style,
+    required this.color,
+  });
+
+  final TextStyle style;
+  final Color color;
+
+  @override
+  State<_MobileSendAmountEmptyCursor> createState() =>
+      _MobileSendAmountEmptyCursorState();
+}
+
+class _MobileSendAmountEmptyCursorState
+    extends State<_MobileSendAmountEmptyCursor> {
+  final _editableKey = GlobalKey();
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  Rect? _cursorRect;
+  bool _measurementScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: '0')
+      ..selection = const TextSelection.collapsed(offset: 1);
+    _focusNode = FocusNode(canRequestFocus: false, skipTraversal: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _MobileSendAmountEmptyCursor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleMeasurement();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scheduleMeasurement();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final platform = Theme.of(context).platform;
+    final cursorOffset = _usesCupertinoCursor(platform)
+        ? Offset(-2.0 / MediaQuery.devicePixelRatioOf(context), 0)
+        : Offset.zero;
+    _scheduleMeasurement();
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        ExcludeSemantics(
+          child: IgnorePointer(
+            child: Offstage(
+              child: EditableText(
+                key: _editableKey,
+                controller: _controller,
+                focusNode: _focusNode,
+                readOnly: true,
+                showCursor: false,
+                enableInteractiveSelection: false,
+                style: widget.style,
+                textAlign: TextAlign.right,
+                textDirection: TextDirection.ltr,
+                maxLines: 1,
+                cursorColor: widget.color,
+                backgroundCursorColor: widget.color,
+                cursorWidth: 2,
+                cursorOffset: cursorOffset,
+              ),
+            ),
+          ),
+        ),
+        if (_cursorRect != null)
+          Positioned.fromRect(
+            rect: _cursorRect!,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                key: const ValueKey('mobile_send_amount_empty_cursor'),
+                decoration: BoxDecoration(
+                  color: widget.color,
+                  borderRadius: _usesCupertinoCursor(platform)
+                      ? BorderRadius.circular(2)
+                      : BorderRadius.zero,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _scheduleMeasurement() {
+    if (_measurementScheduled) return;
+    _measurementScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _measurementScheduled = false;
+      if (!mounted) return;
+
+      final renderObject = context.findRenderObject();
+      final editableRenderObject = _editableKey.currentContext
+          ?.findRenderObject();
+      if (renderObject is! RenderBox || editableRenderObject == null) return;
+
+      final editable = _findRenderEditable(editableRenderObject);
+      if (editable == null || !editable.hasSize) return;
+
+      final caretLocal = editable.getLocalRectForCaret(
+        const TextPosition(offset: 1),
+      );
+      final caretTopLeft = renderObject.globalToLocal(
+        editable.localToGlobal(caretLocal.topLeft),
+      );
+      final nextRect = caretTopLeft & caretLocal.size;
+      if (!_rectNearlyEquals(_cursorRect, nextRect)) {
+        setState(() => _cursorRect = nextRect);
+      }
+    });
+  }
+
+  bool _usesCupertinoCursor(TargetPlatform platform) {
+    return platform == TargetPlatform.iOS || platform == TargetPlatform.macOS;
+  }
+
+  bool _rectNearlyEquals(Rect? a, Rect b) {
+    if (a == null) return false;
+    const tolerance = 0.01;
+    return (a.left - b.left).abs() < tolerance &&
+        (a.top - b.top).abs() < tolerance &&
+        (a.width - b.width).abs() < tolerance &&
+        (a.height - b.height).abs() < tolerance;
+  }
+}
+
+RenderEditable? _findRenderEditable(RenderObject root) {
+  if (root is RenderEditable) return root;
+  RenderEditable? found;
+  root.visitChildren((child) {
+    found ??= _findRenderEditable(child);
+  });
+  return found;
 }
 
 class _DecimalAmountInputFormatter extends TextInputFormatter {
