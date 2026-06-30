@@ -149,7 +149,8 @@ void main() {
     expect(amountInput.decoration?.hintText, isNull);
     final zecHintPadding = amountInput.decoration?.hint as Padding?;
     expect(zecHintPadding, isA<Padding>());
-    expect(zecHintPadding!.padding, const EdgeInsetsDirectional.only(end: 3));
+    expect(zecHintPadding!.padding, const EdgeInsetsDirectional.only(end: 3.7));
+    expect(amountInput.showCursor, isFalse);
     expect(
       amountInput.keyboardType,
       const TextInputType.numberWithOptions(decimal: true),

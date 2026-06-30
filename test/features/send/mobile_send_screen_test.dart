@@ -1028,7 +1028,7 @@ void main() {
     expect(emptyAmountInput.decoration?.hintText, isNull);
     final zecHintPadding = emptyAmountInput.decoration?.hint as Padding?;
     expect(zecHintPadding, isA<Padding>());
-    expect(zecHintPadding!.padding, const EdgeInsetsDirectional.only(end: 3));
+    expect(zecHintPadding!.padding, const EdgeInsetsDirectional.only(end: 3.7));
     final zecHintText = zecHintPadding.child as Text?;
     expect(zecHintText, isA<Text>());
     expect(zecHintText!.data, '0');
@@ -1037,6 +1037,7 @@ void main() {
       emptyAmountInput.keyboardType,
       const TextInputType.numberWithOptions(decimal: true),
     );
+    expect(emptyAmountInput.showCursor, isFalse);
     expect(emptyAmountInput.cursorColor, AppThemeData.light.colors.text.accent);
     expect(
       tester
@@ -1082,6 +1083,7 @@ void main() {
     );
     expect(amountText.style?.fontSize, 48);
     expect(amountText.style?.height, 40 / 48);
+    expect(amountText.showCursor, isTrue);
     final zecUnitText = tester.widget<Text>(find.text('ZEC'));
     expect(
       zecUnitText.style?.color,
@@ -1171,6 +1173,7 @@ void main() {
       find.byKey(const ValueKey('mobile_send_amount_input')),
     );
     expect(usdInput.decoration?.hintText, '0');
+    expect(usdInput.showCursor, isTrue);
 
     await tester.enterText(
       find.byKey(const ValueKey('mobile_send_amount_input')),

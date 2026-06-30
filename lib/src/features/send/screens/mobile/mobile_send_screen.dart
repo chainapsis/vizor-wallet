@@ -1886,6 +1886,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final colors = context.colors;
     final activeText = _amountInputIsUsd ? _fiatAmountText : _amountText;
     final inputWidth = _amountInputWidth(activeText, amountStyle);
+    final showAmountCursor = _amountInputIsUsd || activeText.trim().isNotEmpty;
     final hintStyle = amountStyle.copyWith(color: colors.text.disabled);
     final usdPrefixStyle = amountUnitStyle.copyWith(
       fontSize: _kMobileSendAmountUsdPrefixFontSize,
@@ -1937,6 +1938,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               inputFormatters: inputFormatters,
               maxLines: 1,
               style: amountStyle,
+              showCursor: showAmountCursor,
               cursorColor: colors.text.accent,
               decoration: _amountInputDecoration(hintStyle),
             ),
