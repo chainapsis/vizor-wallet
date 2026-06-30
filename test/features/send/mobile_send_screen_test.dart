@@ -34,11 +34,17 @@ Completer<ProposalResult>? _proposeSendCompleter;
 int _estimateSendMaxCalls = 0;
 String? _lastEstimateSendMaxToAddress;
 String? _lastEstimateSendMaxMemo;
+String? _lastEstimateSendMaxSource;
+String? _lastEstimateFeeSendSource;
 String? _lastProposeSendSource;
 _SendMaxEstimateBuilder? _sendMaxEstimateBuilder;
 
 typedef _SendMaxEstimateBuilder =
-    SendMaxEstimateResult Function({required String toAddress, String? memo});
+    SendMaxEstimateResult Function({
+      required String toAddress,
+      String? memo,
+      String? sendSource,
+    });
 
 class _RustApiFake implements RustLibApi {
   @override
@@ -70,6 +76,7 @@ class _RustApiFake implements RustLibApi {
     String? memo,
     String? sendSource,
   }) async {
+    _lastEstimateFeeSendSource = sendSource;
     // Real fee estimation crosses the FFI boundary and takes real time;
     // the timer keeps an in-flight validation window open so tests can
     // assert Continue stays blocked until the estimate lands.
@@ -89,9 +96,10 @@ class _RustApiFake implements RustLibApi {
     _estimateSendMaxCalls++;
     _lastEstimateSendMaxToAddress = toAddress;
     _lastEstimateSendMaxMemo = memo;
+    _lastEstimateSendMaxSource = sendSource;
     final builder = _sendMaxEstimateBuilder;
     if (builder != null) {
-      return builder(toAddress: toAddress, memo: memo);
+      return builder(toAddress: toAddress, memo: memo, sendSource: sendSource);
     }
     return SendMaxEstimateResult(
       amountZatoshi: BigInt.from(499990000),
@@ -161,8 +169,9 @@ class _FakeSyncNotifier extends SyncNotifier {
   Future<SyncState> build() async => SyncState(
     accountUuid: 'account-1',
     hasAccountScopedData: true,
+    transparentBalance: BigInt.from(220000000), // 2.2 ZEC
     spendableBalance: BigInt.from(500000000), // 5 ZEC
-    totalBalance: BigInt.from(500000000),
+    totalBalance: BigInt.from(720000000),
   );
 }
 
@@ -265,6 +274,7 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
             initialSendFlowId: args.sendFlowId,
             initialRecipient: args.recipient,
             initialAddressType: args.addressType,
+            initialSendSource: args.sendSource,
             initialContactLabel: args.contactLabel,
             initialContactPictureId: args.contactPictureId,
             loadWalletDbPath: () async => '/tmp/zcash-test',
@@ -288,6 +298,7 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
             initialFeeZatoshi: args.feeZatoshi,
             refreshReviewFeeOnInit: true,
             initialMaxMode: args.isMaxMode,
+            initialSendSource: args.sendSource,
             initialMemo: args.memo,
             initialContactLabel: args.contactLabel,
             initialContactPictureId: args.contactPictureId,
@@ -416,6 +427,8 @@ void main() {
     _estimateSendMaxCalls = 0;
     _lastEstimateSendMaxToAddress = null;
     _lastEstimateSendMaxMemo = null;
+    _lastEstimateSendMaxSource = null;
+    _lastEstimateFeeSendSource = null;
     _lastProposeSendSource = null;
     _sendMaxEstimateBuilder = null;
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -591,6 +604,7 @@ void main() {
           required toAddress,
           required amountZatoshi,
           memo,
+          sendSource,
         }) async {
           feeCalls++;
           return feeCalls == 1 ? BigInt.from(10000) : refreshedFee;
@@ -1111,6 +1125,53 @@ void main() {
     expect(find.text('Finish & review'), findsOneWidget);
   });
 
+  testWidgets('the amount step source picker sends transparent Max source', (
+    tester,
+  ) async {
+    _sendMaxEstimateBuilder =
+        ({required toAddress, memo, sendSource}) => SendMaxEstimateResult(
+          amountZatoshi:
+              sendSource == 'transparent'
+                  ? BigInt.from(219990000)
+                  : BigInt.from(499990000),
+          feeZatoshi: BigInt.from(10000),
+          needsSaplingParams: false,
+        );
+
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_source_button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_send_source_total_divider')),
+      findsOneWidget,
+    );
+    expect(find.text('Send source'), findsOneWidget);
+    expect(find.text('Total'), findsOneWidget);
+    expect(find.text('Shielded'), findsOneWidget);
+    expect(find.text('Transparent'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_send_source_option_transparent')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Max: 2.2 ZEC'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('mobile_send_max_button')));
+    await tester.pumpAndSettle();
+
+    expect(_estimateSendMaxCalls, 1);
+    expect(_lastEstimateSendMaxSource, 'transparent');
+    final amountInput = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+    );
+    expect(amountInput.controller?.text, '2.1999');
+    expect(find.text('Finish & review'), findsOneWidget);
+  });
+
   testWidgets('Max ignores a stale pending amount fee validation', (
     tester,
   ) async {
@@ -1126,6 +1187,7 @@ void main() {
           required toAddress,
           required amountZatoshi,
           memo,
+          sendSource,
         }) {
           feeCalls++;
           return feeCompleter.future;
@@ -1176,11 +1238,42 @@ void main() {
     },
   );
 
+  testWidgets('route-step source picker sends transparent source on confirm', (
+    tester,
+  ) async {
+    _proposeSendSucceeds = true;
+
+    await tester.pumpWidget(_sendFlowRouterApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_source_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_send_source_option_transparent')),
+    );
+    await tester.pumpAndSettle();
+
+    await _enterAmount(tester, '1.2');
+    expect(_lastEstimateFeeSendSource, 'transparent');
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(_lastProposeSendSource, 'transparent');
+    expect(find.text('status can pop'), findsOneWidget);
+  });
+
   testWidgets('route-step max mode recalculates amount when memo changes', (
     tester,
   ) async {
     _sendMaxEstimateBuilder =
-        ({required toAddress, memo}) => SendMaxEstimateResult(
+        ({required toAddress, memo, sendSource}) => SendMaxEstimateResult(
           amountZatoshi:
               memo == 'thanks!'
                   ? BigInt.from(499980000)

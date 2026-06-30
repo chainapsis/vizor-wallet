@@ -55,12 +55,13 @@ class _ReviewRecipientPresentation {
   Widget buildReviewLeading() {
     return KeyedSubtree(
       key: const ValueKey('mobile_send_review_recipient_picture'),
-      child: useZecIcon
-          ? const _ReviewWalletIcon()
-          : AppProfilePicture(
-              profilePictureId: profilePictureId ?? '',
-              size: AppProfilePictureSize.navLarge,
-            ),
+      child:
+          useZecIcon
+              ? const _ReviewWalletIcon()
+              : AppProfilePicture(
+                profilePictureId: profilePictureId ?? '',
+                size: AppProfilePictureSize.navLarge,
+              ),
     );
   }
 
@@ -86,6 +87,7 @@ typedef MobileSendFeeEstimator =
       required String toAddress,
       required BigInt amountZatoshi,
       String? memo,
+      String? sendSource,
     });
 
 typedef MobileSendScanner = Future<String?> Function(BuildContext context);
@@ -97,6 +99,7 @@ class _MobileSendMaxQuote {
     required this.memo,
     required this.amountZatoshi,
     required this.feeZatoshi,
+    required this.sendSource,
   });
 
   final String accountUuid;
@@ -104,6 +107,7 @@ class _MobileSendMaxQuote {
   final String memo;
   final BigInt amountZatoshi;
   final BigInt feeZatoshi;
+  final SendSource sendSource;
 }
 
 class MobileSendAmountArgs {
@@ -111,6 +115,7 @@ class MobileSendAmountArgs {
     required this.sendFlowId,
     required this.recipient,
     required this.addressType,
+    this.sendSource = SendSource.shielded,
     this.contactLabel,
     this.contactPictureId,
   });
@@ -118,6 +123,7 @@ class MobileSendAmountArgs {
   final String sendFlowId;
   final String recipient;
   final String addressType;
+  final SendSource sendSource;
   final String? contactLabel;
   final String? contactPictureId;
 }
@@ -130,6 +136,7 @@ class MobileSendReviewDraftArgs {
     required this.amountText,
     this.feeZatoshi,
     this.isMaxMode = false,
+    this.sendSource = SendSource.shielded,
     this.memo,
     this.contactLabel,
     this.contactPictureId,
@@ -141,6 +148,7 @@ class MobileSendReviewDraftArgs {
   final String amountText;
   final BigInt? feeZatoshi;
   final bool isMaxMode;
+  final SendSource sendSource;
   final String? memo;
   final String? contactLabel;
   final String? contactPictureId;
@@ -159,6 +167,7 @@ class MobileSendAmountScreen extends StatelessWidget {
       initialSendFlowId: args.sendFlowId,
       initialRecipient: args.recipient,
       initialAddressType: args.addressType,
+      initialSendSource: args.sendSource,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
     );
@@ -183,6 +192,7 @@ class MobileSendReviewScreen extends StatelessWidget {
       initialFeeZatoshi: args.feeZatoshi,
       refreshReviewFeeOnInit: true,
       initialMaxMode: args.isMaxMode,
+      initialSendSource: args.sendSource,
       initialMemo: args.memo,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
@@ -240,6 +250,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.initialReview = false,
     this.initialFeeZatoshi,
     this.initialMaxMode = false,
+    this.initialSendSource = SendSource.shielded,
     this.refreshReviewFeeOnInit = false,
     this.initialMemo,
     this.initialContactLabel,
@@ -265,6 +276,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   final bool initialReview;
   final BigInt? initialFeeZatoshi;
   final bool initialMaxMode;
+  final SendSource initialSendSource;
   final bool refreshReviewFeeOnInit;
   final String? initialMemo;
   final String? initialSendFlowId;
@@ -311,6 +323,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   int _validateSeq = 0;
   bool _isMaxMode = false;
   bool _isResolvingMax = false;
+  bool _isSourceSheetOpen = false;
+  late SendSource _sendSource = widget.initialSendSource;
   int _maxSeq = 0;
   _MobileSendMaxQuote? _maxQuote;
 
@@ -438,10 +452,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       return;
     }
     try {
-      final result =
-          await (widget.validateAddress ?? rust_sync.validateAddress)(
-            address: address,
-          );
+      final result = await (widget.validateAddress ??
+          rust_sync.validateAddress)(address: address);
       if (!mounted || seq != _addressSeq) return;
       setState(
         () => _addressType = result.isValid ? result.addressType : 'invalid',
@@ -472,9 +484,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       selection: TextSelection.collapsed(offset: address.length),
     );
     setState(() {
-      _contactLabel = contact.label.trim().isEmpty
-          ? null
-          : contact.label.trim();
+      _contactLabel =
+          contact.label.trim().isEmpty ? null : contact.label.trim();
       _contactPictureId = contact.profilePictureId;
     });
     _handleAddressChanged(clearContact: false);
@@ -529,6 +540,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             sendFlowId: _sendFlowId,
             recipient: _addressController.text.trim(),
             addressType: _addressType,
+            sendSource: _sendSource,
             contactLabel: _contactLabel,
             contactPictureId: _contactPictureId,
           ),
@@ -547,13 +559,31 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   BigInt get _spendable {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    return (ref.read(syncProvider).value ?? SyncState())
-        .scopedToAccount(accountUuid)
-        .spendableBalance;
+    final sync = (ref.read(syncProvider).value ?? SyncState()).scopedToAccount(
+      accountUuid,
+    );
+    return _sendSource.isTransparent
+        ? sync.transparentBalance
+        : sync.spendableBalance;
+  }
+
+  SyncState get _scopedSyncState {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    return (ref.read(syncProvider).value ?? SyncState()).scopedToAccount(
+      accountUuid,
+    );
   }
 
   String? get _activeAccountUuid =>
       ref.read(accountProvider).value?.activeAccountUuid;
+
+  bool get _isTransparentSource => _sendSource.isTransparent;
+
+  bool get _isHardwareTransparentSourceSend =>
+      _isTransparentSource && _activeAccountIsHardware;
+
+  static const _hardwareTransparentSourceUnsupportedText =
+      'Keystone does not support transparent source sends yet.';
 
   bool get _hasCurrentMaxQuote {
     final quote = _maxQuote;
@@ -561,6 +591,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     return quote.accountUuid == _activeAccountUuid &&
         quote.address == _addressController.text.trim() &&
         quote.memo == _effectiveMemo &&
+        quote.sendSource == _sendSource &&
         parseZecAmount(_amountText.trim()) == quote.amountZatoshi &&
         _feeZatoshi == quote.feeZatoshi;
   }
@@ -579,6 +610,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       memo: _effectiveMemo,
       amountZatoshi: amountZatoshi,
       feeZatoshi: feeZatoshi,
+      sendSource: _sendSource,
     );
   }
 
@@ -611,10 +643,53 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     unawaited(_resolveMaxEstimate());
   }
 
+  void _selectSendSource(SendSource next) {
+    if (_sendSource == next) return;
+    setState(() {
+      _sendSource = next;
+      _clearMaxMode();
+      _feeZatoshi = null;
+      _amountError = '';
+      _error = null;
+    });
+    unawaited(_validateAmount());
+  }
+
+  Future<void> _showSendSourceSheet() async {
+    if (_isSourceSheetOpen) return;
+    _amountFocus.unfocus();
+    setState(() => _isSourceSheetOpen = true);
+    final sync = _scopedSyncState;
+    final next = await showAppMobileSheet<SendSource>(
+      context: context,
+      builder:
+          (sheetContext) => _MobileSendSourceSheet(
+            totalText: _formatSourceBalance(sync.totalBalance),
+            shieldedText: _formatSourceBalance(sync.spendableBalance),
+            transparentText: _formatSourceBalance(sync.transparentBalance),
+            selectedSource: _sendSource,
+          ),
+    );
+    if (!mounted) return;
+    setState(() => _isSourceSheetOpen = false);
+    if (next != null) {
+      _selectSendSource(next);
+    }
+  }
+
+  String _formatSourceBalance(BigInt zatoshi) {
+    return ZecAmount.fromZatoshi(
+      zatoshi,
+    ).pretty(denomStyle: ZecDenomStyle.upper).toString();
+  }
+
   String? _maxEstimatePreconditionError() {
     if (_activeAccountUuid == null) return 'Max amount unavailable';
     if (!_hasValidAddress) return 'Max amount unavailable';
     if (_isHardwareTexRecipient) return _hardwareTexUnsupportedText;
+    if (_isHardwareTransparentSourceSend) {
+      return _hardwareTransparentSourceUnsupportedText;
+    }
     if (utf8.encode(_effectiveMemo).length > 512) {
       return 'Message is too long';
     }
@@ -627,6 +702,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final accountUuid = _activeAccountUuid;
     final address = _addressController.text.trim();
     final memo = _effectiveMemo;
+    final sendSource = _sendSource;
     final preconditionError = _maxEstimatePreconditionError();
     setState(() {
       _isMaxMode = true;
@@ -642,7 +718,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     try {
       final dbPath = await widget.loadWalletDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
-      if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) return;
+      if (!_isCurrentMaxRequest(seq, accountUuid, address, memo, sendSource)) {
+        return;
+      }
 
       final estimate = await rust_sync.estimateSendMax(
         dbPath: dbPath,
@@ -650,17 +728,19 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         accountUuid: accountUuid,
         toAddress: address,
         memo: memo.isNotEmpty ? memo : null,
+        sendSource: sendSource.wireName,
       );
-      if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) return;
+      if (!_isCurrentMaxRequest(seq, accountUuid, address, memo, sendSource)) {
+        return;
+      }
 
       if (estimate.amountZatoshi <= BigInt.zero) {
         _applyMaxEstimateError('Not enough ZEC');
         return;
       }
 
-      final amountText = ZecAmount.fromZatoshi(
-        estimate.amountZatoshi,
-      ).pretty().amountText;
+      final amountText =
+          ZecAmount.fromZatoshi(estimate.amountZatoshi).pretty().amountText;
       _amountController.value = TextEditingValue(
         text: amountText,
         selection: TextSelection.collapsed(offset: amountText.length),
@@ -677,10 +757,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           memo: memo,
           amountZatoshi: estimate.amountZatoshi,
           feeZatoshi: estimate.feeZatoshi,
+          sendSource: sendSource,
         );
       });
     } catch (e) {
-      if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) return;
+      if (!_isCurrentMaxRequest(seq, accountUuid, address, memo, sendSource)) {
+        return;
+      }
       final msg = e.toString().toLowerCase();
       _applyMaxEstimateError(
         msg.contains('insufficient')
@@ -695,13 +778,15 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     String accountUuid,
     String address,
     String memo,
+    SendSource sendSource,
   ) {
     return mounted &&
         _isMaxMode &&
         seq == _maxSeq &&
         _activeAccountUuid == accountUuid &&
         _addressController.text.trim() == address &&
-        _effectiveMemo == memo;
+        _effectiveMemo == memo &&
+        _sendSource == sendSource;
   }
 
   void _applyMaxEstimateError(String message) {
@@ -735,6 +820,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       setState(() => _amountError = 'Not enough ZEC');
       return;
     }
+    if (_isHardwareTransparentSourceSend) {
+      setState(() => _amountError = _hardwareTransparentSourceUnsupportedText);
+      return;
+    }
     // Block Continue until the fee estimate confirms the total fits —
     // otherwise a quick Continue tap right after typing rides on the
     // previous amount's validation result.
@@ -752,6 +841,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         toAddress: _addressController.text.trim(),
         amountZatoshi: zatoshi,
         memo: _effectiveMemo.isNotEmpty ? _effectiveMemo : null,
+        sendSource: _sendSource.wireName,
       );
       if (!mounted || seq != _validateSeq) return;
       if (zatoshi + fee > _spendable) {
@@ -794,6 +884,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             amountText: _amountText,
             feeZatoshi: _feeZatoshi,
             isMaxMode: _isMaxMode && _hasCurrentMaxQuote,
+            sendSource: _sendSource,
             memo: _memo,
             contactLabel: _contactLabel,
             contactPictureId: _contactPictureId,
@@ -832,6 +923,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         toAddress: _addressController.text.trim(),
         amountZatoshi: zatoshi,
         memo: _effectiveMemo.isNotEmpty ? _effectiveMemo : null,
+        sendSource: _sendSource.wireName,
       );
       if (!mounted || seq != _feeSeq) return;
       setState(() => _feeZatoshi = fee);
@@ -868,6 +960,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   Future<void> _confirmAndSend() async {
     if (_phase != _SendPhase.compose || _isConfirmingSend) return;
     if (_isResolvingMax || (_isMaxMode && !_hasCurrentMaxQuote)) return;
+    if (_isHardwareTransparentSourceSend) return;
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
     final isHardware = ref
@@ -892,6 +985,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         addressType: _addressType,
         amountZatoshi: amountZatoshi,
         memo: _effectiveMemo.isNotEmpty ? _effectiveMemo : null,
+        sendSource: _sendSource,
       );
     } catch (e) {
       log('MobileSend: propose error: $e');
@@ -1384,45 +1478,50 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           child: AppIcon(
             AppIcons.plane,
             size: 20,
-            color: _addressController.text.trim().isEmpty
-                ? colors.icon.regular
-                : colors.icon.accent,
+            color:
+                _addressController.text.trim().isEmpty
+                    ? colors.icon.regular
+                    : colors.icon.accent,
           ),
         ),
       ),
-      restingBorderColor: hasAddressError
-          ? colors.border.utilityDestructive
-          : null,
-      focusedBorderColor: hasAddressError
-          ? colors.border.utilityDestructive
-          : const Color(0x00000000),
-      focusedBoxShadow: showAction
-          ? [
-              BoxShadow(
-                color: colors.background.neutralScrim,
-                offset: const Offset(0, 4),
-                blurRadius: 4,
-                spreadRadius: 1000,
-              ),
-            ]
-          : null,
-      trailing: showAction
-          ? SizedBox(
-              key: const ValueKey('mobile_send_address_action_slot'),
-              width: _kMobileSendAddressActionSlotWidth,
-              height: AppInputSizing.height,
-              child: Center(
-                child: _AddressFieldActionButton(
-                  label: _addressController.text.trim().isEmpty
-                      ? 'Paste'
-                      : 'Clear',
-                  onTap: _addressController.text.trim().isEmpty
-                      ? () => unawaited(_pasteAddress())
-                      : _clearAddress,
+      restingBorderColor:
+          hasAddressError ? colors.border.utilityDestructive : null,
+      focusedBorderColor:
+          hasAddressError
+              ? colors.border.utilityDestructive
+              : const Color(0x00000000),
+      focusedBoxShadow:
+          showAction
+              ? [
+                BoxShadow(
+                  color: colors.background.neutralScrim,
+                  offset: const Offset(0, 4),
+                  blurRadius: 4,
+                  spreadRadius: 1000,
                 ),
-              ),
-            )
-          : null,
+              ]
+              : null,
+      trailing:
+          showAction
+              ? SizedBox(
+                key: const ValueKey('mobile_send_address_action_slot'),
+                width: _kMobileSendAddressActionSlotWidth,
+                height: AppInputSizing.height,
+                child: Center(
+                  child: _AddressFieldActionButton(
+                    label:
+                        _addressController.text.trim().isEmpty
+                            ? 'Paste'
+                            : 'Clear',
+                    onTap:
+                        _addressController.text.trim().isEmpty
+                            ? () => unawaited(_pasteAddress())
+                            : _clearAddress,
+                  ),
+                ),
+              )
+              : null,
       onChanged: (_) => _handleAddressChanged(),
       keyboardType: TextInputType.text,
     );
@@ -1435,24 +1534,27 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _addressType == 'invalid' || _addressType == 'error' || hardwareTex;
     return SizedBox(
       height: _kMobileSendAddressErrorGap + _kMobileSendRecipientLineHeight,
-      child: showError
-          ? Padding(
-              padding: const EdgeInsets.only(top: _kMobileSendAddressErrorGap),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: Text(
-                  hardwareTex
-                      ? _hardwareTexUnsupportedText
-                      : (_addressType == 'invalid'
+      child:
+          showError
+              ? Padding(
+                padding: const EdgeInsets.only(
+                  top: _kMobileSendAddressErrorGap,
+                ),
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: Text(
+                    hardwareTex
+                        ? _hardwareTexUnsupportedText
+                        : (_addressType == 'invalid'
                             ? 'Invalid address'
                             : 'Address validation failed'),
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.destructive,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.destructive,
+                    ),
                   ),
                 ),
-              ),
-            )
-          : null,
+              )
+              : null,
     );
   }
 
@@ -1467,15 +1569,19 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         key: const ValueKey('mobile_send_continue'),
         expand: true,
         constrainContent: true,
-        disabledBackgroundColor: useBackdropColors
-            ? Color.alphaBlend(colors.button.disabled.bg, colors.surface.input)
-            : null,
-        enabledBorderColor: useBackdropColors
-            ? colors.border.subtleOpacity
-            : null,
-        onPressed: _hasValidAddress && !_isHardwareTexRecipient
-            ? _continueToAmount
-            : null,
+        disabledBackgroundColor:
+            useBackdropColors
+                ? Color.alphaBlend(
+                  colors.button.disabled.bg,
+                  colors.surface.input,
+                )
+                : null,
+        enabledBorderColor:
+            useBackdropColors ? colors.border.subtleOpacity : null,
+        onPressed:
+            _hasValidAddress && !_isHardwareTexRecipient
+                ? _continueToAmount
+                : null,
         child: Text(
           _addressController.text.trim().isEmpty
               ? 'Enter address to continue'
@@ -1489,9 +1595,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAmountStep(BuildContext context) {
     final colors = context.colors;
-    final spendableText = ZecAmount.fromZatoshi(
-      _spendable,
-    ).pretty(denomStyle: ZecDenomStyle.upper).toString();
+    final spendableText =
+        ZecAmount.fromZatoshi(
+          _spendable,
+        ).pretty(denomStyle: ZecDenomStyle.upper).toString();
     final showError = _amountError != null && _amountError!.isNotEmpty;
     final amountStyle = AppTypography.displayLarge.copyWith(
       color: showError ? colors.text.destructive : colors.text.accent,
@@ -1571,30 +1678,31 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                                           MainAxisAlignment.center,
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
-                                      children: _contactLabel == null
-                                          ? [
-                                              _RecipientLineText(
-                                                _truncateAddress(
-                                                  _addressController.text,
+                                      children:
+                                          _contactLabel == null
+                                              ? [
+                                                _RecipientLineText(
+                                                  _truncateAddress(
+                                                    _addressController.text,
+                                                  ),
+                                                  color: colors.text.accent,
                                                 ),
-                                                color: colors.text.accent,
-                                              ),
-                                            ]
-                                          : [
-                                              _RecipientLineText(
-                                                _contactLabel!,
-                                                color: colors.text.accent,
-                                              ),
-                                              const SizedBox(
-                                                height: AppSpacing.xxs,
-                                              ),
-                                              _RecipientLineText(
-                                                _truncateAddress(
-                                                  _addressController.text,
+                                              ]
+                                              : [
+                                                _RecipientLineText(
+                                                  _contactLabel!,
+                                                  color: colors.text.accent,
                                                 ),
-                                                color: colors.text.secondary,
-                                              ),
-                                            ],
+                                                const SizedBox(
+                                                  height: AppSpacing.xxs,
+                                                ),
+                                                _RecipientLineText(
+                                                  _truncateAddress(
+                                                    _addressController.text,
+                                                  ),
+                                                  color: colors.text.secondary,
+                                                ),
+                                              ],
                                     ),
                                   ),
                                 ],
@@ -1659,16 +1767,17 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           children: [
             SizedBox(
               height: _kMobileSendAmountLineHeight,
-              child: showError
-                  ? Center(
-                      child: Text(
-                        _amountError!,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.destructive,
+              child:
+                  showError
+                      ? Center(
+                        child: Text(
+                          _amountError!,
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.destructive,
+                          ),
                         ),
-                      ),
-                    )
-                  : const SizedBox.shrink(),
+                      )
+                      : const SizedBox.shrink(),
             ),
             const SizedBox(height: AppSpacing.s),
             SizedBox(
@@ -1693,9 +1802,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 ],
                 maxLines: 1,
                 style: amountStyle,
-                cursorColor: showError
-                    ? colors.text.destructive
-                    : colors.text.accent,
+                cursorColor:
+                    showError ? colors.text.destructive : colors.text.accent,
                 cursorWidth: _kMobileSendAmountCaretWidth,
                 cursorHeight: _kMobileSendAmountCaretHeight,
                 cursorRadius: const Radius.circular(AppRadii.full),
@@ -1709,20 +1817,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             SizedBox(
               height: _kMobileSendAmountLineHeight,
               child: Center(
-                child: Semantics(
-                  button: true,
-                  label: 'Use maximum spendable balance',
-                  child: GestureDetector(
-                    key: const ValueKey('mobile_send_max_button'),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _isResolvingMax ? null : _activateMaxMode,
-                    child: Text(
-                      'Max: $spendableText',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ),
+                child: _MobileSendMaxBalanceControl(
+                  spendableText: spendableText,
+                  isTransparentSource: _isTransparentSource,
+                  sourceSheetOpen: _isSourceSheetOpen,
+                  onMaxTap: _isResolvingMax ? null : _activateMaxMode,
+                  onSourceTap: () => unawaited(_showSendSourceSheet()),
                 ),
               ),
             ),
@@ -1738,15 +1838,17 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         ZecAmount.tryParse(_amountText)?.activityDetail.toString() ??
         '$_amountText ZEC';
     final amountZatoshi = parseZecAmount(_amountText.trim());
-    final amountFiatText = amountZatoshi == null
-        ? null
-        : fiatTextForZatoshi(
-            amountZatoshi,
-            zecUsdUnitPrice: ref.watch(zecHomeUsdUnitPriceProvider),
-          );
-    final feeText = _feeZatoshi == null
-        ? '—'
-        : ZecAmount.fromZatoshi(_feeZatoshi!).fee.toString();
+    final amountFiatText =
+        amountZatoshi == null
+            ? null
+            : fiatTextForZatoshi(
+              amountZatoshi,
+              zecUsdUnitPrice: ref.watch(zecHomeUsdUnitPriceProvider),
+            );
+    final feeText =
+        _feeZatoshi == null
+            ? '—'
+            : ZecAmount.fromZatoshi(_feeZatoshi!).fee.toString();
     final address = _addressController.text.trim();
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ??
@@ -1811,9 +1913,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                               address: _compactReviewAddress(address),
                               addressType: _addressType,
                               isShielded: _isShieldedAddress,
-                              onFullAddress: () => unawaited(
-                                _showFullAddressSheet(address, recipient),
-                              ),
+                              onFullAddress:
+                                  () => unawaited(
+                                    _showFullAddressSheet(address, recipient),
+                                  ),
                             ),
                           ),
                         ],
@@ -1844,10 +1947,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   expand: true,
                   onPressed:
                       _isConfirmingSend ||
-                          _isResolvingMax ||
-                          (_isMaxMode && !_hasCurrentMaxQuote)
-                      ? null
-                      : () => unawaited(_confirmAndSend()),
+                              _isResolvingMax ||
+                              (_isMaxMode && !_hasCurrentMaxQuote)
+                          ? null
+                          : () => unawaited(_confirmAndSend()),
                   leading: const AppIcon(AppIcons.plane, size: 20),
                   child: Text(
                     _isConfirmingSend ? 'Preparing...' : 'Confirm & Send',
@@ -2002,6 +2105,314 @@ class _ZecAmountInputFormatter extends TextInputFormatter {
   }
 }
 
+class _MobileSendMaxBalanceControl extends StatelessWidget {
+  const _MobileSendMaxBalanceControl({
+    required this.spendableText,
+    required this.isTransparentSource,
+    required this.sourceSheetOpen,
+    required this.onMaxTap,
+    required this.onSourceTap,
+  });
+
+  final String spendableText;
+  final bool isTransparentSource;
+  final bool sourceSheetOpen;
+  final VoidCallback? onMaxTap;
+  final VoidCallback onSourceTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final labelStyle = AppTypography.labelLarge.copyWith(
+      color: colors.text.secondary,
+    );
+    final chevronColor =
+        isTransparentSource ? colors.icon.brandCrimson : colors.icon.accent;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Semantics(
+          button: true,
+          label: 'Use maximum spendable balance',
+          child: GestureDetector(
+            key: const ValueKey('mobile_send_max_button'),
+            behavior: HitTestBehavior.opaque,
+            onTap: onMaxTap,
+            child: Text('Max: $spendableText', style: labelStyle),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xxs),
+        Semantics(
+          button: true,
+          label: 'Choose send source balance',
+          child: GestureDetector(
+            key: const ValueKey('mobile_send_source_button'),
+            behavior: HitTestBehavior.opaque,
+            onTap: onSourceTap,
+            child: SizedBox(
+              width: 24,
+              height: 22,
+              child: Center(
+                child: RotatedBox(
+                  quarterTurns: sourceSheetOpen ? 3 : 1,
+                  child: AppIcon(
+                    AppIcons.chevronForward,
+                    size: 18,
+                    color: chevronColor,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MobileSendSourceSheet extends StatelessWidget {
+  const _MobileSendSourceSheet({
+    required this.totalText,
+    required this.shieldedText,
+    required this.transparentText,
+    required this.selectedSource,
+  });
+
+  final String totalText;
+  final String shieldedText;
+  final String transparentText;
+  final SendSource selectedSource;
+
+  static const _helpText =
+      'Spendable balance can be lower than total balance while funds wait for '
+      'confirmations or scanning.';
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MobileModalScaffold(
+      title: 'Send source',
+      onClose: () => Navigator.of(context).pop(),
+      bottomPadding: AppSpacing.base,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _MobileSendSourceSummaryRow(
+            iconName: AppIcons.zcash,
+            label: 'Total',
+            value: totalText,
+          ),
+          const _MobileSendSourceDivider(),
+          _MobileSendSourceOptionRow(
+            key: const ValueKey('mobile_send_source_option_shielded'),
+            iconName: AppIcons.shieldKeyhole,
+            label: 'Shielded',
+            value: shieldedText,
+            selected: selectedSource == SendSource.shielded,
+            selectedColor: colors.text.brandCrimson,
+            onTap: () => Navigator.of(context).pop(SendSource.shielded),
+          ),
+          _MobileSendSourceOptionRow(
+            key: const ValueKey('mobile_send_source_option_transparent'),
+            iconName: AppIcons.transparentBalance,
+            label: 'Transparent',
+            value: transparentText,
+            selected: selectedSource == SendSource.transparent,
+            onTap: () => Navigator.of(context).pop(SendSource.transparent),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          const _MobileSendSourceHelpRow(text: _helpText),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileSendSourceSummaryRow extends StatelessWidget {
+  const _MobileSendSourceSummaryRow({
+    required this.iconName,
+    required this.label,
+    required this.value,
+  });
+
+  final String iconName;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xs,
+        vertical: AppSpacing.xxs,
+      ),
+      child: _MobileSendSourceRowContent(
+        iconName: iconName,
+        label: label,
+        value: value,
+        iconColor: colors.icon.muted,
+        labelColor: colors.text.secondary,
+        valueColor: colors.text.accent,
+      ),
+    );
+  }
+}
+
+class _MobileSendSourceDivider extends StatelessWidget {
+  const _MobileSendSourceDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xs,
+        vertical: AppSpacing.xs,
+      ),
+      child: Container(
+        key: const ValueKey('mobile_send_source_total_divider'),
+        height: 1,
+        color: context.colors.border.subtleOpacity,
+      ),
+    );
+  }
+}
+
+class _MobileSendSourceOptionRow extends StatelessWidget {
+  const _MobileSendSourceOptionRow({
+    super.key,
+    required this.iconName,
+    required this.label,
+    required this.value,
+    required this.selected,
+    required this.onTap,
+    this.selectedColor,
+  });
+
+  final String iconName;
+  final String label;
+  final String value;
+  final bool selected;
+  final VoidCallback onTap;
+  final Color? selectedColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final accentColor =
+        selectedColor ?? (selected ? colors.text.accent : colors.icon.regular);
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+        decoration: BoxDecoration(
+          color: selected ? colors.background.brandCrimsonAlpha : null,
+          borderRadius: BorderRadius.circular(AppRadii.medium),
+        ),
+        child: _MobileSendSourceRowContent(
+          iconName: iconName,
+          label: label,
+          value: value,
+          iconColor: selected ? accentColor : colors.icon.regular,
+          labelColor: selected ? accentColor : colors.text.accent,
+          valueColor: colors.text.secondary,
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileSendSourceRowContent extends StatelessWidget {
+  const _MobileSendSourceRowContent({
+    required this.iconName,
+    required this.label,
+    required this.value,
+    required this.iconColor,
+    required this.labelColor,
+    required this.valueColor,
+  });
+
+  final String iconName;
+  final String label;
+  final String value;
+  final Color iconColor;
+  final Color labelColor;
+  final Color valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 20,
+          height: 20,
+          child: Center(
+            child: AppIcon(
+              iconName,
+              size: AppIconSize.medium,
+              color: iconColor,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            label,
+            style: AppTypography.labelLarge.copyWith(color: labelColor),
+          ),
+        ),
+        Text(
+          value,
+          style: AppTypography.labelLarge.copyWith(color: valueColor),
+        ),
+      ],
+    );
+  }
+}
+
+class _MobileSendSourceHelpRow extends StatelessWidget {
+  const _MobileSendSourceHelpRow({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: Center(
+              child: AppIcon(
+                AppIcons.help,
+                size: AppIconSize.medium,
+                color: colors.icon.muted,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ReviewZecIcon extends StatelessWidget {
   const _ReviewZecIcon();
 
@@ -2116,17 +2527,18 @@ class _ReviewInfoRow extends StatelessWidget {
                         bottom ??
                         Align(
                           alignment: Alignment.centerLeft,
-                          child: detailText == null
-                              ? const SizedBox.shrink()
-                              : Text(
-                                  detailText,
-                                  key: detailKey,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: AppTypography.labelLarge.copyWith(
-                                    color: colors.text.secondary,
+                          child:
+                              detailText == null
+                                  ? const SizedBox.shrink()
+                                  : Text(
+                                    detailText,
+                                    key: detailKey,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppTypography.labelLarge.copyWith(
+                                      color: colors.text.secondary,
+                                    ),
                                   ),
-                                ),
                         ),
                   ),
                 ],
@@ -2167,9 +2579,8 @@ class _ReviewAddressLine extends StatelessWidget {
                     ? AppIcons.shieldKeyhole
                     : AppIcons.transparentBalance,
                 size: 16,
-                color: isShielded
-                    ? colors.icon.brandCrimson
-                    : colors.icon.muted,
+                color:
+                    isShielded ? colors.icon.brandCrimson : colors.icon.muted,
               ),
               const SizedBox(width: AppSpacing.xxs),
               Expanded(
@@ -2277,9 +2688,8 @@ class _ReviewWrap extends StatelessWidget {
                 onTap: onMemoTap,
                 leftLabel: memo.isEmpty ? null : 'Message',
                 rightLabel: memo.isEmpty ? 'Add short encrypted message' : memo,
-                rightIcon: memo.isEmpty
-                    ? AppIcons.edit
-                    : AppIcons.doubleArrowVertical,
+                rightIcon:
+                    memo.isEmpty ? AppIcons.edit : AppIcons.doubleArrowVertical,
                 centered: memo.isEmpty,
               ),
               const SizedBox(height: AppSpacing.sm),
@@ -2329,9 +2739,8 @@ class _ReviewListRow extends StatelessWidget {
     final colors = context.colors;
     final right = Row(
       mainAxisSize: centered ? MainAxisSize.min : MainAxisSize.max,
-      mainAxisAlignment: centered
-          ? MainAxisAlignment.center
-          : MainAxisAlignment.end,
+      mainAxisAlignment:
+          centered ? MainAxisAlignment.center : MainAxisAlignment.end,
       children: [
         if (rightIcon != null && centered) ...[
           AppIcon(rightIcon!, size: 20, color: colors.icon.muted),
@@ -2346,9 +2755,10 @@ class _ReviewListRow extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyMediumStrong.copyWith(
-              color: centered && leftLabel == null
-                  ? colors.text.secondary
-                  : colors.text.accent,
+              color:
+                  centered && leftLabel == null
+                      ? colors.text.secondary
+                      : colors.text.accent,
             ),
           ),
         ),
@@ -2363,21 +2773,22 @@ class _ReviewListRow extends StatelessWidget {
       height: _kMobileSendReviewRowHeight,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-        child: centered
-            ? Center(child: right)
-            : Row(
-                children: [
-                  if (leftLabel != null)
-                    Text(
-                      leftLabel!,
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: colors.text.secondary,
+        child:
+            centered
+                ? Center(child: right)
+                : Row(
+                  children: [
+                    if (leftLabel != null)
+                      Text(
+                        leftLabel!,
+                        style: AppTypography.bodyMediumStrong.copyWith(
+                          color: colors.text.secondary,
+                        ),
                       ),
-                    ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(child: right),
-                ],
-              ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(child: right),
+                  ],
+                ),
       ),
     );
 
@@ -2472,9 +2883,10 @@ class _MemoSheetState extends State<_MemoSheet> {
                           // "51/512".
                           '$_usedBytes/$_memoByteLimit',
                           style: labelStyle.copyWith(
-                            color: overLimit
-                                ? colors.text.destructive
-                                : colors.text.secondary,
+                            color:
+                                overLimit
+                                    ? colors.text.destructive
+                                    : colors.text.secondary,
                           ),
                         ),
                       ],
@@ -2493,14 +2905,15 @@ class _MemoSheetState extends State<_MemoSheet> {
                     height: _kMobileSendRecipientLineHeight,
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: overLimit
-                          ? Text(
-                              'Message is too long',
-                              style: labelStyle.copyWith(
-                                color: colors.text.destructive,
-                              ),
-                            )
-                          : const SizedBox.shrink(),
+                      child:
+                          overLimit
+                              ? Text(
+                                'Message is too long',
+                                style: labelStyle.copyWith(
+                                  color: colors.text.destructive,
+                                ),
+                              )
+                              : const SizedBox.shrink(),
                     ),
                   ),
                 ],
@@ -2521,14 +2934,14 @@ class _MemoSheetState extends State<_MemoSheet> {
                         : 'mobile_send_memo_save',
                   ),
                   expand: true,
-                  leading: primaryIsClear
-                      ? const AppIcon(AppIcons.trash)
-                      : null,
-                  onPressed: primaryDisabled
-                      ? null
-                      : () => Navigator.of(
-                          context,
-                        ).pop(primaryIsClear ? '' : _currentMemo),
+                  leading:
+                      primaryIsClear ? const AppIcon(AppIcons.trash) : null,
+                  onPressed:
+                      primaryDisabled
+                          ? null
+                          : () => Navigator.of(
+                            context,
+                          ).pop(primaryIsClear ? '' : _currentMemo),
                   child: Text(primaryIsClear ? 'Clear memo' : 'Add Memo'),
                 ),
                 const SizedBox(height: AppSpacing.s),
@@ -2621,9 +3034,10 @@ class _MemoTextAreaState extends State<_MemoTextArea> {
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.small),
         border: Border.all(
-          color: focused
-              ? colors.background.inverse
-              : colors.background.ground.withValues(alpha: 0),
+          color:
+              focused
+                  ? colors.background.inverse
+                  : colors.background.ground.withValues(alpha: 0),
           width: 1.5,
           strokeAlign: BorderSide.strokeAlignInside,
         ),
@@ -2773,17 +3187,18 @@ class _MemoTextAreaScrollbarState extends State<_MemoTextAreaScrollbar> {
       return null;
     }
 
-    final maxThumbHeight = trackHeight < _maxThumbHeight
-        ? trackHeight
-        : _maxThumbHeight;
+    final maxThumbHeight =
+        trackHeight < _maxThumbHeight ? trackHeight : _maxThumbHeight;
     if (maxThumbHeight <= 0) return null;
-    final thumbHeight = (trackHeight * viewportExtent / contentExtent)
-        .clamp(_minThumbHeight, maxThumbHeight)
-        .toDouble();
+    final thumbHeight =
+        (trackHeight * viewportExtent / contentExtent)
+            .clamp(_minThumbHeight, maxThumbHeight)
+            .toDouble();
     final thumbTravel = trackHeight - thumbHeight;
-    final scrollFraction = thumbTravel <= 0
-        ? 0.0
-        : (position.pixels / maxScrollExtent).clamp(0.0, 1.0).toDouble();
+    final scrollFraction =
+        thumbTravel <= 0
+            ? 0.0
+            : (position.pixels / maxScrollExtent).clamp(0.0, 1.0).toDouble();
     final thumbTop = _topInset + scrollFraction * thumbTravel;
 
     return _MemoScrollbarGeometry(
@@ -2799,9 +3214,10 @@ class _MemoTextAreaScrollbarState extends State<_MemoTextAreaScrollbar> {
     if (geometry.thumbTravel <= 0) return;
     final dragOffset = _dragThumbOffset ?? geometry.thumbHeight / 2;
     final targetThumbTop = localY - dragOffset;
-    final scrollFraction = ((targetThumbTop - _topInset) / geometry.thumbTravel)
-        .clamp(0.0, 1.0)
-        .toDouble();
+    final scrollFraction =
+        ((targetThumbTop - _topInset) / geometry.thumbTravel)
+            .clamp(0.0, 1.0)
+            .toDouble();
     widget.controller.jumpTo(scrollFraction * geometry.maxScrollExtent);
   }
 
@@ -2812,9 +3228,8 @@ class _MemoTextAreaScrollbarState extends State<_MemoTextAreaScrollbar> {
     final hitThumb =
         localY >= geometry.thumbTop &&
         localY <= geometry.thumbTop + geometry.thumbHeight;
-    _dragThumbOffset = hitThumb
-        ? localY - geometry.thumbTop
-        : geometry.thumbHeight / 2;
+    _dragThumbOffset =
+        hitThumb ? localY - geometry.thumbTop : geometry.thumbHeight / 2;
     _jumpToLocalY(localY, geometry);
   }
 

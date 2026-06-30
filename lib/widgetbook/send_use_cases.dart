@@ -495,6 +495,7 @@ Future<BigInt> _widgetbookEstimateFee({
   required String toAddress,
   required BigInt amountZatoshi,
   String? memo,
+  String? sendSource,
 }) async {
   return BigInt.from(10000);
 }
