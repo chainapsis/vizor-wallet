@@ -209,6 +209,7 @@ const _kMobileSendAmountBalanceRowHeight = 44.0;
 const _kMobileSendAmountInputHeight = 64.0;
 const _kMobileSendAmountMetaHeight = 20.0;
 const _kMobileSendAmountZecHintEndInset = 3.7;
+const _kMobileSendAmountCursorBlinkHalfPeriod = Duration(milliseconds: 500);
 const _kMobileSendAmountFontSize = 48.0;
 const _kMobileSendAmountLineHeightPx = 40.0;
 const _kMobileSendAmountUnitFontSize = 38.0;
@@ -2322,10 +2323,28 @@ class _MobileSendAmountEmptyCursor extends StatefulWidget {
 
 class _MobileSendAmountEmptyCursorState
     extends State<_MobileSendAmountEmptyCursor> {
+  static const _iosCursorOpacityKeyFrames = <_CursorOpacityKeyFrame>[
+    _CursorOpacityKeyFrame(Duration.zero, 1),
+    _CursorOpacityKeyFrame(Duration(milliseconds: 500), 1),
+    _CursorOpacityKeyFrame(Duration(microseconds: 537500), 0.75),
+    _CursorOpacityKeyFrame(Duration(milliseconds: 575), 0.5),
+    _CursorOpacityKeyFrame(Duration(microseconds: 612500), 0.25),
+    _CursorOpacityKeyFrame(Duration(milliseconds: 650), 0),
+    _CursorOpacityKeyFrame(Duration(milliseconds: 850), 0),
+    _CursorOpacityKeyFrame(Duration(microseconds: 887500), 0.25),
+    _CursorOpacityKeyFrame(Duration(milliseconds: 925), 0.5),
+    _CursorOpacityKeyFrame(Duration(microseconds: 962500), 0.75),
+    _CursorOpacityKeyFrame(Duration(seconds: 1), 1),
+  ];
+
   final _editableKey = GlobalKey();
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
+  Timer? _blinkTimer;
   Rect? _cursorRect;
+  TargetPlatform? _blinkPlatform;
+  bool? _blinkTickersEnabled;
+  double _cursorOpacity = 1;
   bool _measurementScheduled = false;
 
   @override
@@ -2345,11 +2364,19 @@ class _MobileSendAmountEmptyCursorState
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final platform = Theme.of(context).platform;
+    final tickersEnabled = TickerMode.valuesOf(context).enabled;
+    if (_blinkPlatform != platform || _blinkTickersEnabled != tickersEnabled) {
+      _blinkPlatform = platform;
+      _blinkTickersEnabled = tickersEnabled;
+      _restartBlink(platform, tickersEnabled: tickersEnabled);
+    }
     _scheduleMeasurement();
   }
 
   @override
   void dispose() {
+    _blinkTimer?.cancel();
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -2392,19 +2419,62 @@ class _MobileSendAmountEmptyCursorState
           Positioned.fromRect(
             rect: _cursorRect!,
             child: IgnorePointer(
-              child: DecoratedBox(
+              child: Opacity(
                 key: const ValueKey('mobile_send_amount_empty_cursor'),
-                decoration: BoxDecoration(
-                  color: widget.color,
-                  borderRadius: _usesCupertinoCursor(platform)
-                      ? BorderRadius.circular(2)
-                      : BorderRadius.zero,
+                opacity: _cursorOpacity,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: widget.color,
+                    borderRadius: _usesCupertinoCursor(platform)
+                        ? BorderRadius.circular(2)
+                        : BorderRadius.zero,
+                  ),
                 ),
               ),
             ),
           ),
       ],
     );
+  }
+
+  void _restartBlink(TargetPlatform platform, {required bool tickersEnabled}) {
+    _blinkTimer?.cancel();
+    _blinkTimer = null;
+    _cursorOpacity = tickersEnabled ? 1 : 0;
+    if (!tickersEnabled || EditableText.debugDeterministicCursor) return;
+
+    if (platform == TargetPlatform.iOS) {
+      _scheduleIosBlinkKeyFrame(1);
+      return;
+    }
+
+    _blinkTimer = Timer.periodic(_kMobileSendAmountCursorBlinkHalfPeriod, (_) {
+      _setCursorOpacity(_cursorOpacity == 0 ? 1 : 0);
+    });
+  }
+
+  void _scheduleIosBlinkKeyFrame(int index) {
+    final next = _iosCursorOpacityKeyFrames[index];
+    final previous = _iosCursorOpacityKeyFrames[index - 1];
+    _blinkTimer = Timer(next.time - previous.time, () {
+      if (!mounted ||
+          _blinkPlatform != TargetPlatform.iOS ||
+          _blinkTickersEnabled != true ||
+          EditableText.debugDeterministicCursor) {
+        return;
+      }
+
+      _setCursorOpacity(next.opacity);
+      final nextIndex = index + 1;
+      _scheduleIosBlinkKeyFrame(
+        nextIndex < _iosCursorOpacityKeyFrames.length ? nextIndex : 1,
+      );
+    });
+  }
+
+  void _setCursorOpacity(double opacity) {
+    if (_cursorOpacity == opacity) return;
+    setState(() => _cursorOpacity = opacity);
   }
 
   void _scheduleMeasurement() {
@@ -2447,6 +2517,13 @@ class _MobileSendAmountEmptyCursorState
         (a.width - b.width).abs() < tolerance &&
         (a.height - b.height).abs() < tolerance;
   }
+}
+
+class _CursorOpacityKeyFrame {
+  const _CursorOpacityKeyFrame(this.time, this.opacity);
+
+  final Duration time;
+  final double opacity;
 }
 
 RenderEditable? _findRenderEditable(RenderObject root) {

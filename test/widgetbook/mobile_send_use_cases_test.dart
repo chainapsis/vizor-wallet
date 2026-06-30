@@ -1,7 +1,8 @@
 @Tags(['mobile'])
 library;
 
-import 'package:flutter/material.dart' show MaterialApp, TextField;
+import 'package:flutter/material.dart'
+    show MaterialApp, TargetPlatform, TextField, ThemeData;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -216,6 +217,53 @@ void main() {
     expect(emptyCursorRect.center.dx, closeTo(typedCursorRect.center.dx, 0.75));
   });
 
+  testWidgets('mobile send amount empty cursor blinks on Android cadence', (
+    tester,
+  ) async {
+    await _pumpMobileSendUseCase(
+      tester,
+      buildMobileSendAmountEmptyUseCase,
+      platform: TargetPlatform.android,
+      settleDuration: Duration.zero,
+    );
+
+    expect(_emptyCursorOpacity(tester), 1);
+
+    await tester.pump(const Duration(milliseconds: 499));
+    expect(_emptyCursorOpacity(tester), 1);
+
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(_emptyCursorOpacity(tester), 0);
+
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(_emptyCursorOpacity(tester), 1);
+  });
+
+  testWidgets('mobile send amount empty cursor uses iOS opacity keyframes', (
+    tester,
+  ) async {
+    await _pumpMobileSendUseCase(
+      tester,
+      buildMobileSendAmountEmptyUseCase,
+      platform: TargetPlatform.iOS,
+      settleDuration: Duration.zero,
+    );
+
+    expect(_emptyCursorOpacity(tester), 1);
+
+    await tester.pump(const Duration(milliseconds: 650));
+    expect(_emptyCursorOpacity(tester), 0);
+
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(_emptyCursorOpacity(tester), 0);
+
+    await tester.pump(const Duration(microseconds: 37500));
+    expect(_emptyCursorOpacity(tester), 0.25);
+
+    await tester.pump(const Duration(microseconds: 112500));
+    expect(_emptyCursorOpacity(tester), 1);
+  });
+
   testWidgets('mobile send amount empty cursor does not shift amount layout', (
     tester,
   ) async {
@@ -404,6 +452,8 @@ Future<void> _pumpMobileSendUseCase(
   WidgetTester tester,
   WidgetBuilder builder, {
   double devicePixelRatio = 1,
+  TargetPlatform? platform,
+  Duration settleDuration = const Duration(milliseconds: 600),
 }) async {
   tester.view.physicalSize = Size(
     393 * devicePixelRatio,
@@ -415,6 +465,7 @@ Future<void> _pumpMobileSendUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      theme: platform == null ? null : ThemeData(platform: platform),
       home: AppTheme(
         data: AppThemeData.dark,
         child: Builder(builder: builder),
@@ -422,8 +473,18 @@ Future<void> _pumpMobileSendUseCase(
     ),
   );
   await tester.pump();
-  await tester.pump(const Duration(milliseconds: 300));
-  await tester.pump(const Duration(milliseconds: 300));
+  await tester.pump();
+  if (settleDuration > Duration.zero) {
+    await tester.pump(settleDuration);
+  }
+}
+
+double _emptyCursorOpacity(WidgetTester tester) {
+  return tester
+      .widget<Opacity>(
+        find.byKey(const ValueKey('mobile_send_amount_empty_cursor')),
+      )
+      .opacity;
 }
 
 Rect _globalCaretRect(RenderEditable editable, int offset) {
