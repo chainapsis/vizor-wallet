@@ -483,7 +483,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
     await tester.pump();
-    expect(find.text('Enter amount'), findsNothing);
+    expect(find.text('Enter Amount'), findsNothing);
 
     validation.complete(
       const AddressValidationResult(isValid: true, addressType: 'tex'),
@@ -528,7 +528,7 @@ void main() {
     expect(_sendRouteCanPop(tester), isTrue);
 
     await _toAmountStep(tester, _shieldedAddress);
-    expect(find.text('Enter amount'), findsOneWidget);
+    expect(find.text('Enter Amount'), findsOneWidget);
     expect(_sendRouteCanPop(tester), isFalse);
 
     await _enterAmount(tester, '1.5');
@@ -549,7 +549,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await _toAmountStep(tester, _shieldedAddress);
-    expect(find.text('Enter amount'), findsOneWidget);
+    expect(find.text('Enter Amount'), findsOneWidget);
     expect(_sendRouteCanPop(tester), isTrue);
 
     await _enterAmount(tester, '1.5');
@@ -561,7 +561,7 @@ void main() {
 
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pumpAndSettle();
-    expect(find.text('Enter amount'), findsOneWidget);
+    expect(find.text('Enter Amount'), findsOneWidget);
 
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pumpAndSettle();
@@ -707,7 +707,7 @@ void main() {
     expect(find.text('Invalid address'), findsNothing);
     await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
     await tester.pumpAndSettle();
-    expect(find.text('Enter amount'), findsOneWidget);
+    expect(find.text('Enter Amount'), findsOneWidget);
   });
 
   testWidgets('scan result fills the recipient on the current send screen', (
@@ -892,7 +892,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
     await tester.pumpAndSettle();
-    expect(find.text('Enter amount'), findsOneWidget);
+    expect(find.text('Enter Amount'), findsOneWidget);
     expect(find.text('Alice'), findsOneWidget);
   });
 
@@ -1020,7 +1020,7 @@ void main() {
     await _toAmountStep(tester, _shieldedAddress);
 
     expect(find.text('Enter amount to continue'), findsOneWidget);
-    expect(find.textContaining('Max:'), findsOneWidget);
+    expect(find.text('Max'), findsOneWidget);
     final emptyAmountInput = tester.widget<TextField>(
       find.byKey(const ValueKey('mobile_send_amount_input')),
     );
@@ -1036,7 +1036,7 @@ void main() {
       tester
           .getSize(find.byKey(const ValueKey('mobile_send_amount_field')))
           .height,
-      178,
+      164,
     );
     expect(
       tester
@@ -1054,7 +1054,7 @@ void main() {
           .height,
       68,
     );
-    final maxText = tester.widget<Text>(find.textContaining('Max:'));
+    final maxText = tester.widget<Text>(find.text('Max'));
     expect(maxText.style?.fontSize, AppTypography.labelLarge.fontSize);
     expect(maxText.style?.height, AppTypography.labelLarge.height);
 
@@ -1069,7 +1069,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_send_amount_input')));
     await tester.pumpAndSettle();
     await _enterAmount(tester, '9');
-    expect(find.text('Not enough ZEC'), findsOneWidget);
+    expect(find.text('Not enough ZEC'), findsNothing);
+    expect(find.text('Enter amount to continue'), findsOneWidget);
     final amountText = tester.widget<TextField>(
       find.byKey(const ValueKey('mobile_send_amount_input')),
     );
@@ -1098,6 +1099,106 @@ void main() {
       find.byKey(const ValueKey('mobile_send_amount_input')),
     );
     expect(amountInput.controller?.text, '4.9999');
+    expect(find.text('Finish & review'), findsOneWidget);
+  });
+
+  testWidgets('Max estimate failure is shown through the disabled CTA', (
+    tester,
+  ) async {
+    _sendMaxEstimateBuilder = ({required toAddress, memo}) {
+      throw StateError('estimate unavailable');
+    };
+
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_max_button')));
+    await tester.pumpAndSettle();
+
+    expect(_estimateSendMaxCalls, 1);
+    expect(find.text('Max amount unavailable'), findsOneWidget);
+    expect(find.text('Not enough ZEC'), findsNothing);
+  });
+
+  testWidgets('Max insufficient balance keeps the obvious error label hidden', (
+    tester,
+  ) async {
+    _sendMaxEstimateBuilder = ({required toAddress, memo}) =>
+        SendMaxEstimateResult(
+          amountZatoshi: BigInt.zero,
+          feeZatoshi: BigInt.zero,
+          needsSaplingParams: false,
+        );
+
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_max_button')));
+    await tester.pumpAndSettle();
+
+    expect(_estimateSendMaxCalls, 1);
+    expect(find.text('Not enough ZEC'), findsNothing);
+    expect(find.text('Enter amount to continue'), findsOneWidget);
+  });
+
+  testWidgets('USD input derives the canonical ZEC amount for review', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_send_amount_mode_toggle')),
+    );
+    await tester.pumpAndSettle();
+
+    final usdInput = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+    );
+    expect(usdInput.decoration?.hintText, '0');
+
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+      '105',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('1.5 ZEC'), findsOneWidget);
+    expect(find.text('Finish & review'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(find.text('1.50 ZEC'), findsOneWidget);
+  });
+
+  testWidgets('Max in USD mode keeps USD mode and syncs the display amount', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_send_amount_mode_toggle')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_max_button')));
+    await tester.pumpAndSettle();
+
+    expect(_estimateSendMaxCalls, 1);
+    final amountInput = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+    );
+    expect(amountInput.decoration?.hintText, '0');
+    expect(amountInput.controller?.text, '349.99');
+    expect(find.text('4.9999 ZEC'), findsOneWidget);
     expect(find.text('Finish & review'), findsOneWidget);
   });
 

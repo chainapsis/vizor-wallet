@@ -704,6 +704,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileSendAmountReadyUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Amount USD input',
+                      builder: buildMobileSendAmountUsdUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Review default',
                       builder: buildMobileSendReviewDefaultUseCase,
                     ),

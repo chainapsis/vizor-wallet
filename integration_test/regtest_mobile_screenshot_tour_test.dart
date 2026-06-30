@@ -266,7 +266,7 @@ void main() {
       );
       await pumpUntil(
         tester,
-        () => tester.any(find.text('Enter amount')),
+        () => tester.any(find.text('Enter Amount')),
         description: 'send amount step',
       );
       await shot('21_send_amount_empty');

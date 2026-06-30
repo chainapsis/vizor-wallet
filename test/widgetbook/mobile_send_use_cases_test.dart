@@ -62,10 +62,6 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('mobile_send_address_field_placeholder')),
-        findsOneWidget,
-      );
-      expect(
         tester.getSize(find.byKey(const ValueKey('mobile_send_address_field'))),
         const Size(361, 60),
       );
@@ -127,19 +123,19 @@ void main() {
     await _pumpMobileSendUseCase(tester, buildMobileSendAmountEmptyUseCase);
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Enter amount'), findsOneWidget);
+    expect(find.text('Enter Amount'), findsOneWidget);
     expect(find.text('Enter amount to continue'), findsOneWidget);
     expect(
       tester
           .getSize(find.byKey(const ValueKey('mobile_send_amount_field')))
           .height,
-      178,
+      164,
     );
     expect(
       tester.getSize(
         find.byKey(const ValueKey('mobile_send_amount_top_content')),
       ),
-      const Size(361, 299),
+      const Size(361, 285),
     );
     expect(
       tester.getTopLeft(
@@ -187,14 +183,15 @@ void main() {
     );
   });
 
-  testWidgets('mobile send amount error use case renders amount error', (
+  testWidgets('mobile send amount error use case renders visual error state', (
     tester,
   ) async {
     await _pumpMobileSendUseCase(tester, buildMobileSendAmountErrorUseCase);
 
     expect(tester.takeException(), isNull);
     expect(find.text('243.12'), findsOneWidget);
-    expect(find.text('Not enough ZEC'), findsOneWidget);
+    expect(find.text('Not enough ZEC'), findsNothing);
+    expect(find.text('Enter amount to continue'), findsOneWidget);
   });
 
   testWidgets('mobile send amount ready use case renders review CTA', (
@@ -204,6 +201,18 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('24.312'), findsOneWidget);
+    expect(find.text('Finish & review'), findsOneWidget);
+  });
+
+  testWidgets('mobile send amount USD use case renders USD input mode', (
+    tester,
+  ) async {
+    await _pumpMobileSendUseCase(tester, buildMobileSendAmountUsdUseCase);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(r'$'), findsOneWidget);
+    expect(find.text('120.12'), findsOneWidget);
+    expect(find.text('12 ZEC'), findsOneWidget);
     expect(find.text('Finish & review'), findsOneWidget);
   });
 

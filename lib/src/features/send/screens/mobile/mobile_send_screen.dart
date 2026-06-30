@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/formatting/number_format.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -38,6 +39,8 @@ import 'mobile_send_scan_screen.dart';
 enum _SendStep { recipient, amount, review }
 
 enum _SendPhase { compose, failed }
+
+enum MobileSendAmountInputMode { zec, usd }
 
 class _ReviewRecipientPresentation {
   const _ReviewRecipientPresentation({
@@ -200,14 +203,16 @@ const _kMobileSendAddressFieldGroupHeight =
     AppInputSizing.height +
     _kMobileSendAddressErrorGap +
     _kMobileSendRecipientLineHeight;
-const _kMobileSendAmountFieldHeight = 178.0;
+const _kMobileSendAmountFieldHeight = 164.0;
+const _kMobileSendAmountBalanceRowHeight = 44.0;
 const _kMobileSendAmountInputHeight = 64.0;
-const _kMobileSendAmountLineHeight = 17.0;
+const _kMobileSendAmountMetaHeight = 20.0;
 const _kMobileSendAmountCaretHeight = 48.0;
 const _kMobileSendAmountCaretWidth = 3.0;
 const _kMobileSendAmountFontSize = 48.0;
 const _kMobileSendAmountLineHeightPx = 40.0;
-const _kMobileSendAmountTopContentHeight = 299.0;
+const _kMobileSendAmountUnitFontSize = 38.0;
+const _kMobileSendAmountTopContentHeight = 285.0;
 const _kMobileSendAmountRecipientBlockHeight = 97.0;
 const _kMobileSendAmountRecipientLabelHeight = 25.0;
 const _kMobileSendAmountRecipientRowHeight = 68.0;
@@ -219,7 +224,7 @@ const _kMobileSendReviewWrapHeight = 161.0;
 const _kMobileSendReviewRowHeight = 32.0;
 const _kMobileSendReviewDividerHeight = 1.0;
 
-/// The mobile send wizard — Figma `Send to` → `Enter amount` →
+/// The mobile send wizard — Figma `Send to` → `Enter Amount` →
 /// `Review Send` (4423:119950, 4479:47503, 4481:51525) plus the memo
 /// modal (4484:62917). This screen owns proposal creation and hands
 /// the proposal to the mobile status route for broadcast.
@@ -234,6 +239,8 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.initialRecipient,
     this.initialAddressType,
     this.initialAmount,
+    this.initialFiatAmount,
+    this.initialAmountInputMode = MobileSendAmountInputMode.zec,
     this.initialAmountError,
     this.initialAmountReady = false,
     this.initialAmountStep = false,
@@ -260,6 +267,8 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   /// Preview/test seam for opening the amount step with a preset value.
   final bool initialAmountStep;
   final String? initialAmount;
+  final String? initialFiatAmount;
+  final MobileSendAmountInputMode initialAmountInputMode;
   final String? initialAmountError;
   final bool initialAmountReady;
   final bool initialReview;
@@ -305,8 +314,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String? _contactPictureId;
   int _addressSeq = 0;
 
-  // Amount state. The raw text is numpad-driven.
+  // Amount state. `_amountText` stays canonical ZEC text for Rust/review.
   String _amountText = '';
+  String _fiatAmountText = '';
+  MobileSendAmountInputMode _amountInputMode = MobileSendAmountInputMode.zec;
   String? _amountError = ''; // null = valid, '' = silently incomplete
   int _validateSeq = 0;
   bool _isMaxMode = false;
@@ -348,7 +359,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (widget.initialAmountStep || widget.initialAmount != null) {
       _step = widget.initialReview ? _SendStep.review : _SendStep.amount;
       _amountText = widget.initialAmount?.trim() ?? '';
-      _amountController.text = _amountText;
+      _amountInputMode = widget.initialAmountInputMode;
+      _fiatAmountText = widget.initialFiatAmount?.trim() ?? '';
+      _amountController.text = _amountInputMode == MobileSendAmountInputMode.usd
+          ? _fiatAmountText
+          : _amountText;
       _isMaxMode = widget.initialMaxMode;
       if (widget.initialAmountError != null) {
         _amountError = widget.initialAmountError;
@@ -397,6 +412,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   static const _hardwareTexUnsupportedText =
       'Keystone does not support TEX sends yet.';
+  static const _notEnoughZecText = 'Not enough ZEC';
 
   bool get _activeAccountIsHardware {
     final uuid = ref.read(accountProvider).value?.activeAccountUuid;
@@ -555,6 +571,78 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String? get _activeAccountUuid =>
       ref.read(accountProvider).value?.activeAccountUuid;
 
+  bool get _amountInputIsUsd =>
+      _amountInputMode == MobileSendAmountInputMode.usd;
+
+  void _setAmountControllerText(String text) {
+    _amountController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
+  BigInt? _zatoshiFromUsdText(String text, double? zecUsdUnitPrice) {
+    final normalized = text.trim();
+    if (normalized.isEmpty || normalized == '.' || normalized == '0.') {
+      return null;
+    }
+    final usd = double.tryParse(
+      normalized.startsWith('.') ? '0$normalized' : normalized,
+    );
+    if (usd == null ||
+        !usd.isFinite ||
+        usd <= 0 ||
+        zecUsdUnitPrice == null ||
+        !zecUsdUnitPrice.isFinite ||
+        zecUsdUnitPrice <= 0) {
+      return null;
+    }
+    final zatoshi = (usd / zecUsdUnitPrice) * zatoshiPerZec.toDouble();
+    if (!zatoshi.isFinite || zatoshi <= 0) return null;
+    return BigInt.from(zatoshi.floor());
+  }
+
+  String _usdInputTextForZatoshi(BigInt zatoshi, double zecUsdUnitPrice) {
+    final usd = zatoshi.toDouble() / zatoshiPerZec.toDouble() * zecUsdUnitPrice;
+    if (!usd.isFinite || usd <= 0) return '';
+    return usd.toStringAsFixed(2);
+  }
+
+  String _usdDisplayTextForZatoshi(BigInt zatoshi, double zecUsdUnitPrice) {
+    final raw = _usdInputTextForZatoshi(zatoshi, zecUsdUnitPrice);
+    if (raw.isEmpty) return '0.00';
+    final parts = raw.split('.');
+    final whole = int.tryParse(parts.first) ?? 0;
+    final fraction = parts.length > 1 ? parts[1] : '00';
+    return '${formatGroupedInteger(whole)}.$fraction';
+  }
+
+  void _toggleAmountInputMode() {
+    final nextMode = _amountInputIsUsd
+        ? MobileSendAmountInputMode.zec
+        : MobileSendAmountInputMode.usd;
+    final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+    if (nextMode == MobileSendAmountInputMode.usd && zecUsdUnitPrice == null) {
+      return;
+    }
+
+    setState(() {
+      _amountInputMode = nextMode;
+      if (_amountInputIsUsd) {
+        final zatoshi = parseZecAmount(_amountText.trim());
+        _fiatAmountText = zatoshi == null || zatoshi <= BigInt.zero
+            ? ''
+            : _usdInputTextForZatoshi(zatoshi, zecUsdUnitPrice!);
+        _setAmountControllerText(_fiatAmountText);
+      } else {
+        _setAmountControllerText(_amountText);
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _amountFocus.requestFocus();
+    });
+  }
+
   bool get _hasCurrentMaxQuote {
     final quote = _maxQuote;
     if (quote == null) return false;
@@ -590,8 +678,27 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _handleAmountChanged(String value) {
+    if (_amountInputIsUsd) {
+      _handleFiatAmountChanged(value);
+      return;
+    }
     setState(() {
       _amountText = value.trim();
+      if (_isMaxMode) {
+        _clearMaxMode();
+      }
+    });
+    unawaited(_validateAmount());
+  }
+
+  void _handleFiatAmountChanged(String value) {
+    final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+    final zatoshi = _zatoshiFromUsdText(value, zecUsdUnitPrice);
+    setState(() {
+      _fiatAmountText = value.trim();
+      _amountText = zatoshi == null
+          ? ''
+          : ZecAmount.fromZatoshi(zatoshi).pretty().amountText;
       if (_isMaxMode) {
         _clearMaxMode();
       }
@@ -654,20 +761,22 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) return;
 
       if (estimate.amountZatoshi <= BigInt.zero) {
-        _applyMaxEstimateError('Not enough ZEC');
+        _applyMaxEstimateError(_notEnoughZecText);
         return;
       }
 
       final amountText = ZecAmount.fromZatoshi(
         estimate.amountZatoshi,
       ).pretty().amountText;
-      _amountController.value = TextEditingValue(
-        text: amountText,
-        selection: TextSelection.collapsed(offset: amountText.length),
-      );
+      final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+      final fiatText = zecUsdUnitPrice == null
+          ? ''
+          : _usdInputTextForZatoshi(estimate.amountZatoshi, zecUsdUnitPrice);
+      _setAmountControllerText(_amountInputIsUsd ? fiatText : amountText);
 
       setState(() {
         _amountText = amountText;
+        _fiatAmountText = fiatText;
         _amountError = null;
         _feeZatoshi = estimate.feeZatoshi;
         _isResolvingMax = false;
@@ -684,7 +793,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       final msg = e.toString().toLowerCase();
       _applyMaxEstimateError(
         msg.contains('insufficient')
-            ? 'Not enough ZEC'
+            ? _notEnoughZecText
             : 'Max amount unavailable',
       );
     }
@@ -732,7 +841,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       return;
     }
     if (zatoshi > _spendable) {
-      setState(() => _amountError = 'Not enough ZEC');
+      setState(() => _amountError = _notEnoughZecText);
       return;
     }
     // Block Continue until the fee estimate confirms the total fits —
@@ -755,7 +864,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       );
       if (!mounted || seq != _validateSeq) return;
       if (zatoshi + fee > _spendable) {
-        setState(() => _amountError = 'Not enough ZEC');
+        setState(() => _amountError = _notEnoughZecText);
       } else {
         setState(() {
           _amountError = null;
@@ -766,7 +875,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       if (!mounted || seq != _validateSeq) return;
       final msg = e.toString();
       if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
-        setState(() => _amountError = 'Not enough ZEC');
+        setState(() => _amountError = _notEnoughZecText);
       } else {
         log('MobileSend: fee estimation failed (non-blocking): $e');
         setState(() => _amountError = null);
@@ -779,6 +888,17 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _amountError == null &&
       (parseZecAmount(_amountText.trim()) ?? BigInt.zero) > BigInt.zero &&
       (!_isMaxMode || _hasCurrentMaxQuote);
+
+  String get _amountCtaLabel {
+    if (_isResolvingMax) return 'Calculating max amount';
+    if (_amountReady) return 'Finish & review';
+
+    final error = _amountError;
+    if (error != null && error.isNotEmpty && error != _notEnoughZecText) {
+      return error;
+    }
+    return 'Enter amount to continue';
+  }
 
   void _continueToReview() {
     if (!_amountReady) return;
@@ -1092,7 +1212,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final title = switch (_phase) {
       _SendPhase.compose => switch (_step) {
         _SendStep.recipient => 'Select Recipient',
-        _SendStep.amount => 'Enter amount',
+        _SendStep.amount => 'Enter Amount',
         _SendStep.review => 'Review Send',
       },
       _SendPhase.failed => 'Send failed',
@@ -1489,6 +1609,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAmountStep(BuildContext context) {
     final colors = context.colors;
+    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final spendableText = ZecAmount.fromZatoshi(
       _spendable,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
@@ -1498,6 +1619,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       fontSize: _kMobileSendAmountFontSize,
       height: _kMobileSendAmountLineHeightPx / _kMobileSendAmountFontSize,
       fontWeight: FontWeight.w500,
+    );
+    final amountUnitStyle = amountStyle.copyWith(
+      color: amountStyle.color?.withValues(alpha: 0.5),
+      fontSize: _kMobileSendAmountUnitFontSize,
     );
 
     return Column(
@@ -1523,7 +1648,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       context,
                       showError: showError,
                       spendableText: spendableText,
+                      zecUsdUnitPrice: zecUsdUnitPrice,
                       amountStyle: amountStyle,
+                      amountUnitStyle: amountUnitStyle,
                     ),
                     const SizedBox(height: AppSpacing.md),
                     SizedBox(
@@ -1626,11 +1753,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               constrainContent: true,
               onPressed: _amountReady ? _continueToReview : null,
               child: Text(
-                _isResolvingMax
-                    ? 'Calculating max amount'
-                    : _amountReady
-                    ? 'Finish & review'
-                    : 'Enter amount to continue',
+                _amountCtaLabel,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -1645,88 +1768,249 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     BuildContext context, {
     required bool showError,
     required String spendableText,
+    required double? zecUsdUnitPrice,
     required TextStyle amountStyle,
+    required TextStyle amountUnitStyle,
   }) {
-    final colors = context.colors;
     return SizedBox(
       key: const ValueKey('mobile_send_amount_field'),
       height: _kMobileSendAmountFieldHeight,
       width: double.infinity,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SizedBox(
-              height: _kMobileSendAmountLineHeight,
-              child: showError
-                  ? Center(
-                      child: Text(
-                        _amountError!,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.destructive,
-                        ),
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            SizedBox(
-              height: _kMobileSendAmountInputHeight,
-              child: TextField(
-                key: const ValueKey('mobile_send_amount_input'),
-                controller: _amountController,
-                focusNode: _amountFocus,
-                autofocus: true,
-                onChanged: _handleAmountChanged,
-                onSubmitted: (_) => _amountFocus.unfocus(),
-                onTapOutside: (_) => _amountFocus.unfocus(),
-                textAlign: TextAlign.center,
-                textAlignVertical: TextAlignVertical.center,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                textInputAction: TextInputAction.done,
-                inputFormatters: const [
-                  CommaToDotInputFormatter(),
-                  _ZecAmountInputFormatter(maxFractionDigits: 8, maxLength: 17),
-                ],
-                maxLines: 1,
-                style: amountStyle,
-                cursorColor: showError
-                    ? colors.text.destructive
-                    : colors.text.accent,
-                cursorWidth: _kMobileSendAmountCaretWidth,
-                cursorHeight: _kMobileSendAmountCaretHeight,
-                cursorRadius: const Radius.circular(AppRadii.full),
-                decoration: InputDecoration.collapsed(
-                  hintText: '0',
-                  hintStyle: amountStyle.copyWith(color: colors.text.disabled),
-                ),
+      child: Column(
+        children: [
+          _buildAmountBalanceRow(
+            context,
+            showError: showError,
+            spendableText: spendableText,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _buildAmountInputPanel(
+            context,
+            zecUsdUnitPrice: zecUsdUnitPrice,
+            amountStyle: amountStyle,
+            amountUnitStyle: amountUnitStyle,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAmountBalanceRow(
+    BuildContext context, {
+    required bool showError,
+    required String spendableText,
+  }) {
+    final colors = context.colors;
+    final textColor = showError ? colors.text.destructive : colors.text.accent;
+    return SizedBox(
+      key: const ValueKey('mobile_send_amount_balance_row'),
+      height: _kMobileSendAmountBalanceRowHeight,
+      child: Row(
+        children: [
+          const _ReviewZecIcon(),
+          const SizedBox(width: AppSpacing.s),
+          Expanded(
+            child: Text(
+              spendableText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.labelLarge.copyWith(
+                color: textColor,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: AppSpacing.s),
-            SizedBox(
-              height: _kMobileSendAmountLineHeight,
-              child: Center(
-                child: Semantics(
-                  button: true,
-                  label: 'Use maximum spendable balance',
-                  child: GestureDetector(
-                    key: const ValueKey('mobile_send_max_button'),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _isResolvingMax ? null : _activateMaxMode,
-                    child: Text(
-                      'Max: $spendableText',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Semantics(
+            button: true,
+            label: 'Use maximum spendable balance',
+            child: GestureDetector(
+              key: const ValueKey('mobile_send_max_button'),
+              behavior: HitTestBehavior.opaque,
+              onTap: _isResolvingMax ? null : _activateMaxMode,
+              child: Container(
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+                decoration: BoxDecoration(
+                  color: colors.button.secondary.bg,
+                  borderRadius: BorderRadius.circular(AppRadii.full),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  'Max',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.button.secondary.label,
                   ),
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAmountInputPanel(
+    BuildContext context, {
+    required double? zecUsdUnitPrice,
+    required TextStyle amountStyle,
+    required TextStyle amountUnitStyle,
+  }) {
+    return SizedBox(
+      key: const ValueKey('mobile_send_amount_input_panel'),
+      height:
+          _kMobileSendAmountInputHeight +
+          AppSpacing.s +
+          _kMobileSendAmountMetaHeight,
+      child: Column(
+        children: [
+          _buildAmountInputRow(
+            context,
+            amountStyle: amountStyle,
+            amountUnitStyle: amountUnitStyle,
+          ),
+          const SizedBox(height: AppSpacing.s),
+          _buildAmountConversionRow(context, zecUsdUnitPrice: zecUsdUnitPrice),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAmountInputRow(
+    BuildContext context, {
+    required TextStyle amountStyle,
+    required TextStyle amountUnitStyle,
+  }) {
+    final colors = context.colors;
+    final activeText = _amountInputIsUsd ? _fiatAmountText : _amountText;
+    final inputWidth = _amountInputWidth(activeText, amountStyle);
+    final inputFormatters = [
+      const CommaToDotInputFormatter(),
+      _DecimalAmountInputFormatter(
+        maxFractionDigits: _amountInputIsUsd ? 2 : 8,
+        maxLength: _amountInputIsUsd ? 12 : 17,
+      ),
+    ];
+
+    return SizedBox(
+      height: _kMobileSendAmountInputHeight,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_amountInputIsUsd) ...[
+            Text(
+              r'$',
+              style: amountUnitStyle.copyWith(color: colors.text.secondary),
+            ),
+            const SizedBox(width: AppSpacing.xs),
           ],
+          SizedBox(
+            width: inputWidth,
+            child: TextField(
+              key: const ValueKey('mobile_send_amount_input'),
+              controller: _amountController,
+              focusNode: _amountFocus,
+              autofocus: true,
+              onChanged: _handleAmountChanged,
+              onSubmitted: (_) => _amountFocus.unfocus(),
+              onTapOutside: (_) => _amountFocus.unfocus(),
+              textAlign: _amountInputIsUsd ? TextAlign.left : TextAlign.right,
+              textAlignVertical: TextAlignVertical.center,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              textInputAction: TextInputAction.done,
+              inputFormatters: inputFormatters,
+              maxLines: 1,
+              style: amountStyle,
+              cursorColor: colors.text.accent,
+              cursorWidth: _kMobileSendAmountCaretWidth,
+              cursorHeight: _kMobileSendAmountCaretHeight,
+              cursorRadius: const Radius.circular(AppRadii.full),
+              decoration: InputDecoration.collapsed(
+                hintText: '0',
+                hintStyle: amountStyle.copyWith(color: colors.text.disabled),
+              ),
+            ),
+          ),
+          if (!_amountInputIsUsd) ...[
+            const SizedBox(width: AppSpacing.xs),
+            Text('ZEC', style: amountUnitStyle),
+          ],
+        ],
+      ),
+    );
+  }
+
+  double _amountInputWidth(String text, TextStyle style) {
+    final sample = text.trim().isEmpty ? '0' : text.trim();
+    final painter = TextPainter(
+      text: TextSpan(text: sample, style: style),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout();
+    return (painter.width + 10).clamp(32.0, 220.0).toDouble();
+  }
+
+  Widget _buildAmountConversionRow(
+    BuildContext context, {
+    required double? zecUsdUnitPrice,
+  }) {
+    final colors = context.colors;
+    final amountZatoshi = parseZecAmount(_amountText.trim());
+    final canToggle = _amountInputIsUsd || zecUsdUnitPrice != null;
+    final metaText = _amountInputIsUsd
+        ? '${amountZatoshi == null ? '0' : ZecAmount.fromZatoshi(amountZatoshi).pretty().amountText} ZEC'
+        : zecUsdUnitPrice == null
+        ? null
+        : r'$ ' +
+              (amountZatoshi == null || amountZatoshi <= BigInt.zero
+                  ? '0.00'
+                  : _usdDisplayTextForZatoshi(amountZatoshi, zecUsdUnitPrice));
+
+    return SizedBox(
+      height: _kMobileSendAmountMetaHeight,
+      child: Center(
+        child: Semantics(
+          button: true,
+          label: _amountInputIsUsd
+              ? 'Enter amount in ZEC'
+              : 'Enter amount in USD',
+          enabled: canToggle,
+          child: GestureDetector(
+            key: const ValueKey('mobile_send_amount_mode_toggle'),
+            behavior: HitTestBehavior.opaque,
+            onTap: canToggle ? _toggleAmountInputMode : null,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppIcon(
+                  AppIcons.doubleArrowVertical,
+                  size: 20,
+                  color: colors.text.secondary,
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                if (metaText == null) ...[
+                  Text(
+                    r'$',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                  const _AmountPriceLoadingBar(),
+                ] else
+                  Text(
+                    metaText,
+                    key: const ValueKey('mobile_send_amount_conversion_text'),
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1954,8 +2238,26 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 }
 
-class _ZecAmountInputFormatter extends TextInputFormatter {
-  const _ZecAmountInputFormatter({
+class _AmountPriceLoadingBar extends StatelessWidget {
+  const _AmountPriceLoadingBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      key: const ValueKey('mobile_send_amount_price_loading'),
+      width: 48,
+      height: 12,
+      decoration: BoxDecoration(
+        color: colors.background.neutralSubtleOpacity,
+        borderRadius: BorderRadius.circular(AppRadii.full),
+      ),
+    );
+  }
+}
+
+class _DecimalAmountInputFormatter extends TextInputFormatter {
+  const _DecimalAmountInputFormatter({
     required this.maxFractionDigits,
     required this.maxLength,
   });
