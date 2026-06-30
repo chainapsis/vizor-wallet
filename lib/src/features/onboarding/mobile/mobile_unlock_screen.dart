@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart' show Icon, Icons, Scaffold;
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -32,6 +33,7 @@ const _authBackgroundImage = AssetImage(mobileBiometricSignInBackgroundAsset);
 const _welcomeBadgeImage = AssetImage(
   'assets/illustrations/welcome_badge_mobile.png',
 );
+const _biometricBackdropMaxWait = Duration(milliseconds: 350);
 
 /// Mobile unlock — Figma `Sign In Passcode` (4885:23041): "Welcome Back",
 /// crimson-filling dots, round numpad keys, a bottom biometric retry action,
@@ -65,12 +67,41 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     super.didChangeDependencies();
     if (_didPrecacheBackdrop) return;
     _didPrecacheBackdrop = true;
-    // Warm the backdrop assets so the biometric sign-in view paints before the
-    // system Face ID sheet covers the screen. Best-effort: a decode failure
-    // must never block unlock, and this is fire-and-forget so it can't stall
-    // the prompt.
-    unawaited(precacheImage(_authBackgroundImage, context, onError: (_, _) {}));
-    unawaited(precacheImage(_welcomeBadgeImage, context, onError: (_, _) {}));
+    // Warm the backdrop assets opportunistically. The auto-prompt waits for
+    // the backdrop shell frame, but image decode must not delay Face ID.
+    unawaited(_precacheBiometricBackdrop());
+  }
+
+  Future<void> _precacheBiometricBackdrop() async {
+    await Future.wait<void>([
+      precacheImage(
+        _authBackgroundImage,
+        context,
+        onError: (_, _) {},
+      ).catchError((_) {}),
+      precacheImage(
+        _welcomeBadgeImage,
+        context,
+        onError: (_, _) {},
+      ).catchError((_) {}),
+    ]);
+  }
+
+  Future<void> _waitForBiometricBackdropFrame() async {
+    await _waitForBackdropFrame().timeout(
+      _biometricBackdropMaxWait,
+      onTimeout: () {},
+    );
+  }
+
+  Future<void> _waitForBackdropFrame() async {
+    await SchedulerBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    final binding = WidgetsBinding.instance;
+    if (!binding.firstFrameRasterized) {
+      await binding.waitUntilFirstFrameRasterized;
+    }
   }
 
   Future<void> _tryBiometricUnlock() async {
@@ -121,8 +152,24 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     _biometricPromptShown = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      unawaited(_tryBiometricUnlock());
+      unawaited(_tryBiometricUnlockAfterBackdropFrame());
     });
+  }
+
+  Future<void> _tryBiometricUnlockAfterBackdropFrame() async {
+    await _waitForBiometricBackdropFrame();
+    if (!mounted) return;
+
+    final biometric = ref.read(biometricUnlockProvider).value;
+    if (!widget.autoPromptBiometric ||
+        _biometricFallback ||
+        _submitting ||
+        _entry.isNotEmpty ||
+        biometric == null ||
+        !biometric.usable) {
+      return;
+    }
+    await _tryBiometricUnlock();
   }
 
   void _onDigit(int digit) {
@@ -227,10 +274,9 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _error =
-            e.kind == DeviceOwnerAuthErrorKind.unavailable
-                ? kWalletResetDeviceAuthRequiredMessage
-                : kWalletResetDeviceAuthFailedMessage;
+        _error = e.kind == DeviceOwnerAuthErrorKind.unavailable
+            ? kWalletResetDeviceAuthRequiredMessage
+            : kWalletResetDeviceAuthFailedMessage;
       });
       return;
     } catch (e, st) {

@@ -40,11 +40,16 @@ class FakeBiometricUnlock extends BiometricUnlock {
   BiometricAvailability avail;
   String? escrow;
   BiometricUnlockErrorKind? readError;
+  Completer<BiometricAvailability>? availabilityCompleter;
   Completer<String>? readCompleter;
   var reads = 0;
 
   @override
-  Future<BiometricAvailability> availability() async => avail;
+  Future<BiometricAvailability> availability() async {
+    final completer = availabilityCompleter;
+    if (completer != null) return completer.future;
+    return avail;
+  }
 
   @override
   Future<void> enable(String passcode) async => escrow = passcode;
@@ -132,6 +137,21 @@ Widget _app({
       home: MobileUnlockScreen(autoPromptBiometric: autoPromptBiometric),
     ),
   );
+}
+
+Future<void> _pumpAutoBiometricPromptWait(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 350));
+  await tester.pump();
+}
+
+Future<void> _pumpUntilBiometricRead(
+  WidgetTester tester,
+  FakeBiometricUnlock biometric,
+) async {
+  for (var i = 0; i < 4 && biometric.reads == 0; i += 1) {
+    await _pumpAutoBiometricPromptWait(tester);
+  }
 }
 
 void main() {
@@ -334,6 +354,11 @@ void main() {
       );
 
       await tester.pumpWidget(_app(biometric: biometric));
+      await tester.pump();
+
+      expect(biometric.reads, 0);
+
+      await _pumpUntilBiometricRead(tester, biometric);
       await tester.pumpAndSettle();
 
       expect(biometric.reads, 1);
@@ -369,6 +394,9 @@ void main() {
         findsOneWidget,
       );
       expect(find.byType(PasscodeNumpad), findsNothing);
+      expect(biometric.reads, 0);
+
+      await _pumpUntilBiometricRead(tester, biometric);
       expect(biometric.reads, 1);
 
       pendingRead.complete('999999');
@@ -376,6 +404,43 @@ void main() {
 
       expect(find.byType(MobileBiometricSignInView), findsNothing);
       expect(find.text('Incorrect Passcode'), findsOneWidget);
+    });
+
+    testWidgets('auto-prompt waits for a painted backdrop frame', (
+      tester,
+    ) async {
+      await AppSecureStore.instance.configurePassword('123456');
+      AppSecureStore.instance.clearSessionPassword();
+      await AppSecureStore.instance.writePlain(
+        kBiometricUnlockEnabledKey,
+        'true',
+      );
+      final availability = Completer<BiometricAvailability>();
+      final pendingRead = Completer<String>();
+      final biometric =
+          FakeBiometricUnlock(avail: faceAvailability, escrow: '999999')
+            ..availabilityCompleter = availability
+            ..readCompleter = pendingRead;
+
+      await tester.pumpWidget(
+        _app(
+          bootstrap: _bootstrap(biometricEnabled: true),
+          biometric: biometric,
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(MobileBiometricSignInView), findsOneWidget);
+      expect(biometric.reads, 0);
+
+      availability.complete(faceAvailability);
+      await tester.pump();
+
+      expect(find.byType(MobileBiometricSignInView), findsOneWidget);
+      expect(biometric.reads, 0);
+
+      await _pumpUntilBiometricRead(tester, biometric);
+      expect(biometric.reads, 1);
     });
 
     testWidgets('cancel falls back to the numpad with a retry key', (
@@ -391,6 +456,7 @@ void main() {
       )..readError = BiometricUnlockErrorKind.cancelled;
 
       await tester.pumpWidget(_app(biometric: biometric));
+      await _pumpUntilBiometricRead(tester, biometric);
       await tester.pumpAndSettle();
 
       expect(biometric.reads, 1);
@@ -437,6 +503,7 @@ void main() {
         ..readError = BiometricUnlockErrorKind.invalidated;
 
       await tester.pumpWidget(_app(biometric: biometric));
+      await _pumpUntilBiometricRead(tester, biometric);
       await tester.pumpAndSettle();
 
       expect(
