@@ -26,6 +26,7 @@ use crate::wallet::{
 mod pczt;
 mod send;
 mod transactions;
+mod transparent_send;
 
 // Re-export the split submodules at the `wallet::sync` path so every
 // `crate::wallet::sync::propose_send` / `::get_wallet_balance` /
@@ -55,6 +56,8 @@ pub(crate) use send::resubmit_pending_transactions;
 pub(crate) use send::ProposalResult;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::SendMaxEstimateResult;
+#[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
+pub(crate) use send::SendSource;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::ShieldTransparentPcztResult;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface

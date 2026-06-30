@@ -34,7 +34,7 @@
 //! components) and the provers log+fail loudly rather than produce a
 //! silently-invalid proof.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::convert::Infallible;
 use std::num::NonZeroUsize;
 
@@ -50,19 +50,21 @@ use zcash_client_backend::{
         Account as _, Balance, InputSource, MaxSpendMode, NoteRetention, ReceivedNotes,
         TargetValue, TransparentKeyOrigin, TransparentOutputFilter, WalletRead,
     },
+    encoding::AddressCodec,
     fees::{
         zip317::{MultiOutputChangeStrategy, Zip317FeeRule},
-        DustOutputPolicy, SplitPolicy, StandardFeeRule, TransactionBalance,
+        ChangeError, ChangeStrategy, DustOutputPolicy, SplitPolicy, StandardFeeRule,
+        TransactionBalance,
     },
     proposal::{Proposal, ShieldedInputs},
-    wallet::{OvkPolicy, ReceivedNote},
+    wallet::{OvkPolicy, ReceivedNote, WalletTransparentOutput},
     zip321::{Payment, TransactionRequest},
 };
 use zcash_client_sqlite::AccountUuid;
 use zcash_keys::{address::Address, keys::UnifiedSpendingKey};
 use zcash_primitives::transaction::{
     fees::{
-        transparent::InputSize as TransparentInputSize,
+        transparent::{InputSize as TransparentInputSize, InputView as TransparentInputView},
         zip317::{P2PKH_STANDARD_INPUT_SIZE, P2PKH_STANDARD_OUTPUT_SIZE},
         FeeRule,
     },
@@ -95,6 +97,7 @@ pub(crate) struct ProposalResult {
     pub proposal_id: u64,
     pub needs_sapling_params: bool,
     pub fee_zatoshi: u64,
+    pub source_address: Option<String>,
 }
 
 pub struct ExecuteProposalResult {
@@ -109,6 +112,27 @@ pub(crate) struct SendMaxEstimateResult {
     pub amount_zatoshi: u64,
     pub fee_zatoshi: u64,
     pub needs_sapling_params: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SendSource {
+    Shielded,
+    Transparent,
+}
+
+impl SendSource {
+    pub(crate) fn parse(raw: Option<&str>) -> Result<Self, String> {
+        match raw
+            .unwrap_or("shielded")
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "" | "shielded" => Ok(Self::Shielded),
+            "transparent" => Ok(Self::Transparent),
+            other => Err(format!("Unsupported send source: {other}")),
+        }
+    }
 }
 
 pub(crate) struct ShieldTransparentResult {
@@ -208,6 +232,7 @@ pub fn propose_send(
     to_address: &str,
     amount_zatoshi: u64,
     memo_str: Option<&str>,
+    send_source: SendSource,
 ) -> Result<ProposalResult, String> {
     use zcash_protocol::{PoolType, ShieldedProtocol as SP};
 
@@ -217,37 +242,28 @@ pub fn propose_send(
 
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
-
-    let to: zcash_address::ZcashAddress = to_address
-        .parse()
-        .map_err(|e| format!("Bad address: {e}"))?;
-    let value = Zatoshis::from_u64(amount_zatoshi).map_err(|_| "Bad amount")?;
-    let memo_bytes = match memo_str {
-        Some(m) => {
-            let bytes = MemoBytes::from(
-                Memo::from_bytes(m.as_bytes()).map_err(|e| format!("Bad memo: {e}"))?,
-            );
-            Some(bytes)
-        }
-        None => None,
+    let (proposal, source_address) = match send_source {
+        SendSource::Shielded => (
+            build_shielded_source_send_proposal(
+                &mut db,
+                network,
+                account_id,
+                to_address,
+                amount_zatoshi,
+                memo_str,
+            )?,
+            None,
+        ),
+        SendSource::Transparent => build_transparent_source_send_proposal(
+            db_path,
+            &mut db,
+            network,
+            account_id,
+            to_address,
+            amount_zatoshi,
+            memo_str,
+        )?,
     };
-
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
-    let payment = Payment::new(to, Some(value), memo_bytes, None, None, vec![])
-        .map_err(|e| format!("Cannot create payment: {e:?}"))?;
-    let request = TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))?;
-
-    let proposal = propose_transfer::<_, _, _, _, Infallible>(
-        &mut db,
-        &network,
-        account_id,
-        &input_selector,
-        &change_strategy,
-        request,
-        ConfirmationsPolicy::default(),
-        None,
-    )
-    .map_err(|e| format!("Propose failed: {e}"))?;
 
     let needs_sapling = proposal
         .steps()
@@ -280,6 +296,7 @@ pub fn propose_send(
         proposal_id: id,
         needs_sapling_params: needs_sapling,
         fee_zatoshi: fee,
+        source_address,
     })
 }
 
@@ -293,40 +310,32 @@ pub fn estimate_fee(
     to_address: &str,
     amount_zatoshi: u64,
     memo_str: Option<&str>,
+    send_source: SendSource,
 ) -> Result<u64, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
-
-    let to: zcash_address::ZcashAddress = to_address
-        .parse()
-        .map_err(|e| format!("Bad address: {e}"))?;
-    let value = Zatoshis::from_u64(amount_zatoshi).map_err(|_| "Bad amount")?;
-    let memo_bytes = match memo_str {
-        Some(m) => {
-            let bytes = MemoBytes::from(
-                Memo::from_bytes(m.as_bytes()).map_err(|e| format!("Bad memo: {e}"))?,
-            );
-            Some(bytes)
+    let proposal = match send_source {
+        SendSource::Shielded => build_shielded_source_send_proposal(
+            &mut db,
+            network,
+            account_id,
+            to_address,
+            amount_zatoshi,
+            memo_str,
+        )?,
+        SendSource::Transparent => {
+            build_transparent_source_send_proposal(
+                db_path,
+                &mut db,
+                network,
+                account_id,
+                to_address,
+                amount_zatoshi,
+                memo_str,
+            )?
+            .0
         }
-        None => None,
     };
-
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
-    let payment = Payment::new(to, Some(value), memo_bytes, None, None, vec![])
-        .map_err(|e| format!("Cannot create payment: {e:?}"))?;
-    let request = TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))?;
-
-    let proposal = propose_transfer::<_, _, _, _, Infallible>(
-        &mut db,
-        &network,
-        account_id,
-        &input_selector,
-        &change_strategy,
-        request,
-        ConfirmationsPolicy::default(),
-        None,
-    )
-    .map_err(|e| format!("Propose failed: {e}"))?;
 
     let fee: u64 = proposal
         .steps()
@@ -349,11 +358,375 @@ pub(crate) fn estimate_send_max(
     account_uuid: &str,
     to_address: &str,
     memo_str: Option<&str>,
+    send_source: SendSource,
 ) -> Result<SendMaxEstimateResult, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
-    let proposal = build_send_max_proposal(&mut db, network, account_id, to_address, memo_str)?;
+    let proposal = match send_source {
+        SendSource::Shielded => {
+            build_send_max_proposal(&mut db, network, account_id, to_address, memo_str)?
+        }
+        SendSource::Transparent => build_transparent_source_send_max_proposal(
+            db_path, &mut db, network, account_id, to_address, memo_str,
+        )?,
+    };
     summarize_send_max_proposal(&proposal)
+}
+
+fn build_shielded_source_send_proposal(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+    to_address: &str,
+    amount_zatoshi: u64,
+    memo_str: Option<&str>,
+) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
+    let to: zcash_address::ZcashAddress = to_address
+        .parse()
+        .map_err(|e| format!("Bad address: {e}"))?;
+    let value = Zatoshis::from_u64(amount_zatoshi).map_err(|_| "Bad amount")?;
+    let memo_bytes = parse_memo(memo_str)?;
+
+    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
+    let payment = Payment::new(to, Some(value), memo_bytes, None, None, vec![])
+        .map_err(|e| format!("Cannot create payment: {e:?}"))?;
+    let request = TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))?;
+
+    propose_transfer::<_, _, _, _, Infallible>(
+        db,
+        &network,
+        account_id,
+        &input_selector,
+        &change_strategy,
+        request,
+        ConfirmationsPolicy::default(),
+        None,
+    )
+    .map_err(|e| format!("Propose failed: {e}"))
+}
+
+fn build_transparent_source_send_proposal(
+    db_path: &str,
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+    to_address: &str,
+    amount_zatoshi: u64,
+    memo_str: Option<&str>,
+) -> Result<
+    (
+        Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>,
+        Option<String>,
+    ),
+    String,
+> {
+    let value = Zatoshis::from_u64(amount_zatoshi).map_err(|_| "Bad amount")?;
+    let memo_bytes = parse_memo(memo_str)?;
+    let confirmations_policy = super::transparent_send::transparent_send_confirmations_policy();
+    let (target_height, _) = db
+        .get_target_and_anchor_heights(confirmations_policy.trusted())
+        .map_err(|e| format!("Failed to read target height: {e}"))?
+        .ok_or("Wallet must sync before sending transparent funds")?;
+    let (transparent_inputs, source_address, _) =
+        select_transparent_source_inputs(db_path, network, account_id, target_height)?;
+
+    let proposal = build_transparent_source_proposal_from_inputs(
+        db,
+        network,
+        account_id,
+        target_height,
+        transparent_inputs,
+        to_address,
+        value,
+        memo_bytes,
+    )?;
+
+    Ok((proposal, source_address))
+}
+
+fn build_transparent_source_send_max_proposal(
+    db_path: &str,
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+    to_address: &str,
+    memo_str: Option<&str>,
+) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
+    let memo_bytes = parse_memo(memo_str)?;
+    let confirmations_policy = super::transparent_send::transparent_send_confirmations_policy();
+    let (target_height, _) = db
+        .get_target_and_anchor_heights(confirmations_policy.trusted())
+        .map_err(|e| format!("Failed to read target height: {e}"))?
+        .ok_or("Wallet must sync before sending transparent funds")?;
+    let (transparent_inputs, _, input_total) =
+        select_transparent_source_inputs(db_path, network, account_id, target_height)?;
+    let fee = transparent_source_send_max_fee(
+        network,
+        target_height,
+        &transparent_inputs,
+        to_address,
+        memo_bytes.as_ref(),
+    )?;
+    let value = (input_total - fee).ok_or("Insufficient transparent balance to cover fee")?;
+    if value == Zatoshis::ZERO {
+        return Err("Insufficient transparent balance to cover fee".to_string());
+    }
+
+    build_transparent_source_proposal_from_inputs(
+        db,
+        network,
+        account_id,
+        target_height,
+        transparent_inputs,
+        to_address,
+        value,
+        memo_bytes,
+    )
+}
+
+fn parse_memo(memo_str: Option<&str>) -> Result<Option<MemoBytes>, String> {
+    match memo_str {
+        Some(m) => Ok(Some(MemoBytes::from(
+            Memo::from_bytes(m.as_bytes()).map_err(|e| format!("Bad memo: {e}"))?,
+        ))),
+        None => Ok(None),
+    }
+}
+
+struct RecipientOutputPlan {
+    request: TransactionRequest,
+    payment_pools: BTreeMap<usize, PoolType>,
+    transparent_outputs: Vec<transparent::bundle::TxOut>,
+    sapling_outputs: Vec<Zatoshis>,
+    orchard_outputs: Vec<Zatoshis>,
+}
+
+fn recipient_output_plan(
+    network: WalletNetwork,
+    to_address: &str,
+    value: Zatoshis,
+    memo_bytes: Option<MemoBytes>,
+) -> Result<RecipientOutputPlan, String> {
+    let to: zcash_address::ZcashAddress = to_address
+        .parse()
+        .map_err(|e| format!("Bad address: {e}"))?;
+    let recipient_address: Address = to
+        .clone()
+        .convert_if_network(network.network_type())
+        .map_err(|e| format!("Bad address: {e:?}"))?;
+    let payment = Payment::new(to, Some(value), memo_bytes, None, None, vec![])
+        .map_err(|e| format!("Cannot create payment: {e:?}"))?;
+    let request = TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))?;
+
+    let mut payment_pools = BTreeMap::new();
+    let mut transparent_outputs = Vec::new();
+    let mut sapling_outputs = Vec::new();
+    let mut orchard_outputs = Vec::new();
+
+    match recipient_address {
+        Address::Transparent(addr) => {
+            payment_pools.insert(0, PoolType::TRANSPARENT);
+            transparent_outputs.push(transparent::bundle::TxOut::new(value, addr.script().into()));
+        }
+        Address::Tex(data) => {
+            let addr = TransparentAddress::PublicKeyHash(data);
+            payment_pools.insert(0, PoolType::TRANSPARENT);
+            transparent_outputs.push(transparent::bundle::TxOut::new(value, addr.script().into()));
+        }
+        Address::Sapling(_) => {
+            payment_pools.insert(0, PoolType::SAPLING);
+            sapling_outputs.push(value);
+        }
+        Address::Unified(addr) => {
+            if addr.has_orchard() {
+                payment_pools.insert(0, PoolType::ORCHARD);
+                orchard_outputs.push(value);
+            } else if addr.has_sapling() {
+                payment_pools.insert(0, PoolType::SAPLING);
+                sapling_outputs.push(value);
+            } else if let Some(taddr) = addr.transparent() {
+                payment_pools.insert(0, PoolType::TRANSPARENT);
+                transparent_outputs.push(transparent::bundle::TxOut::new(
+                    value,
+                    taddr.script().into(),
+                ));
+            } else {
+                return Err("Unsupported recipient address".to_string());
+            }
+        }
+    }
+
+    Ok(RecipientOutputPlan {
+        request,
+        payment_pools,
+        transparent_outputs,
+        sapling_outputs,
+        orchard_outputs,
+    })
+}
+
+fn build_transparent_source_proposal_from_inputs(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+    target_height: TargetHeight,
+    mut transparent_inputs: Vec<WalletTransparentOutput>,
+    to_address: &str,
+    value: Zatoshis,
+    memo_bytes: Option<MemoBytes>,
+) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
+    if transparent_inputs.is_empty() {
+        return Err("No transparent funds available to send".to_string());
+    }
+
+    let plan = recipient_output_plan(network, to_address, value, memo_bytes)?;
+    let (change_strategy, _) = zip317_helper::<WalletDatabase>(None);
+    let wallet_meta = change_strategy
+        .fetch_wallet_meta(db, account_id, target_height, &[])
+        .map_err(|e| format!("Failed to fetch wallet metadata: {e}"))?;
+    let no_sapling_inputs: [Infallible; 0] = [];
+    let no_orchard_inputs: [Infallible; 0] = [];
+
+    loop {
+        let balance = change_strategy
+            .compute_balance::<_, <WalletDatabase as InputSource>::NoteRef>(
+                &network,
+                target_height,
+                &transparent_inputs,
+                &plan.transparent_outputs,
+                &(
+                    sapling_crypto::builder::BundleType::DEFAULT,
+                    &no_sapling_inputs[..],
+                    &plan.sapling_outputs[..],
+                ),
+                &(
+                    orchard::builder::BundleType::DEFAULT,
+                    &no_orchard_inputs[..],
+                    &plan.orchard_outputs[..],
+                ),
+                None,
+                &wallet_meta,
+            );
+
+        match balance {
+            Ok(balance) => {
+                return Proposal::single_step(
+                    plan.request,
+                    plan.payment_pools,
+                    transparent_inputs,
+                    None,
+                    balance,
+                    ConservativeZip317FeeRule,
+                    target_height,
+                    false,
+                )
+                .map_err(|e| format!("Propose transparent source failed: {e}"));
+            }
+            Err(ChangeError::DustInputs { transparent, .. }) => {
+                let exclusions = transparent.into_iter().collect::<BTreeSet<_>>();
+                let before = transparent_inputs.len();
+                transparent_inputs.retain(|input| !exclusions.contains(input.outpoint()));
+                if transparent_inputs.is_empty() || transparent_inputs.len() == before {
+                    return Err("No economic transparent funds available to send".to_string());
+                }
+            }
+            Err(ChangeError::InsufficientFunds {
+                required,
+                available,
+            }) => {
+                return Err(format!(
+                    "Insufficient transparent balance (have {}, need {} including fee)",
+                    u64::from(available),
+                    u64::from(required)
+                ));
+            }
+            Err(other) => return Err(format!("Transparent source balance failed: {other}")),
+        }
+    }
+}
+
+fn transparent_source_send_max_fee(
+    network: WalletNetwork,
+    target_height: TargetHeight,
+    transparent_inputs: &[WalletTransparentOutput],
+    to_address: &str,
+    memo_bytes: Option<&MemoBytes>,
+) -> Result<Zatoshis, String> {
+    let plan = recipient_output_plan(
+        network,
+        to_address,
+        Zatoshis::const_from_u64(1),
+        memo_bytes.cloned(),
+    )?;
+    let sapling_output_count = sapling_crypto::builder::BundleType::DEFAULT
+        .num_outputs(0, plan.sapling_outputs.len())
+        .map_err(|e| format!("Sapling bundle size failed: {e:?}"))?;
+    let orchard_action_count = orchard::builder::BundleType::DEFAULT
+        .num_actions(0, plan.orchard_outputs.len())
+        .map_err(|e| format!("Orchard bundle size failed: {e:?}"))?;
+
+    ConservativeZip317FeeRule
+        .fee_required(
+            &network,
+            BlockHeight::from(target_height),
+            transparent_inputs
+                .iter()
+                .map(|input| input.serialized_size()),
+            plan.transparent_outputs
+                .iter()
+                .map(|_| P2PKH_STANDARD_OUTPUT_SIZE),
+            0,
+            sapling_output_count,
+            orchard_action_count,
+        )
+        .map_err(|e| format!("Transparent max fee calculation failed: {e}"))
+}
+
+fn select_transparent_source_inputs(
+    db_path: &str,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+    target_height: TargetHeight,
+) -> Result<(Vec<WalletTransparentOutput>, Option<String>, Zatoshis), String> {
+    let balances = super::transparent_send::get_transparent_send_balances_by_address(
+        db_path,
+        network,
+        account_id,
+        target_height,
+    )?;
+    let (source_addrs, _) = select_transparent_sources(balances)?;
+    let mut source_addrs_with_inputs = Vec::new();
+    let mut transparent_inputs = Vec::new();
+
+    for source_addr in source_addrs {
+        let utxos = super::transparent_send::get_spendable_transparent_outputs_for_address(
+            db_path,
+            network,
+            account_id,
+            target_height,
+            &source_addr,
+        )?;
+        if !utxos.is_empty() {
+            source_addrs_with_inputs.push(source_addr);
+        }
+        transparent_inputs.extend(utxos);
+    }
+
+    let total = transparent_inputs
+        .iter()
+        .try_fold(Zatoshis::ZERO, |acc, input| {
+            (acc + input.value()).ok_or("Selected transparent balance overflow")
+        })?;
+    if total == Zatoshis::ZERO {
+        return Err("No transparent funds available to send".to_string());
+    }
+
+    let source_address = match source_addrs_with_inputs.as_slice() {
+        [addr] => Some(addr.encode(&network)),
+        _ => None,
+    };
+
+    Ok((transparent_inputs, source_address, total))
 }
 
 /// Dry-run the transparent shielding proposal path without creating or
@@ -835,6 +1208,16 @@ fn select_shielding_sources(
     account_receivers: HashMap<TransparentAddress, (TransparentKeyOrigin, Balance)>,
     shielding_threshold: Zatoshis,
 ) -> Result<(Vec<TransparentAddress>, Zatoshis), String> {
+    let (addresses, total) = select_transparent_sources(account_receivers)?;
+    if total < shielding_threshold {
+        return Err("No transparent funds available to shield above the fee threshold".to_string());
+    }
+    Ok((addresses, total))
+}
+
+fn select_transparent_sources(
+    account_receivers: HashMap<TransparentAddress, (TransparentKeyOrigin, Balance)>,
+) -> Result<(Vec<TransparentAddress>, Zatoshis), String> {
     let mut ephemeral = Vec::new();
     let mut non_ephemeral = Vec::new();
 
@@ -874,8 +1257,8 @@ fn select_shielding_sources(
         addresses.push(address);
     }
 
-    if addresses.is_empty() || total < shielding_threshold {
-        return Err("No transparent funds available to shield above the fee threshold".to_string());
+    if addresses.is_empty() {
+        return Err("No transparent funds available to send".to_string());
     }
 
     Ok((addresses, total))
@@ -1378,6 +1761,75 @@ mod tests {
 
     fn receiver(value: u64, scope: TransparentKeyScope) -> (TransparentKeyOrigin, Balance) {
         (TransparentKeyOrigin::Derived { scope }, balance(value))
+    }
+
+    #[test]
+    fn send_source_parse_defaults_to_shielded() {
+        assert_eq!(SendSource::parse(None).unwrap(), SendSource::Shielded);
+        assert_eq!(SendSource::parse(Some("")).unwrap(), SendSource::Shielded);
+        assert_eq!(
+            SendSource::parse(Some(" SHIELDED ")).unwrap(),
+            SendSource::Shielded
+        );
+        assert_eq!(
+            SendSource::parse(Some(" Transparent ")).unwrap(),
+            SendSource::Transparent
+        );
+        assert!(SendSource::parse(Some("orchard")).is_err());
+    }
+
+    #[test]
+    fn transparent_source_selection_rejects_empty_or_unspendable_receivers() {
+        assert!(select_transparent_sources(HashMap::new())
+            .unwrap_err()
+            .contains("No transparent funds available"));
+
+        let selected = HashMap::from([(taddr(1), receiver(0, TransparentKeyScope::EXTERNAL))]);
+
+        assert!(select_transparent_sources(selected)
+            .unwrap_err()
+            .contains("No transparent funds available"));
+    }
+
+    #[test]
+    fn transparent_source_selection_prefers_non_ephemeral_receivers() {
+        let non_ephemeral_a = taddr(1);
+        let non_ephemeral_b = taddr(2);
+        let ephemeral = taddr(3);
+        let selected = HashMap::from([
+            (
+                non_ephemeral_a,
+                receiver(100_000, TransparentKeyScope::EXTERNAL),
+            ),
+            (
+                non_ephemeral_b,
+                receiver(200_000, TransparentKeyScope::EXTERNAL),
+            ),
+            (ephemeral, receiver(900_000, TransparentKeyScope::EPHEMERAL)),
+        ]);
+
+        let (addresses, total) = select_transparent_sources(selected).unwrap();
+
+        assert_eq!(total, Zatoshis::from_u64(300_000).unwrap());
+        assert_eq!(addresses.len(), 2);
+        assert!(addresses.contains(&non_ephemeral_a));
+        assert!(addresses.contains(&non_ephemeral_b));
+        assert!(!addresses.contains(&ephemeral));
+    }
+
+    #[test]
+    fn transparent_source_selection_uses_largest_single_ephemeral_receiver() {
+        let smaller = taddr(1);
+        let larger = taddr(2);
+        let selected = HashMap::from([
+            (smaller, receiver(100_000, TransparentKeyScope::EPHEMERAL)),
+            (larger, receiver(200_000, TransparentKeyScope::EPHEMERAL)),
+        ]);
+
+        let (addresses, total) = select_transparent_sources(selected).unwrap();
+
+        assert_eq!(total, Zatoshis::from_u64(200_000).unwrap());
+        assert_eq!(addresses, vec![larger]);
     }
 
     #[test]

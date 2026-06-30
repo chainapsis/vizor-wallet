@@ -585,6 +585,7 @@ pub struct ProposalResult {
     pub proposal_id: u64,
     pub needs_sapling_params: bool,
     pub fee_zatoshi: u64,
+    pub source_address: Option<String>,
 }
 
 pub struct ExecuteProposalResult {
@@ -640,9 +641,11 @@ pub fn propose_send(
     to_address: String,
     amount_zatoshi: u64,
     memo: Option<String>,
+    send_source: Option<String>,
 ) -> Result<ProposalResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
+        let send_source = wallet_sync::SendSource::parse(send_source.as_deref())?;
         let r = wallet_sync::propose_send(
             &db_path,
             network,
@@ -651,11 +654,13 @@ pub fn propose_send(
             &to_address,
             amount_zatoshi,
             memo.as_deref(),
+            send_source,
         )?;
         Ok(ProposalResult {
             proposal_id: r.proposal_id,
             needs_sapling_params: r.needs_sapling_params,
             fee_zatoshi: r.fee_zatoshi,
+            source_address: r.source_address,
         })
     })
 }
@@ -668,9 +673,11 @@ pub fn estimate_fee(
     to_address: String,
     amount_zatoshi: u64,
     memo: Option<String>,
+    send_source: Option<String>,
 ) -> Result<u64, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
+        let send_source = wallet_sync::SendSource::parse(send_source.as_deref())?;
         wallet_sync::estimate_fee(
             &db_path,
             network,
@@ -678,6 +685,7 @@ pub fn estimate_fee(
             &to_address,
             amount_zatoshi,
             memo.as_deref(),
+            send_source,
         )
     })
 }
@@ -689,15 +697,18 @@ pub fn estimate_send_max(
     account_uuid: String,
     to_address: String,
     memo: Option<String>,
+    send_source: Option<String>,
 ) -> Result<SendMaxEstimateResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
+        let send_source = wallet_sync::SendSource::parse(send_source.as_deref())?;
         let r = wallet_sync::estimate_send_max(
             &db_path,
             network,
             &account_uuid,
             &to_address,
             memo.as_deref(),
+            send_source,
         )?;
         Ok(SendMaxEstimateResult {
             amount_zatoshi: r.amount_zatoshi,

@@ -300,6 +300,7 @@ abstract class RustLibApi extends BaseApi {
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
+    String? sendSource,
   });
 
   Future<SendMaxEstimateResult> crateApiSyncEstimateSendMax({
@@ -308,6 +309,7 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required String toAddress,
     String? memo,
+    String? sendSource,
   });
 
   Future<ExecuteProposalResult> crateApiSyncExecuteProposal({
@@ -598,6 +600,7 @@ abstract class RustLibApi extends BaseApi {
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
+    String? sendSource,
   });
 
   Future<void> crateApiSyncPutSubtreeRoots({
@@ -2195,6 +2198,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
+    String? sendSource,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -2206,6 +2210,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(toAddress, serializer);
           sse_encode_u_64(amountZatoshi, serializer);
           sse_encode_opt_String(memo, serializer);
+          sse_encode_opt_String(sendSource, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -2225,6 +2230,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           toAddress,
           amountZatoshi,
           memo,
+          sendSource,
         ],
         apiImpl: this,
       ),
@@ -2240,6 +2246,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       "toAddress",
       "amountZatoshi",
       "memo",
+      "sendSource",
     ],
   );
 
@@ -2250,6 +2257,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required String toAddress,
     String? memo,
+    String? sendSource,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -2260,6 +2268,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(toAddress, serializer);
           sse_encode_opt_String(memo, serializer);
+          sse_encode_opt_String(sendSource, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -2272,7 +2281,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncEstimateSendMaxConstMeta,
-        argValues: [dbPath, network, accountUuid, toAddress, memo],
+        argValues: [dbPath, network, accountUuid, toAddress, memo, sendSource],
         apiImpl: this,
       ),
     );
@@ -2281,7 +2290,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSyncEstimateSendMaxConstMeta =>
       const TaskConstMeta(
         debugName: "estimate_send_max",
-        argNames: ["dbPath", "network", "accountUuid", "toAddress", "memo"],
+        argNames: [
+          "dbPath",
+          "network",
+          "accountUuid",
+          "toAddress",
+          "memo",
+          "sendSource",
+        ],
       );
 
   @override
@@ -4099,6 +4115,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
+    String? sendSource,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -4111,6 +4128,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(toAddress, serializer);
           sse_encode_u_64(amountZatoshi, serializer);
           sse_encode_opt_String(memo, serializer);
+          sse_encode_opt_String(sendSource, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -4131,6 +4149,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           toAddress,
           amountZatoshi,
           memo,
+          sendSource,
         ],
         apiImpl: this,
       ),
@@ -4147,6 +4166,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       "toAddress",
       "amountZatoshi",
       "memo",
+      "sendSource",
     ],
   );
 
@@ -6469,12 +6489,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ProposalResult dco_decode_proposal_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return ProposalResult(
       proposalId: dco_decode_u_64(arr[0]),
       needsSaplingParams: dco_decode_bool(arr[1]),
       feeZatoshi: dco_decode_u_64(arr[2]),
+      sourceAddress: dco_decode_opt_String(arr[3]),
     );
   }
 
@@ -8392,10 +8413,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_proposalId = sse_decode_u_64(deserializer);
     var var_needsSaplingParams = sse_decode_bool(deserializer);
     var var_feeZatoshi = sse_decode_u_64(deserializer);
+    var var_sourceAddress = sse_decode_opt_String(deserializer);
     return ProposalResult(
       proposalId: var_proposalId,
       needsSaplingParams: var_needsSaplingParams,
       feeZatoshi: var_feeZatoshi,
+      sourceAddress: var_sourceAddress,
     );
   }
 
@@ -10300,6 +10323,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.proposalId, serializer);
     sse_encode_bool(self.needsSaplingParams, serializer);
     sse_encode_u_64(self.feeZatoshi, serializer);
+    sse_encode_opt_String(self.sourceAddress, serializer);
   }
 
   @protected

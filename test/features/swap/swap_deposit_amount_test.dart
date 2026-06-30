@@ -1,5 +1,13 @@
+// ignore_for_file: depend_on_referenced_packages
+
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_deposit_sender.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_hardware_signing_service.dart';
@@ -14,8 +22,22 @@ void main() {
     RustLib.initMock(api: rustApi);
   });
 
-  setUp(() {
+  setUp(() async {
     rustApi.reset();
+    FlutterSecureStorage.setMockInitialValues({
+      'zcash_wallet_db_name': 'zcash_wallet_test.db',
+    });
+    final previousPathProvider = PathProviderPlatform.instance;
+    final tempDir = await Directory.systemTemp.createTemp(
+      'swap_deposit_amount_test',
+    );
+    PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
+    addTearDown(() async {
+      PathProviderPlatform.instance = previousPathProvider;
+      try {
+        await tempDir.delete(recursive: true);
+      } catch (_) {}
+    });
   });
 
   tearDownAll(RustLib.dispose);
@@ -37,6 +59,30 @@ void main() {
       throwsA(isA<StateError>()),
     );
   });
+
+  test(
+    'software ZEC deposit fee preflight does not select send source',
+    () async {
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final sender = container.read(swapDepositSenderProvider);
+      final fee = await sender.estimateZecDepositFee(
+        accountUuid: 'account-1',
+        quote: _quote(sellAmountBaseUnits: BigInt.from(150000000)),
+      );
+
+      expect(fee, BigInt.from(10000));
+      expect(rustApi.estimateFeeCalls, 1);
+      expect(rustApi.lastEstimateFeeToAddress, 't1deposit');
+      expect(rustApi.lastEstimateFeeAmountZatoshi, BigInt.from(150000000));
+      expect(rustApi.lastEstimateFeeSendSource, isNull);
+    },
+  );
 
   test('hardware ZEC deposit uses intent base units, not display text', () {
     final intent = _intent(
@@ -131,9 +177,17 @@ SwapIntent _intent({
 
 class _RustApiFake implements RustLibApi {
   int proposeSendCalls = 0;
+  int estimateFeeCalls = 0;
+  String? lastEstimateFeeToAddress;
+  BigInt? lastEstimateFeeAmountZatoshi;
+  String? lastEstimateFeeSendSource;
 
   void reset() {
     proposeSendCalls = 0;
+    estimateFeeCalls = 0;
+    lastEstimateFeeToAddress = null;
+    lastEstimateFeeAmountZatoshi = null;
+    lastEstimateFeeSendSource = null;
   }
 
   @override
@@ -150,6 +204,23 @@ class _RustApiFake implements RustLibApi {
   }
 
   @override
+  Future<BigInt> crateApiSyncEstimateFee({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String toAddress,
+    required BigInt amountZatoshi,
+    String? memo,
+    String? sendSource,
+  }) async {
+    estimateFeeCalls++;
+    lastEstimateFeeToAddress = toAddress;
+    lastEstimateFeeAmountZatoshi = amountZatoshi;
+    lastEstimateFeeSendSource = sendSource;
+    return BigInt.from(10000);
+  }
+
+  @override
   Future<ProposalResult> crateApiSyncProposeSend({
     required String dbPath,
     required String network,
@@ -158,6 +229,7 @@ class _RustApiFake implements RustLibApi {
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
+    String? sendSource,
   }) async {
     proposeSendCalls++;
     return ProposalResult(
@@ -169,6 +241,16 @@ class _RustApiFake implements RustLibApi {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakePathProviderPlatform extends PathProviderPlatform
+    with MockPlatformInterfaceMixin {
+  _FakePathProviderPlatform(this.root);
+
+  final String root;
+
+  @override
+  Future<String?> getApplicationSupportPath() async => root;
 }
 
 const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';

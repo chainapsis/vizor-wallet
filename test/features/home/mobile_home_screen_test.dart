@@ -112,6 +112,7 @@ Widget _app(
 SyncState _syncedState({
   BigInt? orchardBalance,
   BigInt? transparentBalance,
+  BigInt? transparentPendingBalance,
   bool canShieldTransparentBalance = false,
 }) => SyncState(
   accountUuid: 'account-1',
@@ -120,6 +121,7 @@ SyncState _syncedState({
   displayPercentage: 1.0,
   orchardBalance: orchardBalance ?? BigInt.zero,
   transparentBalance: transparentBalance ?? BigInt.zero,
+  transparentPendingBalance: transparentPendingBalance ?? BigInt.zero,
   canShieldTransparentBalance: canShieldTransparentBalance,
 );
 
@@ -201,6 +203,7 @@ void main() {
         _syncedState(
           orchardBalance: BigInt.from(14312000000),
           transparentBalance: BigInt.from(242000000),
+          transparentPendingBalance: BigInt.from(100000000),
           canShieldTransparentBalance: true,
         ),
       ),
@@ -213,6 +216,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Transparent: 2.42 ZEC'), findsOneWidget);
+    expect(find.text('Transparent: 3.42 ZEC'), findsNothing);
     expect(
       find.byKey(const ValueKey('mobile_home_shield_balance_button')),
       findsOneWidget,

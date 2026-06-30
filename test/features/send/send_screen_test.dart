@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
@@ -328,6 +329,114 @@ void main() {
     expect(find.text('Max amount unavailable'), findsNothing);
   });
 
+  testWidgets('source picker sends transparent source through desktop send', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(500000000),
+        transparentBalance: BigInt.from(242000000),
+        totalBalance: BigInt.from(842000000),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Max: 5 ZEC'), findsOneWidget);
+    expect(find.text('Transparent'), findsNothing);
+
+    final sourceIcon = tester.widget<AppIcon>(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_source_toggle_button')),
+        matching: find.byType(AppIcon),
+      ),
+    );
+    final closedChevron = tester.widget<RotatedBox>(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_source_toggle_button')),
+        matching: find.byType(RotatedBox),
+      ),
+    );
+    expect(sourceIcon.name, AppIcons.chevronForward);
+    expect(sourceIcon.size, 20);
+    expect(closedChevron.quarterTurns, 1);
+
+    await tester.tap(find.byKey(const ValueKey('send_source_toggle_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('send_source_picker')), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('send_source_picker'))).width,
+      236,
+    );
+    final openChevron = tester.widget<RotatedBox>(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_source_toggle_button')),
+        matching: find.byType(RotatedBox),
+      ),
+    );
+    expect(openChevron.quarterTurns, 3);
+    expect(find.text('Total'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_source_picker')),
+        matching: find.text('8.42 ZEC'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('send_source_total_divider')),
+      findsOneWidget,
+    );
+    expect(find.text('Shielded'), findsOneWidget);
+    expect(find.text('Transparent'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_source_picker')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.check,
+        ),
+      ),
+      findsNothing,
+    );
+    final helpIcon = tester.widget<AppIcon>(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_source_picker')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.help,
+        ),
+      ),
+    );
+    expect(helpIcon.size, AppIconSize.medium);
+    expect(
+      find.textContaining('Spendable balance can be lower'),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('send_source_option_transparent')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('send_source_picker')), findsNothing);
+    expect(find.textContaining('Max: 2.42 ZEC'), findsOneWidget);
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Max:'));
+    await tester.pumpAndSettle();
+
+    expect(rustApi.estimateSendMaxCalls, 1);
+    expect(rustApi.lastEstimateSendMaxSource, 'transparent');
+
+    await tester.tap(find.text('Review'));
+    await tester.pumpAndSettle();
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeSendSource, 'transparent');
+  });
+
   testWidgets('hides imported memo controls for TEX recipients', (
     tester,
   ) async {
@@ -498,6 +607,7 @@ Widget _sendHarness({
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
   BigInt? transparentBalance,
+  BigInt? totalBalance,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -518,6 +628,7 @@ Widget _sendHarness({
         () => _FakeSyncNotifier(
           spendableBalance: spendableBalance ?? BigInt.from(500000000),
           transparentBalance: transparentBalance ?? BigInt.zero,
+          totalBalance: totalBalance,
         ),
       ),
       if (addressBookRepository != null)
@@ -628,10 +739,12 @@ class _FakeSyncNotifier extends SyncNotifier {
   _FakeSyncNotifier({
     required this.spendableBalance,
     required this.transparentBalance,
+    this.totalBalance,
   });
 
   final BigInt spendableBalance;
   final BigInt transparentBalance;
+  final BigInt? totalBalance;
 
   @override
   Future<SyncState> build() async => SyncState(
@@ -639,7 +752,7 @@ class _FakeSyncNotifier extends SyncNotifier {
     hasAccountScopedData: true,
     spendableBalance: spendableBalance,
     transparentBalance: transparentBalance,
-    totalBalance: spendableBalance + transparentBalance,
+    totalBalance: totalBalance ?? spendableBalance + transparentBalance,
   );
 }
 
@@ -648,16 +761,20 @@ class _RustApiFake implements RustLibApi {
   int estimateSendMaxCalls = 0;
   String? lastProposeToAddress;
   String? lastProposeMemo;
+  String? lastProposeSendSource;
   String? lastEstimateSendMaxToAddress;
   String? lastEstimateSendMaxMemo;
+  String? lastEstimateSendMaxSource;
 
   void reset() {
     proposeSendCalls = 0;
     estimateSendMaxCalls = 0;
     lastProposeToAddress = null;
     lastProposeMemo = null;
+    lastProposeSendSource = null;
     lastEstimateSendMaxToAddress = null;
     lastEstimateSendMaxMemo = null;
+    lastEstimateSendMaxSource = null;
   }
 
   @override
@@ -684,6 +801,7 @@ class _RustApiFake implements RustLibApi {
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
+    String? sendSource,
   }) async {
     return BigInt.from(10000);
   }
@@ -695,12 +813,16 @@ class _RustApiFake implements RustLibApi {
     required String accountUuid,
     required String toAddress,
     String? memo,
+    String? sendSource,
   }) async {
     estimateSendMaxCalls++;
     lastEstimateSendMaxToAddress = toAddress;
     lastEstimateSendMaxMemo = memo;
+    lastEstimateSendMaxSource = sendSource;
     return SendMaxEstimateResult(
-      amountZatoshi: BigInt.from(499990000),
+      amountZatoshi: sendSource == 'transparent'
+          ? BigInt.from(241990000)
+          : BigInt.from(499990000),
       feeZatoshi: BigInt.from(10000),
       needsSaplingParams: false,
     );
@@ -715,10 +837,12 @@ class _RustApiFake implements RustLibApi {
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
+    String? sendSource,
   }) async {
     proposeSendCalls++;
     lastProposeToAddress = toAddress;
     lastProposeMemo = memo;
+    lastProposeSendSource = sendSource;
     return ProposalResult(
       proposalId: BigInt.one,
       needsSaplingParams: false,

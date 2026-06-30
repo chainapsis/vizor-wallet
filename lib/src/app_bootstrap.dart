@@ -544,7 +544,8 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
     var canShieldTransparentBalance = false;
     var shieldTransparentFee = BigInt.zero;
     var shieldTransparentAmount = BigInt.zero;
-    if (balance.transparent > BigInt.zero) {
+    final transparentTotal = balance.transparent + balance.transparentPending;
+    if (transparentTotal > BigInt.zero) {
       try {
         final shieldStatus = await rust_sync.getShieldTransparentStatus(
           dbPath: dbPath,

@@ -209,6 +209,7 @@ Future<ProposalResult> proposeSend({
   required String toAddress,
   required BigInt amountZatoshi,
   String? memo,
+  String? sendSource,
 }) => RustLib.instance.api.crateApiSyncProposeSend(
   dbPath: dbPath,
   network: network,
@@ -217,6 +218,7 @@ Future<ProposalResult> proposeSend({
   toAddress: toAddress,
   amountZatoshi: amountZatoshi,
   memo: memo,
+  sendSource: sendSource,
 );
 
 /// Estimate the fee for a transfer without storing a proposal.
@@ -227,6 +229,7 @@ Future<BigInt> estimateFee({
   required String toAddress,
   required BigInt amountZatoshi,
   String? memo,
+  String? sendSource,
 }) => RustLib.instance.api.crateApiSyncEstimateFee(
   dbPath: dbPath,
   network: network,
@@ -234,6 +237,7 @@ Future<BigInt> estimateFee({
   toAddress: toAddress,
   amountZatoshi: amountZatoshi,
   memo: memo,
+  sendSource: sendSource,
 );
 
 /// Estimate the maximum recipient amount for the current recipient and memo.
@@ -243,12 +247,14 @@ Future<SendMaxEstimateResult> estimateSendMax({
   required String accountUuid,
   required String toAddress,
   String? memo,
+  String? sendSource,
 }) => RustLib.instance.api.crateApiSyncEstimateSendMax(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
   toAddress: toAddress,
   memo: memo,
+  sendSource: sendSource,
 );
 
 /// Step 2: Execute a previously proposed transfer and broadcast to the network.
@@ -750,16 +756,21 @@ class ProposalResult {
   final BigInt proposalId;
   final bool needsSaplingParams;
   final BigInt feeZatoshi;
+  final String? sourceAddress;
 
   const ProposalResult({
     required this.proposalId,
     required this.needsSaplingParams,
     required this.feeZatoshi,
+    this.sourceAddress,
   });
 
   @override
   int get hashCode =>
-      proposalId.hashCode ^ needsSaplingParams.hashCode ^ feeZatoshi.hashCode;
+      proposalId.hashCode ^
+      needsSaplingParams.hashCode ^
+      feeZatoshi.hashCode ^
+      sourceAddress.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -768,7 +779,8 @@ class ProposalResult {
           runtimeType == other.runtimeType &&
           proposalId == other.proposalId &&
           needsSaplingParams == other.needsSaplingParams &&
-          feeZatoshi == other.feeZatoshi;
+          feeZatoshi == other.feeZatoshi &&
+          sourceAddress == other.sourceAddress;
 }
 
 class ScanRangeInfo {

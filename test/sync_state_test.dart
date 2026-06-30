@@ -18,6 +18,19 @@ void main() {
     expect(state.pendingBalance, BigInt.from(12));
   });
 
+  test(
+    'transparentSpendableBalance aliases ordinary-send transparent balance',
+    () {
+      final state = SyncState(
+        transparentBalance: BigInt.from(100),
+        transparentPendingBalance: BigInt.from(300),
+      );
+
+      expect(state.transparentSpendableBalance, BigInt.from(100));
+      expect(state.pendingBalance, BigInt.from(300));
+    },
+  );
+
   test('displayPercentage defaults to actual percentage', () {
     final state = SyncState(percentage: 0.25);
 

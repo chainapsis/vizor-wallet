@@ -36,6 +36,9 @@ class SyncState {
   final double displayPercentage;
   final int scannedHeight;
   final int chainTipHeight;
+
+  /// Transparent balance that is spendable for ordinary transparent-source sends.
+  /// Zero-conf transparent outputs may still be shieldable, but stay pending here.
   final BigInt transparentBalance;
   final BigInt saplingBalance;
   final BigInt orchardBalance;
@@ -70,6 +73,8 @@ class SyncState {
   /// Amount waiting for confirmations (e.g. change from a recently sent tx).
   BigInt get pendingBalance =>
       transparentPendingBalance + saplingPendingBalance + orchardPendingBalance;
+
+  BigInt get transparentSpendableBalance => transparentBalance;
 
   SyncState({
     this.accountUuid,
@@ -1371,8 +1376,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         dbPath: dbPath,
         network: network,
         accountUuid: accountUuid,
-        transparentBalance:
-            transparent ?? scopedPrev?.transparentBalance ?? BigInt.zero,
+        transparentTotalBalance:
+            (transparent ?? scopedPrev?.transparentBalance ?? BigInt.zero) +
+            (transparentPending ??
+                scopedPrev?.transparentPendingBalance ??
+                BigInt.zero),
       );
       if (shieldStatus != null) {
         canShieldTransparentBalance = shieldStatus.canShield;
@@ -1578,8 +1586,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       dbPath: dbPath,
       network: network,
       accountUuid: accountUuid,
-      transparentBalance:
-          transparent ?? scopedPrev?.transparentBalance ?? BigInt.zero,
+      transparentTotalBalance:
+          (transparent ?? scopedPrev?.transparentBalance ?? BigInt.zero) +
+          (transparentPending ??
+              scopedPrev?.transparentPendingBalance ??
+              BigInt.zero),
     );
     if (shieldStatus != null) {
       canShieldTransparentBalance = shieldStatus.canShield;
@@ -1659,9 +1670,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     required String dbPath,
     required String network,
     required String accountUuid,
-    required BigInt transparentBalance,
+    required BigInt transparentTotalBalance,
   }) async {
-    if (transparentBalance <= BigInt.zero) {
+    if (transparentTotalBalance <= BigInt.zero) {
       return (canShield: false, fee: BigInt.zero, amount: BigInt.zero);
     }
 

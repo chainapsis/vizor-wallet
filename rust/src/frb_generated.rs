@@ -1328,6 +1328,7 @@ fn wire__crate__api__sync__estimate_fee_impl(
             let api_to_address = <String>::sse_decode(&mut deserializer);
             let api_amount_zatoshi = <u64>::sse_decode(&mut deserializer);
             let api_memo = <Option<String>>::sse_decode(&mut deserializer);
+            let api_send_source = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -1338,6 +1339,7 @@ fn wire__crate__api__sync__estimate_fee_impl(
                         api_to_address,
                         api_amount_zatoshi,
                         api_memo,
+                        api_send_source,
                     )?;
                     Ok(output_ok)
                 })())
@@ -1372,6 +1374,7 @@ fn wire__crate__api__sync__estimate_send_max_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_to_address = <String>::sse_decode(&mut deserializer);
             let api_memo = <Option<String>>::sse_decode(&mut deserializer);
+            let api_send_source = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -1381,6 +1384,7 @@ fn wire__crate__api__sync__estimate_send_max_impl(
                         api_account_uuid,
                         api_to_address,
                         api_memo,
+                        api_send_source,
                     )?;
                     Ok(output_ok)
                 })())
@@ -3216,6 +3220,7 @@ fn wire__crate__api__sync__propose_send_impl(
             let api_to_address = <String>::sse_decode(&mut deserializer);
             let api_amount_zatoshi = <u64>::sse_decode(&mut deserializer);
             let api_memo = <Option<String>>::sse_decode(&mut deserializer);
+            let api_send_source = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -3227,6 +3232,7 @@ fn wire__crate__api__sync__propose_send_impl(
                         api_to_address,
                         api_amount_zatoshi,
                         api_memo,
+                        api_send_source,
                     )?;
                     Ok(output_ok)
                 })())
@@ -6043,10 +6049,12 @@ impl SseDecode for crate::api::sync::ProposalResult {
         let mut var_proposalId = <u64>::sse_decode(deserializer);
         let mut var_needsSaplingParams = <bool>::sse_decode(deserializer);
         let mut var_feeZatoshi = <u64>::sse_decode(deserializer);
+        let mut var_sourceAddress = <Option<String>>::sse_decode(deserializer);
         return crate::api::sync::ProposalResult {
             proposal_id: var_proposalId,
             needs_sapling_params: var_needsSaplingParams,
             fee_zatoshi: var_feeZatoshi,
+            source_address: var_sourceAddress,
         };
     }
 }
@@ -7726,6 +7734,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ProposalResult {
             self.proposal_id.into_into_dart().into_dart(),
             self.needs_sapling_params.into_into_dart().into_dart(),
             self.fee_zatoshi.into_into_dart().into_dart(),
+            self.source_address.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -9601,6 +9610,7 @@ impl SseEncode for crate::api::sync::ProposalResult {
         <u64>::sse_encode(self.proposal_id, serializer);
         <bool>::sse_encode(self.needs_sapling_params, serializer);
         <u64>::sse_encode(self.fee_zatoshi, serializer);
+        <Option<String>>::sse_encode(self.source_address, serializer);
     }
 }
 
