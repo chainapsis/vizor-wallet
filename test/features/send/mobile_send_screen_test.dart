@@ -1037,6 +1037,7 @@ void main() {
       emptyAmountInput.keyboardType,
       const TextInputType.numberWithOptions(decimal: true),
     );
+    expect(emptyAmountInput.cursorColor, AppThemeData.light.colors.text.accent);
     expect(
       tester
           .getSize(find.byKey(const ValueKey('mobile_send_amount_field')))

@@ -1921,6 +1921,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               inputFormatters: inputFormatters,
               maxLines: 1,
               style: amountStyle,
+              cursorColor: colors.text.accent,
               decoration: _amountInputDecoration(hintStyle),
             ),
           ),
