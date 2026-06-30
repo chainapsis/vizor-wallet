@@ -123,7 +123,7 @@ class _RustApiFake implements RustLibApi {
     final completer = _proposeSendCompleter;
     if (completer != null) return completer.future;
     if (!_proposeSendSucceeds) {
-      throw StateError('proposal failed');
+      throw StateError('insufficient funds');
     }
     return ProposalResult(
       proposalId: BigInt.from(1),
@@ -1267,6 +1267,40 @@ void main() {
 
     expect(_lastProposeSendSource, 'transparent');
     expect(find.text('status can pop'), findsOneWidget);
+  });
+
+  testWidgets('transparent source propose failure uses transparent copy', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sendFlowRouterApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_source_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_send_source_option_transparent')),
+    );
+    await tester.pumpAndSettle();
+
+    await _enterAmount(tester, '1.2');
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(_lastProposeSendSource, 'transparent');
+    expect(
+      find.text('Insufficient transparent balance to cover amount and fee.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Insufficient shielded balance to cover amount and fee.'),
+      findsNothing,
+    );
   });
 
   testWidgets('route-step max mode recalculates amount when memo changes', (

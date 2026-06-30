@@ -60,6 +60,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     );
     final spendableBalance = sync.spendableBalance;
     final transparentBalance = sync.transparentBalance;
+    final totalBalance = sync.totalBalance;
 
     return _SendComposeBody(
       key: ValueKey('$activeAccountUuid:${widget.prefill?.fingerprint ?? ''}'),
@@ -68,6 +69,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       activeAccountIsHardware: activeAccountIsHardware,
       spendableBalance: spendableBalance,
       transparentBalance: transparentBalance,
+      totalBalance: totalBalance,
       prefill: widget.prefill,
     );
   }
@@ -81,6 +83,7 @@ class _SendComposeBody extends ConsumerStatefulWidget {
     required this.activeAccountIsHardware,
     required this.spendableBalance,
     required this.transparentBalance,
+    required this.totalBalance,
     this.prefill,
   });
 
@@ -89,6 +92,7 @@ class _SendComposeBody extends ConsumerStatefulWidget {
   final bool activeAccountIsHardware;
   final BigInt spendableBalance;
   final BigInt transparentBalance;
+  final BigInt totalBalance;
   final SendPrefillArgs? prefill;
 
   @override
@@ -847,7 +851,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     );
     final totalText = hideAmountIfPrivacyMode(
       ZecAmount.fromZatoshi(
-        widget.spendableBalance + widget.transparentBalance,
+        widget.totalBalance,
       ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
       privacyModeEnabled: privacyModeEnabled,
     );

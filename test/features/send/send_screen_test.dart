@@ -338,6 +338,7 @@ void main() {
       _sendHarness(
         spendableBalance: BigInt.from(500000000),
         transparentBalance: BigInt.from(242000000),
+        totalBalance: BigInt.from(842000000),
       ),
     );
     await tester.pumpAndSettle();
@@ -377,6 +378,13 @@ void main() {
     );
     expect(openChevron.quarterTurns, 3);
     expect(find.text('Total'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_source_picker')),
+        matching: find.text('8.42 ZEC'),
+      ),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('send_source_total_divider')),
       findsOneWidget,
@@ -599,6 +607,7 @@ Widget _sendHarness({
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
   BigInt? transparentBalance,
+  BigInt? totalBalance,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -619,6 +628,7 @@ Widget _sendHarness({
         () => _FakeSyncNotifier(
           spendableBalance: spendableBalance ?? BigInt.from(500000000),
           transparentBalance: transparentBalance ?? BigInt.zero,
+          totalBalance: totalBalance,
         ),
       ),
       if (addressBookRepository != null)
@@ -729,10 +739,12 @@ class _FakeSyncNotifier extends SyncNotifier {
   _FakeSyncNotifier({
     required this.spendableBalance,
     required this.transparentBalance,
+    this.totalBalance,
   });
 
   final BigInt spendableBalance;
   final BigInt transparentBalance;
+  final BigInt? totalBalance;
 
   @override
   Future<SyncState> build() async => SyncState(
@@ -740,7 +752,7 @@ class _FakeSyncNotifier extends SyncNotifier {
     hasAccountScopedData: true,
     spendableBalance: spendableBalance,
     transparentBalance: transparentBalance,
-    totalBalance: spendableBalance + transparentBalance,
+    totalBalance: totalBalance ?? spendableBalance + transparentBalance,
   );
 }
 

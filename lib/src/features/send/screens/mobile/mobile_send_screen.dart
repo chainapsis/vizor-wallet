@@ -975,6 +975,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     });
 
     SendReviewArgs args;
+    final sendSource = _sendSource;
     try {
       args = await proposeSendTransfer(
         ref: ref,
@@ -985,7 +986,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         addressType: _addressType,
         amountZatoshi: amountZatoshi,
         memo: _effectiveMemo.isNotEmpty ? _effectiveMemo : null,
-        sendSource: _sendSource,
+        sendSource: sendSource,
       );
     } catch (e) {
       log('MobileSend: propose error: $e');
@@ -993,7 +994,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       setState(() {
         _isConfirmingSend = false;
         _phase = _SendPhase.failed;
-        _error = friendlyProposeSendError(e.toString());
+        _error = friendlyProposeSendError(e.toString(), sendSource: sendSource);
       });
       return;
     }
