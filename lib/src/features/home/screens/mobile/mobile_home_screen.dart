@@ -231,10 +231,11 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         sync.orchardBalance +
         sync.saplingPendingBalance +
         sync.orchardPendingBalance;
-    final transparentBalance =
+    final transparentBalance = sync.transparentBalance;
+    final transparentTotalBalance =
         sync.transparentBalance + sync.transparentPendingBalance;
     final hasBalance =
-        shieldedBalance > BigInt.zero || transparentBalance > BigInt.zero;
+        shieldedBalance > BigInt.zero || transparentTotalBalance > BigInt.zero;
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final fiatBalanceText = fiatTextForZatoshi(
       shieldedBalance,

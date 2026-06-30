@@ -195,8 +195,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       privacyModeEnabled: privacyModeEnabled,
     );
     final priceChange24hPct = ref.watch(zecPriceChange24hPctProvider);
-    final transparentBalance =
-        sync.transparentBalance + sync.transparentPendingBalance;
+    final transparentBalance = sync.transparentBalance;
     final canShieldTransparentBalance = sync.canShieldTransparentBalance;
     final isImportingForBackground =
         activeAccountUuid != null &&

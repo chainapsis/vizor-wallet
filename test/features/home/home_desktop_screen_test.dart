@@ -394,9 +394,10 @@ void main() {
           hasAccountScopedData: true,
           orchardBalance: BigInt.from(14_312_000_000),
           transparentBalance: BigInt.from(242_000_000),
+          transparentPendingBalance: BigInt.from(100_000_000),
           canShieldTransparentBalance: true,
           spendableBalance: BigInt.from(14_312_000_000),
-          totalBalance: BigInt.from(14_554_000_000),
+          totalBalance: BigInt.from(14_654_000_000),
         ),
       ),
     );
@@ -407,6 +408,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Transparent: 2.42 ZEC'), findsOneWidget);
+    expect(find.text('Transparent: 3.42 ZEC'), findsNothing);
     expect(
       find.byKey(const ValueKey('home_shield_balance_button')),
       findsOneWidget,
