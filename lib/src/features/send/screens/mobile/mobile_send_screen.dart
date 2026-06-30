@@ -211,6 +211,7 @@ const _kMobileSendAmountZecHintEndInset = 3.0;
 const _kMobileSendAmountFontSize = 48.0;
 const _kMobileSendAmountLineHeightPx = 40.0;
 const _kMobileSendAmountUnitFontSize = 38.0;
+const _kMobileSendAmountUsdPrefixFontSize = 40.0;
 const _kMobileSendAmountTopContentHeight = 285.0;
 const _kMobileSendAmountRecipientBlockHeight = 97.0;
 const _kMobileSendAmountRecipientLabelHeight = 25.0;
@@ -1884,6 +1885,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final activeText = _amountInputIsUsd ? _fiatAmountText : _amountText;
     final inputWidth = _amountInputWidth(activeText, amountStyle);
     final hintStyle = amountStyle.copyWith(color: colors.text.disabled);
+    final usdPrefixStyle = amountUnitStyle.copyWith(
+      fontSize: _kMobileSendAmountUsdPrefixFontSize,
+    );
     final inputFormatters = [
       const CommaToDotInputFormatter(),
       _DecimalAmountInputFormatter(
@@ -1899,7 +1903,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_amountInputIsUsd) ...[
-            Text(r'$', style: amountUnitStyle),
+            Text(r'$', style: usdPrefixStyle),
             const SizedBox(width: AppSpacing.xs),
           ],
           SizedBox(
