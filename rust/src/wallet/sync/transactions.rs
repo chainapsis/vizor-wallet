@@ -58,30 +58,34 @@ pub fn get_wallet_balance(
         .get_wallet_summary(ConfirmationsPolicy::default())
         .map_err(|e| format!("{e}"))?
     {
-        Some(s) => match s.account_balances().get(&target_id) {
-            Some(b) => Ok(WalletBalance {
-                transparent: u64::from(b.unshielded_balance().spendable_value()),
-                sapling: u64::from(b.sapling_balance().spendable_value()),
-                orchard: u64::from(b.orchard_balance().spendable_value()),
-                transparent_pending: u64::from(
-                    b.unshielded_balance().change_pending_confirmation(),
-                ) + u64::from(
-                    b.unshielded_balance().value_pending_spendability(),
-                ),
-                sapling_pending: u64::from(b.sapling_balance().change_pending_confirmation())
-                    + u64::from(b.sapling_balance().value_pending_spendability()),
-                orchard_pending: u64::from(b.orchard_balance().change_pending_confirmation())
-                    + u64::from(b.orchard_balance().value_pending_spendability()),
-            }),
-            None => Ok(WalletBalance {
-                transparent: 0,
-                sapling: 0,
-                orchard: 0,
-                transparent_pending: 0,
-                sapling_pending: 0,
-                orchard_pending: 0,
-            }),
-        },
+        Some(s) => {
+            let transparent_send_balance = super::transparent_send::get_transparent_send_balance(
+                db_path,
+                network,
+                target_id,
+                (s.chain_tip_height() + 1).into(),
+            )?;
+            match s.account_balances().get(&target_id) {
+                Some(b) => Ok(WalletBalance {
+                    transparent: transparent_send_balance.spendable,
+                    sapling: u64::from(b.sapling_balance().spendable_value()),
+                    orchard: u64::from(b.orchard_balance().spendable_value()),
+                    transparent_pending: transparent_send_balance.pending,
+                    sapling_pending: u64::from(b.sapling_balance().change_pending_confirmation())
+                        + u64::from(b.sapling_balance().value_pending_spendability()),
+                    orchard_pending: u64::from(b.orchard_balance().change_pending_confirmation())
+                        + u64::from(b.orchard_balance().value_pending_spendability()),
+                }),
+                None => Ok(WalletBalance {
+                    transparent: transparent_send_balance.spendable,
+                    sapling: 0,
+                    orchard: 0,
+                    transparent_pending: transparent_send_balance.pending,
+                    sapling_pending: 0,
+                    orchard_pending: 0,
+                }),
+            }
+        }
         None => Ok(WalletBalance {
             transparent: 0,
             sapling: 0,
@@ -3520,12 +3524,7 @@ mod tests {
             Some("u-my-receiver"),
             Some(0),
         );
-        set_cached_transparent_receiver_address(
-            &db,
-            account,
-            "u-my-receiver",
-            "t-my-receiver",
-        );
+        set_cached_transparent_receiver_address(&db, account, "u-my-receiver", "t-my-receiver");
 
         let got = get_transaction_detail(
             db.path().to_str().unwrap(),

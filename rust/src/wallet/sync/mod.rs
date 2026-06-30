@@ -26,6 +26,7 @@ use crate::wallet::{
 mod pczt;
 mod send;
 mod transactions;
+mod transparent_send;
 
 // Re-export the split submodules at the `wallet::sync` path so every
 // `crate::wallet::sync::propose_send` / `::get_wallet_balance` /

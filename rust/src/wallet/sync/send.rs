@@ -255,6 +255,7 @@ pub fn propose_send(
             None,
         ),
         SendSource::Transparent => build_transparent_source_send_proposal(
+            db_path,
             &mut db,
             network,
             account_id,
@@ -324,6 +325,7 @@ pub fn estimate_fee(
         )?,
         SendSource::Transparent => {
             build_transparent_source_send_proposal(
+                db_path,
                 &mut db,
                 network,
                 account_id,
@@ -365,7 +367,7 @@ pub(crate) fn estimate_send_max(
             build_send_max_proposal(&mut db, network, account_id, to_address, memo_str)?
         }
         SendSource::Transparent => build_transparent_source_send_max_proposal(
-            &mut db, network, account_id, to_address, memo_str,
+            db_path, &mut db, network, account_id, to_address, memo_str,
         )?,
     };
     summarize_send_max_proposal(&proposal)
@@ -404,6 +406,7 @@ fn build_shielded_source_send_proposal(
 }
 
 fn build_transparent_source_send_proposal(
+    db_path: &str,
     db: &mut WalletDatabase,
     network: WalletNetwork,
     account_id: AccountUuid,
@@ -419,18 +422,13 @@ fn build_transparent_source_send_proposal(
 > {
     let value = Zatoshis::from_u64(amount_zatoshi).map_err(|_| "Bad amount")?;
     let memo_bytes = parse_memo(memo_str)?;
-    let confirmations_policy = ConfirmationsPolicy::default();
+    let confirmations_policy = super::transparent_send::transparent_send_confirmations_policy();
     let (target_height, _) = db
         .get_target_and_anchor_heights(confirmations_policy.trusted())
         .map_err(|e| format!("Failed to read target height: {e}"))?
         .ok_or("Wallet must sync before sending transparent funds")?;
-    let (transparent_inputs, source_address, _) = select_transparent_source_inputs(
-        db,
-        network,
-        account_id,
-        target_height,
-        confirmations_policy,
-    )?;
+    let (transparent_inputs, source_address, _) =
+        select_transparent_source_inputs(db_path, network, account_id, target_height)?;
 
     let proposal = build_transparent_source_proposal_from_inputs(
         db,
@@ -447,6 +445,7 @@ fn build_transparent_source_send_proposal(
 }
 
 fn build_transparent_source_send_max_proposal(
+    db_path: &str,
     db: &mut WalletDatabase,
     network: WalletNetwork,
     account_id: AccountUuid,
@@ -454,18 +453,13 @@ fn build_transparent_source_send_max_proposal(
     memo_str: Option<&str>,
 ) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
     let memo_bytes = parse_memo(memo_str)?;
-    let confirmations_policy = ConfirmationsPolicy::default();
+    let confirmations_policy = super::transparent_send::transparent_send_confirmations_policy();
     let (target_height, _) = db
         .get_target_and_anchor_heights(confirmations_policy.trusted())
         .map_err(|e| format!("Failed to read target height: {e}"))?
         .ok_or("Wallet must sync before sending transparent funds")?;
-    let (transparent_inputs, _, input_total) = select_transparent_source_inputs(
-        db,
-        network,
-        account_id,
-        target_height,
-        confirmations_policy,
-    )?;
+    let (transparent_inputs, _, input_total) =
+        select_transparent_source_inputs(db_path, network, account_id, target_height)?;
     let fee = transparent_source_send_max_fee(
         network,
         target_height,
@@ -689,32 +683,33 @@ fn transparent_source_send_max_fee(
 }
 
 fn select_transparent_source_inputs(
-    db: &WalletDatabase,
+    db_path: &str,
     network: WalletNetwork,
     account_id: AccountUuid,
     target_height: TargetHeight,
-    confirmations_policy: ConfirmationsPolicy,
 ) -> Result<(Vec<WalletTransparentOutput>, Option<String>, Zatoshis), String> {
-    let balances = db
-        .get_transparent_balances(account_id, target_height, confirmations_policy)
-        .map_err(|e| format!("Failed to get transparent balances: {e}"))?;
+    let balances = super::transparent_send::get_transparent_send_balances_by_address(
+        db_path,
+        network,
+        account_id,
+        target_height,
+    )?;
     let (source_addrs, _) = select_transparent_sources(balances)?;
     let mut source_addrs_with_inputs = Vec::new();
     let mut transparent_inputs = Vec::new();
 
     for source_addr in source_addrs {
-        let utxos = db
-            .get_spendable_transparent_outputs(
-                &source_addr,
-                target_height,
-                confirmations_policy,
-                TransparentOutputFilter::All,
-            )
-            .map_err(|e| format!("Failed to get transparent UTXOs: {e}"))?;
+        let utxos = super::transparent_send::get_spendable_transparent_outputs_for_address(
+            db_path,
+            network,
+            account_id,
+            target_height,
+            &source_addr,
+        )?;
         if !utxos.is_empty() {
             source_addrs_with_inputs.push(source_addr);
         }
-        transparent_inputs.extend(utxos.into_iter().map(|utxo| utxo.into_wallet_output()));
+        transparent_inputs.extend(utxos);
     }
 
     let total = transparent_inputs

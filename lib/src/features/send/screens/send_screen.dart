@@ -59,7 +59,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       ),
     );
     final spendableBalance = sync.spendableBalance;
-    final transparentBalance = sync.transparentBalance;
+    final transparentBalance = sync.transparentSpendableBalance;
     final totalBalance = sync.totalBalance;
 
     return _SendComposeBody(

@@ -2,8 +2,9 @@ mod common;
 
 use common::{
     add_account_with_birthday, create_wallet, ensure_regtest_up, exclusive_regtest, execute_send,
-    execute_send_with_source, fund_wallet, get_balance, get_transaction_history, mine_blocks,
-    sync_wallet, transparent_receive_address,
+    execute_send_with_source, fund_wallet, fund_wallet_with_confirmations, get_balance,
+    get_transaction_history, mine_blocks, propose_send_with_source, sync_wallet,
+    transparent_receive_address,
 };
 
 #[test]
@@ -186,5 +187,71 @@ fn transparent_source_can_send_to_shielded_recipient() {
             .iter()
             .any(|tx| tx.account_balance_delta > 0),
         "receiver should record an inbound transparent-source transaction"
+    );
+}
+
+#[test]
+#[ignore = "requires Dockerized zcashd/lightwalletd regtest services"]
+fn transparent_source_send_requires_untrusted_confirmations() {
+    let _guard = exclusive_regtest();
+    ensure_regtest_up();
+
+    let (sender_dir, sender_wallet) = create_wallet("Pending Transparent Sender");
+    let sender_db = sender_dir.path().join("zcash_wallet.db");
+    let (_receiver_dir, receiver_wallet) = create_wallet("Confirmed Shielded Receiver");
+
+    let sender_taddr = transparent_receive_address(&sender_db, &sender_wallet.account_uuid);
+    fund_wallet_with_confirmations(&sender_taddr, "1.1", 1);
+    sync_wallet(&sender_db);
+
+    let pending_balance = get_balance(&sender_db, &sender_wallet.account_uuid);
+    assert_eq!(
+        pending_balance.transparent, 0,
+        "1-conf external transparent funds must not be ordinary-send spendable"
+    );
+    assert!(
+        pending_balance.transparent_pending >= 110_000_000,
+        "1-conf external transparent funds should be pending, got {}",
+        pending_balance.transparent_pending
+    );
+
+    let pending_send = propose_send_with_source(
+        &sender_db,
+        &sender_wallet.account_uuid,
+        "pending-transparent-send",
+        &receiver_wallet.unified_address,
+        40_000_000,
+        Some("transparent"),
+    );
+    let err = match pending_send {
+        Ok(_) => panic!("1-conf transparent source send should fail"),
+        Err(err) => err,
+    };
+    assert!(
+        err.contains("No transparent funds available"),
+        "unexpected pending transparent send error: {err}"
+    );
+
+    mine_blocks(9);
+    sync_wallet(&sender_db);
+
+    let confirmed_balance = get_balance(&sender_db, &sender_wallet.account_uuid);
+    assert!(
+        confirmed_balance.transparent >= 110_000_000,
+        "10-conf external transparent funds should be spendable, got {}",
+        confirmed_balance.transparent
+    );
+
+    let txid = execute_send_with_source(
+        &sender_db,
+        &sender_wallet.account_uuid,
+        &sender_wallet.mnemonic,
+        &receiver_wallet.unified_address,
+        40_000_000,
+        Some("transparent"),
+    );
+    assert!(
+        !txid.is_empty(),
+        "10-conf transparent-source send should return a txid"
     );
 }

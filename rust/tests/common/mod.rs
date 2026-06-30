@@ -65,7 +65,18 @@ pub fn mine_blocks(blocks: u32) {
 }
 
 pub fn fund_wallet(unified_address: &str, amount_zec: &str) -> String {
-    run_script("fund-wallet.sh", &[unified_address, amount_zec, "10"])
+    fund_wallet_with_confirmations(unified_address, amount_zec, 10)
+}
+
+pub fn fund_wallet_with_confirmations(
+    unified_address: &str,
+    amount_zec: &str,
+    confirming_blocks: u32,
+) -> String {
+    run_script(
+        "fund-wallet.sh",
+        &[unified_address, amount_zec, &confirming_blocks.to_string()],
+    )
 }
 
 pub fn current_tip_height() -> u64 {
@@ -267,15 +278,13 @@ pub fn execute_send_with_source(
     send_source: Option<&str>,
 ) -> String {
     let send_flow_id = "regtest-send-flow";
-    let proposal = sync_api::propose_send(
-        path_str(db_path),
-        REGTEST_NETWORK.into(),
-        sender_account_uuid.into(),
-        send_flow_id.into(),
-        to_address.into(),
+    let proposal = propose_send_with_source(
+        db_path,
+        sender_account_uuid,
+        send_flow_id,
+        to_address,
         amount_zatoshi,
-        None,
-        send_source.map(str::to_string),
+        send_source,
     )
     .expect("propose_send");
 
@@ -300,6 +309,26 @@ pub fn execute_send_with_source(
     )
     .expect("execute_proposal")
     .txids
+}
+
+pub fn propose_send_with_source(
+    db_path: &Path,
+    sender_account_uuid: &str,
+    send_flow_id: &str,
+    to_address: &str,
+    amount_zatoshi: u64,
+    send_source: Option<&str>,
+) -> Result<sync_api::ProposalResult, String> {
+    sync_api::propose_send(
+        path_str(db_path),
+        REGTEST_NETWORK.into(),
+        sender_account_uuid.into(),
+        send_flow_id.into(),
+        to_address.into(),
+        amount_zatoshi,
+        None,
+        send_source.map(str::to_string),
+    )
 }
 
 pub fn positive_history_count(history: &[sync_api::TransactionInfo]) -> usize {
