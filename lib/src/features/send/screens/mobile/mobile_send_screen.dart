@@ -207,8 +207,6 @@ const _kMobileSendAmountFieldHeight = 164.0;
 const _kMobileSendAmountBalanceRowHeight = 44.0;
 const _kMobileSendAmountInputHeight = 64.0;
 const _kMobileSendAmountMetaHeight = 20.0;
-const _kMobileSendAmountCaretHeight = 48.0;
-const _kMobileSendAmountCaretWidth = 3.0;
 const _kMobileSendAmountFontSize = 48.0;
 const _kMobileSendAmountLineHeightPx = 40.0;
 const _kMobileSendAmountUnitFontSize = 38.0;
@@ -1921,10 +1919,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               inputFormatters: inputFormatters,
               maxLines: 1,
               style: amountStyle,
-              cursorColor: colors.text.accent,
-              cursorWidth: _kMobileSendAmountCaretWidth,
-              cursorHeight: _kMobileSendAmountCaretHeight,
-              cursorRadius: const Radius.circular(AppRadii.full),
               decoration: InputDecoration.collapsed(
                 hintText: '0',
                 hintStyle: amountStyle.copyWith(color: colors.text.disabled),

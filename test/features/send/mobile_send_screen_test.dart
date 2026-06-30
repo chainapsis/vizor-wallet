@@ -1030,8 +1030,6 @@ void main() {
       emptyAmountInput.keyboardType,
       const TextInputType.numberWithOptions(decimal: true),
     );
-    expect(emptyAmountInput.cursorWidth, 3);
-    expect(emptyAmountInput.cursorHeight, 48);
     expect(
       tester
           .getSize(find.byKey(const ValueKey('mobile_send_amount_field')))

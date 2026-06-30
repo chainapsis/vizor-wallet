@@ -151,8 +151,6 @@ void main() {
       amountInput.keyboardType,
       const TextInputType.numberWithOptions(decimal: true),
     );
-    expect(amountInput.cursorWidth, 3);
-    expect(amountInput.cursorHeight, 48);
     expect(
       tester.getSize(
         find.byKey(const ValueKey('mobile_send_amount_recipient_block')),
