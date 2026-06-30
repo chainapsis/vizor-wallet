@@ -212,6 +212,7 @@ const _kMobileSendAmountFontSize = 48.0;
 const _kMobileSendAmountLineHeightPx = 40.0;
 const _kMobileSendAmountUnitFontSize = 38.0;
 const _kMobileSendAmountUsdPrefixFontSize = 40.0;
+const _kMobileSendAmountUsdPrefixOpticalOffsetY = -2.0;
 const _kMobileSendAmountTopContentHeight = 285.0;
 const _kMobileSendAmountRecipientBlockHeight = 97.0;
 const _kMobileSendAmountRecipientLabelHeight = 25.0;
@@ -1623,6 +1624,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final amountUnitStyle = amountStyle.copyWith(
       color: amountStyle.color?.withValues(alpha: 0.5),
       fontSize: _kMobileSendAmountUnitFontSize,
+      height: _kMobileSendAmountLineHeightPx / _kMobileSendAmountUnitFontSize,
     );
 
     return Column(
@@ -1887,6 +1889,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final hintStyle = amountStyle.copyWith(color: colors.text.disabled);
     final usdPrefixStyle = amountUnitStyle.copyWith(
       fontSize: _kMobileSendAmountUsdPrefixFontSize,
+      height:
+          _kMobileSendAmountLineHeightPx / _kMobileSendAmountUsdPrefixFontSize,
     );
     final inputFormatters = [
       const CommaToDotInputFormatter(),
@@ -1899,11 +1903,19 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     return SizedBox(
       height: _kMobileSendAmountInputHeight,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
+        textBaseline: TextBaseline.alphabetic,
         children: [
           if (_amountInputIsUsd) ...[
-            Text(r'$', style: usdPrefixStyle),
+            Transform.translate(
+              offset: const Offset(
+                0,
+                _kMobileSendAmountUsdPrefixOpticalOffsetY,
+              ),
+              child: Text(r'$', style: usdPrefixStyle),
+            ),
             const SizedBox(width: AppSpacing.xs),
           ],
           SizedBox(
