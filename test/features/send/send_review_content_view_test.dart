@@ -44,6 +44,7 @@ void main() {
     expect(find.text('Amount'), findsOneWidget);
     expect(find.text('123.12 ZEC'), findsOneWidget);
     expect(find.text(r'$250.12'), findsOneWidget);
+    expect(find.text('From'), findsNothing);
     expect(find.text('To'), findsOneWidget);
     expect(find.text(truncatedAddress(_address)), findsOneWidget);
     expect(find.text('Shielded'), findsOneWidget);

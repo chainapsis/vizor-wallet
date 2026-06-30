@@ -22,6 +22,17 @@ import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import 'sapling_params.dart';
 
+enum SendSource {
+  shielded('shielded'),
+  transparent('transparent');
+
+  const SendSource(this.wireName);
+
+  final String wireName;
+
+  bool get isTransparent => this == SendSource.transparent;
+}
+
 /// Route-extra payload for the review/status legs of the send flow.
 class SendReviewArgs {
   const SendReviewArgs({
@@ -33,6 +44,8 @@ class SendReviewArgs {
     required this.amountZatoshi,
     required this.feeZatoshi,
     required this.needsSaplingParams,
+    this.sendSource = SendSource.shielded,
+    this.sourceAddress,
     this.memo,
   });
 
@@ -44,9 +57,12 @@ class SendReviewArgs {
   final BigInt amountZatoshi;
   final BigInt feeZatoshi;
   final bool needsSaplingParams;
+  final SendSource sendSource;
+  final String? sourceAddress;
   final String? memo;
 
   bool get isShielded => addressType == 'unified' || addressType == 'sapling';
+  bool get isTransparentSource => sendSource.isTransparent;
 }
 
 /// Hardware-wallet handoff payload: the phone-side proof clone plus the
@@ -81,6 +97,7 @@ Future<SendReviewArgs> proposeSendTransfer({
   required String address,
   required String addressType,
   required BigInt amountZatoshi,
+  SendSource sendSource = SendSource.shielded,
   String? memo,
   Future<String> Function() loadDbPath = getWalletDbPath,
 }) async {
@@ -94,6 +111,7 @@ Future<SendReviewArgs> proposeSendTransfer({
     toAddress: address,
     amountZatoshi: amountZatoshi,
     memo: (memo != null && memo.isNotEmpty) ? memo : null,
+    sendSource: sendSource.wireName,
   );
   return SendReviewArgs(
     proposalId: proposal.proposalId,
@@ -103,6 +121,8 @@ Future<SendReviewArgs> proposeSendTransfer({
     addressType: addressType,
     amountZatoshi: amountZatoshi,
     feeZatoshi: proposal.feeZatoshi,
+    sendSource: sendSource,
+    sourceAddress: proposal.sourceAddress,
     memo: (memo != null && memo.isNotEmpty) ? memo : null,
     needsSaplingParams: proposal.needsSaplingParams,
   );
@@ -125,10 +145,15 @@ Future<void> discardSendProposal({
   }
 }
 
-String friendlyProposeSendError(String raw) {
+String friendlyProposeSendError(
+  String raw, {
+  SendSource sendSource = SendSource.shielded,
+}) {
   final lower = raw.toLowerCase();
   if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
-    return 'Insufficient shielded balance to cover amount and fee.';
+    return sendSource.isTransparent
+        ? 'Insufficient transparent balance to cover amount and fee.'
+        : 'Insufficient shielded balance to cover amount and fee.';
   }
   if (lower.contains('grpc connect failed') ||
       lower.contains('connection refused') ||
@@ -405,7 +430,9 @@ Future<SendBroadcastOutcome> runSendBroadcast({
           .switchToFallbackFor(
             broadcastMessageForFallback,
             endpoint: endpoint,
-            operation: isHardware ? 'keystone send broadcast' : 'send broadcast',
+            operation: isHardware
+                ? 'keystone send broadcast'
+                : 'send broadcast',
           );
       if (switched) {
         unawaited(ref.read(syncProvider.notifier).restartSync());

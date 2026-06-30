@@ -34,6 +34,7 @@ Completer<ProposalResult>? _proposeSendCompleter;
 int _estimateSendMaxCalls = 0;
 String? _lastEstimateSendMaxToAddress;
 String? _lastEstimateSendMaxMemo;
+String? _lastProposeSendSource;
 _SendMaxEstimateBuilder? _sendMaxEstimateBuilder;
 
 typedef _SendMaxEstimateBuilder =
@@ -67,6 +68,7 @@ class _RustApiFake implements RustLibApi {
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
+    String? sendSource,
   }) async {
     // Real fee estimation crosses the FFI boundary and takes real time;
     // the timer keeps an in-flight validation window open so tests can
@@ -82,6 +84,7 @@ class _RustApiFake implements RustLibApi {
     required String accountUuid,
     required String toAddress,
     String? memo,
+    String? sendSource,
   }) async {
     _estimateSendMaxCalls++;
     _lastEstimateSendMaxToAddress = toAddress;
@@ -106,7 +109,9 @@ class _RustApiFake implements RustLibApi {
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
+    String? sendSource,
   }) async {
+    _lastProposeSendSource = sendSource;
     final completer = _proposeSendCompleter;
     if (completer != null) return completer.future;
     if (!_proposeSendSucceeds) {
@@ -187,12 +192,13 @@ Widget _app({
     routes: [
       GoRoute(
         path: '/send',
-        builder: (_, _) => MobileSendScreen(
-          loadWalletDbPath: () async => '/tmp/zcash-test',
-          openScanner: openScanner ?? (_) async => null,
-          initialRecipient: initialRecipient,
-          validateAddress: validateAddress,
-        ),
+        builder:
+            (_, _) => MobileSendScreen(
+              loadWalletDbPath: () async => '/tmp/zcash-test',
+              openScanner: openScanner ?? (_) async => null,
+              initialRecipient: initialRecipient,
+              validateAddress: validateAddress,
+            ),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
     ],
@@ -232,20 +238,22 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
     routes: [
       GoRoute(
         path: '/home',
-        builder: (context, _) => TextButton(
-          key: const ValueKey('mobile_send_open_from_home'),
-          onPressed: () => context.push('/send'),
-          child: const Text('home'),
-        ),
+        builder:
+            (context, _) => TextButton(
+              key: const ValueKey('mobile_send_open_from_home'),
+              onPressed: () => context.push('/send'),
+              child: const Text('home'),
+            ),
       ),
       GoRoute(
         path: '/send',
-        builder: (_, _) => MobileSendScreen(
-          useRouteSteps: true,
-          loadWalletDbPath: () async => '/tmp/zcash-test',
-          openScanner: (_) async => null,
-          estimateFee: estimateFee,
-        ),
+        builder:
+            (_, _) => MobileSendScreen(
+              useRouteSteps: true,
+              loadWalletDbPath: () async => '/tmp/zcash-test',
+              openScanner: (_) async => null,
+              estimateFee: estimateFee,
+            ),
       ),
       GoRoute(
         path: '/send/amount',
@@ -291,13 +299,14 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
       ),
       GoRoute(
         path: '/send/status',
-        builder: (context, _) => TextButton(
-          key: const ValueKey('mobile_send_status_pop'),
-          onPressed: context.canPop() ? () => context.pop() : null,
-          child: Text(
-            context.canPop() ? 'status can pop' : 'status cannot pop',
-          ),
-        ),
+        builder:
+            (context, _) => TextButton(
+              key: const ValueKey('mobile_send_status_pop'),
+              onPressed: context.canPop() ? () => context.pop() : null,
+              child: Text(
+                context.canPop() ? 'status can pop' : 'status cannot pop',
+              ),
+            ),
       ),
     ],
   );
@@ -407,6 +416,7 @@ void main() {
     _estimateSendMaxCalls = 0;
     _lastEstimateSendMaxToAddress = null;
     _lastEstimateSendMaxMemo = null;
+    _lastProposeSendSource = null;
     _sendMaxEstimateBuilder = null;
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
@@ -574,18 +584,17 @@ void main() {
 
     await tester.pumpWidget(
       _sendFlowRouterApp(
-        estimateFee:
-            ({
-              required dbPath,
-              required network,
-              required accountUuid,
-              required toAddress,
-              required amountZatoshi,
-              memo,
-            }) async {
-              feeCalls++;
-              return feeCalls == 1 ? BigInt.from(10000) : refreshedFee;
-            },
+        estimateFee: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required toAddress,
+          required amountZatoshi,
+          memo,
+        }) async {
+          feeCalls++;
+          return feeCalls == 1 ? BigInt.from(10000) : refreshedFee;
+        },
       ),
     );
     await tester.pumpAndSettle();
@@ -624,6 +633,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('status can pop'), findsOneWidget);
+    expect(_lastProposeSendSource, 'shielded');
     await tester.tap(find.byKey(const ValueKey('mobile_send_status_pop')));
     await tester.pumpAndSettle();
 
@@ -1109,18 +1119,17 @@ void main() {
 
     await tester.pumpWidget(
       _sendFlowRouterApp(
-        estimateFee:
-            ({
-              required dbPath,
-              required network,
-              required accountUuid,
-              required toAddress,
-              required amountZatoshi,
-              memo,
-            }) {
-              feeCalls++;
-              return feeCompleter.future;
-            },
+        estimateFee: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required toAddress,
+          required amountZatoshi,
+          memo,
+        }) {
+          feeCalls++;
+          return feeCompleter.future;
+        },
       ),
     );
     await tester.pumpAndSettle();
@@ -1170,14 +1179,14 @@ void main() {
   testWidgets('route-step max mode recalculates amount when memo changes', (
     tester,
   ) async {
-    _sendMaxEstimateBuilder = ({required toAddress, memo}) =>
-        SendMaxEstimateResult(
-          amountZatoshi: memo == 'thanks!'
-              ? BigInt.from(499980000)
-              : BigInt.from(499990000),
-          feeZatoshi: memo == 'thanks!'
-              ? BigInt.from(20000)
-              : BigInt.from(10000),
+    _sendMaxEstimateBuilder =
+        ({required toAddress, memo}) => SendMaxEstimateResult(
+          amountZatoshi:
+              memo == 'thanks!'
+                  ? BigInt.from(499980000)
+                  : BigInt.from(499990000),
+          feeZatoshi:
+              memo == 'thanks!' ? BigInt.from(20000) : BigInt.from(10000),
           needsSaplingParams: false,
         );
 

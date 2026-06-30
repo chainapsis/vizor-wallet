@@ -16,10 +16,10 @@ import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_context_menu.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_text_field.dart';
-import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -59,6 +59,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       ),
     );
     final spendableBalance = sync.spendableBalance;
+    final transparentBalance = sync.transparentBalance;
 
     return _SendComposeBody(
       key: ValueKey('$activeAccountUuid:${widget.prefill?.fingerprint ?? ''}'),
@@ -66,6 +67,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       activeAccountUuid: activeAccountUuid,
       activeAccountIsHardware: activeAccountIsHardware,
       spendableBalance: spendableBalance,
+      transparentBalance: transparentBalance,
       prefill: widget.prefill,
     );
   }
@@ -78,6 +80,7 @@ class _SendComposeBody extends ConsumerStatefulWidget {
     required this.activeAccountUuid,
     required this.activeAccountIsHardware,
     required this.spendableBalance,
+    required this.transparentBalance,
     this.prefill,
   });
 
@@ -85,6 +88,7 @@ class _SendComposeBody extends ConsumerStatefulWidget {
   final String? activeAccountUuid;
   final bool activeAccountIsHardware;
   final BigInt spendableBalance;
+  final BigInt transparentBalance;
   final SendPrefillArgs? prefill;
 
   @override
@@ -94,12 +98,14 @@ class _SendComposeBody extends ConsumerStatefulWidget {
 class _MaxQuote {
   const _MaxQuote({
     required this.accountUuid,
+    required this.sendSource,
     required this.address,
     required this.memo,
     required this.amountZatoshi,
   });
 
   final String accountUuid;
+  final SendSource sendSource;
   final String address;
   final String memo;
   final BigInt amountZatoshi;
@@ -158,6 +164,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _maxDebounceDuration = Duration(milliseconds: 300);
   static const _hardwareTexUnsupportedText =
       'Keystone does not support TEX sends yet.';
+  static const _hardwareTransparentSourceUnsupportedText =
+      'Keystone does not support transparent source sends yet.';
   final _addressController = _AddressTextEditingController();
   final _amountController = TextEditingController();
   final _memoController = TextEditingController();
@@ -176,6 +184,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool _isMaxMode = false;
   bool _isResolvingMax = false;
   bool _programmaticAmountEdit = false;
+  bool _sourcePickerOpen = false;
+  SendSource _sendSource = SendSource.shielded;
   _MaxQuote? _maxQuote;
   Timer? _maxDebounceTimer;
   int _addressSeq = 0;
@@ -247,7 +257,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   }
 
   void _openContactPicker() {
-    setState(() => _contactPickerOpen = true);
+    setState(() {
+      _contactPickerOpen = true;
+      _sourcePickerOpen = false;
+    });
   }
 
   void _closeContactPicker() {
@@ -267,7 +280,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   @override
   void didUpdateWidget(covariant _SendComposeBody oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.spendableBalance != widget.spendableBalance) {
+    final selectedBalanceChanged = switch (_sendSource) {
+      SendSource.shielded =>
+        oldWidget.spendableBalance != widget.spendableBalance,
+      SendSource.transparent =>
+        oldWidget.transparentBalance != widget.transparentBalance,
+    };
+    if (selectedBalanceChanged) {
       if (_isMaxMode) {
         _scheduleMaxEstimate(immediate: true);
       } else if (_amountController.text.trim().isNotEmpty) {
@@ -372,9 +391,17 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   String get _effectiveMemo =>
       _isTransparentLikeAddress ? '' : _memoController.text.trim();
 
-  BigInt get _availableBalanceForCurrentAddress => widget.spendableBalance;
-  String get _insufficientBalanceText =>
-      _isTexAddress ? 'Insufficient balance' : 'Insufficient shielded balance';
+  bool get _isTransparentSource => _sendSource.isTransparent;
+  BigInt get _availableBalanceForCurrentAddress => _isTransparentSource
+      ? widget.transparentBalance
+      : widget.spendableBalance;
+  String get _insufficientBalanceText {
+    if (_isTransparentSource) return 'Insufficient transparent balance';
+    return _isTexAddress
+        ? 'Insufficient balance'
+        : 'Insufficient shielded balance';
+  }
+
   String get _insufficientBalanceToCoverFeeText =>
       '$_insufficientBalanceText to cover fee';
   String get _insufficientBalanceIncludingFeeText =>
@@ -383,18 +410,27 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       '$_insufficientBalanceText (fee: $feeText)';
   bool get _isHardwareTexSend =>
       _isTexAddress && widget.activeAccountIsHardware;
+  bool get _isHardwareTransparentSourceSend =>
+      _isTransparentSource && widget.activeAccountIsHardware;
 
   bool get _showAmountError =>
       _amountError != null &&
       _amountError!.trim().isNotEmpty &&
-      _amountError != _hardwareTexUnsupportedText;
-  String? get _ctaWarningText =>
-      _isHardwareTexSend ? _hardwareTexUnsupportedText : null;
+      _amountError != _hardwareTexUnsupportedText &&
+      _amountError != _hardwareTransparentSourceUnsupportedText;
+  String? get _ctaWarningText {
+    if (_isHardwareTexSend) return _hardwareTexUnsupportedText;
+    if (_isHardwareTransparentSourceSend) {
+      return _hardwareTransparentSourceUnsupportedText;
+    }
+    return null;
+  }
 
   bool get _hasCurrentMaxQuote {
     final quote = _maxQuote;
     if (quote == null) return false;
     return quote.accountUuid == widget.activeAccountUuid &&
+        quote.sendSource == _sendSource &&
         quote.address == _addressController.text.trim() &&
         quote.memo == _effectiveMemo &&
         parseZecAmount(_amountController.text.trim()) == quote.amountZatoshi;
@@ -417,6 +453,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _hasValidAddress &&
       _isAmountValid &&
       !_isHardwareTexSend &&
+      !_isHardwareTransparentSourceSend &&
       (!_isMaxMode || _hasCurrentMaxQuote) &&
       _memoError == null &&
       (_isShieldedAddress || _effectiveMemo.isEmpty);
@@ -435,7 +472,43 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     if (widget.activeAccountUuid == null) return 'No active account';
     if (!_hasValidAddress) return 'Enter a valid address to use Max';
     if (_isHardwareTexSend) return _hardwareTexUnsupportedText;
+    if (_isHardwareTransparentSourceSend) {
+      return _hardwareTransparentSourceUnsupportedText;
+    }
     return _memoError;
+  }
+
+  void _toggleSourcePicker() {
+    setState(() => _sourcePickerOpen = !_sourcePickerOpen);
+  }
+
+  void _closeSourcePicker() {
+    if (!_sourcePickerOpen) return;
+    setState(() => _sourcePickerOpen = false);
+  }
+
+  void _selectSendSource(SendSource next) {
+    if (next == _sendSource) {
+      _closeSourcePicker();
+      return;
+    }
+
+    setState(() {
+      _sourcePickerOpen = false;
+      _sendSource = next;
+      _maxQuote = null;
+      _error = null;
+      _isResolvingMax = false;
+      _amountError = _isMaxMode ? '' : null;
+      _validateSeq++;
+      _maxSeq++;
+    });
+
+    if (_isMaxMode) {
+      _scheduleMaxEstimate(immediate: true);
+    } else if (_amountController.text.trim().isNotEmpty) {
+      _validateAmount();
+    }
   }
 
   void _scheduleMaxEstimate({bool immediate = false}) {
@@ -468,12 +541,18 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     final accountUuid = widget.activeAccountUuid;
     final address = _addressController.text.trim();
     final memo = _effectiveMemo;
+    final sendSource = _sendSource;
     if (accountUuid == null || !_isMaxMode || seq != _maxSeq) return;
 
     try {
       final dbPath = await ref.read(sendWalletDbPathProvider).call();
       final endpoint = ref.read(rpcEndpointProvider);
-      if (!mounted || !_isMaxMode || seq != _maxSeq) return;
+      if (!mounted ||
+          !_isMaxMode ||
+          seq != _maxSeq ||
+          sendSource != _sendSource) {
+        return;
+      }
 
       final estimate = await rust_sync.estimateSendMax(
         dbPath: dbPath,
@@ -481,9 +560,15 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         accountUuid: accountUuid,
         toAddress: address,
         memo: memo.isNotEmpty ? memo : null,
+        sendSource: sendSource.wireName,
       );
 
-      if (!mounted || !_isMaxMode || seq != _maxSeq) return;
+      if (!mounted ||
+          !_isMaxMode ||
+          seq != _maxSeq ||
+          sendSource != _sendSource) {
+        return;
+      }
 
       if (estimate.amountZatoshi <= BigInt.zero) {
         setState(() {
@@ -509,13 +594,19 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         _amountError = null;
         _maxQuote = _MaxQuote(
           accountUuid: accountUuid,
+          sendSource: sendSource,
           address: address,
           memo: memo,
           amountZatoshi: estimate.amountZatoshi,
         );
       });
     } catch (e) {
-      if (!mounted || !_isMaxMode || seq != _maxSeq) return;
+      if (!mounted ||
+          !_isMaxMode ||
+          seq != _maxSeq ||
+          sendSource != _sendSource) {
+        return;
+      }
       final msg = e.toString().toLowerCase();
       setState(() {
         _isResolvingMax = false;
@@ -560,6 +651,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       setState(() => _amountError = _hardwareTexUnsupportedText);
       return;
     }
+    if (_isHardwareTransparentSourceSend) {
+      setState(() => _amountError = _hardwareTransparentSourceUnsupportedText);
+      return;
+    }
+    final sendSource = _sendSource;
     final available = _availableBalanceForCurrentAddress;
     if (zatoshi > available) {
       setState(() => _amountError = _insufficientBalanceText);
@@ -569,7 +665,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     try {
       final dbPath = await ref.read(sendWalletDbPathProvider).call();
       final endpoint = ref.read(rpcEndpointProvider);
-      if (!mounted || seq != _validateSeq) return;
+      if (!mounted || seq != _validateSeq || sendSource != _sendSource) {
+        return;
+      }
       final memo = _effectiveMemo;
       final accountUuid = widget.activeAccountUuid;
       if (accountUuid == null) {
@@ -583,10 +681,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         toAddress: address,
         amountZatoshi: zatoshi,
         memo: memo.isNotEmpty ? memo : null,
+        sendSource: sendSource.wireName,
       );
 
       // Stale check — new input arrived while awaiting
-      if (!mounted || seq != _validateSeq) return;
+      if (!mounted || seq != _validateSeq || sendSource != _sendSource) {
+        return;
+      }
 
       final totalNeeded = zatoshi + fee;
       if (totalNeeded > available) {
@@ -596,7 +697,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         setState(() => _amountError = null);
       }
     } catch (e) {
-      if (!mounted || seq != _validateSeq) return;
+      if (!mounted || seq != _validateSeq || sendSource != _sendSource) {
+        return;
+      }
       final msg = e.toString();
       if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
         setState(() => _amountError = _insufficientBalanceIncludingFeeText);
@@ -645,6 +748,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         });
         return;
       }
+      if (_isHardwareTransparentSourceSend) {
+        setState(() {
+          _error = _hardwareTransparentSourceUnsupportedText;
+          _isSending = false;
+        });
+        return;
+      }
       if (amountZatoshi == null || amountZatoshi <= BigInt.zero) {
         setState(() {
           _error = 'Invalid amount';
@@ -672,6 +782,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       }
 
       final memo = _effectiveMemo;
+      final sendSource = _sendSource;
 
       // Step 1: Propose transfer
       log('Send: proposing transfer');
@@ -691,6 +802,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         address: address,
         addressType: _addressType,
         amountZatoshi: amountZatoshi,
+        sendSource: sendSource,
         memo: memo.isNotEmpty ? memo : null,
       );
       activeProposalId = reviewArgs.proposalId;
@@ -705,7 +817,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       log('Send: review preparation error: $e');
       if (!mounted) return;
       setState(() {
-        _error = friendlyProposeSendError(e.toString());
+        _error = friendlyProposeSendError(
+          e.toString(),
+          sendSource: _sendSource,
+        );
         _isSending = false;
       });
     } finally {
@@ -725,9 +840,28 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     final visibleSpendableText = ZecAmount.fromZatoshi(
       available,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final spendableText = hideAmountIfPrivacyMode(
       visibleSpendableText,
-      privacyModeEnabled: ref.watch(privacyModeProvider),
+      privacyModeEnabled: privacyModeEnabled,
+    );
+    final totalText = hideAmountIfPrivacyMode(
+      ZecAmount.fromZatoshi(
+        widget.spendableBalance + widget.transparentBalance,
+      ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
+      privacyModeEnabled: privacyModeEnabled,
+    );
+    final shieldedText = hideAmountIfPrivacyMode(
+      ZecAmount.fromZatoshi(
+        widget.spendableBalance,
+      ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
+      privacyModeEnabled: privacyModeEnabled,
+    );
+    final transparentText = hideAmountIfPrivacyMode(
+      ZecAmount.fromZatoshi(
+        widget.transparentBalance,
+      ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
+      privacyModeEnabled: privacyModeEnabled,
     );
     final colors = context.colors;
 
@@ -886,9 +1020,17 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                             ),
                             rightSlot: _SendMaxBalanceControl(
                               spendableText: spendableText,
+                              totalText: totalText,
+                              shieldedText: shieldedText,
+                              transparentText: transparentText,
+                              isTransparentSource: _isTransparentSource,
+                              pickerOpen: _sourcePickerOpen,
                               onMaxPressed: _isResolvingMax
                                   ? null
                                   : _activateMaxMode,
+                              onSourceToggle: _toggleSourcePicker,
+                              onSourceSelected: _selectSendSource,
+                              onPickerDismissed: _closeSourcePicker,
                             ),
                             messageText: _showAmountError ? _amountError : null,
                             messageIcon: _showAmountError
@@ -1166,27 +1308,126 @@ class _SendContactsLabelButtonState extends State<_SendContactsLabelButton> {
   }
 }
 
-class _SendMaxBalanceControl extends StatelessWidget {
+class _SendMaxBalanceControl extends StatefulWidget {
   const _SendMaxBalanceControl({
     required this.spendableText,
+    required this.totalText,
+    required this.shieldedText,
+    required this.transparentText,
+    required this.isTransparentSource,
+    required this.pickerOpen,
     required this.onMaxPressed,
+    required this.onSourceToggle,
+    required this.onSourceSelected,
+    required this.onPickerDismissed,
   });
 
-  static const _tooltipTitle =
-      'Your spendable balance may be lower than your total balance.';
-  static const _tooltipBody =
-      'Funds need confirmations before they can be spent: 3 for change from '
-      'your own wallet, 10 for funds received from others. Shielded notes also '
-      "need to be fully scanned. They'll become available shortly.";
-
   final String spendableText;
+  final String totalText;
+  final String shieldedText;
+  final String transparentText;
+  final bool isTransparentSource;
+  final bool pickerOpen;
   final VoidCallback? onMaxPressed;
+  final VoidCallback onSourceToggle;
+  final ValueChanged<SendSource> onSourceSelected;
+  final VoidCallback onPickerDismissed;
+
+  @override
+  State<_SendMaxBalanceControl> createState() => _SendMaxBalanceControlState();
+}
+
+class _SendMaxBalanceControlState extends State<_SendMaxBalanceControl> {
+  final LayerLink _sourceMenuLink = LayerLink();
+  OverlayEntry? _sourceMenuEntry;
+  bool _overlaySyncScheduled = false;
+
+  @override
+  void didUpdateWidget(covariant _SendMaxBalanceControl oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.pickerOpen && _sourceMenuEntry == null) {
+      _syncMenuAfterFrame();
+    } else if (!widget.pickerOpen && _sourceMenuEntry != null) {
+      _syncMenuAfterFrame();
+    } else if (widget.pickerOpen) {
+      _syncMenuAfterFrame();
+    }
+  }
+
+  @override
+  void dispose() {
+    _hideMenu();
+    super.dispose();
+  }
+
+  void _syncMenuAfterFrame() {
+    if (_overlaySyncScheduled) return;
+    _overlaySyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _overlaySyncScheduled = false;
+      if (!mounted) {
+        _hideMenu();
+        return;
+      }
+      if (widget.pickerOpen) {
+        if (_sourceMenuEntry == null) {
+          _showMenu();
+        } else {
+          _sourceMenuEntry?.markNeedsBuild();
+        }
+      } else {
+        _hideMenu();
+      }
+    });
+  }
+
+  void _showMenu() {
+    final overlay = Overlay.of(context);
+    final appTheme = AppTheme.of(context);
+    _sourceMenuEntry = OverlayEntry(
+      builder: (_) => AppTheme(
+        data: appTheme,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: widget.onPickerDismissed,
+              ),
+            ),
+            CompositedTransformFollower(
+              link: _sourceMenuLink,
+              showWhenUnlinked: false,
+              targetAnchor: Alignment.topRight,
+              followerAnchor: Alignment.topRight,
+              offset: const Offset(0, 24),
+              child: _SendSourcePicker(
+                totalText: widget.totalText,
+                shieldedText: widget.shieldedText,
+                transparentText: widget.transparentText,
+                selectedSource: widget.isTransparentSource
+                    ? SendSource.transparent
+                    : SendSource.shielded,
+                onSourceSelected: widget.onSourceSelected,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    overlay.insert(_sourceMenuEntry!);
+  }
+
+  void _hideMenu() {
+    _sourceMenuEntry?.remove();
+    _sourceMenuEntry = null;
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final maxLabel = Text(
-      'Max: $spendableText',
+      'Max: ${widget.spendableText}',
       style: AppTypography.labelMedium.copyWith(color: colors.text.secondary),
     );
 
@@ -1197,41 +1438,330 @@ class _SendMaxBalanceControl extends StatelessWidget {
           button: true,
           label: 'Use maximum spendable balance',
           child: MouseRegion(
-            cursor: onMaxPressed == null
+            cursor: widget.onMaxPressed == null
                 ? SystemMouseCursors.basic
                 : SystemMouseCursors.click,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: onMaxPressed,
+              onTap: widget.onMaxPressed,
               child: maxLabel,
             ),
           ),
         ),
         const SizedBox(width: AppSpacing.xxs),
-        AppTooltip(
-          richMessage: TextSpan(
-            children: [
-              TextSpan(
-                text: _tooltipTitle,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const TextSpan(text: '\n\n$_tooltipBody'),
-            ],
-          ),
-          child: SizedBox(
-            width: 18,
-            height: 18,
-            child: Center(
-              child: AppIcon(
-                AppIcons.help,
-                size: 14,
-                color: colors.icon.muted,
-                semanticLabel: 'Spendable balance info',
+        CompositedTransformTarget(
+          link: _sourceMenuLink,
+          child: Semantics(
+            button: true,
+            label: 'Choose send source balance',
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                key: const ValueKey('send_source_toggle_button'),
+                behavior: HitTestBehavior.opaque,
+                onTap: widget.onSourceToggle,
+                child: SizedBox(
+                  width: 24,
+                  height: 22,
+                  child: Center(
+                    child: RotatedBox(
+                      quarterTurns: widget.pickerOpen ? 3 : 1,
+                      child: AppIcon(
+                        AppIcons.chevronForward,
+                        size: 20,
+                        color: widget.isTransparentSource
+                            ? colors.icon.brandCrimson
+                            : colors.icon.accent,
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SendSourcePicker extends StatelessWidget {
+  const _SendSourcePicker({
+    required this.totalText,
+    required this.shieldedText,
+    required this.transparentText,
+    required this.selectedSource,
+    required this.onSourceSelected,
+  });
+
+  final String totalText;
+  final String shieldedText;
+  final String transparentText;
+  final SendSource selectedSource;
+  final ValueChanged<SendSource> onSourceSelected;
+
+  static const _helpText =
+      'Spendable balance can be lower than total balance while funds wait for '
+      'confirmations or scanning.';
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return DefaultTextStyle.merge(
+      style: const TextStyle(decoration: TextDecoration.none),
+      child: Container(
+        key: const ValueKey('send_source_picker'),
+        width: 236,
+        padding: const EdgeInsets.fromLTRB(6, 10, 6, AppSpacing.xs),
+        decoration: BoxDecoration(
+          color: colors.surface.nav,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: colors.border.subtleOpacity),
+          boxShadow: appContextMenuShadow,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _SendSourceSummaryRow(
+              iconName: AppIcons.zcash,
+              label: 'Total',
+              value: totalText,
+            ),
+            const _SendSourceDivider(),
+            _SendSourceOptionRow(
+              key: const ValueKey('send_source_option_shielded'),
+              iconName: AppIcons.shieldKeyhole,
+              label: 'Shielded',
+              value: shieldedText,
+              selected: selectedSource == SendSource.shielded,
+              selectedColor: colors.text.brandCrimson,
+              onTap: () => onSourceSelected(SendSource.shielded),
+            ),
+            _SendSourceOptionRow(
+              key: const ValueKey('send_source_option_transparent'),
+              iconName: AppIcons.transparentBalance,
+              label: 'Transparent',
+              value: transparentText,
+              selected: selectedSource == SendSource.transparent,
+              onTap: () => onSourceSelected(SendSource.transparent),
+            ),
+            const SizedBox(height: 2),
+            const _SendSourceHelpRow(text: _helpText),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SendSourceSummaryRow extends StatelessWidget {
+  const _SendSourceSummaryRow({
+    required this.iconName,
+    required this.label,
+    required this.value,
+  });
+
+  final String iconName;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xs,
+        vertical: 1,
+      ),
+      child: _SendSourceRowContent(
+        iconName: iconName,
+        label: label,
+        value: value,
+        iconColor: colors.icon.muted,
+        labelColor: colors.text.secondary,
+        valueColor: colors.text.accent,
+      ),
+    );
+  }
+}
+
+class _SendSourceDivider extends StatelessWidget {
+  const _SendSourceDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xs,
+        vertical: AppSpacing.xxs,
+      ),
+      child: Container(
+        key: const ValueKey('send_source_total_divider'),
+        height: 1,
+        color: context.colors.border.subtleOpacity,
+      ),
+    );
+  }
+}
+
+class _SendSourceOptionRow extends StatefulWidget {
+  const _SendSourceOptionRow({
+    super.key,
+    required this.iconName,
+    required this.label,
+    required this.value,
+    required this.selected,
+    required this.onTap,
+    this.selectedColor,
+  });
+
+  final String iconName;
+  final String label;
+  final String value;
+  final bool selected;
+  final VoidCallback onTap;
+  final Color? selectedColor;
+
+  @override
+  State<_SendSourceOptionRow> createState() => _SendSourceOptionRowState();
+}
+
+class _SendSourceOptionRowState extends State<_SendSourceOptionRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final accentColor =
+        widget.selectedColor ??
+        (widget.selected ? colors.text.accent : colors.icon.regular);
+    final rowColor = widget.selected
+        ? colors.background.brandCrimsonAlpha
+        : _hovered
+        ? colors.state.hoverOpacity
+        : null;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => _setHovered(true),
+      onExit: (_) => _setHovered(false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Container(
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+          decoration: BoxDecoration(
+            color: rowColor,
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+          ),
+          child: _SendSourceRowContent(
+            iconName: widget.iconName,
+            label: widget.label,
+            value: widget.value,
+            iconColor: widget.selected ? accentColor : colors.icon.regular,
+            labelColor: widget.selected ? accentColor : colors.text.accent,
+            valueColor: colors.text.secondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _setHovered(bool value) {
+    if (_hovered == value) return;
+    setState(() => _hovered = value);
+  }
+}
+
+class _SendSourceRowContent extends StatelessWidget {
+  const _SendSourceRowContent({
+    required this.iconName,
+    required this.label,
+    required this.value,
+    required this.iconColor,
+    required this.labelColor,
+    required this.valueColor,
+  });
+
+  final String iconName;
+  final String label;
+  final String value;
+  final Color iconColor;
+  final Color labelColor;
+  final Color valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 20,
+          height: 20,
+          child: Center(
+            child: AppIcon(
+              iconName,
+              size: AppIconSize.medium,
+              color: iconColor,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            label,
+            style: AppTypography.labelMedium.copyWith(color: labelColor),
+          ),
+        ),
+        Text(
+          value,
+          style: AppTypography.labelMedium.copyWith(color: valueColor),
+        ),
+      ],
+    );
+  }
+}
+
+class _SendSourceHelpRow extends StatelessWidget {
+  const _SendSourceHelpRow({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.xs,
+        AppSpacing.xxs,
+        AppSpacing.xs,
+        2,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: Center(
+              child: AppIcon(
+                AppIcons.help,
+                size: AppIconSize.medium,
+                color: colors.icon.muted,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
