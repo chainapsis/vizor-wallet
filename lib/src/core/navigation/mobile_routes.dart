@@ -28,6 +28,7 @@ import '../../features/swap/screens/mobile/mobile_swap_screen.dart';
 import '../config/swap_feature_config.dart';
 import '../layout/mobile/app_mobile_shell.dart';
 import '../layout/mobile/app_mobile_tab_bar.dart';
+import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
 import 'mobile_tab_history.dart';
 
@@ -173,7 +174,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         final child = extra is MobileSwapKeystoneSignArgs
             ? MobileSwapKeystoneSignScreen(args: extra)
             : const MobileSwapScreen();
-        return CupertinoPage(key: state.pageKey, child: child);
+        return _mobileModalPage(context: context, state: state, child: child);
       },
     ),
     // Same path as the desktop transaction status route so the shared
@@ -214,8 +215,9 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/send/keystone-sign',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
+      pageBuilder: (context, state) => _mobileModalPage(
+        context: context,
+        state: state,
         child: MobileKeystoneSignScreen(args: state.extra! as SendReviewArgs),
       ),
     ),
@@ -237,6 +239,23 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
           CupertinoPage(key: state.pageKey, child: const MobileAboutScreen()),
     ),
   ];
+}
+
+CustomTransitionPage<T> _mobileModalPage<T>({
+  required BuildContext context,
+  required GoRouterState state,
+  required Widget child,
+}) {
+  return CustomTransitionPage<T>(
+    key: state.pageKey,
+    opaque: false,
+    barrierDismissible: false,
+    barrierColor: context.colors.background.neutralScrim,
+    transitionDuration: Duration.zero,
+    reverseTransitionDuration: Duration.zero,
+    transitionsBuilder: (_, _, _, child) => child,
+    child: child,
+  );
 }
 
 class _MobileTab {

@@ -189,7 +189,7 @@ void main() {
     expect(route, isA<CupertinoRouteTransitionMixin<dynamic>>());
   });
 
-  testWidgets('swap Keystone signing route pushes a Cupertino page', (
+  testWidgets('swap Keystone signing route pushes a non-opaque modal page', (
     tester,
   ) async {
     final router = _router();
@@ -217,7 +217,8 @@ void main() {
     final route = ModalRoute.of(
       tester.element(find.byType(MobileSwapKeystoneSignScreen)),
     );
-    expect(route, isA<CupertinoRouteTransitionMixin<dynamic>>());
+    expect(route?.opaque, isFalse);
+    expect(route?.barrierColor, isNotNull);
   });
 
   testWidgets('receive pushes over a Cupertino shell page', (tester) async {

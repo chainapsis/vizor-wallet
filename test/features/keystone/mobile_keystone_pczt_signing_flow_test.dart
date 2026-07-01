@@ -9,7 +9,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
 
@@ -49,6 +48,7 @@ void main() {
               completeScan = onComplete;
               return const SizedBox(key: ValueKey('fake_keystone_scanner'));
             },
+            forceScannerActiveForTesting: true,
             onSigned: (_, _, _, _) => signingCompleter.future,
             friendlyError: (_) => 'Keystone signing failed.',
           ),
@@ -69,7 +69,14 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('open_signing')));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('test_keystone_sign_next')));
+    expect(find.text('Confirm with Keystone'), findsOneWidget);
+    expect(find.text('Scan with your Keystone'), findsOneWidget);
+    expect(find.text('Get Signature'), findsOneWidget);
+    expect(find.text('Close'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('test_keystone_sign_get_signature')),
+    );
     await tester.pump();
     expect(find.byKey(const ValueKey('fake_keystone_scanner')), findsOneWidget);
 
@@ -79,21 +86,8 @@ void main() {
 
     expect(find.text('Broadcasting ZEC deposit...'), findsOneWidget);
 
-    final cancelButton = tester.widget<AppButton>(
-      find.byKey(const ValueKey('test_keystone_sign_cancel')),
-    );
-    expect(cancelButton.onPressed, isNull);
-
-    final cancelText = tester.widget<Text>(
-      find.descendant(
-        of: find.byKey(const ValueKey('test_keystone_sign_cancel')),
-        matching: find.text('Cancel'),
-      ),
-    );
-    expect(cancelText.style?.color, isNot(Colors.white));
-
     await tester.tap(
-      find.byKey(const ValueKey('test_keystone_sign_cancel')),
+      find.bySemanticsLabel('Close scanner'),
       warnIfMissed: false,
     );
     await tester.pump();
