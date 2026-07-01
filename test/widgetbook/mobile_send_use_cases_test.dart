@@ -281,6 +281,26 @@ void main() {
     expect(tester.getRect(zecFinder), _closeRect(emptyZecRect));
   });
 
+  testWidgets('mobile send amount input expands for full precision ZEC', (
+    tester,
+  ) async {
+    await _pumpMobileSendUseCase(tester, buildMobileSendAmountEmptyUseCase);
+
+    final inputFinder = find.byKey(const ValueKey('mobile_send_amount_input'));
+    await tester.enterText(inputFinder, '0.04903463');
+    await tester.pump();
+
+    final fieldRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_send_amount_field')),
+    );
+    final inputRect = tester.getRect(inputFinder);
+    final zecRect = tester.getRect(find.text('ZEC'));
+
+    expect(inputRect.width, greaterThan(220));
+    expect(inputRect.left, greaterThanOrEqualTo(fieldRect.left - 0.01));
+    expect(zecRect.right, lessThanOrEqualTo(fieldRect.right + 0.01));
+  });
+
   testWidgets('mobile send amount error use case renders visual error state', (
     tester,
   ) async {

@@ -209,6 +209,8 @@ const _kMobileSendAmountBalanceRowHeight = 44.0;
 const _kMobileSendAmountInputHeight = 64.0;
 const _kMobileSendAmountMetaHeight = 20.0;
 const _kMobileSendAmountZecHintEndInset = 3.7;
+const _kMobileSendAmountInputMinWidth = 32.0;
+const _kMobileSendAmountInputFallbackMaxWidth = 220.0;
 const _kMobileSendAmountCursorBlinkHalfPeriod = Duration(milliseconds: 500);
 const _kMobileSendAmountPriceLoadingWidth = 48.0;
 const _kMobileSendAmountPriceLoadingHeight = 12.0;
@@ -1896,7 +1898,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }) {
     final colors = context.colors;
     final activeText = _amountInputIsUsd ? _fiatAmountText : _amountText;
-    final inputWidth = _amountInputWidth(activeText, amountStyle);
     final showAmountCursor = _amountInputIsUsd || activeText.trim().isNotEmpty;
     final showEmptyZecCursor =
         !_amountInputIsUsd &&
@@ -1918,65 +1919,78 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
     return SizedBox(
       height: _kMobileSendAmountInputHeight,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        textBaseline: TextBaseline.alphabetic,
-        children: [
-          if (_amountInputIsUsd) ...[
-            Transform.translate(
-              offset: const Offset(
-                0,
-                _kMobileSendAmountUsdPrefixOpticalOffsetY,
-              ),
-              child: Text(r'$', style: usdPrefixStyle),
-            ),
-            const SizedBox(width: AppSpacing.xs),
-          ],
-          SizedBox(
-            width: inputWidth,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                TextField(
-                  key: const ValueKey('mobile_send_amount_input'),
-                  controller: _amountController,
-                  focusNode: _amountFocus,
-                  autofocus: true,
-                  onChanged: _handleAmountChanged,
-                  onSubmitted: (_) => _amountFocus.unfocus(),
-                  onTapOutside: (_) => _amountFocus.unfocus(),
-                  textAlign: _amountInputIsUsd
-                      ? TextAlign.left
-                      : TextAlign.right,
-                  textAlignVertical: TextAlignVertical.center,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final affixWidth = _amountInputIsUsd
+              ? _textWidth(r'$', usdPrefixStyle) + AppSpacing.xs
+              : _textWidth('ZEC', amountUnitStyle) + AppSpacing.xs;
+          final inputWidth = _amountInputWidth(
+            activeText,
+            amountStyle,
+            maxWidth: constraints.maxWidth - affixWidth,
+          );
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              if (_amountInputIsUsd) ...[
+                Transform.translate(
+                  offset: const Offset(
+                    0,
+                    _kMobileSendAmountUsdPrefixOpticalOffsetY,
                   ),
-                  textInputAction: TextInputAction.done,
-                  inputFormatters: inputFormatters,
-                  maxLines: 1,
-                  style: amountStyle,
-                  showCursor: showAmountCursor,
-                  cursorColor: colors.text.accent,
-                  decoration: _amountInputDecoration(hintStyle),
+                  child: Text(r'$', style: usdPrefixStyle),
                 ),
-                if (showEmptyZecCursor)
-                  Positioned.fill(
-                    child: _MobileSendAmountEmptyCursor(
-                      style: amountStyle,
-                      color: colors.text.accent,
-                    ),
-                  ),
+                const SizedBox(width: AppSpacing.xs),
               ],
-            ),
-          ),
-          if (!_amountInputIsUsd) ...[
-            const SizedBox(width: AppSpacing.xs),
-            Text('ZEC', style: amountUnitStyle),
-          ],
-        ],
+              SizedBox(
+                width: inputWidth,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    TextField(
+                      key: const ValueKey('mobile_send_amount_input'),
+                      controller: _amountController,
+                      focusNode: _amountFocus,
+                      autofocus: true,
+                      onChanged: _handleAmountChanged,
+                      onSubmitted: (_) => _amountFocus.unfocus(),
+                      onTapOutside: (_) => _amountFocus.unfocus(),
+                      textAlign: _amountInputIsUsd
+                          ? TextAlign.left
+                          : TextAlign.right,
+                      textAlignVertical: TextAlignVertical.center,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      textInputAction: TextInputAction.done,
+                      inputFormatters: inputFormatters,
+                      maxLines: 1,
+                      style: amountStyle,
+                      showCursor: showAmountCursor,
+                      cursorColor: colors.text.accent,
+                      decoration: _amountInputDecoration(hintStyle),
+                    ),
+                    if (showEmptyZecCursor)
+                      Positioned.fill(
+                        child: _MobileSendAmountEmptyCursor(
+                          style: amountStyle,
+                          color: colors.text.accent,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (!_amountInputIsUsd) ...[
+                const SizedBox(width: AppSpacing.xs),
+                Text('ZEC', style: amountUnitStyle),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -1997,14 +2011,28 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
-  double _amountInputWidth(String text, TextStyle style) {
+  double _amountInputWidth(
+    String text,
+    TextStyle style, {
+    required double maxWidth,
+  }) {
     final sample = text.trim().isEmpty ? '0' : text.trim();
+    final measuredWidth = _textWidth(sample, style);
+    final resolvedMaxWidth = maxWidth.isFinite
+        ? maxWidth.clamp(_kMobileSendAmountInputMinWidth, double.infinity)
+        : _kMobileSendAmountInputFallbackMaxWidth;
+    return (measuredWidth + 10)
+        .clamp(_kMobileSendAmountInputMinWidth, resolvedMaxWidth)
+        .toDouble();
+  }
+
+  double _textWidth(String text, TextStyle style) {
     final painter = TextPainter(
-      text: TextSpan(text: sample, style: style),
+      text: TextSpan(text: text, style: style),
       maxLines: 1,
       textDirection: TextDirection.ltr,
     )..layout();
-    return (painter.width + 10).clamp(32.0, 220.0).toDouble();
+    return painter.width;
   }
 
   Widget _buildAmountConversionRow(
