@@ -57,10 +57,7 @@ Widget _app() {
       ),
     ],
     child: MaterialApp(
-      home: AppTheme(
-        data: AppThemeData.dark,
-        child: const MobilePayScreen(),
-      ),
+      home: AppTheme(data: AppThemeData.dark, child: const MobilePayScreen()),
     ),
   );
 }
@@ -82,6 +79,11 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.byType(MobilePayScreen), findsOneWidget);
+    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(
+      scaffold.backgroundColor,
+      AppThemeData.dark.colors.background.window,
+    );
     expect(find.byKey(const ValueKey('pay_page_title')), findsNothing);
     expect(find.byKey(const ValueKey('pay_page_icon')), findsNothing);
     expect(
