@@ -301,7 +301,7 @@ class _MobileKeystonePcztSigningFlowState
         ? 'Loading the QR code ...'
         : isFailed
         ? _error ?? widget.friendlyError(StateError('Keystone signing failed.'))
-        : 'After you scanned, click Get Signature.';
+        : 'After you scanned, click Get signature.';
 
     final surface = Stack(
       key: _key('modal_surface'),
@@ -370,7 +370,7 @@ class _MobileKeystonePcztSigningFlowState
                     key: _key('get_signature'),
                     expand: true,
                     onPressed: actionEnabled ? _startScanning : null,
-                    child: const Text('Get Signature'),
+                    child: const Text('Get signature'),
                   ),
                   const SizedBox(height: AppSpacing.s),
                   AppButton(

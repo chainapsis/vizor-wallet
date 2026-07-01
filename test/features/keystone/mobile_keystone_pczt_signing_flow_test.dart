@@ -376,7 +376,7 @@ void main() {
 
     expect(find.text('Confirm with Keystone'), findsOneWidget);
     expect(find.text('Scan with your Keystone'), findsOneWidget);
-    expect(find.text('Get Signature'), findsOneWidget);
+    expect(find.text('Get signature'), findsOneWidget);
     expect(find.text('Close'), findsOneWidget);
 
     await tester.tap(
