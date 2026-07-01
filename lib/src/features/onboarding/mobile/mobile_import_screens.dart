@@ -35,7 +35,8 @@ String? validateImportedMnemonic(List<String> words) {
   }
   try {
     if (!rust_wallet.validateMnemonic(mnemonic: words.join(' '))) {
-      return "That passphrase isn't valid. Check the words and try again.";
+      return 'These words are valid, but they do not form a valid secret '
+          'passphrase. Check the order or replace any word that looks wrong.';
     }
   } catch (e) {
     log('validateImportedMnemonic: ERROR: $e');
