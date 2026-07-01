@@ -133,12 +133,12 @@ void main() {
       find.byKey(const ValueKey('mobile_import_birthday_continue')),
     );
 
-    expect(continueButton().onPressed, isNull);
-
     await tester.tap(
       find.byKey(const ValueKey('mobile_import_birthday_mode_height')),
     );
     await tester.pump();
+
+    expect(continueButton().onPressed, isNull);
 
     final heightField = find.byKey(
       const ValueKey('mobile_import_birthday_height'),
@@ -214,7 +214,7 @@ void main() {
             ),
           )
           .variant,
-      AppButtonVariant.ghost,
+      AppButtonVariant.primary,
     );
     expect(
       tester
@@ -224,7 +224,7 @@ void main() {
             ),
           )
           .variant,
-      AppButtonVariant.primary,
+      AppButtonVariant.ghost,
     );
     expect(confirmedHeight, isNull);
 
@@ -268,14 +268,25 @@ void main() {
       find.byKey(const ValueKey('mobile_import_birthday_continue')),
     );
 
-    // Date mode is the default — no editable text exists in it, and
-    // continue is disabled until the calendar provides a date.
+    // Date mode is the default — no editable text exists in it, and the
+    // large bottom action opens the calendar until a date has been selected.
     expect(find.byType(EditableText), findsNothing);
-    expect(continueButton().onPressed, isNull);
+    expect(continueButton().onPressed, isNotNull);
+    expect(find.text('Choose date'), findsOneWidget);
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('mobile_import_birthday_continue')),
+          )
+          .width,
+      greaterThan(300),
+    );
     expect(find.text('mm/dd/yyyy'), findsOneWidget);
 
-    // Tapping anywhere on the field opens the calendar sheet.
-    await tester.tap(find.byKey(const ValueKey('mobile_import_birthday_date')));
+    // The bottom primary action opens the calendar sheet.
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_birthday_continue')),
+    );
     await tester.pumpAndSettle();
     expect(find.byType(ImportBirthdayCalendarPanel), findsOneWidget);
 
@@ -300,12 +311,34 @@ void main() {
       const Color(0x00000000),
     );
 
-    // Selecting a (past) day fills the field and enables continue.
-    await tester.tap(find.text('10').first);
+    // Selecting today's enabled day fills the field and enables continue.
+    final todayLabel = DateTime.now().day.toString();
+    final enabledToday = find
+        .descendant(
+          of: find.byWidgetPredicate(
+            (widget) => widget is GestureDetector && widget.onTap != null,
+          ),
+          matching: find.text(todayLabel),
+        )
+        .first;
+    await tester.tap(enabledToday);
     await tester.pumpAndSettle();
     expect(find.byType(ImportBirthdayCalendarPanel), findsNothing);
     expect(continueButton().onPressed, isNotNull);
+    expect(find.text('Continue'), findsOneWidget);
     expect(find.text('mm/dd/yyyy'), findsNothing);
+  });
+
+  testWidgets('tapping the date field still opens the calendar', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_birthday_date')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ImportBirthdayCalendarPanel), findsOneWidget);
   });
 
   testWidgets('passes discovered account selection to passcode route', (
