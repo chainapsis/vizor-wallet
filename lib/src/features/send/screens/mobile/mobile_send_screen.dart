@@ -10,7 +10,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
-import '../../../../core/formatting/number_format.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -34,6 +33,7 @@ import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../services/send_flow.dart';
+import '../../services/send_amount_conversion.dart';
 import '../../widgets/send_recipient_resolver.dart';
 import 'mobile_send_scan_screen.dart';
 
@@ -595,50 +595,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
-  BigInt? _zatoshiFromUsdText(String text, double? zecUsdUnitPrice) {
-    final normalized = text.trim();
-    if (normalized.isEmpty || normalized == '.' || normalized == '0.') {
-      return null;
-    }
-    final usd = double.tryParse(
-      normalized.startsWith('.') ? '0$normalized' : normalized,
-    );
-    if (usd == null ||
-        !usd.isFinite ||
-        usd <= 0 ||
-        zecUsdUnitPrice == null ||
-        !zecUsdUnitPrice.isFinite ||
-        zecUsdUnitPrice <= 0) {
-      return null;
-    }
-    final zatoshi = (usd / zecUsdUnitPrice) * zatoshiPerZec.toDouble();
-    if (!zatoshi.isFinite || zatoshi <= 0) return null;
-    return BigInt.from(zatoshi.floor());
-  }
-
-  String _usdInputTextForZatoshi(BigInt zatoshi, double zecUsdUnitPrice) {
-    final usd = zatoshi.toDouble() / zatoshiPerZec.toDouble() * zecUsdUnitPrice;
-    if (!usd.isFinite || usd <= 0) return '';
-    return usd.toStringAsFixed(2);
-  }
-
-  String _sendableUsdInputTextForZatoshi(
-    BigInt zatoshi,
-    double zecUsdUnitPrice,
-  ) {
-    final text = _usdInputTextForZatoshi(zatoshi, zecUsdUnitPrice);
-    return text == '0.00' ? '' : text;
-  }
-
-  String _usdDisplayTextForZatoshi(BigInt zatoshi, double zecUsdUnitPrice) {
-    final raw = _usdInputTextForZatoshi(zatoshi, zecUsdUnitPrice);
-    if (raw.isEmpty) return '0.00';
-    final parts = raw.split('.');
-    final whole = int.tryParse(parts.first) ?? 0;
-    final fraction = parts.length > 1 ? parts[1] : '00';
-    return '${formatGroupedInteger(whole)}.$fraction';
-  }
-
   void _toggleAmountInputMode() {
     final nextMode = _amountInputIsUsd
         ? MobileSendAmountInputMode.zec
@@ -654,7 +610,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         final zatoshi = parseZecAmount(_amountText.trim());
         _fiatAmountText = zatoshi == null || zatoshi <= BigInt.zero
             ? ''
-            : _sendableUsdInputTextForZatoshi(zatoshi, zecUsdUnitPrice!);
+            : sendSendableUsdInputTextForZatoshi(zatoshi, zecUsdUnitPrice!);
         if (_fiatAmountText.isEmpty) {
           _amountText = '';
           _amountError = '';
@@ -721,7 +677,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   void _handleFiatAmountChanged(String value) {
     final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
-    final zatoshi = _zatoshiFromUsdText(value, zecUsdUnitPrice);
+    final zatoshi = sendZatoshiFromUsdText(value, zecUsdUnitPrice);
     setState(() {
       _fiatAmountText = value.trim();
       _amountText = zatoshi == null
@@ -799,7 +755,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
       final fiatText = zecUsdUnitPrice == null
           ? ''
-          : _sendableUsdInputTextForZatoshi(
+          : sendSendableUsdInputTextForZatoshi(
               estimate.amountZatoshi,
               zecUsdUnitPrice,
             );
@@ -2089,7 +2045,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         : r'$ ' +
               (amountZatoshi == null || amountZatoshi <= BigInt.zero
                   ? '0.00'
-                  : _usdDisplayTextForZatoshi(amountZatoshi, zecUsdUnitPrice));
+                  : sendUsdDisplayTextForZatoshi(
+                      amountZatoshi,
+                      zecUsdUnitPrice,
+                    ));
 
     return SizedBox(
       height: _kMobileSendAmountMetaHeight,

@@ -49,6 +49,13 @@ void main() {
     expect(find.text('Shielded → Shielded'), findsNothing);
     expect(find.text('Shielded → Transparent'), findsNothing);
     expect(find.text('125.12'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_amount_field')),
+        matching: find.text('ZEC'),
+      ),
+      findsOneWidget,
+    );
 
     await _pumpSendUseCase(tester, buildSendTransparentUseCase);
 

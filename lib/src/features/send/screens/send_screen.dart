@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
@@ -25,10 +26,12 @@ import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
+import '../../../providers/zec_price_change_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../models/send_prefill_args.dart';
+import '../services/send_amount_conversion.dart';
 import '../services/send_flow.dart';
 
 final sendWalletDbPathProvider = Provider<Future<String> Function()>((ref) {
@@ -105,6 +108,8 @@ class _MaxQuote {
   final BigInt amountZatoshi;
 }
 
+enum _DesktopSendAmountInputMode { zec, usd }
+
 class _AddressTextEditingController extends TextEditingController {
   // Emphasize the visible address edges while keeping the middle neutral.
   static const _highlightPrefixLength = 6;
@@ -173,6 +178,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   String _addressType = '';
   String?
   _amountError; // null = no error, empty string = silent invalid (empty/dot)
+  // Canonical wallet amount used for validation and Rust calls. The controller
+  // is only the visible text for the currently selected amount input mode.
+  String _amountText = '';
+  String _fiatAmountText = '';
+  _DesktopSendAmountInputMode _amountInputMode =
+      _DesktopSendAmountInputMode.zec;
   bool _isMaxMode = false;
   bool _isResolvingMax = false;
   bool _programmaticAmountEdit = false;
@@ -200,7 +211,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     if (prefill == null) return;
     _addressController.text = prefill.address;
     if (prefill.amountText != null) {
-      _amountController.text = prefill.amountText!;
+      _amountText = prefill.amountText!.trim();
+      _amountController.text = _amountText;
       _amountError = null;
     }
     if (prefill.memoText != null && prefill.memoText!.isNotEmpty) {
@@ -270,7 +282,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     if (oldWidget.spendableBalance != widget.spendableBalance) {
       if (_isMaxMode) {
         _scheduleMaxEstimate(immediate: true);
-      } else if (_amountController.text.trim().isNotEmpty) {
+      } else if (_amountText.trim().isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           _validateAmount();
@@ -341,6 +353,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   void _handleAmountChanged() {
     if (_programmaticAmountEdit) return;
+    if (_amountInputIsUsd) {
+      _handleFiatAmountChanged(_amountController.text);
+      return;
+    }
     if (_isMaxMode) {
       _maxDebounceTimer?.cancel();
       _maxSeq++;
@@ -351,7 +367,80 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         _error = null;
       });
     }
+    setState(() => _amountText = _amountController.text.trim());
     _validateAmount();
+  }
+
+  void _handleFiatAmountChanged(String value) {
+    final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+    final zatoshi = sendZatoshiFromUsdText(value, zecUsdUnitPrice);
+    if (_isMaxMode) {
+      _maxDebounceTimer?.cancel();
+      _maxSeq++;
+      setState(() {
+        _isMaxMode = false;
+        _isResolvingMax = false;
+        _maxQuote = null;
+        _error = null;
+      });
+    }
+    setState(() {
+      _fiatAmountText = value.trim();
+      _amountText = zatoshi == null
+          ? ''
+          : ZecAmount.fromZatoshi(zatoshi).pretty().amountText;
+    });
+    _validateAmount();
+  }
+
+  bool get _amountInputIsUsd =>
+      _amountInputMode == _DesktopSendAmountInputMode.usd;
+
+  void _setAmountControllerText(String text) {
+    _programmaticAmountEdit = true;
+    _amountController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _programmaticAmountEdit = false;
+  }
+
+  void _toggleAmountInputMode() {
+    final nextMode = _amountInputIsUsd
+        ? _DesktopSendAmountInputMode.zec
+        : _DesktopSendAmountInputMode.usd;
+    final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+    if (nextMode == _DesktopSendAmountInputMode.usd &&
+        zecUsdUnitPrice == null) {
+      return;
+    }
+
+    var nextVisibleText = _amountText;
+    setState(() {
+      _amountInputMode = nextMode;
+      if (nextMode == _DesktopSendAmountInputMode.usd) {
+        final zatoshi = parseZecAmount(_amountText.trim());
+        _fiatAmountText = zatoshi == null || zatoshi <= BigInt.zero
+            ? ''
+            : sendSendableUsdInputTextForZatoshi(zatoshi, zecUsdUnitPrice!);
+        if (_fiatAmountText.isEmpty && _amountText.trim().isNotEmpty) {
+          _amountText = '';
+          _amountError = '';
+          _isMaxMode = false;
+          _isResolvingMax = false;
+          _maxQuote = null;
+          _maxSeq++;
+          _validateSeq++;
+        }
+        nextVisibleText = _fiatAmountText;
+      } else {
+        nextVisibleText = _amountText;
+      }
+    });
+    _setAmountControllerText(nextVisibleText);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _amountFocusNode.requestFocus();
+    });
   }
 
   bool get _hasValidAddress =>
@@ -373,16 +462,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _isTransparentLikeAddress ? '' : _memoController.text.trim();
 
   BigInt get _availableBalanceForCurrentAddress => widget.spendableBalance;
-  String get _insufficientBalanceText =>
-      _isTexAddress ? 'Insufficient balance' : 'Insufficient shielded balance';
-  String get _insufficientBalanceToCoverFeeText =>
-      '$_insufficientBalanceText to cover fee';
-  String get _insufficientBalanceIncludingFeeText =>
-      '$_insufficientBalanceText including fee';
-  String _insufficientBalanceWithFeeText(String feeText) =>
-      '$_insufficientBalanceText (fee: $feeText)';
   bool get _isHardwareTexSend =>
       _isTexAddress && widget.activeAccountIsHardware;
+  String get _notEnoughCurrencyText =>
+      'Not enough $kZcashDefaultCurrencyTicker';
 
   bool get _showAmountError =>
       _amountError != null &&
@@ -397,7 +480,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     return quote.accountUuid == widget.activeAccountUuid &&
         quote.address == _addressController.text.trim() &&
         quote.memo == _effectiveMemo &&
-        parseZecAmount(_amountController.text.trim()) == quote.amountZatoshi;
+        parseZecAmount(_amountText.trim()) == quote.amountZatoshi;
   }
 
   int get _memoLength => utf8.encode(_memoController.text).length;
@@ -420,6 +503,34 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       (!_isMaxMode || _hasCurrentMaxQuote) &&
       _memoError == null &&
       (_isShieldedAddress || _effectiveMemo.isEmpty);
+
+  String get _reviewButtonLabel {
+    final error = _amountError;
+    if (error != null &&
+        error.trim().isNotEmpty &&
+        error != _hardwareTexUnsupportedText) {
+      return error;
+    }
+    return 'Review';
+  }
+
+  String? _amountConversionText({
+    required BigInt? amountZatoshi,
+    required double? zecUsdUnitPrice,
+  }) {
+    if (_amountInputIsUsd) {
+      final zecText = amountZatoshi == null || amountZatoshi <= BigInt.zero
+          ? '0'
+          : ZecAmount.fromZatoshi(amountZatoshi).pretty().amountText;
+      return '$zecText $kZcashDefaultCurrencyTicker';
+    }
+
+    if (amountZatoshi == null || amountZatoshi <= BigInt.zero) {
+      return r'$ 0';
+    }
+    if (zecUsdUnitPrice == null) return null;
+    return r'$ ' + sendUsdDisplayTextForZatoshi(amountZatoshi, zecUsdUnitPrice);
+  }
 
   void _activateMaxMode() {
     if (_isResolvingMax) return;
@@ -489,7 +600,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         setState(() {
           _isResolvingMax = false;
           _maxQuote = null;
-          _amountError = _insufficientBalanceToCoverFeeText;
+          _amountError = _notEnoughCurrencyText;
         });
         return;
       }
@@ -497,14 +608,30 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final amountText = ZecAmount.fromZatoshi(
         estimate.amountZatoshi,
       ).pretty().amountText;
-      _programmaticAmountEdit = true;
-      _amountController.value = TextEditingValue(
-        text: amountText,
-        selection: TextSelection.collapsed(offset: amountText.length),
-      );
-      _programmaticAmountEdit = false;
+      final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+      final fiatText = zecUsdUnitPrice == null
+          ? ''
+          : sendSendableUsdInputTextForZatoshi(
+              estimate.amountZatoshi,
+              zecUsdUnitPrice,
+            );
+      if (_amountInputIsUsd && fiatText.isEmpty) {
+        _setAmountControllerText('');
+        setState(() {
+          _amountText = '';
+          _fiatAmountText = '';
+          _isResolvingMax = false;
+          _isMaxMode = false;
+          _maxQuote = null;
+          _amountError = '';
+        });
+        return;
+      }
+      _setAmountControllerText(_amountInputIsUsd ? fiatText : amountText);
 
       setState(() {
+        _amountText = amountText;
+        _fiatAmountText = fiatText;
         _isResolvingMax = false;
         _amountError = null;
         _maxQuote = _MaxQuote(
@@ -521,7 +648,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         _isResolvingMax = false;
         _maxQuote = null;
         if (msg.contains('insufficient')) {
-          _amountError = _insufficientBalanceToCoverFeeText;
+          _amountError = _notEnoughCurrencyText;
         } else {
           _amountError = 'Max amount unavailable';
         }
@@ -533,17 +660,17 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   Future<void> _validateAmount() async {
     final seq = ++_validateSeq;
-    final text = _amountController.text.trim();
+    final text = _amountText.trim();
 
     // Empty or just "." — silently invalid (no error shown, button disabled)
-    if (text.isEmpty || text == '.') {
+    if (text.isEmpty || text == '.' || text == '0.') {
       setState(() => _amountError = '');
       return;
     }
 
     final zatoshi = parseZecAmount(text);
     if (zatoshi == null || zatoshi <= BigInt.zero) {
-      setState(() => _amountError = 'Invalid amount');
+      setState(() => _amountError = '');
       return;
     }
 
@@ -562,7 +689,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     }
     final available = _availableBalanceForCurrentAddress;
     if (zatoshi > available) {
-      setState(() => _amountError = _insufficientBalanceText);
+      setState(() => _amountError = _notEnoughCurrencyText);
       return;
     }
     setState(() => _amountError = null);
@@ -590,8 +717,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
       final totalNeeded = zatoshi + fee;
       if (totalNeeded > available) {
-        final feeText = ZecAmount.fromZatoshi(fee).fee.toString();
-        setState(() => _amountError = _insufficientBalanceWithFeeText(feeText));
+        setState(() => _amountError = _notEnoughCurrencyText);
       } else {
         setState(() => _amountError = null);
       }
@@ -599,7 +725,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       if (!mounted || seq != _validateSeq) return;
       final msg = e.toString();
       if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
-        setState(() => _amountError = _insufficientBalanceIncludingFeeText);
+        setState(() => _amountError = _notEnoughCurrencyText);
       } else {
         log('Send: fee estimation failed (non-blocking): $e');
         setState(() => _amountError = null);
@@ -620,7 +746,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     try {
       final address = _addressController.text.trim();
-      final amountZatoshi = parseZecAmount(_amountController.text.trim());
+      final amountZatoshi = parseZecAmount(_amountText.trim());
 
       if (_isResolvingMax) {
         setState(() {
@@ -665,7 +791,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final available = _availableBalanceForCurrentAddress;
       if (amountZatoshi > available) {
         setState(() {
-          _error = '$_insufficientBalanceText.';
+          _error = _notEnoughCurrencyText;
           _isSending = false;
         });
         return;
@@ -730,6 +856,17 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       privacyModeEnabled: ref.watch(privacyModeProvider),
     );
     final colors = context.colors;
+    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
+    final amountZatoshi = parseZecAmount(_amountText.trim());
+    final amountConversionText = _amountConversionText(
+      amountZatoshi: amountZatoshi,
+      zecUsdUnitPrice: zecUsdUnitPrice,
+    );
+    final amountConversionLoading =
+        amountConversionText == null &&
+        !_amountInputIsUsd &&
+        amountZatoshi != null &&
+        amountZatoshi > BigInt.zero;
 
     _addressController.edgeHighlightColor = null;
 
@@ -808,6 +945,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                         onPressed: _canReview ? _openReview : null,
                         variant: AppButtonVariant.primary,
                         minWidth: _SendComposeLayout.reviewButtonWidth,
+                        constrainContent: true,
                         trailing: _isSending
                             ? null
                             : const AppIcon(AppIcons.chevronForward),
@@ -819,7 +957,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                   strokeWidth: 2,
                                 ),
                               )
-                            : const Text('Review'),
+                            : Text(
+                                _reviewButtonLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -876,49 +1018,63 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                 : AppTextFieldTone.neutral,
                             focusNode: _amountFocusNode,
                             controller: _amountController,
-                            hintText: '0.00',
-                            leading: AppIcon(
-                              AppIcons.zcash,
-                              size: 20,
-                              color: _amountController.text.trim().isNotEmpty
-                                  ? colors.icon.accent
-                                  : colors.icon.regular,
-                            ),
+                            hintText: '0',
+                            leading: _amountInputIsUsd
+                                ? Text(
+                                    r'$',
+                                    style: AppTypography.labelLarge.copyWith(
+                                      color:
+                                          _amountController.text
+                                              .trim()
+                                              .isNotEmpty
+                                          ? colors.text.accent
+                                          : colors.text.muted,
+                                    ),
+                                  )
+                                : AppIcon(
+                                    AppIcons.coins,
+                                    size: 20,
+                                    color:
+                                        _amountController.text.trim().isNotEmpty
+                                        ? colors.icon.accent
+                                        : colors.icon.regular,
+                                  ),
                             rightSlot: _SendMaxBalanceControl(
                               spendableText: spendableText,
                               onMaxPressed: _isResolvingMax
                                   ? null
                                   : _activateMaxMode,
                             ),
-                            messageText: _showAmountError ? _amountError : null,
-                            messageIcon: _showAmountError
-                                ? AppIcon(
-                                    AppIcons.warning,
-                                    size: 16,
-                                    color: colors.text.destructive,
-                                  )
-                                : null,
+                            trailing: _amountInputIsUsd
+                                ? null
+                                : Text(
+                                    kZcashDefaultCurrencyTicker,
+                                    style: AppTypography.labelLarge.copyWith(
+                                      color: colors.text.secondary,
+                                    ),
+                                  ),
+                            trailingFitsSlot: true,
+                            trailingSlotWidth: _amountInputIsUsd ? null : 42,
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                             ),
-                            inputFormatters: const [ZecAmountInputFormatter()],
+                            inputFormatters: [
+                              _SendAmountInputFormatter(
+                                isUsd: _amountInputIsUsd,
+                              ),
+                            ],
                             onChanged: (_) => _handleAmountChanged(),
-                            showClearButton: true,
-                            onClear: () {
-                              _maxDebounceTimer?.cancel();
-                              _validateSeq++;
-                              _maxSeq++;
-                              setState(() {
-                                _isMaxMode = false;
-                                _isResolvingMax = false;
-                                _maxQuote = null;
-                                _amountError = '';
-                                _error = null;
-                              });
-                            },
                           ),
-                          const SizedBox(
+                          SizedBox(
                             height: _singleLineFieldOverlayReserve,
+                            child: _SendAmountConversionRow(
+                              text: amountConversionText,
+                              loading: amountConversionLoading,
+                              onTap: _toggleAmountInputMode,
+                              enabled:
+                                  _amountInputIsUsd || zecUsdUnitPrice != null,
+                              enterUsdMode: !_amountInputIsUsd,
+                            ),
                           ),
                           const SizedBox(height: _singleLineFieldGap),
                           if (!hideMemoControls) ...[
@@ -1186,7 +1342,7 @@ class _SendMaxBalanceControl extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final maxLabel = Text(
-      'Max: $spendableText',
+      'Use Max',
       style: AppTypography.labelMedium.copyWith(color: colors.text.secondary),
     );
 
@@ -1195,7 +1351,7 @@ class _SendMaxBalanceControl extends StatelessWidget {
       children: [
         Semantics(
           button: true,
-          label: 'Use maximum spendable balance',
+          label: 'Use maximum spendable balance, $spendableText available',
           child: MouseRegion(
             cursor: onMaxPressed == null
                 ? SystemMouseCursors.basic
@@ -1232,6 +1388,141 @@ class _SendMaxBalanceControl extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SendAmountConversionRow extends StatelessWidget {
+  const _SendAmountConversionRow({
+    required this.text,
+    required this.loading,
+    required this.onTap,
+    required this.enabled,
+    required this.enterUsdMode,
+  });
+
+  final String? text;
+  final bool loading;
+  final VoidCallback onTap;
+  final bool enabled;
+  final bool enterUsdMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final content = Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xxs),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppIcon(
+            AppIcons.doubleArrowVertical,
+            size: 16,
+            color: enabled ? colors.icon.muted : colors.icon.disabled,
+          ),
+          const SizedBox(width: AppSpacing.xxs),
+          if (loading) ...[
+            Text(
+              r'$',
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xxs),
+            const _SendAmountPriceLoadingBar(),
+          ] else
+            Text(
+              text ?? r'$ 0',
+              key: const ValueKey('send_amount_conversion_text'),
+              style: AppTypography.labelMedium.copyWith(
+                color: enabled ? colors.text.secondary : colors.text.disabled,
+              ),
+            ),
+        ],
+      ),
+    );
+
+    return Align(
+      alignment: AlignmentDirectional.topCenter,
+      child: Semantics(
+        button: true,
+        enabled: enabled,
+        label: enterUsdMode
+            ? 'Enter amount in USD'
+            : 'Enter amount in $kZcashDefaultCurrencyTicker',
+        child: MouseRegion(
+          cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+          child: GestureDetector(
+            key: const ValueKey('send_amount_mode_toggle'),
+            behavior: HitTestBehavior.opaque,
+            onTap: enabled ? onTap : null,
+            child: content,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SendAmountPriceLoadingBar extends StatelessWidget {
+  const _SendAmountPriceLoadingBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      key: const ValueKey('send_amount_price_loading'),
+      width: 48,
+      height: 12,
+      decoration: BoxDecoration(
+        color: colors.background.overlay.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(AppRadii.full),
+      ),
+    );
+  }
+}
+
+class _SendAmountInputFormatter extends TextInputFormatter {
+  const _SendAmountInputFormatter({required this.isUsd});
+
+  final bool isUsd;
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    var text = newValue.text.replaceAll(',', '.');
+    if (text.isEmpty) return newValue.copyWith(text: text);
+
+    final buffer = StringBuffer();
+    var hasDecimal = false;
+    for (final codeUnit in text.codeUnits) {
+      final ch = String.fromCharCode(codeUnit);
+      if (ch == '.') {
+        if (hasDecimal) continue;
+        hasDecimal = true;
+        buffer.write(ch);
+        continue;
+      }
+      if (codeUnit >= 0x30 && codeUnit <= 0x39) {
+        buffer.write(ch);
+      }
+    }
+
+    text = buffer.toString();
+    if (text.startsWith('.')) text = '0$text';
+    final maxLength = isUsd ? 12 : 17;
+    if (text.length > maxLength) text = text.substring(0, maxLength);
+    final decimalIndex = text.indexOf('.');
+    if (decimalIndex >= 0) {
+      final maxEnd = decimalIndex + 1 + (isUsd ? 2 : 8);
+      if (text.length > maxEnd) text = text.substring(0, maxEnd);
+    }
+
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }

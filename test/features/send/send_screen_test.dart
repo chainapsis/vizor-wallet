@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
@@ -317,7 +318,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.textContaining('Max:'));
+    await tester.tap(find.text('Use Max'));
     await tester.pump();
     await tester.pumpAndSettle();
 
@@ -326,6 +327,26 @@ void main() {
     expect(rustApi.lastEstimateSendMaxMemo, isNull);
     expect(_fieldText(tester, 'send_amount_field'), isNotEmpty);
     expect(find.text('Max amount unavailable'), findsNothing);
+  });
+
+  testWidgets('amount field keeps the native ticker suffix while editing', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_amount_field'), '1.25');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_amount_field')),
+        matching: find.text(kZcashDefaultCurrencyTicker),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('hides imported memo controls for TEX recipients', (
@@ -380,7 +401,7 @@ void main() {
     expect(find.text('Insufficient shielded balance'), findsNothing);
     expect(find.text('Insufficient balance'), findsNothing);
 
-    await tester.tap(find.text('Review'));
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
     await tester.runAsync(() async {
       await Future<void>.delayed(const Duration(milliseconds: 100));
     });
@@ -413,12 +434,81 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
 
-    expect(find.text('Insufficient balance'), findsOneWidget);
+    expect(
+      find.text('Not enough $kZcashDefaultCurrencyTicker'),
+      findsOneWidget,
+    );
 
-    await tester.tap(find.text('Review'));
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
     await tester.pumpAndSettle();
 
     expect(rustApi.proposeSendCalls, 0);
+  });
+
+  testWidgets('USD amount input proposes the converted canonical amount', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(1000000000), zecUsdPrice: 100),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('send_amount_mode_toggle')));
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_amount_field'), '250');
+    await tester.pumpAndSettle();
+
+    expect(_fieldText(tester, 'send_amount_field'), '250');
+    expect(find.text('2.5 $kZcashDefaultCurrencyTicker'), findsOneWidget);
+
+    await tester.tap(find.text('Review'));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeAmountZatoshi, BigInt.from(250000000));
+  });
+
+  testWidgets('native amount remains reviewable while USD price is loading', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(1000000000),
+        zecUsdPrice: null,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_amount_field'), '1.25');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('send_amount_price_loading')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Review'));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeAmountZatoshi, BigInt.from(125000000));
   });
 
   testWidgets('hardware TEX sends are blocked inline before proposal', (
@@ -498,6 +588,7 @@ Widget _sendHarness({
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
   BigInt? transparentBalance,
+  double? zecUsdPrice = 70,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -514,6 +605,7 @@ Widget _sendHarness({
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       sendWalletDbPathProvider.overrideWithValue(() async => '/tmp/test.db'),
+      zecHomeUsdUnitPriceProvider.overrideWithValue(zecUsdPrice),
       syncProvider.overrideWith(
         () => _FakeSyncNotifier(
           spendableBalance: spendableBalance ?? BigInt.from(500000000),
@@ -648,6 +740,7 @@ class _RustApiFake implements RustLibApi {
   int estimateSendMaxCalls = 0;
   String? lastProposeToAddress;
   String? lastProposeMemo;
+  BigInt? lastProposeAmountZatoshi;
   String? lastEstimateSendMaxToAddress;
   String? lastEstimateSendMaxMemo;
 
@@ -656,6 +749,7 @@ class _RustApiFake implements RustLibApi {
     estimateSendMaxCalls = 0;
     lastProposeToAddress = null;
     lastProposeMemo = null;
+    lastProposeAmountZatoshi = null;
     lastEstimateSendMaxToAddress = null;
     lastEstimateSendMaxMemo = null;
   }
@@ -719,6 +813,7 @@ class _RustApiFake implements RustLibApi {
     proposeSendCalls++;
     lastProposeToAddress = toAddress;
     lastProposeMemo = memo;
+    lastProposeAmountZatoshi = amountZatoshi;
     return ProposalResult(
       proposalId: BigInt.one,
       needsSaplingParams: false,

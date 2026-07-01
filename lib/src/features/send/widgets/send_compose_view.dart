@@ -50,7 +50,10 @@ class SendComposeView extends StatelessWidget {
     this.route = SendPoolRoute.unknown,
     this.amountText = '',
     this.amountHint = '0.00',
-    this.maxLabel = 'Max: 150 ZEC',
+    this.maxLabel = 'Use Max',
+    this.amountInputIsUsd = false,
+    this.amountConversionText = r'$ 0',
+    this.amountConversionLoading = false,
     this.amountFocused = false,
     this.amountError,
     this.memoMode = SendMemoMode.prompt,
@@ -59,6 +62,7 @@ class SendComposeView extends StatelessWidget {
     this.memoCounter = '512/512',
     this.memoError,
     this.reviewEnabled = false,
+    this.reviewLabel = 'Review',
     this.onReview,
     this.onContactsPressed,
     this.onAddMemo,
@@ -80,6 +84,9 @@ class SendComposeView extends StatelessWidget {
   final String amountText;
   final String amountHint;
   final String maxLabel;
+  final bool amountInputIsUsd;
+  final String? amountConversionText;
+  final bool amountConversionLoading;
 
   /// Autofocuses the amount field so the focus ring is visible in static
   /// previews of the "amount entered" states.
@@ -95,6 +102,7 @@ class SendComposeView extends StatelessWidget {
 
   // Primary CTA.
   final bool reviewEnabled;
+  final String reviewLabel;
   final VoidCallback? onReview;
   final VoidCallback? onContactsPressed;
   final VoidCallback? onAddMemo;
@@ -127,7 +135,15 @@ class SendComposeView extends StatelessWidget {
         const SizedBox(height: _overlayReserve),
         const SizedBox(height: _fieldGap),
         _amountField(context),
-        const SizedBox(height: _overlayReserve),
+        SizedBox(
+          height: _overlayReserve,
+          child: _AmountConversionRow(
+            text: amountConversionText,
+            loading: amountConversionLoading,
+            enabled: amountInputIsUsd || !amountConversionLoading,
+            enterUsdMode: !amountInputIsUsd,
+          ),
+        ),
         const SizedBox(height: _fieldGap),
         _memo(context),
         if (_expanded) const SizedBox(height: _multilineOverlayReserve),
@@ -185,8 +201,13 @@ class SendComposeView extends StatelessWidget {
                           onPressed: reviewEnabled ? (onReview ?? _noop) : null,
                           variant: AppButtonVariant.primary,
                           minWidth: reviewButtonWidth,
+                          constrainContent: true,
                           trailing: const AppIcon(AppIcons.chevronForward),
-                          child: const Text('Review'),
+                          child: Text(
+                            reviewLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
                     ],
@@ -235,18 +256,37 @@ class SendComposeView extends StatelessWidget {
     return AppTextField(
       key: const ValueKey('send_amount_field'),
       label: 'Amount',
-      rightLabel: maxLabel,
+      rightLabel: null,
+      rightSlot: Text(
+        maxLabel,
+        style: AppTypography.labelMedium.copyWith(color: colors.text.secondary),
+      ),
       initialValue: amountText,
       hintText: amountHint,
       autofocus: amountFocused,
       tone: isError ? AppTextFieldTone.destructive : AppTextFieldTone.neutral,
-      leading: AppIcon(
-        AppIcons.zcash,
-        size: 20,
-        color: hasText ? colors.icon.accent : colors.icon.regular,
-      ),
-      messageText: isError ? amountError : null,
-      showClearButton: true,
+      leading: amountInputIsUsd
+          ? Text(
+              r'$',
+              style: AppTypography.labelLarge.copyWith(
+                color: hasText ? colors.text.accent : colors.text.muted,
+              ),
+            )
+          : AppIcon(
+              AppIcons.coins,
+              size: 20,
+              color: hasText ? colors.icon.accent : colors.icon.regular,
+            ),
+      trailing: amountInputIsUsd
+          ? null
+          : Text(
+              'ZEC',
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+      trailingFitsSlot: true,
+      trailingSlotWidth: amountInputIsUsd ? null : 42,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
     );
   }
@@ -340,6 +380,84 @@ class _SendRecipientLink extends StatelessWidget {
           onTap: onTap,
           child: row,
         ),
+      ),
+    );
+  }
+}
+
+class _AmountConversionRow extends StatelessWidget {
+  const _AmountConversionRow({
+    required this.text,
+    required this.loading,
+    required this.enabled,
+    required this.enterUsdMode,
+  });
+
+  final String? text;
+  final bool loading;
+  final bool enabled;
+  final bool enterUsdMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Align(
+      alignment: AlignmentDirectional.topCenter,
+      child: Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.xxs),
+        child: Semantics(
+          button: true,
+          enabled: enabled,
+          label: enterUsdMode ? 'Enter amount in USD' : 'Enter amount in ZEC',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIcon(
+                AppIcons.doubleArrowVertical,
+                size: 16,
+                color: enabled ? colors.icon.muted : colors.icon.disabled,
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              if (loading) ...[
+                Text(
+                  r'$',
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                const _AmountPriceLoadingBar(),
+              ] else
+                Text(
+                  text ?? r'$ 0',
+                  key: const ValueKey('send_amount_conversion_text'),
+                  style: AppTypography.labelMedium.copyWith(
+                    color: enabled
+                        ? colors.text.secondary
+                        : colors.text.disabled,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AmountPriceLoadingBar extends StatelessWidget {
+  const _AmountPriceLoadingBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      key: const ValueKey('send_amount_price_loading'),
+      width: 48,
+      height: 12,
+      decoration: BoxDecoration(
+        color: colors.background.overlay.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(AppRadii.full),
       ),
     );
   }
