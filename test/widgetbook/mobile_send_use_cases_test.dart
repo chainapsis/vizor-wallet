@@ -325,15 +325,15 @@ void main() {
     expect(inputRect.right, lessThanOrEqualTo(zecRect.left - AppSpacing.xs));
   });
 
-  testWidgets('mobile send amount error use case renders visual error state', (
+  testWidgets('mobile send amount error use case renders CTA error state', (
     tester,
   ) async {
     await _pumpMobileSendUseCase(tester, buildMobileSendAmountErrorUseCase);
 
     expect(tester.takeException(), isNull);
     expect(find.text('243.12'), findsOneWidget);
-    expect(find.text('Not enough ZEC'), findsNothing);
-    expect(find.text('Enter amount to continue'), findsOneWidget);
+    expect(find.text('Not enough ZEC'), findsOneWidget);
+    expect(find.text('Enter amount to continue'), findsNothing);
   });
 
   testWidgets('mobile send amount ready use case renders review CTA', (

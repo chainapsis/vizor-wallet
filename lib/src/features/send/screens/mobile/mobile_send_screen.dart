@@ -938,7 +938,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (_amountReady) return 'Finish & review';
 
     final error = _amountError;
-    if (error != null && error.isNotEmpty && error != _notEnoughZecText) {
+    if (error != null && error.isNotEmpty) {
       return error;
     }
     return 'Enter amount to continue';

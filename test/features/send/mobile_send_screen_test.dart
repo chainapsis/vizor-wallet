@@ -1130,8 +1130,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_send_amount_input')));
     await tester.pumpAndSettle();
     await _enterAmount(tester, '9');
-    expect(find.text('Not enough ZEC'), findsNothing);
-    expect(find.text('Enter amount to continue'), findsOneWidget);
+    expect(find.text('Not enough ZEC'), findsOneWidget);
+    expect(find.text('Enter amount to continue'), findsNothing);
     final amountText = tester.widget<TextField>(
       find.byKey(const ValueKey('mobile_send_amount_input')),
     );
@@ -1192,7 +1192,7 @@ void main() {
     expect(find.text('Not enough ZEC'), findsNothing);
   });
 
-  testWidgets('Max insufficient balance keeps the obvious error label hidden', (
+  testWidgets('Max insufficient balance is shown through the disabled CTA', (
     tester,
   ) async {
     _sendMaxEstimateBuilder = ({required toAddress, memo}) =>
@@ -1210,8 +1210,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(_estimateSendMaxCalls, 1);
-    expect(find.text('Not enough ZEC'), findsNothing);
-    expect(find.text('Enter amount to continue'), findsOneWidget);
+    expect(find.text('Not enough ZEC'), findsOneWidget);
+    expect(find.text('Enter amount to continue'), findsNothing);
   });
 
   testWidgets('USD input derives the canonical ZEC amount for review', (
@@ -1299,8 +1299,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Not enough ZEC'), findsNothing);
-      expect(find.text('Enter amount to continue'), findsOneWidget);
+      expect(find.text('Not enough ZEC'), findsOneWidget);
+      expect(find.text('Enter amount to continue'), findsNothing);
       final dollarPrefix = tester.widget<Text>(find.text(r'$'));
       expect(
         dollarPrefix.style?.color,
