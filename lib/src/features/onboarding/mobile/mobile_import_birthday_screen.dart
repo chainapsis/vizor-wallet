@@ -471,6 +471,14 @@ class _MobileImportBirthdayScreenState
     final colors = context.colors;
     final isDateMode = _mode == _BirthdayEntryMode.date;
     final needsDate = isDateMode && _selectedDate == null;
+    final primaryLabel = needsDate
+        ? Platform.isIOS
+              ? 'Select month'
+              : 'Select date'
+        : 'Next';
+    final primaryTrailing = needsDate
+        ? AppIcons.calendar
+        : AppIcons.chevronForward;
 
     return MobileOnboardingStepScaffold(
       progress: widget.progress ?? mobileImportProgress(2),
@@ -478,38 +486,27 @@ class _MobileImportBirthdayScreenState
       title: 'Around when did you create your wallet?',
       // Two 25 px lines like the Figma subtitle block.
       subtitle: 'An estimate is enough — sync starts\nfrom there.',
-      // Keep the primary "next" affordance in the bottom stack, matching
-      // the previous onboarding pages. The earliest-height fallback stays
-      // below it and still requires confirmation before scanning from zero.
+      // Keep the primary flow action last in the bottom stack. The
+      // earliest-height fallback remains a text action above it and still
+      // requires confirmation before scanning from zero.
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _BottomTextAction(
+            key: const ValueKey('mobile_import_birthday_skip'),
+            onPressed: _busy ? null : () => unawaited(_skipBirthday()),
+            label: 'I don’t remember',
+          ),
+          const SizedBox(height: AppSpacing.xs),
           AppButton(
             key: const ValueKey('mobile_import_birthday_continue'),
             expand: true,
             onPressed: _primaryActionEnabled
                 ? () => unawaited(_handlePrimaryAction())
                 : null,
-            trailing: AppIcon(
-              needsDate ? AppIcons.calendar : AppIcons.chevronForward,
-            ),
-            child: Text(
-              needsDate
-                  ? Platform.isIOS
-                        ? 'Choose month'
-                        : 'Choose date'
-                  : 'Continue',
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          AppButton(
-            key: const ValueKey('mobile_import_birthday_skip'),
-            variant: AppButtonVariant.secondary,
-            expand: true,
-            onPressed: _busy ? null : () => unawaited(_skipBirthday()),
-            trailing: const AppIcon(AppIcons.skip),
-            child: const Text('I can’t remember'),
+            trailing: AppIcon(primaryTrailing),
+            child: Text(primaryLabel),
           ),
         ],
       ),
@@ -642,6 +639,46 @@ class _MobileImportBirthdayScreenState
               style: AppTypography.bodySmall.copyWith(color: colors.text.muted),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _BottomTextAction extends StatelessWidget {
+  const _BottomTextAction({
+    required this.label,
+    required this.onPressed,
+    super.key,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final enabled = onPressed != null;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: label,
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onPressed,
+          child: SizedBox(
+            height: AppButtonSizing.largeHeight,
+            child: Center(
+              child: Text(
+                label,
+                style: AppTypography.labelLarge.copyWith(
+                  color: enabled ? colors.text.primary : colors.text.disabled,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

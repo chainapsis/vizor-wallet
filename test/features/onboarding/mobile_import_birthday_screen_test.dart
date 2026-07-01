@@ -272,7 +272,8 @@ void main() {
     // large bottom action opens the calendar until a date has been selected.
     expect(find.byType(EditableText), findsNothing);
     expect(continueButton().onPressed, isNotNull);
-    expect(find.text('Choose date'), findsOneWidget);
+    expect(find.text('Select date'), findsOneWidget);
+    expect(find.text('I don’t remember'), findsOneWidget);
     expect(
       tester
           .getSize(
@@ -325,7 +326,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(ImportBirthdayCalendarPanel), findsNothing);
     expect(continueButton().onPressed, isNotNull);
-    expect(find.text('Continue'), findsOneWidget);
+    expect(find.text('Next'), findsOneWidget);
     expect(find.text('mm/dd/yyyy'), findsNothing);
   });
 
@@ -339,6 +340,45 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(ImportBirthdayCalendarPanel), findsOneWidget);
+  });
+
+  testWidgets('busy skip action remains text-only', (tester) async {
+    final submitCompleter = Completer<void>();
+
+    await tester.pumpWidget(
+      _app(onHeightConfirmed: (_) => submitCompleter.future),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_birthday_mode_height')),
+    );
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_import_birthday_height')),
+      '2500000',
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_birthday_continue')),
+    );
+    await tester.pump();
+
+    final skipAction = find.byKey(
+      const ValueKey('mobile_import_birthday_skip'),
+    );
+    expect(find.text('Importing wallet...'), findsOneWidget);
+    expect(skipAction, findsOneWidget);
+    expect(
+      find.descendant(of: skipAction, matching: find.byType(AppButton)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: skipAction, matching: find.byType(DecoratedBox)),
+      findsNothing,
+    );
+
+    submitCompleter.complete();
   });
 
   testWidgets('passes discovered account selection to passcode route', (
