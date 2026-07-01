@@ -70,6 +70,7 @@ void main() {
       oneClickRefundTo: 'u1refund',
       depositDeadline: DateTime.utc(2026, 5, 7, 12),
       accountUuid: 'account-1',
+      payMode: true,
       broadcastStatus: SwapDepositBroadcastStatus.broadcastedStorageFailed,
     );
 
@@ -121,6 +122,7 @@ void main() {
     expect(restored.single.oneClickRecipient, '0xrecipient');
     expect(restored.single.oneClickRefundTo, 'u1refund');
     expect(restored.single.depositDeadline, DateTime.utc(2026, 5, 7, 12));
+    expect(restored.single.payMode, isTrue);
     expect(restored.single.status, SwapIntentStatus.processing);
     expect(
       restored.single.broadcastStatus,
@@ -129,13 +131,11 @@ void main() {
   });
 
   test('broadcastStatus survives save and load round-trip', () async {
-    final intentWithStatus = _minimalIntent(
-      id: 'swap-bcast',
-      accountUuid: 'account-1',
-    ).copyWith(
-      depositTxHash: 'bcast-txid',
-      broadcastStatus: SwapDepositBroadcastStatus.broadcastedStorageFailed,
-    );
+    final intentWithStatus =
+        _minimalIntent(id: 'swap-bcast', accountUuid: 'account-1').copyWith(
+          depositTxHash: 'bcast-txid',
+          broadcastStatus: SwapDepositBroadcastStatus.broadcastedStorageFailed,
+        );
 
     await activityStore.saveRecords(
       accountUuid: 'account-1',
@@ -166,8 +166,10 @@ void main() {
 
   test('depositClaimedAt survives save and load round-trip', () async {
     final claimedAt = DateTime.utc(2026, 5, 29, 14, 30);
-    final intent = _minimalIntent(id: 'swap-claimed', accountUuid: 'account-1')
-        .copyWith(depositClaimedAt: claimedAt);
+    final intent = _minimalIntent(
+      id: 'swap-claimed',
+      accountUuid: 'account-1',
+    ).copyWith(depositClaimedAt: claimedAt);
 
     await activityStore.saveRecords(
       accountUuid: 'account-1',
@@ -308,6 +310,7 @@ void main() {
     expect(restored.single.providerLabel, 'NEAR Intents');
     expect(restored.single.accountUuid, 'account-1');
     expect(restored.single.direction, SwapDirection.zecToExternal);
+    expect(restored.single.payMode, isFalse);
     expect(
       await secureStore.readString(swapActivityStorageKeyForTest('account-1')),
       isNotNull,

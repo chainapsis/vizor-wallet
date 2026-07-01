@@ -36,6 +36,7 @@ class SwapIntentRecord {
     this.oneClickRefundTo,
     this.depositDeadline,
     this.accountUuid,
+    this.payMode = false,
     this.createdAt,
     this.updatedAt,
     this.completedAt,
@@ -77,6 +78,7 @@ class SwapIntentRecord {
       oneClickRefundTo: intent.oneClickRefundTo,
       depositDeadline: intent.depositDeadline,
       accountUuid: intent.accountUuid,
+      payMode: intent.payMode,
       createdAt: intent.createdAt,
       updatedAt: intent.updatedAt,
       completedAt: intent.completedAt,
@@ -117,6 +119,7 @@ class SwapIntentRecord {
   final String? oneClickRefundTo;
   final DateTime? depositDeadline;
   final String? accountUuid;
+  final bool payMode;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? completedAt;
@@ -159,6 +162,7 @@ class SwapIntentRecord {
     String? oneClickRefundTo,
     DateTime? depositDeadline,
     String? accountUuid,
+    bool? payMode,
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? completedAt,
@@ -207,6 +211,7 @@ class SwapIntentRecord {
       oneClickRefundTo: oneClickRefundTo ?? this.oneClickRefundTo,
       depositDeadline: depositDeadline ?? this.depositDeadline,
       accountUuid: accountUuid ?? this.accountUuid,
+      payMode: payMode ?? this.payMode,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       completedAt: completedAt ?? this.completedAt,
@@ -248,6 +253,7 @@ class SwapIntent {
     this.oneClickRefundTo,
     this.depositDeadline,
     this.accountUuid,
+    this.payMode = false,
     this.createdAt,
     this.updatedAt,
     this.completedAt,
@@ -287,6 +293,7 @@ class SwapIntent {
   final String? oneClickRefundTo;
   final DateTime? depositDeadline;
   final String? accountUuid;
+  final bool payMode;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? completedAt;
@@ -336,6 +343,7 @@ class SwapIntent {
     String? oneClickRefundTo,
     DateTime? depositDeadline,
     String? accountUuid,
+    bool? payMode,
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? completedAt,
@@ -380,6 +388,7 @@ class SwapIntent {
       oneClickRefundTo: oneClickRefundTo ?? this.oneClickRefundTo,
       depositDeadline: depositDeadline ?? this.depositDeadline,
       accountUuid: accountUuid ?? this.accountUuid,
+      payMode: payMode ?? this.payMode,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       completedAt: completedAt ?? this.completedAt,

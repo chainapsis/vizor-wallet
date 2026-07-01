@@ -70,6 +70,7 @@ class SwapState {
     this.depositTxHashText = '',
     this.depositSubmitting = false,
     this.selectedIntentId,
+    this.payMode = false,
   });
 
   final SwapDirection direction;
@@ -103,6 +104,7 @@ class SwapState {
   final String depositTxHashText;
   final bool depositSubmitting;
   final String? selectedIntentId;
+  final bool payMode;
 
   SwapIntent? get selectedIntentOrNull {
     final selectedId = selectedIntentId;
@@ -279,6 +281,7 @@ class SwapState {
     String? depositTxHashText,
     bool? depositSubmitting,
     String? selectedIntentId,
+    bool? payMode,
     bool clearReview = false,
     bool clearQuoteError = false,
     bool clearStatusError = false,
@@ -331,6 +334,7 @@ class SwapState {
       selectedIntentId: clearSelectedIntent
           ? null
           : selectedIntentId ?? this.selectedIntentId,
+      payMode: payMode ?? this.payMode,
     );
   }
 }

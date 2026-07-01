@@ -7,6 +7,7 @@ import '../../features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/home/screens/mobile/mobile_keystone_shield_screen.dart';
+import '../../features/pay/screens/pay_screen.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
 import '../../features/address_book/screens/mobile/mobile_address_book_screen.dart';
 import '../../features/activity/screens/mobile/mobile_swap_activity_detail_screen.dart';
@@ -175,6 +176,18 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
             : const MobileSwapScreen();
         return CupertinoPage(key: state.pageKey, child: child);
       },
+    ),
+    GoRoute(
+      path: '/pay/review',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileSwapReviewScreen(payMode: true),
+      ),
+    ),
+    GoRoute(
+      path: '/pay',
+      pageBuilder: (context, state) =>
+          CupertinoPage(key: state.pageKey, child: const MobilePayScreen()),
     ),
     // Same path as the desktop transaction status route so the shared
     // redirect guard and deep links treat them identically.

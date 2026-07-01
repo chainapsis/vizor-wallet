@@ -14,6 +14,7 @@ class SwapSlippageModal extends StatefulWidget {
     required this.onSubmitted,
     required this.onCancel,
     this.initialCustomText,
+    this.paymentMode = false,
     super.key,
   });
 
@@ -21,6 +22,7 @@ class SwapSlippageModal extends StatefulWidget {
   final ValueChanged<int> onSubmitted;
   final VoidCallback onCancel;
   final String? initialCustomText;
+  final bool paymentMode;
 
   @override
   State<SwapSlippageModal> createState() => _SwapSlippageModalState();
@@ -143,6 +145,15 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
+          if (widget.paymentMode) ...[
+            Text(
+              'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.',
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
           for (final bps in swapSlippagePresetBps) ...[
             _SlippageRadioCard(
               bps: bps,

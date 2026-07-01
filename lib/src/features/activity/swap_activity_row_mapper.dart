@@ -28,6 +28,7 @@ class SwapActivityRowItem {
     this.updatedAt,
     this.receiveWalletTxidHex,
     this.depositWalletTxidHex,
+    this.payMode = false,
   });
 
   factory SwapActivityRowItem.fromRecord(SwapIntentRecord record) {
@@ -49,6 +50,7 @@ class SwapActivityRowItem {
         record.destinationChainTxHash,
       ),
       depositWalletTxidHex: swapChainTxidToWalletTxidHex(record.depositTxHash),
+      payMode: record.payMode,
     );
   }
 
@@ -73,6 +75,8 @@ class SwapActivityRowItem {
   /// Wallet-order txid of our ZEC deposit broadcast (ZEC→external), used to
   /// suppress the duplicate standalone Sent row.
   final String? depositWalletTxidHex;
+
+  final bool payMode;
 }
 
 List<SwapActivityRowItem> swapActivityRowItemsFromRecords(
@@ -99,23 +103,30 @@ ActivityRowData buildSwapActivityRow({
   final sellAsset = _swapActivitySellAsset(item);
   final receiveAsset = _swapActivityReceiveAsset(item);
   final progress = _swapActivityProgress(item);
+  final payMode = item.payMode && item.direction == SwapDirection.zecToExternal;
 
   return ActivityRowData(
     stableId: 'swap:${item.intentId}',
-    title: _swapActivityTitle(item.status),
-    leadingIconName: AppIcons.swapArrows,
+    title: payMode
+        ? _payActivityTitle(item.status)
+        : _swapActivityTitle(item.status),
+    leadingIconName: payMode ? AppIcons.coins : AppIcons.swapArrows,
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
     leadingProgressValue: complete ? null : progress?.value,
-    subtitle: returnsFunds
+    subtitle: payMode
+        ? _payActivitySubtitle(receiveAsset)
+        : returnsFunds
         ? '${sellAsset?.symbol ?? 'ZEC'} Refunded'
         : _swapActivityAssetSubtitle(sellAsset) ?? item.providerLabel,
     amountText: activityAmountTextForFormFactor(
-      _swapActivityAmountText(
-        item,
-        includeSign: !(returnsFunds || timedOut),
-        privacyModeEnabled: privacyModeEnabled,
-      ),
+      payMode
+          ? _payActivityAmountText(item, privacyModeEnabled: privacyModeEnabled)
+          : _swapActivityAmountText(
+              item,
+              includeSign: !(returnsFunds || timedOut),
+              privacyModeEnabled: privacyModeEnabled,
+            ),
     ),
     amountIconName: returnsFunds ? AppIcons.uturnUp : null,
     amountIconColor: returnsFunds ? colors.icon.regular : null,
@@ -168,6 +179,9 @@ List<ActivityRowData> _swapActivityChildRows({
 }) {
   final direction = item.direction;
   if (direction == null || receiveAsset == null) return const [];
+  if (item.payMode && direction == SwapDirection.zecToExternal) {
+    return const [];
+  }
   if (item.status != SwapIntentStatus.complete) return const [];
 
   final colors = context.colors;
@@ -235,6 +249,39 @@ String _swapActivityReceiveAmountText(
   if (amount.isEmpty) return '--';
   if (amount.startsWith('+')) return amount;
   return '+$amount';
+}
+
+String _payActivityAmountText(
+  SwapActivityRowItem item, {
+  required bool privacyModeEnabled,
+}) {
+  if (privacyModeEnabled) {
+    return hideAmountIfPrivacyMode(
+      '',
+      privacyModeEnabled: true,
+      maskLength: _swapActivityAmountPrivacyMaskLength,
+    );
+  }
+  final amount = item.receiveEstimateText.trim();
+  return amount.isEmpty ? '--' : amount;
+}
+
+String _payActivityTitle(SwapIntentStatus status) {
+  return switch (status) {
+    SwapIntentStatus.complete => 'Paid',
+    SwapIntentStatus.failed ||
+    SwapIntentStatus.expired ||
+    SwapIntentStatus.refunded => 'Payment failed',
+    _ => 'Payment in progress',
+  };
+}
+
+String _payActivitySubtitle(SwapAsset? receiveAsset) {
+  final network = receiveAsset?.chainLabel;
+  if (network == null || network.isEmpty) {
+    return 'from shielded ZEC';
+  }
+  return 'from shielded ZEC · $network';
 }
 
 String _swapActivityStatusText(

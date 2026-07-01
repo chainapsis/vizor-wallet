@@ -78,6 +78,123 @@ void main() {
     );
   });
 
+  test('maps pay activity status without swap-specific detail rows', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.complete,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        sellAmount: '4.0000 ZEC',
+        receiveEstimate: '100.00 USDC',
+        depositTxHash: 'zec-shielded-spend-txid',
+        destinationChainTxHash: '0xusdc-delivery-txid',
+        oneClickRecipient: '0xrecipient-address',
+        totalFeesText: '0.1800 ZEC',
+        completedAt: DateTime.utc(2026, 5, 25, 13, 30),
+        payMode: true,
+      ),
+    );
+
+    expect(presentation.title, 'Payment complete');
+    expect(presentation.payLabel, 'You paid');
+    expect(presentation.receiveLabel, 'Recipient received');
+    expect(presentation.payDetailText, 'Privately, from shielded balance');
+    expect(presentation.progressTabLabel, 'Payment progress');
+    expect(presentation.paymentMode, isTrue);
+    expect(presentation.showTabs, isFalse);
+    expect(presentation.steps.map((step) => step.title), [
+      'Spend ZEC',
+      'Convert',
+      'Deliver USDC',
+      'Recipient receives',
+    ]);
+
+    expect(presentation.details.map((detail) => detail.label), [
+      'You paid',
+      'Rate',
+      'Fees',
+      'ZEC tx (shielded)',
+      'USDC delivery tx',
+    ]);
+    expect(_detailValue(presentation.details, 'You paid'), '4.0000 ZEC');
+    expect(_detailValue(presentation.details, 'Rate'), '1 ZEC = 25 USDC');
+    expect(
+      _detailRow(presentation.details, 'ZEC tx (shielded)').copyText,
+      'zec-shielded-spend-txid',
+    );
+    expect(
+      _detailRow(presentation.details, 'USDC delivery tx').copyText,
+      '0xusdc-delivery-txid',
+    );
+    expect(_detailValue(presentation.details, 'Fees'), '0.1800 ZEC');
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Timestamp')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('USDC recipient')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Deposit ZEC to')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Realized slippage')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Total fees')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Slippage tolerance')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Guaranteed minimum')),
+    );
+  });
+
+  test('omits pay activity fee rows when status has no fee data', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        sellAmount: '4.0000 ZEC',
+        receiveEstimate: '100.00 USDC',
+        oneClickRecipient: '0xrecipient-address',
+        payMode: true,
+      ),
+    );
+
+    expect(presentation.paymentMode, isTrue);
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Fees')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Network + conversion fees')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.value),
+      isNot(contains('Included')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.value),
+      isNot(contains('Included in shown rate')),
+    );
+    expect(
+      presentation.steps.map((step) => step.lastCheckedLabel),
+      everyElement(isNull),
+    );
+  });
+
   test('omits the tx id detail row on desktop', () {
     // The "Tx ID" row is a mobile-only addition; desktop keeps the original
     // detail set. Mobile-lane coverage of the row lives in
@@ -670,6 +787,7 @@ SwapIntent _intent({
   DateTime? depositDeadline,
   DateTime? createdAt,
   DateTime? completedAt,
+  bool payMode = false,
 }) {
   return SwapIntent(
     id: 'swap-activity',
@@ -696,6 +814,7 @@ SwapIntent _intent({
     providerRefundInfo: providerRefundInfo,
     fiatValueBasis: fiatValueBasis,
     depositDeadline: depositDeadline,
+    payMode: payMode,
     createdAt: createdAt,
     completedAt: completedAt,
   );

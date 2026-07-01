@@ -121,6 +121,7 @@ class SwapNotifier extends Notifier<SwapState> {
           amountFiatText: '',
           receiveFiatText: '',
           reviewVisible: false,
+          payMode: false,
         ),
       ),
     );
@@ -147,6 +148,7 @@ class SwapNotifier extends Notifier<SwapState> {
           amountFiatText: '',
           receiveFiatText: '',
           reviewVisible: false,
+          payMode: false,
         ),
       ),
     );
@@ -219,6 +221,65 @@ class SwapNotifier extends Notifier<SwapState> {
     );
   }
 
+  void preparePayFromShieldedZec() {
+    _clearReviewState();
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
+        state.copyWith(
+          direction: SwapDirection.zecToExternal,
+          quoteMode: SwapQuoteMode.exactOutput,
+          amountText: '',
+          receiveAmountText: '',
+          amountInputMode: SwapAmountInputMode.token,
+          receiveAmountInputMode: SwapAmountInputMode.token,
+          amountFiatText: '',
+          receiveFiatText: '',
+          externalAsset: SwapAsset.usdc,
+          destinationText: '',
+          reviewVisible: false,
+          depositTxHashText: '',
+          payMode: true,
+          clearReview: true,
+          clearQuoteError: true,
+          clearStatusError: true,
+          clearMaxAmountError: true,
+        ),
+      ),
+    );
+  }
+
+  void prepareSwapComposer() {
+    if (!state.payMode) return;
+    _clearReviewState();
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
+        state.copyWith(
+          quoteMode: SwapQuoteMode.exactInput,
+          amountText: '',
+          receiveAmountText: '',
+          amountInputMode: SwapAmountInputMode.token,
+          receiveAmountInputMode: SwapAmountInputMode.token,
+          amountFiatText: '',
+          receiveFiatText: '',
+          destinationText: '',
+          reviewVisible: false,
+          depositTxHashText: '',
+          payMode: false,
+          clearReview: true,
+          clearQuoteError: true,
+          clearStatusError: true,
+          clearMaxAmountError: true,
+        ),
+      ),
+    );
+    unawaited(
+      _restoreComposerPreferences(
+        accountUuid: _activeAccountUuidOrNull,
+        replaceComposer: true,
+      ),
+    );
+  }
+
   void toggleFiatInputMode(SwapAmountInputSide side) {
     _clearReviewState();
     final next = swapStateWithToggledFiatInputMode(state, side);
@@ -255,6 +316,7 @@ class SwapNotifier extends Notifier<SwapState> {
             externalAsset: supportedAsset,
             reviewVisible: false,
             destinationText: chainChanged ? '' : null,
+            payMode: false,
           ),
         ),
       ),
@@ -264,6 +326,34 @@ class SwapNotifier extends Notifier<SwapState> {
           state.receiveAmountInputMode == SwapAmountInputMode.fiat,
     );
     unawaited(_persistComposerPreferences(_currentComposerPreferences));
+  }
+
+  void selectPayExternalAsset(SwapAsset asset) {
+    final supportedAsset = _supportedAssetFor(
+      asset,
+      state.supportedExternalAssets,
+    );
+    if (supportedAsset == null) return;
+    // Pay collects the recipient address first, then lets the user confirm the
+    // destination network/token. Preserve the typed address when changing
+    // chains; the generic swap composer clears it because that flow is
+    // token-first.
+    _clearReviewState();
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
+        swapStateWithTokenAmountsForFiatModes(
+          state.copyWith(
+            externalAsset: supportedAsset,
+            reviewVisible: false,
+            payMode: true,
+          ),
+        ),
+      ),
+      preserveAmountFiatInput:
+          state.amountInputMode == SwapAmountInputMode.fiat,
+      preserveReceiveFiatInput:
+          state.receiveAmountInputMode == SwapAmountInputMode.fiat,
+    );
   }
 
   void updateSlippageBps(int value) {
@@ -440,7 +530,9 @@ class SwapNotifier extends Notifier<SwapState> {
     );
 
     try {
-      await _persistComposerPreferences(preferences);
+      if (!state.payMode) {
+        await _persistComposerPreferences(preferences);
+      }
       final stagingAddress = await ref
           .read(swapZecStagingAddressServiceProvider)
           .prepareForQuote(accountUuid: accountUuid);
@@ -531,6 +623,7 @@ class SwapNotifier extends Notifier<SwapState> {
       'quote=${_shortSwapValue(quote.providerQuoteId)} '
       'deposit=${_shortSwapValue(quote.depositInstruction.address)}',
     );
+    final startingPayMode = state.payMode;
     state = state.copyWith(startSubmitting: true, clearStatusError: true);
     if (accountUuid == null) {
       log('Swap: start blocked; no active account');
@@ -584,6 +677,7 @@ class SwapNotifier extends Notifier<SwapState> {
       quote: quote,
       addressPlan: addressPlan,
       accountUuid: accountUuid,
+      payMode: startingPayMode,
       now: DateTime.now().toUtc(),
     );
     if (activeAccountIsHardware && quote.direction.sendsZec) {
@@ -1432,6 +1526,7 @@ class SwapNotifier extends Notifier<SwapState> {
 
   Future<void> _restoreComposerPreferences({
     required String? accountUuid,
+    bool replaceComposer = false,
   }) async {
     final scopedAccountUuid = accountUuid?.trim();
     if (scopedAccountUuid == null || scopedAccountUuid.isEmpty) {
@@ -1443,11 +1538,13 @@ class SwapNotifier extends Notifier<SwapState> {
           .loadPreferences(accountUuid: scopedAccountUuid);
       if (preferences == null) return;
       if (!_isAccountActive(scopedAccountUuid)) return;
-      if (state.amountText.isNotEmpty ||
-          state.receiveAmountText.isNotEmpty ||
-          state.destinationText.isNotEmpty ||
-          state.quoteLoading ||
-          state.reviewVisible) {
+      if (!replaceComposer &&
+          (state.payMode ||
+              state.amountText.isNotEmpty ||
+              state.receiveAmountText.isNotEmpty ||
+              state.destinationText.isNotEmpty ||
+              state.quoteLoading ||
+              state.reviewVisible)) {
         return;
       }
       final externalAsset =
@@ -1463,6 +1560,7 @@ class SwapNotifier extends Notifier<SwapState> {
         slippageBps: preferences.slippageBps,
         reviewVisible: false,
         quoteLoading: false,
+        payMode: false,
         clearReview: true,
         clearQuoteError: true,
         clearStatusError: true,

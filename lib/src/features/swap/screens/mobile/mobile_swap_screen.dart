@@ -65,6 +65,15 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
   bool _addressEditorDraftRemember = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(swapStateProvider.notifier).prepareSwapComposer();
+    });
+  }
+
+  @override
   void dispose() {
     _swapModal.dispose();
     super.dispose();

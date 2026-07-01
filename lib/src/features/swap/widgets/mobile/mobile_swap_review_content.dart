@@ -34,6 +34,7 @@ class MobileSwapReviewContent extends StatelessWidget {
     this.inactiveMessage,
     this.payFiatTextOverride,
     this.receiveFiatTextOverride,
+    this.payMode = false,
     super.key,
   });
 
@@ -49,6 +50,7 @@ class MobileSwapReviewContent extends StatelessWidget {
   final String? inactiveMessage;
   final String? payFiatTextOverride;
   final String? receiveFiatTextOverride;
+  final bool payMode;
 
   @override
   Widget build(BuildContext context) {
@@ -76,15 +78,19 @@ class MobileSwapReviewContent extends StatelessWidget {
     final externalBottom = '$externalLabel: $externalAddressText';
 
     final payRow = MobileSwapReviewHeaderRow(
-      label: "You're paying",
+      label: payMode ? 'You pay' : "You're paying",
       amountText: trimSwapAmountText(
         compactSwapAmountText(quote.sellAmountText),
       ),
       asset: quote.sellAsset,
-      bottomText: sendsZec ? payFiatTextOverride : null,
+      bottomText: payMode && sendsZec
+          ? 'Privately, from shielded balance'
+          : sendsZec
+          ? payFiatTextOverride
+          : null,
     );
     final receiveRow = MobileSwapReviewHeaderRow(
-      label: "You're receiving",
+      label: payMode ? 'Recipient gets' : "You're receiving",
       amountText: trimSwapAmountText(
         compactSwapAmountText(quote.receiveEstimateText),
       ),
@@ -99,7 +105,7 @@ class MobileSwapReviewContent extends StatelessWidget {
       children: [
         MobileSwapReviewHeader(pay: payRow, receive: receiveRow),
         const SizedBox(height: AppSpacing.sm),
-        _ReviewCard(quote: quote),
+        _ReviewCard(quote: quote, payMode: payMode),
         if (amountWarning != null) ...[
           const SizedBox(height: AppSpacing.s),
           _MobileReviewNotice(
@@ -135,13 +141,15 @@ class MobileSwapReviewContent extends StatelessWidget {
 
 /// The rounded details card — Figma `Review Wrap` (4731:85565).
 class _ReviewCard extends StatelessWidget {
-  const _ReviewCard({required this.quote});
+  const _ReviewCard({required this.quote, required this.payMode});
 
   final SwapQuote quote;
+  final bool payMode;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final feeText = quote.totalFeesText?.trim();
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sm,
@@ -154,24 +162,33 @@ class _ReviewCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _ReviewRow(
-            label: 'Slippage tolerance',
-            value: swapReviewSlippageToleranceText(quote),
-          ),
-          _ReviewRow(
-            label: 'Guaranteed minimum',
-            value: compactSwapAmountText(quote.minimumReceiveText),
-            helpTooltip: swapMinimumReceiveTooltip(quote.receiveAsset.symbol),
-          ),
+          if (payMode) ...[
+            _ReviewRow(label: 'Rate', value: quote.rateText),
+            if (feeText != null && feeText.isNotEmpty)
+              _ReviewRow(label: 'Network + conversion fees', value: feeText),
+          ] else ...[
+            _ReviewRow(
+              label: 'Slippage tolerance',
+              value: swapReviewSlippageToleranceText(quote),
+            ),
+            _ReviewRow(
+              label: 'Guaranteed minimum',
+              value: compactSwapAmountText(quote.minimumReceiveText),
+              helpTooltip: swapMinimumReceiveTooltip(quote.receiveAsset.symbol),
+            ),
+          ],
           const SizedBox(height: AppSpacing.sm),
           // Figma `border/neutral/default`.
           Container(height: 1, color: colors.border.regular),
           const SizedBox(height: AppSpacing.sm),
-          _ReviewRow(
-            label: 'Swap fee',
-            value: quote.feeLabel,
-            helpTooltip: swapFeeTooltip,
-          ),
+          if (payMode)
+            _ReviewRow(label: 'Quote holds', value: quote.expiryLabel)
+          else
+            _ReviewRow(
+              label: 'Swap fee',
+              value: quote.feeLabel,
+              helpTooltip: swapFeeTooltip,
+            ),
         ],
       ),
     );
@@ -296,6 +313,8 @@ class MobileSwapReviewActions extends StatelessWidget {
     required this.onCancelReview,
     required this.onReviewAgain,
     required this.onStartIntent,
+    this.payMode = false,
+    this.receiveAmountText,
     super.key,
   });
 
@@ -307,19 +326,27 @@ class MobileSwapReviewActions extends StatelessWidget {
   final VoidCallback onCancelReview;
   final VoidCallback onReviewAgain;
   final VoidCallback onStartIntent;
+  final bool payMode;
+  final String? receiveAmountText;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final startingLabel = sendsZec ? 'Sending' : 'Locking quote';
+    final startingLabel = payMode
+        ? 'Paying'
+        : sendsZec
+        ? 'Sending'
+        : 'Locking quote';
     final primaryLabel = inactive
-        ? 'Return to swap'
+        ? (payMode ? 'Return to pay' : 'Return to swap')
         : expired
         ? 'Review again'
         : startBlockedReason != null
         ? 'Not enough ZEC'
         : starting
         ? startingLabel
+        : payMode
+        ? _payReviewActionLabel(receiveAmountText)
         : 'Confirm & swap';
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -343,6 +370,8 @@ class MobileSwapReviewActions extends StatelessWidget {
               : onStartIntent,
           leading: inactive || expired || starting || startBlockedReason != null
               ? null
+              : payMode
+              ? const AppIcon(AppIcons.coins, size: 20)
               : const AppIcon(AppIcons.swapArrows, size: 20),
           child: Text(primaryLabel),
         ),
@@ -371,4 +400,9 @@ class MobileSwapReviewActions extends StatelessWidget {
       ],
     );
   }
+}
+
+String _payReviewActionLabel(String? receiveAmountText) {
+  final amount = compactSwapAmountText(receiveAmountText ?? '').trim();
+  return amount.isEmpty ? 'Confirm payment' : 'Pay $amount';
 }

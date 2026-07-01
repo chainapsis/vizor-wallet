@@ -31,6 +31,7 @@ Widget _harness(Widget child) {
 MobileSwapReviewContent _content({
   Iterable<AddressBookContact> addressBookContacts = const [],
   SwapDirection direction = SwapDirection.zecToExternal,
+  bool payMode = false,
 }) {
   const externalAddress = '0x9aDFd236b6ccD57bd571ca3C538dbB55FE4819E2';
   const walletAddress =
@@ -56,6 +57,7 @@ MobileSwapReviewContent _content({
     expired: false,
     amountWarning: null,
     startError: null,
+    payMode: payMode,
   );
 }
 
@@ -127,6 +129,22 @@ void main() {
       separator: ' ... ',
     );
     expect(find.text('To: Treasury ($compactAddress)'), findsOneWidget);
+  });
+
+  testWidgets('pay review card uses payment detail rows', (tester) async {
+    await tester.pumpWidget(_harness(_content(payMode: true)));
+
+    expect(find.text('You pay'), findsOneWidget);
+    expect(find.text('Recipient gets'), findsOneWidget);
+    expect(find.text('Privately, from shielded balance'), findsOneWidget);
+    expect(find.text('Arrives in'), findsNothing);
+    expect(find.text('Rate'), findsOneWidget);
+    expect(find.text('Network + conversion fees'), findsNothing);
+    expect(find.text('Included in shown rate'), findsNothing);
+    expect(find.text('Quote holds'), findsOneWidget);
+    expect(find.text('Slippage tolerance'), findsNothing);
+    expect(find.text('Guaranteed minimum'), findsNothing);
+    expect(find.text('Swap fee'), findsNothing);
   });
 
   testWidgets('review detail help icons use desktop tooltip copy', (

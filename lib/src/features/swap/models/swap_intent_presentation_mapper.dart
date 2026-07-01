@@ -47,6 +47,7 @@ SwapIntent _swapIntentFromRecord(SwapIntentRecord record, {DateTime? now}) {
     oneClickRefundTo: record.oneClickRefundTo,
     depositDeadline: record.depositDeadline,
     accountUuid: record.accountUuid,
+    payMode: record.payMode,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     completedAt:
@@ -103,6 +104,7 @@ SwapIntent swapIntentFromSnapshot({
   required SwapQuote quote,
   required SwapAddressPlan addressPlan,
   required String accountUuid,
+  bool payMode = false,
   required DateTime now,
 }) {
   final depositDeadline =
@@ -148,6 +150,7 @@ SwapIntent swapIntentFromSnapshot({
     oneClickRefundTo: addressPlan.oneClickRefundTo,
     depositDeadline: depositDeadline,
     accountUuid: accountUuid,
+    payMode: payMode,
     createdAt: now,
     updatedAt: now,
     completedAt: status.isTerminal ? now : null,
@@ -237,8 +240,7 @@ SwapIntent updateSwapIntentFromSnapshot(
     providerStatus: snapshot.status,
     deadline: depositDeadline,
     hasDepositEvidence: swapHasConfirmedDepositEvidence(
-      originChainTxHash:
-          _hasText(intent.originChainTxHash)
+      originChainTxHash: _hasText(intent.originChainTxHash)
           ? intent.originChainTxHash
           : snapshot.originChainTxHash,
       depositTxHash: intent.depositTxHash,
@@ -320,4 +322,3 @@ String _nextActionForRestoredStatus(
 }
 
 bool _hasText(String? value) => value?.trim().isNotEmpty ?? false;
-

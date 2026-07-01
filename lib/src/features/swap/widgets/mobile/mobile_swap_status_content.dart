@@ -56,7 +56,11 @@ class MobileSwapStatusContent extends StatelessWidget {
         MobileSwapReviewHeader(pay: payHeaderRow, receive: receiveHeaderRow),
         const SizedBox(height: _mobileStatusHeaderToBodyGap),
         if (presentation.showTabs) ...[
-          _MobileStatusTabs(activeTab: activeTab, onChanged: onTabChanged),
+          _MobileStatusTabs(
+            activeTab: activeTab,
+            progressLabel: presentation.progressTabLabel,
+            onChanged: onTabChanged,
+          ),
           const SizedBox(height: AppSpacing.sm),
           _StatusCard(
             key: const ValueKey('mobile_swap_status_card'),
@@ -115,9 +119,14 @@ class _StatusCard extends StatelessWidget {
 }
 
 class _MobileStatusTabs extends StatelessWidget {
-  const _MobileStatusTabs({required this.activeTab, required this.onChanged});
+  const _MobileStatusTabs({
+    required this.activeTab,
+    required this.progressLabel,
+    required this.onChanged,
+  });
 
   final SwapStatusTab activeTab;
+  final String progressLabel;
   final ValueChanged<SwapStatusTab> onChanged;
 
   @override
@@ -130,7 +139,7 @@ class _MobileStatusTabs extends StatelessWidget {
           children: [
             _MobileStatusTabLabel(
               key: const ValueKey('mobile_swap_status_tab_progress'),
-              label: 'Swap progress',
+              label: progressLabel,
               selected: activeTab == SwapStatusTab.progress,
               onTap: () => onChanged(SwapStatusTab.progress),
             ),

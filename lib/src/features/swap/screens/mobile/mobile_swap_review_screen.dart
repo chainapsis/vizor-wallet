@@ -27,7 +27,9 @@ const _keystoneSigningReviewInactiveDelay = Duration(milliseconds: 500);
 /// surface that fits the phone; smaller devices scale down) with the
 /// same quote/start orchestration as the desktop review screen.
 class MobileSwapReviewScreen extends ConsumerStatefulWidget {
-  const MobileSwapReviewScreen({super.key});
+  const MobileSwapReviewScreen({this.payMode = false, super.key});
+
+  final bool payMode;
 
   @override
   ConsumerState<MobileSwapReviewScreen> createState() =>
@@ -64,7 +66,7 @@ class _MobileSwapReviewScreenState
 
   void _returnToSwap() {
     ref.read(swapStateProvider.notifier).cancelReviewQuote();
-    context.go('/swap');
+    context.go(widget.payMode ? '/pay' : '/swap');
   }
 
   void _reviewAgain() {
@@ -75,7 +77,7 @@ class _MobileSwapReviewScreenState
       if (!next.reviewVisible ||
           next.reviewQuote == null ||
           next.reviewAddressPlan == null) {
-        context.go('/swap');
+        context.go(widget.payMode ? '/pay' : '/swap');
       }
     }());
   }
@@ -100,12 +102,15 @@ class _MobileSwapReviewScreenState
         });
         return;
       }
+      final returnTarget = widget.payMode
+          ? SwapActivityReturnTarget.pay
+          : SwapActivityReturnTarget.swap;
       switch (result) {
         case SwapStartedActivity(:final intentId):
           context.go(
             swapActivityDetailUri(
               intentId: intentId,
-              returnTarget: SwapActivityReturnTarget.swap,
+              returnTarget: returnTarget,
             ).toString(),
           );
         case SwapStartedKeystoneSigning(:final intentId):
@@ -125,7 +130,7 @@ class _MobileSwapReviewScreenState
             final path = GoRouter.of(
               context,
             ).routerDelegate.currentConfiguration.uri.path;
-            if (path == '/swap/review') {
+            if (path == (widget.payMode ? '/pay/review' : '/swap/review')) {
               ref
                   .read(swapStateProvider.notifier)
                   .clearPendingKeystoneSigningIntent(intentId);
@@ -138,7 +143,7 @@ class _MobileSwapReviewScreenState
           context.go(
             swapActivityDetailUri(
               intentId: intentId,
-              returnTarget: SwapActivityReturnTarget.swap,
+              returnTarget: returnTarget,
               autoSignZecDeposit: true,
             ).toString(),
           );
@@ -184,7 +189,7 @@ class _MobileSwapReviewScreenState
     if (!swapState.reviewVisible || quote == null || addressPlan == null) {
       if (!_hadReviewState || !_startingIntent) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) context.go('/swap');
+          if (mounted) context.go(widget.payMode ? '/pay' : '/swap');
         });
       }
       return const SizedBox.shrink();
@@ -209,7 +214,9 @@ class _MobileSwapReviewScreenState
     );
     final startBlockedReason =
         swapReviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
-        ? "You don't have enough ZEC for this swap. Try a smaller amount."
+        ? widget.payMode
+              ? "You don't have enough ZEC for this payment. Try a smaller amount."
+              : "You don't have enough ZEC for this swap. Try a smaller amount."
         : null;
 
     return Scaffold(
@@ -217,7 +224,10 @@ class _MobileSwapReviewScreenState
       body: SafeArea(
         child: Column(
           children: [
-            MobileTopNav.back(title: 'Review quote', onBack: _returnToSwap),
+            MobileTopNav.back(
+              title: widget.payMode ? 'Confirm payment' : 'Review quote',
+              onBack: _returnToSwap,
+            ),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(
@@ -251,6 +261,7 @@ class _MobileSwapReviewScreenState
                     asset: quote.receiveAsset,
                     amount: quote.receiveAmount,
                   ),
+                  payMode: widget.payMode,
                 ),
               ),
             ),
@@ -271,6 +282,8 @@ class _MobileSwapReviewScreenState
                   inactive: inactiveReview,
                   startBlockedReason: startBlockedReason,
                   sendsZec: quote.direction.sendsZec,
+                  payMode: widget.payMode,
+                  receiveAmountText: quote.receiveEstimateText,
                   onReviewAgain: _reviewAgain,
                   onCancelReview: _returnToSwap,
                   onStartIntent: _startIntent,
