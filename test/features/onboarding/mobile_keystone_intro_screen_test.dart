@@ -57,6 +57,9 @@ void main() {
     expect(find.byKey(prepareCardKey), findsOneWidget);
     expect(find.text('1. Check Keystone firmware'), findsOneWidget);
     expect(find.text('2. Prepare to connect'), findsOneWidget);
+    expect(find.textContaining('Make sure your Keystone'), findsOneWidget);
+    expect(find.text('link'), findsOneWidget);
+    expect(find.text('Download firmware'), findsNothing);
 
     expect(tester.getSize(find.byKey(firmwareCardKey)).width, 361);
     expect(tester.getSize(find.byKey(prepareCardKey)).width, 361);
@@ -74,10 +77,16 @@ void main() {
 
     expect(find.text('Continue'), findsOneWidget);
     expect(find.text('Tell me how Zcash works'), findsNothing);
+    expect(find.text('On your Keystone'), findsOneWidget);
+    expect(find.text('Unlock it.'), findsNothing);
     expect(
-      find.text(
-        'Allow camera access when prompted and scan the QR code with your phone.',
-      ),
+      find.text('Tap ••• (top right), then Connect software wallet.'),
+      findsOneWidget,
+    );
+    expect(find.text('Select Vizor (or ZODL)'), findsOneWidget);
+    expect(find.text('On Vizor'), findsOneWidget);
+    expect(
+      find.text('Scan the dynamic QR code on your Keystone.'),
       findsOneWidget,
     );
 

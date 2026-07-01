@@ -22,9 +22,22 @@ void main() {
     expect(find.text('Connect Keystone'), findsOneWidget);
     expect(find.text('Prepare your Keystone wallet'), findsOneWidget);
     expect(find.text('1. Check Keystone firmware'), findsOneWidget);
-    expect(find.text('Keystone Firmware'), findsOneWidget);
+    expect(find.textContaining('Make sure your Keystone'), findsOneWidget);
+    expect(find.text('link'), findsOneWidget);
+    expect(find.text('Download firmware'), findsNothing);
     expect(find.text('2. Prepare to connect'), findsOneWidget);
-    expect(find.text('Unlock your Keystone.'), findsOneWidget);
+    expect(find.text('On your Keystone'), findsOneWidget);
+    expect(find.text('Unlock it.'), findsNothing);
+    expect(
+      find.text('Tap ••• (top right), then Connect software wallet.'),
+      findsOneWidget,
+    );
+    expect(find.text('Select Vizor (or ZODL)'), findsOneWidget);
+    expect(find.text('On Vizor'), findsOneWidget);
+    expect(
+      find.text('Scan the dynamic QR code on your Keystone.'),
+      findsOneWidget,
+    );
     expect(find.text("I'm ready now"), findsOneWidget);
   });
 
