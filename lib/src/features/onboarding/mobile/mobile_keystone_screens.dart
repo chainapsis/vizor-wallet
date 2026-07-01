@@ -613,6 +613,7 @@ class MobileKeystoneBirthdayScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return MobileImportBirthdayScreen(
       args: const ImportBirthdayArgs(mnemonic: ''),
+      progress: 0.8,
       onHeightConfirmed: (height) => _confirm(context, ref, height),
     );
   }

@@ -19,7 +19,7 @@ import '../keystone/keystone_onboarding_flow.dart'
     show keystoneOnboardingProvider;
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
-import 'mobile_create_steps.dart';
+import 'mobile_onboarding_progress.dart';
 import 'passcode_widgets.dart';
 
 /// Length of the mobile wallet passcode. The digit string is stored as
@@ -191,7 +191,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         child: Column(
           children: [
             MobileTopNav.steps(
-              progress: mobileCreateProgress(5),
+              progress: _progressForFlow(widget.args.flow),
               onBack: isSubmitting
                   ? null
                   : () => Navigator.of(context).maybePop(),
@@ -260,3 +260,9 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     );
   }
 }
+
+double _progressForFlow(SetPasswordFlow flow) => switch (flow) {
+  SetPasswordFlow.create => mobileCreateProgress(7),
+  SetPasswordFlow.importKeystone => kMobileKeystonePasscodeProgress,
+  SetPasswordFlow.importWallet => mobileImportProgress(3),
+};

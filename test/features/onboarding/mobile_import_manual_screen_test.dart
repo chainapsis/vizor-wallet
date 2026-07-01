@@ -7,8 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_manual_screen.dart';
-import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_review_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 const _wordList = ['abandon', 'ability', 'able', 'about', 'zebra'];
@@ -33,10 +33,11 @@ Widget _routedApp() {
             const MobileImportManualScreen(wordListOverride: _wordList),
       ),
       GoRoute(
-        path: '/import/review',
-        builder: (_, state) => MobileImportReviewScreen(
-          args: state.extra as MobileImportReviewArgs,
-        ),
+        path: '/import/birthday',
+        builder: (_, state) {
+          final args = state.extra as ImportBirthdayArgs;
+          return Scaffold(body: Text('Birthday: ${args.mnemonic}'));
+        },
       ),
     ],
   );
@@ -89,37 +90,38 @@ void main() {
     expect(find.textContaining('abandon'), findsOneWidget);
   });
 
-  testWidgets('back from review edits the last word instead of adding a 25th', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_routedApp());
-    await tester.pumpAndSettle();
+  testWidgets(
+    'back from birthday edits the last word instead of adding a 25th',
+    (tester) async {
+      await tester.pumpWidget(_routedApp());
+      await tester.pumpAndSettle();
 
-    final field = find.byKey(const ValueKey('mobile_import_manual_field'));
-    await tester.enterText(
-      field,
-      List.filled(kMnemonicMaxWords, 'abandon').join(' '),
-    );
-    await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('mobile_import_manual_field'));
+      await tester.enterText(
+        field,
+        List.filled(kMnemonicMaxWords, 'abandon').join(' '),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Review Import'), findsOneWidget);
+      expect(find.textContaining('Birthday:'), findsOneWidget);
 
-    await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
 
-    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
-    expect(tester.widget<TextField>(field).controller!.text, 'abandon');
-    expect(find.text('24'), findsOneWidget);
+      expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
+      expect(tester.widget<TextField>(field).controller!.text, 'abandon');
+      expect(find.text('24'), findsOneWidget);
 
-    await tester.enterText(field, 'zebra');
-    await tester.pump();
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pumpAndSettle();
+      await tester.enterText(field, 'zebra');
+      await tester.pump();
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
 
-    expect(find.text('Review Import'), findsOneWidget);
-    expect(find.text('zebra'), findsOneWidget);
-    expect(find.textContaining('found 25'), findsNothing);
-  });
+      expect(find.textContaining('Birthday:'), findsOneWidget);
+      expect(find.textContaining('zebra'), findsOneWidget);
+      expect(find.textContaining('found 25'), findsNothing);
+    },
+  );
 
   testWidgets('keyboard action advances without dropping focus', (
     tester,

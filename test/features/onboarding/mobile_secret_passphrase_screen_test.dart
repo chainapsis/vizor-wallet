@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/seed_card.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
@@ -81,6 +82,13 @@ Widget _routerApp(Stream<void> screenshotStream) {
   );
 }
 
+double _stepsProgress(WidgetTester tester) {
+  final fill = tester.widget<FractionallySizedBox>(
+    find.byType(FractionallySizedBox).first,
+  );
+  return fill.widthFactor!;
+}
+
 void main() {
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -109,6 +117,21 @@ void main() {
     expect(find.text('abandon'), findsOneWidget);
     expect(find.text('actual'), findsOneWidget);
     expect(find.text('Continue'), findsOneWidget);
+  });
+
+  testWidgets('create secret passphrase progress counts welcome', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        const MobileSecretPassphraseScreen(
+          args: CreateSecretPassphraseArgs(mnemonic: _mnemonic),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(6), 0.0001));
   });
 
   testWidgets('copy puts the full phrase on the clipboard', (tester) async {

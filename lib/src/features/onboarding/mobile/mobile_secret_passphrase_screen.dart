@@ -26,7 +26,7 @@ import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import '../../settings/screens/mobile/mobile_seed_phrase_screen.dart'
     show MobileSeedScreenshotWarningSheet;
-import 'mobile_create_steps.dart';
+import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
 import 'seed_card.dart';
 
@@ -210,7 +210,7 @@ class _MobileSecretPassphraseScreenState
       sensitiveContentVisible: _revealed && _mnemonic != null,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
-        progress: mobileCreateProgress(4),
+        progress: mobileCreateProgress(6),
         onBack: _submitting ? null : () => Navigator.of(context).maybePop(),
         title: 'Secret Passphrase',
         subtitle: 'The Master Key to your wallet.',

@@ -25,6 +25,7 @@ import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_import_account_discovery_sheet.dart';
 import 'mobile_import_birthday_unknown_height_sheet.dart';
+import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 enum _BirthdayEntryMode { date, blockHeight }
@@ -47,6 +48,7 @@ class MobileImportBirthdayScreen extends ConsumerStatefulWidget {
   const MobileImportBirthdayScreen({
     required this.args,
     this.onHeightConfirmed,
+    this.progress,
     this.loadChainMetadata = true,
     super.key,
   });
@@ -58,6 +60,10 @@ class MobileImportBirthdayScreen extends ConsumerStatefulWidget {
   /// this screen but imports a hardware UFVK. Thrown errors surface
   /// through the screen's standard error line.
   final Future<void> Function(int height)? onHeightConfirmed;
+
+  /// Override for shared Keystone usage. Software import uses the compact
+  /// import-flow value.
+  final double? progress;
 
   /// Test seam — widget tests disable the lightwalletd metadata fetch.
   @visibleForTesting
@@ -450,7 +456,7 @@ class _MobileImportBirthdayScreenState
     final isDateMode = _mode == _BirthdayEntryMode.date;
 
     return MobileOnboardingStepScaffold(
-      progress: 0.8,
+      progress: widget.progress ?? mobileImportProgress(2),
       onBack: _isSubmitting ? null : () => Navigator.of(context).maybePop(),
       title: 'Around when did you create your wallet?',
       // Two 25 px lines like the Figma subtitle block.

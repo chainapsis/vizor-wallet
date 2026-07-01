@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import 'mobile_onboarding_progress.dart';
 
 const double _methodCardHeight = 120;
 const double _regularArtWidth = 180;
@@ -38,9 +39,12 @@ class MobileMethodSelectionScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // First step, just before the create flow's step 1
-            // (mobileCreateProgress(1) ≈ 0.167) so the track never moves back.
-            MobileTopNav.steps(progress: 0.15, onBack: () => context.pop()),
+            // Welcome has no track, so method selection is the first visible
+            // fill after one completed create-flow screen.
+            MobileTopNav.steps(
+              progress: mobileCreateProgress(2),
+              onBack: () => context.pop(),
+            ),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),

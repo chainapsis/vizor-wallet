@@ -8,6 +8,8 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
+import '../shared/onboarding_flow_args.dart';
+import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 /// Mnemonic lengths the wallet accepts. The Figma frames show a fixed
@@ -24,20 +26,6 @@ List<String> tokenizeMnemonicWords(String raw) => raw
     .split(RegExp(r'[^a-z]+'))
     .where((word) => word.isNotEmpty)
     .toList();
-
-/// Words ready for review, carried between the import steps.
-class MobileImportReviewArgs {
-  const MobileImportReviewArgs({required this.words});
-
-  final List<String> words;
-
-  String get mnemonic => words.join(' ');
-}
-
-/// Result a pushed review screen returns to whoever opened it. `cleared`
-/// means the user tapped "Clear secret phrase" — the opener drops the
-/// entered phrase and returns the user to a fresh entry.
-enum ImportReviewResult { cleared }
 
 /// Validates a candidate phrase; returns an error message or null.
 String? validateImportedMnemonic(List<String> words) {
@@ -111,24 +99,14 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
   }
 
   void _confirm() {
-    context
-        .push<Object?>(
-          '/import/review',
-          extra: MobileImportReviewArgs(words: _words),
-        )
-        .then((result) {
-          // "Clear secret phrase" on review wipes the pasted phrase so the
-          // entry reappears empty.
-          if (result == ImportReviewResult.cleared && mounted) _clear();
-        });
+    context.push(
+      '/import/birthday',
+      extra: ImportBirthdayArgs(mnemonic: _words.join(' ')),
+    );
   }
 
   void _openManual() {
-    context.push<Object?>('/import/manual').then((result) {
-      // The manual flow forwards a Clear secret phrase so the entry also
-      // wipes any stale pasted phrase/error and starts fresh.
-      if (result == ImportReviewResult.cleared && mounted) _clear();
-    });
+    context.push('/import/manual');
   }
 
   bool get _filled => _words.isNotEmpty && _error == null;
@@ -137,7 +115,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileOnboardingStepScaffold(
-      progress: 0.2,
+      progress: mobileImportProgress(1),
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Import Wallet',
       // Line break matches the Figma subtitle wrap.
@@ -234,7 +212,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       // VZR-71: users instinctively tap the slot grid expecting to
       // type — route the tap into the manual wizard, same as the Enter
       // manually link. Once a valid phrase fills the card it is a
-      // review surface and the tap is disabled.
+      // confirmed phrase surface and the tap is disabled.
       child: _filled
           ? ImportSlotsCard(words: _words)
           : Semantics(
