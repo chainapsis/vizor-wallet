@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_method_selection_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
 
 Widget _app({
   String initialLocation = '/welcome',
@@ -34,6 +35,13 @@ Widget _app({
 Future<void> _openMethodSelection(WidgetTester tester) async {
   await tester.tap(find.byKey(const ValueKey('mobile_welcome_get_started')));
   await tester.pumpAndSettle();
+}
+
+double _stepsProgress(WidgetTester tester) {
+  final fill = tester.widget<FractionallySizedBox>(
+    find.byType(FractionallySizedBox).first,
+  );
+  return fill.widthFactor!;
 }
 
 BoxDecoration _cardBackgroundDecoration(WidgetTester tester, Key cardKey) {
@@ -136,6 +144,7 @@ void main() {
       expect(find.text('Create wallet'), findsOneWidget);
       expect(find.text('Import wallet'), findsOneWidget);
       expect(find.text('Connect Keystone'), findsOneWidget);
+      expect(_stepsProgress(tester), closeTo(mobileCreateProgress(2), 0.0001));
       expect(find.textContaining('you agree to our'), findsOneWidget);
       final hiddenFooter = find.byKey(
         const ValueKey('mobile_method_legal_footer_hidden'),

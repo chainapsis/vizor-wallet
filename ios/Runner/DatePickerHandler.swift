@@ -194,6 +194,7 @@ private final class DatePickerSheetViewController: UIViewController,
   private let initialDate: Date?
   private let minDate: Date
   private let maxDate: Date
+  private let interfaceStyle: UIUserInterfaceStyle
   private var pickedDate: Date?
   private var finished = false
   /// Largest calendar fitting height seen so far. The detent is
@@ -212,8 +213,10 @@ private final class DatePickerSheetViewController: UIViewController,
     self.initialDate = initialDate
     self.minDate = minDate
     self.maxDate = maxDate
+    self.interfaceStyle = isDarkTheme ? .dark : .light
     super.init(nibName: nil, bundle: nil)
-    overrideUserInterfaceStyle = isDarkTheme ? .dark : .light
+    overrideUserInterfaceStyle = interfaceStyle
+    calendarView.overrideUserInterfaceStyle = interfaceStyle
     if let accentColor {
       calendarView.tintColor = accentColor
     }
@@ -244,6 +247,7 @@ private final class DatePickerSheetViewController: UIViewController,
 
   override func viewDidLoad() {
     super.viewDidLoad()
+    view.overrideUserInterfaceStyle = interfaceStyle
     view.backgroundColor = .systemBackground
 
     var gregorian = Calendar(identifier: .gregorian)
@@ -333,6 +337,7 @@ private final class MonthYearPickerSheetViewController: UIViewController,
   private let minDate: Date
   private let maxDate: Date
   private let accentColor: UIColor?
+  private let interfaceStyle: UIUserInterfaceStyle
   private weak var contentStack: UIStackView?
   private var calendar: Calendar
   private var selectedYear: Int
@@ -372,6 +377,7 @@ private final class MonthYearPickerSheetViewController: UIViewController,
     self.minDate = minDate
     self.maxDate = maxDate
     self.accentColor = accentColor
+    self.interfaceStyle = isDarkTheme ? .dark : .light
     self.calendar = gregorian
     self.selectedYear = year
     self.selectedMonth = month
@@ -383,7 +389,7 @@ private final class MonthYearPickerSheetViewController: UIViewController,
       calendar: gregorian
     )
     super.init(nibName: nil, bundle: nil)
-    overrideUserInterfaceStyle = isDarkTheme ? .dark : .light
+    overrideUserInterfaceStyle = interfaceStyle
     modalPresentationStyle = .pageSheet
   }
 
@@ -392,6 +398,7 @@ private final class MonthYearPickerSheetViewController: UIViewController,
 
   override func viewDidLoad() {
     super.viewDidLoad()
+    view.overrideUserInterfaceStyle = interfaceStyle
     view.backgroundColor = .systemBackground
     if let accentColor {
       view.tintColor = accentColor
@@ -458,6 +465,7 @@ private final class MonthYearPickerSheetViewController: UIViewController,
       datePicker.minimumDate = minDate
       datePicker.maximumDate = maxDate
       datePicker.date = selectedDate
+      datePicker.overrideUserInterfaceStyle = interfaceStyle
       if let accentColor {
         datePicker.tintColor = accentColor
       }
@@ -472,6 +480,7 @@ private final class MonthYearPickerSheetViewController: UIViewController,
 
     pickerView.dataSource = self
     pickerView.delegate = self
+    pickerView.overrideUserInterfaceStyle = interfaceStyle
     pickerView.translatesAutoresizingMaskIntoConstraints = false
     selectFallbackRows(animated: false)
     return pickerView

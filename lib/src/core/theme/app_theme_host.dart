@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 import 'app_theme.dart';
 
 /// Resolves the user's [ThemeMode] into the app design-system theme and keeps
-/// the macOS window chrome aligned with that resolved brightness.
+/// native platform chrome aligned with that resolved brightness.
 class AppThemeHost extends StatelessWidget {
   const AppThemeHost({required this.themeMode, required this.child, super.key});
 
@@ -29,7 +29,11 @@ class AppThemeHost extends StatelessWidget {
       data: appThemeData,
       child: _MacOSWindowAppearanceSync(
         brightness: brightness,
-        child: _AndroidSystemBarsSync(brightness: brightness, child: child),
+        child: _IOSWindowAppearanceSync(
+          themeMode: themeMode,
+          brightness: brightness,
+          child: _AndroidSystemBarsSync(brightness: brightness, child: child),
+        ),
       ),
     );
   }
@@ -73,6 +77,43 @@ class _MacOSWindowAppearanceSyncState
     super.didUpdateWidget(oldWidget);
     if (oldWidget.brightness == widget.brightness) return;
     _MacOSWindowAppearance.sync(widget.brightness);
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
+class _IOSWindowAppearanceSync extends StatefulWidget {
+  const _IOSWindowAppearanceSync({
+    required this.themeMode,
+    required this.brightness,
+    required this.child,
+  });
+
+  final ThemeMode themeMode;
+  final Brightness brightness;
+  final Widget child;
+
+  @override
+  State<_IOSWindowAppearanceSync> createState() =>
+      _IOSWindowAppearanceSyncState();
+}
+
+class _IOSWindowAppearanceSyncState extends State<_IOSWindowAppearanceSync> {
+  @override
+  void initState() {
+    super.initState();
+    _IOSWindowAppearance.sync(widget.themeMode, widget.brightness);
+  }
+
+  @override
+  void didUpdateWidget(covariant _IOSWindowAppearanceSync oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.themeMode == widget.themeMode &&
+        oldWidget.brightness == widget.brightness) {
+      return;
+    }
+    _IOSWindowAppearance.sync(widget.themeMode, widget.brightness);
   }
 
   @override
@@ -125,9 +166,7 @@ abstract final class _AndroidSystemBars {
     if (kIsWeb || !Platform.isAndroid) return;
     if (_lastBrightness == brightness) return;
     _lastBrightness = brightness;
-    SystemChrome.setSystemUIOverlayStyle(
-      androidSystemBarsStyleFor(brightness),
-    );
+    SystemChrome.setSystemUIOverlayStyle(androidSystemBarsStyleFor(brightness));
   }
 }
 
@@ -175,6 +214,43 @@ abstract final class _MacOSWindowAppearance {
     } catch (error) {
       _lastBrightness = null;
       debugPrint('MacOSWindowAppearance: sync failed: $error');
+    }
+  }
+}
+
+abstract final class _IOSWindowAppearance {
+  static const _channel = MethodChannel('com.zcash.wallet/window_appearance');
+
+  static ThemeMode? _lastThemeMode;
+  static Brightness? _lastResolvedBrightness;
+
+  static void sync(ThemeMode themeMode, Brightness resolvedBrightness) {
+    if (kIsWeb || !Platform.isIOS) return;
+    if (_lastThemeMode == themeMode &&
+        _lastResolvedBrightness == resolvedBrightness) {
+      return;
+    }
+    _lastThemeMode = themeMode;
+    _lastResolvedBrightness = resolvedBrightness;
+    unawaited(_setBrightness(themeMode, resolvedBrightness));
+  }
+
+  static Future<void> _setBrightness(
+    ThemeMode themeMode,
+    Brightness resolvedBrightness,
+  ) async {
+    try {
+      await _channel.invokeMethod<void>('setBrightness', {
+        'brightness': switch (themeMode) {
+          ThemeMode.system => 'system',
+          ThemeMode.dark => 'dark',
+          ThemeMode.light => 'light',
+        },
+      });
+    } catch (error) {
+      _lastThemeMode = null;
+      _lastResolvedBrightness = null;
+      debugPrint('IOSWindowAppearance: sync failed: $error');
     }
   }
 }

@@ -25,6 +25,7 @@ import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_import_account_discovery_sheet.dart';
 import 'mobile_import_birthday_unknown_height_sheet.dart';
+import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 enum _BirthdayEntryMode { date, blockHeight }
@@ -47,6 +48,7 @@ class MobileImportBirthdayScreen extends ConsumerStatefulWidget {
   const MobileImportBirthdayScreen({
     required this.args,
     this.onHeightConfirmed,
+    this.progress,
     this.loadChainMetadata = true,
     super.key,
   });
@@ -58,6 +60,10 @@ class MobileImportBirthdayScreen extends ConsumerStatefulWidget {
   /// this screen but imports a hardware UFVK. Thrown errors surface
   /// through the screen's standard error line.
   final Future<void> Function(int height)? onHeightConfirmed;
+
+  /// Override for shared Keystone usage. Software import uses the compact
+  /// import-flow value.
+  final double? progress;
 
   /// Test seam — widget tests disable the lightwalletd metadata fetch.
   @visibleForTesting
@@ -149,6 +155,13 @@ class _MobileImportBirthdayScreenState
   };
 
   bool get _busy => _submitPhase != _MobileImportSubmitPhase.idle;
+
+  bool get _primaryActionEnabled =>
+      !_busy &&
+      switch (_mode) {
+        _BirthdayEntryMode.date => true,
+        _BirthdayEntryMode.blockHeight => _heightPlausible,
+      };
 
   void _setMode(_BirthdayEntryMode mode) {
     if (_busy || _mode == mode) return;
@@ -251,6 +264,15 @@ class _MobileImportBirthdayScreenState
           });
         }
     }
+  }
+
+  Future<void> _handlePrimaryAction() async {
+    if (!_primaryActionEnabled) return;
+    if (_mode == _BirthdayEntryMode.date && _selectedDate == null) {
+      await _pickDate();
+      return;
+    }
+    await _continue();
   }
 
   /// "I can't remember" — like the desktop skip, import from the Sapling
@@ -448,26 +470,43 @@ class _MobileImportBirthdayScreenState
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isDateMode = _mode == _BirthdayEntryMode.date;
+    final needsDate = isDateMode && _selectedDate == null;
+    final primaryLabel = needsDate
+        ? Platform.isIOS
+              ? 'Select month'
+              : 'Select date'
+        : 'Next';
+    final primaryTrailing = needsDate
+        ? AppIcons.calendar
+        : AppIcons.chevronForward;
 
     return MobileOnboardingStepScaffold(
-      progress: 0.8,
+      progress: widget.progress ?? mobileImportProgress(2),
       onBack: _isSubmitting ? null : () => Navigator.of(context).maybePop(),
       title: 'Around when did you create your wallet?',
       // Two 25 px lines like the Figma subtitle block.
       subtitle: 'An estimate is enough — sync starts\nfrom there.',
-      // Figma `Buttons Stack` (4752:26672): a full-width skip below the
-      // entry row that imports from the Sapling activation height.
+      // Keep the primary flow action last in the bottom stack. The
+      // earliest-height fallback remains a text action above it and still
+      // requires confirmation before scanning from zero.
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AppButton(
+          _BottomTextAction(
             key: const ValueKey('mobile_import_birthday_skip'),
-            variant: AppButtonVariant.secondary,
-            expand: true,
             onPressed: _busy ? null : () => unawaited(_skipBirthday()),
-            trailing: const AppIcon(AppIcons.skip),
-            child: const Text('I can’t remember'),
+            label: 'I don’t remember',
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          AppButton(
+            key: const ValueKey('mobile_import_birthday_continue'),
+            expand: true,
+            onPressed: _primaryActionEnabled
+                ? () => unawaited(_handlePrimaryAction())
+                : null,
+            trailing: AppIcon(primaryTrailing),
+            child: Text(primaryLabel),
           ),
         ],
       ),
@@ -500,81 +539,65 @@ class _MobileImportBirthdayScreenState
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              Expanded(
-                // 61-high 2 px-bordered field per the Figma entry row.
-                child: isDateMode
-                    ? _DateFieldButton(
-                        date: _selectedDate,
-                        formatted: _selectedDate == null
-                            ? null
-                            : _formattedDate(_selectedDate!),
-                        enabled: !_busy,
-                        onTap: () => unawaited(_pickDate()),
-                      )
-                    : _FieldShell(
-                        focused: _heightFocus.hasFocus,
-                        child: Row(
+          // 61-high 2 px-bordered field per the Figma entry row.
+          isDateMode
+              ? _DateFieldButton(
+                  date: _selectedDate,
+                  formatted: _selectedDate == null
+                      ? null
+                      : _formattedDate(_selectedDate!),
+                  enabled: !_busy,
+                  onTap: () => unawaited(_pickDate()),
+                )
+              : _FieldShell(
+                  focused: _heightFocus.hasFocus,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Stack(
+                          alignment: Alignment.centerLeft,
                           children: [
-                            Expanded(
-                              child: Stack(
-                                alignment: Alignment.centerLeft,
-                                children: [
-                                  if (_heightController.text.isEmpty)
-                                    IgnorePointer(
-                                      child: Text(
-                                        'Block height',
-                                        maxLines: 1,
-                                        style: AppTypography.headlineSmall
-                                            .copyWith(color: colors.text.muted),
-                                      ),
-                                    ),
-                                  // A real TextField (bare, no
-                                  // decoration) rather than raw
-                                  // EditableText so long-press selection
-                                  // and the paste menu work; the shell
-                                  // owns all visible chrome.
-                                  TextField(
-                                    key: const ValueKey(
-                                      'mobile_import_birthday_height',
-                                    ),
-                                    controller: _heightController,
-                                    focusNode: _heightFocus,
-                                    autofocus: true,
-                                    readOnly: _busy,
-                                    keyboardType: TextInputType.number,
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.digitsOnly,
-                                      LengthLimitingTextInputFormatter(10),
-                                    ],
-                                    onChanged: (_) =>
-                                        setState(() => _error = null),
-                                    maxLines: 1,
-                                    style: AppTypography.headlineSmall.copyWith(
-                                      color: colors.text.accent,
-                                    ),
-                                    cursorColor: colors.text.accent,
-                                    decoration: null,
+                            if (_heightController.text.isEmpty)
+                              IgnorePointer(
+                                child: Text(
+                                  'Block height',
+                                  maxLines: 1,
+                                  style: AppTypography.headlineSmall.copyWith(
+                                    color: colors.text.muted,
                                   ),
-                                ],
+                                ),
                               ),
+                            // A real TextField (bare, no decoration) rather
+                            // than raw EditableText so long-press selection
+                            // and the paste menu work; the shell owns all
+                            // visible chrome.
+                            TextField(
+                              key: const ValueKey(
+                                'mobile_import_birthday_height',
+                              ),
+                              controller: _heightController,
+                              focusNode: _heightFocus,
+                              autofocus: true,
+                              readOnly: _busy,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(10),
+                              ],
+                              onChanged: (_) => setState(() => _error = null),
+                              maxLines: 1,
+                              style: AppTypography.headlineSmall.copyWith(
+                                color: colors.text.accent,
+                              ),
+                              cursorColor: colors.text.accent,
+                              decoration: null,
                             ),
                           ],
                         ),
                       ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              AppButton(
-                key: const ValueKey('mobile_import_birthday_continue'),
-                onPressed: !_canContinue || _busy ? null : _continue,
-                // 70×60 chevron pill with a 20 px glyph per the Figma row.
-                height: 60,
-                minWidth: 70,
-                child: const AppIcon(AppIcons.chevronForward, size: 20),
-              ),
-            ],
-          ),
+                    ],
+                  ),
+                ),
           const SizedBox(height: AppSpacing.s),
           if (_error != null)
             Text(
@@ -616,6 +639,46 @@ class _MobileImportBirthdayScreenState
               style: AppTypography.bodySmall.copyWith(color: colors.text.muted),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _BottomTextAction extends StatelessWidget {
+  const _BottomTextAction({
+    required this.label,
+    required this.onPressed,
+    super.key,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final enabled = onPressed != null;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: label,
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onPressed,
+          child: SizedBox(
+            height: AppButtonSizing.largeHeight,
+            child: Center(
+              child: Text(
+                label,
+                style: AppTypography.labelLarge.copyWith(
+                  color: enabled ? colors.text.primary : colors.text.disabled,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
