@@ -226,6 +226,31 @@ Widget _app({
   );
 }
 
+Widget _amountStepWithPriceLoadingApp() {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      syncProvider.overrideWith(_FakeSyncNotifier.new),
+      zecHomeUsdUnitPriceProvider.overrideWithValue(null),
+      addressBookRepositoryProvider.overrideWithValue(
+        _FakeAddressBookRepository(const []),
+      ),
+      ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+    ],
+    child: MaterialApp(
+      home: AppTheme(
+        data: AppThemeData.light,
+        child: MobileSendScreen(
+          loadWalletDbPath: () async => '/tmp/zcash-test',
+          initialAmountStep: true,
+          initialRecipient: _shieldedAddress,
+          initialAddressType: 'unified',
+        ),
+      ),
+    ),
+  );
+}
+
 Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
   final router = GoRouter(
     initialLocation: '/home',
@@ -1013,6 +1038,31 @@ void main() {
       expect(find.text('Savings'), findsWidgets);
     },
   );
+
+  testWidgets('amount step shows animated price loading placeholder', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_amountStepWithPriceLoadingApp());
+    await tester.pump();
+    await tester.pump();
+
+    final loadingFinder = find.byKey(
+      const ValueKey('mobile_send_amount_price_loading'),
+    );
+    expect(loadingFinder, findsOneWidget);
+    expect(tester.getSize(loadingFinder), const Size(48, 12));
+    expect(
+      find.descendant(
+        of: loadingFinder,
+        matching: find.byType(AnimatedBuilder),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(loadingFinder, findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('the amount step enforces the spendable balance', (tester) async {
     await tester.pumpWidget(_app());

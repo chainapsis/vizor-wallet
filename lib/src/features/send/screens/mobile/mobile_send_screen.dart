@@ -210,6 +210,9 @@ const _kMobileSendAmountInputHeight = 64.0;
 const _kMobileSendAmountMetaHeight = 20.0;
 const _kMobileSendAmountZecHintEndInset = 3.7;
 const _kMobileSendAmountCursorBlinkHalfPeriod = Duration(milliseconds: 500);
+const _kMobileSendAmountPriceLoadingWidth = 48.0;
+const _kMobileSendAmountPriceLoadingHeight = 12.0;
+const _kMobileSendAmountPriceLoadingPeriod = Duration(milliseconds: 1200);
 const _kMobileSendAmountFontSize = 48.0;
 const _kMobileSendAmountLineHeightPx = 40.0;
 const _kMobileSendAmountUnitFontSize = 38.0;
@@ -2289,21 +2292,141 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 }
 
-class _AmountPriceLoadingBar extends StatelessWidget {
+class _AmountPriceLoadingBar extends StatefulWidget {
   const _AmountPriceLoadingBar();
+
+  @override
+  State<_AmountPriceLoadingBar> createState() => _AmountPriceLoadingBarState();
+}
+
+class _AmountPriceLoadingBarState extends State<_AmountPriceLoadingBar>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _controller;
+
+  AnimationController get _activeController {
+    return _controller ??= AnimationController(
+      vsync: this,
+      duration: _kMobileSendAmountPriceLoadingPeriod,
+    );
+  }
+
+  bool get _shouldAnimate {
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) return false;
+    return TickerMode.valuesOf(context).enabled;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncAnimation();
+  }
+
+  void _syncAnimation() {
+    final controller = _controller;
+    if (_shouldAnimate) {
+      if (!_activeController.isAnimating) _activeController.repeat();
+      return;
+    }
+    if (controller != null) {
+      controller
+        ..stop()
+        ..value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Container(
-      key: const ValueKey('mobile_send_amount_price_loading'),
-      width: 48,
-      height: 12,
-      decoration: BoxDecoration(
-        color: colors.background.neutralSubtleOpacity,
-        borderRadius: BorderRadius.circular(AppRadii.full),
-      ),
+    final baseColor = colors.background.overlay.withValues(alpha: 0.15);
+    final highlightColor = colors.background.raised;
+    final staticPainter = _AmountPriceLoadingPainter(
+      progress: 0,
+      baseColor: baseColor,
+      highlightColor: highlightColor,
+      animate: false,
     );
+
+    return SizedBox(
+      key: const ValueKey('mobile_send_amount_price_loading'),
+      width: _kMobileSendAmountPriceLoadingWidth,
+      height: _kMobileSendAmountPriceLoadingHeight,
+      child: _shouldAnimate
+          ? AnimatedBuilder(
+              animation: _activeController,
+              builder: (context, _) {
+                return CustomPaint(
+                  painter: _AmountPriceLoadingPainter(
+                    progress: _activeController.value,
+                    baseColor: baseColor,
+                    highlightColor: highlightColor,
+                  ),
+                );
+              },
+            )
+          : CustomPaint(painter: staticPainter),
+    );
+  }
+}
+
+class _AmountPriceLoadingPainter extends CustomPainter {
+  const _AmountPriceLoadingPainter({
+    required this.progress,
+    required this.baseColor,
+    required this.highlightColor,
+    this.animate = true,
+  });
+
+  final double progress;
+  final Color baseColor;
+  final Color highlightColor;
+  final bool animate;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(AppRadii.full));
+    if (!animate) {
+      final shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [highlightColor, baseColor],
+      ).createShader(rect);
+      canvas.drawRRect(rrect, Paint()..shader = shader);
+      return;
+    }
+
+    canvas.drawRRect(rrect, Paint()..color = baseColor);
+    canvas.save();
+    canvas.clipRRect(rrect);
+    final sweepWidth = size.width * 1.6;
+    final left = -sweepWidth + progress * (size.width + sweepWidth);
+    final sweepRect = Rect.fromLTWH(left, 0, sweepWidth, size.height);
+    final shader = LinearGradient(
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+      colors: [
+        baseColor.withValues(alpha: 0),
+        highlightColor,
+        baseColor.withValues(alpha: 0),
+      ],
+      stops: const [0, 0.5, 1],
+    ).createShader(sweepRect);
+    canvas.drawRect(sweepRect, Paint()..shader = shader);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _AmountPriceLoadingPainter oldDelegate) {
+    return progress != oldDelegate.progress ||
+        baseColor != oldDelegate.baseColor ||
+        highlightColor != oldDelegate.highlightColor ||
+        animate != oldDelegate.animate;
   }
 }
 
