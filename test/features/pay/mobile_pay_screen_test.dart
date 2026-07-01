@@ -121,7 +121,21 @@ void main() {
     final amountInput = tester.widget<TextField>(
       find.byKey(const ValueKey('pay_recipient_amount_input')),
     );
-    expect(amountInput.textAlign, TextAlign.right);
+    final amountInputRect = tester.getRect(
+      find.byKey(const ValueKey('pay_recipient_amount_input')),
+    );
+    final amountSymbolRect = tester.getRect(
+      find.byKey(const ValueKey('pay_recipient_amount_symbol')),
+    );
+    final amountDisplayRect = tester.getRect(
+      find.byKey(const ValueKey('pay_recipient_amount_display')),
+    );
+    expect(amountInput.textAlign, TextAlign.center);
+    expect(amountInputRect.width, lessThan(120));
+    expect(
+      (amountInputRect.left + amountSymbolRect.right) / 2,
+      closeTo(amountDisplayRect.center.dx, 1),
+    );
   });
 }
 
