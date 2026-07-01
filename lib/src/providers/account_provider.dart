@@ -454,15 +454,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       for (final account in prev.accounts)
         if (account.uuid != uuid) account,
     ];
-    final seedAnchorCount = prev.accounts
-        .where((account) => account.isSeedAnchor)
-        .length;
-    if (target.isSeedAnchor && seedAnchorCount <= 1 && remaining.isNotEmpty) {
-      throw StateError(
-        'The last seed anchor account cannot be removed while other accounts remain.',
-      );
-    }
-
     final dbPath = await _getDbPath();
     final network = await _getNetwork();
     await _resetVotingProcessStateForAccount(uuid, dbPath: dbPath);

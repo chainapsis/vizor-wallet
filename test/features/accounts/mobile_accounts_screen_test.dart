@@ -253,8 +253,9 @@ void main() {
     expect(safeArea.bottom, isFalse);
   });
 
-  testWidgets('imported accounts offer removal; the last seed anchor with '
-      'other accounts does not', (tester) async {
+  testWidgets('imported accounts and seed anchors offer removal', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _app(
         AccountState(
@@ -291,11 +292,11 @@ void main() {
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
 
-    // Last seed anchor with another account: edit only.
+    // Seed anchor with another account: edit + remove.
     await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
     await tester.pumpAndSettle();
     expect(find.text('Edit account'), findsOneWidget);
-    expect(find.text('Remove account'), findsNothing);
+    expect(find.text('Remove account'), findsOneWidget);
   });
 
   testWidgets('the last remaining seed account resets the app on removal', (

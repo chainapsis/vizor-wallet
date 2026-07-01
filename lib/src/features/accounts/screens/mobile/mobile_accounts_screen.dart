@@ -86,13 +86,10 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     }
   }
 
-  /// Mirrors the desktop eligibility rule: the last remaining account
-  /// is removable because removal becomes a full app reset.
+  /// Mirrors the desktop eligibility rule: account removal is available for
+  /// every listed account. The last remaining account becomes a full app reset.
   bool _canRemove(AccountInfo account, List<AccountInfo> accounts) {
-    if (accounts.length == 1) return true;
-    if (!account.isSeedAnchor) return true;
-    final seedAnchorCount = accounts.where((a) => a.isSeedAnchor).length;
-    return seedAnchorCount > 1;
+    return accounts.any((candidate) => candidate.uuid == account.uuid);
   }
 
   /// Anchored dark popup at the row's ⋯ button — Figma `Accounts` row
