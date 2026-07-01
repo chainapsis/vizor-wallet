@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart'
-    show InputDecoration, Material, MaterialType, TextField;
+    show InputDecoration, Material, MaterialType, Scaffold, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -188,22 +188,18 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                           swapNotifier.updateReceiveAmountFiat,
                       onToggleFiatInputMode: swapNotifier.toggleFiatInputMode,
                       onDestinationChanged: _handleDestinationChanged,
-                      onNetworkSelected:
-                          (chainTicker) =>
-                              _handleNetworkSelected(chainTicker, swapState),
+                      onNetworkSelected: (chainTicker) =>
+                          _handleNetworkSelected(chainTicker, swapState),
                       onAssetSelected: _handleAssetSelected,
-                      onOpenAssetSelector:
-                          () => setState(
-                            () => _payModal = _PayModalSurface.assetSelector,
-                          ),
-                      onOpenAddressScanner:
-                          () => setState(
-                            () => _payModal = _PayModalSurface.addressScanner,
-                          ),
-                      onOpenContactPicker:
-                          () => setState(
-                            () => _payModal = _PayModalSurface.contactPicker,
-                          ),
+                      onOpenAssetSelector: () => setState(
+                        () => _payModal = _PayModalSurface.assetSelector,
+                      ),
+                      onOpenAddressScanner: () => setState(
+                        () => _payModal = _PayModalSurface.addressScanner,
+                      ),
+                      onOpenContactPicker: () => setState(
+                        () => _payModal = _PayModalSurface.contactPicker,
+                      ),
                       onReviewPayment: () => unawaited(_openReview()),
                     ),
                   ),
@@ -245,9 +241,8 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                           swapState.supportedExternalAssets,
                           _selectedPayNetworkId,
                         ),
-                        onSelected:
-                            (contact) =>
-                                _handleContactSelected(contact, swapState),
+                        onSelected: (contact) =>
+                            _handleContactSelected(contact, swapState),
                         onCancel: _closePayModal,
                       ),
                   },
@@ -424,8 +419,8 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                   swapState.supportedExternalAssets,
                   _selectedPayNetworkId,
                 ),
-                onSelected:
-                    (contact) => _handleContactSelected(contact, swapState),
+                onSelected: (contact) =>
+                    _handleContactSelected(contact, swapState),
                 onCancel: _closePayModal,
               ),
             };
@@ -433,7 +428,10 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
               bottom: false,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [const Spacer(), MobileModalCard(child: content)],
+                children: [
+                  const Spacer(),
+                  MobileModalCard(child: content),
+                ],
               ),
             );
           },
@@ -466,9 +464,9 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
             (value.value ?? SyncState()).scopedToAccount(activeAccountUuid),
       ),
     );
-    return Material(
-      type: MaterialType.transparency,
-      child: SafeArea(
+    return Scaffold(
+      backgroundColor: context.colors.background.window,
+      body: SafeArea(
         bottom: false,
         child: Column(
           children: [
@@ -501,16 +499,15 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                       swapNotifier.updateReceiveAmountFiat,
                   onToggleFiatInputMode: swapNotifier.toggleFiatInputMode,
                   onDestinationChanged: _handleDestinationChanged,
-                  onNetworkSelected:
-                      (chainTicker) =>
-                          _handleNetworkSelected(chainTicker, swapState),
+                  onNetworkSelected: (chainTicker) =>
+                      _handleNetworkSelected(chainTicker, swapState),
                   onAssetSelected: _handleAssetSelected,
-                  onOpenAssetSelector:
-                      () => _openModal(_PayModalSurface.assetSelector),
-                  onOpenAddressScanner:
-                      () => _openModal(_PayModalSurface.addressScanner),
-                  onOpenContactPicker:
-                      () => _openModal(_PayModalSurface.contactPicker),
+                  onOpenAssetSelector: () =>
+                      _openModal(_PayModalSurface.assetSelector),
+                  onOpenAddressScanner: () =>
+                      _openModal(_PayModalSurface.addressScanner),
+                  onOpenContactPicker: () =>
+                      _openModal(_PayModalSurface.contactPicker),
                   onReviewPayment: () => unawaited(_openReview()),
                   showHeader: false,
                   showFooterAttribution: false,
@@ -627,20 +624,18 @@ class _PayComposerState extends State<PayComposer> {
     final destinationError = state.destinationAddressFormatError;
     final destinationText = state.destinationText.trim();
     final selectedNetworkId = widget.selectedNetworkId;
-    final selectedNetwork =
-        selectedNetworkId == null
-            ? null
-            : AddressBookNetwork.tryFromChainTicker(selectedNetworkId);
+    final selectedNetwork = selectedNetworkId == null
+        ? null
+        : AddressBookNetwork.tryFromChainTicker(selectedNetworkId);
     final inferredNetworks = _payInferredNetworks(
       state.supportedExternalAssets,
       destinationText,
     );
-    final networkOptions =
-        destinationText.isEmpty
-            ? const <AddressBookNetwork>[]
-            : inferredNetworks.isEmpty
-            ? _paySupportedNetworks(state.supportedExternalAssets)
-            : inferredNetworks;
+    final networkOptions = destinationText.isEmpty
+        ? const <AddressBookNetwork>[]
+        : inferredNetworks.isEmpty
+        ? _paySupportedNetworks(state.supportedExternalAssets)
+        : inferredNetworks;
     final networkReady = _paySelectedNetworkAcceptsAddress(
       selectedNetwork,
       destinationText,
@@ -749,14 +744,12 @@ class _PayComposerState extends State<PayComposer> {
               textStyle: AppTypography.codeMedium.copyWith(
                 color: colors.text.accent,
               ),
-              tone:
-                  destinationError == null || !networkReady
-                      ? AppTextFieldTone.neutral
-                      : AppTextFieldTone.destructive,
-              messageText:
-                  networkReady && destinationError != null
-                      ? destinationError
-                      : 'Network and token unlock after this address.',
+              tone: destinationError == null || !networkReady
+                  ? AppTextFieldTone.neutral
+                  : AppTextFieldTone.destructive,
+              messageText: networkReady && destinationError != null
+                  ? destinationError
+                  : 'Network and token unlock after this address.',
             ),
           ),
           if (destinationText.isNotEmpty) ...[
@@ -775,10 +768,9 @@ class _PayComposerState extends State<PayComposer> {
             variant: AppButtonVariant.primary,
             size: AppButtonSize.large,
             expand: true,
-            onPressed:
-                canContinue
-                    ? () => setState(() => _step = _PayComposerStep.quote)
-                    : null,
+            onPressed: canContinue
+                ? () => setState(() => _step = _PayComposerStep.quote)
+                : null,
             child: const _PayButtonLabel(label: 'Continue', loading: false),
           ),
         ] else ...[
@@ -802,9 +794,8 @@ class _PayComposerState extends State<PayComposer> {
               precisionError: amountPrecisionError,
               onChanged: widget.onAmountChanged,
               onFiatChanged: widget.onReceiveAmountFiatChanged,
-              onToggleFiatInputMode:
-                  () =>
-                      widget.onToggleFiatInputMode(SwapAmountInputSide.receive),
+              onToggleFiatInputMode: () =>
+                  widget.onToggleFiatInputMode(SwapAmountInputSide.receive),
             ),
           ],
           if (assetReady && quoteError != null) ...[
@@ -1055,14 +1046,14 @@ class _PayTokenOptionChip extends StatelessWidget {
             vertical: AppSpacing.xs,
           ),
           decoration: BoxDecoration(
-            color:
-                selected
-                    ? colors.background.inverse
-                    : colors.background.neutralSubtleOpacity,
+            color: selected
+                ? colors.background.inverse
+                : colors.background.neutralSubtleOpacity,
             borderRadius: BorderRadius.circular(AppRadii.full),
             border: Border.all(
-              color:
-                  selected ? colors.border.strong : colors.border.subtleOpacity,
+              color: selected
+                  ? colors.border.strong
+                  : colors.border.subtleOpacity,
               width: selected ? 1.5 : 1,
             ),
           ),
@@ -1140,8 +1131,9 @@ class _PayAmountPanel extends StatelessWidget {
         LayoutBuilder(
           key: const ValueKey('pay_recipient_amount_display'),
           builder: (context, constraints) {
-            final inputWidth =
-                (constraints.maxWidth - 72).clamp(148.0, 280.0).toDouble();
+            final inputWidth = (constraints.maxWidth - 72)
+                .clamp(148.0, 280.0)
+                .toDouble();
             return SizedBox(
               height: 104,
               child: Center(
@@ -1285,8 +1277,9 @@ class _PayAmountModeChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MouseRegion(
-      cursor:
-          onTap == null ? SystemMouseCursors.basic : SystemMouseCursors.click,
+      cursor: onTap == null
+          ? SystemMouseCursors.basic
+          : SystemMouseCursors.click,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
@@ -1342,10 +1335,9 @@ class _PayNetworkPanel extends StatelessWidget {
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
         border: Border.all(
-          color:
-              selectedReady
-                  ? colors.border.regular
-                  : colors.border.subtleOpacity,
+          color: selectedReady
+              ? colors.border.regular
+              : colors.border.subtleOpacity,
         ),
       ),
       child: Column(
@@ -1368,10 +1360,9 @@ class _PayNetworkPanel extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppTypography.labelSmall.copyWith(
-                  color:
-                      inferred
-                          ? colors.text.positiveStrong
-                          : colors.text.secondary,
+                  color: inferred
+                      ? colors.text.positiveStrong
+                      : colors.text.secondary,
                 ),
               ),
             ],
@@ -1393,10 +1384,9 @@ class _PayNetworkPanel extends StatelessWidget {
           Text(
             statusText,
             style: AppTypography.bodySmall.copyWith(
-              color:
-                  selectedReady
-                      ? colors.text.secondary
-                      : colors.text.destructive,
+              color: selectedReady
+                  ? colors.text.secondary
+                  : colors.text.destructive,
             ),
           ),
         ],
@@ -1432,14 +1422,14 @@ class _PayNetworkOptionChip extends StatelessWidget {
             vertical: AppSpacing.xxs,
           ),
           decoration: BoxDecoration(
-            color:
-                selected
-                    ? colors.background.inverse
-                    : colors.background.neutralSubtleOpacity,
+            color: selected
+                ? colors.background.inverse
+                : colors.background.neutralSubtleOpacity,
             borderRadius: BorderRadius.circular(AppRadii.full),
             border: Border.all(
-              color:
-                  selected ? colors.border.strong : colors.border.subtleOpacity,
+              color: selected
+                  ? colors.border.strong
+                  : colors.border.subtleOpacity,
               width: selected ? 1.5 : 1,
             ),
           ),
@@ -1650,10 +1640,9 @@ class _PayDecimalAmountInputFormatter extends TextInputFormatter {
     final text = newValue.text;
     if (text.isEmpty) return newValue;
     final max = maxFractionDigits;
-    final pattern =
-        max == null
-            ? RegExp(r'^\d*(\.\d*)?$')
-            : RegExp('^\\d*(\\.\\d{0,$max})?\$');
+    final pattern = max == null
+        ? RegExp(r'^\d*(\.\d*)?$')
+        : RegExp('^\\d*(\\.\\d{0,$max})?\$');
     if (pattern.hasMatch(text)) return newValue;
     return oldValue;
   }
