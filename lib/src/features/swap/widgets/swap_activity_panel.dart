@@ -17,6 +17,7 @@ import '../models/swap_activity_status_mapper.dart';
 import '../models/swap_keystone_broadcast_result.dart';
 import '../models/swap_models.dart';
 import '../providers/swap_state_provider.dart';
+import '../screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import 'swap_deposit_tokens_page_content.dart';
 import 'swap_keystone_signing_overlay.dart';
 import 'mobile/mobile_swap_review_header.dart';
@@ -107,14 +108,23 @@ class _SwapActivityDetailSurfaceState
         _isHardwareIntent(intent) &&
         intent.direction == SwapDirection.zecToExternal &&
         !(intent.depositTxHash?.trim().isNotEmpty ?? false);
+    final request = needsAutoSign
+        ? _SwapKeystoneSigningRequest(
+            intentId: intent.id,
+            accountUuid: intent.accountUuid ?? _activeAccountUuid ?? '',
+            removeUnsentIntentOnCancel: true,
+          )
+        : null;
+    if (request != null && widget.layout == SwapActivityDetailLayout.mobile) {
+      setState(() => _initialIntentApplied = true);
+      unawaited(_openMobileKeystoneSigning(intent, request));
+      return;
+    }
+
     setState(() {
       _initialIntentApplied = true;
-      if (needsAutoSign) {
-        _keystoneSigningRequest = _SwapKeystoneSigningRequest(
-          intentId: intent.id,
-          accountUuid: intent.accountUuid ?? _activeAccountUuid ?? '',
-          removeUnsentIntentOnCancel: true,
-        );
+      if (request != null) {
+        _keystoneSigningRequest = request;
       }
     });
   }
@@ -176,11 +186,17 @@ class _SwapActivityDetailSurfaceState
   }
 
   void _signZecDeposit(SwapIntent intent) {
+    final request = _SwapKeystoneSigningRequest(
+      intentId: intent.id,
+      accountUuid: intent.accountUuid ?? _activeAccountUuid ?? '',
+    );
+    if (widget.layout == SwapActivityDetailLayout.mobile) {
+      unawaited(_openMobileKeystoneSigning(intent, request));
+      return;
+    }
+
     setState(() {
-      _keystoneSigningRequest = _SwapKeystoneSigningRequest(
-        intentId: intent.id,
-        accountUuid: intent.accountUuid ?? _activeAccountUuid ?? '',
-      );
+      _keystoneSigningRequest = request;
     });
   }
 
@@ -205,6 +221,36 @@ class _SwapActivityDetailSurfaceState
     final request = _keystoneSigningRequest;
     if (request == null) return;
     _closeKeystoneSigning();
+    _submitKeystoneDepositBroadcast(context, request, result);
+  }
+
+  Future<void> _openMobileKeystoneSigning(
+    SwapIntent intent,
+    _SwapKeystoneSigningRequest request,
+  ) async {
+    final result = await context.push<SwapKeystoneBroadcastResult>(
+      '/swap/keystone-sign',
+      extra: MobileSwapKeystoneSignArgs(intent: intent),
+    );
+    if (!mounted) return;
+    if (result == null) {
+      if (request.removeUnsentIntentOnCancel) {
+        unawaited(
+          ref
+              .read(swapStateProvider.notifier)
+              .removeUnsentHardwareDepositIntent(request.intentId),
+        );
+      }
+      return;
+    }
+    _submitKeystoneDepositBroadcast(context, request, result);
+  }
+
+  void _submitKeystoneDepositBroadcast(
+    BuildContext context,
+    _SwapKeystoneSigningRequest request,
+    SwapKeystoneBroadcastResult result,
+  ) {
     unawaited(
       ref
           .read(swapStateProvider.notifier)

@@ -13,6 +13,7 @@ import '../../features/activity/screens/mobile/mobile_swap_activity_detail_scree
 import '../../features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import '../../features/send/screens/mobile/mobile_keystone_sign_screen.dart';
 import '../../features/swap/models/swap_activity_navigation.dart';
+import '../../features/swap/screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import '../../features/swap/screens/mobile/mobile_swap_review_screen.dart';
 import '../../features/send/services/send_flow.dart'
     show KeystoneBroadcastArgs, SendReviewArgs;
@@ -164,6 +165,16 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         key: state.pageKey,
         child: const MobileSwapReviewScreen(),
       ),
+    ),
+    GoRoute(
+      path: '/swap/keystone-sign',
+      pageBuilder: (context, state) {
+        final extra = state.extra;
+        final child = extra is MobileSwapKeystoneSignArgs
+            ? MobileSwapKeystoneSignScreen(args: extra)
+            : const MobileSwapScreen();
+        return CupertinoPage(key: state.pageKey, child: child);
+      },
     ),
     // Same path as the desktop transaction status route so the shared
     // redirect guard and deep links treat them identically.

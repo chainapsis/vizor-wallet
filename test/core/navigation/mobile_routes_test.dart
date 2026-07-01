@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart' show CupertinoRouteTransitionMixin;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -19,9 +20,13 @@ import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activit
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_hardware_signing_service.dart';
+import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -56,7 +61,11 @@ GoRouter _router() => GoRouter(
   routes: buildMobileRoutes(entryRoutes: const []),
 );
 
-Widget _app(GoRouter router, {bool swapFeatureEnabled = true}) => ProviderScope(
+Widget _app(
+  GoRouter router, {
+  bool swapFeatureEnabled = true,
+  List<Override> overrides = const [],
+}) => ProviderScope(
   overrides: [
     appBootstrapProvider.overrideWithValue(_bootstrap()),
     swapFeatureEnabledProvider.overrideWithValue(swapFeatureEnabled),
@@ -71,6 +80,7 @@ Widget _app(GoRouter router, {bool swapFeatureEnabled = true}) => ProviderScope(
         ),
       ),
     ),
+    ...overrides,
   ],
   child: MaterialApp.router(
     routerConfig: router,
@@ -179,6 +189,37 @@ void main() {
     expect(route, isA<CupertinoRouteTransitionMixin<dynamic>>());
   });
 
+  testWidgets('swap Keystone signing route pushes a Cupertino page', (
+    tester,
+  ) async {
+    final router = _router();
+    await tester.pumpWidget(
+      _app(
+        router,
+        overrides: [
+          swapHardwareSigningServiceProvider.overrideWithValue(
+            const _FakeSwapHardwareSigningService(),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    unawaited(
+      router.push<void>(
+        '/swap/keystone-sign',
+        extra: MobileSwapKeystoneSignArgs(intent: _hardwareSwapIntent),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileSwapKeystoneSignScreen), findsOneWidget);
+    final route = ModalRoute.of(
+      tester.element(find.byType(MobileSwapKeystoneSignScreen)),
+    );
+    expect(route, isA<CupertinoRouteTransitionMixin<dynamic>>());
+  });
+
   testWidgets('receive pushes over a Cupertino shell page', (tester) async {
     await tester.pumpWidget(_app(_router()));
     await tester.pumpAndSettle();
@@ -199,4 +240,61 @@ void main() {
     expect(find.byType(MobileReceiveScreen), findsNothing);
     expect(find.byType(MobileHomeScreen), findsOneWidget);
   });
+}
+
+final _hardwareSwapIntent = SwapIntent(
+  id: 'swap-route-hardware',
+  pair: 'ZEC -> USDC',
+  sellAmount: '0.003 ZEC',
+  receiveEstimate: '0.21 USDC',
+  provider: 'NEAR Intents',
+  status: SwapIntentStatus.awaitingDeposit,
+  nextAction: 'Deposit ZEC',
+  sellAmountBaseUnits: BigInt.from(300000),
+  direction: SwapDirection.zecToExternal,
+  externalAsset: SwapAsset.usdc,
+  depositAddress: 't1route-deposit',
+  accountUuid: 'account-1',
+);
+
+class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
+  const _FakeSwapHardwareSigningService();
+
+  @override
+  Future<SwapHardwarePcztDraft> createZecDepositPczt({
+    required String accountUuid,
+    required SwapIntent intent,
+  }) async {
+    return SwapHardwarePcztDraft(
+      pcztBytes: const [1, 2, 3],
+      needsSaplingParams: false,
+      feeZatoshi: BigInt.zero,
+    );
+  }
+
+  @override
+  Future<List<String>> encodeSigningUrParts({
+    required SwapHardwarePcztDraft draft,
+  }) async {
+    return const ['ur:zcash-pczt/route-test'];
+  }
+
+  @override
+  Future<List<int>> addProofsForSigning({
+    required SwapHardwarePcztDraft draft,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  }) async {
+    return const [4, 5, 6];
+  }
+
+  @override
+  Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({
+    required List<int> pcztWithProofsBytes,
+    required List<int> pcztWithSignaturesBytes,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  }) {
+    throw UnimplementedError();
+  }
 }
