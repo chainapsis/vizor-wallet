@@ -201,6 +201,8 @@ private enum WindowAppearanceHandler {
     switch brightness {
     case "dark":
       style = .dark
+    case "system":
+      style = .unspecified
     default:
       style = .light
     }

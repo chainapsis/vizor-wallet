@@ -30,6 +30,7 @@ class AppThemeHost extends StatelessWidget {
       child: _MacOSWindowAppearanceSync(
         brightness: brightness,
         child: _IOSWindowAppearanceSync(
+          themeMode: themeMode,
           brightness: brightness,
           child: _AndroidSystemBarsSync(brightness: brightness, child: child),
         ),
@@ -84,10 +85,12 @@ class _MacOSWindowAppearanceSyncState
 
 class _IOSWindowAppearanceSync extends StatefulWidget {
   const _IOSWindowAppearanceSync({
+    required this.themeMode,
     required this.brightness,
     required this.child,
   });
 
+  final ThemeMode themeMode;
   final Brightness brightness;
   final Widget child;
 
@@ -100,14 +103,17 @@ class _IOSWindowAppearanceSyncState extends State<_IOSWindowAppearanceSync> {
   @override
   void initState() {
     super.initState();
-    _IOSWindowAppearance.sync(widget.brightness);
+    _IOSWindowAppearance.sync(widget.themeMode, widget.brightness);
   }
 
   @override
   void didUpdateWidget(covariant _IOSWindowAppearanceSync oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.brightness == widget.brightness) return;
-    _IOSWindowAppearance.sync(widget.brightness);
+    if (oldWidget.themeMode == widget.themeMode &&
+        oldWidget.brightness == widget.brightness) {
+      return;
+    }
+    _IOSWindowAppearance.sync(widget.themeMode, widget.brightness);
   }
 
   @override
@@ -215,22 +221,35 @@ abstract final class _MacOSWindowAppearance {
 abstract final class _IOSWindowAppearance {
   static const _channel = MethodChannel('com.zcash.wallet/window_appearance');
 
-  static Brightness? _lastBrightness;
+  static ThemeMode? _lastThemeMode;
+  static Brightness? _lastResolvedBrightness;
 
-  static void sync(Brightness brightness) {
+  static void sync(ThemeMode themeMode, Brightness resolvedBrightness) {
     if (kIsWeb || !Platform.isIOS) return;
-    if (_lastBrightness == brightness) return;
-    _lastBrightness = brightness;
-    unawaited(_setBrightness(brightness));
+    if (_lastThemeMode == themeMode &&
+        _lastResolvedBrightness == resolvedBrightness) {
+      return;
+    }
+    _lastThemeMode = themeMode;
+    _lastResolvedBrightness = resolvedBrightness;
+    unawaited(_setBrightness(themeMode, resolvedBrightness));
   }
 
-  static Future<void> _setBrightness(Brightness brightness) async {
+  static Future<void> _setBrightness(
+    ThemeMode themeMode,
+    Brightness resolvedBrightness,
+  ) async {
     try {
       await _channel.invokeMethod<void>('setBrightness', {
-        'brightness': brightness == Brightness.dark ? 'dark' : 'light',
+        'brightness': switch (themeMode) {
+          ThemeMode.system => 'system',
+          ThemeMode.dark => 'dark',
+          ThemeMode.light => 'light',
+        },
       });
     } catch (error) {
-      _lastBrightness = null;
+      _lastThemeMode = null;
+      _lastResolvedBrightness = null;
       debugPrint('IOSWindowAppearance: sync failed: $error');
     }
   }
