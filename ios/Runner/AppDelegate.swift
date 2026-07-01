@@ -132,6 +132,33 @@ import UIKit
       DatePickerHandler.shared.handle(call, result: result)
     }
 
+    let windowAppearanceChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/window_appearance",
+      binaryMessenger: messenger
+    )
+    windowAppearanceChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "setBrightness":
+        guard
+          let args = call.arguments as? [String: Any],
+          let brightness = args["brightness"] as? String
+        else {
+          result(
+            FlutterError(
+              code: "bad_args",
+              message: "Expected brightness argument.",
+              details: nil
+            )
+          )
+          return
+        }
+        WindowAppearanceHandler.setBrightness(brightness)
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     let cameraPermissionChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/camera_permission",
       binaryMessenger: messenger
@@ -165,6 +192,26 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+  }
+}
+
+private enum WindowAppearanceHandler {
+  static func setBrightness(_ brightness: String) {
+    let style: UIUserInterfaceStyle
+    switch brightness {
+    case "dark":
+      style = .dark
+    default:
+      style = .light
+    }
+
+    UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap { $0.windows }
+      .forEach { window in
+        window.overrideUserInterfaceStyle = style
+        window.rootViewController?.overrideUserInterfaceStyle = style
+      }
   }
 }
 
