@@ -137,7 +137,7 @@ void main() {
     expect(amountDisplayRect.height, greaterThanOrEqualTo(70));
     expect(amountDisplayRect.height, greaterThan(tokenRect.height));
     expect(amountInput.style?.fontSize, AppTypography.displayLarge.fontSize);
-    expect(amountInput.textAlign, TextAlign.center);
+    expect(amountInput.textAlign, TextAlign.right);
     expect(
       tokenRect.top - stepLabelRect.bottom,
       greaterThanOrEqualTo(AppSpacing.s),

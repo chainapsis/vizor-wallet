@@ -1071,7 +1071,7 @@ class _PayTokenOptionChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SwapAssetIcon(asset: asset, size: 20, badgeScale: 0),
+              SwapAssetIcon(asset: asset, size: 20, showChainBadge: false),
               const SizedBox(width: AppSpacing.xxs),
               Text(
                 asset.symbol,
@@ -1169,7 +1169,7 @@ class _PayAmountPanel extends StatelessWidget {
                           ),
                         ],
                         onChanged: inputIsFiat ? onFiatChanged : onChanged,
-                        textAlign: TextAlign.center,
+                        textAlign: TextAlign.right,
                         style: AppTypography.displayLarge.copyWith(
                           color: colors.text.accent,
                         ),

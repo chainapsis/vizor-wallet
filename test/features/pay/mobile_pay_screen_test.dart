@@ -112,11 +112,16 @@ void main() {
 
     expect(find.byKey(const ValueKey('pay_token_picker')), findsOneWidget);
     expect(_payTokenOptionChips(), findsNWidgets(3));
+    expect(_payTokenChainBadges(), findsNothing);
     expect(find.byKey(const ValueKey('pay_token_more_button')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('pay_recipient_amount_field')),
       findsOneWidget,
     );
+    final amountInput = tester.widget<TextField>(
+      find.byKey(const ValueKey('pay_recipient_amount_input')),
+    );
+    expect(amountInput.textAlign, TextAlign.right);
   });
 }
 
@@ -125,4 +130,12 @@ Finder _payTokenOptionChips() {
     final key = widget.key;
     return key is ValueKey<String> && key.value.startsWith('pay_token_option_');
   }, description: 'pay token option chips');
+}
+
+Finder _payTokenChainBadges() {
+  return find.byWidgetPredicate((widget) {
+    final key = widget.key;
+    return key is ValueKey<String> &&
+        key.value.startsWith('swap_asset_chain_badge_');
+  }, description: 'pay token chain badges');
 }
