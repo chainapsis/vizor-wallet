@@ -144,6 +144,52 @@ void main() {
     );
   });
 
+  testWidgets('slippage stepper changes by 0.1 percent per tap', (
+    tester,
+  ) async {
+    var submittedBps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppTheme(
+            data: AppThemeData.dark,
+            child: MobileSwapSlippageStepperModal(
+              slippageBps: 100,
+              onSubmitted: (value) => submittedBps = value,
+              onCancel: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    TextField field() =>
+        tester.widget(find.byKey(const ValueKey('mobile_swap_slippage_value')));
+
+    expect(field().controller!.text, '1');
+
+    await tester.tap(find.byKey(const ValueKey('mobile_swap_slippage_plus')));
+    await tester.pump();
+    expect(field().controller!.text, '1.1');
+
+    await tester.tap(find.byKey(const ValueKey('mobile_swap_slippage_minus')));
+    await tester.pump();
+    expect(field().controller!.text, '1');
+
+    await tester.tap(find.byKey(const ValueKey('swap_slippage_update_button')));
+    await tester.pump();
+    expect(submittedBps, 0);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_swap_slippage_minus')));
+    await tester.pump();
+    expect(field().controller!.text, '0.9');
+
+    await tester.tap(find.byKey(const ValueKey('swap_slippage_update_button')));
+    await tester.pump();
+    expect(submittedBps, 90);
+  });
+
   testWidgets('swap composer CTA fits on narrow Android-sized screens', (
     tester,
   ) async {
