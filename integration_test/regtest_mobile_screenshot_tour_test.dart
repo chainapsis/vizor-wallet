@@ -103,18 +103,6 @@ void main() {
       await pumpUntil(
         tester,
         () => tester.any(
-          find.byKey(const ValueKey('mobile_import_review_continue')),
-        ),
-        description: 'import review',
-      );
-      await shot('03_import_review');
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_import_review_continue'),
-      );
-      await pumpUntil(
-        tester,
-        () => tester.any(
           find.byKey(const ValueKey('mobile_import_birthday_continue')),
         ),
         description: 'import birthday',
