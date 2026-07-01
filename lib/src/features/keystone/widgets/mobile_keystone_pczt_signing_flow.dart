@@ -48,7 +48,14 @@ typedef MobileKeystonePcztSigned =
 
 typedef MobileKeystonePcztFriendlyError = String Function(Object error);
 
+typedef MobileKeystonePcztDecoder = Future<Uint8List> Function(List<int> cbor);
+
+typedef MobileKeystonePcztScannerBuilder =
+    Widget Function(BuildContext context, ValueChanged<ScanResult> onComplete);
+
 enum _SignStage { preparing, showQr, scanning, failed }
+
+const _disabledSigningControlColor = Color(0x61FFFFFF);
 
 /// Shared mobile Keystone PCZT round trip.
 ///
@@ -67,6 +74,8 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
     this.readingSignatureLabel = 'Reading signature...',
     this.finalizingSignatureLabel,
     this.logTag = 'MobileKeystonePcztSigningFlow',
+    @visibleForTesting this.signedPcztDecoder,
+    @visibleForTesting this.scannerBuilder,
     super.key,
   });
 
@@ -80,6 +89,8 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
   final MobileKeystonePcztPrepare preparePczt;
   final MobileKeystonePcztSigned onSigned;
   final MobileKeystonePcztFriendlyError friendlyError;
+  final MobileKeystonePcztDecoder? signedPcztDecoder;
+  final MobileKeystonePcztScannerBuilder? scannerBuilder;
 
   @override
   ConsumerState<MobileKeystonePcztSigningFlow> createState() =>
@@ -216,10 +227,8 @@ class _MobileKeystonePcztSigningFlowState
 
     late final Uint8List signedPczt;
     try {
-      final signedPcztBytes = await rust_keystone.decodePcztFromCbor(
-        cbor: result.data,
-      );
-      signedPczt = Uint8List.fromList(signedPcztBytes);
+      final decoder = widget.signedPcztDecoder ?? _decodeSignedPcztFromCbor;
+      signedPczt = await decoder(result.data);
     } catch (e, st) {
       log('${widget.logTag}: signed PCZT decode error: $e\n$st');
       if (!mounted) return;
@@ -286,6 +295,7 @@ class _MobileKeystonePcztSigningFlowState
   @override
   Widget build(BuildContext context) {
     final scanning = _stage == _SignStage.scanning;
+    final cancelColor = _decoding ? _disabledSigningControlColor : Colors.white;
     return PopScope<void>(
       canPop: !_decoding,
       onPopInvokedWithResult: (didPop, _) {
@@ -337,14 +347,14 @@ class _MobileKeystonePcztSigningFlowState
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: _decoding ? null : _cancel,
-                            child: const SizedBox(
+                            child: SizedBox(
                               width: 44,
                               height: 44,
                               child: Center(
                                 child: AppIcon(
                                   AppIcons.cross,
                                   size: 24,
-                                  color: Colors.white,
+                                  color: cancelColor,
                                 ),
                               ),
                             ),
@@ -431,10 +441,11 @@ class _MobileKeystonePcztSigningFlowState
     const viewfinderSize = 260.0;
     final scanController = _scanController;
     if (scanController == null) return const SizedBox.shrink();
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
+    final scannerView =
+        widget.scannerBuilder?.call(
+          context,
+          (result) => unawaited(_handleScanComplete(result)),
+        ) ??
         AnimatedUrScannerView(
           controller: scanController,
           expectedUrType: 'zcash-pczt',
@@ -446,7 +457,12 @@ class _MobileKeystonePcztSigningFlowState
           },
           onDecodeError: _handleDecodeError,
           onComplete: (result) => unawaited(_handleScanComplete(result)),
-        ),
+        );
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        scannerView,
         ColorFiltered(
           colorFilter: const ColorFilter.mode(
             Color(0x99000000),
@@ -511,6 +527,7 @@ class _MobileKeystonePcztSigningFlowState
 
   Widget _buildBottomBar() {
     final scanning = _stage == _SignStage.scanning;
+    final cancelColor = _decoding ? _disabledSigningControlColor : Colors.white;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.md,
@@ -526,10 +543,7 @@ class _MobileKeystonePcztSigningFlowState
               expand: true,
               variant: AppButtonVariant.ghost,
               onPressed: _decoding ? null : _cancel,
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: Colors.white),
-              ),
+              child: Text('Cancel', style: TextStyle(color: cancelColor)),
             ),
           ),
           const SizedBox(width: AppSpacing.s),
@@ -556,4 +570,9 @@ class _MobileKeystonePcztSigningFlowState
       ),
     );
   }
+}
+
+Future<Uint8List> _decodeSignedPcztFromCbor(List<int> cbor) async {
+  final signedPcztBytes = await rust_keystone.decodePcztFromCbor(cbor: cbor);
+  return Uint8List.fromList(signedPcztBytes);
 }
