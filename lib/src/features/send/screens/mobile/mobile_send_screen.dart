@@ -622,6 +622,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     return usd.toStringAsFixed(2);
   }
 
+  String _sendableUsdInputTextForZatoshi(
+    BigInt zatoshi,
+    double zecUsdUnitPrice,
+  ) {
+    final text = _usdInputTextForZatoshi(zatoshi, zecUsdUnitPrice);
+    return text == '0.00' ? '' : text;
+  }
+
   String _usdDisplayTextForZatoshi(BigInt zatoshi, double zecUsdUnitPrice) {
     final raw = _usdInputTextForZatoshi(zatoshi, zecUsdUnitPrice);
     if (raw.isEmpty) return '0.00';
@@ -646,7 +654,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         final zatoshi = parseZecAmount(_amountText.trim());
         _fiatAmountText = zatoshi == null || zatoshi <= BigInt.zero
             ? ''
-            : _usdInputTextForZatoshi(zatoshi, zecUsdUnitPrice!);
+            : _sendableUsdInputTextForZatoshi(zatoshi, zecUsdUnitPrice!);
+        if (_fiatAmountText.isEmpty) {
+          _amountText = '';
+          _amountError = '';
+          _feeZatoshi = null;
+          _clearMaxMode();
+        }
         _setAmountControllerText(_fiatAmountText);
       } else {
         _setAmountControllerText(_amountText);
@@ -785,7 +799,23 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
       final fiatText = zecUsdUnitPrice == null
           ? ''
-          : _usdInputTextForZatoshi(estimate.amountZatoshi, zecUsdUnitPrice);
+          : _sendableUsdInputTextForZatoshi(
+              estimate.amountZatoshi,
+              zecUsdUnitPrice,
+            );
+      if (_amountInputIsUsd && fiatText.isEmpty) {
+        _setAmountControllerText('');
+        setState(() {
+          _amountText = '';
+          _fiatAmountText = '';
+          _amountError = '';
+          _feeZatoshi = null;
+          _isResolvingMax = false;
+          _isMaxMode = false;
+          _maxQuote = null;
+        });
+        return;
+      }
       _setAmountControllerText(_amountInputIsUsd ? fiatText : amountText);
 
       setState(() {
