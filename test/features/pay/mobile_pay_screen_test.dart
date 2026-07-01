@@ -111,9 +111,18 @@ void main() {
     expect(tester.takeException(), isNull);
 
     expect(find.byKey(const ValueKey('pay_token_picker')), findsOneWidget);
+    expect(_payTokenOptionChips(), findsNWidgets(3));
+    expect(find.byKey(const ValueKey('pay_token_more_button')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('pay_recipient_amount_field')),
       findsOneWidget,
     );
   });
+}
+
+Finder _payTokenOptionChips() {
+  return find.byWidgetPredicate((widget) {
+    final key = widget.key;
+    return key is ValueKey<String> && key.value.startsWith('pay_token_option_');
+  }, description: 'pay token option chips');
 }

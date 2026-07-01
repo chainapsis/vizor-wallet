@@ -44,7 +44,8 @@ const _payStepGap = AppSpacing.sm;
 const _payReviewGap = AppSpacing.md;
 const _payFooterGap = AppSpacing.sm;
 const _payTextFieldMessageReserve = AppSpacing.md;
-const _payTokenVisibleLimit = 4;
+const _payDesktopTokenVisibleLimit = 4;
+const _payMobileTokenVisibleLimit = 3;
 
 enum _PayComposerStep { recipient, quote }
 
@@ -509,6 +510,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                   onOpenContactPicker: () =>
                       _openModal(_PayModalSurface.contactPicker),
                   onReviewPayment: () => unawaited(_openReview()),
+                  tokenVisibleLimit: _payMobileTokenVisibleLimit,
                   showHeader: false,
                   showFooterAttribution: false,
                 ),
@@ -537,6 +539,7 @@ class PayComposer extends StatefulWidget {
     required this.onOpenAddressScanner,
     required this.onOpenContactPicker,
     required this.onReviewPayment,
+    this.tokenVisibleLimit = _payDesktopTokenVisibleLimit,
     this.showHeader = true,
     this.showFooterAttribution = true,
     super.key,
@@ -556,6 +559,7 @@ class PayComposer extends StatefulWidget {
   final VoidCallback onOpenAddressScanner;
   final VoidCallback onOpenContactPicker;
   final VoidCallback onReviewPayment;
+  final int tokenVisibleLimit;
   final bool showHeader;
   final bool showFooterAttribution;
 
@@ -782,6 +786,7 @@ class _PayComposerState extends State<PayComposer> {
             selectedAsset: state.externalAsset,
             onSelected: widget.onAssetSelected,
             onOpenAssetSelector: widget.onOpenAssetSelector,
+            tokenVisibleLimit: widget.tokenVisibleLimit,
           ),
           if (assetReady) ...[
             const SizedBox(height: _payStepGap),
@@ -913,18 +918,24 @@ class _PayAmountStepHeader extends StatelessWidget {
     required this.selectedAsset,
     required this.onSelected,
     required this.onOpenAssetSelector,
+    required this.tokenVisibleLimit,
   });
 
   final List<SwapAsset> assets;
   final SwapAsset selectedAsset;
   final ValueChanged<SwapAsset> onSelected;
   final VoidCallback onOpenAssetSelector;
+  final int tokenVisibleLimit;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final visibleAssets = _payVisibleTokenChips(assets, selectedAsset);
-    final showSelector = assets.length > _payTokenVisibleLimit;
+    final visibleAssets = _payVisibleTokenChips(
+      assets,
+      selectedAsset,
+      visibleLimit: tokenVisibleLimit,
+    );
+    final showSelector = assets.length > tokenVisibleLimit;
     return Column(
       key: const ValueKey('pay_amount_step_header'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1697,13 +1708,15 @@ bool _payAmountExceedsAvailableZec(SwapState state, BigInt availableZatoshi) {
 
 List<SwapAsset> _payVisibleTokenChips(
   List<SwapAsset> assets,
-  SwapAsset selectedAsset,
-) {
+  SwapAsset selectedAsset, {
+  required int visibleLimit,
+}) {
   final source = assets.isEmpty ? <SwapAsset>[selectedAsset] : assets;
-  if (source.length <= _payTokenVisibleLimit) return source;
-  final visible = source.take(_payTokenVisibleLimit).toList();
+  final limit = visibleLimit.clamp(1, source.length).toInt();
+  if (source.length <= limit) return source;
+  final visible = source.take(limit).toList();
   if (!visible.contains(selectedAsset)) {
-    visible[_payTokenVisibleLimit - 1] = selectedAsset;
+    visible[limit - 1] = selectedAsset;
   }
   return visible;
 }
