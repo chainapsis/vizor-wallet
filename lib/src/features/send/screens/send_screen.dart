@@ -1443,8 +1443,8 @@ class _SendAmountConversionRow extends StatelessWidget {
           if (loading) ...[
             Text(
               r'$',
-              style: AppTypography.labelMedium.copyWith(
-                color: colors.text.secondary,
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.muted,
               ),
             ),
             const SizedBox(width: AppSpacing.xxs),
@@ -1453,8 +1453,8 @@ class _SendAmountConversionRow extends StatelessWidget {
             Text(
               text ?? r'$ 0',
               key: const ValueKey('send_amount_conversion_text'),
-              style: AppTypography.labelMedium.copyWith(
-                color: enabled ? colors.text.secondary : colors.text.disabled,
+              style: AppTypography.labelLarge.copyWith(
+                color: enabled ? colors.text.muted : colors.text.disabled,
               ),
             ),
         ],
