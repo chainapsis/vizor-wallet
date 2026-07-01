@@ -252,6 +252,19 @@ class SendComposeView extends StatelessWidget {
     final colors = context.colors;
     final hasText = amountText.isNotEmpty;
     final isError = amountError != null && amountError!.trim().isNotEmpty;
+    final amountValueColor = isError
+        ? colors.text.destructive
+        : hasText
+        ? colors.text.accent
+        : colors.text.muted;
+    final amountAffixStyle = AppTypography.labelLarge.copyWith(
+      color: amountValueColor,
+    );
+    final amountIconColor = isError
+        ? colors.icon.destructive
+        : hasText
+        ? colors.icon.accent
+        : colors.icon.regular;
 
     return AppTextField(
       key: const ValueKey('send_amount_field'),
@@ -265,28 +278,18 @@ class SendComposeView extends StatelessWidget {
       hintText: amountHint,
       autofocus: amountFocused,
       tone: isError ? AppTextFieldTone.destructive : AppTextFieldTone.neutral,
-      leading: amountInputIsUsd
-          ? Text(
-              r'$',
-              style: AppTypography.labelLarge.copyWith(
-                color: hasText ? colors.text.accent : colors.text.muted,
-              ),
-            )
-          : AppIcon(
-              AppIcons.coins,
-              size: 20,
-              color: hasText ? colors.icon.accent : colors.icon.regular,
-            ),
-      trailing: amountInputIsUsd
-          ? null
-          : Text(
-              'ZEC',
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-      trailingFitsSlot: true,
-      trailingSlotWidth: amountInputIsUsd ? null : 42,
+      textStyle: AppTypography.labelLarge.copyWith(
+        color: isError ? colors.text.destructive : colors.text.accent,
+      ),
+      hintStyle: AppTypography.labelLarge.copyWith(
+        color: isError ? colors.text.destructive : colors.text.muted,
+      ),
+      leading: AppIcon(AppIcons.coins, size: 20, color: amountIconColor),
+      inlinePrefixText: amountInputIsUsd ? r'$' : null,
+      inlinePrefixStyle: amountAffixStyle,
+      inlineSuffixText: amountInputIsUsd ? null : 'ZEC',
+      inlineSuffixStyle: amountAffixStyle,
+      showClearButton: true,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
     );
   }
@@ -402,7 +405,7 @@ class _AmountConversionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Align(
-      alignment: AlignmentDirectional.topCenter,
+      alignment: AlignmentDirectional.topStart,
       child: Padding(
         padding: const EdgeInsets.only(top: AppSpacing.xxs),
         child: Semantics(

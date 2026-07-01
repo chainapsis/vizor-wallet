@@ -867,6 +867,23 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         !_amountInputIsUsd &&
         amountZatoshi != null &&
         amountZatoshi > BigInt.zero;
+    final amountHasVisibleText = _amountController.text.trim().isNotEmpty;
+    final amountValueColor = _showAmountError
+        ? colors.text.destructive
+        : amountHasVisibleText
+        ? colors.text.accent
+        : colors.text.muted;
+    final amountValueStyle = AppTypography.labelLarge.copyWith(
+      color: _showAmountError ? colors.text.destructive : colors.text.accent,
+    );
+    final amountAffixStyle = AppTypography.labelLarge.copyWith(
+      color: amountValueColor,
+    );
+    final amountIconColor = _showAmountError
+        ? colors.icon.destructive
+        : amountHasVisibleText
+        ? colors.icon.accent
+        : colors.icon.regular;
 
     _addressController.edgeHighlightColor = null;
 
@@ -1019,42 +1036,29 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                             focusNode: _amountFocusNode,
                             controller: _amountController,
                             hintText: '0',
-                            leading: _amountInputIsUsd
-                                ? Text(
-                                    r'$',
-                                    style: AppTypography.labelLarge.copyWith(
-                                      color:
-                                          _amountController.text
-                                              .trim()
-                                              .isNotEmpty
-                                          ? colors.text.accent
-                                          : colors.text.muted,
-                                    ),
-                                  )
-                                : AppIcon(
-                                    AppIcons.coins,
-                                    size: 20,
-                                    color:
-                                        _amountController.text.trim().isNotEmpty
-                                        ? colors.icon.accent
-                                        : colors.icon.regular,
-                                  ),
+                            textStyle: amountValueStyle,
+                            hintStyle: AppTypography.labelLarge.copyWith(
+                              color: _showAmountError
+                                  ? colors.text.destructive
+                                  : colors.text.muted,
+                            ),
+                            leading: AppIcon(
+                              AppIcons.coins,
+                              size: 20,
+                              color: amountIconColor,
+                            ),
+                            inlinePrefixText: _amountInputIsUsd ? r'$' : null,
+                            inlinePrefixStyle: amountAffixStyle,
+                            inlineSuffixText: _amountInputIsUsd
+                                ? null
+                                : kZcashDefaultCurrencyTicker,
+                            inlineSuffixStyle: amountAffixStyle,
                             rightSlot: _SendMaxBalanceControl(
                               spendableText: spendableText,
                               onMaxPressed: _isResolvingMax
                                   ? null
                                   : _activateMaxMode,
                             ),
-                            trailing: _amountInputIsUsd
-                                ? null
-                                : Text(
-                                    kZcashDefaultCurrencyTicker,
-                                    style: AppTypography.labelLarge.copyWith(
-                                      color: colors.text.secondary,
-                                    ),
-                                  ),
-                            trailingFitsSlot: true,
-                            trailingSlotWidth: _amountInputIsUsd ? null : 42,
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                             ),
@@ -1064,6 +1068,21 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                               ),
                             ],
                             onChanged: (_) => _handleAmountChanged(),
+                            showClearButton: true,
+                            onClear: () {
+                              _maxDebounceTimer?.cancel();
+                              _validateSeq++;
+                              _maxSeq++;
+                              setState(() {
+                                _amountText = '';
+                                _fiatAmountText = '';
+                                _isMaxMode = false;
+                                _isResolvingMax = false;
+                                _maxQuote = null;
+                                _amountError = '';
+                                _error = null;
+                              });
+                            },
                           ),
                           SizedBox(
                             height: _singleLineFieldOverlayReserve,
@@ -1443,7 +1462,7 @@ class _SendAmountConversionRow extends StatelessWidget {
     );
 
     return Align(
-      alignment: AlignmentDirectional.topCenter,
+      alignment: AlignmentDirectional.topStart,
       child: Semantics(
         button: true,
         enabled: enabled,
