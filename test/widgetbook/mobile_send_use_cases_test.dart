@@ -1,7 +1,9 @@
 @Tags(['mobile'])
 library;
 
-import 'package:flutter/material.dart' show MaterialApp, TextField;
+import 'package:flutter/material.dart'
+    show MaterialApp, TargetPlatform, TextField, ThemeData;
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -59,10 +61,6 @@ void main() {
       expect(find.text('Enter address to continue'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('mobile_send_recipient_focus_scrim')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey('mobile_send_address_field_placeholder')),
         findsOneWidget,
       );
       expect(
@@ -127,19 +125,19 @@ void main() {
     await _pumpMobileSendUseCase(tester, buildMobileSendAmountEmptyUseCase);
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Enter amount'), findsOneWidget);
+    expect(find.text('Enter Amount'), findsOneWidget);
     expect(find.text('Enter amount to continue'), findsOneWidget);
     expect(
       tester
           .getSize(find.byKey(const ValueKey('mobile_send_amount_field')))
           .height,
-      178,
+      164,
     );
     expect(
       tester.getSize(
         find.byKey(const ValueKey('mobile_send_amount_top_content')),
       ),
-      const Size(361, 299),
+      const Size(361, 285),
     );
     expect(
       tester.getTopLeft(
@@ -150,13 +148,19 @@ void main() {
     final amountInput = tester.widget<TextField>(
       find.byKey(const ValueKey('mobile_send_amount_input')),
     );
-    expect(amountInput.decoration?.hintText, '0');
+    expect(amountInput.decoration?.hintText, isNull);
+    final zecHintPadding = amountInput.decoration?.hint as Padding?;
+    expect(zecHintPadding, isA<Padding>());
+    expect(zecHintPadding!.padding, const EdgeInsetsDirectional.only(end: 3.7));
+    expect(amountInput.showCursor, isFalse);
+    expect(
+      find.byKey(const ValueKey('mobile_send_amount_empty_cursor')),
+      findsOneWidget,
+    );
     expect(
       amountInput.keyboardType,
       const TextInputType.numberWithOptions(decimal: true),
     );
-    expect(amountInput.cursorWidth, 3);
-    expect(amountInput.cursorHeight, 48);
     expect(
       tester.getSize(
         find.byKey(const ValueKey('mobile_send_amount_recipient_block')),
@@ -187,14 +191,149 @@ void main() {
     );
   });
 
-  testWidgets('mobile send amount error use case renders amount error', (
+  testWidgets('mobile send amount empty cursor matches typed native cursor', (
+    tester,
+  ) async {
+    await _pumpMobileSendUseCase(
+      tester,
+      buildMobileSendAmountEmptyUseCase,
+      devicePixelRatio: 3,
+    );
+
+    final inputFinder = find.byKey(const ValueKey('mobile_send_amount_input'));
+    final emptyCursorFinder = find.byKey(
+      const ValueKey('mobile_send_amount_empty_cursor'),
+    );
+    final emptyCursorRect = tester.getRect(emptyCursorFinder);
+
+    await tester.enterText(inputFinder, '0');
+    await tester.pump();
+
+    expect(emptyCursorFinder, findsNothing);
+    final editable = _findRenderEditable(
+      tester.renderObject(find.byType(EditableText)),
+    );
+    final typedCursorRect = _globalCaretRect(editable, 1);
+    expect(emptyCursorRect.center.dx, closeTo(typedCursorRect.center.dx, 0.75));
+  });
+
+  testWidgets('mobile send amount empty cursor blinks on Android cadence', (
+    tester,
+  ) async {
+    await _pumpMobileSendUseCase(
+      tester,
+      buildMobileSendAmountEmptyUseCase,
+      platform: TargetPlatform.android,
+      settleDuration: Duration.zero,
+    );
+
+    expect(_emptyCursorOpacity(tester), 1);
+
+    await tester.pump(const Duration(milliseconds: 499));
+    expect(_emptyCursorOpacity(tester), 1);
+
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(_emptyCursorOpacity(tester), 0);
+
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(_emptyCursorOpacity(tester), 1);
+  });
+
+  testWidgets('mobile send amount empty cursor uses iOS opacity keyframes', (
+    tester,
+  ) async {
+    await _pumpMobileSendUseCase(
+      tester,
+      buildMobileSendAmountEmptyUseCase,
+      platform: TargetPlatform.iOS,
+      settleDuration: Duration.zero,
+    );
+
+    expect(_emptyCursorOpacity(tester), 1);
+
+    await tester.pump(const Duration(milliseconds: 650));
+    expect(_emptyCursorOpacity(tester), 0);
+
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(_emptyCursorOpacity(tester), 0);
+
+    await tester.pump(const Duration(microseconds: 37500));
+    expect(_emptyCursorOpacity(tester), 0.25);
+
+    await tester.pump(const Duration(microseconds: 112500));
+    expect(_emptyCursorOpacity(tester), 1);
+  });
+
+  testWidgets('mobile send amount empty cursor does not shift amount layout', (
+    tester,
+  ) async {
+    await _pumpMobileSendUseCase(tester, buildMobileSendAmountEmptyUseCase);
+
+    final inputFinder = find.byKey(const ValueKey('mobile_send_amount_input'));
+    final zecFinder = find.text('ZEC');
+    final emptyInputRect = tester.getRect(inputFinder);
+    final emptyZecRect = tester.getRect(zecFinder);
+
+    await tester.enterText(inputFinder, '0');
+    await tester.pump();
+
+    expect(tester.getRect(inputFinder), _closeRect(emptyInputRect));
+    expect(tester.getRect(zecFinder), _closeRect(emptyZecRect));
+  });
+
+  testWidgets('mobile send amount input expands for full precision ZEC', (
+    tester,
+  ) async {
+    await _pumpMobileSendUseCase(tester, buildMobileSendAmountEmptyUseCase);
+
+    final inputFinder = find.byKey(const ValueKey('mobile_send_amount_input'));
+    await tester.enterText(inputFinder, '0.04903463');
+    await tester.pump();
+
+    final fieldRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_send_amount_field')),
+    );
+    final inputRect = tester.getRect(inputFinder);
+    final zecRect = tester.getRect(find.text('ZEC'));
+
+    expect(inputRect.width, greaterThan(220));
+    expect(inputRect.left, greaterThanOrEqualTo(fieldRect.left - 0.01));
+    expect(zecRect.right, lessThanOrEqualTo(fieldRect.right + 0.01));
+  });
+
+  testWidgets('mobile send amount measurement honors text scaler', (
+    tester,
+  ) async {
+    await _pumpMobileSendUseCase(
+      tester,
+      buildMobileSendAmountEmptyUseCase,
+      textScaler: const TextScaler.linear(1.5),
+    );
+
+    final inputFinder = find.byKey(const ValueKey('mobile_send_amount_input'));
+    await tester.enterText(inputFinder, '0.04903463');
+    await tester.pump();
+
+    final fieldRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_send_amount_field')),
+    );
+    final inputRect = tester.getRect(inputFinder);
+    final zecRect = tester.getRect(find.text('ZEC'));
+
+    expect(inputRect.left, greaterThanOrEqualTo(fieldRect.left - 0.01));
+    expect(zecRect.right, lessThanOrEqualTo(fieldRect.right + 0.01));
+    expect(inputRect.right, lessThanOrEqualTo(zecRect.left - AppSpacing.xs));
+  });
+
+  testWidgets('mobile send amount error use case renders visual error state', (
     tester,
   ) async {
     await _pumpMobileSendUseCase(tester, buildMobileSendAmountErrorUseCase);
 
     expect(tester.takeException(), isNull);
     expect(find.text('243.12'), findsOneWidget);
-    expect(find.text('Not enough ZEC'), findsOneWidget);
+    expect(find.text('Not enough ZEC'), findsNothing);
+    expect(find.text('Enter amount to continue'), findsOneWidget);
   });
 
   testWidgets('mobile send amount ready use case renders review CTA', (
@@ -204,6 +343,18 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('24.312'), findsOneWidget);
+    expect(find.text('Finish & review'), findsOneWidget);
+  });
+
+  testWidgets('mobile send amount USD use case renders USD input mode', (
+    tester,
+  ) async {
+    await _pumpMobileSendUseCase(tester, buildMobileSendAmountUsdUseCase);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(r'$'), findsOneWidget);
+    expect(find.text('120.12'), findsOneWidget);
+    expect(find.text('12 ZEC'), findsOneWidget);
     expect(find.text('Finish & review'), findsOneWidget);
   });
 
@@ -333,17 +484,40 @@ Rect _rectForKey(WidgetTester tester, ValueKey<String> key) {
   return tester.getRect(finder);
 }
 
+Matcher _closeRect(Rect expected) {
+  return isA<Rect>()
+      .having((rect) => rect.left, 'left', closeTo(expected.left, 0.01))
+      .having((rect) => rect.top, 'top', closeTo(expected.top, 0.01))
+      .having((rect) => rect.width, 'width', closeTo(expected.width, 0.01))
+      .having((rect) => rect.height, 'height', closeTo(expected.height, 0.01));
+}
+
 Future<void> _pumpMobileSendUseCase(
   WidgetTester tester,
-  WidgetBuilder builder,
-) async {
-  tester.view.physicalSize = const Size(393, 852);
-  tester.view.devicePixelRatio = 1;
+  WidgetBuilder builder, {
+  double devicePixelRatio = 1,
+  TargetPlatform? platform,
+  TextScaler? textScaler,
+  Duration settleDuration = const Duration(milliseconds: 600),
+}) async {
+  tester.view.physicalSize = Size(
+    393 * devicePixelRatio,
+    852 * devicePixelRatio,
+  );
+  tester.view.devicePixelRatio = devicePixelRatio;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 
   await tester.pumpWidget(
     MaterialApp(
+      theme: platform == null ? null : ThemeData(platform: platform),
+      builder: (context, child) {
+        if (textScaler == null) return child!;
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+          child: child!,
+        );
+      },
       home: AppTheme(
         data: AppThemeData.dark,
         child: Builder(builder: builder),
@@ -351,6 +525,32 @@ Future<void> _pumpMobileSendUseCase(
     ),
   );
   await tester.pump();
-  await tester.pump(const Duration(milliseconds: 300));
-  await tester.pump(const Duration(milliseconds: 300));
+  await tester.pump();
+  if (settleDuration > Duration.zero) {
+    await tester.pump(settleDuration);
+  }
+}
+
+double _emptyCursorOpacity(WidgetTester tester) {
+  return tester
+      .widget<Opacity>(
+        find.byKey(const ValueKey('mobile_send_amount_empty_cursor')),
+      )
+      .opacity;
+}
+
+Rect _globalCaretRect(RenderEditable editable, int offset) {
+  final caretLocal = editable.getLocalRectForCaret(
+    TextPosition(offset: offset),
+  );
+  return editable.localToGlobal(caretLocal.topLeft) & caretLocal.size;
+}
+
+RenderEditable _findRenderEditable(RenderObject root) {
+  if (root is RenderEditable) return root;
+  RenderEditable? found;
+  root.visitChildren((child) {
+    found ??= _findRenderEditable(child);
+  });
+  return found!;
 }

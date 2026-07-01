@@ -2,13 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart'
-    show InputDecoration, Scaffold, TextField;
+    show InputDecoration, Scaffold, TextField, Theme;
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/formatting/number_format.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -38,6 +40,8 @@ import 'mobile_send_scan_screen.dart';
 enum _SendStep { recipient, amount, review }
 
 enum _SendPhase { compose, failed }
+
+enum MobileSendAmountInputMode { zec, usd }
 
 class _ReviewRecipientPresentation {
   const _ReviewRecipientPresentation({
@@ -200,14 +204,23 @@ const _kMobileSendAddressFieldGroupHeight =
     AppInputSizing.height +
     _kMobileSendAddressErrorGap +
     _kMobileSendRecipientLineHeight;
-const _kMobileSendAmountFieldHeight = 178.0;
+const _kMobileSendAmountFieldHeight = 164.0;
+const _kMobileSendAmountBalanceRowHeight = 44.0;
 const _kMobileSendAmountInputHeight = 64.0;
-const _kMobileSendAmountLineHeight = 17.0;
-const _kMobileSendAmountCaretHeight = 48.0;
-const _kMobileSendAmountCaretWidth = 3.0;
+const _kMobileSendAmountMetaHeight = 20.0;
+const _kMobileSendAmountZecHintEndInset = 3.7;
+const _kMobileSendAmountInputMinWidth = 32.0;
+const _kMobileSendAmountInputFallbackMaxWidth = 220.0;
+const _kMobileSendAmountCursorBlinkHalfPeriod = Duration(milliseconds: 500);
+const _kMobileSendAmountPriceLoadingWidth = 48.0;
+const _kMobileSendAmountPriceLoadingHeight = 12.0;
+const _kMobileSendAmountPriceLoadingPeriod = Duration(milliseconds: 1200);
 const _kMobileSendAmountFontSize = 48.0;
 const _kMobileSendAmountLineHeightPx = 40.0;
-const _kMobileSendAmountTopContentHeight = 299.0;
+const _kMobileSendAmountUnitFontSize = 38.0;
+const _kMobileSendAmountUsdPrefixFontSize = 40.0;
+const _kMobileSendAmountUsdPrefixOpticalOffsetY = -2.0;
+const _kMobileSendAmountTopContentHeight = 285.0;
 const _kMobileSendAmountRecipientBlockHeight = 97.0;
 const _kMobileSendAmountRecipientLabelHeight = 25.0;
 const _kMobileSendAmountRecipientRowHeight = 68.0;
@@ -219,7 +232,7 @@ const _kMobileSendReviewWrapHeight = 161.0;
 const _kMobileSendReviewRowHeight = 32.0;
 const _kMobileSendReviewDividerHeight = 1.0;
 
-/// The mobile send wizard — Figma `Send to` → `Enter amount` →
+/// The mobile send wizard — Figma `Send to` → `Enter Amount` →
 /// `Review Send` (4423:119950, 4479:47503, 4481:51525) plus the memo
 /// modal (4484:62917). This screen owns proposal creation and hands
 /// the proposal to the mobile status route for broadcast.
@@ -234,6 +247,8 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.initialRecipient,
     this.initialAddressType,
     this.initialAmount,
+    this.initialFiatAmount,
+    this.initialAmountInputMode = MobileSendAmountInputMode.zec,
     this.initialAmountError,
     this.initialAmountReady = false,
     this.initialAmountStep = false,
@@ -260,6 +275,8 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   /// Preview/test seam for opening the amount step with a preset value.
   final bool initialAmountStep;
   final String? initialAmount;
+  final String? initialFiatAmount;
+  final MobileSendAmountInputMode initialAmountInputMode;
   final String? initialAmountError;
   final bool initialAmountReady;
   final bool initialReview;
@@ -305,8 +322,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String? _contactPictureId;
   int _addressSeq = 0;
 
-  // Amount state. The raw text is numpad-driven.
+  // Amount state. `_amountText` stays canonical ZEC text for Rust/review.
   String _amountText = '';
+  String _fiatAmountText = '';
+  MobileSendAmountInputMode _amountInputMode = MobileSendAmountInputMode.zec;
   String? _amountError = ''; // null = valid, '' = silently incomplete
   int _validateSeq = 0;
   bool _isMaxMode = false;
@@ -326,6 +345,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   void initState() {
     super.initState();
     _addressFocus.addListener(_handleAddressFocusChanged);
+    _amountFocus.addListener(_handleAmountFocusChanged);
     final initial = widget.initialRecipient;
     if (initial != null && initial.trim().isNotEmpty) {
       _addressController.text = initial.trim();
@@ -348,7 +368,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (widget.initialAmountStep || widget.initialAmount != null) {
       _step = widget.initialReview ? _SendStep.review : _SendStep.amount;
       _amountText = widget.initialAmount?.trim() ?? '';
-      _amountController.text = _amountText;
+      _amountInputMode = widget.initialAmountInputMode;
+      _fiatAmountText = widget.initialFiatAmount?.trim() ?? '';
+      _amountController.text = _amountInputMode == MobileSendAmountInputMode.usd
+          ? _fiatAmountText
+          : _amountText;
       _isMaxMode = widget.initialMaxMode;
       if (widget.initialAmountError != null) {
         _amountError = widget.initialAmountError;
@@ -380,6 +404,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   @override
   void dispose() {
     _addressFocus.removeListener(_handleAddressFocusChanged);
+    _amountFocus.removeListener(_handleAmountFocusChanged);
     _addressController.dispose();
     _addressFocus.dispose();
     _amountController.dispose();
@@ -397,6 +422,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   static const _hardwareTexUnsupportedText =
       'Keystone does not support TEX sends yet.';
+  static const _notEnoughZecText = 'Not enough ZEC';
 
   bool get _activeAccountIsHardware {
     final uuid = ref.read(accountProvider).value?.activeAccountUuid;
@@ -427,6 +453,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _addressType == 'unified' || _addressType == 'sapling';
 
   void _handleAddressFocusChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _handleAmountFocusChanged() {
     if (mounted) setState(() {});
   }
 
@@ -555,6 +585,92 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String? get _activeAccountUuid =>
       ref.read(accountProvider).value?.activeAccountUuid;
 
+  bool get _amountInputIsUsd =>
+      _amountInputMode == MobileSendAmountInputMode.usd;
+
+  void _setAmountControllerText(String text) {
+    _amountController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
+  BigInt? _zatoshiFromUsdText(String text, double? zecUsdUnitPrice) {
+    final normalized = text.trim();
+    if (normalized.isEmpty || normalized == '.' || normalized == '0.') {
+      return null;
+    }
+    final usd = double.tryParse(
+      normalized.startsWith('.') ? '0$normalized' : normalized,
+    );
+    if (usd == null ||
+        !usd.isFinite ||
+        usd <= 0 ||
+        zecUsdUnitPrice == null ||
+        !zecUsdUnitPrice.isFinite ||
+        zecUsdUnitPrice <= 0) {
+      return null;
+    }
+    final zatoshi = (usd / zecUsdUnitPrice) * zatoshiPerZec.toDouble();
+    if (!zatoshi.isFinite || zatoshi <= 0) return null;
+    return BigInt.from(zatoshi.floor());
+  }
+
+  String _usdInputTextForZatoshi(BigInt zatoshi, double zecUsdUnitPrice) {
+    final usd = zatoshi.toDouble() / zatoshiPerZec.toDouble() * zecUsdUnitPrice;
+    if (!usd.isFinite || usd <= 0) return '';
+    return usd.toStringAsFixed(2);
+  }
+
+  String _sendableUsdInputTextForZatoshi(
+    BigInt zatoshi,
+    double zecUsdUnitPrice,
+  ) {
+    final text = _usdInputTextForZatoshi(zatoshi, zecUsdUnitPrice);
+    return text == '0.00' ? '' : text;
+  }
+
+  String _usdDisplayTextForZatoshi(BigInt zatoshi, double zecUsdUnitPrice) {
+    final raw = _usdInputTextForZatoshi(zatoshi, zecUsdUnitPrice);
+    if (raw.isEmpty) return '0.00';
+    final parts = raw.split('.');
+    final whole = int.tryParse(parts.first) ?? 0;
+    final fraction = parts.length > 1 ? parts[1] : '00';
+    return '${formatGroupedInteger(whole)}.$fraction';
+  }
+
+  void _toggleAmountInputMode() {
+    final nextMode = _amountInputIsUsd
+        ? MobileSendAmountInputMode.zec
+        : MobileSendAmountInputMode.usd;
+    final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+    if (nextMode == MobileSendAmountInputMode.usd && zecUsdUnitPrice == null) {
+      return;
+    }
+
+    setState(() {
+      _amountInputMode = nextMode;
+      if (_amountInputIsUsd) {
+        final zatoshi = parseZecAmount(_amountText.trim());
+        _fiatAmountText = zatoshi == null || zatoshi <= BigInt.zero
+            ? ''
+            : _sendableUsdInputTextForZatoshi(zatoshi, zecUsdUnitPrice!);
+        if (_fiatAmountText.isEmpty) {
+          _amountText = '';
+          _amountError = '';
+          _feeZatoshi = null;
+          _clearMaxMode();
+        }
+        _setAmountControllerText(_fiatAmountText);
+      } else {
+        _setAmountControllerText(_amountText);
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _amountFocus.requestFocus();
+    });
+  }
+
   bool get _hasCurrentMaxQuote {
     final quote = _maxQuote;
     if (quote == null) return false;
@@ -590,8 +706,27 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _handleAmountChanged(String value) {
+    if (_amountInputIsUsd) {
+      _handleFiatAmountChanged(value);
+      return;
+    }
     setState(() {
       _amountText = value.trim();
+      if (_isMaxMode) {
+        _clearMaxMode();
+      }
+    });
+    unawaited(_validateAmount());
+  }
+
+  void _handleFiatAmountChanged(String value) {
+    final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+    final zatoshi = _zatoshiFromUsdText(value, zecUsdUnitPrice);
+    setState(() {
+      _fiatAmountText = value.trim();
+      _amountText = zatoshi == null
+          ? ''
+          : ZecAmount.fromZatoshi(zatoshi).pretty().amountText;
       if (_isMaxMode) {
         _clearMaxMode();
       }
@@ -654,20 +789,38 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) return;
 
       if (estimate.amountZatoshi <= BigInt.zero) {
-        _applyMaxEstimateError('Not enough ZEC');
+        _applyMaxEstimateError(_notEnoughZecText);
         return;
       }
 
       final amountText = ZecAmount.fromZatoshi(
         estimate.amountZatoshi,
       ).pretty().amountText;
-      _amountController.value = TextEditingValue(
-        text: amountText,
-        selection: TextSelection.collapsed(offset: amountText.length),
-      );
+      final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+      final fiatText = zecUsdUnitPrice == null
+          ? ''
+          : _sendableUsdInputTextForZatoshi(
+              estimate.amountZatoshi,
+              zecUsdUnitPrice,
+            );
+      if (_amountInputIsUsd && fiatText.isEmpty) {
+        _setAmountControllerText('');
+        setState(() {
+          _amountText = '';
+          _fiatAmountText = '';
+          _amountError = '';
+          _feeZatoshi = null;
+          _isResolvingMax = false;
+          _isMaxMode = false;
+          _maxQuote = null;
+        });
+        return;
+      }
+      _setAmountControllerText(_amountInputIsUsd ? fiatText : amountText);
 
       setState(() {
         _amountText = amountText;
+        _fiatAmountText = fiatText;
         _amountError = null;
         _feeZatoshi = estimate.feeZatoshi;
         _isResolvingMax = false;
@@ -684,7 +837,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       final msg = e.toString().toLowerCase();
       _applyMaxEstimateError(
         msg.contains('insufficient')
-            ? 'Not enough ZEC'
+            ? _notEnoughZecText
             : 'Max amount unavailable',
       );
     }
@@ -732,7 +885,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       return;
     }
     if (zatoshi > _spendable) {
-      setState(() => _amountError = 'Not enough ZEC');
+      setState(() => _amountError = _notEnoughZecText);
       return;
     }
     // Block Continue until the fee estimate confirms the total fits —
@@ -755,7 +908,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       );
       if (!mounted || seq != _validateSeq) return;
       if (zatoshi + fee > _spendable) {
-        setState(() => _amountError = 'Not enough ZEC');
+        setState(() => _amountError = _notEnoughZecText);
       } else {
         setState(() {
           _amountError = null;
@@ -766,7 +919,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       if (!mounted || seq != _validateSeq) return;
       final msg = e.toString();
       if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
-        setState(() => _amountError = 'Not enough ZEC');
+        setState(() => _amountError = _notEnoughZecText);
       } else {
         log('MobileSend: fee estimation failed (non-blocking): $e');
         setState(() => _amountError = null);
@@ -779,6 +932,17 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _amountError == null &&
       (parseZecAmount(_amountText.trim()) ?? BigInt.zero) > BigInt.zero &&
       (!_isMaxMode || _hasCurrentMaxQuote);
+
+  String get _amountCtaLabel {
+    if (_isResolvingMax) return 'Calculating max amount';
+    if (_amountReady) return 'Finish & review';
+
+    final error = _amountError;
+    if (error != null && error.isNotEmpty && error != _notEnoughZecText) {
+      return error;
+    }
+    return 'Enter amount to continue';
+  }
 
   void _continueToReview() {
     if (!_amountReady) return;
@@ -1092,7 +1256,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final title = switch (_phase) {
       _SendPhase.compose => switch (_step) {
         _SendStep.recipient => 'Select Recipient',
-        _SendStep.amount => 'Enter amount',
+        _SendStep.amount => 'Enter Amount',
         _SendStep.review => 'Review Send',
       },
       _SendPhase.failed => 'Send failed',
@@ -1489,6 +1653,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAmountStep(BuildContext context) {
     final colors = context.colors;
+    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final spendableText = ZecAmount.fromZatoshi(
       _spendable,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
@@ -1498,6 +1663,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       fontSize: _kMobileSendAmountFontSize,
       height: _kMobileSendAmountLineHeightPx / _kMobileSendAmountFontSize,
       fontWeight: FontWeight.w500,
+    );
+    final amountUnitStyle = amountStyle.copyWith(
+      color: amountStyle.color?.withValues(alpha: 0.5),
+      fontSize: _kMobileSendAmountUnitFontSize,
+      height: _kMobileSendAmountLineHeightPx / _kMobileSendAmountUnitFontSize,
     );
 
     return Column(
@@ -1523,7 +1693,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       context,
                       showError: showError,
                       spendableText: spendableText,
+                      zecUsdUnitPrice: zecUsdUnitPrice,
                       amountStyle: amountStyle,
+                      amountUnitStyle: amountUnitStyle,
                     ),
                     const SizedBox(height: AppSpacing.md),
                     SizedBox(
@@ -1626,11 +1798,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               constrainContent: true,
               onPressed: _amountReady ? _continueToReview : null,
               child: Text(
-                _isResolvingMax
-                    ? 'Calculating max amount'
-                    : _amountReady
-                    ? 'Finish & review'
-                    : 'Enter amount to continue',
+                _amountCtaLabel,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -1645,88 +1813,326 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     BuildContext context, {
     required bool showError,
     required String spendableText,
+    required double? zecUsdUnitPrice,
     required TextStyle amountStyle,
+    required TextStyle amountUnitStyle,
   }) {
-    final colors = context.colors;
     return SizedBox(
       key: const ValueKey('mobile_send_amount_field'),
       height: _kMobileSendAmountFieldHeight,
       width: double.infinity,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SizedBox(
-              height: _kMobileSendAmountLineHeight,
-              child: showError
-                  ? Center(
-                      child: Text(
-                        _amountError!,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.destructive,
-                        ),
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            SizedBox(
-              height: _kMobileSendAmountInputHeight,
-              child: TextField(
-                key: const ValueKey('mobile_send_amount_input'),
-                controller: _amountController,
-                focusNode: _amountFocus,
-                autofocus: true,
-                onChanged: _handleAmountChanged,
-                onSubmitted: (_) => _amountFocus.unfocus(),
-                onTapOutside: (_) => _amountFocus.unfocus(),
-                textAlign: TextAlign.center,
-                textAlignVertical: TextAlignVertical.center,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                textInputAction: TextInputAction.done,
-                inputFormatters: const [
-                  CommaToDotInputFormatter(),
-                  _ZecAmountInputFormatter(maxFractionDigits: 8, maxLength: 17),
-                ],
-                maxLines: 1,
-                style: amountStyle,
-                cursorColor: showError
-                    ? colors.text.destructive
-                    : colors.text.accent,
-                cursorWidth: _kMobileSendAmountCaretWidth,
-                cursorHeight: _kMobileSendAmountCaretHeight,
-                cursorRadius: const Radius.circular(AppRadii.full),
-                decoration: InputDecoration.collapsed(
-                  hintText: '0',
-                  hintStyle: amountStyle.copyWith(color: colors.text.disabled),
-                ),
+      child: Column(
+        children: [
+          _buildAmountBalanceRow(
+            context,
+            showError: showError,
+            spendableText: spendableText,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _buildAmountInputPanel(
+            context,
+            zecUsdUnitPrice: zecUsdUnitPrice,
+            amountStyle: amountStyle,
+            amountUnitStyle: amountUnitStyle,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAmountBalanceRow(
+    BuildContext context, {
+    required bool showError,
+    required String spendableText,
+  }) {
+    final colors = context.colors;
+    final textColor = showError ? colors.text.destructive : colors.text.accent;
+    return SizedBox(
+      key: const ValueKey('mobile_send_amount_balance_row'),
+      height: _kMobileSendAmountBalanceRowHeight,
+      child: Row(
+        children: [
+          const _ReviewZecIcon(),
+          const SizedBox(width: AppSpacing.s),
+          Expanded(
+            child: Text(
+              spendableText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.labelLarge.copyWith(
+                color: textColor,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: AppSpacing.s),
-            SizedBox(
-              height: _kMobileSendAmountLineHeight,
-              child: Center(
-                child: Semantics(
-                  button: true,
-                  label: 'Use maximum spendable balance',
-                  child: GestureDetector(
-                    key: const ValueKey('mobile_send_max_button'),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _isResolvingMax ? null : _activateMaxMode,
-                    child: Text(
-                      'Max: $spendableText',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Semantics(
+            button: true,
+            label: 'Use maximum spendable balance',
+            child: GestureDetector(
+              key: const ValueKey('mobile_send_max_button'),
+              behavior: HitTestBehavior.opaque,
+              onTap: _isResolvingMax ? null : _activateMaxMode,
+              child: Container(
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+                decoration: BoxDecoration(
+                  color: colors.button.secondary.bg,
+                  borderRadius: BorderRadius.circular(AppRadii.full),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  'Max',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.button.secondary.label,
                   ),
                 ),
               ),
             ),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAmountInputPanel(
+    BuildContext context, {
+    required double? zecUsdUnitPrice,
+    required TextStyle amountStyle,
+    required TextStyle amountUnitStyle,
+  }) {
+    return SizedBox(
+      key: const ValueKey('mobile_send_amount_input_panel'),
+      height:
+          _kMobileSendAmountInputHeight +
+          AppSpacing.s +
+          _kMobileSendAmountMetaHeight,
+      child: Column(
+        children: [
+          _buildAmountInputRow(
+            context,
+            amountStyle: amountStyle,
+            amountUnitStyle: amountUnitStyle,
+          ),
+          const SizedBox(height: AppSpacing.s),
+          _buildAmountConversionRow(context, zecUsdUnitPrice: zecUsdUnitPrice),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAmountInputRow(
+    BuildContext context, {
+    required TextStyle amountStyle,
+    required TextStyle amountUnitStyle,
+  }) {
+    final colors = context.colors;
+    final activeText = _amountInputIsUsd ? _fiatAmountText : _amountText;
+    final textScaler = MediaQuery.textScalerOf(context);
+    final showAmountCursor = _amountInputIsUsd || activeText.trim().isNotEmpty;
+    final showEmptyZecCursor =
+        !_amountInputIsUsd &&
+        activeText.trim().isEmpty &&
+        _amountFocus.hasFocus;
+    final hintStyle = amountStyle.copyWith(color: colors.text.disabled);
+    final usdPrefixStyle = amountUnitStyle.copyWith(
+      fontSize: _kMobileSendAmountUsdPrefixFontSize,
+      height:
+          _kMobileSendAmountLineHeightPx / _kMobileSendAmountUsdPrefixFontSize,
+    );
+    final inputFormatters = [
+      const CommaToDotInputFormatter(),
+      _DecimalAmountInputFormatter(
+        maxFractionDigits: _amountInputIsUsd ? 2 : 8,
+        maxLength: _amountInputIsUsd ? 12 : 17,
+      ),
+    ];
+
+    return SizedBox(
+      height: _kMobileSendAmountInputHeight,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final affixWidth = _amountInputIsUsd
+              ? _textWidth(r'$', usdPrefixStyle, textScaler: textScaler) +
+                    AppSpacing.xs
+              : _textWidth('ZEC', amountUnitStyle, textScaler: textScaler) +
+                    AppSpacing.xs;
+          final inputWidth = _amountInputWidth(
+            activeText,
+            amountStyle,
+            maxWidth: constraints.maxWidth - affixWidth,
+            textScaler: textScaler,
+          );
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              if (_amountInputIsUsd) ...[
+                Transform.translate(
+                  offset: const Offset(
+                    0,
+                    _kMobileSendAmountUsdPrefixOpticalOffsetY,
+                  ),
+                  child: Text(r'$', style: usdPrefixStyle),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+              ],
+              SizedBox(
+                width: inputWidth,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    TextField(
+                      key: const ValueKey('mobile_send_amount_input'),
+                      controller: _amountController,
+                      focusNode: _amountFocus,
+                      autofocus: true,
+                      onChanged: _handleAmountChanged,
+                      onSubmitted: (_) => _amountFocus.unfocus(),
+                      onTapOutside: (_) => _amountFocus.unfocus(),
+                      textAlign: _amountInputIsUsd
+                          ? TextAlign.left
+                          : TextAlign.right,
+                      textAlignVertical: TextAlignVertical.center,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      textInputAction: TextInputAction.done,
+                      inputFormatters: inputFormatters,
+                      maxLines: 1,
+                      style: amountStyle,
+                      showCursor: showAmountCursor,
+                      cursorColor: colors.text.accent,
+                      decoration: _amountInputDecoration(hintStyle),
+                    ),
+                    if (showEmptyZecCursor)
+                      Positioned.fill(
+                        child: _MobileSendAmountEmptyCursor(
+                          style: amountStyle,
+                          color: colors.text.accent,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (!_amountInputIsUsd) ...[
+                const SizedBox(width: AppSpacing.xs),
+                Text('ZEC', style: amountUnitStyle),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  InputDecoration _amountInputDecoration(TextStyle hintStyle) {
+    if (_amountInputIsUsd) {
+      return InputDecoration.collapsed(hintText: '0', hintStyle: hintStyle);
+    }
+
+    return InputDecoration.collapsed(
+      hintText: null,
+      hint: Padding(
+        padding: const EdgeInsetsDirectional.only(
+          end: _kMobileSendAmountZecHintEndInset,
+        ),
+        child: Text('0', style: hintStyle, textAlign: TextAlign.right),
+      ),
+    );
+  }
+
+  double _amountInputWidth(
+    String text,
+    TextStyle style, {
+    required double maxWidth,
+    required TextScaler textScaler,
+  }) {
+    final sample = text.trim().isEmpty ? '0' : text.trim();
+    final measuredWidth = _textWidth(sample, style, textScaler: textScaler);
+    final resolvedMaxWidth = maxWidth.isFinite
+        ? maxWidth.clamp(_kMobileSendAmountInputMinWidth, double.infinity)
+        : _kMobileSendAmountInputFallbackMaxWidth;
+    return (measuredWidth + 10)
+        .clamp(_kMobileSendAmountInputMinWidth, resolvedMaxWidth)
+        .toDouble();
+  }
+
+  double _textWidth(
+    String text,
+    TextStyle style, {
+    required TextScaler textScaler,
+  }) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+      textScaler: textScaler,
+    )..layout();
+    return painter.width;
+  }
+
+  Widget _buildAmountConversionRow(
+    BuildContext context, {
+    required double? zecUsdUnitPrice,
+  }) {
+    final colors = context.colors;
+    final amountZatoshi = parseZecAmount(_amountText.trim());
+    final canToggle = _amountInputIsUsd || zecUsdUnitPrice != null;
+    final metaText = _amountInputIsUsd
+        ? '${amountZatoshi == null ? '0' : ZecAmount.fromZatoshi(amountZatoshi).pretty().amountText} ZEC'
+        : zecUsdUnitPrice == null
+        ? null
+        : r'$ ' +
+              (amountZatoshi == null || amountZatoshi <= BigInt.zero
+                  ? '0.00'
+                  : _usdDisplayTextForZatoshi(amountZatoshi, zecUsdUnitPrice));
+
+    return SizedBox(
+      height: _kMobileSendAmountMetaHeight,
+      child: Center(
+        child: Semantics(
+          button: true,
+          label: _amountInputIsUsd
+              ? 'Enter amount in ZEC'
+              : 'Enter amount in USD',
+          enabled: canToggle,
+          child: GestureDetector(
+            key: const ValueKey('mobile_send_amount_mode_toggle'),
+            behavior: HitTestBehavior.opaque,
+            onTap: canToggle ? _toggleAmountInputMode : null,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppIcon(
+                  AppIcons.doubleArrowVertical,
+                  size: 20,
+                  color: colors.text.secondary,
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                if (metaText == null) ...[
+                  Text(
+                    r'$',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                  const _AmountPriceLoadingBar(),
+                ] else
+                  Text(
+                    metaText,
+                    key: const ValueKey('mobile_send_amount_conversion_text'),
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1954,8 +2360,374 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 }
 
-class _ZecAmountInputFormatter extends TextInputFormatter {
-  const _ZecAmountInputFormatter({
+class _AmountPriceLoadingBar extends StatefulWidget {
+  const _AmountPriceLoadingBar();
+
+  @override
+  State<_AmountPriceLoadingBar> createState() => _AmountPriceLoadingBarState();
+}
+
+class _AmountPriceLoadingBarState extends State<_AmountPriceLoadingBar>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _controller;
+
+  AnimationController get _activeController {
+    return _controller ??= AnimationController(
+      vsync: this,
+      duration: _kMobileSendAmountPriceLoadingPeriod,
+    );
+  }
+
+  bool get _shouldAnimate {
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) return false;
+    return TickerMode.valuesOf(context).enabled;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncAnimation();
+  }
+
+  void _syncAnimation() {
+    final controller = _controller;
+    if (_shouldAnimate) {
+      if (!_activeController.isAnimating) _activeController.repeat();
+      return;
+    }
+    if (controller != null) {
+      controller
+        ..stop()
+        ..value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final baseColor = colors.background.overlay.withValues(alpha: 0.15);
+    final highlightColor = colors.background.raised;
+    final staticPainter = _AmountPriceLoadingPainter(
+      progress: 0,
+      baseColor: baseColor,
+      highlightColor: highlightColor,
+      animate: false,
+    );
+
+    return SizedBox(
+      key: const ValueKey('mobile_send_amount_price_loading'),
+      width: _kMobileSendAmountPriceLoadingWidth,
+      height: _kMobileSendAmountPriceLoadingHeight,
+      child: _shouldAnimate
+          ? AnimatedBuilder(
+              animation: _activeController,
+              builder: (context, _) {
+                return CustomPaint(
+                  painter: _AmountPriceLoadingPainter(
+                    progress: _activeController.value,
+                    baseColor: baseColor,
+                    highlightColor: highlightColor,
+                  ),
+                );
+              },
+            )
+          : CustomPaint(painter: staticPainter),
+    );
+  }
+}
+
+class _AmountPriceLoadingPainter extends CustomPainter {
+  const _AmountPriceLoadingPainter({
+    required this.progress,
+    required this.baseColor,
+    required this.highlightColor,
+    this.animate = true,
+  });
+
+  final double progress;
+  final Color baseColor;
+  final Color highlightColor;
+  final bool animate;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(AppRadii.full));
+    if (!animate) {
+      final shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [highlightColor, baseColor],
+      ).createShader(rect);
+      canvas.drawRRect(rrect, Paint()..shader = shader);
+      return;
+    }
+
+    canvas.drawRRect(rrect, Paint()..color = baseColor);
+    canvas.save();
+    canvas.clipRRect(rrect);
+    final sweepWidth = size.width * 1.6;
+    final left = -sweepWidth + progress * (size.width + sweepWidth);
+    final sweepRect = Rect.fromLTWH(left, 0, sweepWidth, size.height);
+    final shader = LinearGradient(
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+      colors: [
+        baseColor.withValues(alpha: 0),
+        highlightColor,
+        baseColor.withValues(alpha: 0),
+      ],
+      stops: const [0, 0.5, 1],
+    ).createShader(sweepRect);
+    canvas.drawRect(sweepRect, Paint()..shader = shader);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _AmountPriceLoadingPainter oldDelegate) {
+    return progress != oldDelegate.progress ||
+        baseColor != oldDelegate.baseColor ||
+        highlightColor != oldDelegate.highlightColor ||
+        animate != oldDelegate.animate;
+  }
+}
+
+class _MobileSendAmountEmptyCursor extends StatefulWidget {
+  const _MobileSendAmountEmptyCursor({
+    required this.style,
+    required this.color,
+  });
+
+  final TextStyle style;
+  final Color color;
+
+  @override
+  State<_MobileSendAmountEmptyCursor> createState() =>
+      _MobileSendAmountEmptyCursorState();
+}
+
+class _MobileSendAmountEmptyCursorState
+    extends State<_MobileSendAmountEmptyCursor> {
+  static const _iosCursorOpacityKeyFrames = <_CursorOpacityKeyFrame>[
+    _CursorOpacityKeyFrame(Duration.zero, 1),
+    _CursorOpacityKeyFrame(Duration(milliseconds: 500), 1),
+    _CursorOpacityKeyFrame(Duration(microseconds: 537500), 0.75),
+    _CursorOpacityKeyFrame(Duration(milliseconds: 575), 0.5),
+    _CursorOpacityKeyFrame(Duration(microseconds: 612500), 0.25),
+    _CursorOpacityKeyFrame(Duration(milliseconds: 650), 0),
+    _CursorOpacityKeyFrame(Duration(milliseconds: 850), 0),
+    _CursorOpacityKeyFrame(Duration(microseconds: 887500), 0.25),
+    _CursorOpacityKeyFrame(Duration(milliseconds: 925), 0.5),
+    _CursorOpacityKeyFrame(Duration(microseconds: 962500), 0.75),
+    _CursorOpacityKeyFrame(Duration(seconds: 1), 1),
+  ];
+
+  final _editableKey = GlobalKey();
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  Timer? _blinkTimer;
+  Rect? _cursorRect;
+  TargetPlatform? _blinkPlatform;
+  bool? _blinkTickersEnabled;
+  double _cursorOpacity = 1;
+  bool _measurementScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: '0')
+      ..selection = const TextSelection.collapsed(offset: 1);
+    _focusNode = FocusNode(canRequestFocus: false, skipTraversal: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _MobileSendAmountEmptyCursor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleMeasurement();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final platform = Theme.of(context).platform;
+    final tickersEnabled = TickerMode.valuesOf(context).enabled;
+    if (_blinkPlatform != platform || _blinkTickersEnabled != tickersEnabled) {
+      _blinkPlatform = platform;
+      _blinkTickersEnabled = tickersEnabled;
+      _restartBlink(platform, tickersEnabled: tickersEnabled);
+    }
+    _scheduleMeasurement();
+  }
+
+  @override
+  void dispose() {
+    _blinkTimer?.cancel();
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final platform = Theme.of(context).platform;
+    final cursorOffset = _usesCupertinoCursor(platform)
+        ? Offset(-2.0 / MediaQuery.devicePixelRatioOf(context), 0)
+        : Offset.zero;
+    _scheduleMeasurement();
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        ExcludeSemantics(
+          child: IgnorePointer(
+            child: Offstage(
+              child: EditableText(
+                key: _editableKey,
+                controller: _controller,
+                focusNode: _focusNode,
+                readOnly: true,
+                showCursor: false,
+                enableInteractiveSelection: false,
+                style: widget.style,
+                textAlign: TextAlign.right,
+                textDirection: TextDirection.ltr,
+                maxLines: 1,
+                cursorColor: widget.color,
+                backgroundCursorColor: widget.color,
+                cursorWidth: 2,
+                cursorOffset: cursorOffset,
+              ),
+            ),
+          ),
+        ),
+        if (_cursorRect != null)
+          Positioned.fromRect(
+            rect: _cursorRect!,
+            child: IgnorePointer(
+              child: Opacity(
+                key: const ValueKey('mobile_send_amount_empty_cursor'),
+                opacity: _cursorOpacity,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: widget.color,
+                    borderRadius: _usesCupertinoCursor(platform)
+                        ? BorderRadius.circular(2)
+                        : BorderRadius.zero,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _restartBlink(TargetPlatform platform, {required bool tickersEnabled}) {
+    _blinkTimer?.cancel();
+    _blinkTimer = null;
+    _cursorOpacity = tickersEnabled ? 1 : 0;
+    if (!tickersEnabled || EditableText.debugDeterministicCursor) return;
+
+    if (platform == TargetPlatform.iOS) {
+      _scheduleIosBlinkKeyFrame(1);
+      return;
+    }
+
+    _blinkTimer = Timer.periodic(_kMobileSendAmountCursorBlinkHalfPeriod, (_) {
+      _setCursorOpacity(_cursorOpacity == 0 ? 1 : 0);
+    });
+  }
+
+  void _scheduleIosBlinkKeyFrame(int index) {
+    final next = _iosCursorOpacityKeyFrames[index];
+    final previous = _iosCursorOpacityKeyFrames[index - 1];
+    _blinkTimer = Timer(next.time - previous.time, () {
+      if (!mounted ||
+          _blinkPlatform != TargetPlatform.iOS ||
+          _blinkTickersEnabled != true ||
+          EditableText.debugDeterministicCursor) {
+        return;
+      }
+
+      _setCursorOpacity(next.opacity);
+      final nextIndex = index + 1;
+      _scheduleIosBlinkKeyFrame(
+        nextIndex < _iosCursorOpacityKeyFrames.length ? nextIndex : 1,
+      );
+    });
+  }
+
+  void _setCursorOpacity(double opacity) {
+    if (_cursorOpacity == opacity) return;
+    setState(() => _cursorOpacity = opacity);
+  }
+
+  void _scheduleMeasurement() {
+    if (_measurementScheduled) return;
+    _measurementScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _measurementScheduled = false;
+      if (!mounted) return;
+
+      final renderObject = context.findRenderObject();
+      final editableRenderObject = _editableKey.currentContext
+          ?.findRenderObject();
+      if (renderObject is! RenderBox || editableRenderObject == null) return;
+
+      final editable = _findRenderEditable(editableRenderObject);
+      if (editable == null || !editable.hasSize) return;
+
+      final caretLocal = editable.getLocalRectForCaret(
+        const TextPosition(offset: 1),
+      );
+      final caretTopLeft = renderObject.globalToLocal(
+        editable.localToGlobal(caretLocal.topLeft),
+      );
+      final nextRect = caretTopLeft & caretLocal.size;
+      if (!_rectNearlyEquals(_cursorRect, nextRect)) {
+        setState(() => _cursorRect = nextRect);
+      }
+    });
+  }
+
+  bool _usesCupertinoCursor(TargetPlatform platform) {
+    return platform == TargetPlatform.iOS || platform == TargetPlatform.macOS;
+  }
+
+  bool _rectNearlyEquals(Rect? a, Rect b) {
+    if (a == null) return false;
+    const tolerance = 0.01;
+    return (a.left - b.left).abs() < tolerance &&
+        (a.top - b.top).abs() < tolerance &&
+        (a.width - b.width).abs() < tolerance &&
+        (a.height - b.height).abs() < tolerance;
+  }
+}
+
+class _CursorOpacityKeyFrame {
+  const _CursorOpacityKeyFrame(this.time, this.opacity);
+
+  final Duration time;
+  final double opacity;
+}
+
+RenderEditable? _findRenderEditable(RenderObject root) {
+  if (root is RenderEditable) return root;
+  RenderEditable? found;
+  root.visitChildren((child) {
+    found ??= _findRenderEditable(child);
+  });
+  return found;
+}
+
+class _DecimalAmountInputFormatter extends TextInputFormatter {
+  const _DecimalAmountInputFormatter({
     required this.maxFractionDigits,
     required this.maxLength,
   });

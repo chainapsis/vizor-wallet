@@ -148,6 +148,18 @@ Widget buildMobileSendAmountReadyUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileSendAmountUsdUseCase(BuildContext context) {
+  return const _MobileSendHarness(
+    initialRecipient: _mobileShieldedAddress,
+    initialAmount: '12',
+    initialFiatAmount: '120.12',
+    initialAmountInputMode: MobileSendAmountInputMode.usd,
+    initialAmountReady: true,
+    initialContactLabel: 'Contact label',
+    initialContactPictureId: 'pfp-02',
+  );
+}
+
 Widget buildMobileSendReviewDefaultUseCase(BuildContext context) {
   return const _MobileSendHarness(
     initialRecipient: _mobileShieldedAddress,
@@ -267,6 +279,8 @@ class _MobileSendHarness extends StatelessWidget {
     this.contacts = const [],
     this.initialRecipient,
     this.initialAmount,
+    this.initialFiatAmount,
+    this.initialAmountInputMode = MobileSendAmountInputMode.zec,
     this.initialAmountError,
     this.initialAmountReady = false,
     this.initialReview = false,
@@ -279,6 +293,8 @@ class _MobileSendHarness extends StatelessWidget {
   final List<AddressBookContact> contacts;
   final String? initialRecipient;
   final String? initialAmount;
+  final String? initialFiatAmount;
+  final MobileSendAmountInputMode initialAmountInputMode;
   final String? initialAmountError;
   final bool initialAmountReady;
   final bool initialReview;
@@ -306,6 +322,8 @@ class _MobileSendHarness extends StatelessWidget {
         child: MobileSendScreen(
           initialRecipient: initialRecipient,
           initialAmount: initialAmount,
+          initialFiatAmount: initialFiatAmount,
+          initialAmountInputMode: initialAmountInputMode,
           initialAmountError: initialAmountError,
           initialAmountReady: initialAmountReady,
           initialReview: initialReview,
