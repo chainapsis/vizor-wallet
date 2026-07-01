@@ -466,54 +466,59 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
             (value.value ?? SyncState()).scopedToAccount(activeAccountUuid),
       ),
     );
-    return SafeArea(
-      bottom: false,
-      child: Column(
-        children: [
-          MobileTopNav.back(
-            title: 'Pay',
-            onBack: () {
-              if (context.canPop()) {
-                context.pop();
-              } else {
-                context.go('/home');
-              }
-            },
-            trailing: const SwapNearIntentsAttribution(alignEnd: true),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.sm,
-                0,
-                AppSpacing.sm,
-                96,
-              ),
-              child: PayComposer(
-                state: swapState,
-                selectedNetworkId: _selectedPayNetworkId,
-                selectedAssetKey: _selectedPayAssetKey,
-                zecAvailableZatoshi: sync.spendableBalance,
-                onAmountChanged: swapNotifier.updateReceiveAmount,
-                onReceiveAmountFiatChanged:
-                    swapNotifier.updateReceiveAmountFiat,
-                onToggleFiatInputMode: swapNotifier.toggleFiatInputMode,
-                onDestinationChanged: _handleDestinationChanged,
-                onNetworkSelected:
-                    (chainTicker) =>
-                        _handleNetworkSelected(chainTicker, swapState),
-                onAssetSelected: _handleAssetSelected,
-                onOpenAssetSelector:
-                    () => _openModal(_PayModalSurface.assetSelector),
-                onOpenAddressScanner:
-                    () => _openModal(_PayModalSurface.addressScanner),
-                onOpenContactPicker:
-                    () => _openModal(_PayModalSurface.contactPicker),
-                onReviewPayment: () => unawaited(_openReview()),
+    return Material(
+      type: MaterialType.transparency,
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            MobileTopNav.back(
+              title: 'Pay',
+              onBack: () {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go('/home');
+                }
+              },
+              trailing: const SwapNearIntentsAttribution(alignEnd: true),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.sm,
+                  0,
+                  AppSpacing.sm,
+                  96,
+                ),
+                child: PayComposer(
+                  state: swapState,
+                  selectedNetworkId: _selectedPayNetworkId,
+                  selectedAssetKey: _selectedPayAssetKey,
+                  zecAvailableZatoshi: sync.spendableBalance,
+                  onAmountChanged: swapNotifier.updateReceiveAmount,
+                  onReceiveAmountFiatChanged:
+                      swapNotifier.updateReceiveAmountFiat,
+                  onToggleFiatInputMode: swapNotifier.toggleFiatInputMode,
+                  onDestinationChanged: _handleDestinationChanged,
+                  onNetworkSelected:
+                      (chainTicker) =>
+                          _handleNetworkSelected(chainTicker, swapState),
+                  onAssetSelected: _handleAssetSelected,
+                  onOpenAssetSelector:
+                      () => _openModal(_PayModalSurface.assetSelector),
+                  onOpenAddressScanner:
+                      () => _openModal(_PayModalSurface.addressScanner),
+                  onOpenContactPicker:
+                      () => _openModal(_PayModalSurface.contactPicker),
+                  onReviewPayment: () => unawaited(_openReview()),
+                  showHeader: false,
+                  showFooterAttribution: false,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -535,6 +540,8 @@ class PayComposer extends StatefulWidget {
     required this.onOpenAddressScanner,
     required this.onOpenContactPicker,
     required this.onReviewPayment,
+    this.showHeader = true,
+    this.showFooterAttribution = true,
     super.key,
   });
 
@@ -552,6 +559,8 @@ class PayComposer extends StatefulWidget {
   final VoidCallback onOpenAddressScanner;
   final VoidCallback onOpenContactPicker;
   final VoidCallback onReviewPayment;
+  final bool showHeader;
+  final bool showFooterAttribution;
 
   @override
   State<PayComposer> createState() => _PayComposerState();
@@ -667,51 +676,53 @@ class _PayComposerState extends State<PayComposer> {
       key: const ValueKey('pay_composer'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: AppSpacing.s),
-        Row(
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: colors.background.neutralSubtleOpacity,
-                borderRadius: BorderRadius.circular(AppRadii.small),
+        if (widget.showHeader) ...[
+          const SizedBox(height: AppSpacing.s),
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: colors.background.neutralSubtleOpacity,
+                  borderRadius: BorderRadius.circular(AppRadii.small),
+                ),
+                child: AppIcon(
+                  AppIcons.coins,
+                  key: const ValueKey('pay_page_icon'),
+                  size: 20,
+                  color: colors.icon.accent,
+                ),
               ),
-              child: AppIcon(
-                AppIcons.coins,
-                key: const ValueKey('pay_page_icon'),
-                size: 20,
-                color: colors.icon.accent,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.s),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Pay',
-                    key: const ValueKey('pay_page_title'),
-                    style: AppTypography.headlineLarge.copyWith(
-                      color: colors.text.accent,
+              const SizedBox(width: AppSpacing.s),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Pay',
+                      key: const ValueKey('pay_page_title'),
+                      style: AppTypography.headlineLarge.copyWith(
+                        color: colors.text.accent,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Exact output from shielded ZEC',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.bodySmall.copyWith(
-                      color: colors.text.secondary,
+                    const SizedBox(height: 2),
+                    Text(
+                      'Exact output from shielded ZEC',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.bodySmall.copyWith(
+                        color: colors.text.secondary,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: _payHeaderGap),
+            ],
+          ),
+          const SizedBox(height: _payHeaderGap),
+        ],
         if (_step == _PayComposerStep.recipient) ...[
           Padding(
             padding: const EdgeInsets.only(bottom: _payTextFieldMessageReserve),
@@ -824,8 +835,10 @@ class _PayComposerState extends State<PayComposer> {
             ),
           ],
         ],
-        const SizedBox(height: _payFooterGap),
-        const Center(child: SwapNearIntentsAttribution(centered: true)),
+        if (widget.showFooterAttribution) ...[
+          const SizedBox(height: _payFooterGap),
+          const Center(child: SwapNearIntentsAttribution(centered: true)),
+        ],
       ],
     );
   }
