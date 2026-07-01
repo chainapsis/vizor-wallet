@@ -22,6 +22,22 @@ class MobileSwapKeystoneSignArgs {
   final SwapIntent intent;
 }
 
+sealed class MobileSwapKeystoneSignResult {
+  const MobileSwapKeystoneSignResult();
+}
+
+class MobileSwapKeystoneSignSuccess extends MobileSwapKeystoneSignResult {
+  const MobileSwapKeystoneSignSuccess(this.broadcast);
+
+  final SwapKeystoneBroadcastResult broadcast;
+}
+
+class MobileSwapKeystoneSignFailure extends MobileSwapKeystoneSignResult {
+  const MobileSwapKeystoneSignFailure(this.message);
+
+  final String message;
+}
+
 class MobileSwapKeystoneSignScreen extends ConsumerStatefulWidget {
   const MobileSwapKeystoneSignScreen({required this.args, super.key});
 
@@ -127,28 +143,39 @@ class _MobileSwapKeystoneSignScreenState
       throw StateError('Keystone signing could not be prepared.');
     }
 
-    final result = await ref
-        .read(swapHardwareSigningServiceProvider)
-        .broadcastSignedPczt(
-          pcztWithProofsBytes: pcztWithProofs,
-          pcztWithSignaturesBytes: signedPczt,
-          spendParamsPath: draft.needsSaplingParams
-              ? saplingParams!.spendPath
-              : null,
-          outputParamsPath: draft.needsSaplingParams
-              ? saplingParams!.outputPath
-              : null,
-        );
-    log(
-      'MobileSwapKeystoneSign: broadcast complete kind=zecDeposit '
-      'tx=${_shortSwapValue(result.txid)} status=${result.status}',
-    );
+    late final rust_sync.ExtractAndBroadcastPcztResult result;
+    try {
+      result = await ref
+          .read(swapHardwareSigningServiceProvider)
+          .broadcastSignedPczt(
+            pcztWithProofsBytes: pcztWithProofs,
+            pcztWithSignaturesBytes: signedPczt,
+            spendParamsPath: draft.needsSaplingParams
+                ? saplingParams!.spendPath
+                : null,
+            outputParamsPath: draft.needsSaplingParams
+                ? saplingParams!.outputPath
+                : null,
+          );
+      log(
+        'MobileSwapKeystoneSign: broadcast complete kind=zecDeposit '
+        'tx=${_shortSwapValue(result.txid)} status=${result.status}',
+      );
+    } catch (e, st) {
+      log('MobileSwapKeystoneSign._broadcast: ERROR: $e\n$st');
+      if (!context.mounted) return;
+      context.pop(MobileSwapKeystoneSignFailure(_friendlyError(e)));
+      return;
+    }
 
     if (!_hasBroadcastTxid(result)) {
-      throw _SwapSigningDisplayError(
-        result.message ??
-            'The transaction status is uncertain. Refresh activity before trying again.',
+      if (!context.mounted) return;
+      context.pop(
+        MobileSwapKeystoneSignFailure(
+          _friendlyBroadcastFailureMessage(result.message),
+        ),
       );
+      return;
     }
     if (result.status != SwapDepositBroadcastStatus.broadcasted) {
       log(
@@ -158,10 +185,12 @@ class _MobileSwapKeystoneSignScreenState
     }
     if (!context.mounted) return;
     context.pop(
-      SwapKeystoneBroadcastResult(
-        txHash: result.txid,
-        status: result.status,
-        message: result.message,
+      MobileSwapKeystoneSignSuccess(
+        SwapKeystoneBroadcastResult(
+          txHash: result.txid,
+          status: result.status,
+          message: result.message,
+        ),
       ),
     );
   }
@@ -176,10 +205,15 @@ class _MobileSwapKeystoneSignScreenState
     };
   }
 
-  String _friendlyError(Object error) {
-    if (error is _SwapSigningDisplayError) {
-      return error.message;
+  String _friendlyBroadcastFailureMessage(String? message) {
+    final trimmed = message?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      return 'Transaction could not be broadcast.';
     }
+    return _friendlyError(trimmed);
+  }
+
+  String _friendlyError(Object error) {
     final lower = error.toString().toLowerCase();
     if (lower.contains('does not support tex')) {
       return 'Keystone does not support TEX sends yet.';
@@ -190,23 +224,14 @@ class _MobileSwapKeystoneSignScreenState
     if (lower.contains('proposal not found')) {
       return 'Transaction expired before it could be signed.';
     }
-    if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
-      return 'Transaction could not be broadcast.';
-    }
     if (lower.contains('pczt') || lower.contains('signature')) {
       return 'Keystone signature could not be applied.';
     }
+    if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
+      return 'Transaction could not be broadcast.';
+    }
     return 'ZEC deposit signing could not be completed.';
   }
-}
-
-class _SwapSigningDisplayError implements Exception {
-  const _SwapSigningDisplayError(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
 }
 
 String _shortSwapValue(String? value) {

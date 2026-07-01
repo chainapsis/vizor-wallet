@@ -228,7 +228,7 @@ class _SwapActivityDetailSurfaceState
     SwapIntent intent,
     _SwapKeystoneSigningRequest request,
   ) async {
-    final result = await context.push<SwapKeystoneBroadcastResult>(
+    final result = await context.push<MobileSwapKeystoneSignResult>(
       '/swap/keystone-sign',
       extra: MobileSwapKeystoneSignArgs(intent: intent),
     );
@@ -243,7 +243,16 @@ class _SwapActivityDetailSurfaceState
       }
       return;
     }
-    _submitKeystoneDepositBroadcast(context, request, result);
+    switch (result) {
+      case MobileSwapKeystoneSignSuccess(:final broadcast):
+        _submitKeystoneDepositBroadcast(context, request, broadcast);
+      case MobileSwapKeystoneSignFailure(:final message):
+        showAppToast(
+          _toastContext(context),
+          message,
+          iconName: AppIcons.warning,
+        );
+    }
   }
 
   void _submitKeystoneDepositBroadcast(

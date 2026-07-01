@@ -89,9 +89,56 @@ void main() {
     final args = capturedExtra! as MobileSwapKeystoneSignArgs;
     expect(args.intent.id, _hardwareIntent.id);
   });
+
+  testWidgets('mobile Keystone broadcast failure shows toast without submit', (
+    tester,
+  ) async {
+    const failureMessage = 'Keystone signature could not be applied.';
+    final swapProvider = _FakeSwapProvider();
+    final router = GoRouter(
+      initialLocation: '/activity/swap/${_hardwareIntent.id}',
+      routes: [
+        GoRoute(
+          path: '/activity/swap/:swapId',
+          builder: (_, state) => SwapActivityDetailSurface(
+            intentId: state.pathParameters['swapId'] ?? '',
+            returnTarget: SwapActivityReturnTarget.activity,
+            layout: SwapActivityDetailLayout.mobile,
+          ),
+        ),
+        GoRoute(
+          path: '/swap/keystone-sign',
+          builder: (context, _) => Center(
+            child: TextButton(
+              key: const ValueKey('fail_mobile_swap_keystone_signing'),
+              onPressed: () => context.pop(
+                const MobileSwapKeystoneSignFailure(failureMessage),
+              ),
+              child: const Text('Fail signing'),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(_app(router, swapProvider: swapProvider));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Deposit ZEC'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('fail_mobile_swap_keystone_signing')),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text(failureMessage), findsOneWidget);
+    expect(swapProvider.submitDepositTransactionCalls, 0);
+  });
 }
 
-Widget _app(GoRouter router) {
+Widget _app(GoRouter router, {_FakeSwapProvider? swapProvider}) {
   final activityStore = _FakeSwapActivityStore([_hardwareIntent]);
   final preferencesStore = _FakeSwapComposerPreferencesStore();
   return ProviderScope(
@@ -101,7 +148,7 @@ Widget _app(GoRouter router) {
       swapInitialIntentsProvider.overrideWithValue([_hardwareIntent]),
       swapActivityStoreProvider.overrideWithValue(activityStore),
       swapComposerPreferencesStoreProvider.overrideWithValue(preferencesStore),
-      swapIntentProvider.overrideWithValue(const _FakeSwapProvider()),
+      swapIntentProvider.overrideWithValue(swapProvider ?? _FakeSwapProvider()),
       swapStatusPollIntervalProvider.overrideWithValue(
         const Duration(hours: 1),
       ),
@@ -152,7 +199,7 @@ final _bootstrap = AppBootstrapState(
 );
 
 class _FakeSwapProvider implements SwapProvider {
-  const _FakeSwapProvider();
+  int submitDepositTransactionCalls = 0;
 
   @override
   String get providerLabel => 'NEAR Intents';
@@ -183,8 +230,24 @@ class _FakeSwapProvider implements SwapProvider {
     required String txHash,
     String? depositMemo,
     String? nearSenderAccount,
-  }) {
-    throw UnimplementedError();
+  }) async {
+    submitDepositTransactionCalls += 1;
+    return SwapIntentSnapshot(
+      id: _hardwareIntent.id,
+      providerLabel: providerLabel,
+      pairText: _hardwareIntent.pair,
+      sellAmountText: _hardwareIntent.sellAmount,
+      receiveEstimateText: _hardwareIntent.receiveEstimate,
+      status: SwapIntentStatus.depositObserved,
+      nextAction: 'Waiting for swap provider confirmation.',
+      originChainTxHash: txHash,
+      depositInstruction: const SwapDepositInstruction(
+        asset: SwapAsset.zec,
+        address: 't1mobile-deposit',
+        expiresInLabel: '1 hour',
+        reuseWarning: 'Use this deposit address only once.',
+      ),
+    );
   }
 }
 
