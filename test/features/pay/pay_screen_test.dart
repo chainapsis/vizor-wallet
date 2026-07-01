@@ -123,6 +123,12 @@ void main() {
     final amountInput = tester.widget<TextField>(
       find.byKey(const ValueKey('pay_recipient_amount_input')),
     );
+    final amountInputRect = tester.getRect(
+      find.byKey(const ValueKey('pay_recipient_amount_input')),
+    );
+    final amountSymbolRect = tester.getRect(
+      find.byKey(const ValueKey('pay_recipient_amount_symbol')),
+    );
     final rateRect = tester.getRect(
       find.byKey(const ValueKey('pay_rate_hint')),
     );
@@ -137,7 +143,12 @@ void main() {
     expect(amountDisplayRect.height, greaterThanOrEqualTo(70));
     expect(amountDisplayRect.height, greaterThan(tokenRect.height));
     expect(amountInput.style?.fontSize, AppTypography.displayLarge.fontSize);
-    expect(amountInput.textAlign, TextAlign.right);
+    expect(amountInput.textAlign, TextAlign.center);
+    expect(amountInputRect.width, lessThan(120));
+    expect(
+      (amountInputRect.left + amountSymbolRect.right) / 2,
+      closeTo(amountDisplayRect.center.dx, 1),
+    );
     expect(
       tokenRect.top - stepLabelRect.bottom,
       greaterThanOrEqualTo(AppSpacing.s),

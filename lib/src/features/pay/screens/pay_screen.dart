@@ -1118,6 +1118,12 @@ class _PayAmountPanel extends StatelessWidget {
     final hasError = precisionError != null;
     final inputIsFiat = inputMode == SwapAmountInputMode.fiat;
     final inputSymbol = inputIsFiat ? 'USD' : asset.symbol;
+    final amountTextStyle = AppTypography.displayLarge.copyWith(
+      color: colors.text.accent,
+    );
+    final amountHintStyle = AppTypography.displayLarge.copyWith(
+      color: colors.text.muted,
+    );
 
     return Column(
       key: const ValueKey('pay_recipient_amount_field'),
@@ -1142,60 +1148,69 @@ class _PayAmountPanel extends StatelessWidget {
         LayoutBuilder(
           key: const ValueKey('pay_recipient_amount_display'),
           builder: (context, constraints) {
-            final inputWidth = (constraints.maxWidth - 72)
-                .clamp(148.0, 280.0)
+            final maxInputWidth = (constraints.maxWidth - 72)
+                .clamp(56.0, 280.0)
                 .toDouble();
             return SizedBox(
               height: 104,
               child: Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    SizedBox(
-                      width: inputWidth,
-                      child: TextField(
-                        key: const ValueKey('pay_recipient_amount_input'),
-                        controller: controller,
-                        focusNode: focusNode,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        textInputAction: TextInputAction.next,
-                        inputFormatters: [
-                          const CommaToDotInputFormatter(),
-                          _PayDecimalAmountInputFormatter(
-                            maxFractionDigits: inputIsFiat ? 2 : asset.decimals,
+                child: AnimatedBuilder(
+                  animation: controller,
+                  builder: (context, _) {
+                    final inputWidth = _payAmountInputWidth(
+                      context: context,
+                      text: controller.text,
+                      style: amountTextStyle,
+                      maxWidth: maxInputWidth,
+                    );
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        SizedBox(
+                          width: inputWidth,
+                          child: TextField(
+                            key: const ValueKey('pay_recipient_amount_input'),
+                            controller: controller,
+                            focusNode: focusNode,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            textInputAction: TextInputAction.next,
+                            inputFormatters: [
+                              const CommaToDotInputFormatter(),
+                              _PayDecimalAmountInputFormatter(
+                                maxFractionDigits: inputIsFiat
+                                    ? 2
+                                    : asset.decimals,
+                              ),
+                            ],
+                            onChanged: inputIsFiat ? onFiatChanged : onChanged,
+                            textAlign: TextAlign.center,
+                            style: amountTextStyle,
+                            cursorColor: colors.text.accent,
+                            decoration: InputDecoration.collapsed(
+                              hintText: '0',
+                              hintStyle: amountHintStyle,
+                            ),
                           ),
-                        ],
-                        onChanged: inputIsFiat ? onFiatChanged : onChanged,
-                        textAlign: TextAlign.right,
-                        style: AppTypography.displayLarge.copyWith(
-                          color: colors.text.accent,
                         ),
-                        cursorColor: colors.text.accent,
-                        decoration: InputDecoration.collapsed(
-                          hintText: '0',
-                          hintStyle: AppTypography.displayLarge.copyWith(
-                            color: colors.text.muted,
+                        const SizedBox(width: AppSpacing.xs),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: AppSpacing.s),
+                          child: Text(
+                            inputSymbol,
+                            key: const ValueKey('pay_recipient_amount_symbol'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.bodyMediumStrong.copyWith(
+                              color: colors.text.secondary,
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.s),
-                      child: Text(
-                        inputSymbol,
-                        key: const ValueKey('pay_recipient_amount_symbol'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          color: colors.text.secondary,
-                        ),
-                      ),
-                    ),
-                  ],
+                      ],
+                    );
+                  },
                 ),
               ),
             );
@@ -1704,6 +1719,21 @@ bool _payAmountExceedsAvailableZec(SwapState state, BigInt availableZatoshi) {
   }
   final requiredZatoshi = BigInt.from((quote.sellAmount * 100000000).ceil());
   return requiredZatoshi >= availableZatoshi;
+}
+
+double _payAmountInputWidth({
+  required BuildContext context,
+  required String text,
+  required TextStyle style,
+  required double maxWidth,
+}) {
+  final displayText = text.trim().isEmpty ? '0' : text.trim();
+  final painter = TextPainter(
+    text: TextSpan(text: displayText, style: style),
+    maxLines: 1,
+    textDirection: Directionality.of(context),
+  )..layout();
+  return (painter.width + AppSpacing.sm).clamp(56.0, maxWidth).toDouble();
 }
 
 List<SwapAsset> _payVisibleTokenChips(
