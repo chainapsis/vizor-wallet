@@ -265,6 +265,9 @@ class SendComposeView extends StatelessWidget {
         : hasText
         ? colors.icon.accent
         : colors.icon.regular;
+    final amountIconName = amountInputIsUsd
+        ? AppIcons.moneyBag
+        : AppIcons.zcash;
 
     return AppTextField(
       key: const ValueKey('send_amount_field'),
@@ -284,7 +287,7 @@ class SendComposeView extends StatelessWidget {
       hintStyle: AppTypography.labelLarge.copyWith(
         color: isError ? colors.text.destructive : colors.text.muted,
       ),
-      leading: AppIcon(AppIcons.coins, size: 20, color: amountIconColor),
+      leading: AppIcon(amountIconName, size: 20, color: amountIconColor),
       inlinePrefixText: amountInputIsUsd ? r'$' : null,
       inlinePrefixStyle: amountAffixStyle,
       inlineSuffixText: amountInputIsUsd ? null : 'ZEC',

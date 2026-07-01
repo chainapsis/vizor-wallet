@@ -884,6 +884,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         : amountHasVisibleText
         ? colors.icon.accent
         : colors.icon.regular;
+    final amountIconName = _amountInputIsUsd
+        ? AppIcons.moneyBag
+        : AppIcons.zcash;
 
     _addressController.edgeHighlightColor = null;
 
@@ -1043,7 +1046,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                   : colors.text.muted,
                             ),
                             leading: AppIcon(
-                              AppIcons.coins,
+                              amountIconName,
                               size: 20,
                               color: amountIconColor,
                             ),

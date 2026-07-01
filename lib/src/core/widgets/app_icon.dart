@@ -66,6 +66,7 @@ abstract final class AppIcons {
   static const lock = 'lock';
   static const logOut = 'log_out';
   static const monitor = 'monitor';
+  static const moneyBag = 'money_bag';
   static const night = 'night';
   static const options = 'options';
   static const plane = 'plane';

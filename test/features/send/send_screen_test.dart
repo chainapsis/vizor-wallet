@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
@@ -337,9 +338,20 @@ void main() {
     await tester.pumpWidget(_sendHarness());
     await tester.pumpAndSettle();
 
+    _expectAmountIcon(
+      tester,
+      AppIcons.zcash,
+      AppThemeData.light.colors.icon.regular,
+    );
+
     await tester.enterText(_editableIn('send_amount_field'), '1.25');
     await tester.pumpAndSettle();
 
+    _expectAmountIcon(
+      tester,
+      AppIcons.zcash,
+      AppThemeData.light.colors.icon.accent,
+    );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('send_amount_field')),
@@ -460,9 +472,20 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('send_amount_mode_toggle')));
     await tester.pumpAndSettle();
+    _expectAmountIcon(
+      tester,
+      AppIcons.moneyBag,
+      AppThemeData.light.colors.icon.regular,
+    );
+
     await tester.enterText(_editableIn('send_amount_field'), '250');
     await tester.pumpAndSettle();
 
+    _expectAmountIcon(
+      tester,
+      AppIcons.moneyBag,
+      AppThemeData.light.colors.icon.accent,
+    );
     expect(_fieldText(tester, 'send_amount_field'), '250');
     expect(find.text('2.5 $kZcashDefaultCurrencyTicker'), findsOneWidget);
 
@@ -673,6 +696,21 @@ Finder _editableIn(String keyValue) {
     of: find.byKey(ValueKey(keyValue)),
     matching: find.byType(EditableText),
   );
+}
+
+void _expectAmountIcon(WidgetTester tester, String name, Color color) {
+  final icon = tester.widget<AppIcon>(
+    find.descendant(
+      of: find.byKey(const ValueKey('send_amount_field')),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == name,
+      ),
+    ),
+  );
+
+  expect(icon.name, name);
+  expect(icon.size, 20);
+  expect(icon.color, color);
 }
 
 final _bootstrap = AppBootstrapState(
