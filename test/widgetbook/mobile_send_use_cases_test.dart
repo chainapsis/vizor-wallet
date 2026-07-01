@@ -301,6 +301,30 @@ void main() {
     expect(zecRect.right, lessThanOrEqualTo(fieldRect.right + 0.01));
   });
 
+  testWidgets('mobile send amount measurement honors text scaler', (
+    tester,
+  ) async {
+    await _pumpMobileSendUseCase(
+      tester,
+      buildMobileSendAmountEmptyUseCase,
+      textScaler: const TextScaler.linear(1.5),
+    );
+
+    final inputFinder = find.byKey(const ValueKey('mobile_send_amount_input'));
+    await tester.enterText(inputFinder, '0.04903463');
+    await tester.pump();
+
+    final fieldRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_send_amount_field')),
+    );
+    final inputRect = tester.getRect(inputFinder);
+    final zecRect = tester.getRect(find.text('ZEC'));
+
+    expect(inputRect.left, greaterThanOrEqualTo(fieldRect.left - 0.01));
+    expect(zecRect.right, lessThanOrEqualTo(fieldRect.right + 0.01));
+    expect(inputRect.right, lessThanOrEqualTo(zecRect.left - AppSpacing.xs));
+  });
+
   testWidgets('mobile send amount error use case renders visual error state', (
     tester,
   ) async {
@@ -473,6 +497,7 @@ Future<void> _pumpMobileSendUseCase(
   WidgetBuilder builder, {
   double devicePixelRatio = 1,
   TargetPlatform? platform,
+  TextScaler? textScaler,
   Duration settleDuration = const Duration(milliseconds: 600),
 }) async {
   tester.view.physicalSize = Size(
@@ -486,6 +511,13 @@ Future<void> _pumpMobileSendUseCase(
   await tester.pumpWidget(
     MaterialApp(
       theme: platform == null ? null : ThemeData(platform: platform),
+      builder: (context, child) {
+        if (textScaler == null) return child!;
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+          child: child!,
+        );
+      },
       home: AppTheme(
         data: AppThemeData.dark,
         child: Builder(builder: builder),

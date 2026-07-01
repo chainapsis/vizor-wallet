@@ -1898,6 +1898,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }) {
     final colors = context.colors;
     final activeText = _amountInputIsUsd ? _fiatAmountText : _amountText;
+    final textScaler = MediaQuery.textScalerOf(context);
     final showAmountCursor = _amountInputIsUsd || activeText.trim().isNotEmpty;
     final showEmptyZecCursor =
         !_amountInputIsUsd &&
@@ -1922,12 +1923,15 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final affixWidth = _amountInputIsUsd
-              ? _textWidth(r'$', usdPrefixStyle) + AppSpacing.xs
-              : _textWidth('ZEC', amountUnitStyle) + AppSpacing.xs;
+              ? _textWidth(r'$', usdPrefixStyle, textScaler: textScaler) +
+                    AppSpacing.xs
+              : _textWidth('ZEC', amountUnitStyle, textScaler: textScaler) +
+                    AppSpacing.xs;
           final inputWidth = _amountInputWidth(
             activeText,
             amountStyle,
             maxWidth: constraints.maxWidth - affixWidth,
+            textScaler: textScaler,
           );
 
           return Row(
@@ -2015,9 +2019,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     String text,
     TextStyle style, {
     required double maxWidth,
+    required TextScaler textScaler,
   }) {
     final sample = text.trim().isEmpty ? '0' : text.trim();
-    final measuredWidth = _textWidth(sample, style);
+    final measuredWidth = _textWidth(sample, style, textScaler: textScaler);
     final resolvedMaxWidth = maxWidth.isFinite
         ? maxWidth.clamp(_kMobileSendAmountInputMinWidth, double.infinity)
         : _kMobileSendAmountInputFallbackMaxWidth;
@@ -2026,11 +2031,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         .toDouble();
   }
 
-  double _textWidth(String text, TextStyle style) {
+  double _textWidth(
+    String text,
+    TextStyle style, {
+    required TextScaler textScaler,
+  }) {
     final painter = TextPainter(
       text: TextSpan(text: text, style: style),
       maxLines: 1,
       textDirection: TextDirection.ltr,
+      textScaler: textScaler,
     )..layout();
     return painter.width;
   }
