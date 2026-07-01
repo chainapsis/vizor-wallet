@@ -590,20 +590,19 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       addressBookContacts: addressBookContacts,
     );
     if (widget.layout == SwapActivityDetailLayout.mobile) {
-      final terminal = !presentation.showTabs;
       final recipient = intent.oneClickRecipient?.trim();
       final hasRecipient = recipient != null && recipient.isNotEmpty;
       final recipientFullAddress = mobileSwapStatusRecipientFullAddress(intent);
       return MobileSwapStatusContent(
         presentation: presentation,
         payHeaderRow: MobileSwapReviewHeaderRow(
-          label: terminal ? 'You paid' : "You're paying",
+          label: presentation.payLabel,
           amountText: trimSwapAmountText(presentation.payAmountText),
           asset: presentation.payAsset,
-          bottomText: presentation.payFiatText,
+          bottomText: presentation.payDetailText,
         ),
         receiveHeaderRow: MobileSwapReviewHeaderRow(
-          label: terminal ? 'You received' : "You're receiving",
+          label: presentation.receiveLabel,
           amountText: trimSwapAmountText(presentation.receiveAmountText),
           asset: presentation.receiveAsset,
           bottomText: hasRecipient
@@ -632,6 +631,8 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       receiveAsset: presentation.receiveAsset,
       payAmountText: presentation.payAmountText,
       receiveAmountText: presentation.receiveAmountText,
+      payLabel: presentation.payLabel,
+      receiveLabel: presentation.receiveLabel,
       payDetailText: presentation.payDetailText,
       payDetailCopyText: presentation.payDetailCopyText,
       receiveDetailText: presentation.receiveDetailText,
@@ -642,6 +643,8 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       activeTab: _activeTab,
       steps: presentation.steps,
       details: presentation.details,
+      progressTabLabel: presentation.progressTabLabel,
+      paymentMode: presentation.paymentMode,
       showTabs: presentation.showTabs,
       onTabChanged: (tab) {
         setState(() {

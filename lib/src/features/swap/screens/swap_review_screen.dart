@@ -23,7 +23,9 @@ import '../providers/swap_state_provider.dart';
 import '../widgets/swap_review_page_content.dart';
 
 class SwapReviewScreen extends ConsumerStatefulWidget {
-  const SwapReviewScreen({super.key});
+  const SwapReviewScreen({this.payMode = false, super.key});
+
+  final bool payMode;
 
   @override
   ConsumerState<SwapReviewScreen> createState() => _SwapReviewScreenState();
@@ -57,7 +59,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
 
   void _returnToSwap() {
     ref.read(swapStateProvider.notifier).cancelReviewQuote();
-    context.go('/swap');
+    context.go(widget.payMode ? '/pay' : '/swap');
   }
 
   void _reviewAgain() {
@@ -68,7 +70,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
       if (!next.reviewVisible ||
           next.reviewQuote == null ||
           next.reviewAddressPlan == null) {
-        context.go('/swap');
+        context.go(widget.payMode ? '/pay' : '/swap');
       }
     }());
   }
@@ -89,7 +91,9 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
         context.go(
           swapActivityDetailUri(
             intentId: startedIntent.id,
-            returnTarget: SwapActivityReturnTarget.swap,
+            returnTarget: widget.payMode
+                ? SwapActivityReturnTarget.pay
+                : SwapActivityReturnTarget.swap,
           ).toString(),
         );
         return;
@@ -106,7 +110,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     if (!swapState.reviewVisible || quote == null || addressPlan == null) {
       if (!_hadReviewState || !_startingIntent) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) context.go('/swap');
+          if (mounted) context.go(widget.payMode ? '/pay' : '/swap');
         });
       }
       return const SizedBox.shrink();
@@ -127,7 +131,9 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     );
     final startBlockedReason =
         swapReviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
-        ? "You don't have enough ZEC for this swap. Try a smaller amount."
+        ? widget.payMode
+              ? "You don't have enough ZEC for this payment. Try a smaller amount."
+              : "You don't have enough ZEC for this swap. Try a smaller amount."
         : null;
 
     return AppDesktopShell(
@@ -140,7 +146,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
             AppPaneScrollScaffold(
               toolbar: AppPaneToolbar(
                 leading: AppBackLink(
-                  label: 'Swap',
+                  label: widget.payMode ? 'Pay' : 'Swap',
                   minWidth: 60,
                   onTap: _returnToSwap,
                 ),
@@ -173,6 +179,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                         asset: quote.receiveAsset,
                         amount: quote.receiveAmount,
                       ),
+                      payMode: widget.payMode,
                       onCopy: _copyAddress,
                     ),
                     const SizedBox(height: AppSpacing.base),
@@ -181,6 +188,8 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                       starting: swapState.startSubmitting,
                       startBlockedReason: startBlockedReason,
                       sendsZec: quote.direction.sendsZec,
+                      payMode: widget.payMode,
+                      receiveAmountText: quote.receiveEstimateText,
                       onReviewAgain: _reviewAgain,
                       onCancelReview: _returnToSwap,
                       onStartIntent: _startIntent,

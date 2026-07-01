@@ -861,6 +861,7 @@ class _FakeSwapPersistenceStore
 
   var loadCount = 0;
   var loadPreferencesCount = 0;
+  var savePreferencesCount = 0;
   final saveSnapshots = <List<SwapIntent>>[];
   final loadedAccounts = <String>[];
   final savedAccounts = <String>[];
@@ -917,6 +918,7 @@ class _FakeSwapPersistenceStore
     required String accountUuid,
     required SwapComposerPreferences preferences,
   }) async {
+    savePreferencesCount++;
     savedPreferences = preferences;
     _preferencesByAccount[accountUuid] = preferences;
   }

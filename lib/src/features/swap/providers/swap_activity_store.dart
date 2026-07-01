@@ -183,8 +183,9 @@ Map<String, Object?> _recordToJson(SwapIntentRecord record) {
     'destinationChainTxHash': record.destinationChainTxHash,
     'providerRefundInfo': _providerRefundInfoToJson(record.providerRefundInfo),
     'fiatValueBasis': _fiatValueBasisToJson(record.fiatValueBasis),
-    'lastStatusCheckedAt':
-        record.lastStatusCheckedAt?.toUtc().toIso8601String(),
+    'lastStatusCheckedAt': record.lastStatusCheckedAt
+        ?.toUtc()
+        .toIso8601String(),
     'statusError': record.statusError,
     'broadcastNotice': record.broadcastNotice,
     'broadcastStatus': record.broadcastStatus,
@@ -192,6 +193,7 @@ Map<String, Object?> _recordToJson(SwapIntentRecord record) {
     'oneClickRefundTo': record.oneClickRefundTo,
     'depositDeadline': record.depositDeadline?.toUtc().toIso8601String(),
     'accountUuid': record.accountUuid,
+    'payMode': record.payMode,
     'createdAt': record.createdAt?.toUtc().toIso8601String(),
     'updatedAt': record.updatedAt?.toUtc().toIso8601String(),
     'completedAt': record.completedAt?.toUtc().toIso8601String(),
@@ -238,6 +240,7 @@ SwapIntentRecord _recordFromJson(Map<String, dynamic> json) {
     oneClickRefundTo: _optionalString(json['oneClickRefundTo']),
     depositDeadline: _optionalDateTime(json['depositDeadline']),
     accountUuid: _optionalString(json['accountUuid']),
+    payMode: json['payMode'] == true,
     createdAt: _optionalDateTime(json['createdAt']),
     updatedAt: _optionalDateTime(json['updatedAt']),
     completedAt: _optionalDateTime(json['completedAt']),
