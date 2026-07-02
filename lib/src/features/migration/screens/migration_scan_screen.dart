@@ -22,7 +22,7 @@ typedef MigrationScanScannerBuilder =
     });
 
 /// The completed scan of a Keystone migration signing response: the UR type
-/// that was scanned (`zcash-sig-result` or the legacy `zcash-sign-result`) and
+/// that was scanned (`zcash-batch-sig-result` or the legacy `zcash-sign-result`) and
 /// its raw CBOR payload. The migration screen routes decoding on the type.
 class MigrationSignedQrResult {
   const MigrationSignedQrResult({required this.urType, required this.cbor});
@@ -45,10 +45,10 @@ class MigrationScanScreen extends ConsumerStatefulWidget {
 
 class _MigrationScanScreenState extends ConsumerState<MigrationScanScreen> {
   // Newer migration firmware returns the compact signatures-only
-  // `zcash-sig-result` response. Current ForgeBox firmware still returns the
+  // `zcash-batch-sig-result` response. Current ForgeBox firmware still returns the
   // older `zcash-sign-result` envelope, which the migration flow normalizes
   // after scanning.
-  static const _sigResultUrType = 'zcash-sig-result';
+  static const _batchSigResultUrType = 'zcash-batch-sig-result';
   static const _signResultUrType = 'zcash-sign-result';
 
   bool _decoding = false;
@@ -89,7 +89,7 @@ class _MigrationScanScreenState extends ConsumerState<MigrationScanScreen> {
     }
 
     return KeystoneQrScannerCard(
-      expectedUrType: _sigResultUrType,
+      expectedUrType: _batchSigResultUrType,
       additionalExpectedUrTypes: const [_signResultUrType],
       decoding: _decoding,
       error: _error,

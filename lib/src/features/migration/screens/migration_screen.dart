@@ -42,7 +42,7 @@ class MigrationScreen extends ConsumerStatefulWidget {
 
 class _MigrationScreenState extends ConsumerState<MigrationScreen> {
   static const _keystoneMigrationBatchMaxFragmentLen = 200;
-  static const _keystoneSigResultUrType = 'zcash-sig-result';
+  static const _keystoneBatchSigResultUrType = 'zcash-batch-sig-result';
   static const _keystoneSignResultUrType = 'zcash-sign-result';
 
   Timer? _progressRefreshTimer;
@@ -1016,14 +1016,14 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
 
   /// Decode a scanned Keystone migration signing response into the compact
   /// signature shape, routing on the scanned UR type: the new
-  /// `zcash-sig-result` decodes directly, while the legacy `zcash-sign-result`
+  /// `zcash-batch-sig-result` decodes directly, while the legacy `zcash-sign-result`
   /// (current ForgeBox firmware) is normalized by extracting the
   /// spend-authorization signatures from its signed PCZTs.
   Future<rust_keystone.KeystoneSigResult> _decodeKeystoneSignedMigrationQr(
     MigrationSignedQrResult signedQr,
   ) {
     switch (signedQr.urType) {
-      case _keystoneSigResultUrType:
+      case _keystoneBatchSigResultUrType:
         return rust_keystone.decodeZcashSigResultCbor(cbor: signedQr.cbor);
       case _keystoneSignResultUrType:
         return rust_keystone.decodeZcashSignResultCborAsSigResult(
@@ -1037,7 +1037,7 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
   }
 
   /// Decode a Keystone id (request id or message id) from the raw bytes the
-  /// compact `zcash-sig-result` carries back. The wallet sends these ids as
+  /// compact `zcash-batch-sig-result` carries back. The wallet sends these ids as
   /// UTF-8 strings; if a device ever returns non-UTF-8 bytes, fall back to hex
   /// so the value is still comparable rather than throwing on decode.
   String _decodeKeystoneId(List<int> idBytes) {

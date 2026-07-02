@@ -55,7 +55,7 @@ Future<ZcashBatchSignResult> decodeZcashSignResultCbor({
 }) =>
     RustLib.instance.api.crateApiKeystoneDecodeZcashSignResultCbor(cbor: cbor);
 
-/// Decode the CBOR payload returned from a compact `zcash-sig-result` UR into
+/// Decode the CBOR payload returned from a compact `zcash-batch-sig-result` UR into
 /// flat FRB structs. The wallet-layer decode in
 /// `crate::wallet::keystone::decode_zcash_sig_result_cbor` does all CBOR shape
 /// and policy validation (supported version, known pool, exact 64-byte sig
@@ -105,7 +105,7 @@ Future<List<KeystoneAccountInfo>> decodeAccountsUr({
   required String urString,
 }) => RustLib.instance.api.crateApiKeystoneDecodeAccountsUr(urString: urString);
 
-/// One spend-authorization signature from a compact `zcash-sig-result`,
+/// One spend-authorization signature from a compact `zcash-batch-sig-result`,
 /// located by `pool` (0 = Orchard, 1 = Ironwood) and the spend action's index
 /// within that pool's bundle. `sig` is the raw 64-byte spend-authorization
 /// signature; FRB does not bridge `[u8; 64]` arrays cleanly, so it crosses as a
@@ -156,7 +156,7 @@ class KeystoneMsgSig {
           sigs == other.sigs;
 }
 
-/// FRB-friendly decoding of a compact `zcash-sig-result` UR (tag 49207): the
+/// FRB-friendly decoding of a compact `zcash-batch-sig-result` UR (tag 49207): the
 /// "signatures-only" response. Unlike [`ZcashBatchSignResult`], which echoes the
 /// whole redacted PCZTs back, this carries only the produced signatures so the
 /// wallet can re-apply them to the proofs-PCZTs it already holds (see

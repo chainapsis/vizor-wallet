@@ -40,16 +40,16 @@ pub struct ZcashBatchSignedMessage {
 }
 
 /// Pool discriminant for a decoded [`DecodedActionSig`]: an Orchard action
-/// signature. Mirrors the `zcash-sig-result` wire value, narrowed to the `u8`
+/// signature. Mirrors the `zcash-batch-sig-result` wire value, narrowed to the `u8`
 /// the wallet uses internally.
 pub(crate) const DECODED_SIG_POOL_ORCHARD: u8 = 0;
 /// Pool discriminant for a decoded [`DecodedActionSig`]: an Ironwood action
-/// signature. Mirrors the `zcash-sig-result` wire value, narrowed to the `u8`
+/// signature. Mirrors the `zcash-batch-sig-result` wire value, narrowed to the `u8`
 /// the wallet uses internally.
 pub(crate) const DECODED_SIG_POOL_IRONWOOD: u8 = 1;
 
 /// A wallet-layer decoding of a Keystone "signatures-only" response
-/// (`zcash-sig-result`, UR tag 49207). Unlike [`ZcashBatchSignResult`], which
+/// (`zcash-batch-sig-result`, UR tag 49207). Unlike [`ZcashBatchSignResult`], which
 /// echoes whole redacted PCZTs back, this carries only the produced
 /// signatures, correlated to each request message by id and to each spend by
 /// pool and action index. The wallet re-applies these to the proofs-PCZTs it
@@ -142,7 +142,7 @@ const ZCASH_SIGN_MESSAGE_KIND_PCZT_V1: u32 = 1;
 const ZCASH_SIGN_STATUS_SIGNED: u32 = 0;
 pub(crate) const ZCASH_SIGN_BATCH_MAX_MESSAGES: usize = 35;
 
-// `zcash-sig-result` (UR tag 49207) wire constants. The registry CBOR shape is
+// `zcash-batch-sig-result` (UR tag 49207) wire constants. The registry CBOR shape is
 // `{1: version, 2: request_id, 3: results: [{1: message_id, 2: sigs:
 // [{1: pool, 2: action_index, 3: sig}]}]}`.
 const ZCASH_SIG_RESULT_VERSION: u32 = 1;
@@ -575,7 +575,7 @@ pub fn decode_zcash_sign_result_cbor(cbor: &[u8]) -> Result<ZcashBatchSignResult
     })
 }
 
-/// Decode the raw CBOR payload from a compact `zcash-sig-result` UR (tag
+/// Decode the raw CBOR payload from a compact `zcash-batch-sig-result` UR (tag
 /// 49207) into flat wallet structs.
 ///
 /// The decode is hand-rolled with `minicbor`, mirroring
@@ -590,7 +590,7 @@ pub fn decode_zcash_sign_result_cbor(cbor: &[u8]) -> Result<ZcashBatchSignResult
 /// `message_id` and applied via `sync::pczt::apply_sigs_and_extract`.
 pub fn decode_zcash_sig_result_cbor(cbor: &[u8]) -> Result<DecodedSigResult, String> {
     let mut decoder = minicbor::Decoder::new(cbor);
-    let len = required_len(decoder.map(), "zcash-sig-result map")?;
+    let len = required_len(decoder.map(), "zcash-batch-sig-result map")?;
     let mut version = None;
     let mut request_id = None;
     let mut results = None;
@@ -600,7 +600,7 @@ pub fn decode_zcash_sig_result_cbor(cbor: &[u8]) -> Result<DecodedSigResult, Str
         let key = decoder
             .u8()
             .map_err(|e| format!("CBOR decode sig result key: {e}"))?;
-        reject_duplicate_cbor_key(&mut seen_keys, key, "zcash-sig-result map")?;
+        reject_duplicate_cbor_key(&mut seen_keys, key, "zcash-batch-sig-result map")?;
         match key {
             1 => {
                 version = Some(
@@ -627,25 +627,28 @@ pub fn decode_zcash_sig_result_cbor(cbor: &[u8]) -> Result<DecodedSigResult, Str
     }
 
     if decoder.position() != cbor.len() {
-        return Err("Trailing data after zcash-sig-result".to_string());
+        return Err("Trailing data after zcash-batch-sig-result".to_string());
     }
 
-    let version = version.ok_or_else(|| "Missing zcash-sig-result version".to_string())?;
+    let version = version.ok_or_else(|| "Missing zcash-batch-sig-result version".to_string())?;
     if version != ZCASH_SIG_RESULT_VERSION {
-        return Err(format!("Unsupported zcash-sig-result version {version}"));
+        return Err(format!(
+            "Unsupported zcash-batch-sig-result version {version}"
+        ));
     }
 
     Ok(DecodedSigResult {
         version,
-        request_id: request_id.ok_or_else(|| "Missing zcash-sig-result request id".to_string())?,
-        results: results.ok_or_else(|| "Missing zcash-sig-result results".to_string())?,
+        request_id: request_id
+            .ok_or_else(|| "Missing zcash-batch-sig-result request id".to_string())?,
+        results: results.ok_or_else(|| "Missing zcash-batch-sig-result results".to_string())?,
     })
 }
 
-/// Decode the `results` array of a `zcash-sig-result`: one [`DecodedMsgSig`]
+/// Decode the `results` array of a `zcash-batch-sig-result`: one [`DecodedMsgSig`]
 /// per signed request message.
 fn decode_msg_sigs(decoder: &mut minicbor::Decoder<'_>) -> Result<Vec<DecodedMsgSig>, String> {
-    let len = required_len(decoder.array(), "zcash-sig-result results array")?;
+    let len = required_len(decoder.array(), "zcash-batch-sig-result results array")?;
 
     // Do not pre-allocate from the wire-claimed length; a malformed length
     // fails on the first missing element instead of reserving memory.
@@ -707,7 +710,7 @@ fn decode_action_sigs(
         let sig = decode_action_sig(decoder)?;
         if !seen_sigs.insert((sig.pool, sig.action_index)) {
             return Err(format!(
-                "Duplicate zcash-sig-result signature for pool {} action {}",
+                "Duplicate zcash-batch-sig-result signature for pool {} action {}",
                 sig.pool, sig.action_index
             ));
         }
@@ -762,14 +765,14 @@ fn decode_action_sig(decoder: &mut minicbor::Decoder<'_>) -> Result<DecodedActio
     let pool = match pool.ok_or_else(|| "Missing zcash-action-sig pool".to_string())? {
         ZCASH_SIG_POOL_ORCHARD => DECODED_SIG_POOL_ORCHARD,
         ZCASH_SIG_POOL_IRONWOOD => DECODED_SIG_POOL_IRONWOOD,
-        other => return Err(format!("Unsupported zcash-sig-result pool {other}")),
+        other => return Err(format!("Unsupported zcash-batch-sig-result pool {other}")),
     };
     let action_index =
         action_index.ok_or_else(|| "Missing zcash-action-sig action index".to_string())?;
     let sig_bytes = sig.ok_or_else(|| "Missing zcash-action-sig sig".to_string())?;
     let sig: [u8; ZCASH_SIG_LEN] = sig_bytes.as_slice().try_into().map_err(|_| {
         format!(
-            "zcash-sig-result signature must be {ZCASH_SIG_LEN} bytes, got {}",
+            "zcash-batch-sig-result signature must be {ZCASH_SIG_LEN} bytes, got {}",
             sig_bytes.len()
         )
     })?;
@@ -782,7 +785,7 @@ fn decode_action_sig(decoder: &mut minicbor::Decoder<'_>) -> Result<DecodedActio
 }
 
 /// Reject a duplicate CBOR map key, recording each seen key. The registry
-/// definition of `zcash-sig-result` rejects duplicate map keys so a re-sent
+/// definition of `zcash-batch-sig-result` rejects duplicate map keys so a re-sent
 /// field can never silently overwrite an earlier value.
 fn reject_duplicate_cbor_key(seen_keys: &mut Vec<u8>, key: u8, label: &str) -> Result<(), String> {
     if seen_keys.contains(&key) {
@@ -1120,7 +1123,7 @@ mod tests {
         cbor
     }
 
-    /// Encode a `zcash-sig-result` CBOR payload for tests, mirroring the
+    /// Encode a `zcash-batch-sig-result` CBOR payload for tests, mirroring the
     /// registry wire shape: `{1: version, 2: request_id, 3: results:
     /// [{1: message_id, 2: sigs: [{1: pool, 2: action_index, 3: sig}]}]}`.
     fn encode_test_sig_result(
@@ -1232,7 +1235,7 @@ mod tests {
 
         let err = decode_zcash_sig_result_cbor(&cbor).expect_err("bad version should fail");
 
-        assert!(err.contains("Unsupported zcash-sig-result version"));
+        assert!(err.contains("Unsupported zcash-batch-sig-result version"));
     }
 
     #[test]
@@ -1245,7 +1248,7 @@ mod tests {
 
         let err = decode_zcash_sig_result_cbor(&cbor).expect_err("unknown pool should fail");
 
-        assert!(err.contains("Unsupported zcash-sig-result pool"));
+        assert!(err.contains("Unsupported zcash-batch-sig-result pool"));
     }
 
     #[test]
@@ -1278,7 +1281,7 @@ mod tests {
 
         let err = decode_zcash_sig_result_cbor(&cbor).expect_err("duplicate action should fail");
 
-        assert!(err.contains("Duplicate zcash-sig-result signature"));
+        assert!(err.contains("Duplicate zcash-batch-sig-result signature"));
     }
 
     #[test]
@@ -1288,7 +1291,7 @@ mod tests {
 
         let err = decode_zcash_sig_result_cbor(&cbor).expect_err("duplicate key should fail");
 
-        assert!(err.contains("Duplicate key 1 in zcash-sig-result map"));
+        assert!(err.contains("Duplicate key 1 in zcash-batch-sig-result map"));
     }
 
     #[test]
@@ -1298,7 +1301,7 @@ mod tests {
 
         let err = decode_zcash_sig_result_cbor(&cbor).expect_err("missing results should fail");
 
-        assert!(err.contains("Missing zcash-sig-result results"));
+        assert!(err.contains("Missing zcash-batch-sig-result results"));
     }
 
     #[test]
@@ -1308,7 +1311,7 @@ mod tests {
 
         let err = decode_zcash_sig_result_cbor(&cbor).expect_err("trailing data should fail");
 
-        assert!(err.contains("Trailing data after zcash-sig-result"));
+        assert!(err.contains("Trailing data after zcash-batch-sig-result"));
     }
 
     #[test]

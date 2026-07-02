@@ -301,7 +301,7 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
     }
   }
 
-  /// Extract the UR type (e.g. `zcash-sig-result`) from a UR part string, or
+  /// Extract the UR type (e.g. `zcash-batch-sig-result`) from a UR part string, or
   /// null when the string is not a UR. Lets the scanner route a part to the
   /// right expected type when more than one UR type is accepted.
   String? _urTypeFromPart(String value) {

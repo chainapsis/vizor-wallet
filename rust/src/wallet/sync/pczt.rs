@@ -595,7 +595,7 @@ pub(crate) fn apply_sigs_and_extract(
 /// [`apply_sigs_and_extract`]'s input.
 ///
 /// This is the local-signing analogue of decoding a device's compact
-/// `zcash-sig-result`: the software migration path signs a base PCZT with the
+/// `zcash-batch-sig-result`: the software migration path signs a base PCZT with the
 /// USK and then needs only the produced signatures (not the whole signed PCZT)
 /// to persist for later finalization, so the encrypted migration DB column
 /// stores the same compact form the hardware path stores. Every Orchard (and,
@@ -1106,7 +1106,7 @@ mod tests {
 
         /// Reads the Orchard spend-authorization signature back out of a signed
         /// PCZT's action as raw `[u8; 64]` bytes — the wire form the device sends
-        /// in a `zcash-sig-result`. The pczt wire `Spend` already stores the
+        /// in a `zcash-batch-sig-result`. The pczt wire `Spend` already stores the
         /// signature as `[u8; 64]`, so this is exactly the bytes the compact
         /// path receives.
         fn orchard_spend_auth_sig_bytes(signed: &pczt::Pczt, spend_index: usize) -> [u8; 64] {
