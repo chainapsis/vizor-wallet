@@ -116,8 +116,6 @@ class NearIntentsOneClickSwapAdapter
     final quoteResponse = _OneClickQuoteResponse.fromJson(response.jsonObject);
     _validateQuoteResponseRequest(
       quoteResponse,
-      expectedOriginAsset: sellToken.assetId,
-      expectedDestinationAsset: receiveToken.assetId,
       expectedMode: request.mode,
       expectedFixedAmountBaseUnits: amountBaseUnits,
       expectedSlippageBps: requestedSlippageBps,
@@ -713,8 +711,6 @@ class NearIntentsOneClickSwapAdapter
 
   void _validateQuoteResponseRequest(
     _OneClickQuoteResponse response, {
-    required String expectedOriginAsset,
-    required String expectedDestinationAsset,
     required SwapQuoteMode expectedMode,
     required String expectedFixedAmountBaseUnits,
     required int expectedSlippageBps,
@@ -728,9 +724,7 @@ class NearIntentsOneClickSwapAdapter
     final hasMismatchedSwapType = actualSwapType == null
         ? actual.mode != expectedMode
         : actualSwapType != expectedMode.oneClickSwapType;
-    if (actual.originAsset != expectedOriginAsset ||
-        actual.destinationAsset != expectedDestinationAsset ||
-        hasMismatchedSwapType) {
+    if (hasMismatchedSwapType) {
       throw OneClickApiException(
         '1Click quote response did not match the requested route',
         operation: 'quote',

@@ -141,7 +141,7 @@ void main() {
     expect(transport.requests, isEmpty);
   });
 
-  test('quote rejects response with a mismatched asset route', () async {
+  test('quote accepts response with a mismatched asset route echo', () async {
     final transport = _FakeOneClickTransport([
       _FakeResponse.get('/v0/tokens', _tokens),
       _FakeResponse.post(
@@ -149,9 +149,10 @@ void main() {
         _quoteResponse(
           originAsset: 'nep141:zec.omft.near',
           destinationAsset: 'nep141:wrap.near',
+          amountOut: '1250000',
           amountInFormatted: '1.5',
           amountOutFormatted: '1.25',
-          minAmountOut: '1237500000000000000000000',
+          minAmountOut: '1237500',
           depositAddress: 't1deposit',
           status: null,
         ),
@@ -159,28 +160,96 @@ void main() {
     ]);
     final provider = NearIntentsOneClickSwapAdapter(transport: transport);
 
-    await expectLater(
-      provider.quote(
-        const SwapQuoteRequest(
-          direction: SwapDirection.zecToExternal,
-          externalAsset: SwapAsset.usdc,
-          sellAmount: 1.5,
-          sellAmountText: '1.5',
-          destination: '0xrecipient',
-          refundAddress: 'u1refund',
-        ),
-      ),
-      throwsA(
-        isA<OneClickApiException>()
-            .having((error) => error.operation, 'operation', 'quote')
-            .having(
-              (error) => error.message,
-              'message',
-              contains('did not match the requested route'),
-            ),
+    final quote = await provider.quote(
+      const SwapQuoteRequest(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        sellAmount: 1.5,
+        sellAmountText: '1.5',
+        destination: '0xrecipient',
+        refundAddress: 'u1refund',
       ),
     );
+
+    expect(quote.pairText, 'ZEC -> USDC');
+    expect(quote.receiveEstimateText, '1.25 USDC');
   });
+
+  test('quote accepts response that echoes BTC(OMNI) for BTC', () async {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', _tokensWithAdditionalAssets),
+      _FakeResponse.post(
+        '/v0/quote',
+        _quoteResponse(
+          originAsset: 'nep141:zec.omft.near',
+          destinationAsset: '1cs_v1:btc:native:coin',
+          amountInFormatted: '1.5',
+          amountOutFormatted: '0.00096',
+          minAmountOut: '95000',
+          depositAddress: 't1deposit',
+          quoteRequestRecipient: 'bc1recipient',
+          status: null,
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    final quote = await provider.quote(
+      const SwapQuoteRequest(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.btc,
+        sellAmount: 1.5,
+        sellAmountText: '1.5',
+        destination: 'bc1recipient',
+        refundAddress: 'u1refund',
+      ),
+    );
+
+    final request = transport.requests.last;
+    expect(request.body?['destinationAsset'], 'nep141:btc.omft.near');
+    expect(quote.pairText, 'ZEC -> BTC');
+    expect(quote.receiveEstimateText, '0.00096 BTC');
+  });
+
+  test(
+    'quote accepts response that echoes BTC(OMNI) for a BTC origin asset',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokensWithAdditionalAssets),
+        _FakeResponse.post(
+          '/v0/quote',
+          _quoteResponse(
+            originAsset: '1cs_v1:btc:native:coin',
+            destinationAsset: 'nep141:zec.omft.near',
+            amountInFormatted: '0.001',
+            amountOutFormatted: '1.5',
+            minAmountOut: '149250000',
+            depositAddress: 'btc-deposit',
+            quoteRequestRefundTo: 'bc1refund',
+            quoteRequestRecipient: 'u1recipient',
+            status: null,
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+      final quote = await provider.quote(
+        const SwapQuoteRequest(
+          direction: SwapDirection.externalToZec,
+          externalAsset: SwapAsset.btc,
+          sellAmount: 0.001,
+          sellAmountText: '0.001',
+          destination: 'u1recipient',
+          refundAddress: 'bc1refund',
+        ),
+      );
+
+      final request = transport.requests.last;
+      expect(request.body?['originAsset'], 'nep141:btc.omft.near');
+      expect(quote.pairText, 'BTC -> ZEC');
+      expect(quote.sellAmountText, '0.001 BTC');
+    },
+  );
 
   test('quote rejects response with a mismatched swap type', () async {
     final transport = _FakeOneClickTransport([
