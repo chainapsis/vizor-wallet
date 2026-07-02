@@ -403,6 +403,19 @@ pub fn decode_ur_part(part: &str, expected_ur_type: &str) -> Result<UrDecodeResu
     })
 }
 
+/// Number of animated-QR parts to emit for a UR whose payload spans
+/// `fragment_count` fragments. The encoder emits the pure fragments first; using
+/// a short fountain tail lets the scanner recover from a missed frame without
+/// forcing the user to wait for a full loop.
+fn ur_part_count(fragment_count: usize) -> usize {
+    if fragment_count <= 1 {
+        return fragment_count;
+    }
+
+    let redundant_parts = fragment_count.div_ceil(10).max(2);
+    fragment_count + redundant_parts
+}
+
 /// Encode PCZT bytes into multiple UR parts for animated QR display.
 pub fn encode_pczt_ur_parts(
     pczt_bytes: &[u8],
@@ -420,7 +433,7 @@ pub fn encode_pczt_ur_parts(
     )
     .map_err(|e| format!("UR encoder: {e}"))?;
 
-    let count = encoder.fragment_count();
+    let count = ur_part_count(encoder.fragment_count());
     let mut parts = Vec::with_capacity(count);
     for _ in 0..count {
         let part = encoder
@@ -511,7 +524,7 @@ pub fn encode_zcash_sign_batch_ur_parts(
 
     let mut ur_encoder = ur::Encoder::new(&cbor, max_fragment_len, ZCASH_SIGN_BATCH_TYPE)
         .map_err(|e| format!("UR encoder: {e}"))?;
-    let count = ur_encoder.fragment_count();
+    let count = ur_part_count(ur_encoder.fragment_count());
     let mut parts = Vec::with_capacity(count);
     for _ in 0..count {
         let part = ur_encoder
@@ -1013,6 +1026,15 @@ mod tests {
         assert_eq!(request_id.as_deref(), Some("request-1"));
         assert_eq!(network, Some(ZCASH_SIGN_BATCH_NETWORK_MAINNET));
         assert_eq!(message_count, Some(2));
+    }
+
+    #[test]
+    fn ur_part_count_adds_small_redundancy_tail() {
+        assert_eq!(ur_part_count(0), 0);
+        assert_eq!(ur_part_count(1), 1);
+        assert_eq!(ur_part_count(20), 22);
+        assert_eq!(ur_part_count(36), 40);
+        assert_eq!(ur_part_count(57), 63);
     }
 
     #[test]
