@@ -224,13 +224,16 @@ What this means for our DB shape:
 - Calling `create_account()` later is not a clean rescue mechanism for an `Imported`-only DB because that path itself depends on seed-aware initialization and seed relevance.
 
 **Account deletion and reset invariants.** Per-account deletion is allowed for
-`Imported` accounts and for a `Derived` account only if another `Derived`
-account remains. Dart enforces this in `AccountNotifier.removeAccount`, and
-Rust `delete_account` repeats the check inside the wallet DB write lock so the
-invariant does not depend on a single UI caller. Deleting the last remaining
-account is not a per-account delete; the Accounts UI treats it as a full wallet
-reset, clearing the wallet DB, secure storage, active account state, and routing
-back to onboarding.
+any listed account while another account remains, including the initial
+`Derived` seed-anchor account. Deleting that account can leave the wallet DB
+containing only `Imported` accounts, which is the same migration tradeoff
+accepted for Keystone-first onboarding: current schema and UFVK-tolerant
+migrations should work, but a future seed-requiring migration may need a product
+recovery path. Deleting the last remaining account is not a per-account delete;
+the Accounts UI treats it as a full wallet reset, clearing the wallet DB, secure
+storage, active account state, and routing back to onboarding. Dart
+`AccountNotifier.removeAccount` and Rust `delete_account` still validate the
+target account exists before removing account-scoped wallet rows.
 
 **Account identification**: `AccountUuid` (UUID string like `"550e8400-e29b-41d4-a716-446655440000"`). Passed as `String` between Dart and Rust via `Uuid::parse_str()` / `Uuid::to_string()`.
 
@@ -382,7 +385,7 @@ rust/src/
 │   ├── mod.rs          # pub mod keys, sync, sync_engine, keystone
 │   ├── keys.rs         # Key derivation, mnemonic, account creation (Derived + Imported),
 │   │                    # list_accounts, ensure_db_initialized, parse_account_uuid,
-│   │                    # delete_account with last-Derived seed-anchor guard,
+│   │                    # delete_account with account existence check and row cleanup,
 │   │                    # init_db_and_create_account (software first-account bootstrap),
 │   │                    # import_hardware_account (Keystone UFVK import;
 │   │                    # Keystone-first is allowed)

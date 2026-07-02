@@ -316,7 +316,7 @@ void main() {
     expect(find.text('Remove account'), findsNothing);
   });
 
-  testWidgets('current account menu shows edit actions and copy only', (
+  testWidgets('current account menu shows edit, copy, and remove actions', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -335,8 +335,12 @@ void main() {
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Send ZEC'), findsNothing);
     expect(find.text('Edit account'), findsOneWidget);
-    expect(find.text('Remove account'), findsNothing);
-    _expectVerticalTextOrder(tester, const ['Edit account', 'Copy address']);
+    expect(find.text('Remove account'), findsOneWidget);
+    _expectVerticalTextOrder(tester, const [
+      'Edit account',
+      'Copy address',
+      'Remove account',
+    ]);
   });
 
   testWidgets('current imported account can be removed', (tester) async {
@@ -548,52 +552,51 @@ void main() {
     );
   });
 
-  testWidgets(
-    'seed anchor is protected while imported accounts can be removed',
-    (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1512, 982));
-      addTearDown(() async {
-        await tester.binding.setSurfaceSize(null);
-      });
+  testWidgets('seed anchor and imported accounts can be removed', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
 
-      const accountState = AccountState(
-        accounts: [
-          AccountInfo(uuid: 'account-1', name: 'Imported First', order: 0),
-          AccountInfo(
-            uuid: 'account-2',
-            name: 'Seed Anchor',
-            order: 1,
-            isSeedAnchor: true,
-          ),
-          AccountInfo(uuid: 'account-3', name: 'Imported Other', order: 2),
-        ],
-        activeAccountUuid: 'account-1',
-        activeAddress: 'u1accountsaddress',
-      );
-      await tester.pumpWidget(
-        _accountsHarness(
-          accountNotifier: () => _FakeAccountNotifier(accountState),
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(uuid: 'account-1', name: 'Imported First', order: 0),
+        AccountInfo(
+          uuid: 'account-2',
+          name: 'Seed Anchor',
+          order: 1,
+          isSeedAnchor: true,
         ),
-      );
-      await tester.pump();
+        AccountInfo(uuid: 'account-3', name: 'Imported Other', order: 2),
+      ],
+      activeAccountUuid: 'account-1',
+      activeAddress: 'u1accountsaddress',
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+      ),
+    );
+    await tester.pump();
 
-      await tester.tap(
-        find.byKey(const ValueKey('accounts_row_menu_button_account-3')),
-      );
-      await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-3')),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.text('Remove account'), findsOneWidget);
+    expect(find.text('Remove account'), findsOneWidget);
 
-      await tester.tapAt(const Offset(20, 20));
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
-      );
-      await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.text('Remove account'), findsNothing);
-    },
-  );
+    expect(find.text('Remove account'), findsOneWidget);
+  });
 
   testWidgets('seed anchor can be removed when another seed anchor remains', (
     tester,
