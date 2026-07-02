@@ -184,9 +184,13 @@ pub(crate) struct KeystoneMigrationSigningRequest {
     pub signing_batch_limit: u32,
 }
 
+/// One signed message in the compact "signatures-only" response: the produced
+/// spend-authorization signatures for the request message `id`, correlated to
+/// the wallet's held proofs-PCZT for that id. Replaces the old full-signed-PCZT
+/// payload; the wallet re-applies these via [`super::pczt::apply_sigs_and_extract`].
 pub(crate) struct KeystoneSignedMigrationMessage {
     pub id: String,
-    pub signed_pczt: Vec<u8>,
+    pub sigs: Vec<crate::wallet::keystone::DecodedActionSig>,
 }
 
 pub(crate) struct KeystoneMigrationProofStatus {
@@ -1081,7 +1085,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
 ) -> Result<IronwoodMigrationResult, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let signed_by_id = signed_migration_messages_by_id(request_id, signed_messages)?;
-    let signed_pczt = signed_by_id
+    let split_sigs = signed_by_id
         .get("denominations")
         .ok_or("Keystone result did not include the denomination split")?;
     if signed_by_id.len() != 1 {
@@ -1135,18 +1139,15 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
         }
     };
 
-    let extracted_split = match super::pczt::extract_transaction_from_pczt(
-        &stored.pczt_with_proofs,
-        signed_pczt,
-        None,
-        None,
-    ) {
-        Ok(extracted) => extracted,
-        Err(e) => {
-            reset_denomination_request_after_failed_completion(request_id);
-            return Err(e);
-        }
-    };
+    let extracted_split =
+        match super::pczt::apply_sigs_and_extract(&stored.pczt_with_proofs, split_sigs, None, None)
+        {
+            Ok(extracted) => extracted,
+            Err(e) => {
+                reset_denomination_request_after_failed_completion(request_id);
+                return Err(e);
+            }
+        };
 
     let txid = extracted_split.txid.to_string();
     let prepared_refs = stored
@@ -1321,7 +1322,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
 ) -> Result<IronwoodMigrationResult, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let signed_by_id = signed_migration_messages_by_id(request_id, signed_messages)?;
-    let signed_split_pczt = signed_by_id
+    let split_sigs = signed_by_id
         .get("denominations")
         .ok_or("Keystone result did not include the denomination split")?;
     if super::migration::active_migration_run(db_path, account_uuid, network)?.is_some() {
@@ -1390,9 +1391,9 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
         }
     }
 
-    let extracted_split = match super::pczt::extract_transaction_from_pczt(
+    let extracted_split = match super::pczt::apply_sigs_and_extract(
         &stored.split_pczt_with_proofs,
-        signed_split_pczt,
+        split_sigs,
         None,
         None,
     ) {
@@ -1428,7 +1429,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
                     note_version: child.selected_note.note_version,
                     nullifier_hex: None,
                 };
-                let signed_pczt = signed_by_id
+                let sigs = signed_by_id
                     .get(&child.id)
                     .ok_or_else(|| format!("Keystone result missing {}", child.id))?
                     .clone();
@@ -1436,7 +1437,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
                     message_id: child.id.clone(),
                     child_index: index as u32,
                     base_pczt: child.base_pczt.clone(),
-                    signed_pczt,
+                    sigs,
                     target_height: child.target_height,
                     expiry_height: child.expiry_height,
                     value_zatoshi: child.migrated_zatoshi,
@@ -1685,15 +1686,15 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
     let completion_result = (|| -> Result<super::migration::PendingMigrationTotals, String> {
         let mut pending_inserts = Vec::with_capacity(stored.messages.len());
         for message in stored.messages.clone() {
-            let signed_pczt = signed_by_id
+            let sigs = signed_by_id
                 .get(&message.id)
                 .ok_or_else(|| format!("Keystone result missing {}", message.id))?;
-            let extracted = super::pczt::extract_transaction_from_pczt(
+            let extracted = super::pczt::apply_sigs_and_extract(
                 message
                     .pczt_with_proofs
                     .as_ref()
                     .ok_or("Keystone migration proof missing")?,
-                signed_pczt,
+                sigs,
                 None,
                 None,
             )?;
@@ -2011,6 +2012,10 @@ fn prepare_software_migration_run(
                 &child.orchard_spend_action_indices,
                 &usk,
             )?;
+            // Persist only the produced signatures, matching the hardware
+            // "signatures-only" path's compact storage form rather than the
+            // full signed PCZT.
+            let sigs = super::pczt::extract_compact_sigs_from_signed_pczt(&signed_pczt)?;
             let selected_note = super::migration::PreparedOrchardNoteRef {
                 txid_hex: format!("{}", split.txid),
                 output_index: child.selected_note.output_index,
@@ -2022,7 +2027,7 @@ fn prepare_software_migration_run(
                 message_id: child.id.clone(),
                 child_index: index as u32,
                 base_pczt: child.base_pczt.clone(),
-                signed_pczt,
+                sigs,
                 target_height: child.target_height,
                 expiry_height: child.expiry_height,
                 value_zatoshi: child.migrated_zatoshi,
@@ -2676,7 +2681,7 @@ fn reset_single_qr_request_after_failed_completion(request_id: &str) {
 fn signed_migration_messages_by_id(
     request_id: &str,
     signed_messages: Vec<KeystoneSignedMigrationMessage>,
-) -> Result<HashMap<String, Vec<u8>>, String> {
+) -> Result<HashMap<String, Vec<crate::wallet::keystone::DecodedActionSig>>, String> {
     if signed_messages.is_empty() {
         return Err(format!(
             "Keystone returned no signed messages for request {request_id}"
@@ -2688,13 +2693,13 @@ fn signed_migration_messages_by_id(
         if message.id.is_empty() {
             return Err("Keystone signed message id is empty".to_string());
         }
-        if message.signed_pczt.is_empty() {
-            return Err(format!("Keystone signed message {} is empty", message.id));
+        if message.sigs.is_empty() {
+            return Err(format!(
+                "Keystone signed message {} carried no signatures",
+                message.id
+            ));
         }
-        if by_id
-            .insert(message.id.clone(), message.signed_pczt)
-            .is_some()
-        {
+        if by_id.insert(message.id.clone(), message.sigs).is_some() {
             return Err(format!("Duplicate signed Keystone message {}", message.id));
         }
     }
@@ -4421,27 +4426,20 @@ fn finalize_presigned_migration_children(
             .as_deref()
             .ok_or("Prepared migration note nullifier unavailable")?;
 
-        // Keep this before proof creation. V6 signatures survive the anchor
-        // update, but Orchard proofs depend on the real anchor.
+        // Set the real anchor/witness on the base before proving — Orchard
+        // proofs depend on the real anchor. The stored spend-authorization
+        // signatures are anchor-independent (the ZIP-244 spend-auth sighash does
+        // not commit to the anchor), so we apply them directly onto the proofed
+        // base via the compact path instead of re-anchoring a full signed PCZT.
         let base_pczt = super::pczt::set_orchard_anchor_and_witness(
             &child.base_pczt,
             orchard_anchor,
             &orchard_witness,
             current_note_nullifier_hex,
         )?;
-        let signed_pczt = super::pczt::set_orchard_anchor_and_witness(
-            &child.signed_pczt,
-            orchard_anchor,
-            &orchard_witness,
-            current_note_nullifier_hex,
-        )?;
         let pczt_with_proofs = super::pczt::add_proofs_to_pczt(&base_pczt, None, None)?;
-        let extracted = super::pczt::extract_transaction_from_pczt(
-            &pczt_with_proofs,
-            &signed_pczt,
-            None,
-            None,
-        )?;
+        let extracted =
+            super::pczt::apply_sigs_and_extract(&pczt_with_proofs, &child.sigs, None, None)?;
         pending_inserts.push(super::migration::PendingMigrationTxInsert {
             txid_hex: extracted.txid.to_string(),
             raw_tx: extracted.raw_tx,

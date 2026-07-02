@@ -39,6 +39,7 @@ mod transactions;
 // downstream consumers, which matches the pre-refactor surface
 // exactly).
 pub(crate) use migration::migration_status;
+pub(crate) use pczt::extract_compact_sigs_from_signed_pczt;
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, discard_proposal, extract_and_broadcast_pczt,
     redact_pczt_for_signer, ExtractAndBroadcastPcztResult,

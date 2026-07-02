@@ -21,6 +21,16 @@ typedef MigrationScanScannerBuilder =
       required ValueChanged<ScanResult> onComplete,
     });
 
+/// The completed scan of a Keystone migration signing response: the UR type
+/// that was scanned (`zcash-sig-result` or the legacy `zcash-sign-result`) and
+/// its raw CBOR payload. The migration screen routes decoding on the type.
+class MigrationSignedQrResult {
+  const MigrationSignedQrResult({required this.urType, required this.cbor});
+
+  final String urType;
+  final Uint8List cbor;
+}
+
 class MigrationScanScreen extends ConsumerStatefulWidget {
   const MigrationScanScreen({this.scannerBuilder, super.key});
 
@@ -34,6 +44,11 @@ class MigrationScanScreen extends ConsumerStatefulWidget {
 }
 
 class _MigrationScanScreenState extends ConsumerState<MigrationScanScreen> {
+  // Newer migration firmware returns the compact signatures-only
+  // `zcash-sig-result` response. Current ForgeBox firmware still returns the
+  // older `zcash-sign-result` envelope, which the migration flow normalizes
+  // after scanning.
+  static const _sigResultUrType = 'zcash-sig-result';
   static const _signResultUrType = 'zcash-sign-result';
 
   bool _decoding = false;
@@ -51,9 +66,12 @@ class _MigrationScanScreenState extends ConsumerState<MigrationScanScreen> {
   void _handleComplete(ScanResult result) {
     if (_decoding) return;
     setState(() => _decoding = true);
-    final bytes = Uint8List.fromList(result.data);
+    final signedQr = MigrationSignedQrResult(
+      urType: result.urType,
+      cbor: Uint8List.fromList(result.data),
+    );
     if (context.canPop()) {
-      context.pop(bytes);
+      context.pop(signedQr);
       return;
     }
     context.go('/migration');
@@ -71,7 +89,8 @@ class _MigrationScanScreenState extends ConsumerState<MigrationScanScreen> {
     }
 
     return KeystoneQrScannerCard(
-      expectedUrType: _signResultUrType,
+      expectedUrType: _sigResultUrType,
+      additionalExpectedUrTypes: const [_signResultUrType],
       decoding: _decoding,
       error: _error,
       onProgress: (_) {},

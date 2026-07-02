@@ -7,6 +7,8 @@ import '../frb_generated.dart';
 import '../wallet/keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These functions are ignored because they are not marked as `pub`: `action_sig_to_api`, `sig_result_to_api`
+
 /// Encode PCZT bytes to a UR string for QR code display.
 Future<String> encodePcztToUr({required List<int> pcztBytes}) =>
     RustLib.instance.api.crateApiKeystoneEncodePcztToUr(pcztBytes: pcztBytes);
@@ -53,6 +55,25 @@ Future<ZcashBatchSignResult> decodeZcashSignResultCbor({
 }) =>
     RustLib.instance.api.crateApiKeystoneDecodeZcashSignResultCbor(cbor: cbor);
 
+/// Decode the CBOR payload returned from a compact `zcash-sig-result` UR into
+/// flat FRB structs. The wallet-layer decode in
+/// `crate::wallet::keystone::decode_zcash_sig_result_cbor` does all CBOR shape
+/// and policy validation (supported version, known pool, exact 64-byte sig
+/// length); this wrapper only reshapes its `[u8; 64]` signatures into the
+/// `Vec<u8>` form FRB carries.
+Future<KeystoneSigResult> decodeZcashSigResultCbor({required List<int> cbor}) =>
+    RustLib.instance.api.crateApiKeystoneDecodeZcashSigResultCbor(cbor: cbor);
+
+/// Decode a legacy `zcash-sign-result` response and normalize it to the compact
+/// signature shape used by migration completion. Current ForgeBox firmware may
+/// still echo signed redacted PCZTs; the wallet only needs their
+/// spend-authorization signatures because it already holds the proofs-PCZTs.
+Future<KeystoneSigResult> decodeZcashSignResultCborAsSigResult({
+  required List<int> cbor,
+}) => RustLib.instance.api.crateApiKeystoneDecodeZcashSignResultCborAsSigResult(
+  cbor: cbor,
+);
+
 /// Return the Sapling and Orchard nullifiers spent by a PCZT.
 Future<List<String>> pcztSpendNullifiers({required List<int> pcztBytes}) =>
     RustLib.instance.api.crateApiKeystonePcztSpendNullifiers(
@@ -83,3 +104,83 @@ Future<Uint8List> decodePcztFromCbor({required List<int> cbor}) =>
 Future<List<KeystoneAccountInfo>> decodeAccountsUr({
   required String urString,
 }) => RustLib.instance.api.crateApiKeystoneDecodeAccountsUr(urString: urString);
+
+/// One spend-authorization signature from a compact `zcash-sig-result`,
+/// located by `pool` (0 = Orchard, 1 = Ironwood) and the spend action's index
+/// within that pool's bundle. `sig` is the raw 64-byte spend-authorization
+/// signature; FRB does not bridge `[u8; 64]` arrays cleanly, so it crosses as a
+/// `Vec<u8>` (always length 64) the way other fixed byte arrays do at this
+/// boundary.
+class KeystoneActionSig {
+  final int pool;
+  final int actionIndex;
+  final Uint8List sig;
+
+  const KeystoneActionSig({
+    required this.pool,
+    required this.actionIndex,
+    required this.sig,
+  });
+
+  @override
+  int get hashCode => pool.hashCode ^ actionIndex.hashCode ^ sig.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is KeystoneActionSig &&
+          runtimeType == other.runtimeType &&
+          pool == other.pool &&
+          actionIndex == other.actionIndex &&
+          sig == other.sig;
+}
+
+/// The signatures produced for a single requested message, correlated back to
+/// the wallet's held proofs-PCZT by `message_id` (the id the wallet assigned
+/// when it built the batch).
+class KeystoneMsgSig {
+  final Uint8List messageId;
+  final List<KeystoneActionSig> sigs;
+
+  const KeystoneMsgSig({required this.messageId, required this.sigs});
+
+  @override
+  int get hashCode => messageId.hashCode ^ sigs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is KeystoneMsgSig &&
+          runtimeType == other.runtimeType &&
+          messageId == other.messageId &&
+          sigs == other.sigs;
+}
+
+/// FRB-friendly decoding of a compact `zcash-sig-result` UR (tag 49207): the
+/// "signatures-only" response. Unlike [`ZcashBatchSignResult`], which echoes the
+/// whole redacted PCZTs back, this carries only the produced signatures so the
+/// wallet can re-apply them to the proofs-PCZTs it already holds (see
+/// `sync::pczt::apply_sigs_and_extract`).
+class KeystoneSigResult {
+  final int version;
+  final Uint8List requestId;
+  final List<KeystoneMsgSig> results;
+
+  const KeystoneSigResult({
+    required this.version,
+    required this.requestId,
+    required this.results,
+  });
+
+  @override
+  int get hashCode => version.hashCode ^ requestId.hashCode ^ results.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is KeystoneSigResult &&
+          runtimeType == other.runtimeType &&
+          version == other.version &&
+          requestId == other.requestId &&
+          results == other.results;
+}

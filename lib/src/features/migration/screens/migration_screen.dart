@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:typed_data';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -29,6 +29,7 @@ import '../models/migration_view_state.dart';
 import '../providers/migration_expected_transfer_count_provider.dart';
 import '../providers/migration_run_controller.dart';
 import '../providers/orchard_migration_status_provider.dart';
+import 'migration_scan_screen.dart' show MigrationSignedQrResult;
 import '../widgets/migration_timeline.dart';
 import '../widgets/migration_warning_dialog.dart';
 
@@ -41,6 +42,8 @@ class MigrationScreen extends ConsumerStatefulWidget {
 
 class _MigrationScreenState extends ConsumerState<MigrationScreen> {
   static const _keystoneMigrationBatchMaxFragmentLen = 200;
+  static const _keystoneSigResultUrType = 'zcash-sig-result';
+  static const _keystoneSignResultUrType = 'zcash-sign-result';
 
   Timer? _progressRefreshTimer;
   Timer? _submissionProgressTimer;
@@ -651,8 +654,10 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     }
 
     final chunkIndex = _keystoneChunkIndex;
-    final cbor = await context.push<Uint8List>('/migration/scan');
-    if (cbor == null || !_keystoneSessionIsCurrent(session)) {
+    final signedQr = await context.push<MigrationSignedQrResult>(
+      '/migration/scan',
+    );
+    if (signedQr == null || !_keystoneSessionIsCurrent(session)) {
       return;
     }
 
@@ -662,20 +667,21 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     });
 
     try {
-      final result = await rust_keystone.decodeZcashSignResultCbor(cbor: cbor);
+      final result = await _decodeKeystoneSignedMigrationQr(signedQr);
       if (!_keystoneSessionIsCurrent(session)) {
         return;
       }
-      if (result.requestId != request.requestId) {
+      final resultRequestId = _decodeKeystoneId(result.requestId);
+      if (resultRequestId != request.requestId) {
         throw _KeystoneMigrationError(
-          'Signed result is for ${result.requestId}, expected ${request.requestId}.',
+          'Signed result is for $resultRequestId, expected ${request.requestId}.',
         );
       }
       final signedMessages = result.results
           .map(
             (message) => rust_sync.KeystoneSignedMigrationMessage(
-              id: message.id,
-              signedPczt: message.signedPcztBytes,
+              id: _decodeKeystoneId(message.messageId),
+              sigs: message.sigs,
             ),
           )
           .toList(growable: false);
@@ -1006,6 +1012,40 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
           .toList(growable: false),
       maxFragmentLen: BigInt.from(_keystoneMigrationBatchMaxFragmentLen),
     );
+  }
+
+  /// Decode a scanned Keystone migration signing response into the compact
+  /// signature shape, routing on the scanned UR type: the new
+  /// `zcash-sig-result` decodes directly, while the legacy `zcash-sign-result`
+  /// (current ForgeBox firmware) is normalized by extracting the
+  /// spend-authorization signatures from its signed PCZTs.
+  Future<rust_keystone.KeystoneSigResult> _decodeKeystoneSignedMigrationQr(
+    MigrationSignedQrResult signedQr,
+  ) {
+    switch (signedQr.urType) {
+      case _keystoneSigResultUrType:
+        return rust_keystone.decodeZcashSigResultCbor(cbor: signedQr.cbor);
+      case _keystoneSignResultUrType:
+        return rust_keystone.decodeZcashSignResultCborAsSigResult(
+          cbor: signedQr.cbor,
+        );
+      default:
+        throw _KeystoneMigrationError(
+          'Unexpected Keystone migration QR type ${signedQr.urType}.',
+        );
+    }
+  }
+
+  /// Decode a Keystone id (request id or message id) from the raw bytes the
+  /// compact `zcash-sig-result` carries back. The wallet sends these ids as
+  /// UTF-8 strings; if a device ever returns non-UTF-8 bytes, fall back to hex
+  /// so the value is still comparable rather than throwing on decode.
+  String _decodeKeystoneId(List<int> idBytes) {
+    try {
+      return utf8.decode(idBytes);
+    } on FormatException {
+      return idBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    }
   }
 
   List<rust_sync.KeystoneSignedMigrationMessage> _validateKeystoneSignedChunk({

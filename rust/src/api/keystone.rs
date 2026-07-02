@@ -47,6 +47,103 @@ pub fn decode_zcash_sign_result_cbor(cbor: Vec<u8>) -> Result<ZcashBatchSignResu
     keystone::decode_zcash_sign_result_cbor(&cbor)
 }
 
+/// One spend-authorization signature from a compact `zcash-sig-result`,
+/// located by `pool` (0 = Orchard, 1 = Ironwood) and the spend action's index
+/// within that pool's bundle. `sig` is the raw 64-byte spend-authorization
+/// signature; FRB does not bridge `[u8; 64]` arrays cleanly, so it crosses as a
+/// `Vec<u8>` (always length 64) the way other fixed byte arrays do at this
+/// boundary.
+pub struct KeystoneActionSig {
+    pub pool: u8,
+    pub action_index: u32,
+    pub sig: Vec<u8>,
+}
+
+/// The signatures produced for a single requested message, correlated back to
+/// the wallet's held proofs-PCZT by `message_id` (the id the wallet assigned
+/// when it built the batch).
+pub struct KeystoneMsgSig {
+    pub message_id: Vec<u8>,
+    pub sigs: Vec<KeystoneActionSig>,
+}
+
+/// FRB-friendly decoding of a compact `zcash-sig-result` UR (tag 49207): the
+/// "signatures-only" response. Unlike [`ZcashBatchSignResult`], which echoes the
+/// whole redacted PCZTs back, this carries only the produced signatures so the
+/// wallet can re-apply them to the proofs-PCZTs it already holds (see
+/// `sync::pczt::apply_sigs_and_extract`).
+pub struct KeystoneSigResult {
+    pub version: u32,
+    pub request_id: Vec<u8>,
+    pub results: Vec<KeystoneMsgSig>,
+}
+
+/// Reshape a wallet-layer [`keystone::DecodedActionSig`] (fixed `[u8; 64]`
+/// signature) into the FRB-boundary form (`Vec<u8>` signature).
+fn action_sig_to_api(action: keystone::DecodedActionSig) -> KeystoneActionSig {
+    KeystoneActionSig {
+        pool: action.pool,
+        action_index: action.action_index,
+        sig: action.sig.to_vec(),
+    }
+}
+
+/// Reshape a wallet-layer [`keystone::DecodedSigResult`] into the flat FRB
+/// structs Dart consumes.
+fn sig_result_to_api(decoded: keystone::DecodedSigResult) -> KeystoneSigResult {
+    KeystoneSigResult {
+        version: decoded.version,
+        request_id: decoded.request_id,
+        results: decoded
+            .results
+            .into_iter()
+            .map(|msg| KeystoneMsgSig {
+                message_id: msg.message_id,
+                sigs: msg.sigs.into_iter().map(action_sig_to_api).collect(),
+            })
+            .collect(),
+    }
+}
+
+/// Decode the CBOR payload returned from a compact `zcash-sig-result` UR into
+/// flat FRB structs. The wallet-layer decode in
+/// `crate::wallet::keystone::decode_zcash_sig_result_cbor` does all CBOR shape
+/// and policy validation (supported version, known pool, exact 64-byte sig
+/// length); this wrapper only reshapes its `[u8; 64]` signatures into the
+/// `Vec<u8>` form FRB carries.
+pub fn decode_zcash_sig_result_cbor(cbor: Vec<u8>) -> Result<KeystoneSigResult, String> {
+    let decoded = keystone::decode_zcash_sig_result_cbor(&cbor)?;
+    Ok(sig_result_to_api(decoded))
+}
+
+/// Decode a legacy `zcash-sign-result` response and normalize it to the compact
+/// signature shape used by migration completion. Current ForgeBox firmware may
+/// still echo signed redacted PCZTs; the wallet only needs their
+/// spend-authorization signatures because it already holds the proofs-PCZTs.
+pub fn decode_zcash_sign_result_cbor_as_sig_result(
+    cbor: Vec<u8>,
+) -> Result<KeystoneSigResult, String> {
+    let decoded = keystone::decode_zcash_sign_result_cbor(&cbor)?;
+    let results = decoded
+        .results
+        .into_iter()
+        .map(|message| {
+            Ok(keystone::DecodedMsgSig {
+                message_id: message.id.into_bytes(),
+                sigs: crate::wallet::sync::extract_compact_sigs_from_signed_pczt(
+                    &message.signed_pczt_bytes,
+                )?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    Ok(sig_result_to_api(keystone::DecodedSigResult {
+        version: decoded.version,
+        request_id: decoded.request_id.into_bytes(),
+        results,
+    }))
+}
+
 /// Return the Sapling and Orchard nullifiers spent by a PCZT.
 pub fn pczt_spend_nullifiers(pczt_bytes: Vec<u8>) -> Result<Vec<String>, String> {
     keystone::pczt_spend_nullifiers(&pczt_bytes)
