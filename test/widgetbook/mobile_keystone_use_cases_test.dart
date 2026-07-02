@@ -128,7 +128,12 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Connect Keystone'), findsOneWidget);
     expect(find.text('1. Check Keystone firmware'), findsOneWidget);
+    expect(find.text('link'), findsOneWidget);
+    expect(find.text('Download firmware'), findsNothing);
     expect(find.text('2. Prepare to connect'), findsOneWidget);
+    expect(find.text('On your Keystone'), findsOneWidget);
+    expect(find.text('Unlock it.'), findsNothing);
+    expect(find.text('On Vizor'), findsOneWidget);
     expect(find.text('Continue'), findsOneWidget);
   });
 
