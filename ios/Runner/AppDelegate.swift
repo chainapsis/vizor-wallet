@@ -108,6 +108,14 @@ import UIKit
       }
     }
 
+    let sensitiveClipboardChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/sensitive_clipboard",
+      binaryMessenger: messenger
+    )
+    sensitiveClipboardChannel.setMethodCallHandler { (call, result) in
+      SensitiveClipboardHandler.handle(call, result: result)
+    }
+
     let biometricUnlockChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/biometric_unlock",
       binaryMessenger: messenger
@@ -192,6 +200,54 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+  }
+}
+
+private enum SensitiveClipboardHandler {
+  private static let plainTextType = "public.utf8-plain-text"
+
+  static func handle(_ call: FlutterMethodCall, result: FlutterResult) {
+    switch call.method {
+    case "copyText":
+      guard
+        let args = call.arguments as? [String: Any],
+        let text = args["text"] as? String
+      else {
+        result(
+          FlutterError(
+            code: "bad_args",
+            message: "Expected text argument.",
+            details: nil
+          )
+        )
+        return
+      }
+
+      let expirationSeconds = max(1, seconds(from: args["expirationSeconds"]) ?? 60)
+      UIPasteboard.general.setItems(
+        [[plainTextType: text]],
+        options: [
+          .expirationDate: Date().addingTimeInterval(expirationSeconds),
+          .localOnly: true,
+        ]
+      )
+      result(nil)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private static func seconds(from value: Any?) -> TimeInterval? {
+    if let number = value as? NSNumber {
+      return number.doubleValue
+    }
+    if let int = value as? Int {
+      return TimeInterval(int)
+    }
+    if let double = value as? Double {
+      return double
+    }
+    return nil
   }
 }
 

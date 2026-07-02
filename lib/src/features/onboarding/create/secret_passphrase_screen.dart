@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart' show CircularProgressIndicator;
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/clipboard/sensitive_clipboard.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
@@ -177,7 +177,7 @@ class _SecretPassphraseScreenState
   Future<void> _copyMnemonic() async {
     final mnemonic = _mnemonic;
     if (mnemonic == null || !_revealed) return;
-    await Clipboard.setData(ClipboardData(text: mnemonic));
+    await SensitiveClipboard.copyText(mnemonic);
     if (!mounted) return;
     _copyResetTimer?.cancel();
     setState(() {
