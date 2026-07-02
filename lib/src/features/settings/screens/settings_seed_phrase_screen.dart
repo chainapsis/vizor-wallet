@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/clipboard/sensitive_clipboard.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
@@ -315,7 +316,7 @@ class _SettingsSeedPhraseScreenState
   Future<void> _copyMnemonic() async {
     final mnemonic = _mnemonic;
     if (mnemonic == null || mnemonic.isEmpty) return;
-    await Clipboard.setData(ClipboardData(text: mnemonic));
+    await SensitiveClipboard.copyText(mnemonic);
     _markCopied(_SeedPhraseCopyTarget.phrase);
   }
 

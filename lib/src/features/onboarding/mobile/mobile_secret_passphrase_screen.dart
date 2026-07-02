@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/clipboard/sensitive_clipboard.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/platform/screenshot_observer.dart';
@@ -120,7 +120,7 @@ class _MobileSecretPassphraseScreenState
   Future<void> _copy() async {
     final mnemonic = _mnemonic;
     if (mnemonic == null || !_revealed) return;
-    await Clipboard.setData(ClipboardData(text: mnemonic));
+    await SensitiveClipboard.copyText(mnemonic);
     unawaited(AppHaptics.copy());
     if (!mounted) return;
     _copyResetTimer?.cancel();
