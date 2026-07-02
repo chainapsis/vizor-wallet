@@ -73,6 +73,13 @@ abstract class MultisigCoordinatorService {
     required String idempotencyKey,
   });
 
+  Future<rust_multisig.ApiMultisigSigningRequest> getSigningRequest({
+    required String coordinatorUrl,
+    required String signingRequestId,
+    required String accessToken,
+    required String pcztHash,
+  });
+
   Future<rust_multisig.ApiMultisigSigningInbox> getSigningInbox({
     required String coordinatorUrl,
     required String sessionId,
@@ -295,6 +302,21 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
       pcztHash: pcztHash,
       requestJson: requestJson,
       idempotencyKey: idempotencyKey,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningRequest> getSigningRequest({
+    required String coordinatorUrl,
+    required String signingRequestId,
+    required String accessToken,
+    required String pcztHash,
+  }) {
+    return rust_multisig.getMultisigSigningRequest(
+      coordinatorUrl: coordinatorUrl,
+      signingRequestId: signingRequestId,
+      accessToken: accessToken,
+      pcztHash: pcztHash,
     );
   }
 

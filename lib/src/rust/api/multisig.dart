@@ -236,6 +236,18 @@ Future<ApiMultisigSigningRequest> submitPreparedMultisigSigningRequest({
   idempotencyKey: idempotencyKey,
 );
 
+Future<ApiMultisigSigningRequest> getMultisigSigningRequest({
+  required String coordinatorUrl,
+  required String signingRequestId,
+  required String accessToken,
+  required String pcztHash,
+}) => RustLib.instance.api.crateApiMultisigGetMultisigSigningRequest(
+  coordinatorUrl: coordinatorUrl,
+  signingRequestId: signingRequestId,
+  accessToken: accessToken,
+  pcztHash: pcztHash,
+);
+
 Future<ApiMultisigSigningInbox> getMultisigSigningInbox({
   required String coordinatorUrl,
   required String sessionId,
@@ -966,6 +978,13 @@ class ApiMultisigSigningRequest {
   final String sessionId;
   final String requesterParticipantId;
   final List<String> selectedParticipantIds;
+
+  /// Coordinator-derived progress: selected signers whose Round 1 / Round 2
+  /// envelopes were relayed, and participants that posted a broadcast
+  /// result. Derived from message metadata server-side.
+  final List<String> round1ParticipantIds;
+  final List<String> round2ParticipantIds;
+  final List<String> broadcastParticipantIds;
   final String state;
   final BigInt createdAt;
   final BigInt updatedAt;
@@ -976,6 +995,9 @@ class ApiMultisigSigningRequest {
     required this.sessionId,
     required this.requesterParticipantId,
     required this.selectedParticipantIds,
+    required this.round1ParticipantIds,
+    required this.round2ParticipantIds,
+    required this.broadcastParticipantIds,
     required this.state,
     required this.createdAt,
     required this.updatedAt,
@@ -988,6 +1010,9 @@ class ApiMultisigSigningRequest {
       sessionId.hashCode ^
       requesterParticipantId.hashCode ^
       selectedParticipantIds.hashCode ^
+      round1ParticipantIds.hashCode ^
+      round2ParticipantIds.hashCode ^
+      broadcastParticipantIds.hashCode ^
       state.hashCode ^
       createdAt.hashCode ^
       updatedAt.hashCode ^
@@ -1002,6 +1027,9 @@ class ApiMultisigSigningRequest {
           sessionId == other.sessionId &&
           requesterParticipantId == other.requesterParticipantId &&
           selectedParticipantIds == other.selectedParticipantIds &&
+          round1ParticipantIds == other.round1ParticipantIds &&
+          round2ParticipantIds == other.round2ParticipantIds &&
+          broadcastParticipantIds == other.broadcastParticipantIds &&
           state == other.state &&
           createdAt == other.createdAt &&
           updatedAt == other.updatedAt &&

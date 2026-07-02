@@ -81,6 +81,18 @@ class _MultisigSigningDetailScreenState
         _error = friendlyMultisigError(e);
       });
     }
+    // Coordinator-side round progress is advisory on top of the inbox
+    // markers, so a failure here must not replace the refresh result.
+    try {
+      await ref
+          .read(multisigSigningRequestsProvider.notifier)
+          .refreshRequestProgress(
+            accountUuid: accountUuid,
+            signingRequestId: widget.signingRequestId,
+          );
+    } catch (e, st) {
+      log('MultisigSigningDetail.refreshProgress: ERROR: $e\n$st');
+    }
   }
 
   Future<void> _run(String action, Future<void> Function() operation) async {

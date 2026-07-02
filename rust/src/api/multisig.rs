@@ -154,6 +154,12 @@ pub struct ApiMultisigSigningRequest {
     pub session_id: String,
     pub requester_participant_id: String,
     pub selected_participant_ids: Vec<String>,
+    /// Coordinator-derived progress: selected signers whose Round 1 / Round 2
+    /// envelopes were relayed, and participants that posted a broadcast
+    /// result. Derived from message metadata server-side.
+    pub round1_participant_ids: Vec<String>,
+    pub round2_participant_ids: Vec<String>,
+    pub broadcast_participant_ids: Vec<String>,
     pub state: String,
     pub created_at: u64,
     pub updated_at: u64,
@@ -1218,6 +1224,22 @@ async fn prepare_multisig_signing_request_inner(
     })
 }
 
+pub fn get_multisig_signing_request(
+    coordinator_url: String,
+    signing_request_id: String,
+    access_token: String,
+    pczt_hash: String,
+) -> Result<ApiMultisigSigningRequest, String> {
+    block_on(async move {
+        let client = Coordinator2Client::new(coordinator_url);
+        let signing = client
+            .get_signing_request(&signing_request_id, &access_token)
+            .await
+            .map_err(client_error)?;
+        Ok(map_signing_request(signing, pczt_hash))
+    })
+}
+
 pub fn get_multisig_signing_inbox(
     coordinator_url: String,
     session_id: String,
@@ -1940,6 +1962,9 @@ fn map_signing_request(value: SigningRequestResp, pczt_hash: String) -> ApiMulti
         session_id: value.session_id,
         requester_participant_id: value.requester_participant_id,
         selected_participant_ids: value.selected_participant_ids,
+        round1_participant_ids: value.round1_participant_ids,
+        round2_participant_ids: value.round2_participant_ids,
+        broadcast_participant_ids: value.broadcast_participant_ids,
         state: value.state.as_str().to_string(),
         created_at: value.created_at,
         updated_at: value.updated_at,

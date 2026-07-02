@@ -753,6 +753,62 @@ class MultisigSigningRequestsNotifier
     });
   }
 
+  /// Merges coordinator-authoritative round progress into a stored record.
+  /// The coordinator derives round1/round2 submission sets from relayed
+  /// message metadata, so this recovers progress even when an inbox marker
+  /// was missed (skipped malformed message, cursor already advanced).
+  Future<MultisigSigningRequestRecord?> refreshRequestProgress({
+    required String accountUuid,
+    required String signingRequestId,
+  }) async {
+    final record = await _findRecordOrNull(signingRequestId);
+    if (record == null ||
+        record.accountUuid != accountUuid ||
+        !record.coordinatorSubmitted ||
+        record.isDraft) {
+      return record;
+    }
+    final material = await _materialWithFreshAccess(
+      await _materialForAccount(accountUuid),
+    );
+    return _withAuthRetry(material, (freshMaterial) async {
+      final signing = await _coordinator.getSigningRequest(
+        coordinatorUrl: freshMaterial.coordinatorUrl,
+        signingRequestId: record.signingRequestId,
+        accessToken: freshMaterial.accessToken,
+        pcztHash: record.pcztHash,
+      );
+      if (signing.sessionId != record.sessionId) {
+        throw StateError(
+          'Coordinator returned a signing request from another session.',
+        );
+      }
+      final current = await _findRecord(
+        record.signingRequestId,
+        fallback: record,
+      );
+      final round1 = {
+        ...current.round1ParticipantIds,
+        ...signing.round1ParticipantIds,
+      }.toList()..sort();
+      final round2 = {
+        ...current.round2ParticipantIds,
+        ...signing.round2ParticipantIds,
+      }.toList()..sort();
+      if (_sameParticipantIds(round1, current.round1ParticipantIds) &&
+          _sameParticipantIds(round2, current.round2ParticipantIds)) {
+        return current;
+      }
+      final updated = current.copyWith(
+        round1ParticipantIds: round1,
+        round2ParticipantIds: round2,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      );
+      await _upsert(updated);
+      return _findRecord(record.signingRequestId, fallback: updated);
+    });
+  }
+
   Future<void> refreshForAccount(String accountUuid) {
     final existing = _refreshesByAccount[accountUuid];
     if (existing != null) return existing;

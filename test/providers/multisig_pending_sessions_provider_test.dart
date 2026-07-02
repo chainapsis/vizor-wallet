@@ -1175,6 +1175,31 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
       sessionId: sessionId,
       requesterParticipantId: 'participant-1',
       selectedParticipantIds: const <String>['participant-1'],
+      round1ParticipantIds: const <String>[],
+      round2ParticipantIds: const <String>[],
+      broadcastParticipantIds: const <String>[],
+      state: 'open',
+      createdAt: BigInt.one,
+      updatedAt: BigInt.from(2),
+      pcztHash: pcztHash,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningRequest> getSigningRequest({
+    required String coordinatorUrl,
+    required String signingRequestId,
+    required String accessToken,
+    required String pcztHash,
+  }) async {
+    return rust_multisig.ApiMultisigSigningRequest(
+      signingRequestId: signingRequestId,
+      sessionId: 'session-1',
+      requesterParticipantId: 'participant-1',
+      selectedParticipantIds: const <String>['participant-1'],
+      round1ParticipantIds: const <String>[],
+      round2ParticipantIds: const <String>[],
+      broadcastParticipantIds: const <String>[],
       state: 'open',
       createdAt: BigInt.one,
       updatedAt: BigInt.from(2),

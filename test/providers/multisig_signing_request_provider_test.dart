@@ -673,6 +673,65 @@ void main() {
       'participant-3',
     ]);
   });
+
+  test(
+    'refreshRequestProgress merges coordinator round progress into record',
+    () async {
+      final record =
+          _record(accountUuid: 'account-1', sendFlowId: 'flow-1').copyWith(
+            state: 'open',
+            selectedParticipantIds: const ['participant-1', 'participant-2'],
+          );
+      final requestStore = _FakeSigningRequestStore()..records = [record];
+      final materialStore = _FakeAccountMaterialStore()
+        ..put(
+          _accountMaterial(
+            localBackupCompletedAt: 10,
+            accessTokenExpiresAt: 9999999999,
+          ),
+        );
+      final coordinator = _FakeCoordinatorService(
+        signingRequestResponse: rust_multisig.ApiMultisigSigningRequest(
+          signingRequestId: record.signingRequestId,
+          sessionId: record.sessionId,
+          requesterParticipantId: record.requesterParticipantId,
+          selectedParticipantIds: record.selectedParticipantIds,
+          round1ParticipantIds: const ['participant-1', 'participant-2'],
+          round2ParticipantIds: const ['participant-2'],
+          broadcastParticipantIds: const <String>[],
+          state: 'open',
+          createdAt: BigInt.from(42),
+          updatedAt: BigInt.from(43),
+          pcztHash: record.pcztHash,
+        ),
+      );
+      final container = _container(
+        requestStore: requestStore,
+        materialStore: materialStore,
+        coordinatorService: coordinator,
+      );
+      addTearDown(container.dispose);
+
+      final updated = await container
+          .read(multisigSigningRequestsProvider.notifier)
+          .refreshRequestProgress(
+            accountUuid: 'account-1',
+            signingRequestId: record.signingRequestId,
+          );
+
+      expect(coordinator.signingRequestCalls, [record.signingRequestId]);
+      expect(updated?.round1ParticipantIds, [
+        'participant-1',
+        'participant-2',
+      ]);
+      expect(updated?.round2ParticipantIds, ['participant-2']);
+      expect(updated?.round1Complete, isTrue);
+      expect(
+        requestStore.records.single.round1ParticipantIds,
+        ['participant-1', 'participant-2'],
+      );
+    },
+  );
 }
 
 ProviderContainer _container({
@@ -877,6 +936,7 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
     this.inboxCursor = 0,
     this.inboxError,
     this.round1Response,
+    this.signingRequestResponse,
     this.failRound1UnauthorizedOnce = false,
   });
 
@@ -888,6 +948,8 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
   final int inboxCursor;
   final Object? inboxError;
   final rust_multisig.ApiMultisigSigningAdvance? round1Response;
+  final rust_multisig.ApiMultisigSigningRequest? signingRequestResponse;
+  final signingRequestCalls = <String>[];
   final prepareCalls = <String>[];
   final submitCalls = <String>[];
   final inboxCalls = <String>[];
@@ -976,6 +1038,34 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
       sessionId: sessionId,
       requesterParticipantId: 'participant-1',
       selectedParticipantIds: const ['participant-1', 'participant-2'],
+      round1ParticipantIds: const <String>[],
+      round2ParticipantIds: const <String>[],
+      broadcastParticipantIds: const <String>[],
+      state: 'open',
+      createdAt: BigInt.from(42),
+      updatedAt: BigInt.from(43),
+      pcztHash: pcztHash,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningRequest> getSigningRequest({
+    required String coordinatorUrl,
+    required String signingRequestId,
+    required String accessToken,
+    required String pcztHash,
+  }) async {
+    signingRequestCalls.add(signingRequestId);
+    final response = signingRequestResponse;
+    if (response != null) return response;
+    return rust_multisig.ApiMultisigSigningRequest(
+      signingRequestId: signingRequestId,
+      sessionId: 'session-1',
+      requesterParticipantId: 'participant-1',
+      selectedParticipantIds: const ['participant-1', 'participant-2'],
+      round1ParticipantIds: const <String>[],
+      round2ParticipantIds: const <String>[],
+      broadcastParticipantIds: const <String>[],
       state: 'open',
       createdAt: BigInt.from(42),
       updatedAt: BigInt.from(43),
