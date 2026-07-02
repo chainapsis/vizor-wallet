@@ -32,6 +32,10 @@ class _OneClickQuoteRequest {
     required this.destinationAsset,
     required this.mode,
     required this.appFeeBpsOrNull,
+    this.swapTypeRaw,
+    this.amount,
+    this.refundTo,
+    this.recipient,
     this.slippageToleranceBps,
     this.deadline,
   });
@@ -42,6 +46,10 @@ class _OneClickQuoteRequest {
       destinationAsset: _string(json, 'destinationAsset'),
       mode: _oneClickSwapMode(_optionalString(json, 'swapType')),
       appFeeBpsOrNull: _appFeeBpsOrNull(json['appFees']),
+      swapTypeRaw: _optionalString(json, 'swapType'),
+      amount: _optionalString(json, 'amount'),
+      refundTo: _optionalString(json, 'refundTo'),
+      recipient: _optionalString(json, 'recipient'),
       slippageToleranceBps:
           _optionalInt(json, 'slippageTolerance') ??
           _optionalInt(json, 'slippage'),
@@ -53,6 +61,10 @@ class _OneClickQuoteRequest {
   final String destinationAsset;
   final SwapQuoteMode mode;
   final int? appFeeBpsOrNull;
+  final String? swapTypeRaw;
+  final String? amount;
+  final String? refundTo;
+  final String? recipient;
   final int? slippageToleranceBps;
   final String? deadline;
 }
