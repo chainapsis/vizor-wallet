@@ -11,12 +11,13 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
+import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
-import 'package:zcash_wallet/src/features/swap/providers/swap_provider_config.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
@@ -293,6 +294,70 @@ void main() {
     await _pumpUntilPresent(tester, find.byType(ReceiveScreen));
 
     expect(find.byType(ReceiveScreen), findsOneWidget);
+  });
+
+  testWidgets('home desktop pay action opens exact-output pay screen', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(14_312_000_000),
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final sendRect = tester.getRect(
+      find.byKey(const ValueKey('home_desktop_send_button')),
+    );
+    final receiveRect = tester.getRect(
+      find.byKey(const ValueKey('home_desktop_receive_button')),
+    );
+    final payRect = tester.getRect(
+      find.byKey(const ValueKey('home_desktop_pay_button')),
+    );
+    final payIcon = tester.widget<AppIcon>(
+      find.descendant(
+        of: find.byKey(const ValueKey('home_desktop_pay_button')),
+        matching: find.byType(AppIcon),
+      ),
+    );
+    expect(payIcon.size, 16);
+    expect(payRect.top, moreOrLessEquals(sendRect.top, epsilon: 0.1));
+    expect(payRect.bottom, moreOrLessEquals(sendRect.bottom, epsilon: 0.1));
+    expect(receiveRect.left, greaterThan(sendRect.right));
+    expect(payRect.left, greaterThan(receiveRect.right));
+
+    await tester.tap(find.byKey(const ValueKey('home_desktop_pay_button')));
+    await _pumpUntilPresent(tester, find.byType(PayScreen));
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PayScreen)),
+    );
+    final state = container.read(swapStateProvider);
+    expect(find.byType(PayScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('pay_page_title')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('pay_recipient_address_field')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('pay_recipient_network_step')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('pay_review_button')), findsNothing);
+    expect(state.direction, SwapDirection.zecToExternal);
+    expect(state.quoteMode, SwapQuoteMode.exactOutput);
+    expect(state.payMode, isTrue);
+    expect(state.amountText, isEmpty);
+    expect(state.receiveAmountText, isEmpty);
+    expect(state.destinationText, isEmpty);
   });
 
   testWidgets('home desktop see all action opens activity screen', (

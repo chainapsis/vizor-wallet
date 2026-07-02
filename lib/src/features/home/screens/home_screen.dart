@@ -39,6 +39,7 @@ import '../../activity/swap_activity_row_mapper.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
+import '../../swap/providers/swap_state_provider.dart';
 import '../services/transparent_shielding_service.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
 
@@ -407,6 +408,10 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       onShieldBalancePressed: widget.onShieldBalancePressed,
       onSend: () => context.push('/send'),
       onReceive: () => context.push('/receive'),
+      onPay: () {
+        ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
+        context.push('/pay');
+      },
       onActivity: () => context.push('/activity'),
     );
   }
@@ -896,6 +901,7 @@ class _HomeDesktopPane extends StatelessWidget {
     required this.onShieldBalancePressed,
     required this.onSend,
     required this.onReceive,
+    required this.onPay,
     required this.onActivity,
   });
 
@@ -918,6 +924,7 @@ class _HomeDesktopPane extends StatelessWidget {
   final VoidCallback onShieldBalancePressed;
   final VoidCallback onSend;
   final VoidCallback onReceive;
+  final VoidCallback onPay;
   final VoidCallback onActivity;
 
   static const _referencePaneHeight = 704.0;
@@ -965,6 +972,7 @@ class _HomeDesktopPane extends StatelessWidget {
                       onShieldBalancePressed: onShieldBalancePressed,
                       onSend: onSend,
                       onReceive: onReceive,
+                      onPay: onPay,
                     ),
                   ),
                 ),
@@ -1160,6 +1168,7 @@ class _HomeDesktopBalanceCard extends StatefulWidget {
     required this.onShieldBalancePressed,
     required this.onSend,
     required this.onReceive,
+    required this.onPay,
   });
 
   final bool hasBalance;
@@ -1175,6 +1184,7 @@ class _HomeDesktopBalanceCard extends StatefulWidget {
   final VoidCallback onShieldBalancePressed;
   final VoidCallback onSend;
   final VoidCallback onReceive;
+  final VoidCallback onPay;
 
   @override
   State<_HomeDesktopBalanceCard> createState() =>
@@ -1405,6 +1415,16 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                     icon: AppIcons.arrowDownCircle,
                     label: 'Receive',
                     onTap: widget.onReceive,
+                    primary: false,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                Expanded(
+                  child: _HomeDesktopActionButton(
+                    key: const ValueKey('home_desktop_pay_button'),
+                    icon: AppIcons.coins,
+                    label: 'Pay',
+                    onTap: widget.onPay,
                     primary: false,
                   ),
                 ),

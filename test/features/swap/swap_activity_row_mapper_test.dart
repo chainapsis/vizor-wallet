@@ -107,6 +107,45 @@ void main() {
     expect(row!.childRows, isEmpty);
   });
 
+  testWidgets('maps pay records as payment activity rows', (tester) async {
+    ActivityRowData? row;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              row = buildSwapActivityRow(
+                context: context,
+                item: const SwapActivityRowItem(
+                  intentId: 'pay-usdc',
+                  providerLabel: 'NEAR Intents',
+                  sellAmountText: '4.0000 ZEC',
+                  receiveEstimateText: '100.00 USDC',
+                  status: SwapIntentStatus.complete,
+                  direction: SwapDirection.zecToExternal,
+                  externalAsset: SwapAsset.usdc,
+                  payMode: true,
+                  activityTimestamp: null,
+                ),
+              );
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(row!.title, 'Paid');
+    expect(row!.subtitle, 'from shielded ZEC · Ethereum');
+    expect(row!.leadingIconName, AppIcons.coins);
+    expect(row!.amountText, '100.00 USDC');
+    expect(row!.statusText, 'Completed');
+    expect(row!.leadingProgressValue, isNull);
+    expect(row!.childRows, isEmpty);
+  });
+
   testWidgets('mobile swap activity rows compact large amounts', (
     tester,
   ) async {
@@ -318,6 +357,7 @@ void main() {
         direction: SwapDirection.zecToExternal,
         externalAsset: SwapAsset.usdc,
         depositTxHash: 'zec-deposit-txid',
+        payMode: true,
         createdAt: createdAt,
         updatedAt: updatedAt,
         lastStatusCheckedAt: checkedAt,
@@ -332,6 +372,7 @@ void main() {
     expect(item.direction, SwapDirection.zecToExternal);
     expect(item.externalAsset, SwapAsset.usdc);
     expect(item.depositTxHash, 'zec-deposit-txid');
+    expect(item.payMode, isTrue);
     expect(item.activityTimestamp, createdAt);
     expect(item.lastStatusCheckedAt, checkedAt);
   });

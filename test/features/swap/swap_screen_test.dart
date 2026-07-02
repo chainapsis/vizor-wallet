@@ -286,6 +286,59 @@ void main() {
     );
   });
 
+  testWidgets('pay review uses payment copy and payment detail rows', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _themeHarnessWithOverlay(
+        _reviewTestPage(
+          direction: SwapDirection.zecToExternal,
+          sellAsset: SwapAsset.zec,
+          receiveAsset: SwapAsset.usdc,
+          sellAmountText: '4.0000 ZEC',
+          receiveAmountText: '100.00 USDC',
+          payMode: true,
+        ),
+      ),
+    );
+
+    expect(find.text('Confirm payment'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pay_review_summary')), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap_review_info')), findsNothing);
+    expect(find.text('You pay'), findsOneWidget);
+    expect(find.text('Recipient gets'), findsOneWidget);
+    expect(find.text('Privately, from shielded balance'), findsOneWidget);
+    expect(find.text('Arrives in'), findsNothing);
+    expect(find.text('Rate'), findsOneWidget);
+    expect(find.text('Network + conversion fees'), findsNothing);
+    expect(find.text('Included in shown rate'), findsNothing);
+    expect(find.text('Quote holds'), findsOneWidget);
+    expect(find.text('Review swap'), findsNothing);
+    expect(find.text('Slippage tolerance'), findsNothing);
+    expect(find.text('Guaranteed minimum'), findsNothing);
+    expect(find.text('Swap fee'), findsNothing);
+  });
+
+  testWidgets('pay review action uses the output asset amount', (tester) async {
+    await tester.pumpWidget(
+      _themeHarness(
+        SwapReviewPageActions(
+          expired: false,
+          starting: false,
+          sendsZec: true,
+          payMode: true,
+          receiveAmountText: '100.00 USDC',
+          onCancelReview: () {},
+          onReviewAgain: () {},
+          onStartIntent: () {},
+        ),
+      ),
+    );
+
+    expect(find.text('Pay 100.00 USDC'), findsOneWidget);
+    expect(find.text('Confirm swap'), findsNothing);
+  });
+
   testWidgets('deposit tokens countdown starts in the final fifteen minutes', (
     tester,
   ) async {
@@ -974,7 +1027,7 @@ void main() {
       findsOneWidget,
     );
 
-    for (final tab in ['Swap Progress', 'Transaction details']) {
+    for (final tab in ['Swap progress', 'Transaction details']) {
       expect(
         find.ancestor(
           of: find.text(tab),
@@ -996,6 +1049,42 @@ void main() {
     expect(feeLabelRect.left, lessThan(feeValueRect.left));
     expect((refundLabelRect.left - depositLabelRect.left).abs(), lessThan(1));
     expect((feeLabelRect.left - refundLabelRect.left).abs(), lessThan(1));
+  });
+
+  testWidgets('pay activity status uses payment-first summary', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _themeHarnessWithOverlay(
+        _statusTestPage(
+          title: 'Payment complete',
+          paymentMode: true,
+          showTabs: false,
+          payAsset: SwapAsset.zec,
+          receiveAsset: SwapAsset.usdc,
+          payLabel: 'You paid',
+          receiveLabel: 'Recipient received',
+          payDetailText: 'Privately, from shielded balance',
+          receiveDetailText: 'To: 0x5290840 ... 4169ee7 on Ethereum',
+          payAmountText: '4.0000 ZEC',
+          receiveAmountText: '100.00 USDC',
+          statusLabel: 'Completed',
+          badgeKind: SwapStatusBadgeKind.completed,
+          details: const [
+            SwapStatusDetailRowData(label: 'You paid', value: '4.0000 ZEC'),
+            SwapStatusDetailRowData(label: 'Rate', value: '1 ZEC = 25 USDC'),
+            SwapStatusDetailRowData(label: 'Fees', value: '0.1800 ZEC'),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('pay_status_summary')), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap_review_info')), findsNothing);
+    expect(find.text('Recipient received'), findsOneWidget);
+    expect(find.text('100.00 USDC'), findsOneWidget);
+    expect(find.text('You paid'), findsWidgets);
+    expect(find.text('4.0000 ZEC'), findsWidgets);
+    expect(find.text('Timestamp'), findsNothing);
   });
 
   testWidgets('status details render address book labels with addresses', (
@@ -2292,6 +2381,57 @@ void main() {
     expect(sessionStore.loadPreferencesCount, 2);
   });
 
+  testWidgets('pay asset selection does not overwrite swap preferences', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialPreferences: const SwapComposerPreferences(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.dai,
+        slippageBps: 150,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+
+    expect(container.read(swapStateProvider).externalAsset, SwapAsset.dai);
+    final savesBeforePay = sessionStore.savePreferencesCount;
+
+    notifier.preparePayFromShieldedZec();
+    notifier.selectPayExternalAsset(SwapAsset.sol);
+    await tester.pump();
+
+    expect(container.read(swapStateProvider).payMode, isTrue);
+    expect(container.read(swapStateProvider).externalAsset, SwapAsset.sol);
+    expect(sessionStore.savePreferencesCount, savesBeforePay);
+
+    notifier.prepareSwapComposer();
+    await tester.pump();
+
+    final restoredSwapState = container.read(swapStateProvider);
+    expect(restoredSwapState.payMode, isFalse);
+    expect(restoredSwapState.externalAsset, SwapAsset.dai);
+    expect(restoredSwapState.slippageBps, 150);
+    expect(sessionStore.savePreferencesCount, savesBeforePay);
+  });
+
   testWidgets('account switch closes open swap activity detail', (
     tester,
   ) async {
@@ -3245,7 +3385,7 @@ void main() {
     );
     expect(find.byKey(const ValueKey('swap_status_title')), findsOneWidget);
     expect(find.text('Swap in progress...'), findsOneWidget);
-    expect(find.text('Swap Progress'), findsOneWidget);
+    expect(find.text('Swap progress'), findsOneWidget);
     expect(find.text('Transaction details'), findsOneWidget);
     expect(find.text('Activity detail'), findsNothing);
     expect(find.byKey(const ValueKey('swap_review_info')), findsOneWidget);
@@ -4258,7 +4398,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Incomplete deposit'), findsWidgets);
-    // An incomplete deposit is non-terminal, so it keeps the Swap Progress /
+    // An incomplete deposit is non-terminal, so it keeps the Swap progress /
     // Transaction details tabs rather than a terminal status badge.
     expect(find.byKey(const ValueKey('swap_status_tabs')), findsOneWidget);
 
@@ -7938,6 +8078,7 @@ Widget _reviewTestPage({
   required String sellAmountText,
   required String receiveAmountText,
   ValueChanged<String>? onCopy,
+  bool payMode = false,
 }) {
   final externalAsset = direction.sendsZec ? receiveAsset : sellAsset;
   return SwapReviewPageContent(
@@ -7972,6 +8113,7 @@ Widget _reviewTestPage({
     expired: false,
     amountWarning: null,
     startError: null,
+    payMode: payMode,
   );
 }
 
@@ -7979,6 +8121,8 @@ Widget _statusTestPage({
   String title = 'Swap in progress...',
   SwapAsset payAsset = SwapAsset.usdc,
   SwapAsset receiveAsset = SwapAsset.zec,
+  String payLabel = "You're paying",
+  String receiveLabel = "You're receiving",
   String payDetailText = r'$110.24',
   String receiveDetailText = r'$110.24',
   String payAmountText = '999.99 USDC',
@@ -7988,6 +8132,7 @@ Widget _statusTestPage({
   Duration progressAdvanceInterval = const Duration(milliseconds: 520),
   SwapStatusBadgeKind badgeKind = SwapStatusBadgeKind.liveQuote,
   SwapStatusTab activeTab = SwapStatusTab.progress,
+  bool paymentMode = false,
   bool showTabs = true,
   List<SwapStatusDetailRowData>? details,
 }) {
@@ -7999,6 +8144,8 @@ Widget _statusTestPage({
       title: title,
       payAsset: payAsset,
       receiveAsset: receiveAsset,
+      payLabel: payLabel,
+      receiveLabel: receiveLabel,
       payDetailText: payDetailText,
       receiveDetailText: receiveDetailText,
       payAmountText: payAmountText,
@@ -8009,6 +8156,7 @@ Widget _statusTestPage({
       progressAdvanceInterval: progressAdvanceInterval,
       activeTab: activeTab,
       showTabs: showTabs,
+      paymentMode: paymentMode,
       steps: const [
         SwapStatusStepData(
           title: 'USDC source deposit',

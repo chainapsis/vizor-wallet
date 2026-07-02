@@ -34,6 +34,8 @@ class SwapStatusPageContent extends StatefulWidget {
     required this.receiveAsset,
     required this.payAmountText,
     required this.receiveAmountText,
+    this.payLabel = "You're paying",
+    this.receiveLabel = "You're receiving",
     required this.payDetailText,
     required this.receiveDetailText,
     required this.statusLabel,
@@ -45,6 +47,8 @@ class SwapStatusPageContent extends StatefulWidget {
     this.activeTab = SwapStatusTab.progress,
     this.steps = const [],
     this.details = const [],
+    this.progressTabLabel = 'Swap progress',
+    this.paymentMode = false,
     this.showTabs = true,
     this.onTabChanged,
     this.onCopy,
@@ -56,6 +60,8 @@ class SwapStatusPageContent extends StatefulWidget {
   final SwapAsset receiveAsset;
   final String payAmountText;
   final String receiveAmountText;
+  final String payLabel;
+  final String receiveLabel;
 
   /// Bottom line of the pay summary row: fiat value, or the refund address
   /// line for external→ZEC swaps.
@@ -78,6 +84,8 @@ class SwapStatusPageContent extends StatefulWidget {
   final SwapStatusTab activeTab;
   final List<SwapStatusStepData> steps;
   final List<SwapStatusDetailRowData> details;
+  final String progressTabLabel;
+  final bool paymentMode;
   final bool showTabs;
   final ValueChanged<SwapStatusTab>? onTabChanged;
 
@@ -223,23 +231,35 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
             ),
           ),
           const SizedBox(height: AppSpacing.base),
-          SwapReviewInfo(
-            pay: SwapReviewInfoSideData(
-              asset: widget.payAsset,
-              label: "You're paying",
-              amountText: widget.payAmountText,
-              detailText: widget.payDetailText,
-              detailCopyText: widget.payDetailCopyText,
+          if (widget.paymentMode)
+            _PaymentStatusSummary(
+              payLabel: widget.payLabel,
+              payAmountText: widget.payAmountText,
+              payDetailText: widget.payDetailText,
+              receiveLabel: widget.receiveLabel,
+              receiveAmountText: widget.receiveAmountText,
+              receiveDetailText: widget.receiveDetailText,
+              receiveDetailCopyText: widget.receiveDetailCopyText,
+              onCopy: widget.onCopy,
+            )
+          else
+            SwapReviewInfo(
+              pay: SwapReviewInfoSideData(
+                asset: widget.payAsset,
+                label: widget.payLabel,
+                amountText: widget.payAmountText,
+                detailText: widget.payDetailText,
+                detailCopyText: widget.payDetailCopyText,
+              ),
+              receive: SwapReviewInfoSideData(
+                asset: widget.receiveAsset,
+                label: widget.receiveLabel,
+                amountText: widget.receiveAmountText,
+                detailText: widget.receiveDetailText,
+                detailCopyText: widget.receiveDetailCopyText,
+              ),
+              onCopy: widget.onCopy,
             ),
-            receive: SwapReviewInfoSideData(
-              asset: widget.receiveAsset,
-              label: "You're receiving",
-              amountText: widget.receiveAmountText,
-              detailText: widget.receiveDetailText,
-              detailCopyText: widget.receiveDetailCopyText,
-            ),
-            onCopy: widget.onCopy,
-          ),
           const SizedBox(height: AppSpacing.base),
           if (widget.showTabs) ...[
             // The Figma `Swap Tabs` frame nominally adds a 12px inset above
@@ -250,6 +270,7 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
             // instance), so the inset is intentionally dropped.
             _StatusTabs(
               activeTab: widget.activeTab,
+              progressLabel: widget.progressTabLabel,
               onChanged: widget.onTabChanged,
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -273,6 +294,135 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
   }
 }
 
+class _PaymentStatusSummary extends StatelessWidget {
+  const _PaymentStatusSummary({
+    required this.payLabel,
+    required this.payAmountText,
+    required this.payDetailText,
+    required this.receiveLabel,
+    required this.receiveAmountText,
+    required this.receiveDetailText,
+    required this.receiveDetailCopyText,
+    required this.onCopy,
+  });
+
+  final String payLabel;
+  final String payAmountText;
+  final String payDetailText;
+  final String receiveLabel;
+  final String receiveAmountText;
+  final String receiveDetailText;
+  final String? receiveDetailCopyText;
+  final ValueChanged<String>? onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final copyable =
+        receiveDetailCopyText != null && receiveDetailCopyText!.isNotEmpty;
+    return ReviewWrapCard(
+      key: const ValueKey('pay_status_summary'),
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              receiveLabel,
+              textAlign: TextAlign.center,
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.text.secondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                receiveAmountText,
+                maxLines: 1,
+                style: appSerifDisplayStyle(
+                  color: colors.text.accent,
+                ).copyWith(fontSize: 34, height: 1),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: copyable && onCopy != null
+                  ? () => onCopy!(receiveDetailCopyText!)
+                  : null,
+              child: Text(
+                receiveDetailText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const ReviewWrapDivider(),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    payLabel,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      payAmountText,
+                      maxLines: 1,
+                      style: appSerifDisplayStyle(
+                        color: colors.text.accent,
+                      ).copyWith(fontSize: 20, height: 1),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Row(
+              children: [
+                Container(
+                  width: 9,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    color: colors.icon.accent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Text(
+                    payDetailText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 /// Figma 'Review Wrap': the raised, rounded detail card that wraps the
 /// progress route and the detail rows. Built on the core [ReviewWrapCard].
 class _SwapDetailCard extends StatelessWidget {
@@ -290,9 +440,14 @@ class _SwapDetailCard extends StatelessWidget {
 }
 
 class _StatusTabs extends StatelessWidget {
-  const _StatusTabs({required this.activeTab, required this.onChanged});
+  const _StatusTabs({
+    required this.activeTab,
+    required this.progressLabel,
+    required this.onChanged,
+  });
 
   final SwapStatusTab activeTab;
+  final String progressLabel;
   final ValueChanged<SwapStatusTab>? onChanged;
 
   @override
@@ -305,7 +460,7 @@ class _StatusTabs extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             _StatusTabLabel(
-              label: 'Swap Progress',
+              label: progressLabel,
               active: activeTab == SwapStatusTab.progress,
               onTap: () => onChanged?.call(SwapStatusTab.progress),
             ),
