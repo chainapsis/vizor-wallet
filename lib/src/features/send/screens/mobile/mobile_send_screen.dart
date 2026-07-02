@@ -1377,43 +1377,51 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   onTap: () => unawaited(_openScanner()),
                   child: SizedBox(
                     height: 44,
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 40,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: colors.background.neutralSubtleOpacity,
-                            borderRadius: BorderRadius.circular(AppRadii.full),
-                          ),
-                          child: Center(
-                            child: AppIcon(
-                              AppIcons.qr,
-                              size: 16,
-                              color: colors.icon.accent,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppAssetSize.padding,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            key: const ValueKey('mobile_send_scan_icon_frame'),
+                            width: AppAssetSize.size,
+                            height: AppAssetSize.size,
+                            decoration: BoxDecoration(
+                              color: colors.background.neutralSubtleOpacity,
+                              borderRadius: BorderRadius.circular(
+                                AppRadii.full,
+                              ),
+                            ),
+                            child: Center(
+                              child: AppIcon(
+                                AppIcons.qr,
+                                size: AppAssetSize.icon,
+                                color: colors.icon.accent,
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: AppSpacing.s),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _RecipientLineText(
-                                'Scan a QR Code',
-                                color: colors.text.accent,
-                              ),
-                              const SizedBox(height: AppSpacing.xxs),
-                              _RecipientLineText(
-                                'Scan an address using camera',
-                                color: colors.text.secondary,
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ],
+                          const SizedBox(width: AppSpacing.s),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _RecipientLineText(
+                                  'Scan a QR Code',
+                                  color: colors.text.accent,
+                                ),
+                                const SizedBox(height: AppSpacing.xxs),
+                                _RecipientLineText(
+                                  'Scan an address using camera',
+                                  color: colors.text.secondary,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
