@@ -12,8 +12,11 @@ flutter_rust_bridge = "=2.11.1"
 # Zcash core
 zcash_primitives = "0.28"
 zcash_address = "0.12"
-zcash_keys = { version = "0.14", features = ["orchard"] }
-zcash_protocol = "0.9"
+# `unstable-frost` exposes `UnifiedFullViewingKey::from_orchard_fvk`, which the
+# zwap joint-UFVK encode path (vendored from solver-v3) needs.
+zcash_keys = { version = "0.14", features = ["orchard", "unstable-frost"] }
+# `local-consensus` provides `LocalNetwork` for regtest UFVK/address encoding.
+zcash_protocol = { version = "0.9", features = ["local-consensus"] }
 transparent = { package = "zcash_transparent", version = "0.8" }
 zcash_script = "0.4.3"
 zcash_client_backend = { version = "0.23", features = [
@@ -27,8 +30,10 @@ zcash_client_backend = { version = "0.23", features = [
 zcash_client_sqlite = { version = "0.21", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
 zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "38b0c738ee8773382a817a00166791210d4dcc6d", package = "zcash_voting" }
-# Must match versions used by zcash_client_sqlite to avoid type conflicts
-orchard = "0.14"
+# Must match versions used by zcash_client_sqlite to avoid type conflicts.
+# `unstable-frost` is additive; the zwap joint-spend path (vendored from
+# orchard-wasm) needs the pczt `Spend::alpha()` getter it exposes.
+orchard = { version = "0.14", features = ["unstable-frost"] }
 sapling-crypto = { version = "0.7", default-features = false, features = ["circuit"] }
 uuid = "1.1"
 zip32 = "0.2"
@@ -38,6 +43,29 @@ ff = "0.13"
 jubjub = "0.10"
 bls12_381 = "0.8"
 rand_core = "0.6"
+
+# zwap joint-note claim path (vendored from orchard-wasm). Versions track
+# orchard 0.14's own deps to keep a single unified graph.
+zcash_note_encryption = "0.4"
+blake2b_simd = "1"
+# zwap joint Orchard key + spend-key reconstruction (vendored from solver-v3).
+# reddsa is what orchard's redpallas wraps; num-bigint for field reductions.
+reddsa = "0.5.2"
+num-bigint = "0.4"
+num-traits = "0.2"
+group = "0.13"
+# zwap EVM ASMR adaptor-signature crypto (e2z/z2e), vendored from
+# zwap-protocol-core::responder_crypto::adaptor — pure-Rust secp256k1 point math.
+k256 = { version = "0.13", features = ["ecdsa"] }
+anyhow = "1"
+# zwap BTC keys (lock refund/claim pubkeys, later BIP143 signing). 0.29 matches
+# zwap's solver + the `bitcoin` 0.32 crate the Phase-4 signing path will add.
+secp256k1 = { version = "0.29", features = ["std", "rand-std", "recovery"] }
+# zwap orderbook identity/auth: the wallet seed IS the ed25519 secret key (the
+# OB identity), matching the SDK's `ed25519PubHexFromSeed`/`signChallengeWithSeed`.
+ed25519-dalek = "2"
+# zwap e2z EVM leg: keccak256 for HTLC/proxy digests + CREATE2 deposit address.
+sha3 = "0.10"
 
 # Proofs
 zcash_proofs = "0.28"
