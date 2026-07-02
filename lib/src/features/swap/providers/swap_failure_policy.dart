@@ -13,6 +13,7 @@ enum SwapFailureOperation {
 
 enum SwapFailureCategory {
   unsupportedAsset,
+  amountTooLow,
   amountPrecision,
   invalidRouteOrAddress,
   noQuoteOrLiquidity,
@@ -20,6 +21,7 @@ enum SwapFailureCategory {
   networkTimeout,
   unverifiedResponse,
   retryLater,
+  zecDepositFunding,
   walletPreflight,
   depositNotFound,
   depositRejected,
@@ -45,6 +47,11 @@ SwapFailureCategory swapFailureCategory(
     return _oneClickCategory(operation, error);
   }
 
+  if (operation == SwapFailureOperation.sendZecDeposit &&
+      _isZecDepositFundingError(error)) {
+    return SwapFailureCategory.zecDepositFunding;
+  }
+
   return switch (operation) {
     SwapFailureOperation.sendZecDeposit => SwapFailureCategory.walletPreflight,
     SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
@@ -60,13 +67,17 @@ SwapFailureCategory _oneClickCategory(
   if (_isUnsupportedAssetError(error)) {
     return SwapFailureCategory.unsupportedAsset;
   }
-  if (_isAmountPrecisionError(error)) {
+  final isQuoteFailure = operation == SwapFailureOperation.quote;
+  if (isQuoteFailure && _isAmountTooLowError(error)) {
+    return SwapFailureCategory.amountTooLow;
+  }
+  if (isQuoteFailure && _isAmountPrecisionError(error)) {
     return SwapFailureCategory.amountPrecision;
   }
   if (_isUnverifiedResponseError(error)) {
     return SwapFailureCategory.unverifiedResponse;
   }
-  if (_isNoQuoteOrLiquidityError(error)) {
+  if (isQuoteFailure && _isNoQuoteOrLiquidityError(error)) {
     return SwapFailureCategory.noQuoteOrLiquidity;
   }
 
@@ -99,12 +110,15 @@ String _messageFor(
 ) {
   return switch (category) {
     SwapFailureCategory.unsupportedAsset => _unsupportedAssetMessage(operation),
+    SwapFailureCategory.amountTooLow =>
+      'Amount is too low for this swap.\nTry a larger amount.',
     SwapFailureCategory.amountPrecision =>
       'Amount has too many decimal places.\nUse fewer decimals and try again.',
     SwapFailureCategory.invalidRouteOrAddress =>
       'This route or address was rejected.\nEdit the details and request a new quote.',
     SwapFailureCategory.noQuoteOrLiquidity =>
-      'No quote is available for this route or amount.\nTry a smaller amount or another asset.',
+      'No quote is available for this route or amount.\n'
+          'Adjust the amount, slippage, or asset and try again.',
     SwapFailureCategory.serviceUnavailable => _serviceUnavailableMessage(
       operation,
     ),
@@ -113,6 +127,9 @@ String _messageFor(
       operation,
     ),
     SwapFailureCategory.retryLater => _retryLaterMessage(operation),
+    SwapFailureCategory.zecDepositFunding =>
+      'Not enough spendable ZEC to cover this swap and its network fee.\n'
+          'Try a smaller amount or use Max.',
     SwapFailureCategory.walletPreflight =>
       'ZEC deposit could not be prepared.\nCheck your balance and try again.',
     SwapFailureCategory.depositNotFound =>
@@ -184,19 +201,30 @@ String _unknownMessage(SwapFailureOperation operation) {
 }
 
 bool _isUnsupportedAssetError(OneClickApiException error) {
-  final message = error.message.toLowerCase();
+  final message = _oneClickSearchableMessage(error);
   return message.contains('does not currently list') ||
-      message.contains('unsupported 1click status pair');
+      message.contains('unsupported 1click status pair') ||
+      message.contains('tokenin is not valid') ||
+      message.contains('tokenout is not valid');
+}
+
+bool _isAmountTooLowError(OneClickApiException error) {
+  final message = _oneClickSearchableMessage(error);
+  return message.contains('amount is too low') ||
+      message.contains('try at least') ||
+      message.contains('no quotes found') ||
+      message.contains('below minimum') ||
+      (message.contains('minimum') && message.contains('amount'));
 }
 
 bool _isAmountPrecisionError(OneClickApiException error) {
-  final message = error.message.toLowerCase();
+  final message = _oneClickSearchableMessage(error);
   return message.contains('amount exceeds token precision') ||
       message.contains('too many decimal');
 }
 
 bool _isUnverifiedResponseError(OneClickApiException error) {
-  final message = error.message.toLowerCase();
+  final message = _oneClickSearchableMessage(error);
   return message.contains('did not match the requested route') ||
       message.contains('malformed 1click') ||
       message.contains('expected a json') ||
@@ -205,8 +233,9 @@ bool _isUnverifiedResponseError(OneClickApiException error) {
 }
 
 bool _isNoQuoteOrLiquidityError(OneClickApiException error) {
-  final message = error.message.toLowerCase();
+  final message = _oneClickSearchableMessage(error);
   return message.contains('liquidity') ||
+      message.contains('failed to get quote') ||
       message.contains('no quote') ||
       message.contains('no route') ||
       message.contains('route not found') ||
@@ -214,4 +243,17 @@ bool _isNoQuoteOrLiquidityError(OneClickApiException error) {
       message.contains('market maker') ||
       message.contains('cannot fulfill') ||
       message.contains("can't fulfill");
+}
+
+bool _isZecDepositFundingError(Object error) {
+  final message = error.toString().toLowerCase();
+  return message.contains('insufficient balance') ||
+      message.contains('insufficient funds');
+}
+
+String _oneClickSearchableMessage(OneClickApiException error) {
+  return [
+    error.providerMessage,
+    error.message,
+  ].whereType<String>().join(' ').toLowerCase();
 }
