@@ -208,7 +208,7 @@ class _ImportBirthdayCalendarPanelState
     final isMobile = kAppFormFactor == AppFormFactor.mobile;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: colors.surface.input,
+        color: colors.surface.input.primary,
         borderRadius: BorderRadius.circular(
           isMobile ? AppRadii.medium : AppRadii.large,
         ),

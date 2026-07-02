@@ -751,13 +751,13 @@ class _FieldShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    // Raised white card (surface.input fill, radius 16, layered subtle
+    // Raised white card (surface.input.primary fill, radius 16, layered subtle
     // shadow) with a focus-only inverse outline — mirrors MobileTextField.
     return Container(
       height: AppInputSizing.height,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
       decoration: BoxDecoration(
-        color: colors.surface.input,
+        color: colors.surface.input.primary,
         borderRadius: BorderRadius.circular(AppInputSizing.radius),
         border: Border.all(
           color: focused ? colors.background.inverse : const Color(0x00000000),

@@ -846,9 +846,9 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
     final shellColor = isInvalidUnfocused
         ? Color.alphaBlend(
             colors.background.utilityDestructiveAlphaSubtle,
-            colors.surface.input,
+            colors.surface.input.primary,
           )
-        : colors.surface.input;
+        : colors.surface.input.primary;
     final borderColor = isInvalidUnfocused
         ? colors.border.utilityDestructiveSubtle
         : isFocused

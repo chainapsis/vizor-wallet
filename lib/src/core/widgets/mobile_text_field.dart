@@ -6,7 +6,7 @@ import 'package:flutter/widgets.dart';
 import '../theme/app_theme.dart';
 
 /// The shared single-line mobile text field (Figma `_Modal Type` field
-/// 4755:84371 / 4755:85337): a flat `surface.input` box sized by
+/// 4755:84371 / 4755:85337): a flat `surface.input.primary` box sized by
 /// [AppInputSizing] (60px tall, radius 16 on mobile), label-m Medium text, NO
 /// visible border by default and a bright `background.inverse` outline only
 /// while focused, over the layered surface shadow — the same shell the
@@ -149,7 +149,7 @@ class _MobileTextFieldState extends State<MobileTextField> {
       // AppTextField shell.
       height: widget.height ?? AppInputSizing.height,
       decoration: BoxDecoration(
-        color: widget.backgroundColor ?? colors.surface.input,
+        color: widget.backgroundColor ?? colors.surface.input.primary,
         borderRadius: BorderRadius.circular(
           widget.radius ?? AppInputSizing.radius,
         ),

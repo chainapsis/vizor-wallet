@@ -5,8 +5,7 @@ import '../primitives.dart';
 /// Component-level surface colors.
 ///
 /// * [card] — Card components, list rows.
-/// * [input] — Text input background at rest.
-/// * [inputFocus] — Text input when focused.
+/// * [input] — Text input surface colors.
 /// * [nav] — Navigation rail background.
 /// * [navActive] — Active nav item indicator.
 /// * [tooltip] — Tooltip / popover background. Theme-invariant.
@@ -19,7 +18,6 @@ class AppSurfaceColors {
   const AppSurfaceColors({
     required this.card,
     required this.input,
-    required this.inputFocus,
     required this.nav,
     required this.navActive,
     required this.tooltip,
@@ -28,8 +26,7 @@ class AppSurfaceColors {
   });
 
   final Color card;
-  final Color input;
-  final Color inputFocus;
+  final AppInputSurfaceColors input;
   final Color nav;
   final Color navActive;
   final Color tooltip;
@@ -38,8 +35,7 @@ class AppSurfaceColors {
 
   static const dark = AppSurfaceColors(
     card: Primitives.p100Dark,
-    input: Primitives.p50Dark,
-    inputFocus: Primitives.p100Dark,
+    input: AppInputSurfaceColors.dark,
     nav: Primitives.p50Dark,
     navActive: Primitives.p150Dark,
     tooltip: Primitives.p200Dark,
@@ -49,8 +45,7 @@ class AppSurfaceColors {
 
   static const light = AppSurfaceColors(
     card: Primitives.p50Light,
-    input: Primitives.p0Light,
-    inputFocus: Primitives.p50Light,
+    input: AppInputSurfaceColors.light,
     nav: Primitives.p0Light,
     navActive: Primitives.p100Light,
     // Tooltip is the same concrete value in both modes; picking p800Light here
@@ -58,5 +53,30 @@ class AppSurfaceColors {
     tooltip: Primitives.p800Light,
     qrCode: Primitives.p0Light,
     scrollbarThumb: Primitives.p150Light,
+  );
+}
+
+/// Text input surface colors grouped by field variant/state.
+class AppInputSurfaceColors {
+  const AppInputSurfaceColors({
+    required this.primary,
+    required this.secondary,
+    required this.focus,
+  });
+
+  final Color primary;
+  final Color secondary;
+  final Color focus;
+
+  static const dark = AppInputSurfaceColors(
+    primary: Primitives.p50Dark,
+    secondary: Primitives.p150Dark,
+    focus: Primitives.p100Dark,
+  );
+
+  static const light = AppInputSurfaceColors(
+    primary: Primitives.p0Light,
+    secondary: Primitives.p100Light,
+    focus: Primitives.p50Light,
   );
 }
