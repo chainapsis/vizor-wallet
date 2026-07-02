@@ -9,11 +9,38 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
+
+const _validMnemonic =
+    'abandon ability able about above absent absorb abstract absurd abuse access accident';
 
 Widget _app(String initialLocation) {
   final router = GoRouter(
     initialLocation: initialLocation,
     routes: mobileOnboardingRoutes(),
+  );
+  return ProviderScope(
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+    ),
+  );
+}
+
+Widget _entryAppWithBirthdayProbe() {
+  final router = GoRouter(
+    initialLocation: '/import',
+    routes: [
+      GoRoute(path: '/import', builder: (_, _) => const MobileImportScreen()),
+      GoRoute(
+        path: '/import/birthday',
+        builder: (_, state) {
+          final args = state.extra as ImportBirthdayArgs;
+          return Scaffold(body: Text('Birthday: ${args.mnemonic}'));
+        },
+      ),
+    ],
   );
   return ProviderScope(
     child: MaterialApp.router(
@@ -40,6 +67,12 @@ void _mockClipboard(WidgetTester tester, String? text) {
 }
 
 void main() {
+  setUpAll(() {
+    RustLib.initMock(api: _RustApiFake());
+  });
+
+  tearDownAll(RustLib.dispose);
+
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
@@ -117,6 +150,25 @@ void main() {
     expect(find.textContaining('"one"'), findsNothing);
   });
 
+  testWidgets('confirming a valid paste opens birthday directly', (
+    tester,
+  ) async {
+    _mockClipboard(tester, _validMnemonic);
+    await tester.pumpWidget(_entryAppWithBirthdayProbe());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('mobile_import_confirm')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Import'), findsNothing);
+    expect(find.text('Birthday: $_validMnemonic'), findsOneWidget);
+  });
+
   testWidgets('an empty clipboard surfaces a toast', (tester) async {
     _mockClipboard(tester, '   ');
     await tester.pumpWidget(_app('/import'));
@@ -129,4 +181,18 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     expect(find.text('Clipboard is empty'), findsNothing);
   });
+}
+
+class _RustApiFake implements RustLibApi {
+  @override
+  List<String> crateApiWalletMnemonicWordList() => _validMnemonic.split(' ');
+
+  @override
+  bool crateApiWalletValidateMnemonic({required String mnemonic}) {
+    final count = mnemonic.trim().split(RegExp(r'\s+')).length;
+    return kMnemonicWordCounts.contains(count);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => Future<void>.value();
 }

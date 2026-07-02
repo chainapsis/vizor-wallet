@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -65,6 +66,13 @@ Future<void> _enter(WidgetTester tester, String digits) async {
   }
 }
 
+double _stepsProgress(WidgetTester tester) {
+  final fill = tester.widget<FractionallySizedBox>(
+    find.byType(FractionallySizedBox).first,
+  );
+  return fill.widthFactor!;
+}
+
 void main() {
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -90,6 +98,24 @@ void main() {
     final confirmTitle = tester.widget<Text>(find.text('Confirm Passcode'));
     expect(confirmTitle.style?.fontSize, AppTypography.displayLarge.fontSize);
     expect(find.text('Re-enter your passcode.'), findsOneWidget);
+  });
+
+  testWidgets('create passcode progress follows the create flow', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(7), 0.0001));
+  });
+
+  testWidgets('import passcode progress follows the compact import flow', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _importApp(accountNotifier: _RecordingAccountNotifier()),
+    );
+    await tester.pump();
+    expect(_stepsProgress(tester), closeTo(mobileImportProgress(3), 0.0001));
   });
 
   testWidgets('a mismatched confirmation restarts with an error', (

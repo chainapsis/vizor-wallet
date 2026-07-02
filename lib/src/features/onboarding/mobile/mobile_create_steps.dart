@@ -4,20 +4,10 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
 
-/// Create-flow step ordering for the steps-nav progress track:
-/// intro → address types → things to know → secret passphrase →
-/// passcode.
-const kMobileCreateStepCount = 5;
-
-/// Track fill for step N. Denominator is one past the step count so the
-/// track is never empty on the first step nor full while the last step
-/// is still in progress (a full bar reads as "done" — the Figma frames
-/// always show a partial fill).
-double mobileCreateProgress(int step) => step / (kMobileCreateStepCount + 1);
-
-/// Step 1 — Figma `Onboarding 1 Intro` (4394:78213).
+/// Step 3 — Figma `Onboarding 1 Intro` (4394:78213).
 class MobileOnboardingIntroScreen extends StatelessWidget {
   const MobileOnboardingIntroScreen({super.key});
 
@@ -25,7 +15,7 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileOnboardingStepScaffold(
-      progress: mobileCreateProgress(1),
+      progress: mobileCreateProgress(3),
       onBack: () => Navigator.of(context).maybePop(),
       title: 'The Shielded World',
       // Line break matches the Figma subtitle wrap.
@@ -79,7 +69,7 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
   }
 }
 
-/// Step 2 — Figma `Onboarding 2 Address Type` (4394:81701).
+/// Step 4 — Figma `Onboarding 2 Address Type` (4394:81701).
 class MobileAddressTypesScreen extends StatelessWidget {
   const MobileAddressTypesScreen({super.key});
 
@@ -87,7 +77,7 @@ class MobileAddressTypesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileOnboardingStepScaffold(
-      progress: mobileCreateProgress(2),
+      progress: mobileCreateProgress(4),
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Zcash Address Types',
       // Line break matches the Figma subtitle wrap.
@@ -132,7 +122,7 @@ class MobileAddressTypesScreen extends StatelessWidget {
   }
 }
 
-/// Step 3 — Figma `Onboarding 3 Things to know` (4394:81851).
+/// Step 5 — Figma `Onboarding 3 Things to know` (4394:81851).
 class MobileThingsToKnowScreen extends StatelessWidget {
   const MobileThingsToKnowScreen({super.key});
 
@@ -140,7 +130,7 @@ class MobileThingsToKnowScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileOnboardingStepScaffold(
-      progress: mobileCreateProgress(3),
+      progress: mobileCreateProgress(5),
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Things to know',
       subtitle: 'Before you dive in.',
