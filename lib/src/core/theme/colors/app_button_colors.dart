@@ -103,9 +103,9 @@ class AppSecondaryButtonColors {
   );
 
   static const light = AppSecondaryButtonColors(
-    bg: Primitives.p100Light,
-    bgHover: Primitives.p150Light,
-    bgPressed: Primitives.p150Light,
+    bg: Primitives.p0Light,
+    bgHover: Primitives.p100Light,
+    bgPressed: Primitives.p100Light,
     label: Primitives.p900Light,
   );
 }
