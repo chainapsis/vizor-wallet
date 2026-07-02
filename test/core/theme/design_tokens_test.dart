@@ -261,6 +261,15 @@ void main() {
     expect(dark.button.disabled.bg, const Color(0x334D5252));
     expect(dark.button.disabled.label, const Color(0x80858686));
 
+    expect(light.button.secondary.bg, Primitives.p0Light);
+    expect(light.button.secondary.bgHover, Primitives.p100Light);
+    expect(light.button.secondary.bgPressed, Primitives.p100Light);
+    expect(light.button.secondary.label, Primitives.p900Light);
+    expect(dark.button.secondary.bg, Primitives.p150Dark);
+    expect(dark.button.secondary.bgHover, Primitives.p200Dark);
+    expect(dark.button.secondary.bgPressed, Primitives.p200Dark);
+    expect(dark.button.secondary.label, Primitives.p800Dark);
+
     expect(light.button.destructive.bg, const Color(0xFF772E89));
     expect(light.button.destructive.bgHover, const Color(0xFF5E2673));
     expect(light.button.destructive.label, const Color(0xFFE6C5EC));
