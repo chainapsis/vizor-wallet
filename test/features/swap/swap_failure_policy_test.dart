@@ -18,25 +18,111 @@ void main() {
     );
   });
 
-  test(
-    'quote liquidity failures ask for a smaller amount or another asset',
-    () {
-      const error = OneClickApiException(
-        'No quote: insufficient liquidity from solver',
-        statusCode: 400,
-      );
+  test('quote liquidity failures ask the user to adjust swap details', () {
+    const error = OneClickApiException(
+      'No quote: insufficient liquidity from solver',
+      statusCode: 400,
+    );
 
-      expect(
-        swapFailureCategory(SwapFailureOperation.quote, error),
-        SwapFailureCategory.noQuoteOrLiquidity,
-      );
-      expect(
-        swapFailureMessage(SwapFailureOperation.quote, error),
-        'No quote is available for this route or amount.\n'
-        'Try a smaller amount or another asset.',
-      );
-    },
-  );
+    expect(
+      swapFailureCategory(SwapFailureOperation.quote, error),
+      SwapFailureCategory.noQuoteOrLiquidity,
+    );
+    expect(
+      swapFailureMessage(SwapFailureOperation.quote, error),
+      'No quote is available for this route or amount.\n'
+      'Adjust the amount, slippage, or asset and try again.',
+    );
+  });
+
+  test('quote amount minimum failures ask for a larger amount', () {
+    const error = OneClickApiException(
+      'NEAR Intents quote failed (400): '
+      '{"message":"Amount is too low for bridge, try at least 74256"}',
+      statusCode: 400,
+      providerMessage: 'Amount is too low for bridge, try at least 74256',
+    );
+
+    expect(
+      swapFailureCategory(SwapFailureOperation.quote, error),
+      SwapFailureCategory.amountTooLow,
+    );
+    expect(
+      swapFailureMessage(SwapFailureOperation.quote, error),
+      'Amount is too low for this swap.\nTry a larger amount.',
+    );
+  });
+
+  test('no quotes found failures follow the low amount guidance', () {
+    const error = OneClickApiException(
+      'NEAR Intents quote failed (400): {"message":"No quotes found"}',
+      statusCode: 400,
+      providerMessage: 'No quotes found',
+    );
+
+    expect(
+      swapFailureCategory(SwapFailureOperation.quote, error),
+      SwapFailureCategory.amountTooLow,
+    );
+    expect(
+      swapFailureMessage(SwapFailureOperation.quote, error),
+      'Amount is too low for this swap.\nTry a larger amount.',
+    );
+  });
+
+  test('failed to get quote failures stay in quote unavailable guidance', () {
+    const error = OneClickApiException(
+      'NEAR Intents quote failed (400): {"message":"Failed to get quote"}',
+      statusCode: 400,
+      providerMessage: 'Failed to get quote',
+    );
+
+    expect(
+      swapFailureCategory(SwapFailureOperation.quote, error),
+      SwapFailureCategory.noQuoteOrLiquidity,
+    );
+    expect(
+      swapFailureMessage(SwapFailureOperation.quote, error),
+      'No quote is available for this route or amount.\n'
+      'Adjust the amount, slippage, or asset and try again.',
+    );
+  });
+
+  test('low amount messages do not override status refresh guidance', () {
+    const error = OneClickApiException(
+      'NEAR Intents status failed (404): {"message":"No quotes found"}',
+      statusCode: 404,
+      providerMessage: 'No quotes found',
+    );
+
+    expect(
+      swapFailureCategory(SwapFailureOperation.refreshStatus, error),
+      SwapFailureCategory.depositNotFound,
+    );
+    expect(
+      swapFailureMessage(SwapFailureOperation.refreshStatus, error),
+      'Deposit is not indexed yet.\nCheck again in a few minutes.',
+    );
+  });
+
+  test('low amount messages do not override submit deposit guidance', () {
+    const error = OneClickApiException(
+      'NEAR Intents submit failed (422): '
+      '{"message":"Amount is too low for bridge, try at least 74256"}',
+      statusCode: 422,
+      providerMessage: 'Amount is too low for bridge, try at least 74256',
+    );
+
+    expect(
+      swapFailureCategory(SwapFailureOperation.submitDeposit, error),
+      SwapFailureCategory.depositRejected,
+    );
+    expect(
+      swapFailureMessage(SwapFailureOperation.submitDeposit, error),
+      'Deposit transaction was rejected.\n'
+      'Check the address, memo, and tx hash.',
+    );
+  });
 
   test('route rejection asks for corrected input', () {
     const error = OneClickApiException('invalid recipient', statusCode: 422);
@@ -198,19 +284,33 @@ void main() {
     );
   });
 
-  test(
-    'generic ZEC deposit failures are treated as wallet preflight issues',
-    () {
-      final error = StateError('insufficient balance');
+  test('ZEC deposit funding failures explain fee and spendable balance', () {
+    final error = Exception(
+      'Propose failed: Insufficient balance '
+      '(have 0, need 210000 including fee)',
+    );
 
-      expect(
-        swapFailureCategory(SwapFailureOperation.sendZecDeposit, error),
-        SwapFailureCategory.walletPreflight,
-      );
-      expect(
-        swapFailureMessage(SwapFailureOperation.sendZecDeposit, error),
-        'ZEC deposit could not be prepared.\nCheck your balance and try again.',
-      );
-    },
-  );
+    expect(
+      swapFailureCategory(SwapFailureOperation.sendZecDeposit, error),
+      SwapFailureCategory.zecDepositFunding,
+    );
+    expect(
+      swapFailureMessage(SwapFailureOperation.sendZecDeposit, error),
+      'Not enough spendable ZEC to cover this swap and its network fee.\n'
+      'Try a smaller amount or use Max.',
+    );
+  });
+
+  test('generic ZEC deposit failures keep the wallet preflight fallback', () {
+    final error = StateError('wallet database locked');
+
+    expect(
+      swapFailureCategory(SwapFailureOperation.sendZecDeposit, error),
+      SwapFailureCategory.walletPreflight,
+    );
+    expect(
+      swapFailureMessage(SwapFailureOperation.sendZecDeposit, error),
+      'ZEC deposit could not be prepared.\nCheck your balance and try again.',
+    );
+  });
 }

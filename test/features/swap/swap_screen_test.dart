@@ -6959,7 +6959,9 @@ void main() {
     expect(sessionStore.savedIntents, isEmpty);
     expect(find.byKey(const ValueKey('swap_review_panel')), findsOneWidget);
     expect(
-      find.textContaining('ZEC deposit could not be prepared.'),
+      find.textContaining(
+        'Not enough spendable ZEC to cover this swap and its network fee.',
+      ),
       findsOneWidget,
     );
     expect(find.textContaining('Insufficient balance'), findsNothing);

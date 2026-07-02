@@ -1075,7 +1075,12 @@ void main() {
       throwsA(
         isA<OneClickApiException>()
             .having((error) => error.operation, 'operation', 'quote')
-            .having((error) => error.statusCode, 'statusCode', 401),
+            .having((error) => error.statusCode, 'statusCode', 401)
+            .having(
+              (error) => error.providerMessage,
+              'providerMessage',
+              'jwt missing',
+            ),
       ),
     );
   });
