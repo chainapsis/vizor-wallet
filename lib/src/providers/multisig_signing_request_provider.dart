@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../main.dart' show log;
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/multisig.dart' as rust_multisig;
@@ -451,6 +452,13 @@ final multisigSendProposalServiceProvider =
 
 class MultisigSigningRequestsNotifier
     extends AsyncNotifier<List<MultisigSigningRequestRecord>> {
+  // Serializes every read-modify-write of the record list. The realtime
+  // inbox refresh and the round submissions both snapshot the whole list
+  // around slow network calls; without this queue the slower writer saves a
+  // stale snapshot and drops the other's fields — losing localStateJson
+  // (FROST nonces + cached idempotent envelopes) bricks the signing request.
+  Future<void> _mutations = Future<void>.value();
+
   MultisigSigningRequestStore get _store =>
       ref.read(multisigSigningRequestStoreProvider);
 
@@ -515,20 +523,42 @@ class MultisigSigningRequestsNotifier
   }) async {
     var proposalConsumed = false;
     try {
-      final material = await _materialWithFreshAccess(
-        await _materialForAccount(accountUuid),
-      );
+      // Everything before the PCZT is created must stay local: the finally
+      // block discards the proposal on a pre-consumption failure, so a
+      // transient network error here would make every retry fail with
+      // "Proposal not found". The token refresh runs after the record is
+      // persisted, where a failure retries from the stored record instead.
+      final material = await _materialForAccount(accountUuid);
       await _ensureLocalBackupCompleted(material);
-      final existing = await _recordForSendFlow(accountUuid, sendFlowId);
-      if (existing != null) {
-        proposalConsumed = true;
-        return _prepareOrSubmitCreate(existing, material);
-      }
       if (!selectedParticipantIds.contains(material.participantId)) {
         throw StateError('Requester must be included in selected signers.');
       }
       if (selectedParticipantIds.length != material.threshold) {
         throw StateError('Select exactly ${material.threshold} signers.');
+      }
+      final existing = await _recordForSendFlow(accountUuid, sendFlowId);
+      if (existing != null) {
+        proposalConsumed = true;
+        var record = existing;
+        // A retry may carry a different signer selection. As long as nothing
+        // was prepared or submitted yet, honor the latest selection instead
+        // of silently reusing the one from the failed attempt.
+        if (!existing.coordinatorSubmitted &&
+            !_hasPreparedCreate(existing) &&
+            !_sameParticipantIds(
+              existing.selectedParticipantIds,
+              selectedParticipantIds,
+            )) {
+          record = existing.copyWith(
+            selectedParticipantIds: [...selectedParticipantIds]..sort(),
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          );
+          await _upsert(record);
+        }
+        return _prepareOrSubmitCreate(
+          record,
+          await _materialWithFreshAccess(material),
+        );
       }
 
       final walletDbPath = dbPath ?? await getWalletDbPath();
@@ -565,7 +595,10 @@ class MultisigSigningRequestsNotifier
         coordinatorSubmitted: false,
       );
       await _upsert(record);
-      return _prepareOrSubmitCreate(record, material);
+      return _prepareOrSubmitCreate(
+        record,
+        await _materialWithFreshAccess(material),
+      );
     } finally {
       if (!proposalConsumed) {
         await _proposalService.discardProposal(
@@ -741,36 +774,40 @@ class MultisigSigningRequestsNotifier
     await _withAuthRetry(material, _refreshForAccountWithMaterial);
   }
 
-  Future<void> deleteForAccount(String accountUuid) async {
-    final current = await _currentRecords();
-    final cursorStorageIds = <String>{
-      for (final record in current)
-        if (record.accountUuid == accountUuid)
-          '${record.sessionId}:${record.localParticipantId}',
-    };
-    try {
-      final material = await _materialStore.read(accountUuid);
-      if (material != null) {
-        cursorStorageIds.add(material.storageId);
+  Future<void> deleteForAccount(String accountUuid) {
+    return _synchronized(() async {
+      final current = await _currentRecords();
+      final cursorStorageIds = <String>{
+        for (final record in current)
+          if (record.accountUuid == accountUuid)
+            '${record.sessionId}:${record.localParticipantId}',
+      };
+      try {
+        final material = await _materialStore.read(accountUuid);
+        if (material != null) {
+          cursorStorageIds.add(material.storageId);
+        }
+      } catch (_) {}
+      final next = [
+        for (final record in current)
+          if (record.accountUuid != accountUuid) record,
+      ];
+      if (next.length != current.length) {
+        await _save(next);
       }
-    } catch (_) {}
-    final next = [
-      for (final record in current)
-        if (record.accountUuid != accountUuid) record,
-    ];
-    if (next.length != current.length) {
-      await _save(next);
-    }
-    for (final storageId in cursorStorageIds) {
-      await _cursorStore.clear(storageId);
-    }
-    state = AsyncData(_sorted(next));
+      for (final storageId in cursorStorageIds) {
+        await _cursorStore.clear(storageId);
+      }
+      state = AsyncData(_sorted(next));
+    });
   }
 
-  Future<void> clearAll() async {
-    await _store.clearAll();
-    await _cursorStore.clearAll();
-    state = const AsyncData(<MultisigSigningRequestRecord>[]);
+  Future<void> clearAll() {
+    return _synchronized(() async {
+      await _store.clearAll();
+      await _cursorStore.clearAll();
+      state = const AsyncData(<MultisigSigningRequestRecord>[]);
+    });
   }
 
   Future<MultisigSigningRequestRecord> _prepareOrSubmitCreate(
@@ -1074,71 +1111,92 @@ class MultisigSigningRequestsNotifier
       deliverySecretKey: material.identity.deliverySecretKey,
       after: storedCursor.inboxCursor,
     );
-    final records = [...await _currentRecords()];
-    var changed = false;
-    for (final message in inbox.messages) {
-      final plaintext = message.plaintextJson;
-      if (plaintext == null || plaintext.trim().isEmpty) continue;
-      final decoded = jsonDecode(plaintext);
-      if (decoded is! Map) continue;
-      final body = decoded.cast<String, Object?>();
-      if (message.kind == 'tx_request') {
-        final incoming = MultisigSigningRequestRecord.fromTxRequestBody(
-          accountUuid: material.accountUuid,
-          localParticipantId: material.participantId,
-          body: body,
-          receivedAt: message.createdAt.toInt() * 1000,
-        );
-        if (incoming.signingRequestId.isEmpty) continue;
-        changed = _mergeRecord(records, incoming) || changed;
-        continue;
+    await _synchronized(() async {
+      final records = [...await _currentRecords()];
+      var changed = false;
+      for (final message in inbox.messages) {
+        // A single malformed message must not abort the refresh: the cursor
+        // would never advance past it and the inbox would be stuck forever.
+        try {
+          changed = _applyInboxMessage(records, material, message) || changed;
+        } catch (e) {
+          log(
+            'MultisigSigningRequests: skipping malformed inbox message '
+            '${message.messageId} (${message.kind}): $e',
+          );
+        }
       }
-
-      final relatedId = message.relatedId;
-      if (relatedId == null || relatedId.isEmpty) continue;
-      final index = records.indexWhere(
-        (entry) => entry.signingRequestId == relatedId,
-      );
-      if (index < 0) continue;
-      final participantId = message.fromParticipantId;
-      if (message.kind == 'tx_round1') {
-        final round1 = {
-          ...records[index].round1ParticipantIds,
-          participantId,
-        }.toList()..sort();
-        records[index] = records[index].copyWith(
-          round1ParticipantIds: round1,
-          updatedAt: message.createdAt.toInt() * 1000,
-        );
-        changed = true;
-      } else if (message.kind == 'tx_round2') {
-        final round2 = {
-          ...records[index].round2ParticipantIds,
-          participantId,
-        }.toList()..sort();
-        records[index] = records[index].copyWith(
-          round2ParticipantIds: round2,
-          updatedAt: message.createdAt.toInt() * 1000,
-        );
-        changed = true;
-      } else if (message.kind == 'broadcast_result') {
-        records[index] = records[index].copyWith(
-          state: 'completed',
-          broadcastTxid: body['txid'] as String?,
-          broadcastResultSent: true,
-          updatedAt: message.createdAt.toInt() * 1000,
-        );
-        changed = true;
+      if (changed) {
+        await _save(records);
+        state = AsyncData(_sorted(records));
       }
-    }
-    if (changed) {
-      await _save(records);
-      state = AsyncData(_sorted(records));
-    }
+    });
     await _cursorStore.advanceInboxCursor(
       material.storageId,
       inbox.cursor.toInt(),
     );
+  }
+
+  bool _applyInboxMessage(
+    List<MultisigSigningRequestRecord> records,
+    MultisigAccountMaterial material,
+    rust_multisig.ApiMultisigSigningMessage message,
+  ) {
+    final plaintext = message.plaintextJson;
+    if (plaintext == null || plaintext.trim().isEmpty) return false;
+    final decoded = jsonDecode(plaintext);
+    if (decoded is! Map) return false;
+    final body = decoded.cast<String, Object?>();
+    if (message.kind == 'tx_request') {
+      final incoming = MultisigSigningRequestRecord.fromTxRequestBody(
+        accountUuid: material.accountUuid,
+        localParticipantId: material.participantId,
+        body: body,
+        receivedAt: message.createdAt.toInt() * 1000,
+      );
+      if (incoming.signingRequestId.isEmpty) return false;
+      return _mergeRecord(records, incoming);
+    }
+
+    final relatedId = message.relatedId;
+    if (relatedId == null || relatedId.isEmpty) return false;
+    final index = records.indexWhere(
+      (entry) => entry.signingRequestId == relatedId,
+    );
+    if (index < 0) return false;
+    final participantId = message.fromParticipantId;
+    if (message.kind == 'tx_round1') {
+      final round1 = {
+        ...records[index].round1ParticipantIds,
+        participantId,
+      }.toList()..sort();
+      records[index] = records[index].copyWith(
+        round1ParticipantIds: round1,
+        updatedAt: message.createdAt.toInt() * 1000,
+      );
+      return true;
+    }
+    if (message.kind == 'tx_round2') {
+      final round2 = {
+        ...records[index].round2ParticipantIds,
+        participantId,
+      }.toList()..sort();
+      records[index] = records[index].copyWith(
+        round2ParticipantIds: round2,
+        updatedAt: message.createdAt.toInt() * 1000,
+      );
+      return true;
+    }
+    if (message.kind == 'broadcast_result') {
+      records[index] = records[index].copyWith(
+        state: 'completed',
+        broadcastTxid: body['txid'] as String?,
+        broadcastResultSent: true,
+        updatedAt: message.createdAt.toInt() * 1000,
+      );
+      return true;
+    }
+    return false;
   }
 
   Future<MultisigAccountMaterial> _materialForAccount(
@@ -1218,14 +1276,30 @@ class MultisigSigningRequestsNotifier
   }) async {
     if (!force && _hasFreshAccess(material)) return material;
 
-    final update = await _coordinator.refreshOrResumeAuth(
-      coordinatorUrl: material.coordinatorUrl,
-      sessionId: material.sessionId,
-      participantId: material.participantId,
-      refreshToken: material.refreshToken,
-      admissionSecretKey: material.identity.admissionSecretKey,
-      deliverySecretKey: material.identity.deliverySecretKey,
-    );
+    // Another component (realtime reconnect, pending-session refresh) may
+    // already have rotated the tokens; reuse its result instead of rotating
+    // the single-use refresh token again.
+    final stored = await _materialStore.read(material.accountUuid);
+    if (stored != null &&
+        stored.sessionId == material.sessionId &&
+        stored.participantId == material.participantId) {
+      if (stored.accessToken != material.accessToken &&
+          _hasFreshAccess(stored)) {
+        return stored;
+      }
+      material = stored;
+    }
+
+    final update = await ref
+        .read(multisigAuthRefresherProvider)
+        .refreshOrResume(
+          coordinatorUrl: material.coordinatorUrl,
+          sessionId: material.sessionId,
+          participantId: material.participantId,
+          refreshToken: material.refreshToken,
+          admissionSecretKey: material.identity.admissionSecretKey,
+          deliverySecretKey: material.identity.deliverySecretKey,
+        );
     _validateAuthOwner(
       expectedSessionId: material.sessionId,
       expectedParticipantId: material.participantId,
@@ -1258,26 +1332,36 @@ class MultisigSigningRequestsNotifier
         nowSeconds + _accessTokenRefreshSkewSeconds;
   }
 
-  Future<void> _upsert(MultisigSigningRequestRecord record) async {
-    final records = [...await _currentRecords()];
-    _mergeRecord(records, record);
-    await _save(records);
-    state = AsyncData(_sorted(records));
+  Future<void> _upsert(MultisigSigningRequestRecord record) {
+    return _synchronized(() async {
+      final records = [...await _currentRecords()];
+      _mergeRecord(records, record);
+      await _save(records);
+      state = AsyncData(_sorted(records));
+    });
   }
 
   Future<void> _replaceRecord(
     String previousSigningRequestId,
     MultisigSigningRequestRecord record,
-  ) async {
-    final records = [...await _currentRecords()];
-    if (previousSigningRequestId != record.signingRequestId) {
-      records.removeWhere(
-        (entry) => entry.signingRequestId == previousSigningRequestId,
-      );
-    }
-    _mergeRecord(records, record);
-    await _save(records);
-    state = AsyncData(_sorted(records));
+  ) {
+    return _synchronized(() async {
+      final records = [...await _currentRecords()];
+      if (previousSigningRequestId != record.signingRequestId) {
+        records.removeWhere(
+          (entry) => entry.signingRequestId == previousSigningRequestId,
+        );
+      }
+      _mergeRecord(records, record);
+      await _save(records);
+      state = AsyncData(_sorted(records));
+    });
+  }
+
+  Future<T> _synchronized<T>(Future<T> Function() action) {
+    final run = _mutations.then((_) => action());
+    _mutations = run.then<void>((_) {}, onError: (_) {});
+    return run;
   }
 
   bool _mergeRecord(
@@ -1385,6 +1469,11 @@ String _pcztHash(List<int> pcztBytes) {
 }
 
 String _localSigningRequestId(String sendFlowId) => 'local_$sendFlowId';
+
+bool _sameParticipantIds(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+  return a.toSet().containsAll(b);
+}
 
 bool _hasPreparedCreate(MultisigSigningRequestRecord record) {
   return record.createRequestJson != null &&

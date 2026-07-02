@@ -505,6 +505,174 @@ void main() {
       );
     },
   );
+
+  test(
+    'inbox refresh skips a malformed message and still applies the rest',
+    () async {
+      final requestStore = _FakeSigningRequestStore();
+      final materialStore = _FakeAccountMaterialStore()
+        ..put(_accountMaterial(accessTokenExpiresAt: 9999999999));
+      final cursorStore = _FakeRealtimeCursorStore();
+      final malformed = rust_multisig.ApiMultisigSigningMessage(
+        cursor: 1,
+        messageId: 'message-bad',
+        sessionId: 'session-1',
+        kind: 'tx_request',
+        fromParticipantId: 'participant-2',
+        toParticipantId: 'participant-1',
+        relatedId: 'other-request',
+        plaintextJson: 'not json {',
+        createdAt: BigInt.from(41),
+      );
+      final coordinator = _FakeCoordinatorService(
+        inboxCursor: 9,
+        inboxMessages: [
+          malformed,
+          _txRequestMessage(signingRequestId: 'signing-request'),
+        ],
+      );
+      final container = _container(
+        requestStore: requestStore,
+        materialStore: materialStore,
+        coordinatorService: coordinator,
+        cursorStore: cursorStore,
+      );
+      addTearDown(container.dispose);
+
+      // A malformed message must not abort the refresh: the cursor would
+      // never advance past it and the inbox would be stuck forever.
+      await container
+          .read(multisigSigningRequestsProvider.notifier)
+          .refreshForAccount('account-1');
+
+      expect(requestStore.records.single.signingRequestId, 'signing-request');
+      expect(cursorStore.cursors['session-1:participant-1']?.inboxCursor, 9);
+    },
+  );
+
+  test(
+    'createRequest keeps the proposal when auth refresh fails after the '
+    'PCZT is consumed',
+    () async {
+      final requestStore = _FakeSigningRequestStore();
+      final materialStore = _FakeAccountMaterialStore()
+        ..put(_accountMaterial(localBackupCompletedAt: 10));
+      final proposalService = _FakeProposalService(
+        pcztBytes: Uint8List.fromList([1, 2, 3]),
+      );
+      final coordinator = _FakeCoordinatorService(failRefreshOnce: true);
+      final container = _container(
+        requestStore: requestStore,
+        materialStore: materialStore,
+        proposalService: proposalService,
+        coordinatorService: coordinator,
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(multisigSigningRequestsProvider.notifier);
+
+      await expectLater(
+        notifier.createRequest(
+          dbPath: '/tmp/wallet.db',
+          network: 'test',
+          proposalId: BigInt.from(7),
+          sendFlowId: 'flow-1',
+          accountUuid: 'account-1',
+          recipientAddress: 'u1recipient',
+          addressType: 'unified',
+          amountZatoshi: BigInt.from(1000),
+          feeZatoshi: BigInt.from(100),
+          selectedParticipantIds: const ['participant-1', 'participant-2'],
+          needsSaplingParams: false,
+        ),
+        throwsA(anything),
+      );
+
+      // The PCZT was created before the token refresh, so the record must
+      // survive the failure and the proposal must not be discarded — a
+      // retry continues from the stored record.
+      expect(proposalService.discardCalls, isEmpty);
+      expect(requestStore.records.single.signingRequestId, 'local_flow-1');
+
+      final submitted = await notifier.createRequest(
+        dbPath: '/tmp/wallet.db',
+        network: 'test',
+        proposalId: BigInt.from(7),
+        sendFlowId: 'flow-1',
+        accountUuid: 'account-1',
+        recipientAddress: 'u1recipient',
+        addressType: 'unified',
+        amountZatoshi: BigInt.from(1000),
+        feeZatoshi: BigInt.from(100),
+        selectedParticipantIds: const ['participant-1', 'participant-2'],
+        needsSaplingParams: false,
+      );
+
+      expect(proposalService.createCalls, hasLength(1));
+      expect(submitted.signingRequestId, 'signing-request');
+      expect(submitted.coordinatorSubmitted, isTrue);
+    },
+  );
+
+  test('createRequest retry honors a changed signer selection', () async {
+    final requestStore = _FakeSigningRequestStore();
+    final materialStore = _FakeAccountMaterialStore()
+      ..put(
+        _accountMaterial(
+          localBackupCompletedAt: 10,
+          accessTokenExpiresAt: 9999999999,
+        ),
+      );
+    final proposalService = _FakeProposalService(
+      pcztBytes: Uint8List.fromList([1, 2, 3]),
+    );
+    final coordinator = _FakeCoordinatorService(failPrepareOnce: true);
+    final container = _container(
+      requestStore: requestStore,
+      materialStore: materialStore,
+      proposalService: proposalService,
+      coordinatorService: coordinator,
+    );
+    addTearDown(container.dispose);
+
+    final notifier = container.read(multisigSigningRequestsProvider.notifier);
+
+    await expectLater(
+      notifier.createRequest(
+        dbPath: '/tmp/wallet.db',
+        network: 'test',
+        proposalId: BigInt.from(7),
+        sendFlowId: 'flow-1',
+        accountUuid: 'account-1',
+        recipientAddress: 'u1recipient',
+        addressType: 'unified',
+        amountZatoshi: BigInt.from(1000),
+        feeZatoshi: BigInt.from(100),
+        selectedParticipantIds: const ['participant-1', 'participant-2'],
+        needsSaplingParams: false,
+      ),
+      throwsA(anything),
+    );
+
+    final submitted = await notifier.createRequest(
+      dbPath: '/tmp/wallet.db',
+      network: 'test',
+      proposalId: BigInt.from(7),
+      sendFlowId: 'flow-1',
+      accountUuid: 'account-1',
+      recipientAddress: 'u1recipient',
+      addressType: 'unified',
+      amountZatoshi: BigInt.from(1000),
+      feeZatoshi: BigInt.from(100),
+      selectedParticipantIds: const ['participant-1', 'participant-3'],
+      needsSaplingParams: false,
+    );
+
+    expect(submitted.selectedParticipantIds, [
+      'participant-1',
+      'participant-3',
+    ]);
+  });
 }
 
 ProviderContainer _container({
@@ -703,6 +871,7 @@ class _FakeProposalService implements MultisigSendProposalService {
 class _FakeCoordinatorService implements MultisigCoordinatorService {
   _FakeCoordinatorService({
     this.failPrepareOnce = false,
+    this.failRefreshOnce = false,
     this.submitPreparedError,
     this.inboxMessages = const <rust_multisig.ApiMultisigSigningMessage>[],
     this.inboxCursor = 0,
@@ -712,6 +881,7 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
   });
 
   bool failPrepareOnce;
+  bool failRefreshOnce;
   bool failRound1UnauthorizedOnce;
   final Object? submitPreparedError;
   final List<rust_multisig.ApiMultisigSigningMessage> inboxMessages;
@@ -737,6 +907,10 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
     required String deliverySecretKey,
   }) async {
     refreshCalls.add('$sessionId|$participantId|$refreshToken');
+    if (failRefreshOnce) {
+      failRefreshOnce = false;
+      throw StateError('refresh network down');
+    }
     return rust_multisig.ApiMultisigAuthUpdate(
       sessionId: 'session-1',
       participantId: 'participant-1',

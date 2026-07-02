@@ -180,11 +180,17 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
       _scheduleCreateAdvancePoll();
     } catch (e) {
       if (!mounted) return;
+      // Transient failures (network, expired auth, 409/429) must not halt
+      // the automatic create loop: the other participants keep waiting on
+      // this one. Advance is idempotent, so keep polling and surface the
+      // error; only unretryable local failures stop the loop.
+      final retryable = MultisigOperationException.from(e).retryable;
       setState(() {
-        _createAutoAdvanceEnabled = false;
+        _createAutoAdvanceEnabled = _createAutoAdvanceEnabled && retryable;
         _isAdvancingCreate = false;
         _error = friendlyMultisigError(e);
       });
+      _scheduleCreateAdvancePoll();
     }
   }
 
@@ -243,8 +249,7 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
     final target = MultisigRealtimeTarget.fromPendingSession(session);
     final key = target.connectionKey;
     final notifier = ref.read(multisigRealtimeProvider.notifier);
-    if (_realtimeKey == key) {
-      notifier.updateTarget(target);
+    if (_realtimeKey == key && notifier.updateTarget(target)) {
       return;
     }
 
@@ -279,11 +284,17 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
         : _summaryByStorageId(summaries, widget.sessionStorageId) ??
               _summaryBySessionId(summaries, widget.sessionStorageId);
     final participantsCount = session?.participants.length ?? 0;
-    if (session != null && _selectedThreshold == null) {
-      final maxThreshold = participantsCount <= 0 ? 1 : participantsCount;
-      final defaultThreshold =
-          session.threshold ?? (participantsCount >= 2 ? 2 : 1);
-      _selectedThreshold = defaultThreshold.clamp(1, maxThreshold).toInt();
+    // FROST requires a threshold of at least 2, and locking is irreversible,
+    // so never preselect (or keep) a value below 2. Recompute when the
+    // stored selection is out of range — e.g. it was initialized while the
+    // roster still had a single participant.
+    if (session != null &&
+        participantsCount >= 2 &&
+        (_selectedThreshold == null ||
+            _selectedThreshold! < 2 ||
+            _selectedThreshold! > participantsCount)) {
+      final defaultThreshold = session.threshold ?? 2;
+      _selectedThreshold = defaultThreshold.clamp(2, participantsCount).toInt();
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -528,7 +539,7 @@ class _SessionContent extends StatelessWidget {
         session.isCreator &&
         session.state == 'collecting' &&
         session.participants.length > 1 &&
-        selectedThreshold != null;
+        (selectedThreshold ?? 0) >= 2;
     final showBackupPanel = session.state == 'ready';
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: AppSpacing.xl),
@@ -563,8 +574,10 @@ class _SessionContent extends StatelessWidget {
                       spacing: AppSpacing.xs,
                       runSpacing: AppSpacing.xs,
                       children: [
+                        // FROST DKG rejects threshold 1, so it is never
+                        // offered — locking with it would brick the session.
                         for (
-                          var value = 1;
+                          var value = 2;
                           value <= session.participants.length;
                           value++
                         )

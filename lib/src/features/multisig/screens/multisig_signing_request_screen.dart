@@ -168,6 +168,10 @@ class _MultisigSigningRequestScreenState
   Future<void> _releaseProposalBeforeNavigate() async {
     if (_proposalReleased) return;
     _proposalReleased = true;
+    // Popping back returns to the send review screen, which resumes
+    // ownership of the proposal (so Send can be retried). Only discard when
+    // there is nowhere to hand it back to.
+    if (context.canPop()) return;
     await rust_sync.discardProposal(
       proposalId: widget.args.proposalId,
       sendFlowId: widget.args.sendFlowId,
@@ -175,7 +179,15 @@ class _MultisigSigningRequestScreenState
   }
 
   Future<void> _cancel() async {
-    await _releaseProposalBeforeNavigate();
+    // Cancel leaves the send flow entirely (the review screen below is
+    // replaced too), so the proposal must be discarded here.
+    if (!_proposalReleased) {
+      _proposalReleased = true;
+      await rust_sync.discardProposal(
+        proposalId: widget.args.proposalId,
+        sendFlowId: widget.args.sendFlowId,
+      );
+    }
     if (!mounted) return;
     context.go('/send');
   }

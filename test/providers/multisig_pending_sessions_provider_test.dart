@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -508,6 +509,115 @@ void main() {
       isTrue,
     );
   });
+
+  test(
+    'refreshSession keeps fields written while the fetch was in flight',
+    () async {
+      final store = _FakePendingSessionStore();
+      final gate = Completer<void>();
+      final service = _GatedGetSessionCoordinatorService(gate);
+      final container = _container(store: store, service: service);
+      addTearDown(container.dispose);
+      final notifier = container.read(multisigPendingSessionsProvider.notifier);
+      await container.read(multisigPendingSessionsProvider.future);
+      final pending = _pendingSession(accessTokenExpiresAt: 99999);
+      await notifier.upsert(pending);
+
+      final refresh = notifier.refreshSession(pending.storageId);
+      // Let refreshSession park on the gated getSession call, then land a
+      // concurrent local write (this is what advance-create does when it
+      // stores the DKG key package).
+      await Future<void>.delayed(Duration.zero);
+      await notifier.upsert(pending.copyWith(keyPackageB64: 'key-package'));
+      gate.complete();
+      final refreshed = await refresh;
+
+      expect(refreshed.keyPackageB64, 'key-package');
+      final sessions = container.read(multisigPendingSessionsProvider).value!;
+      expect(sessions.single.keyPackageB64, 'key-package');
+      expect(store.sessions[pending.storageId]?.keyPackageB64, 'key-package');
+    },
+  );
+
+  test(
+    'auth refresher shares a single in-flight refresh per participant',
+    () async {
+      final gate = Completer<void>();
+      final service = _GatedRefreshCoordinatorService(gate);
+      final container = _container(service: service);
+      addTearDown(container.dispose);
+      final refresher = container.read(multisigAuthRefresherProvider);
+
+      Future<rust_multisig.ApiMultisigAuthUpdate> call() {
+        return refresher.refreshOrResume(
+          coordinatorUrl: 'https://coordinator.example',
+          sessionId: 'session-1',
+          participantId: 'participant-1',
+          refreshToken: 'refresh-token',
+          admissionSecretKey: 'admission-secret',
+          deliverySecretKey: 'delivery-secret',
+        );
+      }
+
+      final first = call();
+      final second = call();
+      gate.complete();
+      final results = await Future.wait([first, second]);
+
+      expect(service.refreshCalls, hasLength(1));
+      expect(results[0].accessToken, results[1].accessToken);
+
+      await call();
+      expect(service.refreshCalls, hasLength(2));
+    },
+  );
+}
+
+class _GatedGetSessionCoordinatorService
+    extends _FakeMultisigCoordinatorService {
+  _GatedGetSessionCoordinatorService(this.gate);
+
+  final Completer<void> gate;
+
+  @override
+  Future<rust_multisig.ApiMultisigSession> getSession({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String accessToken,
+  }) async {
+    await gate.future;
+    return super.getSession(
+      coordinatorUrl: coordinatorUrl,
+      sessionId: sessionId,
+      accessToken: accessToken,
+    );
+  }
+}
+
+class _GatedRefreshCoordinatorService extends _FakeMultisigCoordinatorService {
+  _GatedRefreshCoordinatorService(this.gate);
+
+  final Completer<void> gate;
+
+  @override
+  Future<rust_multisig.ApiMultisigAuthUpdate> refreshOrResumeAuth({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String participantId,
+    required String refreshToken,
+    required String admissionSecretKey,
+    required String deliverySecretKey,
+  }) async {
+    await gate.future;
+    return super.refreshOrResumeAuth(
+      coordinatorUrl: coordinatorUrl,
+      sessionId: sessionId,
+      participantId: participantId,
+      refreshToken: refreshToken,
+      admissionSecretKey: admissionSecretKey,
+      deliverySecretKey: deliverySecretKey,
+    );
+  }
 }
 
 ProviderContainer _container({

@@ -302,12 +302,16 @@ class MultisigRealtimeNotifier extends Notifier<MultisigRealtimeState> {
     });
   }
 
-  void updateTarget(MultisigRealtimeTarget target) {
+  /// Returns false when no connection exists for the target (for example
+  /// after a lock cleared all connections); the caller must acquire a new
+  /// lease in that case — holding on to the old lease keeps realtime dead.
+  bool updateTarget(MultisigRealtimeTarget target) {
     final connection = _connections[target.connectionKey];
-    if (connection == null) return;
+    if (connection == null) return false;
     connection.updateTarget(target);
     if (_canConnect) connection.resumeIfLeased();
     _publish();
+    return true;
   }
 
   bool get _canConnect =>
@@ -320,8 +324,8 @@ class MultisigRealtimeNotifier extends Notifier<MultisigRealtimeState> {
     if (!force && _hasFreshAccess(target)) return target;
 
     final update = await ref
-        .read(multisigCoordinatorServiceProvider)
-        .refreshOrResumeAuth(
+        .read(multisigAuthRefresherProvider)
+        .refreshOrResume(
           coordinatorUrl: target.coordinatorUrl,
           sessionId: target.sessionId,
           participantId: target.participantId,

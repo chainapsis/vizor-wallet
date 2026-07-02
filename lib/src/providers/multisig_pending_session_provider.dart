@@ -747,6 +747,13 @@ final multisigPendingSessionStoreProvider =
 
 class MultisigPendingSessionsNotifier
     extends AsyncNotifier<List<MultisigPendingSession>> {
+  // Serializes every read-modify-write of the session list. Refresh, auth
+  // refresh, and advance-create all snapshot the list around slow network
+  // calls; without this queue a slower writer can persist a stale snapshot
+  // and drop fields another writer just stored (worst case: the DKG
+  // keyPackage right after the create state file was deleted).
+  Future<void> _mutations = Future<void>.value();
+
   MultisigPendingSessionStore get _store =>
       ref.read(multisigPendingSessionStoreProvider);
 
@@ -830,9 +837,10 @@ class MultisigPendingSessionsNotifier
       expectedSessionId: pending.sessionId,
       returnedSessionId: session.sessionId,
     );
-    final updated = pending.applySession(session);
-    await upsert(updated);
-    return updated;
+    return _applySessionUpdate(
+      pending,
+      (current) => current.applySession(session),
+    );
   }
 
   Future<MultisigPendingSession> refreshSessionFromEvents(
@@ -857,8 +865,10 @@ class MultisigPendingSessionsNotifier
       expectedSessionId: pending.sessionId,
       returnedSessionId: session.sessionId,
     );
-    final updated = pending.applySession(session);
-    await upsert(updated);
+    final updated = await _applySessionUpdate(
+      pending,
+      (current) => current.applySession(session),
+    );
     await _cursorStore.advanceEventsCursor(
       pending.storageId,
       events.cursor.toInt(),
@@ -881,16 +891,18 @@ class MultisigPendingSessionsNotifier
       localStateJson: localStateJson,
     );
     await _store.writeCreateState(pending, advanced.localStateJson);
-    final updated = pending
-        .applySession(advanced.session)
-        .copyWith(
-          keyPackageB64: advanced.keyPackageB64,
-          groupPublicPackageJson: advanced.groupPublicPackageJson,
-          groupPublicPackageHash:
-              advanced.groupPublicPackageHash ??
-              advanced.session.groupPublicPackageHash,
-        );
-    await upsert(updated);
+    final updated = await _applySessionUpdate(
+      pending,
+      (current) => current
+          .applySession(advanced.session)
+          .copyWith(
+            keyPackageB64: advanced.keyPackageB64,
+            groupPublicPackageJson: advanced.groupPublicPackageJson,
+            groupPublicPackageHash:
+                advanced.groupPublicPackageHash ??
+                advanced.session.groupPublicPackageHash,
+          ),
+    );
     if (updated.state == 'ready') {
       await _store.deleteCreateState(updated);
     }
@@ -927,17 +939,18 @@ class MultisigPendingSessionsNotifier
       throw StateError('Verified backup evidence is missing.');
     }
     final now = ref.read(multisigNowProvider)().millisecondsSinceEpoch;
-    final updated = stored.copyWith(
-      localBackupCompleted: true,
-      localBackupCompletedAt: now,
-      localBackupVersion: 2,
-      localBackupHash: cleanHash,
-      localBackupVerifiedAt: now,
-      localBackupDestinations: cleanDestinations,
-      updatedLocallyAt: now,
+    return _applySessionUpdate(
+      stored,
+      (current) => current.copyWith(
+        localBackupCompleted: true,
+        localBackupCompletedAt: now,
+        localBackupVersion: 2,
+        localBackupHash: cleanHash,
+        localBackupVerifiedAt: now,
+        localBackupDestinations: cleanDestinations,
+        updatedLocallyAt: now,
+      ),
     );
-    await upsert(updated);
-    return updated;
   }
 
   Future<MultisigPendingSession> resumeParticipant(String storageId) async {
@@ -954,17 +967,21 @@ class MultisigPendingSessionsNotifier
       returnedSessionId: auth.sessionId,
       returnedParticipantId: auth.participantId,
     );
-    final updated = stored.applyAuthSession(auth);
-    await upsert(updated);
-    return updated;
+    return _applySessionUpdate(
+      stored,
+      (current) => current.applyAuthSession(auth),
+    );
   }
 
   Future<MultisigPendingSession> lockSession({
     required String storageId,
     required int threshold,
   }) async {
-    if (threshold <= 0) {
-      throw ArgumentError.value(threshold, 'threshold', 'must be positive');
+    // The coordinator accepts threshold 1 but FROST DKG requires >= 2
+    // (ThresholdParams / frost min_signers); locking a roster with 1 bricks
+    // the session because the threshold is immutable after lock.
+    if (threshold < 2) {
+      throw ArgumentError.value(threshold, 'threshold', 'must be at least 2');
     }
     final pending = await _sessionWithFreshAccess(
       await _requireSession(storageId),
@@ -979,61 +996,69 @@ class MultisigPendingSessionsNotifier
       expectedSessionId: pending.sessionId,
       returnedSessionId: session.sessionId,
     );
-    final updated = pending.applySession(session);
-    await upsert(updated);
-    return updated;
-  }
-
-  Future<void> upsert(MultisigPendingSession session) async {
-    final sessions = [...await _currentSessions()];
-    final index = sessions.indexWhere(
-      (entry) => entry.storageId == session.storageId,
+    return _applySessionUpdate(
+      pending,
+      (current) => current.applySession(session),
     );
-    if (index >= 0) {
-      sessions[index] = session;
-    } else {
-      sessions.add(session);
-    }
-    _sortSessions(sessions);
-    await _store.write(session);
-    await _store.writeSummary(session);
-    ref.invalidate(multisigPendingSessionSummariesProvider);
-    state = AsyncData(sessions);
   }
 
-  Future<void> delete(String storageId) async {
-    final sessions = [...await _currentSessions()];
-    final target = _findSession(sessions, storageId);
-    if (target == null) return;
-    await _store.deleteCreateState(target);
-    await _store.delete(target);
-    await _store.deleteSummary(target.storageId);
-    sessions.removeWhere((entry) => entry.storageId == target.storageId);
-    ref.invalidate(multisigPendingSessionSummariesProvider);
-    state = AsyncData(sessions);
+  Future<void> upsert(MultisigPendingSession session) {
+    return _synchronized(() async {
+      final sessions = [...await _currentSessions()];
+      final index = sessions.indexWhere(
+        (entry) => entry.storageId == session.storageId,
+      );
+      if (index >= 0) {
+        sessions[index] = session;
+      } else {
+        sessions.add(session);
+      }
+      _sortSessions(sessions);
+      await _store.write(session);
+      await _store.writeSummary(session);
+      ref.invalidate(multisigPendingSessionSummariesProvider);
+      state = AsyncData(sessions);
+    });
   }
 
-  Future<void> clearAll() async {
-    final sessions = await _currentSessions();
-    for (final session in sessions) {
-      await _store.deleteCreateState(session);
-      await _store.delete(session);
-    }
-    await _store.deleteAllSummaries();
-    ref.invalidate(multisigPendingSessionSummariesProvider);
-    state = const AsyncData(<MultisigPendingSession>[]);
+  Future<void> delete(String storageId) {
+    return _synchronized(() async {
+      final sessions = [...await _currentSessions()];
+      final target = _findSession(sessions, storageId);
+      if (target == null) return;
+      await _store.deleteCreateState(target);
+      await _store.delete(target);
+      await _store.deleteSummary(target.storageId);
+      sessions.removeWhere((entry) => entry.storageId == target.storageId);
+      ref.invalidate(multisigPendingSessionSummariesProvider);
+      state = AsyncData(sessions);
+    });
+  }
+
+  Future<void> clearAll() {
+    return _synchronized(() async {
+      final sessions = await _currentSessions();
+      for (final session in sessions) {
+        await _store.deleteCreateState(session);
+        await _store.delete(session);
+      }
+      await _store.deleteAllSummaries();
+      ref.invalidate(multisigPendingSessionSummariesProvider);
+      state = const AsyncData(<MultisigPendingSession>[]);
+    });
   }
 
   Future<void> applyAuthUpdate(
     rust_multisig.ApiMultisigAuthUpdate update,
   ) async {
-    final sessions = [...await _currentSessions()];
-    final index = sessions.indexWhere(
-      (entry) =>
-          entry.sessionId == update.sessionId &&
-          entry.participantId == update.participantId,
-    );
-    if (index >= 0) {
+    await _synchronized(() async {
+      final sessions = [...await _currentSessions()];
+      final index = sessions.indexWhere(
+        (entry) =>
+            entry.sessionId == update.sessionId &&
+            entry.participantId == update.participantId,
+      );
+      if (index < 0) return;
       final refreshed = sessions[index].applyAuthUpdate(update);
       sessions[index] = refreshed;
       _sortSessions(sessions);
@@ -1041,7 +1066,7 @@ class MultisigPendingSessionsNotifier
       await _store.writeSummary(refreshed);
       ref.invalidate(multisigPendingSessionSummariesProvider);
       state = AsyncData(sessions);
-    }
+    });
     await _applyAuthUpdateToAccountMaterials(update);
   }
 
@@ -1049,17 +1074,30 @@ class MultisigPendingSessionsNotifier
     FutureOr<MultisigPendingSession> pendingFuture, {
     bool force = false,
   }) async {
-    final pending = await pendingFuture;
+    var pending = await pendingFuture;
     if (!force && _hasFreshAccess(pending)) return pending;
 
-    final update = await _coordinator.refreshOrResumeAuth(
-      coordinatorUrl: pending.coordinatorUrl,
-      sessionId: pending.sessionId,
-      participantId: pending.participantId,
-      refreshToken: pending.refreshToken,
-      admissionSecretKey: pending.identity.admissionSecretKey,
-      deliverySecretKey: pending.identity.deliverySecretKey,
-    );
+    // Another component (realtime reconnect, signing refresh) may already
+    // have rotated the tokens; reuse its result instead of rotating again.
+    final latest = _findSession(await _currentSessions(), pending.storageId);
+    if (latest != null) {
+      if (latest.accessToken != pending.accessToken &&
+          _hasFreshAccess(latest)) {
+        return latest;
+      }
+      pending = latest;
+    }
+
+    final update = await ref
+        .read(multisigAuthRefresherProvider)
+        .refreshOrResume(
+          coordinatorUrl: pending.coordinatorUrl,
+          sessionId: pending.sessionId,
+          participantId: pending.participantId,
+          refreshToken: pending.refreshToken,
+          admissionSecretKey: pending.identity.admissionSecretKey,
+          deliverySecretKey: pending.identity.deliverySecretKey,
+        );
     _validateAuthOwner(
       expectedSessionId: pending.sessionId,
       expectedParticipantId: pending.participantId,
@@ -1067,10 +1105,43 @@ class MultisigPendingSessionsNotifier
       returnedParticipantId: update.participantId,
     );
 
-    final refreshed = pending.applyAuthUpdate(update);
-    await upsert(refreshed);
+    final refreshed = await _applySessionUpdate(
+      pending,
+      (current) => current.applyAuthUpdate(update),
+    );
     await _applyAuthUpdateToAccountMaterials(update);
     return refreshed;
+  }
+
+  /// Atomically re-reads the stored session and applies [transform] to the
+  /// freshest copy, so a response fetched around a slow network call cannot
+  /// overwrite fields written by a concurrent operation. If the session was
+  /// deleted mid-flight the result is returned without being persisted.
+  Future<MultisigPendingSession> _applySessionUpdate(
+    MultisigPendingSession fallback,
+    MultisigPendingSession Function(MultisigPendingSession current) transform,
+  ) {
+    return _synchronized(() async {
+      final sessions = [...await _currentSessions()];
+      final index = sessions.indexWhere(
+        (entry) => entry.storageId == fallback.storageId,
+      );
+      if (index < 0) return transform(fallback);
+      final updated = transform(sessions[index]);
+      sessions[index] = updated;
+      _sortSessions(sessions);
+      await _store.write(updated);
+      await _store.writeSummary(updated);
+      ref.invalidate(multisigPendingSessionSummariesProvider);
+      state = AsyncData(sessions);
+      return updated;
+    });
+  }
+
+  Future<T> _synchronized<T>(Future<T> Function() action) {
+    final run = _mutations.then((_) => action());
+    _mutations = run.then<void>((_) {}, onError: (_) {});
+    return run;
   }
 
   Future<void> _applyAuthUpdateToAccountMaterials(

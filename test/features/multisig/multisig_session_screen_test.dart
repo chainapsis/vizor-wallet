@@ -76,7 +76,7 @@ class _NoopMultisigRealtimeNotifier extends MultisigRealtimeNotifier {
   }
 
   @override
-  void updateTarget(MultisigRealtimeTarget target) {}
+  bool updateTarget(MultisigRealtimeTarget target) => true;
 }
 
 class _UnlockedAppSecurityNotifier extends AppSecurityNotifier {

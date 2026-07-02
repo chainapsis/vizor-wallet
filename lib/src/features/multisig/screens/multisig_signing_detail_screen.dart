@@ -110,9 +110,18 @@ class _MultisigSigningDetailScreenState
     MultisigSigningRequestRecord request,
   ) async {
     await _run('request', () async {
-      await ref
+      final submitted = await ref
           .read(multisigSigningRequestsProvider.notifier)
           .submitPreparedRequest(request);
+      // Preparing a local record swaps its id for the coordinator-issued
+      // one; follow it so this screen doesn't dead-end on "Request not
+      // found".
+      if (!mounted || submitted.signingRequestId == widget.signingRequestId) {
+        return;
+      }
+      context.go(
+        '/multisig/sign/${Uri.encodeComponent(submitted.signingRequestId)}',
+      );
     });
   }
 
@@ -188,8 +197,7 @@ class _MultisigSigningDetailScreenState
     final target = MultisigRealtimeTarget.fromAccountMaterial(material);
     final key = target.connectionKey;
     final notifier = ref.read(multisigRealtimeProvider.notifier);
-    if (_realtimeKey == key) {
-      notifier.updateTarget(target);
+    if (_realtimeKey == key && notifier.updateTarget(target)) {
       return;
     }
 

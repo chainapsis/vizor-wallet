@@ -110,6 +110,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     if (isMultisig) {
       _handoffToMultisig = true;
       await context.push('/multisig/sign/request', extra: widget.args);
+      // Popped back without submitting: this screen owns the proposal again
+      // so Send can be retried and dispose/cancel discard it as usual.
+      if (mounted) {
+        _handoffToMultisig = false;
+      }
       return;
     }
 

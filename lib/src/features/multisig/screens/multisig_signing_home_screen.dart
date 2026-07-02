@@ -13,6 +13,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/multisig_account_material_provider.dart';
+import '../../../providers/multisig_operation_error.dart';
 import '../../../providers/multisig_realtime_provider.dart';
 import '../../../providers/multisig_signing_request_provider.dart';
 
@@ -67,7 +68,7 @@ class _MultisigSigningHomeScreenState
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _refreshError = e.toString();
+        _refreshError = friendlyMultisigError(e);
       });
     } finally {
       if (mounted) {
@@ -87,8 +88,7 @@ class _MultisigSigningHomeScreenState
     final target = MultisigRealtimeTarget.fromAccountMaterial(material);
     final key = target.connectionKey;
     final notifier = ref.read(multisigRealtimeProvider.notifier);
-    if (_realtimeKey == key) {
-      notifier.updateTarget(target);
+    if (_realtimeKey == key && notifier.updateTarget(target)) {
       return;
     }
 

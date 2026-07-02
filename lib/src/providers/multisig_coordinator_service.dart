@@ -450,3 +450,51 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
 final multisigCoordinatorServiceProvider = Provider<MultisigCoordinatorService>(
   (ref) => const RustMultisigCoordinatorService(),
 );
+
+/// Coordinator refresh tokens are single-use (the server rotates them), so
+/// concurrent refreshes for the same participant race each other: the loser
+/// falls back to the admission-resume path and can clobber the winner's fresh
+/// token pair in storage. This shares one in-flight refresh per participant.
+class MultisigAuthRefresher {
+  MultisigAuthRefresher(this._ref);
+
+  final Ref _ref;
+  final Map<String, Future<rust_multisig.ApiMultisigAuthUpdate>> _inFlight = {};
+
+  Future<rust_multisig.ApiMultisigAuthUpdate> refreshOrResume({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String participantId,
+    required String refreshToken,
+    required String admissionSecretKey,
+    required String deliverySecretKey,
+  }) {
+    final key = '$coordinatorUrl|$sessionId|$participantId';
+    final existing = _inFlight[key];
+    if (existing != null) return existing;
+
+    late final Future<rust_multisig.ApiMultisigAuthUpdate> refresh;
+    refresh =
+        _ref
+            .read(multisigCoordinatorServiceProvider)
+            .refreshOrResumeAuth(
+              coordinatorUrl: coordinatorUrl,
+              sessionId: sessionId,
+              participantId: participantId,
+              refreshToken: refreshToken,
+              admissionSecretKey: admissionSecretKey,
+              deliverySecretKey: deliverySecretKey,
+            )
+            .whenComplete(() {
+              if (identical(_inFlight[key], refresh)) {
+                _inFlight.remove(key);
+              }
+            });
+    _inFlight[key] = refresh;
+    return refresh;
+  }
+}
+
+final multisigAuthRefresherProvider = Provider<MultisigAuthRefresher>(
+  MultisigAuthRefresher.new,
+);
