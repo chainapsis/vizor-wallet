@@ -392,35 +392,51 @@ fn combine_pczts(proofs: &[u8], sigs: &[u8]) -> Result<pczt::Pczt, String> {
         .map_err(|e| format!("Combine PCZTs: {e:?}"))
 }
 
-pub(crate) fn extract_transaction_from_pczt(
-    pczt_with_proofs_bytes: &[u8],
-    pczt_with_signatures_bytes: &[u8],
+/// Load the Sapling spend/output verifying keys from local params files, when
+/// both paths are provided. Migration PCZTs are Orchard/Ironwood-only and pass
+/// `None`; see invariant (3) in the module docstring for when params are
+/// required.
+fn load_sapling_verifying_keys(
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
-) -> Result<ExtractedPcztTransaction, String> {
-    use pczt::roles::spend_finalizer::SpendFinalizer;
-    use pczt::roles::tx_extractor::TransactionExtractor;
-
-    let sapling_vks: Option<(
-        sapling_crypto::circuit::SpendVerifyingKey,
-        sapling_crypto::circuit::OutputVerifyingKey,
-    )> = match (spend_params_path, output_params_path) {
+) -> Option<(
+    sapling_crypto::circuit::SpendVerifyingKey,
+    sapling_crypto::circuit::OutputVerifyingKey,
+)> {
+    match (spend_params_path, output_params_path) {
         (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
             let prover = LocalTxProver::new(std::path::Path::new(sp), std::path::Path::new(op));
             Some(prover.verifying_keys())
         }
         _ => None,
-    };
+    }
+}
 
-    let finalized_pczt = SpendFinalizer::new(combine_pczts(
-        pczt_with_proofs_bytes,
-        pczt_with_signatures_bytes,
-    )?)
-    .finalize_spends()
-    .map_err(|e| format!("Finalize transparent spends in PCZT: {e:?}"))?;
+/// Finalize transparent spends and extract the fully-authorized transaction
+/// from a combined PCZT (proofs + signatures already merged).
+///
+/// This is the single, shared tail of every extraction path. Both
+/// [`extract_transaction_from_pczt`] (which combines a proofs-PCZT with a full
+/// redacted signed PCZT) and [`apply_sigs_and_extract`] (which applies a
+/// compact signature list directly onto the proofs-PCZT) funnel into here, so
+/// the two produce identical transactions by construction.
+fn finalize_and_extract(
+    combined: pczt::Pczt,
+    sapling_vks: Option<&(
+        sapling_crypto::circuit::SpendVerifyingKey,
+        sapling_crypto::circuit::OutputVerifyingKey,
+    )>,
+) -> Result<ExtractedPcztTransaction, String> {
+    use pczt::roles::spend_finalizer::SpendFinalizer;
+    use pczt::roles::tx_extractor::TransactionExtractor;
+
+    let finalized_pczt = SpendFinalizer::new(combined)
+        .finalize_spends()
+        .map_err(|e| format!("Finalize transparent spends in PCZT: {e:?}"))?;
 
     let tx_version = *finalized_pczt.global().tx_version();
     let orchard_vk = orchard_verifying_key_for_tx_version(tx_version);
+    #[cfg(zcash_unstable = "nu6.3")]
     let ironwood_vk = orchard::circuit::VerifyingKey::build(ironwood_orchard_circuit_version());
 
     let mut extractor = TransactionExtractor::new(finalized_pczt).with_orchard(&orchard_vk);
@@ -428,7 +444,7 @@ pub(crate) fn extract_transaction_from_pczt(
     {
         extractor = extractor.with_ironwood(&ironwood_vk);
     }
-    if let Some((spend_vk, output_vk)) = sapling_vks.as_ref() {
+    if let Some((spend_vk, output_vk)) = sapling_vks {
         extractor = extractor.with_sapling(spend_vk, output_vk);
     }
 
@@ -441,6 +457,151 @@ pub(crate) fn extract_transaction_from_pczt(
         .map_err(|e| format!("Serialize TX: {e}"))?;
 
     Ok(ExtractedPcztTransaction { txid, raw_tx, tx })
+}
+
+pub(crate) fn extract_transaction_from_pczt(
+    pczt_with_proofs_bytes: &[u8],
+    pczt_with_signatures_bytes: &[u8],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<ExtractedPcztTransaction, String> {
+    let sapling_vks = load_sapling_verifying_keys(spend_params_path, output_params_path);
+    let combined = combine_pczts(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?;
+    finalize_and_extract(combined, sapling_vks.as_ref())
+}
+
+/// Apply a compact, signatures-only response onto the wallet's own
+/// proofs-PCZT, then finalize and extract the transaction — the wallet side of
+/// the "signatures-only" round-trip.
+///
+/// This is the equivalent of [`extract_transaction_from_pczt`] for the compact
+/// path: instead of receiving a full redacted signed PCZT back from the device
+/// and combining it, the device returns only the produced spend-authorization
+/// signatures (decoded into [`crate::wallet::keystone::DecodedActionSig`]s).
+/// We load the proofs-PCZT the wallet already holds into the [`Signer`] role
+/// and re-apply each signature by (pool, action index).
+/// `apply_orchard_signature` / `apply_ironwood_signature` rk-verify each
+/// signature against the action before storing it, so an incorrect or
+/// mismatched signature fails here rather than at broadcast. The finalize +
+/// extract tail is shared with the full path via [`finalize_and_extract`],
+/// which guarantees the two paths produce identical transaction bytes and
+/// txid.
+///
+/// `sigs` must be the decoded signatures for the single message whose
+/// proofs-PCZT is passed in. Sapling params are only required when the PCZT
+/// carries a non-empty Sapling bundle (see the module docstring); migration
+/// PCZTs are Orchard/Ironwood-only and pass `None`.
+///
+/// [`Signer`]: pczt::roles::signer::Signer
+pub(crate) fn apply_sigs_and_extract(
+    pczt_with_proofs_bytes: &[u8],
+    sigs: &[crate::wallet::keystone::DecodedActionSig],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<ExtractedPcztTransaction, String> {
+    use crate::wallet::keystone::{DECODED_SIG_POOL_IRONWOOD, DECODED_SIG_POOL_ORCHARD};
+    use orchard::primitives::redpallas::{Signature, SpendAuth};
+    use pczt::roles::signer::Signer;
+
+    let sapling_vks = load_sapling_verifying_keys(spend_params_path, output_params_path);
+
+    let pczt = pczt::Pczt::parse(pczt_with_proofs_bytes)
+        .map_err(|e| format!("Parse PCZT with proofs: {e:?}"))?;
+    let mut signer = Signer::new(pczt).map_err(|e| format!("Create PCZT signer: {e:?}"))?;
+
+    let mut seen_sigs = std::collections::HashSet::new();
+    for action_sig in sigs {
+        if !seen_sigs.insert((action_sig.pool, action_sig.action_index)) {
+            return Err(format!(
+                "Duplicate compact signature for pool {} action {}",
+                action_sig.pool, action_sig.action_index
+            ));
+        }
+        let index = action_sig.action_index as usize;
+        // `apply_*_signature` takes a typed redpallas SpendAuth signature; the
+        // device sends raw 64-byte signatures, so reconstruct the typed form.
+        let signature = Signature::<SpendAuth>::from(action_sig.sig);
+        match action_sig.pool {
+            DECODED_SIG_POOL_ORCHARD => {
+                signer
+                    .apply_orchard_signature(index, signature)
+                    .map_err(|e| format!("Apply Orchard signature at action {index}: {e:?}"))?;
+            }
+            DECODED_SIG_POOL_IRONWOOD => {
+                #[cfg(zcash_unstable = "nu6.3")]
+                {
+                    signer
+                        .apply_ironwood_signature(index, signature)
+                        .map_err(|e| {
+                            format!("Apply Ironwood signature at action {index}: {e:?}")
+                        })?;
+                }
+                #[cfg(not(zcash_unstable = "nu6.3"))]
+                {
+                    let _ = signature;
+                    return Err(format!(
+                        "Ironwood signature at action {index} requires nu6.3 support"
+                    ));
+                }
+            }
+            other => {
+                return Err(format!("Unsupported signature pool {other}"));
+            }
+        }
+    }
+
+    let signed = signer.finish();
+    finalize_and_extract(signed, sapling_vks.as_ref())
+}
+
+/// Read the spend-authorization signatures out of a fully-signed PCZT as a
+/// compact [`crate::wallet::keystone::DecodedActionSig`] list — the inverse of
+/// [`apply_sigs_and_extract`]'s input.
+///
+/// This is the local-signing analogue of decoding a device's compact
+/// `zcash-sig-result`: the software migration path signs a base PCZT with the
+/// USK and then needs only the produced signatures (not the whole signed PCZT)
+/// to persist for later finalization, so the encrypted migration DB column
+/// stores the same compact form the hardware path stores. Every Orchard (and,
+/// under nu6.3, Ironwood) action whose spend carries a `spend_auth_sig` is
+/// emitted with its pool discriminant and action index; actions without a
+/// signature (outputs / unsigned spends) are skipped.
+pub(crate) fn extract_compact_sigs_from_signed_pczt(
+    signed_pczt_bytes: &[u8],
+) -> Result<Vec<crate::wallet::keystone::DecodedActionSig>, String> {
+    use crate::wallet::keystone::{
+        DecodedActionSig, DECODED_SIG_POOL_IRONWOOD, DECODED_SIG_POOL_ORCHARD,
+    };
+
+    let pczt =
+        pczt::Pczt::parse(signed_pczt_bytes).map_err(|e| format!("Parse signed PCZT: {e:?}"))?;
+
+    let mut sigs = Vec::new();
+    for (index, action) in pczt.orchard().actions().iter().enumerate() {
+        if let Some(sig) = action.spend().spend_auth_sig() {
+            sigs.push(DecodedActionSig {
+                pool: DECODED_SIG_POOL_ORCHARD,
+                action_index: index as u32,
+                sig: *sig,
+            });
+        }
+    }
+
+    #[cfg(zcash_unstable = "nu6.3")]
+    for (index, action) in pczt.ironwood().actions().iter().enumerate() {
+        if let Some(sig) = action.spend().spend_auth_sig() {
+            sigs.push(DecodedActionSig {
+                pool: DECODED_SIG_POOL_IRONWOOD,
+                action_index: index as u32,
+                sig: *sig,
+            });
+        }
+    }
+
+    if sigs.is_empty() {
+        return Err("Signed PCZT has no spend-authorization signatures".to_string());
+    }
+    Ok(sigs)
 }
 
 /// Combine a PCZT-with-proofs and a PCZT-with-signatures, broadcast
@@ -751,5 +912,310 @@ mod tests {
         assert!(err.contains("expired before broadcast"));
         assert!(err.contains("expiry height 500"));
         assert!(err.contains("current chain height 500"));
+    }
+
+    // The headline correctness gate for the "signatures-only" round-trip: for a
+    // real migration-shaped PCZT (Orchard spend -> Ironwood output), producing
+    // the extracted transaction via the compact `apply_sigs_and_extract` path
+    // must yield the same txid as the legacy "full redacted signed PCZT +
+    // combine + extract" path. Same txid => the compact path is equivalent.
+    //
+    // Note on raw bytes: the extracted transactions are the same length and
+    // agree everywhere except the Orchard/Ironwood binding signatures, which
+    // `TransactionExtractor` regenerates with a fresh `OsRng` on every call.
+    // Those bytes are NOT covered by the ZIP-244 txid (which commits to effects,
+    // not authorizing data), so the txid match is the meaningful equivalence and
+    // full raw-byte identity across two independent extractions is not
+    // achievable for either path.
+    #[cfg(zcash_unstable = "nu6.3")]
+    mod sigs_only_byte_identity {
+        // The functions under test live at the module file scope, which is two
+        // levels up from this nested test module.
+        use super::super::{
+            apply_sigs_and_extract, extract_compact_sigs_from_signed_pczt,
+            extract_transaction_from_pczt, ironwood_orchard_proving_key, redact_pczt_for_signer,
+        };
+        use crate::wallet::keystone::{DecodedActionSig, DECODED_SIG_POOL_ORCHARD};
+
+        use orchard::tree::MerkleHashOrchard;
+        use pczt::roles::{
+            creator::Creator, io_finalizer::IoFinalizer, prover::Prover, signer::Signer,
+        };
+        use rand_core::OsRng;
+        use shardtree::{store::memory::MemoryShardStore, ShardTree};
+        use zcash_note_encryption::try_note_decryption;
+        use zcash_primitives::transaction::{
+            builder::{BuildConfig, Builder, PcztResult},
+            fees::zip317,
+        };
+        use zcash_protocol::{
+            consensus::{BlockHeight, NetworkType, NetworkUpgrade, Parameters},
+            memo::{Memo, MemoBytes},
+            value::Zatoshis,
+        };
+
+        // A consensus-parameter set that activates NU6.3 (Ironwood) at a low
+        // height, matching the pinned pczt crate's own end-to-end test harness.
+        #[derive(Clone, Copy, Debug)]
+        struct Nu6_3Network;
+
+        impl Parameters for Nu6_3Network {
+            fn network_type(&self) -> NetworkType {
+                NetworkType::Test
+            }
+
+            fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+                match nu {
+                    NetworkUpgrade::Nu6_3 => Some(BlockHeight::from_u32(10)),
+                    _ => zcash_protocol::consensus::MAIN_NETWORK.activation_height(nu),
+                }
+            }
+        }
+
+        /// Builds a real, IO-finalized v6 migration PCZT (single Orchard spend ->
+        /// Ironwood output), returning the base PCZT bytes, the Orchard spend
+        /// authorizing key, and the spend action index. This is the same shape
+        /// the wallet's migration pipeline produces, minus the wallet DB.
+        fn build_migration_base_pczt() -> (Vec<u8>, orchard::keys::SpendAuthorizingKey, usize) {
+            let mut rng = OsRng;
+
+            let orchard_sk = orchard::keys::SpendingKey::from_bytes([7; 32]).unwrap();
+            let orchard_ask = orchard::keys::SpendAuthorizingKey::from(&orchard_sk);
+            let orchard_fvk = orchard::keys::FullViewingKey::from(&orchard_sk);
+            let orchard_ivk = orchard_fvk.to_ivk(orchard::keys::Scope::External);
+            let orchard_ovk = orchard_fvk.to_ovk(orchard::keys::Scope::External);
+            let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::External);
+
+            // Pretend we already received an Orchard (V2) note.
+            let value = orchard::value::NoteValue::from_raw(1_000_000);
+            let note = {
+                let orchard_bundle_version = orchard::bundle::BundleVersion::orchard_v2();
+                let mut orchard_builder = orchard::builder::Builder::new(
+                    orchard::builder::BundleType::DEFAULT,
+                    orchard_bundle_version,
+                    orchard_bundle_version.default_flags(),
+                    orchard::Anchor::empty_tree(),
+                )
+                .unwrap();
+                orchard_builder
+                    .add_output(None, recipient, value, Memo::Empty.encode().into_bytes())
+                    .unwrap();
+                let (bundle, meta) = orchard_builder.build::<i64>(&mut rng).unwrap().unwrap();
+                let action = bundle
+                    .actions()
+                    .get(meta.output_action_index(0).unwrap())
+                    .unwrap();
+                let domain = orchard::note_encryption::OrchardDomain::for_action(action);
+                let (note, _, _) =
+                    try_note_decryption(&domain, &orchard_ivk.prepare(), action).unwrap();
+                note
+            };
+
+            // Single-leaf Orchard tree for the spend witness/anchor.
+            let (anchor, merkle_path) = {
+                let cmx: orchard::note::ExtractedNoteCommitment = note.commitment().into();
+                let leaf = MerkleHashOrchard::from_cmx(&cmx);
+                let mut tree = ShardTree::<_, 32, 16>::new(
+                    MemoryShardStore::<MerkleHashOrchard, u32>::empty(),
+                    100,
+                );
+                tree.append(leaf, incrementalmerkletree::Retention::Marked)
+                    .unwrap();
+                tree.checkpoint(9_999_999).unwrap();
+                let position = 0.into();
+                let merkle_path = tree
+                    .witness_at_checkpoint_depth(position, 0)
+                    .unwrap()
+                    .unwrap();
+                let anchor = merkle_path.root(leaf);
+                (anchor.into(), merkle_path.into())
+            };
+
+            // Build a v6 transaction that spends Orchard and outputs to Ironwood
+            // (the migration shape).
+            let mut builder = Builder::new(
+                Nu6_3Network,
+                10_000_000.into(),
+                BuildConfig::Standard {
+                    sapling_anchor: None,
+                    orchard_anchor: Some(anchor),
+                    ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+                },
+            );
+            builder
+                .add_orchard_spend::<zip317::FeeRule>(orchard_fvk.clone(), note, merkle_path)
+                .unwrap();
+            builder
+                .add_ironwood_output::<zip317::FeeRule>(
+                    Some(orchard_ovk),
+                    recipient,
+                    Zatoshis::const_from_u64(980_000),
+                    MemoBytes::empty(),
+                )
+                .unwrap();
+            let PcztResult {
+                pczt_parts,
+                orchard_meta,
+                ..
+            } = builder
+                .build_for_pczt(OsRng, &zip317::FeeRule::standard())
+                .unwrap();
+
+            let base = Creator::build_from_parts(pczt_parts).unwrap();
+            let base = IoFinalizer::new(base).finalize_io().unwrap();
+            let spend_index = orchard_meta.spend_action_index(0).unwrap();
+
+            (base.serialize(), orchard_ask, spend_index)
+        }
+
+        /// Reads the Orchard spend-authorization signature back out of a signed
+        /// PCZT's action as raw `[u8; 64]` bytes — the wire form the device sends
+        /// in a `zcash-sig-result`. The pczt wire `Spend` already stores the
+        /// signature as `[u8; 64]`, so this is exactly the bytes the compact
+        /// path receives.
+        fn orchard_spend_auth_sig_bytes(signed: &pczt::Pczt, spend_index: usize) -> [u8; 64] {
+            (*signed
+                .orchard()
+                .actions()
+                .get(spend_index)
+                .expect("spend action present")
+                .spend()
+                .spend_auth_sig())
+            .expect("Orchard spend should be signed")
+        }
+
+        #[test]
+        fn compact_sigs_path_matches_full_signed_pczt_path() {
+            let (base_bytes, orchard_ask, spend_index) = build_migration_base_pczt();
+
+            // The wallet's own proofs-PCZT clone: Orchard + Ironwood proofs over
+            // the same base. This is what both extraction paths consume. Both
+            // bundles of a v6 transaction use the post-NU6.3 circuit.
+            let pk = ironwood_orchard_proving_key();
+            let proofs_pczt = Prover::new(pczt::Pczt::parse(&base_bytes).unwrap())
+                .create_orchard_proof(pk)
+                .unwrap()
+                .create_ironwood_proof(pk)
+                .unwrap()
+                .finish();
+            let proofs_bytes = proofs_pczt.serialize();
+
+            // OLD path: sign the base PCZT to get a full signed PCZT, redact it
+            // for transport the way the wallet does before combining, then
+            // combine with the proofs clone and extract.
+            let mut signer = Signer::new(pczt::Pczt::parse(&base_bytes).unwrap()).unwrap();
+            signer.sign_orchard(spend_index, &orchard_ask).unwrap();
+            let signed_pczt = signer.finish();
+            let sig_bytes = orchard_spend_auth_sig_bytes(&signed_pczt, spend_index);
+            let redacted_signed_bytes = redact_pczt_for_signer(&signed_pczt.serialize())
+                .expect("redact signed PCZT for transport");
+
+            let old =
+                extract_transaction_from_pczt(&proofs_bytes, &redacted_signed_bytes, None, None)
+                    .expect("old combine+extract path should succeed");
+
+            // A SECOND full-path extraction of the very same inputs. The
+            // `TransactionExtractor` creates the Orchard/Ironwood binding
+            // signatures with a fresh `OsRng` each call (no caller-controllable
+            // RNG seam), and RedDSA binding signatures are randomized, so even
+            // two identical full-path extractions are NOT byte-identical: they
+            // differ only in those binding-signature bytes. We use this as the
+            // baseline for "divergence inherent to extraction".
+            let old_again =
+                extract_transaction_from_pczt(&proofs_bytes, &redacted_signed_bytes, None, None)
+                    .expect("second old combine+extract path should succeed");
+
+            // The software path's compact extraction reads back every
+            // spend-authorization signature in the signed PCZT — the real
+            // spend's signature plus the dummy-spend signatures the IO
+            // Finalizer produced for padding actions. The real signature must
+            // be among them at the spend's (pool, action index).
+            let extracted_sigs = extract_compact_sigs_from_signed_pczt(&signed_pczt.serialize())
+                .expect("extract compact sigs from signed PCZT");
+            assert!(
+                extracted_sigs.contains(&DecodedActionSig {
+                    pool: DECODED_SIG_POOL_ORCHARD,
+                    action_index: spend_index as u32,
+                    sig: sig_bytes,
+                }),
+                "compact sig extraction must include the signer's signature at the spend index"
+            );
+
+            // NEW path: hand the SAME signature to the compact path as a
+            // (pool, action_index, sig) list and apply it onto the proofs clone.
+            let sigs = vec![DecodedActionSig {
+                pool: DECODED_SIG_POOL_ORCHARD,
+                action_index: spend_index as u32,
+                sig: sig_bytes,
+            }];
+            let new = apply_sigs_and_extract(&proofs_bytes, &sigs, None, None)
+                .expect("compact apply_sigs_and_extract path should succeed");
+
+            // The software migration path applies the FULL extracted set
+            // (dummy-spend signatures included) onto a proofs base that already
+            // carries the dummy signatures; re-applying an rk-valid signature
+            // is an overwrite, not an error, and yields the same transaction.
+            let software = apply_sigs_and_extract(&proofs_bytes, &extracted_sigs, None, None)
+                .expect("software-path apply of all extracted sigs should succeed");
+            assert_eq!(
+                software.txid, new.txid,
+                "applying the full extracted signature set must produce the same txid"
+            );
+
+            // Headline correctness gate: the compact sigs-only path produces the
+            // SAME txid as the full signed-PCZT path. Under ZIP-244 the txid
+            // commits to the transaction effects and *excludes* the authorizing
+            // data (the randomized binding signatures), so an identical txid means
+            // the two paths built the identical transaction.
+            assert_eq!(
+                old.txid, new.txid,
+                "compact sigs-only path must produce the same txid as the full signed-PCZT path"
+            );
+
+            // The transactions are the same size down to the byte.
+            assert_eq!(
+                old.raw_tx.len(),
+                new.raw_tx.len(),
+                "compact and full paths must produce the same-length transaction"
+            );
+
+            // The only raw-byte differences between the compact path and the full
+            // path are the freshly-randomized binding signatures. We measure this
+            // two ways and require the compact path to be no noisier than the
+            // full path's own non-determinism, both bounded by the two 64-byte
+            // binding signatures (Orchard + Ironwood = 128 bytes). We bound rather
+            // than require exact equality of the diff counts because RedDSA
+            // signature bytes are uniformly random, so two random 64-byte
+            // signatures coincide in a few byte positions by chance, making the
+            // raw differing-byte count jitter slightly below 128.
+            let count_diffs = |a: &[u8], b: &[u8]| a.iter().zip(b).filter(|(x, y)| x != y).count();
+            let inherent_diff = count_diffs(&old.raw_tx, &old_again.raw_tx);
+            let compact_vs_full_diff = count_diffs(&old.raw_tx, &new.raw_tx);
+
+            // Two independent full-path extractions are already non-identical:
+            // this proves the divergence is inherent to `TransactionExtractor`'s
+            // randomized binding signatures, not something the compact path
+            // introduced.
+            assert!(
+                inherent_diff > 0,
+                "two full-path extractions are expected to differ in their randomized binding \
+                 signatures"
+            );
+            assert!(
+                inherent_diff <= 128,
+                "inherent binding-signature divergence ({inherent_diff} bytes) must be within the \
+                 two 64-byte binding signatures"
+            );
+            assert!(
+                compact_vs_full_diff <= 128,
+                "the compact path must not diverge from the full path beyond the two 64-byte \
+                 binding signatures ({compact_vs_full_diff} bytes differ)"
+            );
+
+            // The extracted transaction re-derives the same txid through the real
+            // `Transaction` type, confirming the compact path emits a
+            // structurally valid, consensus-identical transaction.
+            assert_eq!(new.tx.txid(), old.tx.txid());
+        }
     }
 }

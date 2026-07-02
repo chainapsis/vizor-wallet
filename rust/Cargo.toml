@@ -151,6 +151,10 @@ security-framework = { version = "3.7", features = ["OSX_10_15"] }
 [dev-dependencies]
 tempfile = "3"
 hex = "0.4"
+# Used only by the sigs-only byte-identity test to recover the spendable note
+# from a freshly built Orchard bundle (matches pczt's own end-to-end test).
+# Already in the dependency graph via zcash_client_backend.
+zcash_note_encryption = "0.4"
 
 [dev-dependencies.vote-commitment-tree]
 git = "https://github.com/valargroup/zcash_voting"

@@ -653,9 +653,13 @@ pub struct KeystoneMigrationSigningRequest {
     pub signing_batch_limit: u32,
 }
 
+/// One signed message in the compact "signatures-only" Keystone response: the
+/// produced spend-authorization signatures for request message `id`. Replaces
+/// the prior full-signed-PCZT payload. Dart builds this from the decoded
+/// `KeystoneSigResult` and feeds it into the migration completion calls.
 pub struct KeystoneSignedMigrationMessage {
     pub id: String,
-    pub signed_pczt: Vec<u8>,
+    pub sigs: Vec<crate::api::keystone::KeystoneActionSig>,
 }
 
 pub struct KeystoneMigrationProofStatus {
@@ -1075,6 +1079,42 @@ pub fn prepare_orchard_migration_denominations_pczt(
     })
 }
 
+/// Convert the FRB-boundary signed messages (compact action signatures with
+/// `Vec<u8>` sigs) into the wallet-layer form (`[u8; 64]` sigs), validating each
+/// signature is exactly 64 bytes. Shared by all three migration completion FRB
+/// wrappers so the conversion (and its length check) stays in one place.
+fn to_wallet_signed_messages(
+    signed_messages: Vec<KeystoneSignedMigrationMessage>,
+) -> Result<Vec<wallet_sync::KeystoneSignedMigrationMessage>, String> {
+    signed_messages
+        .into_iter()
+        .map(|message| {
+            let sigs = message
+                .sigs
+                .into_iter()
+                .map(|action| {
+                    let sig: [u8; 64] = action.sig.as_slice().try_into().map_err(|_| {
+                        format!(
+                            "Keystone signature for {} must be 64 bytes, got {}",
+                            message.id,
+                            action.sig.len()
+                        )
+                    })?;
+                    Ok(crate::wallet::keystone::DecodedActionSig {
+                        pool: action.pool,
+                        action_index: action.action_index,
+                        sig,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            Ok(wallet_sync::KeystoneSignedMigrationMessage {
+                id: message.id,
+                sigs,
+            })
+        })
+        .collect()
+}
+
 pub async fn complete_orchard_migration_denominations_pczt(
     db_path: String,
     lightwalletd_url: String,
@@ -1087,13 +1127,7 @@ pub async fn complete_orchard_migration_denominations_pczt(
 ) -> Result<IronwoodMigrationResult, String> {
     let network = parse_network_and_migrate(&db_path, &network)?;
     let password = Zeroizing::new(password.into_bytes());
-    let signed_messages = signed_messages
-        .into_iter()
-        .map(|message| wallet_sync::KeystoneSignedMigrationMessage {
-            id: message.id,
-            signed_pczt: message.signed_pczt,
-        })
-        .collect();
+    let signed_messages = to_wallet_signed_messages(signed_messages)?;
     let r = wallet_sync::complete_orchard_migration_denominations_pczt(
         &db_path,
         &lightwalletd_url,
@@ -1155,13 +1189,7 @@ pub async fn complete_orchard_migration_single_qr_pczt(
 ) -> Result<IronwoodMigrationResult, String> {
     let network = parse_network_and_migrate(&db_path, &network)?;
     let password = Zeroizing::new(password.into_bytes());
-    let signed_messages = signed_messages
-        .into_iter()
-        .map(|message| wallet_sync::KeystoneSignedMigrationMessage {
-            id: message.id,
-            signed_pczt: message.signed_pczt,
-        })
-        .collect();
+    let signed_messages = to_wallet_signed_messages(signed_messages)?;
     let r = wallet_sync::complete_orchard_migration_single_qr_pczt(
         &db_path,
         &lightwalletd_url,
@@ -1239,13 +1267,7 @@ pub fn complete_orchard_migration_batch_pczt(
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let password = Zeroizing::new(password.into_bytes());
-        let signed_messages = signed_messages
-            .into_iter()
-            .map(|message| wallet_sync::KeystoneSignedMigrationMessage {
-                id: message.id,
-                signed_pczt: message.signed_pczt,
-            })
-            .collect();
+        let signed_messages = to_wallet_signed_messages(signed_messages)?;
         let r = wallet_sync::complete_orchard_migration_batch_pczt(
             &db_path,
             network,
