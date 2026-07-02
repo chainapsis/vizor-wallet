@@ -285,6 +285,34 @@ pub fn add_proofs_to_pczt(
 /// (witnesses, proprietary metadata). Produces the bytes to send to
 /// the hardware wallet for signing.
 pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
+    redact_pczt_for_signer_inner(pczt_bytes, false)
+}
+
+/// Redact a PCZT for a Keystone **migration batch** request. On top of
+/// [`redact_pczt_for_signer`], this also clears from every Orchard and Ironwood
+/// action:
+///
+/// - the spend `fvk`: the device verifies each spend's nullifier and `rk` against
+///   the FVK it derives from its own stored UFVK and never reads the wire `fvk`,
+///   so dropping it saves wire bytes and skips the device's parse-time
+///   `FullViewingKey::from_bytes` cost for every action in every check pass;
+/// - the spend `spend_auth_sig`: at request time the only signatures present are
+///   the wallet's own IO-finalizer dummy signatures. The device skips those
+///   dummy spends without needing them, and the wallet's stored copy of the
+///   PCZT retains them for the post-signing combine, so on the wire they are
+///   pure overhead (and the device would echo them back, bloating the
+///   response).
+///
+/// Only use this for the migration batch flow; the single-transaction hardware
+/// send keeps [`redact_pczt_for_signer`].
+pub fn redact_pczt_for_batch_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
+    redact_pczt_for_signer_inner(pczt_bytes, true)
+}
+
+/// Shared body of [`redact_pczt_for_signer`] and [`redact_pczt_for_batch_signer`]:
+/// the standard signer redaction, plus the batch-only spend `fvk` and
+/// `spend_auth_sig` clears when `for_batch` is set.
+fn redact_pczt_for_signer_inner(pczt_bytes: &[u8], for_batch: bool) -> Result<Vec<u8>, String> {
     use pczt::roles::redactor::Redactor;
 
     let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
@@ -295,6 +323,10 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
             r.redact_actions(|mut ar| {
                 ar.clear_spend_witness();
                 ar.redact_output_proprietary("zcash_client_backend:output_info");
+                if for_batch {
+                    ar.clear_spend_fvk();
+                    ar.clear_spend_auth_sig();
+                }
             });
         });
 
@@ -304,6 +336,10 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
             r.redact_actions(|mut ar| {
                 ar.clear_spend_witness();
                 ar.redact_output_proprietary("zcash_client_backend:output_info");
+                if for_batch {
+                    ar.clear_spend_fvk();
+                    ar.clear_spend_auth_sig();
+                }
             });
         });
     }

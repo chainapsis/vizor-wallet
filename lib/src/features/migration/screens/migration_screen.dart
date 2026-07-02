@@ -41,7 +41,7 @@ class MigrationScreen extends ConsumerStatefulWidget {
 }
 
 class _MigrationScreenState extends ConsumerState<MigrationScreen> {
-  static const _keystoneMigrationBatchMaxFragmentLen = 140;
+  static const _keystoneMigrationBatchMaxFragmentLen = 200;
   static const _keystoneSigResultUrType = 'zcash-sig-result';
   static const _keystoneSignResultUrType = 'zcash-sign-result';
 

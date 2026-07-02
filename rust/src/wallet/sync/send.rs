@@ -2965,7 +2965,7 @@ fn create_orchard_denomination_split_pczt(
         orchard_inputs.len(),
         split_outputs.len(),
     )?;
-    let redacted_pczt = super::pczt::redact_pczt_for_signer(&built_pczt.bytes)?;
+    let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built_pczt.bytes)?;
 
     Ok(Some(CreatedDenominationSplitPczt {
         base_pczt: built_pczt.bytes,
@@ -3288,7 +3288,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
         .map_err(|e| format!("Build predicted migration PCZT failed: {e}"))?;
     let expiry_height = u32::from(build_result.pczt_parts.expiry_height);
     let built_pczt = pczt_from_build_result(build_result, network, account_derivation, 1, 0)?;
-    let redacted_pczt = super::pczt::redact_pczt_for_signer(&built_pczt.bytes)?;
+    let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built_pczt.bytes)?;
     let target_height_u32: u32 = target_height.into();
 
     Ok(Some(CreatedMigrationPczt {
@@ -3644,7 +3644,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         orchard_inputs.len(),
         0,
     )?;
-    let redacted_pczt = super::pczt::redact_pczt_for_signer(&built_pczt.bytes)?;
+    let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built_pczt.bytes)?;
     let target_height_u32: u32 = target_height.into();
 
     Ok(Some(CreatedMigrationPczt {
@@ -5755,9 +5755,13 @@ mod tests {
         assert_eq!(u64::from(standard_undersized_fee), 10_000);
     }
 
-    #[test]
+    /// Builds a real IO-finalized v6 Orchard split PCZT, shared by the version and
+    /// signer-redaction tests below. Every action's spend is wallet-controlled (the
+    /// real spend plus the fabricated zero-value spend paired with the change
+    /// output), so all of them carry the wallet `fvk` on the wire and are signable
+    /// with the returned spending key.
     #[cfg(zcash_unstable = "nu6.3")]
-    fn orchard_denomination_split_pczt_uses_v6_for_change_outputs() {
+    fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
         let network = WalletNetwork::LocalIronwoodTestnet;
         let target_height = 120;
         let sk = orchard::keys::SpendingKey::from_bytes([7; 32]).unwrap();
@@ -5808,7 +5812,108 @@ mod tests {
 
         assert_eq!(build_result.pczt_parts.version, TxVersion::V6);
         let built_pczt = pczt_from_build_result(build_result, network, None, 1, 1).unwrap();
+        (built_pczt, sk)
+    }
+
+    #[test]
+    #[cfg(zcash_unstable = "nu6.3")]
+    fn orchard_denomination_split_pczt_uses_v6_for_change_outputs() {
+        let (built_pczt, _sk) = built_v6_split_pczt();
         crate::wallet::sync::pczt::redact_pczt_for_signer(&built_pczt.bytes).unwrap();
+    }
+
+    #[test]
+    #[cfg(zcash_unstable = "nu6.3")]
+    fn batch_signer_redaction_clears_spend_fvks_and_signatures() {
+        use pczt::roles::redactor::Redactor;
+        use pczt::roles::signer::Signer;
+
+        let (built_pczt, sk) = built_v6_split_pczt();
+
+        // Give the request-time PCZT spend_auth_sigs to strip. Migration children
+        // carry IO-finalizer dummy signatures at request time; this split fixture's
+        // actions are all wallet-controlled instead, so sign them with the wallet
+        // spending key.
+        let request_bytes = {
+            let parsed = pczt::Pczt::parse(&built_pczt.bytes).unwrap();
+            let action_count = parsed.orchard().actions().len();
+            let mut signer = Signer::new(parsed).unwrap();
+            let ask = orchard::keys::SpendAuthorizingKey::from(&sk);
+            for index in 0..action_count {
+                signer.sign_orchard(index, &ask).unwrap();
+            }
+            signer.finish().serialize()
+        };
+        assert!(
+            pczt::Pczt::parse(&request_bytes)
+                .unwrap()
+                .orchard()
+                .actions()
+                .iter()
+                .any(|action| action.spend().spend_auth_sig().is_some()),
+            "fixture must carry a spend_auth_sig for the sig-clearing to be meaningful",
+        );
+
+        let standard = crate::wallet::sync::pczt::redact_pczt_for_signer(&request_bytes).unwrap();
+        let batch =
+            crate::wallet::sync::pczt::redact_pczt_for_batch_signer(&request_bytes).unwrap();
+
+        // The batch redaction must not send any request-time spend_auth_sig (only
+        // wallet-side signatures exist before the device signs).
+        let batch_parsed = pczt::Pczt::parse(&batch).unwrap();
+        assert!(
+            batch_parsed
+                .orchard()
+                .actions()
+                .iter()
+                .all(|action| action.spend().spend_auth_sig().is_none()),
+            "batch redaction must clear every spend_auth_sig",
+        );
+
+        // Exactness: the batch redaction equals the standard signer redaction plus
+        // precisely the spend fvk + spend_auth_sig clears — no other field changes.
+        let with_extra_clears = |bytes: &[u8]| {
+            let parsed = pczt::Pczt::parse(bytes).unwrap();
+            Redactor::new(parsed)
+                .redact_orchard_with(|mut r| {
+                    r.redact_actions(|mut ar| {
+                        ar.clear_spend_fvk();
+                        ar.clear_spend_auth_sig();
+                    });
+                })
+                .redact_ironwood_with(|mut r| {
+                    r.redact_actions(|mut ar| {
+                        ar.clear_spend_fvk();
+                        ar.clear_spend_auth_sig();
+                    });
+                })
+                .finish()
+                .serialize()
+        };
+        assert_eq!(batch, with_extra_clears(&standard));
+
+        // Guard that the fvk clear is not vacuous: clearing only the signatures must
+        // not reproduce the batch redaction, i.e. the wire fvk was present and cleared.
+        let sigs_only_cleared = {
+            let parsed = pczt::Pczt::parse(&standard).unwrap();
+            Redactor::new(parsed)
+                .redact_orchard_with(|mut r| {
+                    r.redact_actions(|mut ar| {
+                        ar.clear_spend_auth_sig();
+                    });
+                })
+                .redact_ironwood_with(|mut r| {
+                    r.redact_actions(|mut ar| {
+                        ar.clear_spend_auth_sig();
+                    });
+                })
+                .finish()
+                .serialize()
+        };
+        assert_ne!(
+            batch, sigs_only_cleared,
+            "batch redaction must also clear the wire spend fvks",
+        );
     }
 
     #[test]

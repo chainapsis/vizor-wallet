@@ -472,7 +472,7 @@ pub fn encode_zcash_sign_batch_ur_parts(
     let mut cbor = Vec::new();
     let mut encoder = minicbor::Encoder::new(&mut cbor);
     encoder
-        .map(5)
+        .map(4)
         .map_err(|e| format!("CBOR encode batch map: {e}"))?
         .u8(1)
         .map_err(|e| format!("CBOR encode batch version key: {e}"))?
@@ -492,9 +492,8 @@ pub fn encode_zcash_sign_batch_ur_parts(
         .map_err(|e| format!("CBOR encode batch messages array: {e}"))?;
 
     for message in messages {
-        let digest = sha256(&message.pczt_bytes);
         encoder
-            .map(4)
+            .map(3)
             .map_err(|e| format!("CBOR encode message map: {e}"))?
             .u8(1)
             .map_err(|e| format!("CBOR encode message id key: {e}"))?
@@ -507,18 +506,8 @@ pub fn encode_zcash_sign_batch_ur_parts(
             .u8(3)
             .map_err(|e| format!("CBOR encode message payload key: {e}"))?
             .bytes(&message.pczt_bytes)
-            .map_err(|e| format!("CBOR encode message payload: {e}"))?
-            .u8(6)
-            .map_err(|e| format!("CBOR encode message digest key: {e}"))?
-            .bytes(&digest)
-            .map_err(|e| format!("CBOR encode message digest: {e}"))?;
+            .map_err(|e| format!("CBOR encode message payload: {e}"))?;
     }
-
-    encoder
-        .u8(11)
-        .map_err(|e| format!("CBOR encode batch atomic key: {e}"))?
-        .bool(true)
-        .map_err(|e| format!("CBOR encode batch atomic: {e}"))?;
 
     let mut ur_encoder = ur::Encoder::new(&cbor, max_fragment_len, ZCASH_SIGN_BATCH_TYPE)
         .map_err(|e| format!("UR encoder: {e}"))?;
@@ -959,13 +948,13 @@ mod tests {
 
         let mut decoder = minicbor::Decoder::new(&cbor);
         let len = required_len(decoder.map(), "test batch map").expect("map length");
-        assert_eq!(len, 5);
+        assert_eq!(len, 4);
 
         let mut version = None;
         let mut request_id = None;
         let mut network = None;
         let mut message_count = None;
-        let mut atomic = None;
+        let expected_messages: [(&str, &[u8]); 2] = [("tx-1", b"pczt-one"), ("tx-2", b"pczt-two")];
 
         for _ in 0..len {
             match decoder.u8().expect("field key") {
@@ -979,11 +968,40 @@ mod tests {
                 4 => {
                     let messages = required_len(decoder.array(), "test messages").expect("array");
                     message_count = Some(messages);
-                    for _ in 0..messages {
-                        decoder.skip().expect("message map");
+                    for expected in expected_messages.iter().take(messages as usize) {
+                        let message_len =
+                            required_len(decoder.map(), "test message map").expect("message map");
+                        assert_eq!(message_len, 3);
+
+                        let mut id = None;
+                        let mut kind = None;
+                        let mut payload = None;
+                        for _ in 0..message_len {
+                            match decoder.u8().expect("message field key") {
+                                1 => {
+                                    id = Some(
+                                        String::from_utf8(
+                                            decoder.bytes().expect("message id").to_vec(),
+                                        )
+                                        .unwrap(),
+                                    );
+                                }
+                                2 => kind = Some(decoder.u32().expect("message kind")),
+                                3 => {
+                                    payload =
+                                        Some(decoder.bytes().expect("message payload").to_vec())
+                                }
+                                6 => panic!("inbound payload digest should be omitted"),
+                                _ => decoder.skip().expect("unknown message field"),
+                            }
+                        }
+
+                        assert_eq!(id.as_deref(), Some(expected.0));
+                        assert_eq!(kind, Some(ZCASH_SIGN_MESSAGE_KIND_PCZT_V1));
+                        assert_eq!(payload.as_deref(), Some(expected.1));
                     }
                 }
-                11 => atomic = Some(decoder.bool().expect("atomic")),
+                11 => panic!("batch atomic field should be omitted"),
                 _ => decoder.skip().expect("unknown field"),
             }
         }
@@ -992,7 +1010,6 @@ mod tests {
         assert_eq!(request_id.as_deref(), Some("request-1"));
         assert_eq!(network, Some(ZCASH_SIGN_BATCH_NETWORK_MAINNET));
         assert_eq!(message_count, Some(2));
-        assert_eq!(atomic, Some(true));
     }
 
     #[test]
