@@ -5,6 +5,13 @@ import 'package:flutter/services.dart';
 
 const _channel = EventChannel('com.zcash.wallet/screenshots');
 
+// Cache the broadcast stream so stacked screens (e.g. paste import → manual
+// import, both mounted) share ONE native subscription. Calling
+// receiveBroadcastStream() per listener creates competing listen/cancel pairs
+// on the single-listener native handler, so popping the top route would tear
+// down the handler and silently stop the still-mounted route's events.
+Stream<dynamic>? _broadcast;
+
 /// Emits whenever the OS reports a user screenshot (iOS only — Android
 /// uses FLAG_SECURE and never emits here). iOS now also blanks the window
 /// via the secure-field privacy shield (see `SecureScreenshotShield`), but
@@ -14,8 +21,6 @@ const _channel = EventChannel('com.zcash.wallet/screenshots');
 /// swallowed so listeners only ever see real events.
 Stream<void> screenshotEvents() {
   if (kIsWeb || !Platform.isIOS) return const Stream.empty();
-  return _channel
-      .receiveBroadcastStream()
-      .map((_) {})
-      .handleError((Object _) {});
+  final broadcast = _broadcast ??= _channel.receiveBroadcastStream();
+  return broadcast.map((_) {}).handleError((Object _) {});
 }
