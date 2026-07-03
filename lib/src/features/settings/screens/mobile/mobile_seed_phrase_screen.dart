@@ -328,6 +328,10 @@ class _MobileSeedPhraseScreenState
       return;
     }
     _screenshotSheetShowing = true;
+    // Suppress the privacy shield through the iOS screenshot preview/editor
+    // flow — the native blanking already blacks out the capture, so the extra
+    // blur flash is redundant noise.
+    _privacyController.beginScreenshotSuppression();
     unawaited(AppHaptics.privacyToggle());
     try {
       await showAppMobileSheet<void>(
@@ -370,6 +374,9 @@ class _MobileSeedPhraseScreenState
       backgroundColor: colors.background.window,
       body: AppToastHost(
         child: SensitivePrivacyOverlay(
+          // Protect only in the reveal stage. The passcode gate shows no words,
+          // so blanking its screenshot and app-switcher snapshot is needless
+          // friction. Matches the `_onScreenshot` guard.
           sensitiveContentVisible:
               _stage == _SeedStage.reveal && _mnemonic != null,
           controller: _privacyController,

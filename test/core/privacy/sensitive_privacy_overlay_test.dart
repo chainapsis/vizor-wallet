@@ -17,12 +17,13 @@ void main() {
     expect(supportsPlatformPrivacySignals(isWeb: true, isMacOS: true), isFalse);
   });
 
-  test('native privacy shield supports macOS and Android', () {
+  test('native privacy shield supports macOS, Android, and iOS', () {
     expect(
       supportsNativePrivacyShield(
         isWeb: false,
         isMacOS: true,
         isAndroid: false,
+        isIOS: false,
       ),
       isTrue,
     );
@@ -31,6 +32,7 @@ void main() {
         isWeb: false,
         isMacOS: false,
         isAndroid: true,
+        isIOS: false,
       ),
       isTrue,
     );
@@ -39,11 +41,26 @@ void main() {
         isWeb: false,
         isMacOS: false,
         isAndroid: false,
+        isIOS: true,
+      ),
+      isTrue,
+    );
+    expect(
+      supportsNativePrivacyShield(
+        isWeb: false,
+        isMacOS: false,
+        isAndroid: false,
+        isIOS: false,
       ),
       isFalse,
     );
     expect(
-      supportsNativePrivacyShield(isWeb: true, isMacOS: true, isAndroid: true),
+      supportsNativePrivacyShield(
+        isWeb: true,
+        isMacOS: true,
+        isAndroid: true,
+        isIOS: true,
+      ),
       isFalse,
     );
   });
@@ -248,6 +265,54 @@ void main() {
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
 
       // A genuine background (no prompt) still covers the content.
+      controller.setLifecycleInactiveForTesting();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'environment controller suppresses the shield across the iOS screenshot '
+    'preview inactive→resumed transition',
+    (tester) async {
+      final controller = SensitivePrivacyEnvironmentController();
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        AppTheme(
+          data: AppThemeData.light,
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: SensitivePrivacyOverlay(
+              sensitiveContentVisible: true,
+              controller: controller,
+              child: const SizedBox(width: 320, height: 240),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+
+      // A screenshot marks suppression while foreground; the preview/editor
+      // then drives the app inactive — the shield stays down (native blanking
+      // already blacks out the capture).
+      controller.beginScreenshotSuppression();
+      controller.setLifecycleInactiveForTesting();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+
+      // A real background (hide) is not suppressed by the screenshot marker.
+      controller.setLifecycleHiddenForTesting();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+
+      // Returning to foreground clears the screenshot suppression in lockstep.
+      controller.setLifecycleForegroundForTesting();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+
+      // A genuine later background (no screenshot) still covers the content.
       controller.setLifecycleInactiveForTesting();
       await tester.pump();
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
