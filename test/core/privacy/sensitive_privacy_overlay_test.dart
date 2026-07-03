@@ -294,9 +294,9 @@ void main() {
 
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
 
-      // A screenshot marks suppression while foreground; the preview/editor
-      // then drives the app inactive — the shield stays down (native blanking
-      // already blacks out the capture).
+      // A screenshot marks suppression while the warning sheet is up; the
+      // preview/editor then drives the app inactive — the shield stays down
+      // (native blanking already blacks out the capture).
       controller.beginScreenshotSuppression();
       controller.setLifecycleInactiveForTesting();
       await tester.pump();
@@ -307,13 +307,18 @@ void main() {
       await tester.pump();
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
 
-      // Returning to foreground clears the screenshot suppression in lockstep.
+      // The editor closes to foreground and reopens — suppression persists
+      // while the sheet is up, so the preview reopen does not flash the shield.
       controller.setLifecycleForegroundForTesting();
       await tester.pump();
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
-
-      // A genuine later background (no screenshot) still covers the content.
       controller.setLifecycleInactiveForTesting();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+
+      // Dismissing the warning sheet releases suppression; the current
+      // inactive state is no longer safe, so the shield covers the content.
+      controller.endScreenshotSuppression();
       await tester.pump();
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
     },
