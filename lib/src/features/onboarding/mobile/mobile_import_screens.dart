@@ -1,13 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/feedback/app_haptics.dart';
+import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/platform/screenshot_observer.dart';
+import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
+import '../../settings/screens/mobile/mobile_seed_phrase_screen.dart'
+    show MobileSeedScreenshotWarningSheet;
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
@@ -50,7 +58,18 @@ String? validateImportedMnemonic(List<String> words) {
 /// slots with a paste action, clipboard problems surfaced as toasts,
 /// and an Enter Manually link into the word-by-word wizard.
 class MobileImportScreen extends StatefulWidget {
-  const MobileImportScreen({super.key});
+  const MobileImportScreen({
+    this.screenshotStream,
+    this.privacyOverlayController,
+    super.key,
+  });
+
+  /// Test seam — production listens to the platform screenshot events.
+  @visibleForTesting
+  final Stream<void>? screenshotStream;
+
+  @visibleForTesting
+  final SensitivePrivacyOverlayController? privacyOverlayController;
 
   @override
   State<MobileImportScreen> createState() => _MobileImportScreenState();
@@ -59,6 +78,57 @@ class MobileImportScreen extends StatefulWidget {
 class _MobileImportScreenState extends State<MobileImportScreen> {
   List<String> _words = const [];
   String? _error;
+
+  StreamSubscription<void>? _screenshotSub;
+  bool _screenshotSheetShowing = false;
+  late final bool _ownsPrivacyController;
+  late final SensitivePrivacyOverlayController _privacyController;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsPrivacyController = widget.privacyOverlayController == null;
+    _privacyController =
+        widget.privacyOverlayController ??
+        SensitivePrivacyEnvironmentController();
+    _screenshotSub = (widget.screenshotStream ?? screenshotEvents()).listen(
+      (_) => _onScreenshot(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _screenshotSub?.cancel();
+    if (_ownsPrivacyController) _privacyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onScreenshot() async {
+    // Only warn once pasted words are on screen — the empty paste form has
+    // nothing to protect. Mirrors the reveal screens' _onScreenshot guard.
+    if (_words.isEmpty ||
+        _screenshotSheetShowing ||
+        !_isCurrentRoute ||
+        !mounted) {
+      return;
+    }
+    _screenshotSheetShowing = true;
+    // Suppress the privacy shield through the iOS screenshot preview/editor
+    // flow — the native blanking already blacks out the capture, so the extra
+    // blur flash is redundant noise.
+    _privacyController.beginScreenshotSuppression();
+    unawaited(AppHaptics.privacyToggle());
+    try {
+      await showAppMobileSheet<void>(
+        context: context,
+        builder: (_) => const MobileSeedScreenshotWarningSheet(),
+      );
+    } finally {
+      _screenshotSheetShowing = false;
+    }
+  }
+
+  bool get _isCurrentRoute => ModalRoute.of(context)?.isCurrent ?? true;
 
   Future<void> _paste() async {
     String? text;
@@ -115,117 +185,123 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return MobileOnboardingStepScaffold(
-      progress: mobileImportProgress(1),
-      onBack: () => Navigator.of(context).maybePop(),
-      title: 'Import Wallet',
-      // Line break matches the Figma subtitle wrap.
-      subtitle:
-          'Paste your Secret Passphrase or\nenter it manually word by word.',
-      bottomArea: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_error != null) ...[
-            Text(
-              _error!,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.destructive,
+    return SensitivePrivacyOverlay(
+      // Protect only once words are on screen — the empty paste form has
+      // nothing to blank. Matches the `_onScreenshot` guard.
+      sensitiveContentVisible: _words.isNotEmpty,
+      controller: _privacyController,
+      child: MobileOnboardingStepScaffold(
+        progress: mobileImportProgress(1),
+        onBack: () => Navigator.of(context).maybePop(),
+        title: 'Import Wallet',
+        // Line break matches the Figma subtitle wrap.
+        subtitle:
+            'Paste your Secret Passphrase or\nenter it manually word by word.',
+        bottomArea: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_error != null) ...[
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: colors.text.destructive,
+                ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          if (_filled) ...[
-            // Pasted state — Figma fills the slots in place and swaps
-            // the actions for confirm / clear.
-            AppButton(
-              key: const ValueKey('mobile_import_confirm'),
-              expand: true,
-              onPressed: _confirm,
-              trailing: const AppIcon(AppIcons.chevronForward),
-              child: const Text('Confirm & import'),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Semantics(
-              button: true,
-              child: GestureDetector(
-                key: const ValueKey('mobile_import_clear'),
-                behavior: HitTestBehavior.opaque,
-                onTap: _clear,
-                child: SizedBox(
-                  height: 44,
-                  child: Center(
-                    child: Text(
-                      'Clear secret phrase',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.primary,
+              const SizedBox(height: AppSpacing.xs),
+            ],
+            if (_filled) ...[
+              // Pasted state — Figma fills the slots in place and swaps
+              // the actions for confirm / clear.
+              AppButton(
+                key: const ValueKey('mobile_import_confirm'),
+                expand: true,
+                onPressed: _confirm,
+                trailing: const AppIcon(AppIcons.chevronForward),
+                child: const Text('Confirm & import'),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Semantics(
+                button: true,
+                child: GestureDetector(
+                  key: const ValueKey('mobile_import_clear'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _clear,
+                  child: SizedBox(
+                    height: 44,
+                    child: Center(
+                      child: Text(
+                        'Clear secret phrase',
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.primary,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ] else ...[
-            AppButton(
-              key: const ValueKey('mobile_import_paste'),
-              expand: true,
-              onPressed: _paste,
-              // No explicit icon color: AppButton's IconTheme tints it
-              // with the label color (white on the primary fill).
-              leading: const AppIcon(AppIcons.copy),
-              child: const Text('Paste secret phrase'),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Semantics(
-              button: true,
-              child: GestureDetector(
-                key: const ValueKey('mobile_import_enter_manually'),
-                behavior: HitTestBehavior.opaque,
-                onTap: _openManual,
-                child: SizedBox(
-                  height: 44,
-                  child: Center(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        AppIcon(
-                          AppIcons.edit,
-                          size: AppIconSize.medium,
-                          color: colors.text.primary,
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Text(
-                          'Enter manually',
-                          style: AppTypography.labelLarge.copyWith(
+            ] else ...[
+              AppButton(
+                key: const ValueKey('mobile_import_paste'),
+                expand: true,
+                onPressed: _paste,
+                // No explicit icon color: AppButton's IconTheme tints it
+                // with the label color (white on the primary fill).
+                leading: const AppIcon(AppIcons.copy),
+                child: const Text('Paste secret phrase'),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Semantics(
+                button: true,
+                child: GestureDetector(
+                  key: const ValueKey('mobile_import_enter_manually'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _openManual,
+                  child: SizedBox(
+                    height: 44,
+                    child: Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AppIcon(
+                            AppIcons.edit,
+                            size: AppIconSize.medium,
                             color: colors.text.primary,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: AppSpacing.xs),
+                          Text(
+                            'Enter manually',
+                            style: AppTypography.labelLarge.copyWith(
+                              color: colors.text.primary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
+            ],
           ],
-        ],
-      ),
-      // VZR-71: users instinctively tap the slot grid expecting to
-      // type — route the tap into the manual wizard, same as the Enter
-      // manually link. Once a valid phrase fills the card it is a
-      // confirmed phrase surface and the tap is disabled.
-      child: _filled
-          ? ImportSlotsCard(words: _words)
-          : Semantics(
-              button: true,
-              label: 'Enter secret phrase manually',
-              child: GestureDetector(
-                key: const ValueKey('mobile_import_slots'),
-                behavior: HitTestBehavior.opaque,
-                onTap: _openManual,
-                child: ImportSlotsCard(words: _words),
+        ),
+        // VZR-71: users instinctively tap the slot grid expecting to
+        // type — route the tap into the manual wizard, same as the Enter
+        // manually link. Once a valid phrase fills the card it is a
+        // confirmed phrase surface and the tap is disabled.
+        child: _filled
+            ? ImportSlotsCard(words: _words)
+            : Semantics(
+                button: true,
+                label: 'Enter secret phrase manually',
+                child: GestureDetector(
+                  key: const ValueKey('mobile_import_slots'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _openManual,
+                  child: ImportSlotsCard(words: _words),
+                ),
               ),
-            ),
+      ),
     );
   }
 }
