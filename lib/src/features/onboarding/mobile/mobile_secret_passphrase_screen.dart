@@ -166,6 +166,10 @@ class _MobileSecretPassphraseScreenState
       return;
     }
     _screenshotSheetShowing = true;
+    // Suppress the privacy shield through the iOS screenshot preview/editor
+    // flow — the native blanking already blacks out the capture, so the extra
+    // blur flash is redundant noise.
+    _privacyController.beginScreenshotSuppression();
     unawaited(AppHaptics.privacyToggle());
     try {
       await showAppMobileSheet<void>(
@@ -185,6 +189,9 @@ class _MobileSecretPassphraseScreenState
     final words = _mnemonic?.split(' ') ?? const <String>[];
 
     return SensitivePrivacyOverlay(
+      // Protect only while the phrase is actually on screen. Before reveal the
+      // card shows no words, so blanking its screenshot and blurring the app
+      // switcher there is needless friction. Matches the `_onScreenshot` guard.
       sensitiveContentVisible: _revealed && _mnemonic != null,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
