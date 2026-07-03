@@ -8,6 +8,7 @@ import '../../../../main.dart' show log;
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/platform/screenshot_observer.dart';
+import '../../../core/privacy/route_coverage_aware.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -75,16 +76,13 @@ class MobileImportScreen extends StatefulWidget {
   State<MobileImportScreen> createState() => _MobileImportScreenState();
 }
 
-class _MobileImportScreenState extends State<MobileImportScreen> {
+class _MobileImportScreenState extends State<MobileImportScreen>
+    with RouteCoverageAware<MobileImportScreen> {
   List<String> _words = const [];
   String? _error;
 
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
-  // True while a route is pushed on top of this screen. The privacy overlay
-  // drives a global native shield token, so an offstage-but-mounted secret
-  // screen would otherwise keep blanking the pushed (non-secret) screens.
-  bool _coveredByPush = false;
   late final bool _ownsPrivacyController;
   late final SensitivePrivacyOverlayController _privacyController;
 
@@ -177,14 +175,13 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
   }
 
   void _confirm() {
-    // Drop the native shield before pushing so birthday and the screens after
-    // it are not blanked; restore it if the user comes back.
-    setState(() => _coveredByPush = true);
-    context
-        .push('/import/birthday', extra: ImportBirthdayArgs(mnemonic: _words.join(' ')))
-        .then((_) {
-          if (mounted) setState(() => _coveredByPush = false);
-        });
+    // The shield stays engaged through the push transition and drops only once
+    // this screen is fully covered (RouteCoverageAware), so birthday and the
+    // screens after it are not blanked while the seed is no longer visible.
+    context.push(
+      '/import/birthday',
+      extra: ImportBirthdayArgs(mnemonic: _words.join(' ')),
+    );
   }
 
   void _openManual() {
@@ -198,9 +195,9 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
     final colors = context.colors;
     return SensitivePrivacyOverlay(
       // Protect only once words are on screen — the empty paste form has
-      // nothing to blank. Matches the `_onScreenshot` guard. Drops while a next
-      // step is pushed on top so it does not blank those screens.
-      sensitiveContentVisible: _words.isNotEmpty && !_coveredByPush,
+      // nothing to blank. Matches the `_onScreenshot` guard. Drops once a next
+      // step has fully covered this screen so it does not blank those screens.
+      sensitiveContentVisible: _words.isNotEmpty && !isCoveredByNextRoute,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
         progress: mobileImportProgress(1),

@@ -46,9 +46,19 @@ Widget _entryAppWithBirthdayProbe({
       ),
       GoRoute(
         path: '/import/birthday',
-        builder: (_, state) {
+        builder: (context, state) {
           final args = state.extra as ImportBirthdayArgs;
-          return Scaffold(body: Text('Birthday: ${args.mnemonic}'));
+          return Scaffold(
+            body: Column(
+              children: [
+                Text('Birthday: ${args.mnemonic}'),
+                TextButton(
+                  onPressed: () => context.pop(),
+                  child: const Text('back-probe'),
+                ),
+              ],
+            ),
+          );
         },
       ),
     ],
@@ -266,7 +276,8 @@ void main() {
   );
 
   testWidgets(
-    'drops the shield once the next step is pushed on top',
+    'keeps the shield through the push slide, drops it once covered, and '
+    'restores it on back',
     (tester) async {
       final privacyController = SensitivePrivacyOverlayController(
         initiallySafe: false,
@@ -284,12 +295,23 @@ void main() {
       // Pasted words + unsafe controller: the shield covers the import entry.
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
 
+      // Start the push: the seed screen is still sliding out — the shield must
+      // stay up so a screenshot mid-transition does not capture the mnemonic.
       await tester.tap(find.byKey(const ValueKey('mobile_import_confirm')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+
+      // Transition finished: the import screen is fully covered, so the shield
+      // drops and the global native token no longer blanks the birthday screen.
       await tester.pumpAndSettle();
-      // The birthday step is pushed on top; the offstage import screen drops
-      // its shield so the global native token no longer blanks that screen.
       expect(find.text('Birthday: $_validMnemonic'), findsOneWidget);
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+
+      // Back: the secret screen slides in and is protected again.
+      await tester.tap(find.text('back-probe'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
     },
   );
 }

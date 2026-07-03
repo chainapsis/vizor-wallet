@@ -9,6 +9,7 @@ import '../../../../main.dart' show log;
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/platform/screenshot_observer.dart';
+import '../../../core/privacy/route_coverage_aware.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -59,16 +60,13 @@ class MobileSecretPassphraseScreen extends ConsumerStatefulWidget {
 }
 
 class _MobileSecretPassphraseScreenState
-    extends ConsumerState<MobileSecretPassphraseScreen> {
+    extends ConsumerState<MobileSecretPassphraseScreen>
+    with RouteCoverageAware<MobileSecretPassphraseScreen> {
   String? _mnemonic;
   bool _revealed = false;
   bool _copied = false;
   bool _submitting = false;
   String? _error;
-  // True while a route is pushed on top of this screen. The privacy overlay
-  // drives a global native shield token, so an offstage-but-mounted secret
-  // screen would otherwise keep blanking the pushed (non-secret) screens.
-  bool _coveredByPush = false;
   Timer? _copyResetTimer;
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
@@ -148,17 +146,13 @@ class _MobileSecretPassphraseScreenState
 
     final security = ref.read(appSecurityProvider);
     if (!security.isPasswordConfigured) {
-      // Drop the native shield before pushing so the passcode step and the
-      // screens after it are not blanked; restore it if the user comes back.
-      setState(() => _coveredByPush = true);
-      context
-          .push(
-            '/onboarding/set-passcode',
-            extra: SetPasswordScreenArgs.create(mnemonic: mnemonic),
-          )
-          .then((_) {
-            if (mounted) setState(() => _coveredByPush = false);
-          });
+      // The shield stays engaged through the push transition and drops only
+      // once this screen is fully covered (RouteCoverageAware), so the passcode
+      // step is not blanked while the seed is no longer visible.
+      context.push(
+        '/onboarding/set-passcode',
+        extra: SetPasswordScreenArgs.create(mnemonic: mnemonic),
+      );
       return;
     }
 
@@ -228,8 +222,9 @@ class _MobileSecretPassphraseScreenState
       // Protect only while the phrase is actually on screen. Before reveal the
       // card shows no words, so blanking its screenshot and blurring the app
       // switcher there is needless friction. Matches the `_onScreenshot` guard.
-      // Drops while the passcode step is pushed on top so it is not blanked.
-      sensitiveContentVisible: _revealed && _mnemonic != null && !_coveredByPush,
+      // Drops once the passcode step has fully covered this screen.
+      sensitiveContentVisible:
+          _revealed && _mnemonic != null && !isCoveredByNextRoute,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
         progress: mobileCreateProgress(6),
