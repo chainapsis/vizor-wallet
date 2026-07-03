@@ -34,6 +34,7 @@ Widget _app(String initialLocation) {
 
 Widget _entryAppWithBirthdayProbe({
   SensitivePrivacyOverlayController? privacyOverlayController,
+  Stream<void>? screenshotStream,
 }) {
   final router = GoRouter(
     initialLocation: '/import',
@@ -42,6 +43,7 @@ Widget _entryAppWithBirthdayProbe({
         path: '/import',
         builder: (_, _) => MobileImportScreen(
           privacyOverlayController: privacyOverlayController,
+          screenshotStream: screenshotStream,
         ),
       ),
       GoRoute(
@@ -317,7 +319,7 @@ void main() {
 
   testWidgets(
     'keeps the shield up while the screenshot warning sheet is open over the '
-    'seed',
+    'seed (real go_router routing)',
     (tester) async {
       final screenshots = StreamController<void>();
       addTearDown(screenshots.close);
@@ -328,9 +330,9 @@ void main() {
       _mockClipboard(tester, 'one two three');
 
       await tester.pumpWidget(
-        _screenshotApp(
-          screenshotStream: screenshots.stream,
+        _entryAppWithBirthdayProbe(
           privacyOverlayController: privacyController,
+          screenshotStream: screenshots.stream,
         ),
       );
       await tester.pumpAndSettle();
@@ -339,14 +341,23 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
 
-      // A screenshot opens the warning bottom sheet — a non-opaque popup route.
-      // The mnemonic is still behind it, so RouteCoverageAware must NOT treat
-      // the screen as covered; the shield must stay up so a second screenshot
-      // or app-switcher snapshot is still blanked.
+      // A screenshot opens the warning bottom sheet — a non-opaque popup route
+      // (showModalBottomSheet). A page route does not drive its
+      // secondaryAnimation for a popup pushed above it, so RouteCoverageAware
+      // must NOT treat the screen as covered: the mnemonic is still behind the
+      // sheet, and the shield must stay up so a second screenshot or an
+      // app-switcher snapshot is still blanked.
       screenshots.add(null);
       await tester.pumpAndSettle();
       expect(find.byType(MobileSeedScreenshotWarningSheet), findsOneWidget);
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+
+      // The route's secondaryAnimation must have stayed dismissed (the popup
+      // never counted as coverage).
+      final route = ModalRoute.of(
+        tester.element(find.byType(MobileImportScreen)),
+      );
+      expect(route?.secondaryAnimation?.status, AnimationStatus.dismissed);
     },
   );
 }
