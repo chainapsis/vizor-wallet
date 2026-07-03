@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'src/app_bootstrap.dart';
 import 'src/core/config/swap_feature_config.dart';
 import 'src/core/layout/app_layout.dart';
+import 'src/core/navigation/mobile_exit_back_guard.dart';
 import 'src/core/navigation/mobile_onboarding_routes.dart';
 import 'src/core/navigation/mobile_routes.dart';
 import 'src/core/motion/onboarding_motion.dart';
@@ -183,7 +184,7 @@ Future<void> runZcashWalletApp() async {
   }
 }
 
-final _routerProvider = Provider<GoRouter>((ref) {
+final _routerProvider = Provider<_AppRouter>((ref) {
   final bootstrap = ref.watch(appBootstrapProvider);
   final refresh = ref.watch(routerRefreshProvider);
   ref.listen(walletProvider, (_, _) {
@@ -197,7 +198,21 @@ final _routerProvider = Provider<GoRouter>((ref) {
   });
   log('router: initialized');
 
-  return GoRouter(
+  final navigatorKey = GlobalKey<NavigatorState>();
+  final mobileExitBackGuard = MobileExitBackGuard();
+  late final GoRouter router;
+  final mobileExitBackDispatcher = MobileExitBackDispatcher(
+    exitBackGuard: mobileExitBackGuard,
+    navigatorKey: navigatorKey,
+    canPop: () => router.canPop(),
+    currentLocation: () =>
+        router.routerDelegate.currentConfiguration.uri.toString(),
+  );
+  ref.onDispose(mobileExitBackDispatcher.dispose);
+  final useMobileExitBackGuard = mobileExitBackGuard.enabled;
+
+  router = GoRouter(
+    navigatorKey: navigatorKey,
     initialLocation: bootstrap.initialLocation,
     refreshListenable: refresh,
     redirect: (context, state) =>
@@ -232,7 +247,30 @@ final _routerProvider = Provider<GoRouter>((ref) {
             ..._desktopRoutes(),
           ],
   );
+
+  return _AppRouter(
+    router: router,
+    backButtonDispatcher: useMobileExitBackGuard
+        ? mobileExitBackDispatcher
+        : router.backButtonDispatcher,
+    onNavigationNotification: useMobileExitBackGuard
+        ? mobileExitBackDispatcher.handleNavigationNotification
+        : null,
+  );
 });
+
+class _AppRouter {
+  const _AppRouter({
+    required this.router,
+    required this.backButtonDispatcher,
+    this.onNavigationNotification,
+  });
+
+  final GoRouter router;
+  final BackButtonDispatcher backButtonDispatcher;
+  final NotificationListenerCallback<NavigationNotification>?
+  onNavigationNotification;
+}
 
 /// Shared route guard for both the desktop and mobile route trees:
 /// blocking storage failure, wallet existence, unlock state, onboarding
@@ -821,7 +859,8 @@ class ZcashWalletApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final router = ref.watch(_routerProvider);
+    final appRouter = ref.watch(_routerProvider);
+    final router = appRouter.router;
     final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp.router(
@@ -830,7 +869,11 @@ class ZcashWalletApp extends ConsumerWidget {
       theme: buildLegacyLightTheme(),
       darkTheme: buildLegacyDarkTheme(),
       themeMode: themeMode,
-      routerConfig: router,
+      routeInformationProvider: router.routeInformationProvider,
+      routeInformationParser: router.routeInformationParser,
+      routerDelegate: router.routerDelegate,
+      backButtonDispatcher: appRouter.backButtonDispatcher,
+      onNavigationNotification: appRouter.onNavigationNotification,
       builder: (context, child) {
         return AppThemeHost(
           themeMode: themeMode,
