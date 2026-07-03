@@ -162,7 +162,8 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
 
     expect(find.byType(MobileSendAmountScreen), findsOneWidget);
     var route = ModalRoute.of(
@@ -182,7 +183,8 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
 
     expect(find.byType(MobileSendReviewScreen), findsOneWidget);
     route = ModalRoute.of(tester.element(find.byType(MobileSendReviewScreen)));
