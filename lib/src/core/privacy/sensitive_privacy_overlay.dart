@@ -270,14 +270,14 @@ class SensitivePrivacyEnvironmentController
 
   @override
   void beginAuthPrompt() {
-    if (_authPromptActive) return;
+    if (_disposed || _authPromptActive) return;
     super.beginAuthPrompt();
     _syncSafety();
   }
 
   @override
   void endAuthPrompt() {
-    if (!_authPromptActive) return;
+    if (_disposed || !_authPromptActive) return;
     // The biometric sheet pushes the app to `inactive`; dropping suppression
     // now would flash the shield for the frames before `onResume`/`onShow`
     // arrives. Defer the release to the next foreground transition so
