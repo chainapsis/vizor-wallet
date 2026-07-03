@@ -12,6 +12,7 @@ class PasswordTextField extends StatefulWidget {
     this.messageText,
     this.messageIcon,
     this.messageStyle,
+    this.labelStyle,
     this.hintText,
     this.showLabel = true,
     this.leadingSlotWidth,
@@ -19,6 +20,7 @@ class PasswordTextField extends StatefulWidget {
     this.inputHorizontalPadding,
     this.inputBottomPadding,
     this.tone = AppTextFieldTone.neutral,
+    this.surface = AppTextFieldSurface.primary,
     this.onChanged,
     this.onSubmitted,
     this.autofocus = false,
@@ -32,6 +34,7 @@ class PasswordTextField extends StatefulWidget {
   final String? messageText;
   final Widget? messageIcon;
   final TextStyle? messageStyle;
+  final TextStyle? labelStyle;
   final String? hintText;
   final bool showLabel;
   final double? leadingSlotWidth;
@@ -39,6 +42,7 @@ class PasswordTextField extends StatefulWidget {
   final double? inputHorizontalPadding;
   final double? inputBottomPadding;
   final AppTextFieldTone tone;
+  final AppTextFieldSurface surface;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
   final bool autofocus;
@@ -67,6 +71,7 @@ class _PasswordTextFieldState extends State<PasswordTextField> {
       messageText: widget.messageText,
       messageIcon: widget.messageIcon,
       messageStyle: widget.messageStyle,
+      labelStyle: widget.labelStyle,
       hintText: widget.hintText,
       showLabel: widget.showLabel,
       leadingSlotWidth: widget.leadingSlotWidth,
@@ -74,6 +79,7 @@ class _PasswordTextFieldState extends State<PasswordTextField> {
       inputHorizontalPadding: widget.inputHorizontalPadding,
       inputBottomPadding: widget.inputBottomPadding,
       tone: widget.tone,
+      surface: widget.surface,
       leading: const AppIcon(AppIcons.lock, size: 20),
       trailing: widget.showVisibilityToggle
           ? GestureDetector(

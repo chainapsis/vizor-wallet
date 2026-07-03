@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,7 +16,6 @@ import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_text_field.dart';
@@ -33,7 +31,11 @@ import '../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../../keystone/legacy_v5_pczt_mode.dart';
 import '../../migration/providers/orchard_migration_status_provider.dart';
 import '../models/send_prefill_args.dart';
-import 'send_review_screen.dart';
+import '../services/send_flow.dart';
+
+final sendWalletDbPathProvider = Provider<Future<String> Function()>((ref) {
+  return getWalletDbPath;
+});
 
 class SendScreen extends ConsumerStatefulWidget {
   const SendScreen({super.key, this.prefill});
@@ -48,9 +50,10 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   @override
   Widget build(BuildContext context) {
     final walletAsync = ref.watch(walletProvider);
-    final activeAccountUuid = ref.watch(
-      accountProvider.select((value) => value.value?.activeAccountUuid),
-    );
+    final accountState = ref.watch(accountProvider).value;
+    final activeAccountUuid = accountState?.activeAccountUuid;
+    final activeAccountIsHardware =
+        accountState?.activeAccount?.isHardware ?? false;
     final sync = ref.watch(
       syncProvider.select(
         (value) =>
@@ -64,6 +67,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       key: ValueKey('$activeAccountUuid:${widget.prefill?.fingerprint ?? ''}'),
       walletAsync: walletAsync,
       activeAccountUuid: activeAccountUuid,
+      activeAccountIsHardware: activeAccountIsHardware,
       spendableBalance: spendableBalance,
       migrationBlocksSend: migrationBlocksSend,
       prefill: widget.prefill,
@@ -76,6 +80,7 @@ class _SendComposeBody extends ConsumerStatefulWidget {
     super.key,
     required this.walletAsync,
     required this.activeAccountUuid,
+    required this.activeAccountIsHardware,
     required this.spendableBalance,
     required this.migrationBlocksSend,
     this.prefill,
@@ -83,6 +88,7 @@ class _SendComposeBody extends ConsumerStatefulWidget {
 
   final AsyncValue<WalletState> walletAsync;
   final String? activeAccountUuid;
+  final bool activeAccountIsHardware;
   final BigInt spendableBalance;
   final bool migrationBlocksSend;
   final SendPrefillArgs? prefill;
@@ -151,19 +157,13 @@ class _AddressTextEditingController extends TextEditingController {
   }
 }
 
-String _newSendFlowId() {
-  final random = math.Random.secure();
-  return List<int>.generate(
-    16,
-    (_) => random.nextInt(256),
-  ).map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
-}
-
 class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _singleLineFieldOverlayReserve = 20.0;
   static const _singleLineFieldGap = AppSpacing.xs;
   static const _multilineFieldOverlayReserve = 24.0;
   static const _maxDebounceDuration = Duration(milliseconds: 300);
+  static const _hardwareTexUnsupportedText =
+      'Keystone does not support TEX sends yet.';
   final _addressController = _AddressTextEditingController();
   final _amountController = TextEditingController();
   final _memoController = TextEditingController();
@@ -171,7 +171,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   final _amountFocusNode = FocusNode();
   final _memoFocusNode = FocusNode();
   final _memoScrollController = ScrollController();
-  late final String _sendFlowId = _newSendFlowId();
+  late final String _sendFlowId = newSendFlowId();
   bool _isSending = false;
   bool _messageExpanded = false;
   bool _contactPickerOpen = false;
@@ -300,11 +300,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final nextAddressType = result.isValid ? result.addressType : 'invalid';
       setState(() {
         _addressType = nextAddressType;
-        if (nextAddressType == 'transparent') {
+        if (_isTransparentLikeType(nextAddressType)) {
           _messageExpanded = false;
         }
       });
-      if (nextAddressType == 'transparent' && _memoController.text.isNotEmpty) {
+      if (_isTransparentLikeType(nextAddressType) &&
+          _memoController.text.isNotEmpty) {
         _memoController.clear();
       }
       _handleAddressValidationSettled();
@@ -368,15 +369,33 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool get _isShieldedAddress =>
       _addressType == 'unified' || _addressType == 'sapling';
 
-  bool get _isConfirmedTransparentAddress => _addressType == 'transparent';
+  bool get _isTexAddress => _addressType == 'tex';
+  bool get _isTransparentLikeAddress => _isTransparentLikeType(_addressType);
 
-  bool get _showMemoControls => !_isConfirmedTransparentAddress;
+  bool _isTransparentLikeType(String addressType) =>
+      addressType == 'transparent' || addressType == 'tex';
 
   String get _effectiveMemo =>
-      _isConfirmedTransparentAddress ? '' : _memoController.text.trim();
+      _isTransparentLikeAddress ? '' : _memoController.text.trim();
+
+  BigInt get _availableBalanceForCurrentAddress => widget.spendableBalance;
+  String get _insufficientBalanceText =>
+      _isTexAddress ? 'Insufficient balance' : 'Insufficient shielded balance';
+  String get _insufficientBalanceToCoverFeeText =>
+      '$_insufficientBalanceText to cover fee';
+  String get _insufficientBalanceIncludingFeeText =>
+      '$_insufficientBalanceText including fee';
+  String _insufficientBalanceWithFeeText(String feeText) =>
+      '$_insufficientBalanceText (fee: $feeText)';
+  bool get _isHardwareTexSend =>
+      _isTexAddress && widget.activeAccountIsHardware;
 
   bool get _showAmountError =>
-      _amountError != null && _amountError!.trim().isNotEmpty;
+      _amountError != null &&
+      _amountError!.trim().isNotEmpty &&
+      _amountError != _hardwareTexUnsupportedText;
+  String? get _ctaWarningText =>
+      _isHardwareTexSend ? _hardwareTexUnsupportedText : null;
 
   bool get _hasCurrentMaxQuote {
     final quote = _maxQuote;
@@ -411,6 +430,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       !_isResolvingMax &&
       _hasValidAddress &&
       _isAmountValid &&
+      !_isHardwareTexSend &&
       (!_isMaxMode || _hasCurrentMaxQuote) &&
       _memoError == null &&
       (_isShieldedAddress || _effectiveMemo.isEmpty);
@@ -428,6 +448,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   String? _maxEstimatePreconditionError() {
     if (widget.activeAccountUuid == null) return 'No active account';
     if (!_hasValidAddress) return 'Enter a valid address to use Max';
+    if (_isHardwareTexSend) return _hardwareTexUnsupportedText;
     return _memoError;
   }
 
@@ -464,7 +485,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     if (accountUuid == null || !_isMaxMode || seq != _maxSeq) return;
 
     try {
-      final dbPath = await getWalletDbPath();
+      final dbPath = await ref.read(sendWalletDbPathProvider).call();
       final endpoint = ref.read(rpcEndpointProvider);
       if (!mounted || !_isMaxMode || seq != _maxSeq) return;
 
@@ -484,7 +505,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         setState(() {
           _isResolvingMax = false;
           _maxQuote = null;
-          _amountError = 'Insufficient shielded balance to cover fee';
+          _amountError = _insufficientBalanceToCoverFeeText;
         });
         return;
       }
@@ -516,7 +537,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         _isResolvingMax = false;
         _maxQuote = null;
         if (msg.contains('insufficient')) {
-          _amountError = 'Insufficient shielded balance to cover fee';
+          _amountError = _insufficientBalanceToCoverFeeText;
         } else {
           _amountError = 'Max amount unavailable';
         }
@@ -542,14 +563,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       return;
     }
 
-    // Quick balance pre-check
-    final spendable = widget.spendableBalance;
-    if (zatoshi > spendable) {
-      setState(() => _amountError = 'Insufficient shielded balance');
-      return;
-    }
-
-    // Need valid address to estimate fee
     final address = _addressController.text.trim();
     if (address.isEmpty ||
         _addressType == 'invalid' ||
@@ -559,8 +572,18 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       return;
     }
 
+    if (_isHardwareTexSend) {
+      setState(() => _amountError = _hardwareTexUnsupportedText);
+      return;
+    }
+    final available = _availableBalanceForCurrentAddress;
+    if (zatoshi > available) {
+      setState(() => _amountError = _insufficientBalanceText);
+      return;
+    }
+    setState(() => _amountError = null);
     try {
-      final dbPath = await getWalletDbPath();
+      final dbPath = await ref.read(sendWalletDbPathProvider).call();
       final endpoint = ref.read(rpcEndpointProvider);
       if (!mounted || seq != _validateSeq) return;
       final memo = _effectiveMemo;
@@ -583,11 +606,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       if (!mounted || seq != _validateSeq) return;
 
       final totalNeeded = zatoshi + fee;
-      if (totalNeeded > spendable) {
+      if (totalNeeded > available) {
         final feeText = ZecAmount.fromZatoshi(fee).fee.toString();
-        setState(
-          () => _amountError = 'Insufficient shielded balance (fee: $feeText)',
-        );
+        setState(() => _amountError = _insufficientBalanceWithFeeText(feeText));
       } else {
         setState(() => _amountError = null);
       }
@@ -595,9 +616,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       if (!mounted || seq != _validateSeq) return;
       final msg = e.toString();
       if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
-        setState(
-          () => _amountError = 'Insufficient shielded balance including fee',
-        );
+        setState(() => _amountError = _insufficientBalanceIncludingFeeText);
       } else {
         log('Send: fee estimation failed (non-blocking): $e');
         setState(() => _amountError = null);
@@ -606,33 +625,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   }
 
   bool get _isAmountValid => _amountError == null;
-
-  String _friendlyError(String raw) {
-    final lower = raw.toLowerCase();
-    if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
-      return 'Insufficient shielded balance to cover amount and fee.';
-    }
-    if (lower.contains('grpc connect failed') ||
-        lower.contains('connection refused') ||
-        lower.contains('dns error') ||
-        lower.contains('tls error')) {
-      return 'Network error. Check your connection and try again.';
-    }
-    // Partial broadcast must be checked before generic "broadcast rejected"
-    if (lower.contains('broadcast failed after') &&
-        lower.contains('txs sent')) {
-      return 'Some parts of this transaction were sent. Open Activity to see '
-          'what went through before you try again.';
-    }
-    if (lower.contains('broadcast rejected')) {
-      return 'The network rejected this transaction. Try again.';
-    }
-    if (lower.contains('proposal not found') ||
-        lower.contains('send flow mismatch')) {
-      return 'Transaction expired before it could be sent. Try again.';
-    }
-    return 'Send failed. Try again.';
-  }
 
   Future<void> _openReview() async {
     setState(() {
@@ -663,6 +655,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         return;
       }
 
+      if (_isHardwareTexSend) {
+        setState(() {
+          _error = _hardwareTexUnsupportedText;
+          _isSending = false;
+        });
+        return;
+      }
       if (amountZatoshi == null || amountZatoshi <= BigInt.zero) {
         setState(() {
           _error = 'Invalid amount';
@@ -680,19 +679,16 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       }
 
       // Check balance before proposing
-      final spendable = widget.spendableBalance;
-      if (amountZatoshi > spendable) {
+      final available = _availableBalanceForCurrentAddress;
+      if (amountZatoshi > available) {
         setState(() {
-          _error = 'Insufficient shielded balance.';
+          _error = '$_insufficientBalanceText.';
           _isSending = false;
         });
         return;
       }
 
       final memo = _effectiveMemo;
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      if (!mounted) return;
 
       // Step 1: Propose transfer
       log('Send: proposing transfer');
@@ -704,64 +700,48 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         });
         return;
       }
-      final proposal = await rust_sync.proposeSend(
-        dbPath: dbPath,
-        network: endpoint.walletNetworkName,
+      final reviewArgs = await proposeSendTransfer(
+        ref: ref,
+        loadDbPath: ref.read(sendWalletDbPathProvider),
         accountUuid: accountUuid,
         sendFlowId: _sendFlowId,
-        toAddress: address,
+        address: address,
+        addressType: _addressType,
         amountZatoshi: amountZatoshi,
         memo: memo.isNotEmpty ? memo : null,
         legacyV5Pczt: _useLegacyV5Pczt,
       );
-      activeProposalId = proposal.proposalId;
+      activeProposalId = reviewArgs.proposalId;
 
       if (!mounted) {
         return;
       }
       setState(() => _isSending = false);
       pushedReview = true;
-      await context.push(
-        '/send/review',
-        extra: SendReviewArgs(
-          proposalId: proposal.proposalId,
-          sendFlowId: _sendFlowId,
-          proposalAccountUuid: accountUuid,
-          address: address,
-          addressType: _addressType,
-          amountZatoshi: amountZatoshi,
-          feeZatoshi: proposal.feeZatoshi,
-          memo: memo.isNotEmpty ? memo : null,
-          needsSaplingParams: proposal.needsSaplingParams,
-        ),
-      );
+      await context.push('/send/review', extra: reviewArgs);
     } catch (e) {
       log('Send: review preparation error: $e');
       if (!mounted) return;
       setState(() {
-        _error = _friendlyError(e.toString());
+        _error = friendlyProposeSendError(e.toString());
         _isSending = false;
       });
     } finally {
       if (activeProposalId != null && !pushedReview) {
-        try {
-          await rust_sync.discardProposal(
-            proposalId: activeProposalId,
-            sendFlowId: _sendFlowId,
-          );
-          log('Send: released proposal $activeProposalId (review not opened)');
-        } catch (e) {
-          log('Send: discardProposal cleanup failed (non-critical): $e');
-        }
+        await discardSendProposal(
+          proposalId: activeProposalId,
+          sendFlowId: _sendFlowId,
+          logContext: 'Send(review not opened)',
+        );
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final spendable = widget.spendableBalance;
+    final available = _availableBalanceForCurrentAddress;
     final visibleSpendableText = ZecAmount.fromZatoshi(
-      spendable,
+      available,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
     final spendableText = hideAmountIfPrivacyMode(
       visibleSpendableText,
@@ -769,311 +749,291 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     );
     final colors = context.colors;
 
-    _addressController.edgeHighlightColor = _isShieldedAddress
-        ? colors.icon.success
-        : null;
+    _addressController.edgeHighlightColor = null;
 
     final addressTone = switch (_addressType) {
-      'unified' || 'sapling' => AppTextFieldTone.success,
       'invalid' || 'error' => AppTextFieldTone.destructive,
       _ => AppTextFieldTone.neutral,
     };
     final addressMessage = switch (_addressType) {
-      'unified' || 'sapling' => 'Shielded Address',
-      'transparent' => 'Transparent Address',
       'invalid' => 'Invalid address',
       'error' => 'Address validation failed',
       _ => null,
     };
     final addressMessageIcon = switch (_addressType) {
-      'unified' || 'sapling' => AppIcon(
-        AppIcons.shieldKeyhole,
-        size: 16,
-        color: colors.icon.success,
-      ),
       'invalid' || 'error' => AppIcon(
         AppIcons.warning,
         size: 16,
         color: colors.text.destructive,
       ),
-      'transparent' => AppIcon(
-        AppIcons.transparentBalance,
-        size: 16,
-        color: colors.icon.muted,
-      ),
       _ => null,
     };
-    final addressMessageStyle = switch (_addressType) {
-      'transparent' => AppTypography.labelMedium.copyWith(
-        color: colors.text.muted,
-      ),
-      _ => null,
+    final addressHasText = _addressController.text.trim().isNotEmpty;
+    final addressLeadingIcon = switch (_addressType) {
+      'unified' || 'sapling' => AppIcons.shieldKeyhole,
+      'transparent' || 'tex' => AppIcons.transparentBalance,
+      _ => AppIcons.plane,
     };
-    final messageFieldVisible =
-        _showMemoControls &&
-        (_messageExpanded || _memoController.text.isNotEmpty);
+    final addressLeadingColor = switch (_addressType) {
+      'unified' || 'sapling' => colors.icon.brandCrimson,
+      'transparent' || 'tex' => colors.icon.muted,
+      _ => addressHasText ? colors.icon.accent : colors.icon.regular,
+    };
+    final hideMemoControls = _isTransparentLikeAddress;
+    final showMemoPrompt =
+        !hideMemoControls && !_messageExpanded && _memoController.text.isEmpty;
+    final VoidCallback? memoPromptOnTap = _isShieldedAddress
+        ? () {
+            setState(() {
+              _messageExpanded = true;
+            });
+            _memoFocusNode.requestFocus();
+          }
+        : null;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
         child: Stack(
+          fit: StackFit.expand,
           children: [
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: SizedBox.expand(
-                child: widget.walletAsync.when(
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
-                  error: (err, _) => Center(
-                    child: Text(
-                      'Something went wrong. Try again in a moment.\n\n'
-                      'Details: $err',
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: context.colors.text.destructive,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const AppPaneToolbar(
+                  leading: AppRouteBackLink(
+                    key: ValueKey('send_pane_back_button'),
+                    minWidth: 60,
+                  ),
+                ),
+                Expanded(
+                  child: widget.walletAsync.when(
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (err, _) => Center(
+                      child: Text(
+                        'Something went wrong. Try again in a moment.\n\n'
+                        'Details: $err',
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: context.colors.text.destructive,
+                        ),
                       ),
                     ),
-                  ),
-                  data: (_) => Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const AppRouteBackLink(),
-                      const SizedBox(height: AppSpacing.s),
-                      Expanded(
-                        child: _SendComposeLayout(
-                          messageFieldVisible: messageFieldVisible,
-                          reviewButton: AppButton(
-                            key: const ValueKey('send_review_button'),
-                            onPressed: _canReview ? _openReview : null,
-                            variant: AppButtonVariant.primary,
-                            minWidth: 256,
-                            trailing: _isSending
-                                ? null
-                                : const AppIcon(AppIcons.chevronForward),
-                            child: _isSending
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Text('Review'),
+                    data: (_) => _SendComposeLayout(
+                      reviewButton: AppButton(
+                        key: const ValueKey('send_review_button'),
+                        onPressed: _canReview ? _openReview : null,
+                        variant: AppButtonVariant.primary,
+                        minWidth: _SendComposeLayout.reviewButtonWidth,
+                        trailing: _isSending
+                            ? null
+                            : const AppIcon(AppIcons.chevronForward),
+                        child: _isSending
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Review'),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (widget.prefill != null) ...[
+                            _SendPrefillNotice(prefill: widget.prefill!),
+                            const SizedBox(height: AppSpacing.xs),
+                          ],
+                          if (widget.migrationBlocksSend) ...[
+                            const _MigrationSendBlockedNotice(),
+                            const SizedBox(height: AppSpacing.xs),
+                          ],
+                          AppTextField(
+                            key: const ValueKey('send_address_field'),
+                            label: 'Send to',
+                            rightSlot: _SendContactsLabelButton(
+                              label: 'Contacts',
+                              onTap: _openContactPicker,
+                            ),
+                            tone: addressTone,
+                            focusNode: _addressFocusNode,
+                            controller: _addressController,
+                            hintText: 'Zcash address',
+                            leading: AppIcon(
+                              addressLeadingIcon,
+                              size: 20,
+                              color: addressLeadingColor,
+                            ),
+                            messageText: addressMessage,
+                            messageIcon: addressMessageIcon,
+                            onChanged: (_) => _handleAddressChanged(),
+                            keyboardType: TextInputType.text,
+                            showClearButton: true,
+                            onClear: () {
+                              _addressSeq++;
+                              _maxDebounceTimer?.cancel();
+                              setState(() {
+                                _addressType = '';
+                                _error = null;
+                                if (_isMaxMode) {
+                                  _validateSeq++;
+                                  _maxSeq++;
+                                  _maxQuote = null;
+                                  _isResolvingMax = false;
+                                  _amountError = '';
+                                }
+                              });
+                              if (!_isMaxMode) {
+                                _validateAmount();
+                              }
+                            },
                           ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (widget.prefill != null) ...[
-                                _SendPrefillNotice(prefill: widget.prefill!),
-                                const SizedBox(height: AppSpacing.xs),
-                              ],
-                              if (widget.migrationBlocksSend) ...[
-                                const _MigrationSendBlockedNotice(),
-                                const SizedBox(height: AppSpacing.xs),
-                              ],
-                              AppTextField(
-                                key: const ValueKey('send_address_field'),
-                                label: 'Send to',
-                                rightSlot: _SendContactsLabelButton(
-                                  onTap: _openContactPicker,
+                          const SizedBox(
+                            height: _singleLineFieldOverlayReserve,
+                          ),
+                          const SizedBox(height: _singleLineFieldGap),
+                          AppTextField(
+                            key: const ValueKey('send_amount_field'),
+                            label: 'Amount',
+                            tone: _showAmountError
+                                ? AppTextFieldTone.destructive
+                                : AppTextFieldTone.neutral,
+                            focusNode: _amountFocusNode,
+                            controller: _amountController,
+                            hintText: '0.00',
+                            leading: AppIcon(
+                              AppIcons.zcash,
+                              size: 20,
+                              color: _amountController.text.trim().isNotEmpty
+                                  ? colors.icon.accent
+                                  : colors.icon.regular,
+                            ),
+                            rightSlot: _SendMaxBalanceControl(
+                              spendableText: spendableText,
+                              onMaxPressed: _isResolvingMax
+                                  ? null
+                                  : _activateMaxMode,
+                            ),
+                            messageText: _showAmountError ? _amountError : null,
+                            messageIcon: _showAmountError
+                                ? AppIcon(
+                                    AppIcons.warning,
+                                    size: 16,
+                                    color: colors.text.destructive,
+                                  )
+                                : null,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            inputFormatters: const [ZecAmountInputFormatter()],
+                            onChanged: (_) => _handleAmountChanged(),
+                            showClearButton: true,
+                            onClear: () {
+                              _maxDebounceTimer?.cancel();
+                              _validateSeq++;
+                              _maxSeq++;
+                              setState(() {
+                                _isMaxMode = false;
+                                _isResolvingMax = false;
+                                _maxQuote = null;
+                                _amountError = '';
+                                _error = null;
+                              });
+                            },
+                          ),
+                          const SizedBox(
+                            height: _singleLineFieldOverlayReserve,
+                          ),
+                          const SizedBox(height: _singleLineFieldGap),
+                          if (!hideMemoControls) ...[
+                            if (showMemoPrompt) ...[
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: AppSpacing.xs,
                                 ),
-                                tone: addressTone,
-                                focusNode: _addressFocusNode,
-                                controller: _addressController,
-                                hintText: 'Zcash address',
-                                leading: AppIcon(
-                                  AppIcons.users,
-                                  size: 20,
-                                  color:
-                                      _addressController.text.trim().isNotEmpty
-                                      ? colors.icon.accent
-                                      : colors.icon.regular,
+                                child: _SendAddMessageCard(
+                                  onTap: memoPromptOnTap,
                                 ),
-                                messageText: addressMessage,
-                                messageIcon: addressMessageIcon,
-                                messageStyle: addressMessageStyle,
-                                onChanged: (_) => _handleAddressChanged(),
-                                keyboardType: TextInputType.text,
-                                showClearButton: true,
-                                onClear: () {
-                                  _addressSeq++;
-                                  _maxDebounceTimer?.cancel();
-                                  setState(() {
-                                    _addressType = '';
-                                    _error = null;
-                                    if (_isMaxMode) {
-                                      _validateSeq++;
-                                      _maxSeq++;
-                                      _maxQuote = null;
-                                      _isResolvingMax = false;
-                                      _amountError = '';
-                                    }
-                                  });
-                                  if (!_isMaxMode) {
-                                    _validateAmount();
-                                  }
-                                },
                               ),
-                              const SizedBox(
-                                height: _singleLineFieldOverlayReserve,
-                              ),
-                              const SizedBox(height: _singleLineFieldGap),
+                            ] else ...[
                               AppTextField(
-                                key: const ValueKey('send_amount_field'),
-                                label: 'Amount',
-                                tone: _showAmountError
+                                key: const ValueKey('send_memo_field'),
+                                label: 'Message',
+                                tone: _memoError != null
                                     ? AppTextFieldTone.destructive
                                     : AppTextFieldTone.neutral,
-                                focusNode: _amountFocusNode,
-                                controller: _amountController,
-                                hintText: '0.00',
+                                focusNode: _memoFocusNode,
+                                controller: _memoController,
+                                hintText: 'Add a message',
                                 leading: AppIcon(
-                                  AppIcons.zcash,
+                                  AppIcons.scroll,
                                   size: 20,
-                                  color:
-                                      _amountController.text.trim().isNotEmpty
-                                      ? colors.icon.accent
-                                      : colors.icon.regular,
+                                  color: colors.icon.regular,
                                 ),
-                                rightSlot: _SendMaxBalanceControl(
-                                  spendableText: spendableText,
-                                  onMaxPressed: _isResolvingMax
-                                      ? null
-                                      : _activateMaxMode,
+                                rightSlot: Text(
+                                  '$_memoLength/512',
+                                  style: AppTypography.labelMedium.copyWith(
+                                    color: _memoError != null
+                                        ? colors.text.destructive
+                                        : colors.text.secondary,
+                                  ),
                                 ),
-                                messageText: _showAmountError
-                                    ? _amountError
-                                    : null,
-                                messageIcon: _showAmountError
+                                messageText: _memoError,
+                                messageIcon: _memoError != null
                                     ? AppIcon(
                                         AppIcons.warning,
                                         size: 16,
                                         color: colors.text.destructive,
                                       )
                                     : null,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                inputFormatters: [
-                                  const ZecAmountInputFormatter(),
-                                ],
-                                onChanged: (_) => _handleAmountChanged(),
+                                minLines: 6,
+                                maxLines: 6,
+                                scrollController: _memoScrollController,
+                                textStyle: AppTypography.bodyMedium.copyWith(
+                                  color: colors.text.accent,
+                                ),
+                                onChanged: (_) => setState(() {
+                                  _error = null;
+                                }),
                                 showClearButton: true,
+                                clearButtonRequiresText: false,
+                                clearButtonSemanticLabel: 'Close message',
                                 onClear: () {
-                                  _maxDebounceTimer?.cancel();
-                                  _validateSeq++;
-                                  _maxSeq++;
                                   setState(() {
-                                    _isMaxMode = false;
-                                    _isResolvingMax = false;
-                                    _maxQuote = null;
-                                    _amountError = '';
+                                    _messageExpanded = false;
                                     _error = null;
                                   });
+                                  if (_isMaxMode) {
+                                    _scheduleMaxEstimate();
+                                  } else {
+                                    _validateAmount();
+                                  }
                                 },
                               ),
                               const SizedBox(
-                                height: _singleLineFieldOverlayReserve,
+                                height: _multilineFieldOverlayReserve,
                               ),
-                              const SizedBox(height: _singleLineFieldGap),
-                              if (_showMemoControls) ...[
-                                if (!_messageExpanded &&
-                                    _memoController.text.isEmpty) ...[
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: AppSpacing.xs,
-                                    ),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const AppDecorativeDivider(
-                                          width: 256,
-                                          middleWidth: 53.553,
-                                          middleHeight: 14,
-                                        ),
-                                        const SizedBox(height: AppSpacing.sm),
-                                        _SendAddMessageCard(
-                                          onTap: () {
-                                            setState(() {
-                                              _messageExpanded = true;
-                                            });
-                                            _memoFocusNode.requestFocus();
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ] else ...[
-                                  AppTextField(
-                                    label: 'Message',
-                                    tone: _memoError != null
-                                        ? AppTextFieldTone.destructive
-                                        : AppTextFieldTone.neutral,
-                                    focusNode: _memoFocusNode,
-                                    controller: _memoController,
-                                    hintText: 'Add a message',
-                                    leading: AppIcon(
-                                      AppIcons.scroll,
-                                      size: 20,
-                                      color: colors.icon.regular,
-                                    ),
-                                    rightSlot: Text(
-                                      '$_memoLength/512',
-                                      style: AppTypography.labelMedium.copyWith(
-                                        color: _memoError != null
-                                            ? colors.text.destructive
-                                            : colors.text.secondary,
-                                      ),
-                                    ),
-                                    messageText: _memoError,
-                                    messageIcon: _memoError != null
-                                        ? AppIcon(
-                                            AppIcons.warning,
-                                            size: 16,
-                                            color: colors.text.destructive,
-                                          )
-                                        : null,
-                                    minLines: 6,
-                                    maxLines: 6,
-                                    scrollController: _memoScrollController,
-                                    textStyle: AppTypography.bodyMedium
-                                        .copyWith(color: colors.text.accent),
-                                    onChanged: (_) => setState(() {
-                                      _error = null;
-                                    }),
-                                    showClearButton: true,
-                                    clearButtonRequiresText: false,
-                                    clearButtonSemanticLabel: 'Close message',
-                                    onClear: () {
-                                      setState(() {
-                                        _messageExpanded = false;
-                                        _error = null;
-                                      });
-                                      if (_isMaxMode) {
-                                        _scheduleMaxEstimate();
-                                      } else {
-                                        _validateAmount();
-                                      }
-                                    },
-                                  ),
-                                  const SizedBox(
-                                    height: _multilineFieldOverlayReserve,
-                                  ),
-                                ],
-                              ],
-                              if (_error != null) ...[
-                                const SizedBox(height: AppSpacing.xs),
-                                _SendGlobalError(message: _error!),
-                              ],
                             ],
-                          ),
-                        ),
+                          ],
+                          if (_error != null) ...[
+                            const SizedBox(height: AppSpacing.xs),
+                            _SendGlobalError(message: _error!),
+                          ],
+                          if (_error == null && _ctaWarningText != null) ...[
+                            const SizedBox(height: AppSpacing.xs),
+                            _SendGlobalError(
+                              key: const ValueKey('send_cta_warning'),
+                              message: _ctaWarningText!,
+                            ),
+                          ],
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
             if (_contactPickerOpen)
               AppPaneModalOverlay(
@@ -1081,7 +1041,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                 child: Material(
                   type: MaterialType.transparency,
                   child: AddressBookContactPickerModal(
-                    title: 'Contacts',
+                    title: 'Contacts Zcash',
                     networks: const [AddressBookNetwork.zcash],
                     emptyTitle: 'No Zcash contacts',
                     onSelected: _selectContact,
@@ -1189,57 +1149,68 @@ class _MigrationSendBlockedNotice extends StatelessWidget {
 }
 
 class _SendComposeLayout extends StatelessWidget {
-  const _SendComposeLayout({
-    required this.messageFieldVisible,
-    required this.child,
-    required this.reviewButton,
-  });
+  const _SendComposeLayout({required this.child, required this.reviewButton});
 
-  static const _formWidth = 352.0;
-  static const _reviewButtonWidth = 256.0;
-  static const _contentToButtonGap = AppSpacing.sm;
-  // State-specific gaps keep the collapsed and expanded forms balanced.
-  static const _collapsedTitleToFirstFieldGap = 72.0;
-  static const _expandedTitleToFirstFieldGap = 58.0;
-  static const _collapsedBottomGap = 48.0;
-  static const _expandedBottomGap = 10.0;
+  static const contentWidth = 420.0;
+  static const fieldsWidth = 396.0;
+  static const reviewButtonWidth = 196.0;
+  static const _containerHorizontalPadding = AppSpacing.s;
+  static const _containerVerticalPadding = AppSpacing.md;
+  static const _sectionGap = 32.0;
+  static const _fieldsVerticalPadding = AppSpacing.xs;
 
-  final bool messageFieldVisible;
   final Widget child;
   final Widget reviewButton;
 
-  double get _titleToFirstFieldGap => messageFieldVisible
-      ? _expandedTitleToFirstFieldGap
-      : _collapsedTitleToFirstFieldGap;
-
-  double get _bottomGap =>
-      messageFieldVisible ? _expandedBottomGap : _collapsedBottomGap;
-
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: Center(
-            child: SingleChildScrollView(
-              child: SizedBox(
-                width: _formWidth,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const _SendTitle(),
-                    SizedBox(height: _titleToFirstFieldGap),
-                    child,
-                    SizedBox(height: _bottomGap),
-                  ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final height = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : null;
+        final minHeight = height == null
+            ? 0.0
+            : height < (_containerVerticalPadding * 2)
+            ? 0.0
+            : height - (_containerVerticalPadding * 2);
+
+        return Center(
+          child: SizedBox(
+            width: contentWidth,
+            height: height,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: _containerHorizontalPadding,
+                vertical: _containerVerticalPadding,
+              ),
+              child: SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: minHeight),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const _SendTitle(),
+                      const SizedBox(height: _sectionGap),
+                      SizedBox(
+                        width: fieldsWidth,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: _fieldsVerticalPadding,
+                          ),
+                          child: child,
+                        ),
+                      ),
+                      const SizedBox(height: _sectionGap),
+                      SizedBox(width: reviewButtonWidth, child: reviewButton),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-        const SizedBox(height: _contentToButtonGap),
-        SizedBox(width: _reviewButtonWidth, child: reviewButton),
-      ],
+        );
+      },
     );
   }
 }
@@ -1251,7 +1222,7 @@ class _SendTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       'Send $kZcashDefaultCurrencyTicker',
-      style: AppTypography.displaySmall.copyWith(
+      style: AppTypography.headlineLarge.copyWith(
         color: context.colors.text.accent,
       ),
       textAlign: TextAlign.center,
@@ -1260,8 +1231,9 @@ class _SendTitle extends StatelessWidget {
 }
 
 class _SendContactsLabelButton extends StatefulWidget {
-  const _SendContactsLabelButton({required this.onTap});
+  const _SendContactsLabelButton({required this.label, required this.onTap});
 
+  final String label;
   final VoidCallback onTap;
 
   @override
@@ -1293,7 +1265,7 @@ class _SendContactsLabelButtonState extends State<_SendContactsLabelButton> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Contacts',
+                  widget.label,
                   style: AppTypography.labelMedium.copyWith(color: color),
                 ),
                 const SizedBox(width: 2),
@@ -1391,11 +1363,13 @@ class _SendAddMessageCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final card = Container(
-      width: 352,
-      height: 96,
+      key: const ValueKey('send_add_memo_card'),
+      width: double.infinity,
+      height: 128,
       decoration: BoxDecoration(
-        color: colors.background.base,
+        color: colors.surface.input,
         borderRadius: BorderRadius.circular(AppRadii.medium),
+        boxShadow: _sendInputSurfaceShadow(colors),
       ),
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
       child: Column(
@@ -1407,7 +1381,7 @@ class _SendAddMessageCard extends StatelessWidget {
               AppIcon(AppIcons.scroll, size: 16, color: colors.icon.accent),
               const SizedBox(width: AppSpacing.xxs),
               Text(
-                'Add a message',
+                'Add a memo',
                 style: AppTypography.labelMedium.copyWith(
                   color: colors.text.accent,
                 ),
@@ -1416,7 +1390,7 @@ class _SendAddMessageCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Encrypted, for Shielded Addresses only.',
+            'Encrypted, for shielded addresses only.',
             style: AppTypography.labelMedium.copyWith(color: colors.text.muted),
             textAlign: TextAlign.center,
           ),
@@ -1436,8 +1410,25 @@ class _SendAddMessageCard extends StatelessWidget {
   }
 }
 
+List<BoxShadow> _sendInputSurfaceShadow(AppColors colors) {
+  return [
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 2),
+      blurRadius: 4,
+    ),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 1),
+      blurRadius: 2,
+    ),
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+  ];
+}
+
 class _SendGlobalError extends StatelessWidget {
-  const _SendGlobalError({required this.message});
+  const _SendGlobalError({super.key, required this.message});
 
   final String message;
 

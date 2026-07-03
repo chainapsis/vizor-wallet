@@ -11,60 +11,13 @@ class AddressTypesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const OnboardingTrailingPane(child: _Content());
-  }
-}
-
-class _Content extends StatelessWidget {
-  const _Content();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Column(
-      children: [
-        _BackRow(),
-        SizedBox(height: AppSpacing.xs),
-        Expanded(child: _HeroLayout()),
-      ],
-    );
-  }
-}
-
-class _BackRow extends StatelessWidget {
-  const _BackRow();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      height: 32,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => context.go(OnboardingStep.intro.routePath),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.chevronBackward,
-                  size: AppIconSize.medium,
-                  color: colors.text.accent,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+    return OnboardingTrailingPane(
+      backTarget: OnboardingBackTarget.route(
+        label: OnboardingStep.intro.label,
+        routePath: OnboardingStep.intro.routePath,
       ),
+      bodyPadding: EdgeInsets.zero,
+      child: const _HeroLayout(),
     );
   }
 }
@@ -72,29 +25,51 @@ class _BackRow extends StatelessWidget {
 class _HeroLayout extends StatelessWidget {
   const _HeroLayout();
 
+  static const double _contentAreaWidth = 420;
+  static const double _contentPaddingX = 12;
+  static const double _contentPaddingY = 16;
+
   @override
   Widget build(BuildContext context) {
     return const Column(
       children: [
-        Expanded(child: Center(child: _HeroBlock())),
-        SizedBox(height: AppSpacing.md),
-        _ActionRow(),
+        Expanded(
+          child: Center(
+            child: SizedBox(
+              width: _contentAreaWidth,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: _contentPaddingX,
+                  vertical: _contentPaddingY,
+                ),
+                child: Column(
+                  children: [
+                    Expanded(child: _OnPageContent()),
+                    _ButtonStack(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
 }
 
-class _HeroBlock extends StatelessWidget {
-  const _HeroBlock();
+class _OnPageContent extends StatelessWidget {
+  const _OnPageContent();
+
+  static const double _sectionGap = 32;
 
   @override
   Widget build(BuildContext context) {
     return const Column(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         _TitleBlock(),
-        SizedBox(height: AppSpacing.lg),
-        _CardsRow(),
+        SizedBox(height: _sectionGap),
+        _AddressTypesPanel(),
       ],
     );
   }
@@ -106,176 +81,216 @@ class _TitleBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final bodyStyle = AppTypography.bodyMedium.copyWith(
-      color: colors.text.accent,
-    );
-    return SizedBox(
-      width: 480,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
+    return Column(
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.center,
+          child: Text(
             'Zcash Address Types',
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: AppSpacing.sm),
-          Text.rich(
-            TextSpan(
-              style: bodyStyle,
-              children: [
-                const TextSpan(text: 'Zcash has two address types: one for '),
-                TextSpan(
-                  text: 'Privacy',
-                  style: bodyStyle.copyWith(
-                    color: colors.text.brandCrimson,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const TextSpan(text: ', one for '),
-                TextSpan(
-                  text: 'Transparency',
-                  style: bodyStyle.copyWith(fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CardsRow extends StatelessWidget {
-  const _CardsRow();
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      width: 588,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _AddressTypeCard(kind: _AddressTypeCardKind.shielded),
-          SizedBox(width: AppSpacing.md),
-          _AddressTypeCard(kind: _AddressTypeCardKind.transparent),
-        ],
-      ),
-    );
-  }
-}
-
-enum _AddressTypeCardKind { shielded, transparent }
-
-class _AddressTypeCard extends StatelessWidget {
-  const _AddressTypeCard({required this.kind});
-
-  final _AddressTypeCardKind kind;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 282,
-      height: 251,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.xxs,
-          vertical: AppSpacing.xs,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _AddressCardTop(kind: kind),
-            const SizedBox(height: AppSpacing.sm),
-            _AddressCardContent(kind: kind),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AddressCardTop extends StatelessWidget {
-  const _AddressCardTop({required this.kind});
-
-  final _AddressTypeCardKind kind;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final isShielded = kind == _AddressTypeCardKind.shielded;
-    return Container(
-      height: 96,
-      padding: const EdgeInsets.all(AppSpacing.xs),
-      decoration: BoxDecoration(
-        color: isShielded ? colors.background.inverse : colors.background.base,
-        borderRadius: BorderRadius.circular(AppRadii.small),
-        border: isShielded
-            ? Border.all(color: colors.border.subtleOpacity)
-            : null,
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: AppIcon(
-              isShielded
-                  ? AppIcons.shieldKeyholeOutline
-                  : AppIcons.transparentBalance,
-              size: AppIconSize.large,
-              color: isShielded ? colors.icon.inverse : colors.icon.accent,
-            ),
-          ),
-          _AddressLine(kind: kind),
-        ],
-      ),
-    );
-  }
-}
-
-class _AddressLine extends StatelessWidget {
-  const _AddressLine({required this.kind});
-
-  final _AddressTypeCardKind kind;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final isShielded = kind == _AddressTypeCardKind.shielded;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _AddressPrefixBadge(
-          text: isShielded ? 'u1' : 't',
-          shielded: isShielded,
-        ),
-        const SizedBox(width: AppSpacing.xxs),
+        const SizedBox(height: AppSpacing.sm),
         Text(
-          'vtr241aaf13...jFJxxTmd3FwF',
-          maxLines: 1,
-          overflow: TextOverflow.clip,
-          softWrap: false,
-          style: AppTypography.codeMedium.copyWith(
-            color: isShielded ? colors.text.inverse : colors.text.secondary,
-          ),
+          'Zcash has two address types.\n'
+          'One for privacy, one for transparency.',
+          style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
+          textAlign: TextAlign.center,
         ),
       ],
     );
   }
 }
 
-class _AddressPrefixBadge extends StatelessWidget {
-  const _AddressPrefixBadge({required this.text, required this.shielded});
+class _AddressTypesPanel extends StatelessWidget {
+  const _AddressTypesPanel();
 
-  static const double _radius = 4;
+  static const _radius = BorderRadius.all(Radius.circular(24));
 
-  final String text;
-  final bool shielded;
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final fill = colors.background.ground;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.md,
+      ),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: _radius,
+        boxShadow: [
+          BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+          BoxShadow(
+            color: colors.shadows.subtle,
+            offset: const Offset(0, 1),
+            blurRadius: 2,
+          ),
+          BoxShadow(
+            color: colors.shadows.subtle,
+            offset: const Offset(0, 2),
+            blurRadius: 4,
+          ),
+          BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+        ],
+      ),
+      child: const Column(
+        children: [
+          _AddressTypeSection(kind: _AddressTypeKind.shielded),
+          SizedBox(height: AppSpacing.md),
+          _Divider(),
+          SizedBox(height: AppSpacing.md),
+          _AddressTypeSection(kind: _AddressTypeKind.transparent),
+        ],
+      ),
+    );
+  }
+}
+
+class _Divider extends StatelessWidget {
+  const _Divider();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: context.colors.border.regular,
+        borderRadius: BorderRadius.circular(AppRadii.small),
+      ),
+      child: const SizedBox(height: 1, width: double.infinity),
+    );
+  }
+}
+
+enum _AddressTypeKind { shielded, transparent }
+
+class _AddressTypeSection extends StatelessWidget {
+  const _AddressTypeSection({required this.kind});
+
+  final _AddressTypeKind kind;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.xxs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _AddressTypeHeader(kind: kind),
+          const SizedBox(height: AppSpacing.sm),
+          _AddressTypeDescription(kind: kind),
+        ],
+      ),
+    );
+  }
+}
+
+class _AddressTypeHeader extends StatelessWidget {
+  const _AddressTypeHeader({required this.kind});
+
+  final _AddressTypeKind kind;
+
+  bool get _isShielded => kind == _AddressTypeKind.shielded;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Flexible(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIcon(
+                _isShielded
+                    ? AppIcons.shieldKeyholeOutline
+                    : AppIcons.transparentBalance,
+                size: 24,
+                color: _isShielded
+                    ? colors.icon.brandCrimson
+                    : colors.text.accent,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Flexible(
+                child: Text(
+                  _isShielded ? 'Shielded address' : 'Transparent address',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodyLarge.copyWith(
+                    color: colors.text.accent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        _AddressChip(kind: kind),
+      ],
+    );
+  }
+}
+
+class _AddressChip extends StatelessWidget {
+  const _AddressChip({required this.kind});
+
+  final _AddressTypeKind kind;
+
+  bool get _isShielded => kind == _AddressTypeKind.shielded;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final isDark = context.appTheme == AppThemeData.dark;
+    final background = _isShielded
+        ? colors.background.inverse
+        : isDark
+        ? colors.background.overlay
+        : colors.background.raised;
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.xs),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(AppRadii.small),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _AddressBadge(kind: kind),
+          const SizedBox(width: AppSpacing.xxs),
+          Text(
+            _isShielded ? 'vtr42...3F5wF' : 'vt5r2...3F8wF',
+            maxLines: 1,
+            overflow: TextOverflow.clip,
+            softWrap: false,
+            style: AppTypography.codeMedium.copyWith(
+              color: _isShielded ? colors.text.inverse : colors.text.secondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AddressBadge extends StatelessWidget {
+  const _AddressBadge({required this.kind});
+
+  final _AddressTypeKind kind;
+
+  bool get _isShielded => kind == _AddressTypeKind.shielded;
+
+  static const _shieldedFill = Color(0xFFC2546A);
 
   @override
   Widget build(BuildContext context) {
@@ -285,108 +300,75 @@ class _AddressPrefixBadge extends StatelessWidget {
       height: 21,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: shielded
-            ? colors.background.base
-            : colors.background.neutralStrongOpacity,
-        borderRadius: BorderRadius.circular(_radius),
+        color: _isShielded ? _shieldedFill : colors.background.inverse,
+        borderRadius: BorderRadius.circular(AppSpacing.xxs),
       ),
       child: Text(
-        text,
-        style: AppTypography.codeMedium.copyWith(color: colors.text.accent),
+        _isShielded ? 'u1' : 't',
+        style: AppTypography.codeMedium.copyWith(
+          color: _isShielded ? colors.text.homeCard : colors.text.inverse,
+        ),
       ),
     );
   }
 }
 
-class _AddressCardContent extends StatelessWidget {
-  const _AddressCardContent({required this.kind});
+class _AddressTypeDescription extends StatelessWidget {
+  const _AddressTypeDescription({required this.kind});
 
-  final _AddressTypeCardKind kind;
+  final _AddressTypeKind kind;
+
+  bool get _isShielded => kind == _AddressTypeKind.shielded;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final isShielded = kind == _AddressTypeCardKind.shielded;
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: AppSpacing.s,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            isShielded ? 'Shielded Address' : 'Transparent Address',
-            style: AppTypography.bodyLarge.copyWith(
-              color: colors.text.accent,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          SizedBox(
-            width: isShielded ? 256 : 258,
-            child: isShielded
-                ? _ShieldedDescription(colors: colors)
-                : Text(
-                    'Address starts with t. Balance and transaction history '
-                    'are publicly visible.',
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.primary,
-                    ),
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ShieldedDescription extends StatelessWidget {
-  const _ShieldedDescription({required this.colors});
-
-  final AppColors colors;
-
-  @override
-  Widget build(BuildContext context) {
     final bodyStyle = AppTypography.bodyMedium.copyWith(
       color: colors.text.primary,
     );
-    final emphasisStyle = bodyStyle.copyWith(
-      color: colors.text.brandCrimson,
-      fontWeight: FontWeight.w500,
+    final emphasisStyle = AppTypography.bodyMediumStrong.copyWith(
+      color: colors.text.accent,
     );
-    return Text.rich(
-      TextSpan(
-        style: bodyStyle,
-        children: [
-          const TextSpan(text: 'Address starts with '),
-          TextSpan(text: 'u1', style: emphasisStyle),
-          const TextSpan(text: ' (or '),
-          TextSpan(text: 'zs', style: emphasisStyle),
-          const TextSpan(text: ' for legacy).\n'),
-          const TextSpan(
-            text:
-                'Only you can see your account balance and transaction history.',
-          ),
-        ],
-      ),
+
+    if (_isShielded) {
+      return Text.rich(
+        TextSpan(
+          style: bodyStyle,
+          children: [
+            const TextSpan(text: 'Address starts with '),
+            TextSpan(text: 'u1', style: emphasisStyle),
+            const TextSpan(text: ' (or '),
+            TextSpan(text: 'zs', style: emphasisStyle),
+            const TextSpan(
+              text:
+                  ' for legacy). Only you can see your account balance and transaction history.',
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Text(
+      "Address starts with t, similar to Bitcoin, your address' balance "
+      'and transaction history are publicly visible.',
+      style: bodyStyle,
     );
   }
 }
 
-class _ActionRow extends StatelessWidget {
-  const _ActionRow();
+class _ButtonStack extends StatelessWidget {
+  const _ButtonStack();
 
-  static const double _buttonWidth = 256;
+  static const double _buttonMinWidth = 196;
 
   @override
   Widget build(BuildContext context) {
     return AppButton(
       onPressed: () => context.go(OnboardingStep.thingsToKnow.routePath),
       variant: AppButtonVariant.primary,
-      minWidth: _buttonWidth,
+      minWidth: _buttonMinWidth,
       trailing: const AppIcon(AppIcons.chevronForward),
-      child: const Text('Continue'),
+      child: const Text('Tell me how Zcash works'),
     );
   }
 }

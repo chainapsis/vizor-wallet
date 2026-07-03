@@ -11,6 +11,10 @@ import '../primitives.dart';
 /// * [navActive] — Active nav item indicator.
 /// * [tooltip] — Tooltip / popover background. Theme-invariant.
 /// * [qrCode] — QR code backing surface. Theme-invariant for scan contrast.
+/// * [scrollbarThumb] — Desktop pane overlay scrollbar thumb. Solid (fully
+///   opaque) per the Figma Scrollbar component: `#393E3E` dark / `#E1E1E1`
+///   light. Distinct from the sidebar accounts scrollbar, which uses the
+///   semi-transparent `background.neutralStrongOpacity` token.
 class AppSurfaceColors {
   const AppSurfaceColors({
     required this.card,
@@ -20,6 +24,7 @@ class AppSurfaceColors {
     required this.navActive,
     required this.tooltip,
     required this.qrCode,
+    required this.scrollbarThumb,
   });
 
   final Color card;
@@ -29,6 +34,7 @@ class AppSurfaceColors {
   final Color navActive;
   final Color tooltip;
   final Color qrCode;
+  final Color scrollbarThumb;
 
   static const dark = AppSurfaceColors(
     card: Primitives.p100Dark,
@@ -38,6 +44,7 @@ class AppSurfaceColors {
     navActive: Primitives.p150Dark,
     tooltip: Primitives.p200Dark,
     qrCode: Primitives.p0Light,
+    scrollbarThumb: Primitives.p200Dark,
   );
 
   static const light = AppSurfaceColors(
@@ -50,5 +57,6 @@ class AppSurfaceColors {
     // keeps the expression inside the light-face lookup.
     tooltip: Primitives.p800Light,
     qrCode: Primitives.p0Light,
+    scrollbarThumb: Primitives.p150Light,
   );
 }

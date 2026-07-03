@@ -177,6 +177,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.15.0"
+  cross_file:
+    dependency: transitive
+    description:
+      name: cross_file
+      sha256: "28bb3ae56f117b5aec029d702a90f57d285cd975c3c5c281eaca38dbc47c5937"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.5+2"
   crypto:
     dependency: "direct main"
     description:
@@ -205,8 +213,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "01beee7"
-      resolved-ref: "01beee7c6ab94877bafe10503abb0f6cfb2e4686"
+      ref: "16b1b30e08004e91521cc511db098f9561dfeb0a"
+      resolved-ref: "16b1b30e08004e91521cc511db098f9561dfeb0a"
       url: "https://github.com/chainapsis/desktop_window_bootstrap.git"
     source: git
     version: "0.0.1"
@@ -260,14 +268,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  flutter_foreground_task:
-    dependency: "direct main"
-    description:
-      name: flutter_foreground_task
-      sha256: "1903697944a31f596622e51a6af55e3a9dfb27762f9763ab2841184098c6b0ba"
-      url: "https://pub.dev"
-    source: hosted
-    version: "9.2.1"
   flutter_lints:
     dependency: "direct dev"
     description:
@@ -588,8 +588,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "7932282afb502abfac2f5f9fc860491372e56eda"
-      resolved-ref: "7932282afb502abfac2f5f9fc860491372e56eda"
+      ref: "2a594fd6e592fd723cf03e02337a65d83cf8aa1a"
+      resolved-ref: "2a594fd6e592fd723cf03e02337a65d83cf8aa1a"
       url: "https://github.com/chainapsis/mobile_scanner.git"
     source: git
     version: "7.2.0"
@@ -848,8 +848,24 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.2.0"
-  shared_preferences:
+  share_plus:
+    dependency: "direct main"
+    description:
+      name: share_plus
+      sha256: "223873d106614442ea6f20db5a038685cc5b32a2fba81cdecaefbbae0523f7fa"
+      url: "https://pub.dev"
+    source: hosted
+    version: "12.0.2"
+  share_plus_platform_interface:
     dependency: transitive
+    description:
+      name: share_plus_platform_interface
+      sha256: "88023e53a13429bd65d8e85e11a9b484f49d4c190abbd96c7932b74d6927cc9a"
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.1.0"
+  shared_preferences:
+    dependency: "direct main"
     description:
       name: shared_preferences
       sha256: c3025c5534b01739267eb7d76959bbc25a6d10f6988e1c2a3036940133dd10bf
@@ -1133,6 +1149,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.5"
+  uuid:
+    dependency: transitive
+    description:
+      name: uuid
+      sha256: "1fef9e8e11e2991bb773070d4656b7bd5d850967a2456cfc83cf47925ba79489"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.5.3"
   vector_graphics:
     dependency: transitive
     description:

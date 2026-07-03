@@ -8,11 +8,12 @@ import 'package:go_router/go_router.dart';
 import '../../../main.dart' show log;
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
-import '../../core/widgets/app_decorative_divider.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../providers/account_provider.dart';
+import '../../providers/device_owner_auth_provider.dart';
 import '../../providers/sync_provider.dart';
-import 'shared/onboarding_welcome_art.dart';
+import '../../services/device_owner_auth.dart';
+import 'shared/onboarding_auth_shell.dart';
 
 class LostPasswordScreen extends ConsumerStatefulWidget {
   const LostPasswordScreen({
@@ -36,6 +37,7 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
   Timer? _countdownTimer;
   late int _remainingSeconds;
   bool _isResetting = false;
+  String? _error;
 
   bool get _canReset => _remainingSeconds <= 0 && !_isResetting;
 
@@ -79,9 +81,20 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
     if (!_canReset) return;
     setState(() {
       _isResetting = true;
+      _error = null;
     });
 
     try {
+      final verified = await _verifyDeviceOwner();
+      if (!mounted) return;
+      if (!verified) {
+        setState(() {
+          _isResetting = false;
+          _error = null;
+        });
+        return;
+      }
+
       final onReset = widget.onReset;
       if (onReset != null) {
         await onReset();
@@ -94,12 +107,49 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
         if (!mounted) return;
         context.go('/welcome');
       }
+    } on DeviceOwnerAuthException catch (e, st) {
+      log('LostPasswordScreen._handleReset auth failed: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _isResetting = false;
+        _error = e.kind == DeviceOwnerAuthErrorKind.unavailable
+            ? kWalletResetDeviceAuthRequiredMessage
+            : kWalletResetDeviceAuthFailedMessage;
+      });
     } catch (e, st) {
       log('LostPasswordScreen._handleReset: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
         _isResetting = false;
+        // Auth already succeeded; the wipe itself failed. Surface it instead of
+        // silently falling back to the default status line.
+        _error = kWalletResetFailedMessage;
       });
+    }
+  }
+
+  /// Proves device ownership before wiping the wallet.
+  ///
+  /// On supported platforms the OS shows its own device-owner prompt. Windows
+  /// first tries Windows Hello/PIN, then falls back to account password. If no
+  /// usable local credential exists, reset falls back to the on-screen confirm.
+  Future<bool> _verifyDeviceOwner() async {
+    final auth = ref.read(deviceOwnerAuthProvider);
+    if (!auth.hasOsResetGate) {
+      // Linux: no OS device-owner auth is available on the portable AppImage
+      // build, so the on-screen countdown + explicit confirm is the only gate.
+      return Future.value(true);
+    }
+    try {
+      return await verifyDeviceOwnerForWalletReset(ref);
+    } on DeviceOwnerAuthException catch (e, st) {
+      if (e.kind == DeviceOwnerAuthErrorKind.noLocalCredential) {
+        log(
+          'LostPasswordScreen._verifyDeviceOwner no local credential: $e\n$st',
+        );
+        return true;
+      }
+      rethrow;
     }
   }
 
@@ -108,8 +158,11 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
     final accountNotifier = ref.read(accountProvider.notifier);
 
     await syncNotifier.clearSensitiveStateForLock();
-    await accountNotifier.resetWallet();
-    syncNotifier.clearCachedWalletDbPath();
+    try {
+      await accountNotifier.resetWallet();
+    } finally {
+      syncNotifier.clearCachedWalletDbPath();
+    }
   }
 
   @override
@@ -117,133 +170,24 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xs),
-          child: _LostPasswordPane(
-            onBack: _handleBack,
+        child: OnboardingAuthShell(
+          card: OnboardingAuthCard(
+            width: _LostPasswordContent.cardWidth,
+            height: _LostPasswordContent.cardHeight,
+            borderRadius: AppSpacing.md,
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.xl,
+              AppSpacing.md,
+              AppSpacing.lg,
+            ),
             child: _LostPasswordContent(
               remainingSeconds: _remainingSeconds,
               canReset: _canReset,
+              error: _error,
+              onBack: _handleBack,
               onReset: _handleReset,
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LostPasswordPane extends StatelessWidget {
-  const _LostPasswordPane({required this.child, required this.onBack});
-
-  final Widget child;
-  final VoidCallback onBack;
-
-  static const double _canvasWidth = 1064;
-  static const double _canvasHeight = 672;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          const Positioned.fill(
-            child: OnboardingWelcomeBackdrop(
-              fit: BoxFit.fitWidth,
-              alignment: Alignment.bottomCenter,
-            ),
-          ),
-          Positioned.fill(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final alignment = constraints.maxHeight < _canvasHeight
-                    ? Alignment.bottomCenter
-                    : Alignment.center;
-                return OverflowBox(
-                  alignment: alignment,
-                  minWidth: _canvasWidth,
-                  maxWidth: _canvasWidth,
-                  minHeight: _canvasHeight,
-                  maxHeight: _canvasHeight,
-                  child: SizedBox(
-                    width: _canvasWidth,
-                    height: _canvasHeight,
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: Column(
-                        children: [
-                          Align(
-                            alignment: Alignment.topLeft,
-                            child: _LostPasswordBackButton(onPressed: onBack),
-                          ),
-                          Expanded(
-                            child: Center(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: AppSpacing.base,
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: AppSpacing.md,
-                                  ),
-                                  child: child,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LostPasswordBackButton extends StatelessWidget {
-  const _LostPasswordBackButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onPressed,
-        child: SizedBox(
-          height: 32,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppIcon(
-                AppIcons.chevronBackward,
-                size: AppIconSize.medium,
-                color: colors.text.accent,
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              Text(
-                'Back',
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
-            ],
           ),
         ),
       ),
@@ -255,15 +199,21 @@ class _LostPasswordContent extends StatelessWidget {
   const _LostPasswordContent({
     required this.remainingSeconds,
     required this.canReset,
+    required this.error,
+    required this.onBack,
     required this.onReset,
   });
 
   final int remainingSeconds;
   final bool canReset;
+  final String? error;
+  final VoidCallback onBack;
   final VoidCallback onReset;
 
-  static const double _contentWidth = 349;
-  static const double _buttonWidth = 256;
+  static const double cardWidth = 396;
+  static const double cardHeight = 520;
+  static const double _buttonGroupWidth = 348;
+  static const double _destructiveButtonWidth = 232;
 
   @override
   Widget build(BuildContext context) {
@@ -277,89 +227,96 @@ class _LostPasswordContent extends StatelessWidget {
     final buttonLabel = remainingSeconds > 0
         ? 'Reset after ${remainingSeconds}s...'
         : 'Reset Vizor';
+    final statusText = error ?? 'This cannot be undone.';
 
     return Column(
       mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
+        // Figma: this screen's badge sits on a 30% gray shield, unlike the
+        // crimson welcome/unlock badge.
+        Image.asset(
+          'assets/illustrations/lost_password_badge.png',
+          width: 50,
+          height: 50,
+        ),
+        const SizedBox(height: AppSpacing.base),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Lost password?',
+              style: AppTypography.displayMedium.copyWith(
+                color: colors.text.accent,
+                height: 48 / 45,
+              ),
+              maxLines: 1,
+              softWrap: false,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            // Line breaks pinned to the design's rendered wrap (348px box).
+            Text.rich(
+              TextSpan(
+                style: bodyStyle,
+                children: [
+                  const TextSpan(
+                    text:
+                        "If you've lost your password, the only way to recover\nyour account is to ",
+                  ),
+                  TextSpan(
+                    text: 'completely reset Vizor app',
+                    style: strongStyle,
+                  ),
+                  const TextSpan(
+                    text:
+                        ', which\nmeans deleting all accounts and requiring you to\n',
+                  ),
+                  TextSpan(text: 'import accounts again', style: strongStyle),
+                  const TextSpan(text: '.'),
+                ],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.base),
         SizedBox(
-          width: _contentWidth,
+          width: _buttonGroupWidth,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Lost Password?',
-                style: AppTypography.displayLarge.copyWith(
-                  color: colors.text.accent,
+                statusText,
+                style: AppTypography.bodyMediumStrong.copyWith(
+                  color: colors.text.destructive,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppSpacing.md),
-              Text.rich(
-                TextSpan(
-                  style: bodyStyle,
-                  children: [
-                    const TextSpan(
-                      text:
-                          "If you've lost your password, the only way to recover your account is to ",
-                    ),
-                    TextSpan(
-                      text: 'completely reset the Vizor app',
-                      style: strongStyle,
-                    ),
-                    const TextSpan(
-                      text:
-                          ', which means deleting all accounts and requiring you to ',
-                    ),
-                    TextSpan(text: 'import accounts again', style: strongStyle),
-                    const TextSpan(text: '.'),
-                  ],
-                ),
-                textAlign: TextAlign.center,
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppButton(
+                    onPressed: canReset ? onReset : null,
+                    variant: AppButtonVariant.destructive,
+                    minWidth: _destructiveButtonWidth,
+                    leading: const AppIcon(AppIcons.warning, size: 20),
+                    child: Text(buttonLabel),
+                  ),
+                  const SizedBox(height: AppSpacing.s),
+                  AppButton(
+                    onPressed: onBack,
+                    variant: AppButtonVariant.ghost,
+                    minWidth: _destructiveButtonWidth,
+                    child: const Text('Cancel'),
+                  ),
+                ],
               ),
             ],
           ),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        const AppDecorativeDivider(width: _buttonWidth),
-        const SizedBox(height: AppSpacing.lg),
-        SizedBox(
-          width: _buttonWidth,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppButton(
-                onPressed: canReset ? onReset : null,
-                variant: AppButtonVariant.destructive,
-                minWidth: _buttonWidth,
-                trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-                child: Text(buttonLabel),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _DestructiveNotice(color: colors.text.destructive),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DestructiveNotice extends StatelessWidget {
-  const _DestructiveNotice({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        AppIcon(AppIcons.warning, size: AppIconSize.medium, color: color),
-        const SizedBox(width: AppSpacing.xxs),
-        Text(
-          'This cannot be undone.',
-          style: AppTypography.bodyMediumStrong.copyWith(color: color),
         ),
       ],
     );

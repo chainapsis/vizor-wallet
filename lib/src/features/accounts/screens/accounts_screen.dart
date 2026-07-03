@@ -1,56 +1,104 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart'
-    show Scrollbar, ScrollbarTheme, ScrollbarThemeData, WidgetStatePropertyAll;
+import 'package:flutter/material.dart' show Colors;
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/app_pane_floating_bar.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
-import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_context_menu.dart';
-import '../../../core/widgets/app_decorative_divider.dart';
+import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/receive_address_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/voting/voting_submission_guard_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
+import '../../send/models/send_prefill_args.dart';
 import '../../swap/providers/swap_activity_store.dart';
-import '../widgets/account_name_modal.dart';
+import '../widgets/account_edit_modal.dart';
 import '../widgets/account_profile_picture_modal.dart';
 import '../widgets/account_remove_modal.dart';
 
 const _accountRowHeight = 44.0;
-const _accountsListScrollbarKey = ValueKey('accounts_list_scrollbar');
+const _accountsContentWidth = 420.0;
+const _accountsSurfaceWidth = 396.0;
+const _accountsCurrentSurfaceHeight = 124.0;
+const _accountsSurfaceVerticalPadding = AppSpacing.md;
+const _accountsSurfaceHorizontalPadding = AppSpacing.sm;
+const _accountsSectionLabelHeight = 24.0;
+const _accountsRowGap = AppSpacing.xs;
+const _accountsContentHorizontalPadding = AppSpacing.s;
+const _accountsContentVerticalPadding = AppSpacing.sm;
+const _accountsTitleSurfaceGap = AppSpacing.base;
+
+enum AccountsScreenInitialModal { editAccount, profilePicture, removeAccount }
 
 class AccountsScreen extends ConsumerStatefulWidget {
-  const AccountsScreen({super.key});
+  const AccountsScreen({
+    this.initialOpenMenuAccountUuid,
+    this.initialModalAccountUuid,
+    this.initialModal,
+    super.key,
+  });
+
+  final String? initialOpenMenuAccountUuid;
+  final String? initialModalAccountUuid;
+  final AccountsScreenInitialModal? initialModal;
 
   @override
   ConsumerState<AccountsScreen> createState() => _AccountsScreenState();
 }
 
-enum _AccountModalType { accountName, profilePicture, removeAccount }
+enum _AccountModalType { editAccount, profilePicture, removeAccount }
+
+_AccountModalType? _modalTypeFromInitial(AccountsScreenInitialModal? modal) {
+  return switch (modal) {
+    AccountsScreenInitialModal.editAccount => _AccountModalType.editAccount,
+    AccountsScreenInitialModal.profilePicture =>
+      _AccountModalType.profilePicture,
+    AccountsScreenInitialModal.removeAccount => _AccountModalType.removeAccount,
+    null => null,
+  };
+}
 
 class _AccountsScreenState extends ConsumerState<AccountsScreen> {
-  String? _modalAccountUuid;
-  _AccountModalType? _activeModal;
+  late String? _modalAccountUuid;
+  late _AccountModalType? _activeModal;
+  final Set<String> _copyingAddressUuids = {};
+  final Set<String> _sendingZecAddressUuids = {};
 
-  void _showAccountNameModal(AccountInfo account) {
-    _showModal(_AccountModalType.accountName, account);
+  // Edit-account drafts: the picker round-trip unmounts the edit modal, so
+  // the in-progress name and picked picture live here until Update commits
+  // them (or Cancel discards them).
+  String? _editDraftName;
+  String? _editDraftProfilePictureId;
+  bool _pfpPickerFromEdit = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _modalAccountUuid = widget.initialModalAccountUuid;
+    _activeModal = _modalTypeFromInitial(widget.initialModal);
   }
 
-  void _showProfilePictureModal(AccountInfo account) {
-    _showModal(_AccountModalType.profilePicture, account);
+  void _showEditAccountModal(AccountInfo account) {
+    _editDraftName = account.name;
+    _editDraftProfilePictureId = account.profilePictureId;
+    _pfpPickerFromEdit = false;
+    _showModal(_AccountModalType.editAccount, account);
   }
 
   void _showRemoveAccountModal(AccountInfo account) {
@@ -69,11 +117,38 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     setState(() {
       _modalAccountUuid = null;
       _activeModal = null;
+      _editDraftName = null;
+      _editDraftProfilePictureId = null;
+      _pfpPickerFromEdit = false;
     });
   }
 
-  Future<void> _updateAccountName(String uuid, String name) async {
-    await ref.read(accountProvider.notifier).renameAccount(uuid, name);
+  void _openEditProfilePicturePicker() {
+    setState(() {
+      _pfpPickerFromEdit = true;
+      _activeModal = _AccountModalType.profilePicture;
+    });
+  }
+
+  void _returnToEditAccountModal({String? pickedProfilePictureId}) {
+    setState(() {
+      if (pickedProfilePictureId != null) {
+        _editDraftProfilePictureId = pickedProfilePictureId;
+      }
+      _pfpPickerFromEdit = false;
+      _activeModal = _AccountModalType.editAccount;
+    });
+  }
+
+  Future<void> _commitEditAccount(AccountInfo account, String name) async {
+    final notifier = ref.read(accountProvider.notifier);
+    if (name.trim() != account.name.trim()) {
+      await notifier.renameAccount(account.uuid, name);
+    }
+    final draftPicture = _editDraftProfilePictureId;
+    if (draftPicture != null && draftPicture != account.profilePictureId) {
+      await notifier.updateProfilePicture(account.uuid, draftPicture);
+    }
     if (!mounted) return;
     _closeModal();
   }
@@ -140,15 +215,16 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     AccountRemoveProgressCallback? onProgress,
   ) async {
     if (_blockDestructiveWalletChangeIfVotingSubmissionInProgress()) return;
-    final syncNotifier = ref.read(syncProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
 
     onProgress?.call(AccountRemoveProgress.stoppingSync);
-    await runWithSyncPausedForAccountMutation(ref, () async {
-      onProgress?.call(AccountRemoveProgress.removingAccount);
-      await accountNotifier.resetWallet();
-      syncNotifier.clearCachedWalletDbPath();
-    }, resumeAfterMutation: false);
+    await runWithSyncPausedForWalletReset(
+      ref,
+      accountNotifier.resetWallet,
+      onResetting: () {
+        onProgress?.call(AccountRemoveProgress.removingAccount);
+      },
+    );
     if (!mounted) return;
     _closeModal();
     context.go('/welcome');
@@ -182,38 +258,77 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
+        backgroundColor: Colors.transparent,
         child: Stack(
           children: [
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: _AccountsPane(
-                activeAccount: activeAccount,
-                otherAccounts: otherAccounts,
-                onSelectAccount: _handleAccountSelected,
-                onEditAccountName: _showAccountNameModal,
-                onChangeProfilePicture: _showProfilePictureModal,
-                onRemoveAccount: _showRemoveAccountModal,
+            AppPaneFloatingBar(
+              bar: _AccountsAddAccountButton(
+                key: const ValueKey('accounts_add_account_button'),
+                onPressed: () => context.go('/add-account'),
+              ),
+              builder: (context, bottomReserve) => AppPaneScrollScaffold(
+                toolbar: const AppPaneToolbar(
+                  key: ValueKey('accounts_pane_toolbar'),
+                  leading: AppRouteBackLink(
+                    key: ValueKey('accounts_pane_back_button'),
+                    minWidth: 60,
+                  ),
+                ),
+                padding: EdgeInsets.only(bottom: bottomReserve),
+                child: _AccountsPane(
+                  activeAccount: activeAccount,
+                  otherAccounts: otherAccounts,
+                  onSelectAccount: _handleAccountSelected,
+                  onCopyAddress: _copyAddress,
+                  onSendZec: _sendZec,
+                  onEditAccount: _showEditAccountModal,
+                  onRemoveAccount: _showRemoveAccountModal,
+                  initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
+                ),
               ),
             ),
             if (modalAccount != null && _activeModal != null)
               AppPaneModalOverlay(
+                borderRadius: const BorderRadius.all(Radius.circular(20)),
                 onDismiss: _closeModal,
                 child: switch (_activeModal!) {
-                  _AccountModalType.accountName => AccountNameModal(
+                  _AccountModalType.editAccount => AccountEditModal(
+                    accountUuid: modalAccount.uuid,
                     accountName: modalAccount.name,
-                    profilePictureId: modalAccount.profilePictureId,
+                    initialName: _editDraftName ?? modalAccount.name,
+                    profilePictureId:
+                        _editDraftProfilePictureId ??
+                        modalAccount.profilePictureId,
+                    profilePictureChanged:
+                        (_editDraftProfilePictureId ??
+                            modalAccount.profilePictureId) !=
+                        modalAccount.profilePictureId,
+                    onEditProfilePicture: _openEditProfilePicturePicker,
+                    onNameChanged: (name) => _editDraftName = name,
                     onCancel: _closeModal,
-                    onUpdate: (name) =>
-                        _updateAccountName(modalAccount.uuid, name),
+                    onUpdate: (name) => _commitEditAccount(modalAccount, name),
                   ),
                   _AccountModalType.profilePicture =>
                     AccountProfilePictureModal(
-                      currentProfilePictureId: modalAccount.profilePictureId,
-                      onCancel: _closeModal,
-                      onUpdate: (profilePictureId) => _updateProfilePicture(
-                        modalAccount.uuid,
-                        profilePictureId,
-                      ),
+                      currentProfilePictureId: _pfpPickerFromEdit
+                          ? (_editDraftProfilePictureId ??
+                                modalAccount.profilePictureId)
+                          : modalAccount.profilePictureId,
+                      onCancel: _pfpPickerFromEdit
+                          ? () => _returnToEditAccountModal()
+                          : _closeModal,
+                      onUpdate: (profilePictureId) async {
+                        if (_pfpPickerFromEdit) {
+                          _returnToEditAccountModal(
+                            pickedProfilePictureId: profilePictureId,
+                          );
+                          return;
+                        }
+                        await _updateProfilePicture(
+                          modalAccount.uuid,
+                          profilePictureId,
+                        );
+                      },
                     ),
                   _AccountModalType.removeAccount => AccountRemoveModal(
                     accountName: modalAccount.name,
@@ -256,6 +371,87 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     unawaited(_refreshAfterAccountSwitch(syncNotifier));
   }
 
+  Future<void> _copyAddress(AccountInfo account) async {
+    if (_copyingAddressUuids.contains(account.uuid)) return;
+
+    setState(() {
+      _copyingAddressUuids.add(account.uuid);
+    });
+
+    try {
+      final address = await _loadShieldedAddressForAccount(account);
+      if (!mounted) return;
+      if (address.trim().isEmpty) {
+        showAppToast(context, "Address couldn't be copied");
+        return;
+      }
+
+      if (!mounted) return;
+      copyTextWithToast(context, text: address, toastMessage: 'Address copied');
+    } catch (e) {
+      log('AccountsScreen: ERROR copying shielded address: $e');
+      if (!mounted) return;
+      showAppToast(context, "Address couldn't be copied");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _copyingAddressUuids.remove(account.uuid);
+        });
+      }
+    }
+  }
+
+  Future<void> _sendZec(AccountInfo account) async {
+    if (_sendingZecAddressUuids.contains(account.uuid)) return;
+
+    setState(() {
+      _sendingZecAddressUuids.add(account.uuid);
+    });
+
+    try {
+      final address = (await _loadShieldedAddressForAccount(account)).trim();
+      if (!mounted) return;
+      if (address.isEmpty) {
+        showAppToast(context, "Send couldn't be started");
+        return;
+      }
+
+      context.go(
+        '/send',
+        extra: SendPrefillArgs(
+          id: 'account-address:${account.uuid}:$address',
+          source: 'Accounts',
+          address: address,
+          label: account.name,
+        ),
+      );
+    } catch (e) {
+      log('AccountsScreen: ERROR opening send flow for account address: $e');
+      if (!mounted) return;
+      showAppToast(context, "Send couldn't be started");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _sendingZecAddressUuids.remove(account.uuid);
+        });
+      }
+    }
+  }
+
+  Future<String> _loadShieldedAddressForAccount(AccountInfo account) {
+    final accountState = ref.read(accountProvider).value;
+    final currentShieldedAddress =
+        accountState?.activeAccountUuid == account.uuid
+        ? accountState?.activeAddress
+        : null;
+    return ref
+        .read(receiveAddressServiceProvider)
+        .loadShieldedAddress(
+          accountUuid: account.uuid,
+          currentShieldedAddress: currentShieldedAddress,
+        );
+  }
+
   Future<void> _refreshAfterAccountSwitch(SyncNotifier syncNotifier) async {
     try {
       await syncNotifier.refreshAfterSend();
@@ -266,14 +462,14 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
 
   /// Blocks wallet mutations that would delete account state during submission.
   ///
-  /// Account switching remains allowed while a vote submission is guarded.
-  /// This UI guard only covers destructive account removal and wallet reset
-  /// flows; `AccountNotifier` repeats the same check before mutating state.
+  /// Account switching and address copy/send prefill remain allowed while a
+  /// vote submission is guarded. This UI guard only covers destructive account
+  /// removal and wallet reset flows; `AccountNotifier` repeats the invariant
+  /// before mutating state.
   bool _blockDestructiveWalletChangeIfVotingSubmissionInProgress() {
     final guards = ref.read(votingSubmissionGuardProvider);
     if (guards.isEmpty) return false;
-    final guard = guards.first;
-    showAppToast(context, guard.message);
+    showAppToast(context, guards.first.message);
     return true;
   }
 
@@ -305,193 +501,254 @@ class _AccountsPane extends StatelessWidget {
     required this.activeAccount,
     required this.otherAccounts,
     required this.onSelectAccount,
-    required this.onEditAccountName,
-    required this.onChangeProfilePicture,
+    required this.onCopyAddress,
+    required this.onSendZec,
+    required this.onEditAccount,
     required this.onRemoveAccount,
+    required this.initialOpenMenuAccountUuid,
   });
 
   final AccountInfo? activeAccount;
   final List<AccountInfo> otherAccounts;
   final Future<void> Function(String uuid) onSelectAccount;
-  final ValueChanged<AccountInfo> onEditAccountName;
-  final ValueChanged<AccountInfo> onChangeProfilePicture;
+  final ValueChanged<AccountInfo> onCopyAddress;
+  final ValueChanged<AccountInfo> onSendZec;
+  final ValueChanged<AccountInfo> onEditAccount;
   final ValueChanged<AccountInfo> onRemoveAccount;
+  final String? initialOpenMenuAccountUuid;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox.expand(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Align(alignment: Alignment.centerLeft, child: AppRouteBackLink()),
-          const SizedBox(height: AppSpacing.s),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-              child: Column(
-                children: [
-                  Expanded(
-                    child: Column(
-                      children: [
-                        Text(
-                          'Accounts',
-                          textAlign: TextAlign.center,
-                          style: AppTypography.displaySmall.copyWith(
-                            color: context.colors.text.accent,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.s),
-                        const AppDecorativeDivider(width: 256),
-                        const SizedBox(height: AppSpacing.md),
-                        Expanded(
-                          child: _AccountsList(
-                            activeAccount: activeAccount,
-                            otherAccounts: otherAccounts,
-                            onSelectAccount: onSelectAccount,
-                            onEditAccountName: onEditAccountName,
-                            onChangeProfilePicture: onChangeProfilePicture,
-                            onRemoveAccount: onRemoveAccount,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  AppButton(
-                    key: const ValueKey('accounts_add_account_button'),
-                    onPressed: () => context.go('/add-account'),
-                    variant: AppButtonVariant.secondary,
-                    minWidth: 256,
-                    leading: const AppIcon(AppIcons.addNew),
-                    child: const Text('Add Account'),
-                  ),
-                ],
-              ),
-            ),
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: _accountsContentWidth),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: _accountsContentHorizontalPadding,
+            vertical: _accountsContentVerticalPadding,
           ),
-        ],
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Accounts',
+                textAlign: TextAlign.center,
+                style: AppTypography.headlineLarge.copyWith(
+                  color: context.colors.text.accent,
+                ),
+              ),
+              const SizedBox(height: _accountsTitleSurfaceGap),
+              _AccountsList(
+                activeAccount: activeAccount,
+                otherAccounts: otherAccounts,
+                onSelectAccount: onSelectAccount,
+                onCopyAddress: onCopyAddress,
+                onSendZec: onSendZec,
+                onEditAccount: onEditAccount,
+                onRemoveAccount: onRemoveAccount,
+                initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-class _AccountsList extends StatefulWidget {
-  const _AccountsList({
-    required this.activeAccount,
-    required this.otherAccounts,
-    required this.onSelectAccount,
-    required this.onEditAccountName,
-    required this.onChangeProfilePicture,
-    required this.onRemoveAccount,
-  });
+class _AccountsAddAccountButton extends StatefulWidget {
+  const _AccountsAddAccountButton({required this.onPressed, super.key});
 
-  static const _width = 352.0;
-
-  final AccountInfo? activeAccount;
-  final List<AccountInfo> otherAccounts;
-  final Future<void> Function(String uuid) onSelectAccount;
-  final ValueChanged<AccountInfo> onEditAccountName;
-  final ValueChanged<AccountInfo> onChangeProfilePicture;
-  final ValueChanged<AccountInfo> onRemoveAccount;
+  final VoidCallback onPressed;
 
   @override
-  State<_AccountsList> createState() => _AccountsListState();
+  State<_AccountsAddAccountButton> createState() =>
+      _AccountsAddAccountButtonState();
 }
 
-class _AccountsListState extends State<_AccountsList> {
-  final ScrollController _scrollController = ScrollController();
+class _AccountsAddAccountButtonState extends State<_AccountsAddAccountButton> {
+  bool _isHovered = false;
+  bool _isPressed = false;
 
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
+  void _setHovered(bool value) {
+    if (_isHovered == value) return;
+    setState(() {
+      _isHovered = value;
+    });
+  }
+
+  void _setPressed(bool value) {
+    if (_isPressed == value) return;
+    setState(() {
+      _isPressed = value;
+    });
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey != LogicalKeyboardKey.enter &&
+        event.logicalKey != LogicalKeyboardKey.numpadEnter &&
+        event.logicalKey != LogicalKeyboardKey.space) {
+      return KeyEventResult.ignored;
+    }
+    widget.onPressed();
+    return KeyEventResult.handled;
   }
 
   @override
   Widget build(BuildContext context) {
-    final accountCount =
-        widget.otherAccounts.length + (widget.activeAccount == null ? 0 : 1);
-    final seedAnchorCount =
-        widget.otherAccounts.where((account) => account.isSeedAnchor).length +
-        (widget.activeAccount?.isSeedAnchor == true ? 1 : 0);
+    final colors = context.colors;
+    final backgroundColor = _isPressed
+        ? colors.button.secondary.bgPressed
+        : _isHovered
+        ? colors.button.secondary.bgHover
+        : colors.button.secondary.bg;
+    final labelColor = colors.button.secondary.label;
 
+    return Focus(
+      onKeyEvent: _handleKeyEvent,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => _setHovered(true),
+        onExit: (_) {
+          _setHovered(false);
+          _setPressed(false);
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (_) => _setPressed(true),
+          onTapUp: (_) {
+            _setPressed(false);
+            widget.onPressed();
+          },
+          onTapCancel: () => _setPressed(false),
+          child: Semantics(
+            button: true,
+            label: 'Add account',
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 96),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                curve: Curves.easeOut,
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+                decoration: ShapeDecoration(
+                  color: backgroundColor,
+                  shape: const StadiumBorder(),
+                ),
+                child: IconTheme.merge(
+                  data: IconThemeData(color: labelColor, size: 16),
+                  child: DefaultTextStyle.merge(
+                    style: AppTypography.labelLarge.copyWith(color: labelColor),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        AppIcon(AppIcons.addNew),
+                        SizedBox(width: AppSpacing.xxs),
+                        Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xxs,
+                          ),
+                          child: Text('Add account'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountsList extends StatelessWidget {
+  const _AccountsList({
+    required this.activeAccount,
+    required this.otherAccounts,
+    required this.onSelectAccount,
+    required this.onCopyAddress,
+    required this.onSendZec,
+    required this.onEditAccount,
+    required this.onRemoveAccount,
+    required this.initialOpenMenuAccountUuid,
+  });
+
+  static const _width = _accountsSurfaceWidth;
+
+  final AccountInfo? activeAccount;
+  final List<AccountInfo> otherAccounts;
+  final Future<void> Function(String uuid) onSelectAccount;
+  final ValueChanged<AccountInfo> onCopyAddress;
+  final ValueChanged<AccountInfo> onSendZec;
+  final ValueChanged<AccountInfo> onEditAccount;
+  final ValueChanged<AccountInfo> onRemoveAccount;
+  final String? initialOpenMenuAccountUuid;
+
+  @override
+  Widget build(BuildContext context) {
+    final accountCount = otherAccounts.length + (activeAccount == null ? 0 : 1);
     return Align(
       alignment: Alignment.topCenter,
       child: SizedBox(
-        width: _AccountsList._width,
+        width: _width,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (widget.activeAccount != null) ...[
-              const _AccountsSectionLabel(label: 'Current'),
-              const SizedBox(height: AppSpacing.xs),
-              _AccountRow(
-                key: ValueKey(
-                  'accounts_active_row_${widget.activeAccount!.uuid}',
-                ),
-                account: widget.activeAccount!,
-                onTap: null,
-                onEditName: widget.onEditAccountName,
-                onChangePicture: widget.onChangeProfilePicture,
-                onRemove: widget.onRemoveAccount,
-                canRemove: _canRemoveAccount(
-                  widget.activeAccount!,
-                  accountCount,
-                  seedAnchorCount,
+            if (activeAccount != null) ...[
+              _AccountsSurface(
+                key: const ValueKey('accounts_current_surface'),
+                height: _accountsCurrentSurfaceHeight,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const _AccountsSectionLabel(label: 'Current'),
+                    const SizedBox(height: _accountsRowGap),
+                    _AccountRow(
+                      key: ValueKey(
+                        'accounts_active_row_${activeAccount!.uuid}',
+                      ),
+                      account: activeAccount!,
+                      onTap: null,
+                      showSendZec: false,
+                      onCopyAddress: onCopyAddress,
+                      onSendZec: onSendZec,
+                      onEditAccount: onEditAccount,
+                      onRemove: onRemoveAccount,
+                      showRemove: _AccountsList._canRemoveAccount(accountCount),
+                      initiallyOpenMenu:
+                          initialOpenMenuAccountUuid == activeAccount!.uuid,
+                    ),
+                  ],
                 ),
               ),
             ],
-            if (widget.otherAccounts.isNotEmpty) ...[
-              if (widget.activeAccount != null)
-                const SizedBox(height: AppSpacing.md),
-              const _AccountsSectionLabel(label: 'Other'),
-              const SizedBox(height: AppSpacing.xs),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final canScroll =
-                        _otherAccountsContentHeight(
-                          widget.otherAccounts.length,
-                        ) >
-                        constraints.maxHeight;
-                    final listView = ScrollConfiguration(
-                      behavior: ScrollConfiguration.of(
-                        context,
-                      ).copyWith(scrollbars: false),
-                      child: ListView.separated(
-                        controller: _scrollController,
-                        padding: EdgeInsets.zero,
-                        itemCount: widget.otherAccounts.length,
-                        itemBuilder: (context, index) {
-                          final account = widget.otherAccounts[index];
-                          return _AccountRow(
-                            key: ValueKey('accounts_other_row_${account.uuid}'),
-                            account: account,
-                            onTap: () {
-                              widget.onSelectAccount(account.uuid);
-                            },
-                            onEditName: widget.onEditAccountName,
-                            onChangePicture: widget.onChangeProfilePicture,
-                            onRemove: widget.onRemoveAccount,
-                            canRemove: _canRemoveAccount(
-                              account,
-                              accountCount,
-                              seedAnchorCount,
-                            ),
-                          );
-                        },
-                        separatorBuilder: (_, _) =>
-                            const SizedBox(height: AppSpacing.xs),
-                      ),
-                    );
-
-                    if (!canScroll) return listView;
-
-                    return _AccountsListScrollbar(
-                      controller: _scrollController,
-                      child: listView,
-                    );
-                  },
+            if (otherAccounts.isNotEmpty) ...[
+              if (activeAccount != null) const SizedBox(height: AppSpacing.sm),
+              _AccountsSurface(
+                key: const ValueKey('accounts_other_surface'),
+                height: _otherAccountsSurfaceHeight(otherAccounts.length),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const _AccountsSectionLabel(label: 'Other'),
+                    const SizedBox(height: _accountsRowGap),
+                    _OtherAccountsRows(
+                      accounts: otherAccounts,
+                      accountCount: accountCount,
+                      onSelectAccount: onSelectAccount,
+                      onCopyAddress: onCopyAddress,
+                      onSendZec: onSendZec,
+                      onEditAccount: onEditAccount,
+                      onRemoveAccount: onRemoveAccount,
+                      initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -501,63 +758,105 @@ class _AccountsListState extends State<_AccountsList> {
     );
   }
 
-  static bool _canRemoveAccount(
-    AccountInfo account,
-    int accountCount,
-    int seedAnchorCount,
-  ) {
-    if (accountCount == 1) return true;
-    if (!account.isSeedAnchor) return true;
-    return seedAnchorCount > 1;
+  static bool _canRemoveAccount(int accountCount) {
+    return accountCount > 0;
   }
 
-  static double _otherAccountsContentHeight(int count) {
+  static double _accountsRowsHeight(int count) {
     if (count <= 0) return 0;
-    return count * _accountRowHeight + (count - 1) * AppSpacing.xs;
+    return count * _accountRowHeight + (count - 1) * _accountsRowGap;
+  }
+
+  static double _otherAccountsSurfaceHeight(int count) {
+    return _accountsSurfaceVerticalPadding * 2 +
+        _accountsSectionLabelHeight +
+        _accountsRowGap +
+        _accountsRowsHeight(count);
   }
 }
 
-class _AccountsListScrollbar extends StatelessWidget {
-  const _AccountsListScrollbar({required this.controller, required this.child});
+class _AccountsSurface extends StatelessWidget {
+  const _AccountsSurface({
+    required this.height,
+    required this.child,
+    super.key,
+  });
 
-  static const _scrollbarGutter = 18.0;
-
-  final ScrollController controller;
+  final double height;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return OverflowBox(
-      alignment: Alignment.topLeft,
-      minWidth: _AccountsList._width + _scrollbarGutter,
-      maxWidth: _AccountsList._width + _scrollbarGutter,
-      child: SizedBox(
-        width: _AccountsList._width + _scrollbarGutter,
-        child: ScrollbarTheme(
-          data: ScrollbarThemeData(
-            thumbColor: WidgetStatePropertyAll(
-              context.colors.background.overlay,
-            ),
-            thickness: const WidgetStatePropertyAll(6),
-            radius: const Radius.circular(AppRadii.full),
-            thumbVisibility: const WidgetStatePropertyAll(true),
-            trackVisibility: const WidgetStatePropertyAll(false),
-            crossAxisMargin: 3,
-            mainAxisMargin: 3,
-          ),
-          child: Scrollbar(
-            key: _accountsListScrollbarKey,
-            controller: controller,
-            child: Row(
-              children: [
-                SizedBox(width: _AccountsList._width, child: child),
-                const SizedBox(width: _scrollbarGutter),
-              ],
-            ),
-          ),
-        ),
+    return Container(
+      height: height,
+      padding: const EdgeInsets.symmetric(
+        horizontal: _accountsSurfaceHorizontalPadding,
+        vertical: _accountsSurfaceVerticalPadding,
       ),
+      decoration: BoxDecoration(
+        color: _accountsSurfaceColor(context),
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: appSurfaceShadow(context.colors),
+      ),
+      child: child,
     );
+  }
+}
+
+class _OtherAccountsRows extends StatelessWidget {
+  const _OtherAccountsRows({
+    required this.accounts,
+    required this.accountCount,
+    required this.onSelectAccount,
+    required this.onCopyAddress,
+    required this.onSendZec,
+    required this.onEditAccount,
+    required this.onRemoveAccount,
+    required this.initialOpenMenuAccountUuid,
+  });
+
+  final List<AccountInfo> accounts;
+  final int accountCount;
+  final Future<void> Function(String uuid) onSelectAccount;
+  final ValueChanged<AccountInfo> onCopyAddress;
+  final ValueChanged<AccountInfo> onSendZec;
+  final ValueChanged<AccountInfo> onEditAccount;
+  final ValueChanged<AccountInfo> onRemoveAccount;
+  final String? initialOpenMenuAccountUuid;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: _buildRows(),
+    );
+  }
+
+  List<Widget> _buildRows() {
+    final rows = <Widget>[];
+    for (var index = 0; index < accounts.length; index += 1) {
+      if (index > 0) {
+        rows.add(const SizedBox(height: _accountsRowGap));
+      }
+      final account = accounts[index];
+      rows.add(
+        _AccountRow(
+          key: ValueKey('accounts_other_row_${account.uuid}'),
+          account: account,
+          onTap: () {
+            onSelectAccount(account.uuid);
+          },
+          showSendZec: true,
+          onCopyAddress: onCopyAddress,
+          onSendZec: onSendZec,
+          onEditAccount: onEditAccount,
+          onRemove: onRemoveAccount,
+          showRemove: _AccountsList._canRemoveAccount(accountCount),
+          initiallyOpenMenu: initialOpenMenuAccountUuid == account.uuid,
+        ),
+      );
+    }
+    return rows;
   }
 }
 
@@ -568,12 +867,18 @@ class _AccountsSectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.xxs),
-      child: Text(
-        label,
-        style: AppTypography.labelMedium.copyWith(
-          color: context.colors.text.secondary,
+    return SizedBox(
+      height: _accountsSectionLabelHeight,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xxs),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            label,
+            style: AppTypography.labelMedium.copyWith(
+              color: context.colors.text.secondary,
+            ),
+          ),
         ),
       ),
     );
@@ -584,19 +889,25 @@ class _AccountRow extends StatefulWidget {
   const _AccountRow({
     required this.account,
     required this.onTap,
-    required this.onEditName,
-    required this.onChangePicture,
+    required this.showSendZec,
+    required this.onCopyAddress,
+    required this.onSendZec,
+    required this.onEditAccount,
     required this.onRemove,
-    required this.canRemove,
+    required this.showRemove,
+    required this.initiallyOpenMenu,
     super.key,
   });
 
   final AccountInfo account;
   final VoidCallback? onTap;
-  final ValueChanged<AccountInfo> onEditName;
-  final ValueChanged<AccountInfo> onChangePicture;
+  final bool showSendZec;
+  final ValueChanged<AccountInfo> onCopyAddress;
+  final ValueChanged<AccountInfo> onSendZec;
+  final ValueChanged<AccountInfo> onEditAccount;
   final ValueChanged<AccountInfo> onRemove;
-  final bool canRemove;
+  final bool showRemove;
+  final bool initiallyOpenMenu;
 
   @override
   State<_AccountRow> createState() => _AccountRowState();
@@ -626,10 +937,10 @@ class _AccountRowState extends State<_AccountRow> {
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
         height: _accountRowHeight,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
         decoration: BoxDecoration(
-          color: isHighlighted ? context.colors.background.base : null,
-          borderRadius: BorderRadius.circular(AppRadii.xSmall),
+          color: isHighlighted ? _accountsHoverColor(context) : null,
+          borderRadius: BorderRadius.circular(AppRadii.small),
         ),
         child: Row(
           children: [
@@ -641,10 +952,7 @@ class _AccountRowState extends State<_AccountRow> {
                   height: _accountRowHeight,
                   child: Row(
                     children: [
-                      AppProfilePicture(
-                        profilePictureId: widget.account.profilePictureId,
-                        size: AppProfilePictureSize.large,
-                      ),
+                      _AccountRowAvatar(account: widget.account),
                       const SizedBox(width: AppSpacing.xs),
                       Expanded(
                         child: _AccountRowContent(account: widget.account),
@@ -656,10 +964,13 @@ class _AccountRowState extends State<_AccountRow> {
             ),
             _AccountRowMenuButton(
               key: ValueKey('accounts_row_menu_button_${widget.account.uuid}'),
-              onEditName: () => widget.onEditName(widget.account),
-              onChangePicture: () => widget.onChangePicture(widget.account),
+              showSendZec: widget.showSendZec,
+              onCopyAddress: () => widget.onCopyAddress(widget.account),
+              onSendZec: () => widget.onSendZec(widget.account),
+              onEditAccount: () => widget.onEditAccount(widget.account),
               onRemove: () => widget.onRemove(widget.account),
-              canRemove: widget.canRemove,
+              showRemove: widget.showRemove,
+              initiallyOpen: widget.initiallyOpenMenu,
             ),
           ],
         ),
@@ -677,63 +988,88 @@ class _AccountRowContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-    if (!account.isHardware) {
-      return Text(
-        account.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
-      );
-    }
+    return Text(
+      account.name,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+    );
+  }
+}
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          account.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
-        ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppIcon(
-              AppIcons.keystone,
-              size: AppIconSize.medium,
-              color: colors.icon.accent,
-            ),
-            const SizedBox(width: AppSpacing.xxs),
-            Flexible(
-              child: Text(
-                'Keystone',
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.text.secondary,
+class _AccountRowAvatar extends StatelessWidget {
+  const _AccountRowAvatar({required this.account});
+
+  final AccountInfo account;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return SizedBox(
+      width: 32,
+      height: 32,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AppProfilePicture(
+            profilePictureId: account.profilePictureId,
+            size: AppProfilePictureSize.large,
+          ),
+          if (account.isHardware)
+            Positioned(
+              right: -5,
+              bottom: 0,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colors.background.inverse,
+                  // The ring sits OUTSIDE the 16px badge like the Figma
+                  // stroke, leaving the full box to the 14px logo.
+                  border: Border.all(
+                    color: _accountsSurfaceColor(context),
+                    width: 2,
+                    strokeAlign: BorderSide.strokeAlignOutside,
+                  ),
+                  borderRadius: BorderRadius.circular(AppSpacing.xxs),
+                ),
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: Center(
+                    child: AppIcon(
+                      AppIcons.keystone,
+                      size: 14,
+                      color: colors.icon.inverse,
+                    ),
+                  ),
                 ),
               ),
             ),
-          ],
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
 class _AccountRowMenuButton extends StatefulWidget {
   const _AccountRowMenuButton({
-    required this.onEditName,
-    required this.onChangePicture,
+    required this.showSendZec,
+    required this.onCopyAddress,
+    required this.onSendZec,
+    required this.onEditAccount,
     required this.onRemove,
-    required this.canRemove,
+    required this.showRemove,
+    required this.initiallyOpen,
     super.key,
   });
 
-  final VoidCallback onEditName;
-  final VoidCallback onChangePicture;
+  final bool showSendZec;
+  final VoidCallback onCopyAddress;
+  final VoidCallback onSendZec;
+  final VoidCallback onEditAccount;
   final VoidCallback onRemove;
-  final bool canRemove;
+  final bool showRemove;
+  final bool initiallyOpen;
 
   @override
   State<_AccountRowMenuButton> createState() => _AccountRowMenuButtonState();
@@ -743,6 +1079,19 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
   final LayerLink _layerLink = LayerLink();
   OverlayEntry? _menuEntry;
   bool _isHovered = false;
+  bool _openedInitialMenu = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initiallyOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _openedInitialMenu || !widget.initiallyOpen) return;
+        _openedInitialMenu = true;
+        _showMenu();
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -774,16 +1123,19 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
             CompositedTransformFollower(
               link: _layerLink,
               showWhenUnlinked: false,
-              targetAnchor: Alignment.topLeft,
-              followerAnchor: Alignment.topLeft,
+              targetAnchor: Alignment.topRight,
+              followerAnchor: Alignment.topRight,
               offset: const Offset(0, 22),
               child: AppTheme(
                 data: appTheme,
                 child: _AccountContextMenu(
-                  onEditName: _handleEditName,
-                  onChangePicture: _handleChangePicture,
+                  showSendZec: widget.showSendZec,
+                  onCopyAddress: _handleCopyAddress,
+                  onSendZec: _handleSendZec,
+                  onEditAccount: _handleEditAccount,
                   onRemove: _handleRemove,
-                  canRemove: widget.canRemove,
+                  showRemove: widget.showRemove,
+                  onDismiss: () => _hideMenu(),
                 ),
               ),
             ),
@@ -803,14 +1155,19 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
     if (rebuild && mounted) setState(() {});
   }
 
-  void _handleEditName() {
+  void _handleEditAccount() {
     _hideMenu();
-    widget.onEditName();
+    widget.onEditAccount();
   }
 
-  void _handleChangePicture() {
+  void _handleCopyAddress() {
     _hideMenu();
-    widget.onChangePicture();
+    widget.onCopyAddress();
+  }
+
+  void _handleSendZec() {
+    _hideMenu();
+    widget.onSendZec();
   }
 
   void _handleRemove() {
@@ -841,7 +1198,7 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
               height: 20,
               padding: const EdgeInsets.all(2),
               decoration: BoxDecoration(
-                color: isHighlighted ? context.colors.background.base : null,
+                color: isHighlighted ? _accountsHoverColor(context) : null,
                 borderRadius: BorderRadius.circular(AppRadii.xSmall),
               ),
               child: Center(
@@ -862,7 +1219,6 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
   }
 
   void _setHovered(bool value) {
-    if (!mounted) return;
     if (_isHovered == value) return;
     setState(() {
       _isHovered = value;
@@ -872,40 +1228,69 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
 
 class _AccountContextMenu extends StatelessWidget {
   const _AccountContextMenu({
-    required this.onEditName,
-    required this.onChangePicture,
+    required this.showSendZec,
+    required this.onCopyAddress,
+    required this.onSendZec,
+    required this.onEditAccount,
     required this.onRemove,
-    required this.canRemove,
+    required this.showRemove,
+    required this.onDismiss,
   });
 
   static const _width = 160.0;
 
-  final VoidCallback onEditName;
-  final VoidCallback onChangePicture;
+  final bool showSendZec;
+  final VoidCallback onCopyAddress;
+  final VoidCallback onSendZec;
+  final VoidCallback onEditAccount;
   final VoidCallback onRemove;
-  final bool canRemove;
+  final bool showRemove;
+  final VoidCallback onDismiss;
 
   @override
   Widget build(BuildContext context) {
+    // Figma: the current account's menu is Edit account / Copy address;
+    // other accounts get Copy address / Send ZEC / Edit account. Remove is
+    // shown for every account and becomes reset when it is the last one.
     return AppContextMenu(
       width: _width,
       children: [
-        AppContextMenuItem(
-          iconName: AppIcons.scroll,
-          label: 'Edit Name',
-          onTap: onEditName,
-        ),
-        const SizedBox(height: AppSpacing.xxs),
-        AppContextMenuItem(
-          iconName: AppIcons.user,
-          label: 'Change Picture',
-          onTap: onChangePicture,
-        ),
-        if (canRemove) ...[
+        if (!showSendZec) ...[
+          AppContextMenuItem(
+            iconName: AppIcons.edit,
+            label: 'Edit account',
+            onTap: onEditAccount,
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          AppContextMenuItem(
+            iconName: AppIcons.copy,
+            label: 'Copy address',
+            onTap: onCopyAddress,
+          ),
+        ] else ...[
+          AppContextMenuItem(
+            iconName: AppIcons.copy,
+            label: 'Copy address',
+            onTap: onCopyAddress,
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          AppContextMenuItem(
+            iconName: AppIcons.plane,
+            label: 'Send ZEC',
+            onTap: onSendZec,
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          AppContextMenuItem(
+            iconName: AppIcons.edit,
+            label: 'Edit account',
+            onTap: onEditAccount,
+          ),
+        ],
+        if (showRemove) ...[
           const AppContextMenuDivider(),
           AppContextMenuItem(
             iconName: AppIcons.trash,
-            label: 'Remove Account',
+            label: 'Remove account',
             destructive: true,
             onTap: onRemove,
           ),
@@ -913,4 +1298,18 @@ class _AccountContextMenu extends StatelessWidget {
       ],
     );
   }
+}
+
+Color _accountsSurfaceColor(BuildContext context) {
+  final colors = context.colors;
+  return AppTheme.of(context) == AppThemeData.light
+      ? colors.background.ground
+      : colors.background.base;
+}
+
+Color _accountsHoverColor(BuildContext context) {
+  final colors = context.colors;
+  return AppTheme.of(context) == AppThemeData.light
+      ? colors.background.base
+      : colors.background.raised;
 }

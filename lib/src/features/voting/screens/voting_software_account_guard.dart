@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
 import '../../../providers/account_provider.dart';
+import '../widgets/voting_pane_scroll_area.dart';
 
 class VotingSoftwareAccountGuard extends ConsumerWidget {
   const VotingSoftwareAccountGuard({super.key, required this.child});
@@ -16,9 +16,7 @@ class VotingSoftwareAccountGuard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final account = ref.watch(accountProvider);
     return account.when(
-      loading: () => const _VotingGuardScaffold(
-        child: Center(child: CircularProgressIndicator()),
-      ),
+      loading: () => const _VotingGuardScaffold(child: VotingPaneLoading()),
       error: (error, _) => _VotingGuardScaffold(
         child: _VotingGuardMessage(
           title: "Couldn't load account",
@@ -40,15 +38,22 @@ class _VotingGuardScaffold extends StatelessWidget {
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: AppRouteBackLink(),
+            const AppPaneToolbar(),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.md,
+                  0,
+                  AppSpacing.md,
+                  AppSpacing.md,
+                ),
+                child: child,
+              ),
             ),
-            Expanded(child: child),
           ],
         ),
       ),

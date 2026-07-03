@@ -2,10 +2,11 @@ import 'package:flutter/painting.dart';
 
 import '../primitives.dart';
 
-/// Interaction-state colors.
+/// Interaction-state colors from the Figma `Semantic/State` group.
 ///
-/// [hover] is the alpha overlay layered over a base surface. [pressed] and
-/// [selected] are standalone neutral backgrounds.
+/// [hover], [pressed], and [selected] are standalone neutral backgrounds.
+/// [hoverOpacity] is the matching alpha overlay token for hover states that
+/// need to preserve the underlying surface.
 /// [selectedOpacity] is the matching alpha overlay token for selected states
 /// that need to preserve the underlying surface.
 ///
@@ -13,12 +14,13 @@ import '../primitives.dart';
 /// contrast against the page, separated from the element by a 2dp gap so it
 /// reads cleanly on any surface.
 ///
-/// [focusRingBrand] is the brand-crimson variant used when focusing the
-/// primary/accent button so the ring blends with the brand color instead of
-/// contrasting with it.
+/// [focusRingBrand] is the retained brand-crimson focus variant for one-off
+/// accent cases. The current button component uses the neutral ring for its
+/// primary variant.
 class AppStateColors {
   const AppStateColors({
     required this.hover,
+    required this.hoverOpacity,
     required this.pressed,
     required this.focus,
     required this.selected,
@@ -30,6 +32,7 @@ class AppStateColors {
   });
 
   final Color hover;
+  final Color hoverOpacity;
   final Color pressed;
   final Color focus;
   final Color selected;
@@ -40,7 +43,8 @@ class AppStateColors {
   final Color focusRingDestructive;
 
   static const dark = AppStateColors(
-    hover: Primitives.p0Alpha15Dark,
+    hover: Primitives.p100Dark,
+    hoverOpacity: Primitives.p0Alpha15Dark,
     pressed: Primitives.p150Dark,
     focus: Primitives.p200Dark,
     selected: Primitives.p150Dark,
@@ -48,15 +52,16 @@ class AppStateColors {
     focusRing: Primitives.p800Dark,
     focusGap: Primitives.p0Dark,
     focusRingBrand: CrimsonPrimitives.p400Dark,
-    focusRingDestructive: PlumPrimitives.p500Dark,
+    focusRingDestructive: PlumPrimitives.p200Dark,
   );
 
   static const light = AppStateColors(
-    hover: Primitives.p0Alpha30Light,
+    hover: Primitives.p50Light,
+    hoverOpacity: Primitives.p900Alpha5Light,
     pressed: Primitives.p150Light,
     focus: Primitives.p200Light,
     selected: Primitives.p150Light,
-    selectedOpacity: Primitives.p0Alpha50Light,
+    selectedOpacity: Primitives.p900Alpha5Light,
     focusRing: Primitives.p900Light,
     focusGap: Primitives.p0Light,
     focusRingBrand: CrimsonPrimitives.p300Light,

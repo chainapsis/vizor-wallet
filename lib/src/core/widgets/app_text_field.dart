@@ -8,6 +8,12 @@ import 'app_tooltip.dart';
 
 enum AppTextFieldTone { neutral, destructive, success, brandCrimson }
 
+/// Figma Field `Type` variant: [primary] is the default white input
+/// surface; [secondary] is the filled gray shell used on the auth screens.
+enum AppTextFieldSurface { primary, secondary }
+
+const _appTextFieldInputIconSize = AppInputSizing.iconSize;
+
 class AppTextField extends StatefulWidget {
   const AppTextField({
     super.key,
@@ -25,10 +31,13 @@ class AppTextField extends StatefulWidget {
     this.inputBottomPadding,
     this.leading,
     this.trailing,
+    this.trailingFitsSlot = false,
     this.messageText,
     this.messageIcon,
     this.messageStyle,
+    this.labelStyle,
     this.tone = AppTextFieldTone.neutral,
+    this.surface = AppTextFieldSurface.primary,
     this.showClearButton = false,
     this.clearButtonRequiresText = true,
     this.clearButtonSemanticLabel = 'Clear text',
@@ -73,10 +82,19 @@ class AppTextField extends StatefulWidget {
   final double? inputBottomPadding;
   final Widget? leading;
   final Widget? trailing;
+
+  /// When true, a [trailing] widget is rendered at its intrinsic size
+  /// instead of being clamped to the icon-sized slot — use for a text
+  /// pill (e.g. a "Paste" affordance). Pair with [trailingSlotWidth] in
+  /// the fixed-slot layout. Defaults to false so every existing field is
+  /// unaffected.
+  final bool trailingFitsSlot;
   final String? messageText;
   final Widget? messageIcon;
   final TextStyle? messageStyle;
+  final TextStyle? labelStyle;
   final AppTextFieldTone tone;
+  final AppTextFieldSurface surface;
   final bool showClearButton;
   final bool clearButtonRequiresText;
   final String clearButtonSemanticLabel;
@@ -251,15 +269,21 @@ class _AppTextFieldState extends State<AppTextField> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final titleStyle = AppTypography.labelMedium.copyWith(
+    final defaultTitleStyle = AppTypography.labelMedium.copyWith(
       color: colors.text.secondary,
     );
+    final titleStyle = widget.labelStyle == null
+        ? defaultTitleStyle
+        : widget.labelStyle!.copyWith(
+            color: widget.labelStyle!.color ?? colors.text.secondary,
+          );
     final hintStyle =
         widget.hintStyle ??
         AppTypography.labelLarge.copyWith(color: colors.text.muted);
     final valueStyle =
         widget.textStyle ??
-        AppTypography.labelLarge.copyWith(color: colors.text.accent);
+        (_multiline ? AppTypography.bodyMedium : AppTypography.labelLarge)
+            .copyWith(color: colors.text.accent);
     final defaultHintStyle = AppTypography.labelLarge.copyWith(
       color: colors.text.muted,
     );
@@ -276,10 +300,8 @@ class _AppTextFieldState extends State<AppTextField> {
       AppTextFieldTone.brandCrimson => colors.icon.brandCrimson,
     };
     final gap = _multiline ? AppSpacing.xs : AppSpacing.xxs;
-    final shellHeight = _multiline ? 148.0 : 46.0;
-    const shellRadius = AppRadii.small;
-    const focusRingWidth = 3.0;
-    const focusRingStrokeWidth = 2.0;
+    final shellHeight = _multiline ? 148.0 : AppInputSizing.height;
+    const shellRadius = AppInputSizing.radius;
     final useFixedSlotLayout =
         !_multiline &&
         (widget.leadingSlotWidth != null ||
@@ -294,22 +316,39 @@ class _AppTextFieldState extends State<AppTextField> {
       forceStrutHeight: true,
     );
 
-    final isNeutralTone = widget.tone == AppTextFieldTone.neutral;
+    // Figma Field Type=Secondary: filled gray shell (auth screens); its
+    // component stroke is white at 0% paint opacity, so neither surface
+    // draws an idle border. Primary keeps the white input surface.
+    final baseShellColor = widget.surface == AppTextFieldSurface.secondary
+        ? colors.button.secondary.bg
+        : colors.surface.input;
+    final shellColor = widget.tone == AppTextFieldTone.destructive
+        ? Color.alphaBlend(
+            colors.background.utilityDestructiveAlphaSubtle,
+            baseShellColor,
+          )
+        : baseShellColor;
+    // The filled secondary shell keeps its surface color on hover (no
+    // alpha ring — it reads as a pale halo on the gray fill); focus still
+    // draws the inverse ring on both surfaces.
+    final hoverBorderColor = widget.surface == AppTextFieldSurface.secondary
+        ? Colors.transparent
+        : colors.border.subtleOpacity;
     final borderColor = switch (widget.tone) {
-      AppTextFieldTone.neutral when _isFocused || _hasText =>
-        colors.border.medium,
-      AppTextFieldTone.neutral when _hovered => colors.border.regular,
-      AppTextFieldTone.neutral => colors.border.subtle,
-      AppTextFieldTone.destructive => colors.border.utilityDestructive,
+      AppTextFieldTone.neutral when _isFocused => colors.background.inverse,
+      AppTextFieldTone.neutral when _hovered => hoverBorderColor,
+      AppTextFieldTone.neutral => Colors.transparent,
+      AppTextFieldTone.destructive => colors.border.utilityDestructiveSubtle,
       AppTextFieldTone.success => colors.border.utilitySuccess,
       AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,
     };
-    final focusRingColor = switch (widget.tone) {
-      AppTextFieldTone.neutral => colors.state.focusRing,
-      AppTextFieldTone.destructive => colors.border.utilityDestructive,
-      AppTextFieldTone.success => colors.border.utilitySuccess,
-      AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,
-    };
+    // The secondary shell is flat in the design (no effects on the Field
+    // frame); the surface shadow belongs to the white primary input only.
+    final boxShadow =
+        widget.tone == AppTextFieldTone.destructive ||
+            widget.surface == AppTextFieldSurface.secondary
+        ? const <BoxShadow>[]
+        : _appTextFieldSurfaceShadow(colors);
     final messageColor = switch (widget.tone) {
       AppTextFieldTone.neutral => colors.text.secondary,
       AppTextFieldTone.destructive => colors.text.destructive,
@@ -376,10 +415,18 @@ class _AppTextFieldState extends State<AppTextField> {
       strutStyle: textStrutStyle,
       cursorColor: colors.text.accent,
       selectAllOnFocus: false,
-      decoration: InputDecoration.collapsed(
-        hintText: widget.hintText,
-        hintStyle: resolvedHintStyle,
-      ),
+      // Single-line skips InputDecorator entirely: its internal baseline
+      // placement shifts the editable down by visual density / platform
+      // (4px on macOS), which breaks the Field spec's centered 16px line
+      // box. Without a decorator the editable is exactly the strut line,
+      // so the surrounding Row/Center math is deterministic. The hint is
+      // drawn by the overlay below with the same style and strut.
+      decoration: _multiline
+          ? InputDecoration.collapsed(
+              hintText: widget.hintText,
+              hintStyle: resolvedHintStyle,
+            )
+          : null,
     );
     final fieldInput = _multiline
         ? ScrollConfiguration(
@@ -388,7 +435,32 @@ class _AppTextFieldState extends State<AppTextField> {
             ),
             child: textField,
           )
-        : textField;
+        // MergeSemantics folds the overlay hint's label into the editable's
+        // semantics node, matching what InputDecorator's hint provided
+        // before the single-line path dropped the decorator.
+        : MergeSemantics(
+            child: Stack(
+              children: [
+                if (widget.hintText != null && !_hasText)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(
+                          widget.hintText!,
+                          style: resolvedHintStyle,
+                          strutStyle: textStrutStyle,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  ),
+                textField,
+              ],
+            ),
+          );
 
     final shell = SizedBox(
       height: shellHeight,
@@ -406,60 +478,16 @@ class _AppTextFieldState extends State<AppTextField> {
             clipBehavior: Clip.none,
             children: [
               Positioned.fill(
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    if (_isFocused)
-                      Positioned(
-                        left: -focusRingWidth,
-                        top: -focusRingWidth,
-                        right: -focusRingWidth,
-                        bottom: -focusRingWidth,
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(
-                                shellRadius + focusRingWidth,
-                              ),
-                              border: Border.all(
-                                color: focusRingColor,
-                                width: focusRingStrokeWidth,
-                                strokeAlign: BorderSide.strokeAlignInside,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    Positioned.fill(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: colors.surface.input,
-                          borderRadius: BorderRadius.circular(shellRadius),
-                          border: Border.all(
-                            color: borderColor,
-                            width: 1.5,
-                            strokeAlign: BorderSide.strokeAlignInside,
-                          ),
-                        ),
-                      ),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: shellColor,
+                    borderRadius: BorderRadius.circular(shellRadius),
+                    border: Border.all(
+                      color: borderColor,
+                      width: 1.5,
+                      strokeAlign: BorderSide.strokeAlignInside,
                     ),
-                  ],
-                ),
-              ),
-              // Keep this hover layer in the tree at all times and only vary opacity.
-              // Inserting/removing a same-typed Stack sibling around the desktop
-              // TextField caused the EditableText subtree to be replaced during
-              // hover/focus transitions, which made focus visuals appear while text
-              // input/caret handling broke. Apply the same rule to any future
-              // conditional overlay siblings in this Stack.
-              Positioned.fill(
-                child: Opacity(
-                  opacity: _hovered && !_isFocused && isNeutralTone ? 1 : 0,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: colors.state.hover,
-                      borderRadius: BorderRadius.circular(shellRadius),
-                    ),
+                    boxShadow: boxShadow,
                   ),
                 ),
               ),
@@ -500,11 +528,11 @@ class _AppTextFieldState extends State<AppTextField> {
                                     child: IconTheme.merge(
                                       data: IconThemeData(
                                         color: leadingIconColor,
-                                        size: 20,
+                                        size: _appTextFieldInputIconSize,
                                       ),
                                       child: SizedBox(
-                                        width: 20,
-                                        height: 20,
+                                        width: _appTextFieldInputIconSize,
+                                        height: _appTextFieldInputIconSize,
                                         child: widget.leading,
                                       ),
                                     ),
@@ -543,11 +571,13 @@ class _AppTextFieldState extends State<AppTextField> {
                                   AppSpacing.sm,
                                   0,
                                 ),
-                                child: SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: trailingWidget,
-                                ),
+                                child: widget.trailingFitsSlot
+                                    ? trailingWidget
+                                    : SizedBox(
+                                        width: _appTextFieldInputIconSize,
+                                        height: _appTextFieldInputIconSize,
+                                        child: trailingWidget,
+                                      ),
                               ),
                           ],
                         )
@@ -557,18 +587,20 @@ class _AppTextFieldState extends State<AppTextField> {
                           children: [
                             if (widget.leading != null)
                               SizedBox(
-                                width: widget.leadingSlotWidth ?? 32,
+                                width:
+                                    widget.leadingSlotWidth ??
+                                    AppInputSizing.iconWrapWidth,
                                 height: shellHeight,
                                 child: Align(
                                   alignment: Alignment.centerRight,
                                   child: IconTheme.merge(
                                     data: IconThemeData(
                                       color: leadingIconColor,
-                                      size: 20,
+                                      size: _appTextFieldInputIconSize,
                                     ),
                                     child: SizedBox(
-                                      width: 20,
-                                      height: 20,
+                                      width: _appTextFieldInputIconSize,
+                                      height: _appTextFieldInputIconSize,
                                       child: widget.leading,
                                     ),
                                   ),
@@ -583,7 +615,9 @@ class _AppTextFieldState extends State<AppTextField> {
                                   right:
                                       widget.inputHorizontalPadding ??
                                       AppSpacing.s,
-                                  bottom: widget.inputBottomPadding ?? 6,
+                                  // Centered like the Field component (value/hint at y15 in
+                                  // the 46px shell); override only for tuned layouts.
+                                  bottom: widget.inputBottomPadding ?? 0,
                                 ),
                                 child: fieldInput,
                               ),
@@ -597,11 +631,15 @@ class _AppTextFieldState extends State<AppTextField> {
                                 child:
                                     clearButton ??
                                     Center(
-                                      child: SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: trailingWidget,
-                                      ),
+                                      child: widget.trailingFitsSlot
+                                          ? trailingWidget
+                                          : SizedBox(
+                                              width:
+                                                  _appTextFieldInputIconSize,
+                                              height:
+                                                  _appTextFieldInputIconSize,
+                                              child: trailingWidget,
+                                            ),
                                     ),
                               ),
                           ],
@@ -617,36 +655,34 @@ class _AppTextFieldState extends State<AppTextField> {
                                 IconTheme.merge(
                                   data: IconThemeData(
                                     color: leadingIconColor,
-                                    size: AppIconSize.large,
+                                    size: _appTextFieldInputIconSize,
                                   ),
                                   child: SizedBox(
-                                    width: AppIconSize.large,
-                                    height: AppIconSize.large,
+                                    width: _appTextFieldInputIconSize,
+                                    height: _appTextFieldInputIconSize,
                                     child: widget.leading,
                                   ),
                                 ),
                               if (widget.leading != null)
                                 const SizedBox(width: AppSpacing.xs),
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.only(bottom: 6),
-                                  child: fieldInput,
-                                ),
-                              ),
+                              Expanded(child: fieldInput),
                               if (clearButton != null) ...[
                                 const SizedBox(width: AppSpacing.xs),
                                 SizedBox(
-                                  width: 20,
-                                  height: 20,
+                                  width: _appTextFieldInputIconSize,
+                                  height: _appTextFieldInputIconSize,
                                   child: clearButton,
                                 ),
                               ] else if (trailingWidget != null) ...[
                                 const SizedBox(width: AppSpacing.xs),
-                                SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: trailingWidget,
-                                ),
+                                if (widget.trailingFitsSlot)
+                                  trailingWidget
+                                else
+                                  SizedBox(
+                                    width: _appTextFieldInputIconSize,
+                                    height: _appTextFieldInputIconSize,
+                                    child: trailingWidget,
+                                  ),
                               ],
                             ],
                           ),
@@ -697,6 +733,9 @@ class _AppTextFieldState extends State<AppTextField> {
     );
   }
 }
+
+List<BoxShadow> _appTextFieldSurfaceShadow(AppColors colors) =>
+    appSurfaceShadow(colors);
 
 class _AppTextFieldMessage extends StatelessWidget {
   const _AppTextFieldMessage({

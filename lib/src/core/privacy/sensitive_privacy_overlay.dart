@@ -15,6 +15,12 @@ bool get _supportsPlatformPrivacySignals => supportsPlatformPrivacySignals(
   isMacOS: !kIsWeb && Platform.isMacOS,
 );
 
+bool get _supportsNativePrivacyShield => supportsNativePrivacyShield(
+  isWeb: kIsWeb,
+  isMacOS: !kIsWeb && Platform.isMacOS,
+  isAndroid: !kIsWeb && Platform.isAndroid,
+);
+
 @visibleForTesting
 bool supportsPlatformPrivacySignals({
   required bool isWeb,
@@ -23,6 +29,15 @@ bool supportsPlatformPrivacySignals({
   // TODO(privacy-layer): Add a Windows implementation before enabling this on
   // desktop platforms other than macOS.
   return !isWeb && isMacOS;
+}
+
+@visibleForTesting
+bool supportsNativePrivacyShield({
+  required bool isWeb,
+  required bool isMacOS,
+  required bool isAndroid,
+}) {
+  return !isWeb && (isMacOS || isAndroid);
 }
 
 class MacOSPrivacyExposureEvent {
@@ -61,7 +76,7 @@ abstract final class MacOSPrivacyExposureEvents {
   static Stream<MacOSPrivacyExposureEvent> get stream => _stream;
 }
 
-abstract final class MacOSSensitiveContentBridge {
+abstract final class NativeSensitiveContentBridge {
   static const _channel = MethodChannel('com.zcash.wallet/privacy_shield');
 
   static final Set<int> _visibleTokens = <int>{};
@@ -92,7 +107,7 @@ abstract final class MacOSSensitiveContentBridge {
   }
 
   static void _syncIfNeeded() {
-    if (kIsWeb || !Platform.isMacOS) return;
+    if (!_supportsNativePrivacyShield) return;
     final visible = _visibleTokens.isNotEmpty;
     if (_lastVisible == visible) return;
     _lastVisible = visible;
@@ -108,23 +123,45 @@ abstract final class MacOSSensitiveContentBridge {
         arguments,
       );
     } catch (_) {
-      // This bridge only controls macOS window policy/exposure events. The
-      // Flutter overlay remains the visual privacy layer if the channel fails.
+      // This bridge only controls native window screenshot policy. The Flutter
+      // overlay remains the visual privacy layer if the channel fails.
     }
   }
 }
+
+@visibleForTesting
+typedef MacOSSensitiveContentBridge = NativeSensitiveContentBridge;
 
 class SensitivePrivacyOverlayController extends ChangeNotifier {
   SensitivePrivacyOverlayController({bool initiallySafe = true})
     : _isSafe = initiallySafe;
 
   bool _isSafe;
+  bool _authPromptActive = false;
 
+  /// Whether sensitive content may be shown unobscured.
   bool get isSafe => _isSafe;
 
   void markSafe() => _setSafe(true);
 
   void markUnsafe() => _setSafe(false);
+
+  /// Marks an in-app biometric prompt as active. The environment controller
+  /// uses this only to suppress the false `inactive` lifecycle transition that
+  /// iOS emits while the prompt is covering the app.
+  void beginAuthPrompt() {
+    if (_authPromptActive) return;
+    _authPromptActive = true;
+    notifyListeners();
+  }
+
+  /// Releases the [beginAuthPrompt] marker. Subclasses may override to defer
+  /// release until the app has returned to foreground.
+  void endAuthPrompt() {
+    if (!_authPromptActive) return;
+    _authPromptActive = false;
+    notifyListeners();
+  }
 
   @protected
   void _setSafe(bool value) {
@@ -140,16 +177,19 @@ class SensitivePrivacyEnvironmentController
   SensitivePrivacyEnvironmentController({
     Stream<MacOSPrivacyExposureEvent>? macOSExposureEvents,
   }) {
-    if (_supportsPlatformPrivacySignals) {
+    if (!kIsWeb) {
       _lifecycleListener = AppLifecycleListener(
-        onResume: () => _setLifecycleSafe(true),
-        onShow: () => _setLifecycleSafe(true),
+        onResume: _setLifecycleForeground,
+        onShow: _setLifecycleForeground,
         // iOS snapshots during inactive, before pause. Keep sensitive content
         // covered as soon as the app starts losing foreground interaction.
-        onInactive: () => _setLifecycleSafe(false),
-        onHide: () => _setLifecycleSafe(false),
-        onPause: () => _setLifecycleSafe(false),
+        onInactive: _setLifecycleInactive,
+        onHide: _setLifecycleHidden,
+        onPause: _setLifecycleHidden,
       );
+    }
+
+    if (_supportsPlatformPrivacySignals) {
       windowManager.addListener(this);
       windowManager
           .isFocused()
@@ -189,9 +229,34 @@ class SensitivePrivacyEnvironmentController
   AppLifecycleListener? _lifecycleListener;
   StreamSubscription<MacOSPrivacyExposureEvent>? _macOSExposureSub;
   bool _lifecycleSafe = true;
+  bool _lifecycleInactive = false;
   bool _windowSafe = true;
   bool _macOSNativeSafe = true;
   bool _disposed = false;
+  bool _deferAuthClear = false;
+
+  @override
+  void beginAuthPrompt() {
+    if (_authPromptActive) return;
+    super.beginAuthPrompt();
+    _syncSafety();
+  }
+
+  @override
+  void endAuthPrompt() {
+    if (!_authPromptActive) return;
+    // The biometric sheet pushes the app to `inactive`; dropping suppression
+    // now would flash the shield for the frames before `onResume`/`onShow`
+    // arrives. Defer the release to the next foreground transition so
+    // suppression and lifecycle-safe flip together. Other unsafe states
+    // (pause/hide/window blur/native exposure) are not suppressed.
+    if (_lifecycleInactive) {
+      _deferAuthClear = true;
+    } else {
+      super.endAuthPrompt();
+      _syncSafety();
+    }
+  }
 
   @override
   void onWindowFocus() => _setWindowSafe(true);
@@ -205,8 +270,37 @@ class SensitivePrivacyEnvironmentController
   @override
   void onWindowMinimize() => _setWindowSafe(false);
 
-  void _setLifecycleSafe(bool value) {
-    _lifecycleSafe = value;
+  @visibleForTesting
+  void setLifecycleForegroundForTesting() => _setLifecycleForeground();
+
+  @visibleForTesting
+  void setLifecycleInactiveForTesting() => _setLifecycleInactive();
+
+  @visibleForTesting
+  void setLifecycleHiddenForTesting() => _setLifecycleHidden();
+
+  void _setLifecycleForeground() {
+    _lifecycleInactive = false;
+    _lifecycleSafe = true;
+    if (_deferAuthClear) {
+      // The prompt that suppressed the shield handed foreground back. Clearing
+      // here keeps suppression and lifecycle-safe in lockstep, so there is no
+      // frame where content is visible, unsuppressed, and unsafe.
+      _deferAuthClear = false;
+      _authPromptActive = false;
+    }
+    _syncSafety();
+  }
+
+  void _setLifecycleInactive() {
+    _lifecycleInactive = true;
+    _lifecycleSafe = false;
+    _syncSafety();
+  }
+
+  void _setLifecycleHidden() {
+    _lifecycleInactive = false;
+    _lifecycleSafe = false;
     _syncSafety();
   }
 
@@ -221,7 +315,9 @@ class SensitivePrivacyEnvironmentController
   }
 
   void _syncSafety() {
-    _setSafe(_lifecycleSafe && _windowSafe && _macOSNativeSafe);
+    final lifecycleSafe =
+        _lifecycleSafe || (_lifecycleInactive && _authPromptActive);
+    _setSafe(lifecycleSafe && _windowSafe && _macOSNativeSafe);
   }
 
   @override
@@ -241,6 +337,7 @@ class SensitivePrivacyOverlay extends StatefulWidget {
     required this.sensitiveContentVisible,
     required this.child,
     this.controller,
+    this.borderRadius = BorderRadius.zero,
     super.key,
   });
 
@@ -249,6 +346,7 @@ class SensitivePrivacyOverlay extends StatefulWidget {
   final bool sensitiveContentVisible;
   final Widget child;
   final SensitivePrivacyOverlayController? controller;
+  final BorderRadiusGeometry borderRadius;
 
   @override
   State<SensitivePrivacyOverlay> createState() =>
@@ -257,7 +355,7 @@ class SensitivePrivacyOverlay extends StatefulWidget {
 
 class _SensitivePrivacyOverlayState extends State<SensitivePrivacyOverlay> {
   late final int _nativeVisibilityToken =
-      MacOSSensitiveContentBridge.createToken();
+      NativeSensitiveContentBridge.createToken();
   late SensitivePrivacyOverlayController _controller;
   late bool _ownsController;
 
@@ -287,13 +385,13 @@ class _SensitivePrivacyOverlayState extends State<SensitivePrivacyOverlay> {
 
   @override
   void dispose() {
-    MacOSSensitiveContentBridge.clearToken(_nativeVisibilityToken);
+    NativeSensitiveContentBridge.clearToken(_nativeVisibilityToken);
     if (_ownsController) _controller.dispose();
     super.dispose();
   }
 
   void _syncNativeVisibility() {
-    MacOSSensitiveContentBridge.updateToken(
+    NativeSensitiveContentBridge.updateToken(
       _nativeVisibilityToken,
       widget.sensitiveContentVisible,
     );
@@ -311,9 +409,10 @@ class _SensitivePrivacyOverlayState extends State<SensitivePrivacyOverlay> {
           children: [
             widget.child,
             if (showShield)
-              const Positioned.fill(
+              Positioned.fill(
                 child: _SensitivePrivacyShield(
                   key: SensitivePrivacyOverlay.shieldKey,
+                  borderRadius: widget.borderRadius,
                 ),
               ),
           ],
@@ -324,7 +423,9 @@ class _SensitivePrivacyOverlayState extends State<SensitivePrivacyOverlay> {
 }
 
 class _SensitivePrivacyShield extends StatelessWidget {
-  const _SensitivePrivacyShield({super.key});
+  const _SensitivePrivacyShield({required this.borderRadius, super.key});
+
+  final BorderRadiusGeometry borderRadius;
 
   static const _lightScrim = Color(0x33141818);
   static const _darkScrim = Color(0x33626767);
@@ -338,7 +439,8 @@ class _SensitivePrivacyShield extends StatelessWidget {
     final iconColor = isDark ? _darkIcon : _darkSurface;
 
     return IgnorePointer(
-      child: ClipRect(
+      child: ClipRRect(
+        borderRadius: borderRadius,
         child: BackdropFilter(
           filter: ui.ImageFilter.blur(sigmaX: 30, sigmaY: 30),
           child: DecoratedBox(

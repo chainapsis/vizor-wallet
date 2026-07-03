@@ -7,11 +7,10 @@ import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
-  testWidgets('maps swap records to shared activity table rows', (
-    tester,
-  ) async {
+  testWidgets('maps swap records to shared activity feed rows', (tester) async {
     ActivityRowData? row;
 
     await tester.pumpWidget(
@@ -46,6 +45,7 @@ void main() {
     );
 
     expect(row!.title, 'Swapping...');
+    expect(row!.stableId, 'swap:swap-1');
     expect(row!.subtitle, 'ZEC Zcash');
     expect(row!.subtitleIconName, isNull);
     expect(row!.amountText, '-0.0030 ZEC');
@@ -61,12 +61,9 @@ void main() {
       int.parse(progressMatch!.group(1)!) / int.parse(progressMatch.group(2)!),
     );
     expect(row!.timestampText, isNot('--'));
-    expect(row!.childRows, hasLength(1));
-    expect(row!.childRows.single.title, 'Depositing USDC...');
-    expect(row!.childRows.single.amountText, '+0.21 USDC');
-    expect(row!.childRows.single.statusText, 'In progress');
-    expect(row!.childRows.single.statusIconName, AppIcons.loader);
-    expect(row!.childRows.single.timestampText, '1m ago');
+    // Results-only sub rows: in-flight swaps carry their state on the parent
+    // progress ring, not a child row.
+    expect(row!.childRows, isEmpty);
   });
 
   testWidgets('maps receive-ZEC swaps as inbound activity rows', (
@@ -109,6 +106,42 @@ void main() {
     expect(row!.timestampText, isNot('--'));
     expect(row!.childRows, isEmpty);
   });
+
+  testWidgets('mobile swap activity rows compact large amounts', (
+    tester,
+  ) async {
+    ActivityRowData? row;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              row = buildSwapActivityRow(
+                context: context,
+                item: const SwapActivityRowItem(
+                  intentId: 'swap-mobile-amounts',
+                  providerLabel: 'NEAR Intents',
+                  sellAmountText: '999,999.99 USDC',
+                  receiveEstimateText: '1234567.891234 USDC',
+                  status: SwapIntentStatus.complete,
+                  direction: SwapDirection.zecToExternal,
+                  externalAsset: SwapAsset.usdc,
+                  activityTimestamp: null,
+                ),
+              );
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(row!.amountText, '-999.999K USDC');
+    expect(row!.childRows, hasLength(1));
+    expect(row!.childRows.single.amountText, '+1.234M USDC');
+  }, tags: 'mobile');
 
   testWidgets('maps broadcast deposits to the confirmation step', (
     tester,
@@ -183,6 +216,7 @@ void main() {
     expect(row!.statusText, 'Completed');
     expect(row!.leadingProgressValue, isNull);
     expect(row!.childRows, hasLength(1));
+    expect(row!.childRows.single.stableId, 'swap:swap-private:deposited');
     expect(row!.childRows.single.amountText, isNot(contains('0.21')));
     expect(row!.childRows.single.amountText, contains('***'));
   });
@@ -338,8 +372,411 @@ void main() {
 
     expect(row!.timestampText, formatActivityTimestamp(createdAt));
     expect(row!.childRows, hasLength(1));
-    expect(row!.childRows.single.title, 'USDC Deposited');
+    expect(row!.childRows.single.title, 'Deposited USDC');
     expect(row!.childRows.single.amountText, '+0.21 USDC');
-    expect(row!.childRows.single.timestampText, '1m ago');
+    expect(row!.childRows.single.leadingIconName, AppIcons.swapArrows);
+    // The result sub row carries no secondary status/timestamp line.
+    expect(row!.childRows.single.timestampText, isEmpty);
+    expect(row!.childRows.single.statusText, isEmpty);
+    expect(row!.childRows.single.onTap, isNull);
+  });
+
+  testWidgets(
+    'completed external->ZEC swap absorbs the settled receive amount and tap',
+    (tester) async {
+      ActivityRowData? row;
+      var legTaps = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.light,
+            child: Builder(
+              builder: (context) {
+                row = buildSwapActivityRow(
+                  context: context,
+                  receivedAmountText: '+12.13 ZEC',
+                  onReceivedLegTap: () => legTaps += 1,
+                  item: const SwapActivityRowItem(
+                    intentId: 'swap-receive',
+                    providerLabel: 'NEAR Intents',
+                    sellAmountText: '101.23 USDC',
+                    receiveEstimateText: '4.12 ZEC',
+                    status: SwapIntentStatus.complete,
+                    direction: SwapDirection.externalToZec,
+                    externalAsset: SwapAsset.usdc,
+                    activityTimestamp: null,
+                  ),
+                );
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(row!.title, 'Swapped');
+      expect(row!.childRows, hasLength(1));
+      final child = row!.childRows.single;
+      expect(child.stableId, 'swap:swap-receive:received');
+      expect(child.title, 'Received ZEC');
+      // The absorbed on-chain receive carries the real settled amount, which
+      // wins over the quote estimate ('+4.12 ZEC').
+      expect(child.amountText, '+12.13 ZEC');
+      expect(child.leadingIconName, AppIcons.swapArrows);
+      expect(child.timestampText, isEmpty);
+      expect(child.statusText, isEmpty);
+      expect(child.onTap, isNotNull);
+
+      child.onTap!();
+      expect(legTaps, 1);
+    },
+  );
+
+  testWidgets(
+    'completed external->ZEC swap falls back to the receive estimate',
+    (tester) async {
+      ActivityRowData? row;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.light,
+            child: Builder(
+              builder: (context) {
+                row = buildSwapActivityRow(
+                  context: context,
+                  // No absorbed payout yet, and no tap handler available.
+                  item: const SwapActivityRowItem(
+                    intentId: 'swap-receive-pending-tx',
+                    providerLabel: 'NEAR Intents',
+                    sellAmountText: '101.23 USDC',
+                    receiveEstimateText: '4.12 ZEC',
+                    status: SwapIntentStatus.complete,
+                    direction: SwapDirection.externalToZec,
+                    externalAsset: SwapAsset.usdc,
+                    activityTimestamp: null,
+                  ),
+                );
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(row!.childRows, hasLength(1));
+      final child = row!.childRows.single;
+      expect(child.title, 'Received ZEC');
+      expect(child.amountText, '+4.12 ZEC');
+      // Without a matched payout there is nothing to navigate to.
+      expect(child.onTap, isNull);
+    },
+  );
+
+  testWidgets(
+    'privacy mode masks the receive leg even with an absorbed amount',
+    (tester) async {
+      ActivityRowData? row;
+      var legTaps = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.light,
+            child: Builder(
+              builder: (context) {
+                row = buildSwapActivityRow(
+                  context: context,
+                  privacyModeEnabled: true,
+                  receivedAmountText: '+12.13 ZEC',
+                  onReceivedLegTap: () => legTaps += 1,
+                  item: const SwapActivityRowItem(
+                    intentId: 'swap-receive-private',
+                    providerLabel: 'NEAR Intents',
+                    sellAmountText: '101.23 USDC',
+                    receiveEstimateText: '4.12 ZEC',
+                    status: SwapIntentStatus.complete,
+                    direction: SwapDirection.externalToZec,
+                    externalAsset: SwapAsset.usdc,
+                    activityTimestamp: null,
+                  ),
+                );
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(row!.childRows, hasLength(1));
+      final child = row!.childRows.single;
+      expect(child.title, 'Received ZEC');
+      expect(child.amountText, isNot(contains('12.13')));
+      expect(child.amountText, isNot(contains('4.12')));
+      expect(child.amountText, contains('***'));
+      // The leg stays tappable so the user can still open the masked receipt.
+      expect(child.onTap, isNotNull);
+      child.onTap!();
+      expect(legTaps, 1);
+    },
+  );
+
+  testWidgets('refunded external->ZEC swap labels the external asset refund', (
+    tester,
+  ) async {
+    ActivityRowData? row;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              row = buildSwapActivityRow(
+                context: context,
+                item: const SwapActivityRowItem(
+                  intentId: 'swap-refund-external',
+                  providerLabel: 'NEAR Intents',
+                  sellAmountText: '101.23 USDC',
+                  receiveEstimateText: '4.12 ZEC',
+                  status: SwapIntentStatus.refunded,
+                  direction: SwapDirection.externalToZec,
+                  externalAsset: SwapAsset.usdc,
+                  activityTimestamp: null,
+                ),
+              );
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(row!.title, 'Swap failed');
+    expect(row!.subtitle, 'USDC Refunded');
+    expect(row!.amountIconName, AppIcons.uturnUp);
+    expect(row!.statusText, 'Refunded');
+    expect(row!.statusIconName, AppIcons.uturnUp);
+    expect(row!.leadingProgressValue, isNull);
+    expect(row!.childRows, isEmpty);
+  });
+
+  testWidgets('refunded ZEC->external swap labels the ZEC refund', (
+    tester,
+  ) async {
+    ActivityRowData? row;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              row = buildSwapActivityRow(
+                context: context,
+                item: const SwapActivityRowItem(
+                  intentId: 'swap-refund-zec',
+                  providerLabel: 'NEAR Intents',
+                  sellAmountText: '0.9000 ZEC',
+                  receiveEstimateText: '63.16 USDC',
+                  status: SwapIntentStatus.refunded,
+                  direction: SwapDirection.zecToExternal,
+                  externalAsset: SwapAsset.usdc,
+                  activityTimestamp: null,
+                ),
+              );
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(row!.title, 'Swap failed');
+    expect(row!.subtitle, 'ZEC Refunded');
+    expect(row!.statusText, 'Refunded');
+    expect(row!.childRows, isEmpty);
+  });
+
+  test('fromRecord byte-reverses the destination and deposit tx hashes', () {
+    const destinationDisplayOrder =
+        'aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899';
+    const destinationWalletOrder =
+        '99887766554433221100ffeeddccbbaa99887766554433221100ffeeddccbbaa';
+    const depositDisplayOrder =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    final expectedDepositWalletOrder = swapChainTxidToWalletTxidHex(
+      depositDisplayOrder,
+    );
+
+    final item = SwapActivityRowItem.fromRecord(
+      SwapIntentRecord(
+        id: 'swap-hashes',
+        providerLabel: 'NEAR Intents',
+        pairText: 'USDC -> ZEC',
+        sellAmountText: '101.23 USDC',
+        receiveEstimateText: '4.12 ZEC',
+        status: SwapIntentStatus.complete,
+        nextAction: 'Swap complete',
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        depositTxHash: depositDisplayOrder,
+        destinationChainTxHash: destinationDisplayOrder,
+      ),
+    );
+
+    expect(item.receiveWalletTxidHex, destinationWalletOrder);
+    expect(item.depositWalletTxidHex, expectedDepositWalletOrder);
+    expect(item.depositWalletTxidHex, isNotNull);
+    // The raw display-order hash is preserved untouched on the record-derived
+    // item for status-screen rendering.
+    expect(item.depositTxHash, depositDisplayOrder);
+  });
+
+  test('deposit-leg absorption follows the signed-amount rendering', () {
+    SwapActivityRowItem itemWith(SwapIntentStatus status) {
+      return SwapActivityRowItem(
+        intentId: 'swap-absorb-${status.name}',
+        providerLabel: 'NEAR Intents',
+        sellAmountText: '1.5000 ZEC',
+        receiveEstimateText: '105.25 USDC',
+        status: status,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        activityTimestamp: null,
+      );
+    }
+
+    // Rows that carry the signed outgoing amount absorb the Sent row.
+    expect(
+      swapActivityRowAbsorbsDepositLeg(itemWith(SwapIntentStatus.processing)),
+      isTrue,
+    );
+    expect(
+      swapActivityRowAbsorbsDepositLeg(itemWith(SwapIntentStatus.complete)),
+      isTrue,
+    );
+    // Refunded and timed-out rows render the amount unsigned, so the
+    // standalone Sent transaction must stay visible in the feed.
+    expect(
+      swapActivityRowAbsorbsDepositLeg(itemWith(SwapIntentStatus.refunded)),
+      isFalse,
+    );
+    expect(
+      swapActivityRowAbsorbsDepositLeg(itemWith(SwapIntentStatus.expired)),
+      isFalse,
+    );
+  });
+
+  test('leg absorption matches payouts and gated deposits', () {
+    const receiveDisplayOrder =
+        'aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899';
+    const depositDisplayOrder =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    final receiveWalletOrder = swapChainTxidToWalletTxidHex(
+      receiveDisplayOrder,
+    )!;
+    final depositWalletOrder = swapChainTxidToWalletTxidHex(
+      depositDisplayOrder,
+    )!;
+
+    SwapActivityRowItem itemWith({
+      required String id,
+      required SwapIntentStatus status,
+      String? destinationChainTxHash,
+      String? depositTxHash,
+    }) {
+      return SwapActivityRowItem(
+        intentId: id,
+        providerLabel: 'NEAR Intents',
+        sellAmountText: '1.5000 ZEC',
+        receiveEstimateText: '105.25 USDC',
+        status: status,
+        direction: destinationChainTxHash != null
+            ? SwapDirection.externalToZec
+            : SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        activityTimestamp: null,
+        receiveWalletTxidHex: swapChainTxidToWalletTxidHex(
+          destinationChainTxHash,
+        ),
+        depositWalletTxidHex: swapChainTxidToWalletTxidHex(depositTxHash),
+      );
+    }
+
+    rust_sync.TransactionInfo tx(String txidHex) {
+      return rust_sync.TransactionInfo(
+        txidHex: txidHex,
+        minedHeight: BigInt.from(2000000),
+        expiredUnmined: false,
+        accountBalanceDelta: 0,
+        fee: BigInt.zero,
+        blockTime: BigInt.from(1800000000),
+        isTransparent: false,
+        txKind: 'sent',
+        displayAmount: BigInt.from(150000000),
+        displayPool: 'shielded',
+        createdTime: BigInt.from(1800000000),
+      );
+    }
+
+    final receiveTx = tx(receiveWalletOrder);
+    final depositTx = tx(depositWalletOrder);
+
+    // Matched payout absorbs the standalone row and feeds the sub row.
+    final completed = matchSwapActivityLegAbsorption(
+      swapItems: [
+        itemWith(
+          id: 'swap-complete',
+          status: SwapIntentStatus.complete,
+          destinationChainTxHash: receiveDisplayOrder,
+        ),
+      ],
+      transactions: [receiveTx],
+    );
+    expect(completed.absorbs(receiveTx), isTrue);
+    expect(completed.receiveTxByIntent['swap-complete'], receiveTx);
+
+    // The deposit leg follows the signed-amount gate: in-flight absorbs,
+    // refunded keeps the standalone Sent row visible.
+    final inFlight = matchSwapActivityLegAbsorption(
+      swapItems: [
+        itemWith(
+          id: 'swap-processing',
+          status: SwapIntentStatus.processing,
+          depositTxHash: depositDisplayOrder,
+        ),
+      ],
+      transactions: [depositTx],
+    );
+    expect(inFlight.absorbs(depositTx), isTrue);
+    expect(inFlight.receiveTxByIntent, isEmpty);
+
+    final refunded = matchSwapActivityLegAbsorption(
+      swapItems: [
+        itemWith(
+          id: 'swap-refunded',
+          status: SwapIntentStatus.refunded,
+          depositTxHash: depositDisplayOrder,
+        ),
+      ],
+      transactions: [depositTx],
+    );
+    expect(refunded.absorbs(depositTx), isFalse);
+
+    // Unmatched hashes absorb nothing.
+    final unmatched = matchSwapActivityLegAbsorption(
+      swapItems: [
+        itemWith(
+          id: 'swap-unmatched',
+          status: SwapIntentStatus.complete,
+          destinationChainTxHash: receiveDisplayOrder,
+        ),
+      ],
+      transactions: [depositTx],
+    );
+    expect(unmatched.absorbs(depositTx), isFalse);
+    expect(unmatched.receiveTxByIntent, isEmpty);
   });
 }

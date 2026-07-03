@@ -31,6 +31,8 @@ const _networkKey = 'zcash_wallet_network';
 // Keep in sync with zcash_voting::storage::VotingDb::wallet_sidecar_path,
 // which appends ".voting" to the wallet DB path for sidecar persistence.
 const _votingSidecarSuffix = '.voting';
+// Keep in sync with wallet::transparent_receive_cache::RECEIVE_CACHE_SIDECAR_SUFFIX.
+const _receiveCacheSidecarSuffix = '.receive.redb';
 const _sqliteCompanionSuffixes = ['', '-journal', '-wal', '-shm'];
 
 const kWalletCreationCurrentBlockHeightErrorMessage =
@@ -44,6 +46,16 @@ class WalletCreationCurrentBlockHeightException implements Exception {
 
   @override
   String toString() => kWalletCreationCurrentBlockHeightErrorMessage;
+}
+
+class WalletResetException implements Exception {
+  const WalletResetException({required this.cause, required this.dbDeleted});
+
+  final Object cause;
+  final bool dbDeleted;
+
+  @override
+  String toString() => cause.toString();
 }
 
 class AccountNotifier extends AsyncNotifier<AccountState> {
@@ -215,6 +227,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     required String mnemonic,
     int? birthdayHeight,
     String? name,
+    List<int> additionalAccountIndices = const [],
   }) async {
     try {
       final dbPath = await _getDbPath();
@@ -223,64 +236,129 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final publicNetwork = endpoint.networkName;
       final accounts = state.value?.accounts ?? [];
       final accountName = name ?? 'Account ${accounts.length + 1}';
+      final isFirstWalletAccount = accounts.isEmpty;
+      final previousActiveAccountUuid = state.value?.activeAccountUuid;
+      final previousActiveAddress = state.value?.activeAddress;
 
-      String accountUuid;
-      String unifiedAddress;
-
-      if (accounts.isEmpty) {
-        // First account — import wallet (init DB + import)
+      if (isFirstWalletAccount) {
         await _deleteExistingDb(dbPath);
-        final result = await rust_wallet.importWallet(
-          mnemonic: mnemonic,
-          birthdayHeight: birthdayHeight != null
-              ? BigInt.from(birthdayHeight)
-              : null,
-          network: network,
-          dbPath: dbPath,
-          accountName: accountName,
-        );
-        accountUuid = result.accountUuid;
-        unifiedAddress = result.unifiedAddress;
-        await _storage.writeString(_networkKey, publicNetwork);
-        await _storage.writeString(kWalletNetworkNameKey, network);
-      } else {
-        // Additional account
-        final result = await rust_wallet.addAccount(
-          dbPath: dbPath,
-          network: network,
-          name: accountName,
-          mnemonic: mnemonic,
-          birthdayHeight: birthdayHeight != null
-              ? BigInt.from(birthdayHeight)
-              : null,
-        );
-        accountUuid = result.accountUuid;
-        unifiedAddress = result.unifiedAddress;
       }
 
-      await _storage.writeAccountMnemonic(accountUuid, mnemonic);
-
-      final newAccount = AccountInfo(
-        uuid: accountUuid,
-        name: accountName,
-        order: accounts.length,
-        isSeedAnchor: accounts.isEmpty,
+      final result = await rust_wallet.importSoftwareWalletWithAccountDiscovery(
+        mnemonic: mnemonic,
+        birthdayHeight: birthdayHeight != null
+            ? BigInt.from(birthdayHeight)
+            : null,
+        network: network,
+        dbPath: dbPath,
+        firstAccountName: accountName,
+        isFirstWalletAccount: isFirstWalletAccount,
+        nextAccountNumber: accounts.length + 1,
+        additionalAccountIndices: additionalAccountIndices,
       );
-      final updatedAccounts = [...accounts, newAccount];
+      if (result.accounts.isEmpty) {
+        throw StateError('Software wallet import did not return an account.');
+      }
+      if (isFirstWalletAccount) {
+        await _storage.writeString(_networkKey, publicNetwork);
+        await _storage.writeString(kWalletNetworkNameKey, network);
+      }
+
+      for (final account in result.accounts) {
+        await _storage.writeAccountMnemonic(account.accountUuid, mnemonic);
+      }
+
+      final importedAccounts = [
+        for (var i = 0; i < result.accounts.length; i++)
+          AccountInfo(
+            uuid: result.accounts[i].accountUuid,
+            name: result.accounts[i].name,
+            order: accounts.length + i,
+            isSeedAnchor: result.accounts[i].isSeedAnchor,
+          ),
+      ];
+      final updatedAccounts = [...accounts, ...importedAccounts];
       await _saveAccounts(updatedAccounts);
-      await _storage.writeString(_activeAccountKey, accountUuid);
+      final activeAccountUuid = result.didImportPrimaryAccount
+          ? result.accounts.first.accountUuid
+          : previousActiveAccountUuid;
+      final activeAddress = result.didImportPrimaryAccount
+          ? result.accounts.first.unifiedAddress
+          : previousActiveAddress;
+      if (activeAccountUuid == null) {
+        await _storage.delete(_activeAccountKey);
+      } else if (result.didImportPrimaryAccount) {
+        await _storage.writeString(_activeAccountKey, activeAccountUuid);
+      }
 
       state = AsyncData(
         AccountState(
           accounts: updatedAccounts,
-          activeAccountUuid: accountUuid,
-          activeAddress: unifiedAddress,
+          activeAccountUuid: activeAccountUuid,
+          activeAddress: activeAddress,
         ),
       );
 
-      log('importAccount: success, uuid=$accountUuid');
+      log(
+        'importAccount: success, active=$activeAccountUuid, '
+        'accounts=${result.accounts.map((a) => a.zip32AccountIndex).join(',')}',
+      );
     } catch (e, st) {
       log('importAccount: ERROR: $e\n$st');
+      rethrow;
+    }
+  }
+
+  Future<rust_wallet.SoftwareWalletImportDiscoveryResult>
+  discoverAdditionalSoftwareAccounts({
+    required String mnemonic,
+    int? birthdayHeight,
+  }) async {
+    try {
+      final dbPath = await _getDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
+      final accounts = state.value?.accounts ?? const <AccountInfo>[];
+      final isFirstWalletAccount = accounts.isEmpty;
+      final network = isFirstWalletAccount
+          ? endpoint.networkName
+          : await _getNetwork();
+
+      return rust_wallet.discoverSoftwareWalletImportAccounts(
+        mnemonic: mnemonic,
+        birthdayHeight: birthdayHeight != null
+            ? BigInt.from(birthdayHeight)
+            : null,
+        network: network,
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        isFirstWalletAccount: isFirstWalletAccount,
+      );
+    } catch (e, st) {
+      log('discoverAdditionalSoftwareAccounts: ERROR: $e\n$st');
+      rethrow;
+    }
+  }
+
+  Future<BigInt> previewSoftwareAccountTransparentBalance({
+    required String mnemonic,
+    required int accountIndex,
+  }) async {
+    try {
+      final endpoint = ref.read(rpcEndpointProvider);
+      final accounts = state.value?.accounts ?? const <AccountInfo>[];
+      final isFirstWalletAccount = accounts.isEmpty;
+      final network = isFirstWalletAccount
+          ? endpoint.networkName
+          : await _getNetwork();
+
+      return rust_wallet.previewSoftwareAccountTransparentBalance(
+        mnemonic: mnemonic,
+        network: network,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        zip32AccountIndex: accountIndex,
+      );
+    } catch (e, st) {
+      log('previewSoftwareAccountTransparentBalance: ERROR: $e\n$st');
       rethrow;
     }
   }
@@ -337,6 +415,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String uuid,
     String profilePictureId,
   ) async {
+    final normalizedProfilePictureId = normalizeProfilePictureId(
+      profilePictureId,
+    );
     if (!isKnownProfilePictureId(profilePictureId)) {
       throw ArgumentError.value(
         profilePictureId,
@@ -349,13 +430,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     final updated = prev.accounts
         .map(
           (a) => a.uuid == uuid
-              ? a.copyWith(profilePictureId: profilePictureId)
+              ? a.copyWith(profilePictureId: normalizedProfilePictureId)
               : a,
         )
         .toList();
     await _saveAccounts(updated);
     state = AsyncData(prev.copyWith(accounts: updated));
-    log('updateProfilePicture: $uuid → $profilePictureId');
+    log('updateProfilePicture: $uuid → $normalizedProfilePictureId');
   }
 
   /// Remove an account from the wallet.
@@ -377,15 +458,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       for (final account in prev.accounts)
         if (account.uuid != uuid) account,
     ];
-    final seedAnchorCount = prev.accounts
-        .where((account) => account.isSeedAnchor)
-        .length;
-    if (target.isSeedAnchor && seedAnchorCount <= 1 && remaining.isNotEmpty) {
-      throw StateError(
-        'The last seed anchor account cannot be removed while other accounts remain.',
-      );
-    }
-
     final dbPath = await _getDbPath();
     final network = await _getNetwork();
     await _resetVotingProcessStateForAccount(uuid, dbPath: dbPath);
@@ -465,16 +537,71 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   ///
   /// This also clears voting state held in this process for every account
   /// before the wallet DB and voting sidecar DB are deleted.
+  ///
+  /// The wipe is best-effort: every deletion step is attempted even if an
+  /// earlier one throws, so a partial failure (e.g. a keychain error during
+  /// deleteAll) cannot strand secrets behind an already-deleted DB. The first
+  /// error is rethrown after all attempts so callers still see the failure
+  /// and can retry; every step is idempotent.
   Future<void> resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
+
+    Object? firstError;
+    StackTrace? firstStackTrace;
+    void recordError(String step, Object e, StackTrace st) {
+      log('resetWallet: $step failed: $e\n$st');
+      firstError ??= e;
+      firstStackTrace ??= st;
+    }
+
+    // Resolve the DB path before touching anything. Secure storage holds the
+    // randomized wallet DB name, so if this lookup fails we must abort with
+    // NOTHING deleted: wiping storage now would orphan the still-existing DB
+    // file (a retry would generate a fresh name and never find the old one).
     final dbPath = await _getDbPath();
+
+    // Best-effort internally; tolerates per-account failures.
     for (final account in state.value?.accounts ?? const <AccountInfo>[]) {
       await _resetVotingProcessStateForAccount(account.uuid, dbPath: dbPath);
     }
-    await _deleteExistingDb(dbPath);
-    await _storage.deleteAll();
-    ref.read(appSecurityProvider.notifier).reset();
+
+    var dbDeleted = false;
+    try {
+      await _deleteExistingDb(dbPath);
+      dbDeleted = true;
+    } catch (e, st) {
+      recordError('wallet db deletion', e, st);
+    }
+    // Only wipe secure storage once the DB file is confirmed gone: the wipe
+    // destroys the stored DB name, which is the only way a retry can target
+    // the original DB file. After a successful DB delete the wipe stays
+    // retryable (deleteAll is idempotent and a regenerated DB name only
+    // no-ops the next, already-satisfied DB delete).
+    if (dbDeleted) {
+      try {
+        await _storage.deleteAll();
+      } catch (e, st) {
+        recordError('secure storage wipe', e, st);
+      }
+    }
+
+    final error = firstError;
+    if (error != null) {
+      Error.throwWithStackTrace(
+        WalletResetException(cause: error, dbDeleted: dbDeleted),
+        firstStackTrace ?? StackTrace.current,
+      );
+    }
+    // Clear the account state BEFORE flipping security back to locked: the
+    // router derives requiresUnlock from hasWallet && !isUnlocked, so the
+    // reverse order bounces a locked-start session to /unlock mid-uninstall
+    // (the /settings/uninstall exemption only covers the no-wallet branch).
     state = const AsyncData(AccountState());
+    try {
+      ref.read(appSecurityProvider.notifier).reset();
+    } catch (e, st) {
+      log('resetWallet: app security reset failed: $e\n$st');
+    }
     log('resetWallet: all data cleared');
   }
 
@@ -775,5 +902,6 @@ List<String> walletDbCleanupPaths(String dbPath) {
   return [
     for (final target in targets)
       for (final suffix in _sqliteCompanionSuffixes) '$target$suffix',
+    '$dbPath$_receiveCacheSidecarSuffix',
   ];
 }

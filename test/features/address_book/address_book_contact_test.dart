@@ -66,4 +66,19 @@ void main() {
       isNull,
     );
   });
+
+  test('address book QR scan title follows the selected network', () {
+    expect(
+      addressBookQrScanTitle(AddressBookNetwork.zcash),
+      'Scan Zcash QR code',
+    );
+    expect(
+      addressBookQrScanTitle(AddressBookNetwork.ethereum),
+      'Scan Ethereum QR code',
+    );
+    expect(
+      addressBookQrScanTitle(AddressBookNetwork.binanceSmartChain),
+      'Scan Binance Smart Chain QR code',
+    );
+  });
 }

@@ -3,34 +3,47 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
+import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../address_book/providers/address_book_provider.dart';
-import '../domain/near_intents_explorer.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_activity_status_mapper.dart';
 import '../models/swap_keystone_broadcast_result.dart';
 import '../models/swap_models.dart';
 import '../providers/swap_state_provider.dart';
+import '../screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import 'swap_deposit_tokens_page_content.dart';
 import 'swap_keystone_signing_overlay.dart';
-import 'swap_near_intents_attribution.dart';
+import 'mobile/mobile_swap_review_header.dart';
+import 'mobile/mobile_swap_status_content.dart';
+import 'mobile/mobile_swap_timeout_content.dart';
 import 'swap_status_page_content.dart';
+
+/// Which rendering the detail surface uses. The orchestration (intent
+/// selection, status refresh, deposit submission, Keystone signing)
+/// is identical; only the widgets differ — desktop keeps the 400pt
+/// pane content, mobile renders the Figma mobile swap frames.
+enum SwapActivityDetailLayout { desktop, mobile }
 
 class SwapActivityDetailSurface extends ConsumerStatefulWidget {
   const SwapActivityDetailSurface({
     required this.intentId,
     this.returnTarget,
     this.autoSignZecDeposit = false,
+    this.layout = SwapActivityDetailLayout.desktop,
     super.key,
   });
 
   final String intentId;
   final SwapActivityReturnTarget? returnTarget;
   final bool autoSignZecDeposit;
+  final SwapActivityDetailLayout layout;
 
   @override
   ConsumerState<SwapActivityDetailSurface> createState() =>
@@ -95,14 +108,23 @@ class _SwapActivityDetailSurfaceState
         _isHardwareIntent(intent) &&
         intent.direction == SwapDirection.zecToExternal &&
         !(intent.depositTxHash?.trim().isNotEmpty ?? false);
+    final request = needsAutoSign
+        ? _SwapKeystoneSigningRequest(
+            intentId: intent.id,
+            accountUuid: intent.accountUuid ?? _activeAccountUuid ?? '',
+            removeUnsentIntentOnCancel: true,
+          )
+        : null;
+    if (request != null && widget.layout == SwapActivityDetailLayout.mobile) {
+      setState(() => _initialIntentApplied = true);
+      unawaited(_openMobileKeystoneSigning(intent, request));
+      return;
+    }
+
     setState(() {
       _initialIntentApplied = true;
-      if (needsAutoSign) {
-        _keystoneSigningRequest = _SwapKeystoneSigningRequest(
-          intentId: intent.id,
-          accountUuid: intent.accountUuid ?? _activeAccountUuid ?? '',
-          removeUnsentIntentOnCancel: true,
-        );
+      if (request != null) {
+        _keystoneSigningRequest = request;
       }
     });
   }
@@ -163,22 +185,18 @@ class _SwapActivityDetailSurfaceState
     context.go('/swap');
   }
 
-  void _openNearIntentsExplorerLink(SwapIntent intent) {
-    unawaited(
-      launchNearIntentsExplorer(
-        nearIntentHash: intent.nearIntentHash,
-        depositTxHash: intent.depositTxHash,
-        depositAddress: intent.depositAddress ?? intent.id,
-      ),
-    );
-  }
-
   void _signZecDeposit(SwapIntent intent) {
+    final request = _SwapKeystoneSigningRequest(
+      intentId: intent.id,
+      accountUuid: intent.accountUuid ?? _activeAccountUuid ?? '',
+    );
+    if (widget.layout == SwapActivityDetailLayout.mobile) {
+      unawaited(_openMobileKeystoneSigning(intent, request));
+      return;
+    }
+
     setState(() {
-      _keystoneSigningRequest = _SwapKeystoneSigningRequest(
-        intentId: intent.id,
-        accountUuid: intent.accountUuid ?? _activeAccountUuid ?? '',
-      );
+      _keystoneSigningRequest = request;
     });
   }
 
@@ -203,6 +221,45 @@ class _SwapActivityDetailSurfaceState
     final request = _keystoneSigningRequest;
     if (request == null) return;
     _closeKeystoneSigning();
+    _submitKeystoneDepositBroadcast(context, request, result);
+  }
+
+  Future<void> _openMobileKeystoneSigning(
+    SwapIntent intent,
+    _SwapKeystoneSigningRequest request,
+  ) async {
+    final result = await context.push<MobileSwapKeystoneSignResult>(
+      '/swap/keystone-sign',
+      extra: MobileSwapKeystoneSignArgs(intent: intent),
+    );
+    if (!mounted) return;
+    if (result == null) {
+      if (request.removeUnsentIntentOnCancel) {
+        unawaited(
+          ref
+              .read(swapStateProvider.notifier)
+              .removeUnsentHardwareDepositIntent(request.intentId),
+        );
+      }
+      return;
+    }
+    switch (result) {
+      case MobileSwapKeystoneSignSuccess(:final broadcast):
+        _submitKeystoneDepositBroadcast(context, request, broadcast);
+      case MobileSwapKeystoneSignFailure(:final message):
+        showAppToast(
+          _toastContext(context),
+          message,
+          iconName: AppIcons.warning,
+        );
+    }
+  }
+
+  void _submitKeystoneDepositBroadcast(
+    BuildContext context,
+    _SwapKeystoneSigningRequest request,
+    SwapKeystoneBroadcastResult result,
+  ) {
     unawaited(
       ref
           .read(swapStateProvider.notifier)
@@ -253,6 +310,7 @@ class _SwapActivityDetailSurfaceState
         : SwapActivityDetailPagePanel(
             state: state,
             intent: activityDetailIntent,
+            layout: widget.layout,
             depositChecking:
                 _depositCheckingIntentId == activityDetailIntent.id,
             depositCheckWarning: null,
@@ -264,7 +322,6 @@ class _SwapActivityDetailSurfaceState
             onSubmitDepositTransaction: _submitDepositTransaction,
             onReviewFreshQuote: _reviewFreshQuote,
             onSignZecDeposit: _signZecDeposit,
-            onCopyExplorerLink: _openNearIntentsExplorerLink,
             intentIsHardware: _isHardwareIntent(activityDetailIntent),
           );
 
@@ -275,6 +332,7 @@ class _SwapActivityDetailSurfaceState
         Positioned.fill(
           child: _SwapActivityDetailPaneContent(
             returnTarget: widget.returnTarget,
+            layout: widget.layout,
             child: pageContent,
           ),
         ),
@@ -288,14 +346,15 @@ class _SwapActivityDetailSurfaceState
                   _handleKeystoneDepositBroadcast(context, result),
             ),
           ),
-        Positioned.fill(
-          child: IgnorePointer(
-            child: AppToastHost(
-              key: const ValueKey('swap_toast_overlay_host'),
-              child: SizedBox.expand(key: _toastOverlayContextKey),
+        if (widget.layout != SwapActivityDetailLayout.mobile)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AppToastHost(
+                key: const ValueKey('swap_toast_overlay_host'),
+                child: SizedBox.expand(key: _toastOverlayContextKey),
+              ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -305,54 +364,37 @@ class _SwapActivityDetailPaneContent extends StatelessWidget {
   const _SwapActivityDetailPaneContent({
     required this.child,
     required this.returnTarget,
+    this.layout = SwapActivityDetailLayout.desktop,
   });
 
   final Widget child;
   final SwapActivityReturnTarget? returnTarget;
+  final SwapActivityDetailLayout layout;
 
   @override
   Widget build(BuildContext context) {
+    // The mobile host draws its own top nav and side padding.
+    if (layout == SwapActivityDetailLayout.mobile) {
+      return child;
+    }
     final returnTarget = this.returnTarget;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.md,
-        AppSpacing.md,
-        0,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (returnTarget != null) ...[
-            Align(
-              alignment: Alignment.centerLeft,
-              child: AppBackLink(
+    return AppPaneScrollScaffold(
+      toolbar: AppPaneToolbar(
+        // The surface is also embedded without a navigation origin (no back
+        // affordance); the toolbar band stays for the shared scroll layout.
+        leading: returnTarget == null
+            ? const SizedBox.shrink()
+            : AppBackLink(
                 label: returnTarget.label,
                 minWidth: 60,
                 onTap: () => context.go(returnTarget.path),
               ),
-            ),
-            const SizedBox(height: AppSpacing.s),
-          ],
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return Stack(
-                  children: [
-                    Positioned.fill(child: child),
-                    if (constraints.maxHeight >= 520)
-                      const Positioned(
-                        left: 0,
-                        bottom: AppSpacing.md,
-                        child: SwapNearIntentsAttribution(),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ],
       ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      child: child,
     );
   }
 }
@@ -369,6 +411,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
   const SwapActivityDetailPagePanel({
     required this.state,
     required this.intent,
+    this.layout = SwapActivityDetailLayout.desktop,
     required this.depositChecking,
     required this.depositCheckWarning,
     required this.onRefreshStatus,
@@ -377,13 +420,13 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
     required this.onSubmitDepositTransaction,
     required this.onReviewFreshQuote,
     required this.onSignZecDeposit,
-    required this.onCopyExplorerLink,
     required this.intentIsHardware,
     super.key,
   });
 
   final SwapState state;
   final SwapIntent intent;
+  final SwapActivityDetailLayout layout;
   final bool depositChecking;
   final String? depositCheckWarning;
   final VoidCallback onRefreshStatus;
@@ -392,7 +435,6 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
   final VoidCallback onSubmitDepositTransaction;
   final VoidCallback onReviewFreshQuote;
   final ValueChanged<SwapIntent> onSignZecDeposit;
-  final ValueChanged<SwapIntent> onCopyExplorerLink;
   final bool intentIsHardware;
 
   @override
@@ -400,6 +442,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
     final flowContent = _SwapActivityFlowContent(
       state: state,
       intent: intent,
+      layout: layout,
       depositChecking: depositChecking,
       depositCheckWarning: depositCheckWarning,
       onRefreshStatus: onRefreshStatus,
@@ -408,7 +451,6 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
       onSubmitDepositTransaction: onSubmitDepositTransaction,
       onReviewFreshQuote: onReviewFreshQuote,
       onSignZecDeposit: onSignZecDeposit,
-      onCopyExplorerLink: onCopyExplorerLink,
       intentIsHardware: intentIsHardware,
     );
     final isDepositPage = swapActivityShowsDepositPage(
@@ -416,23 +458,33 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
       intentIsHardware: intentIsHardware,
     );
 
-    return Container(
-      key: const ValueKey('swap_activity_detail_page'),
-      padding: EdgeInsets.zero,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return _ActivityDetailScrollArea(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: Align(
-                alignment: isDepositPage
-                    ? Alignment.center
-                    : Alignment.topCenter,
-                child: flowContent,
+    if (layout == SwapActivityDetailLayout.mobile) {
+      return Container(
+        key: const ValueKey('swap_activity_detail_page'),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return _ActivityDetailScrollArea(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Align(
+                  alignment: isDepositPage
+                      ? Alignment.center
+                      : Alignment.topCenter,
+                  child: flowContent,
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
+      );
+    }
+
+    return KeyedSubtree(
+      key: const ValueKey('swap_activity_detail_page'),
+      child: Align(
+        alignment: isDepositPage ? Alignment.center : Alignment.topCenter,
+        child: flowContent,
       ),
     );
   }
@@ -442,6 +494,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
   const _SwapActivityFlowContent({
     required this.state,
     required this.intent,
+    this.layout = SwapActivityDetailLayout.desktop,
     required this.depositChecking,
     required this.depositCheckWarning,
     required this.onRefreshStatus,
@@ -450,12 +503,12 @@ class _SwapActivityFlowContent extends StatelessWidget {
     required this.onSubmitDepositTransaction,
     required this.onReviewFreshQuote,
     required this.onSignZecDeposit,
-    required this.onCopyExplorerLink,
     required this.intentIsHardware,
   });
 
   final SwapState state;
   final SwapIntent intent;
+  final SwapActivityDetailLayout layout;
   final bool depositChecking;
   final String? depositCheckWarning;
   final VoidCallback onRefreshStatus;
@@ -464,7 +517,6 @@ class _SwapActivityFlowContent extends StatelessWidget {
   final VoidCallback onSubmitDepositTransaction;
   final VoidCallback onReviewFreshQuote;
   final ValueChanged<SwapIntent> onSignZecDeposit;
-  final ValueChanged<SwapIntent> onCopyExplorerLink;
   final bool intentIsHardware;
 
   @override
@@ -473,6 +525,13 @@ class _SwapActivityFlowContent extends StatelessWidget {
       intent,
     );
     final statusError = intent.statusError ?? state.statusError;
+    // The expired/failed layouts already tell the failure story; a stale
+    // refresh error persisted by an earlier poll (e.g. "service temporarily
+    // unavailable") only muddies it, so the warning panel stays hidden there.
+    final showStatusError =
+        statusError != null &&
+        intent.status != SwapIntentStatus.expired &&
+        intent.status != SwapIntentStatus.failed;
     final showExternalDepositPage = swapActivityShowsExternalDepositPage(
       intent,
     );
@@ -481,9 +540,10 @@ class _SwapActivityFlowContent extends StatelessWidget {
       intentIsHardware: intentIsHardware,
     );
     final primaryContent = switch (intent.status) {
-      SwapIntentStatus.expired => SwapDepositTimeoutPageContent(
-        onRestart: onReviewFreshQuote,
-      ),
+      SwapIntentStatus.expired =>
+        layout == SwapActivityDetailLayout.mobile
+            ? MobileSwapTimeoutContent(onRestart: onReviewFreshQuote)
+            : SwapDepositTimeoutPageContent(onRestart: onReviewFreshQuote),
       _ when showExternalDepositPage && depositInstruction != null =>
         SwapDepositTokensPageContent(
           asset: swapActivitySellAsset(intent) ?? SwapAsset.zec,
@@ -495,6 +555,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
           checking: depositChecking || state.statusRefreshing,
           checkWarning: depositCheckWarning,
           onDeposited: onMarkDeposited,
+          mobile: layout == SwapActivityDetailLayout.mobile,
         ),
       _ when showHardwareDepositPage && depositInstruction != null =>
         SwapHardwareZecDepositPageContent(
@@ -505,24 +566,30 @@ class _SwapActivityFlowContent extends StatelessWidget {
           expiresAt: intent.depositDeadline,
           memo: depositInstruction.memo,
           onDepositZec: () => onSignZecDeposit(intent),
+          mobile: layout == SwapActivityDetailLayout.mobile,
         ),
-      _ => _SwapStatusForIntent(
-        intent: intent,
-        onOpenExplorer: () => onCopyExplorerLink(intent),
-      ),
+      _ => _SwapStatusForIntent(intent: intent, layout: layout),
     };
 
+    final mobile = layout == SwapActivityDetailLayout.mobile;
+    // All mobile branches now render native full-width content (deposit,
+    // status, timeout), so no desktop-content down-scaling is needed.
     return Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
+      crossAxisAlignment: mobile
+          ? CrossAxisAlignment.stretch
+          : CrossAxisAlignment.center,
       children: [
         primaryContent,
-        if (statusError != null) ...[
+        if (showStatusError) ...[
           const SizedBox(height: AppSpacing.md),
-          SizedBox(
-            width: 400,
-            child: _ActivityStatusErrorPanel(message: statusError),
-          ),
+          if (mobile)
+            _ActivityStatusErrorPanel(message: statusError)
+          else
+            SizedBox(
+              width: 400,
+              child: _ActivityStatusErrorPanel(message: statusError),
+            ),
         ],
       ],
     );
@@ -532,11 +599,11 @@ class _SwapActivityFlowContent extends StatelessWidget {
 class _SwapStatusForIntent extends ConsumerStatefulWidget {
   const _SwapStatusForIntent({
     required this.intent,
-    required this.onOpenExplorer,
+    this.layout = SwapActivityDetailLayout.desktop,
   });
 
   final SwapIntent intent;
-  final VoidCallback onOpenExplorer;
+  final SwapActivityDetailLayout layout;
 
   @override
   ConsumerState<_SwapStatusForIntent> createState() =>
@@ -577,34 +644,83 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
             ),
       addressBookContacts: addressBookContacts,
     );
+    if (widget.layout == SwapActivityDetailLayout.mobile) {
+      final terminal = !presentation.showTabs;
+      final recipient = intent.oneClickRecipient?.trim();
+      final hasRecipient = recipient != null && recipient.isNotEmpty;
+      final recipientFullAddress = mobileSwapStatusRecipientFullAddress(intent);
+      return MobileSwapStatusContent(
+        presentation: presentation,
+        payHeaderRow: MobileSwapReviewHeaderRow(
+          label: terminal ? 'You paid' : "You're paying",
+          amountText: trimSwapAmountText(presentation.payAmountText),
+          asset: presentation.payAsset,
+          bottomText: presentation.payFiatText,
+        ),
+        receiveHeaderRow: MobileSwapReviewHeaderRow(
+          label: terminal ? 'You received' : "You're receiving",
+          amountText: trimSwapAmountText(presentation.receiveAmountText),
+          asset: presentation.receiveAsset,
+          bottomText: hasRecipient
+              ? 'To: ${_truncateHeaderAddress(recipient)}'
+              : presentation.receiveFiatText,
+          fullAddress: recipientFullAddress,
+        ),
+        activeTab: _activeTab,
+        detailsExpanded: _detailsExpanded,
+        onTabChanged: (tab) {
+          setState(() {
+            _activeTab = tab;
+          });
+        },
+        onToggleDetails: () {
+          setState(() {
+            _detailsExpanded = !_detailsExpanded;
+          });
+        },
+      );
+    }
+
     return SwapStatusPageContent(
       title: presentation.title,
       payAsset: presentation.payAsset,
       receiveAsset: presentation.receiveAsset,
-      payFiatText: presentation.payFiatText,
-      receiveFiatText: presentation.receiveFiatText,
       payAmountText: presentation.payAmountText,
       receiveAmountText: presentation.receiveAmountText,
+      payDetailText: presentation.payDetailText,
+      payDetailCopyText: presentation.payDetailCopyText,
+      receiveDetailText: presentation.receiveDetailText,
+      receiveDetailCopyText: presentation.receiveDetailCopyText,
+      statusLabel: presentation.statusLabel,
       badgeKind: presentation.badgeKind,
       progressIndex: presentation.progressIndex,
       activeTab: _activeTab,
       steps: presentation.steps,
       details: presentation.details,
-      detailsExpanded: _detailsExpanded,
       showTabs: presentation.showTabs,
       onTabChanged: (tab) {
         setState(() {
           _activeTab = tab;
         });
       },
-      onToggleDetails: () {
-        setState(() {
-          _detailsExpanded = !_detailsExpanded;
-        });
-      },
-      onOpenExplorer: widget.onOpenExplorer,
+      onCopy: (text) =>
+          copyTextWithToast(context, text: text, toastMessage: 'Copied'),
     );
   }
+}
+
+/// Figma-style 6 ... 5 truncation for the header's "To:" line.
+String _truncateHeaderAddress(String address) {
+  if (address.length <= 14) return address;
+  return '${address.substring(0, 6)} ... '
+      '${address.substring(address.length - 5)}';
+}
+
+String? mobileSwapStatusRecipientFullAddress(SwapIntent intent) {
+  final recipient = intent.oneClickRecipient?.trim();
+  if (recipient == null || recipient.isEmpty) return null;
+  if (intent.direction == SwapDirection.externalToZec) return null;
+  return recipient;
 }
 
 AccountInfo? _accountInfoForIntent(
@@ -682,10 +798,9 @@ class _ActivityDetailScrollAreaState extends State<_ActivityDetailScrollArea> {
     final hasScrollableExtent = notification.metrics.maxScrollExtent > 0.5;
     if (hasScrollableExtent != _hasScrollableExtent) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        setState(() {
-          _hasScrollableExtent = hasScrollableExtent;
-        });
+        if (mounted) {
+          setState(() => _hasScrollableExtent = hasScrollableExtent);
+        }
       });
     }
     return false;
@@ -693,32 +808,15 @@ class _ActivityDetailScrollAreaState extends State<_ActivityDetailScrollArea> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return ScrollConfiguration(
-      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-      child: NotificationListener<ScrollMetricsNotification>(
-        onNotification: _handleScrollMetrics,
-        child: RawScrollbar(
-          key: const ValueKey('swap_activity_detail_scrollbar'),
-          controller: _controller,
-          thumbVisibility: _hasScrollableExtent,
-          interactive: _hasScrollableExtent,
-          thickness: 4,
-          radius: const Radius.circular(AppRadii.full),
-          thumbColor: colors.border.regular.withValues(alpha: 0.72),
-          mainAxisMargin: AppSpacing.xxs,
-          crossAxisMargin: AppSpacing.xxs,
-          child: SingleChildScrollView(
-            key: const ValueKey('swap_activity_detail_scroll_view'),
-            controller: _controller,
-            child: Padding(
-              key: const ValueKey('swap_activity_detail_scroll_gutter'),
-              padding: EdgeInsets.only(
-                right: _hasScrollableExtent ? AppSpacing.s : 0,
-              ),
-              child: widget.child,
-            ),
-          ),
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: _handleScrollMetrics,
+      child: PrimaryScrollController(
+        controller: _controller,
+        child: SingleChildScrollView(
+          physics: _hasScrollableExtent
+              ? const AlwaysScrollableScrollPhysics()
+              : const ClampingScrollPhysics(),
+          child: widget.child,
         ),
       ),
     );

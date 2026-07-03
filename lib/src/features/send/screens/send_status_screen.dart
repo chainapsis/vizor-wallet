@@ -1,36 +1,31 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../main.dart' show log;
-import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/config/zcash_explorer.dart';
+import '../../../core/formatting/address_display.dart';
+import '../../../core/formatting/date_format.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
-import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_back_link.dart';
-import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
-import '../../../providers/app_security_provider.dart';
+import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
-import '../../../providers/sync_provider.dart';
-import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
-import '../../address_book/models/address_book_label_lookup.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../keystone/widgets/keystone_transaction_progress_panel.dart';
-import '../services/sapling_params.dart';
+import '../services/send_flow.dart';
 import '../widgets/sapling_params_prompt.dart';
-import '../widgets/transaction_receipt_view.dart';
-import 'send_review_screen.dart';
+import '../widgets/send_recipient_resolver.dart';
+import '../widgets/send_status_content_view.dart';
+import '../widgets/send_verify_address_overlay.dart';
 
 enum _SendStatusPhase { sending, pendingBroadcast, succeeded, failed }
 
@@ -54,6 +49,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   late final DateTime _startedAt = DateTime.now();
   DateTime? _completedAt;
   bool _showSaplingParamsPrompt = false;
+  bool _messageExpanded = false;
+  bool _showVerifyAddress = false;
   Completer<bool>? _saplingParamsPromptCompleter;
 
   @override
@@ -84,120 +81,20 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     if (_proposalConsumed || _discardScheduled) return;
     _discardScheduled = true;
     unawaited(
-      rust_sync
-          .discardProposal(
-            proposalId: widget.args.proposalId,
-            sendFlowId: widget.args.sendFlowId,
-          )
-          .then((_) {
-            log(
-              'SendStatus: released proposal ${widget.args.proposalId} on dispose',
-            );
-          })
-          .catchError((Object e) {
-            log(
-              'SendStatus: discardProposal cleanup failed (non-critical): $e',
-            );
-          }),
+      discardSendProposal(
+        proposalId: widget.args.proposalId,
+        sendFlowId: widget.args.sendFlowId,
+        logContext: 'SendStatus(dispose)',
+      ),
     );
   }
 
-  String _friendlyError(String raw) {
-    final lower = raw.toLowerCase();
-    if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
-      return 'Insufficient shielded balance to cover amount and fee.';
-    }
-    if (lower.contains('grpc connect failed') ||
-        lower.contains('connection refused') ||
-        lower.contains('dns error') ||
-        lower.contains('tls error')) {
-      return 'Network error. Check your connection and try again.';
-    }
-    if (lower.contains('broadcast failed after') &&
-        lower.contains('txs sent')) {
-      return 'Some parts of this transaction were sent. Open Activity to see '
-          'what went through before you try again.';
-    }
-    if (lower.contains('broadcast rejected')) {
-      return 'The network rejected this transaction. Try again later.';
-    }
-    if (lower.contains('proposal not found') ||
-        lower.contains('send flow mismatch')) {
-      return 'Transaction expired before it could be sent.';
-    }
-    if (lower.contains('mnemonic not found')) {
-      return 'Mnemonic not found for the proposal account.';
-    }
-    return "Transaction couldn't be sent. Go back to your wallet and check "
-        'the latest status.';
-  }
-
-  String? _firstTxid(String txids) {
-    for (final part in txids.split(',')) {
-      final trimmed = part.trim();
-      if (trimmed.isNotEmpty) return trimmed;
-    }
-    return null;
-  }
-
-  String _broadcastStatusMessage(rust_sync.ExecuteProposalResult result) {
-    if (result.status == 'partial_broadcast') {
-      return 'Some transactions were broadcast and the rest will retry automatically. Check activity before sending again.';
-    }
-    final rawMessage = result.message?.toLowerCase() ?? '';
-    if (rawMessage.contains('broadcast rejected')) {
-      return "Transaction was created locally but didn't reach the network. "
-          'The wallet will keep retrying until it expires. '
-          "Don't send again unless this one expires.";
-    }
-    return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
-  }
-
-  String _pcztBroadcastStatusMessage(
-    rust_sync.ExtractAndBroadcastPcztResult result,
-  ) {
-    if (result.status == 'broadcast_unknown') {
-      return result.message ??
-          'The transaction may have reached the network, but confirmation timed out. Check activity before sending again.';
-    }
-    if (result.status == 'broadcasted_storage_failed') {
-      return result.message ??
-          'The transaction reached the network, but Vizor could not store it locally. Do not send again until sync or an explorer confirms the latest status.';
-    }
-    final rawMessage = result.message?.toLowerCase() ?? '';
-    if (rawMessage.contains('broadcast rejected')) {
-      return 'Transaction was rejected by the network. Please try again later.';
-    }
-    return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
-  }
-
-  String _formatReceiptAmount(BigInt zatoshi) {
-    return ZecAmount.fromZatoshi(zatoshi).receipt.toString();
+  String _formatAmount(BigInt zatoshi) {
+    return ZecAmount.fromZatoshi(zatoshi).activityDetail.toString();
   }
 
   String _formatFee(BigInt zatoshi) {
     return ZecAmount.fromZatoshi(zatoshi).fee.toString();
-  }
-
-  String _formatDate(DateTime value) {
-    const months = <String>[
-      '',
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
-    final hh = value.hour.toString().padLeft(2, '0');
-    final mm = value.minute.toString().padLeft(2, '0');
-    return '${months[value.month]} ${value.day}, ${value.year} $hh:$mm';
   }
 
   Future<bool> _showSaplingParamsDialog() {
@@ -232,12 +129,14 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     context.go('/home');
   }
 
-  Future<void> _copyTransactionHash() async {
+  void _copyTransactionHash() {
     final txid = _txid;
     if (txid == null) return;
-    await Clipboard.setData(ClipboardData(text: txid));
-    if (!mounted) return;
-    showAppToast(context, 'Transaction Hash Copied');
+    copyTextWithToast(
+      context,
+      text: txid,
+      toastMessage: 'Transaction hash copied',
+    );
   }
 
   Future<void> _openTransactionExplorer() async {
@@ -250,257 +149,34 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       txidOrder: ZcashExplorerTxidOrder.display,
     );
     if (launched || !mounted) return;
-    await _copyTransactionHash();
-  }
-
-  Future<void> _copyRecipientAddress() async {
-    await Clipboard.setData(ClipboardData(text: widget.args.address.trim()));
-    if (!mounted) return;
-    showAppToast(context, 'Address copied');
-  }
-
-  Future<bool> _abortIfUnmounted() async {
-    if (mounted) return false;
-    if (!_proposalConsumed && !_discardScheduled) {
-      _discardScheduled = true;
-      try {
-        await rust_sync.discardProposal(
-          proposalId: widget.args.proposalId,
-          sendFlowId: widget.args.sendFlowId,
-        );
-      } catch (e) {
-        log(
-          'SendStatus: discardProposal cleanup failed after unmount (non-critical): $e',
-        );
-      }
-    }
-    return true;
+    _copyTransactionHash();
   }
 
   Future<void> _startBroadcast() async {
-    try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
-      var saplingParams = await loadSaplingParamsStatus();
-
-      if (widget.args.needsSaplingParams) {
-        if (!saplingParams.complete) {
-          if (await _abortIfUnmounted()) return;
-          final downloadConfirmed = await _showSaplingParamsDialog();
-          if (!downloadConfirmed) {
-            if (await _abortIfUnmounted()) return;
-            setState(() {
-              _phase = _SendStatusPhase.failed;
-              _error =
-                  'Sending was cancelled before proving parameters were downloaded.';
-            });
-            return;
-          }
-
-          await downloadMissingSaplingParams(
-            saplingParams,
-            log: (message) => log('SendStatus: $message'),
-          );
-          saplingParams = await loadSaplingParamsStatus();
-          if (await _abortIfUnmounted()) return;
-        }
-      }
-
-      final accountNotifier = ref.read(accountProvider.notifier);
-      final isHardware = accountNotifier.isHardwareAccount(
-        widget.args.proposalAccountUuid,
-      );
-
-      late final String txids;
-      late final bool broadcastComplete;
-      late final String? pendingStatusMessage;
-      String? broadcastMessageForFallback;
-
-      if (isHardware) {
-        final keystone = widget.keystone;
-        if (keystone == null) {
-          throw Exception('Missing Keystone transaction signature.');
-        }
-        _proposalConsumed = true;
-        final result = await rust_sync.extractAndBroadcastPczt(
-          dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          network: endpoint.walletNetworkName,
-          pcztWithProofsBytes: keystone.pcztWithProofsBytes,
-          pcztWithSignaturesBytes: keystone.pcztWithSignaturesBytes,
-          spendParamsPath: widget.args.needsSaplingParams
-              ? saplingParams.spendPath
-              : null,
-          outputParamsPath: widget.args.needsSaplingParams
-              ? saplingParams.outputPath
-              : null,
-        );
-        txids = result.txid;
-        broadcastComplete = result.status == 'broadcasted';
-        pendingStatusMessage = broadcastComplete
-            ? null
-            : _pcztBroadcastStatusMessage(result);
-        broadcastMessageForFallback = result.message;
-      } else {
-        final result = await _executeSoftwareProposal(
-          dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          saplingParams: saplingParams,
-        );
-        _proposalConsumed = true;
-        txids = result.txids;
-        broadcastComplete = result.status == 'broadcasted';
-        pendingStatusMessage = broadcastComplete
-            ? null
-            : _broadcastStatusMessage(result);
-        broadcastMessageForFallback = result.message;
-      }
-
-      if (!broadcastComplete && broadcastMessageForFallback != null) {
-        final switched = await ref
-            .read(rpcEndpointFailoverProvider.notifier)
-            .switchToFallbackFor(
-              broadcastMessageForFallback,
-              endpoint: endpoint,
-              operation: isHardware
-                  ? 'keystone send broadcast'
-                  : 'send broadcast',
-            );
-        if (switched) {
-          unawaited(ref.read(syncProvider.notifier).restartSync());
-        }
-      }
-
-      try {
-        await ref.read(syncProvider.notifier).refreshAfterSend();
-      } catch (e) {
-        log('SendStatus: refreshAfterSend failed (non-critical): $e');
-      }
-
-      if (Platform.isIOS) {
-        try {
-          const channel = MethodChannel('com.zcash.wallet/background_sync');
-          final available =
-              await channel.invokeMethod<bool>('isAvailable') ?? false;
-          if (available) {
-            await channel.invokeMethod(
-              'startTxTracking',
-              nativeRpcEndpointPayload(
-                endpoint,
-                walletNetworkName: endpoint.walletNetworkName,
-              ),
-            );
-          }
-        } catch (e) {
-          log('SendStatus: iOS TX tracking failed (non-critical): $e');
-        }
-      }
-
-      if (await _abortIfUnmounted()) return;
-      setState(() {
-        _phase = broadcastComplete
-            ? _SendStatusPhase.succeeded
-            : _SendStatusPhase.pendingBroadcast;
-        _txid = _firstTxid(txids);
-        _statusMessage = pendingStatusMessage;
-        _completedAt = DateTime.now();
-      });
-    } catch (e) {
-      log('SendStatus: ERROR: $e');
-      final message = _friendlyError(e.toString());
-      if (!mounted) {
-        if (!_proposalConsumed) {
-          try {
-            await rust_sync.discardProposal(
-              proposalId: widget.args.proposalId,
-              sendFlowId: widget.args.sendFlowId,
-            );
-          } catch (_) {}
-        }
-        return;
-      }
-      setState(() {
-        _phase = _SendStatusPhase.failed;
-        _error = message;
-        _statusMessage = null;
-      });
-    }
-  }
-
-  Future<rust_sync.ExecuteProposalResult> _executeSoftwareProposal({
-    required String dbPath,
-    required String lightwalletdUrl,
-    required SaplingParamsStatus saplingParams,
-  }) async {
-    final syncNotifier = ref.read(syncProvider.notifier);
-    final syncPause = await syncNotifier.pauseForWalletMutation(
-      onStoppingSync: () {
-        log('SendStatus: pausing sync before send wallet mutation');
-      },
+    final outcome = await runSendBroadcast(
+      ref: ref,
+      args: widget.args,
+      keystone: widget.keystone,
+      confirmSaplingParamsDownload: _showSaplingParamsDialog,
+      shouldAbort: () async => !mounted,
     );
-
-    try {
-      if (Platform.isMacOS && !kDebugMode) {
-        final password = ref
-            .read(appSecurityProvider.notifier)
-            .requireSessionPasswordForNativeSecretUse();
-        return await rust_sync.executeProposalWithMacosStoredMnemonic(
-          dbPath: dbPath,
-          lightwalletdUrl: lightwalletdUrl,
-          proposalId: widget.args.proposalId,
-          sendFlowId: widget.args.sendFlowId,
-          password: password,
-          spendParamsPath: widget.args.needsSaplingParams
-              ? saplingParams.spendPath
-              : null,
-          outputParamsPath: widget.args.needsSaplingParams
-              ? saplingParams.outputPath
-              : null,
-        );
+    _proposalConsumed = outcome.proposalConsumed;
+    if (outcome.phase == SendBroadcastPhase.aborted || !mounted) return;
+    setState(() {
+      _phase = switch (outcome.phase) {
+        SendBroadcastPhase.succeeded => _SendStatusPhase.succeeded,
+        SendBroadcastPhase.pendingBroadcast =>
+          _SendStatusPhase.pendingBroadcast,
+        SendBroadcastPhase.failed => _SendStatusPhase.failed,
+        SendBroadcastPhase.aborted => _SendStatusPhase.failed,
+      };
+      _txid = outcome.txid;
+      _statusMessage = outcome.statusMessage;
+      _error = outcome.error;
+      if (outcome.phase != SendBroadcastPhase.failed) {
+        _completedAt = DateTime.now();
       }
-
-      return await _executeSoftwareProposalWithMnemonicBytes(
-        dbPath: dbPath,
-        lightwalletdUrl: lightwalletdUrl,
-        saplingParams: saplingParams,
-      );
-    } finally {
-      syncNotifier.resumeAfterWalletMutation(syncPause);
-    }
-  }
-
-  Future<rust_sync.ExecuteProposalResult>
-  _executeSoftwareProposalWithMnemonicBytes({
-    required String dbPath,
-    required String lightwalletdUrl,
-    required SaplingParamsStatus saplingParams,
-  }) async {
-    final mnemonicBytes = await ref
-        .read(accountProvider.notifier)
-        .getMnemonicBytesForAccount(widget.args.proposalAccountUuid);
-    if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
-      throw StateError('Mnemonic not found for the proposal account.');
-    }
-
-    late final Future<rust_sync.ExecuteProposalResult> resultFuture;
-    try {
-      resultFuture = rust_sync.executeProposal(
-        dbPath: dbPath,
-        lightwalletdUrl: lightwalletdUrl,
-        proposalId: widget.args.proposalId,
-        sendFlowId: widget.args.sendFlowId,
-        mnemonicBytes: mnemonicBytes,
-        spendParamsPath: widget.args.needsSaplingParams
-            ? saplingParams.spendPath
-            : null,
-        outputParamsPath: widget.args.needsSaplingParams
-            ? saplingParams.outputPath
-            : null,
-      );
-    } finally {
-      mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
-    }
-    return resultFuture;
+    });
   }
 
   Widget _buildKeystoneSubmittingScreen(BuildContext context) {
@@ -508,13 +184,11 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: EdgeInsets.zero,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: AppRouteBackLink(),
-            ),
+            const AppPaneToolbar(leading: AppRouteBackLink(minWidth: 60)),
             Expanded(
               child: Center(
                 child: Column(
@@ -539,66 +213,37 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     );
   }
 
-  TransactionReceiptBlockData _primaryBlockFor(
-    BuildContext context, {
-    required bool useFailedReceiptLayout,
-    required String? addressBookLabel,
-  }) {
-    final trimmedAddress = widget.args.address.trim();
-    final trimmedLabel = addressBookLabel?.trim();
-    if (trimmedLabel != null && trimmedLabel.isNotEmpty) {
-      return TransactionReceiptBlockData(
-        title: 'To',
-        child: TransactionReceiptSavedRecipientAddress(
-          address: trimmedAddress,
-          label: trimmedLabel,
-          onCopy: () => unawaited(_copyRecipientAddress()),
-        ),
-      );
-    }
-
-    return TransactionReceiptBlockData(
-      title: 'To',
-      child: TransactionReceiptAddressText(
-        address: trimmedAddress,
-        highlightEdges: widget.args.isShielded,
-        compact: !useFailedReceiptLayout && widget.args.isShielded,
-        highlightColor: useFailedReceiptLayout
-            ? null
-            : context.colors.text.brandCrimson,
-      ),
-      onCopy: useFailedReceiptLayout
-          ? () => unawaited(_copyRecipientAddress())
-          : null,
-    );
-  }
-
-  String? _recipientAddressBookLabel(
-    Iterable<AddressBookContact> addressBookContacts,
-  ) {
-    return addressBookLabelFor(
-      contacts: addressBookContacts,
-      network: AddressBookNetwork.zcash,
-      address: widget.args.address,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final receiptPhase = switch (_phase) {
-      _SendStatusPhase.sending => TransactionReceiptPhase.sending,
-      _SendStatusPhase.pendingBroadcast => TransactionReceiptPhase.pending,
-      _SendStatusPhase.succeeded => TransactionReceiptPhase.succeeded,
-      _SendStatusPhase.failed => TransactionReceiptPhase.failed,
+    // The legacy receipt's pending phase rendered the loader + "In progress"
+    // status with the explorer link; pendingBroadcast keeps that mapping
+    // (in-progress visuals + Tx ID row + the broadcast guidance notice).
+    final statusPhase = switch (_phase) {
+      _SendStatusPhase.sending ||
+      _SendStatusPhase.pendingBroadcast => SendStatusPhase.inProgress,
+      _SendStatusPhase.succeeded => SendStatusPhase.completed,
+      _SendStatusPhase.failed => SendStatusPhase.failed,
     };
-    final useFailedReceiptLayout = _phase == _SendStatusPhase.failed;
-    final statusMessage = _statusMessage;
     final isKeystoneSubmitting =
         widget.keystone != null && _phase == _SendStatusPhase.sending;
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ??
         const <AddressBookContact>[];
-    final addressBookLabel = _recipientAddressBookLabel(addressBookContacts);
+    final ownAccounts =
+        ref.watch(ownAccountAddressesProvider).value ??
+        const <String, AccountInfo>{};
+    final recipient = sendReviewRecipientFor(
+      contacts: addressBookContacts,
+      address: widget.args.address,
+      ownAccounts: ownAccounts,
+    );
+    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
+    final memo = widget.args.memo;
+    final hasMemo = memo != null && memo.trim().isNotEmpty;
+    final canOpenExplorer =
+        (_phase == _SendStatusPhase.succeeded ||
+            _phase == _SendStatusPhase.pendingBroadcast) &&
+        _txid != null;
 
     return PopScope<void>(
       canPop: false,
@@ -614,91 +259,52 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
               pane: AppDesktopPane(
                 padding: EdgeInsets.zero,
                 child: Stack(
+                  fit: StackFit.expand,
                   children: [
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: TransactionReceiptIllustration(
-                          failed: useFailedReceiptLayout,
+                    AppPaneScrollScaffold(
+                      toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                      ),
+                      child: SendStatusContentView(
+                        key: ValueKey('send_status_${statusPhase.name}'),
+                        phase: statusPhase,
+                        amountText: _formatAmount(widget.args.amountZatoshi),
+                        fiatText: fiatTextForZatoshi(
+                          widget.args.amountZatoshi,
+                          zecUsdUnitPrice: zecUsdUnitPrice,
                         ),
+                        recipient: recipient,
+                        timestampText: formatDayMonthTime(
+                          _completedAt ?? _startedAt,
+                        ),
+                        txIdText: _txid == null ? null : truncatedTxid(_txid!),
+                        feeText: _formatFee(widget.args.feeZatoshi),
+                        isShieldedRecipient: widget.args.isShielded,
+                        recipientAddressType: widget.args.addressType,
+                        memoText: hasMemo ? memo : null,
+                        memoExpanded: _messageExpanded,
+                        noticeText: _phase == _SendStatusPhase.failed
+                            ? (_error ?? 'Send failed')
+                            : _statusMessage,
+                        onShowFullAddress: () =>
+                            setState(() => _showVerifyAddress = true),
+                        onExpandMemo: () => setState(
+                          () => _messageExpanded = !_messageExpanded,
+                        ),
+                        onOpenExplorer: canOpenExplorer
+                            ? _openTransactionExplorer
+                            : null,
                       ),
                     ),
-                    Positioned.fill(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.md,
-                          AppSpacing.md,
-                          0,
-                          AppSpacing.md,
-                        ),
-                        child: Column(
-                          children: [
-                            const Align(
-                              alignment: Alignment.centerLeft,
-                              child: AppRouteBackLink(),
-                            ),
-                            Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.only(right: 255),
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: TransactionReceiptView(
-                                    key: ValueKey(
-                                      'send_status_${receiptPhase.name}',
-                                    ),
-                                    phase: receiptPhase,
-                                    amountText: _formatReceiptAmount(
-                                      widget.args.amountZatoshi,
-                                    ),
-                                    primaryBlock: _primaryBlockFor(
-                                      context,
-                                      useFailedReceiptLayout:
-                                          useFailedReceiptLayout,
-                                      addressBookLabel: addressBookLabel,
-                                    ),
-                                    feeText: _formatFee(widget.args.feeZatoshi),
-                                    extraBlocks: [
-                                      if (statusMessage != null)
-                                        TransactionReceiptBlockData(
-                                          title: 'Status',
-                                          child: Text(
-                                            statusMessage,
-                                            style: AppTypography.bodyMedium
-                                                .copyWith(
-                                                  color: context
-                                                      .colors
-                                                      .text
-                                                      .accent,
-                                                ),
-                                          ),
-                                        ),
-                                    ],
-                                    dateText: _formatDate(
-                                      _completedAt ?? _startedAt,
-                                    ),
-                                    error: _error,
-                                    failureFallbackText: 'Send failed',
-                                    useFailedReceiptLayout:
-                                        useFailedReceiptLayout,
-                                    onTransactionHashPressed:
-                                        (_phase == _SendStatusPhase.succeeded ||
-                                                _phase ==
-                                                    _SendStatusPhase
-                                                        .pendingBroadcast) &&
-                                            _txid != null
-                                        ? _openTransactionExplorer
-                                        : null,
-                                    onBackToWallet:
-                                        _phase == _SendStatusPhase.failed
-                                        ? _goHome
-                                        : null,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                    if (_showVerifyAddress)
+                      SendVerifyAddressOverlay(
+                        accountUuid: widget.args.proposalAccountUuid,
+                        address: widget.args.address.trim(),
+                        isShieldedAddress: widget.args.isShielded,
+                        onClose: () =>
+                            setState(() => _showVerifyAddress = false),
                       ),
-                    ),
                     if (_showSaplingParamsPrompt)
                       Positioned.fill(
                         child: SaplingParamsPrompt(

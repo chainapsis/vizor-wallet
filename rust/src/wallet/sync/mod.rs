@@ -81,9 +81,9 @@ pub(crate) use send::ShieldTransparentStatus;
 pub(crate) use send::{KeystoneMigrationMessage, KeystoneMigrationSigningRequest};
 pub use transactions::{
     check_tx_mined, decrypt_and_store_transaction, get_next_available_address,
-    get_pending_transactions, get_transaction_data_requests, get_transaction_detail,
-    get_transaction_history, get_wallet_balance, parse_address_request_kind,
-    set_transaction_status, AddressRequestKind,
+    get_pending_transactions, get_previous_transaction_count_for_address,
+    get_transaction_data_requests, get_transaction_detail, get_transaction_history,
+    get_wallet_balance, parse_address_request_kind, set_transaction_status, AddressRequestKind,
 };
 #[allow(unused_imports)] // ditto
 pub(crate) use transactions::{
@@ -393,16 +393,18 @@ pub fn rewind_to_height(db_path: &str, network: WalletNetwork, height: u64) -> R
 
 pub fn validate_address(address: &str) -> Result<String, String> {
     use zcash_address::ZcashAddress;
-    let addr = ZcashAddress::try_from_encoded(address).map_err(|e| format!("Invalid: {e}"))?;
-    let debug = format!("{:?}", addr);
-    if debug.contains("Unified") {
-        Ok("unified".into())
-    } else if debug.contains("Sapling") {
-        Ok("sapling".into())
-    } else if debug.contains("P2pkh") || debug.contains("P2sh") {
-        Ok("transparent".into())
-    } else {
-        Ok("unknown".into())
+    use zcash_keys::address::Address;
+
+    let addr: Address = ZcashAddress::try_from_encoded(address)
+        .map_err(|e| format!("Invalid: {e}"))?
+        .convert()
+        .map_err(|e| format!("Invalid: {e}"))?;
+
+    match addr {
+        Address::Unified(_) => Ok("unified".into()),
+        Address::Sapling(_) => Ok("sapling".into()),
+        Address::Transparent(_) => Ok("transparent".into()),
+        Address::Tex(_) => Ok("tex".into()),
     }
 }
 
@@ -522,6 +524,36 @@ mod tests {
         // with proposals that a parallel test might genuinely insert.
         static COUNTER: AtomicU64 = AtomicU64::new(1_000_000_000);
         COUNTER.fetch_add(1, Ordering::Relaxed)
+    }
+
+    #[test]
+    fn validate_address_classifies_tex_addresses() {
+        assert_eq!(
+            validate_address("tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte").unwrap(),
+            "tex"
+        );
+        assert_eq!(
+            validate_address("textest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy").unwrap(),
+            "tex"
+        );
+    }
+
+    #[test]
+    fn validate_address_rejects_invalid_address() {
+        assert!(validate_address("not-an-address").is_err());
+    }
+
+    #[test]
+    fn validate_address_rejects_sprout_addresses() {
+        use zcash_address::ToAddress;
+
+        let sprout = zcash_address::ZcashAddress::from_sprout(
+            zcash_protocol::consensus::NetworkType::Main,
+            [0; 64],
+        )
+        .to_string();
+
+        assert!(validate_address(&sprout).is_err());
     }
 
     #[test]

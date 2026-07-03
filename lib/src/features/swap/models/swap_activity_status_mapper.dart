@@ -1,5 +1,6 @@
-import '../../../core/profile_pictures.dart';
+import '../../../core/layout/app_form_factor.dart';
 import '../../address_book/models/address_book_contact.dart';
+import '../domain/near_intents_explorer.dart';
 import 'swap_address_formatting.dart';
 import 'swap_detail_tooltips.dart';
 import 'swap_fiat_value_formatting.dart';
@@ -46,6 +47,11 @@ class SwapActivityStatusPresentation {
     required this.receiveFiatText,
     required this.payAmountText,
     required this.receiveAmountText,
+    this.payDetailText = '',
+    this.payDetailCopyText,
+    this.receiveDetailText = '',
+    this.receiveDetailCopyText,
+    this.statusLabel = '',
     required this.badgeKind,
     required this.progressIndex,
     required this.steps,
@@ -60,6 +66,25 @@ class SwapActivityStatusPresentation {
   final String receiveFiatText;
   final String payAmountText;
   final String receiveAmountText;
+
+  /// Bottom line of the pay summary row: the fiat value, or for
+  /// external→ZEC swaps the "Refund to: …" address line.
+  final String payDetailText;
+
+  /// Full address copied by the pay row's copy affordance, when the pay
+  /// line shows the refund address.
+  final String? payDetailCopyText;
+
+  /// Bottom line of the receive summary row: the fiat value, or for
+  /// ZEC→external swaps the "To: … on [SwapAsset.chainLabel]" address line.
+  final String receiveDetailText;
+
+  /// Full address copied by the receive row's copy affordance, when the
+  /// receive line shows the recipient address.
+  final String? receiveDetailCopyText;
+
+  /// User-facing status label for the terminal Status row.
+  final String statusLabel;
   final SwapStatusBadgeKind badgeKind;
   final int progressIndex;
   final List<SwapStatusStepData> steps;
@@ -75,28 +100,59 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
 }) {
   final sellAsset = swapActivitySellAsset(intent) ?? SwapAsset.zec;
   final receiveAsset = swapActivityReceiveAsset(intent) ?? SwapAsset.usdc;
+  final sendsZec = intent.direction != SwapDirection.externalToZec;
+  final recipientAddress = intent.oneClickRecipient?.trim();
+  final refundAddress = intent.oneClickRefundTo?.trim();
+  final payFiatText = _swapActivityFiatTextForAsset(
+    intent: intent,
+    side: _SwapActivityAmountSide.sell,
+    amountText: intent.sellAmount,
+  );
+  final receiveFiatText = _swapActivityFiatTextForAsset(
+    intent: intent,
+    side: _SwapActivityAmountSide.receive,
+    amountText: intent.receiveEstimate,
+  );
+
+  // The summary's bottom lines: fiat on the ZEC side, the counterparty
+  // address on the external side (recipient when sending ZEC, refund
+  // address when depositing an external asset).
+  var payDetailText = payFiatText;
+  String? payDetailCopyText;
+  var receiveDetailText = receiveFiatText;
+  String? receiveDetailCopyText;
+  if (sendsZec) {
+    if (recipientAddress != null && recipientAddress.isNotEmpty) {
+      receiveDetailText =
+          'To: ${compactSwapAddress(recipientAddress)} '
+          'on ${receiveAsset.chainLabel}';
+      receiveDetailCopyText = recipientAddress;
+    }
+  } else {
+    if (refundAddress != null && refundAddress.isNotEmpty) {
+      payDetailText = 'Refund to: ${compactSwapAddress(refundAddress)}';
+      payDetailCopyText = refundAddress;
+    }
+  }
+
   return SwapActivityStatusPresentation(
     title: _swapActivityStatusTitle(intent),
     payAsset: sellAsset,
     receiveAsset: receiveAsset,
-    payFiatText: _swapActivityFiatTextForAsset(
-      intent: intent,
-      side: _SwapActivityAmountSide.sell,
-      amountText: intent.sellAmount,
-    ),
-    receiveFiatText: _swapActivityFiatTextForAsset(
-      intent: intent,
-      side: _SwapActivityAmountSide.receive,
-      amountText: intent.receiveEstimate,
-    ),
+    payFiatText: payFiatText,
+    receiveFiatText: receiveFiatText,
     payAmountText: intent.sellAmount,
     receiveAmountText: intent.receiveEstimate,
+    payDetailText: payDetailText,
+    payDetailCopyText: payDetailCopyText,
+    receiveDetailText: receiveDetailText,
+    receiveDetailCopyText: receiveDetailCopyText,
+    statusLabel: intent.status.label,
     badgeKind: _swapActivityStatusBadgeKind(intent.status),
     progressIndex: _swapActivityStatusProgressIndex(intent),
     steps: _swapActivityProgressSteps(intent),
     details: _swapActivityStatusDetails(
       intent,
-      accountDetail: accountDetail,
       addressBookContacts: addressBookContacts,
     ),
     showTabs: !intent.status.isTerminal,
@@ -108,7 +164,7 @@ String _swapActivityStatusTitle(SwapIntent intent) {
     SwapIntentStatus.complete => 'Swap completed',
     SwapIntentStatus.incompleteDeposit => 'Incomplete deposit',
     SwapIntentStatus.failed || SwapIntentStatus.refunded => 'Swap failed',
-    _ => 'Swapping ...',
+    _ => 'Swap in progress...',
   };
 }
 
@@ -196,7 +252,6 @@ List<SwapStatusStepData> _swapActivityProgressSteps(SwapIntent intent) {
 
 List<SwapStatusDetailRowData> _swapActivityStatusDetails(
   SwapIntent intent, {
-  SwapActivityAccountDetail? accountDetail,
   required Iterable<AddressBookContact> addressBookContacts,
 }) {
   final sourceSymbol = swapActivityPairSymbol(intent.pair, 0);
@@ -211,41 +266,55 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
   final originChainTxHash = intent.originChainTxHash?.trim();
   final destinationChainTxHash = intent.destinationChainTxHash?.trim();
   final depositTxHash = _firstNonEmpty([localDepositTxHash, originChainTxHash]);
-  final timestamp = _swapActivityTimestampLabel(
-    intent.completedAt ?? intent.updatedAt ?? intent.createdAt,
-  );
+  // The Tx ID detail row is a mobile-only addition; desktop keeps the
+  // original detail set (the standalone "<symbol> deposit tx" row).
+  final txIdRow = kAppFormFactor == AppFormFactor.mobile
+      ? _swapActivityTxIdRow(
+          intent: intent,
+          depositTxHash: depositTxHash,
+          depositAddress: depositAddress,
+        )
+      : null;
   final terminal = intent.status.isTerminal;
   final failed =
       _swapActivityStatusBadgeKind(intent.status) == SwapStatusBadgeKind.failed;
   final sendsZec = intent.direction != SwapDirection.externalToZec;
 
   if (terminal) {
-    final terminalRecipientRows =
-        !failed && recipientAddress != null && recipientAddress.isNotEmpty
-        ? _addressDetailRows(
-            label: '$receiveSymbol recipient',
-            address: recipientAddress,
-            asset: receiveAsset,
-            addressBookLabels: addressBookLabels,
-          )
-        : const <SwapStatusDetailRowData>[];
+    // Terminal surfaces date the swap by its settlement time, falling back
+    // to the start time for records persisted before completion tracking.
+    final timestamp = _swapActivityTimestampLabel(
+      intent.completedAt ?? intent.createdAt,
+    );
+    final explorerUri = nearIntentsExplorerUri(
+      nearIntentHash: intent.nearIntentHash,
+      depositTxHash: depositTxHash,
+      depositAddress: depositAddress,
+    );
     return [
-      _accountDetailRow(accountDetail),
-      if (terminalRecipientRows.isNotEmpty) ...terminalRecipientRows,
+      if (!failed)
+        SwapStatusDetailRowData(
+          label: 'Realized slippage',
+          value: intent.realisedSlippageText ?? 'Not reported',
+        ),
+      if (timestamp != null)
+        SwapStatusDetailRowData(label: 'Timestamp', value: timestamp),
+      if (depositTxHash != null && depositTxHash.isNotEmpty)
+        SwapStatusDetailRowData(
+          label: '$sourceSymbol deposit tx',
+          value: compactSwapAddress(depositTxHash),
+          copyable: true,
+          copyText: depositTxHash,
+          linkUri: explorerUri,
+        ),
       if (failed && refundAddress != null && refundAddress.isNotEmpty)
         ..._addressDetailRows(
           label: '$sourceSymbol refunded to',
           address: refundAddress,
           asset: sourceAsset,
           addressBookLabels: addressBookLabels,
-        )
-      else if (!failed && depositAddress != null && depositAddress.isNotEmpty)
-        ..._addressDetailRows(
-          label: '$sourceSymbol deposit to',
-          address: depositAddress,
-          asset: sourceAsset,
-          addressBookLabels: addressBookLabels,
         ),
+      ?txIdRow,
       SwapStatusDetailRowData(
         label: 'Total fees',
         value:
@@ -256,20 +325,12 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         help: true,
         helpTooltip: swapTotalFeesTooltip,
       ),
-      if (!failed)
-        SwapStatusDetailRowData(
-          label: 'Realized slippage',
-          value: intent.realisedSlippageText ?? 'Not reported',
-        ),
-      if (timestamp != null)
-        SwapStatusDetailRowData(label: 'Timestamp', value: timestamp),
     ];
   }
 
   if (intent.status == SwapIntentStatus.incompleteDeposit) {
     return _swapActivityIncompleteDepositDetails(
       intent,
-      accountDetail: accountDetail,
       sourceSymbol: sourceSymbol,
       receiveSymbol: receiveSymbol,
       depositAddress: depositAddress,
@@ -282,9 +343,11 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     );
   }
 
+  // In-flight surfaces date the swap by when it was started; updatedAt
+  // changes on every poll and would make the row jitter.
+  final timestamp = _swapActivityTimestampLabel(intent.createdAt);
   final depositMemo = intent.depositMemo?.trim();
   return [
-    _accountDetailRow(accountDetail),
     if (sendsZec && recipientAddress != null && recipientAddress.isNotEmpty)
       ..._addressDetailRows(
         label: '$receiveSymbol recipient',
@@ -317,12 +380,6 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         copyText: depositMemo,
       ),
     SwapStatusDetailRowData(
-      label: 'Swap fee',
-      value: intent.swapFeeText ?? 'Included in shown rate',
-      help: true,
-      helpTooltip: swapFeeTooltip,
-    ),
-    SwapStatusDetailRowData(
       label: 'Slippage tolerance',
       value: intent.slippageToleranceText ?? 'Configured quote',
     ),
@@ -332,6 +389,9 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       help: true,
       helpTooltip: swapMinimumReceiveTooltip(receiveSymbol),
     ),
+    if (timestamp != null)
+      SwapStatusDetailRowData(label: 'Timestamp', value: timestamp),
+    ?txIdRow,
     if (sendsZec && refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
         label: '$sourceSymbol refund address',
@@ -360,12 +420,48 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         copyable: true,
         copyText: destinationChainTxHash,
       ),
+    SwapStatusDetailRowData(
+      label: 'Swap fee',
+      value: intent.swapFeeText ?? 'Included in shown rate',
+      help: true,
+      helpTooltip: swapFeeTooltip,
+    ),
   ];
+}
+
+SwapStatusDetailRowData? _swapActivityTxIdRow({
+  required SwapIntent intent,
+  required String? depositTxHash,
+  required String? depositAddress,
+}) {
+  final hasExplorerSource =
+      (intent.nearIntentHash?.trim().isNotEmpty ?? false) ||
+      (depositTxHash?.trim().isNotEmpty ?? false);
+  if (!hasExplorerSource) return null;
+
+  final txId = _firstNonEmpty([
+    depositAddress,
+    intent.nearIntentHash?.trim(),
+    depositTxHash,
+  ]);
+  if (txId == null || txId.isEmpty) return null;
+
+  final linkUri = nearIntentsExplorerUri(
+    nearIntentHash: intent.nearIntentHash,
+    depositTxHash: depositTxHash,
+    depositAddress: depositAddress,
+  );
+  if (linkUri == null) return null;
+
+  return SwapStatusDetailRowData(
+    label: 'Tx ID',
+    value: compactSwapAddress(txId),
+    linkUri: linkUri,
+  );
 }
 
 List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
   SwapIntent intent, {
-  required SwapActivityAccountDetail? accountDetail,
   required String sourceSymbol,
   required String receiveSymbol,
   required String? depositAddress,
@@ -385,7 +481,6 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
   final deadlineText = _swapActivityTimestampLabel(intent.depositDeadline);
 
   return [
-    _accountDetailRow(accountDetail),
     if (missingDepositText != null)
       SwapStatusDetailRowData(
         label: 'Missing deposit',
@@ -683,17 +778,6 @@ String? _swapActivityMissingDepositText(
   if (!missingAmount.isFinite || missingAmount <= 0) return null;
   return '${swapPreciseAmountText(sourceAsset, missingAmount)} '
       '${sourceAsset.symbol}';
-}
-
-SwapStatusDetailRowData _accountDetailRow(
-  SwapActivityAccountDetail? accountDetail,
-) {
-  return SwapStatusDetailRowData(
-    label: 'Account',
-    value: accountDetail?.name ?? 'Unknown account',
-    accountProfilePictureId:
-        accountDetail?.profilePictureId ?? kDefaultProfilePictureId,
-  );
 }
 
 String? _firstNonEmpty(Iterable<String?> values) {

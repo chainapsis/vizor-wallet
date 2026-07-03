@@ -29,7 +29,6 @@ const _fallbackToast =
     'Selected endpoint is unstable. Switched to fallback endpoint.';
 const _primaryToast = 'Selected endpoint recovered. Switched back.';
 final _currencyTicker = kZcashDefaultCurrencyTicker;
-final _currencyTickerLower = _currencyTicker.toLowerCase();
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -78,7 +77,7 @@ void main() {
 
       await _importWallet(tester);
       await _waitForBalance(tester, {
-        '1.25 $_currencyTickerLower',
+        '1.25',
       }, 'initial primary sync');
 
       final baselineHeight = await rust_wallet.getLatestBlockHeight(
@@ -96,7 +95,7 @@ void main() {
         timeout: const Duration(minutes: 2),
       );
       await _waitForBalance(tester, {
-        '1.75 $_currencyTickerLower',
+        '1.75',
       }, 'sync through fallback');
 
       _log('recovering primary proxy');
@@ -112,8 +111,8 @@ void main() {
       _log('funding after primary recovery');
       await _fundWallet('0.25');
       await _waitForBalance(tester, {
-        '2 $_currencyTickerLower',
-        '2.00 $_currencyTickerLower',
+        '2',
+        '2.00',
       }, 'sync through recovered primary');
 
       _log('making primary proxy unavailable');
@@ -126,7 +125,7 @@ void main() {
         timeout: const Duration(minutes: 2),
       );
       await _waitForBalance(tester, {
-        '2.25 $_currencyTickerLower',
+        '2.25',
       }, 'sync through fallback after primary down');
     },
     timeout: const Timeout(Duration(minutes: 12)),
@@ -290,7 +289,7 @@ Future<void> _waitForBalance(
     tester,
     () => _keyedTextIn(
       tester,
-      const ValueKey('home_shielded_balance_text'),
+      const ValueKey('home_desktop_balance_amount_text'),
       expected,
     ),
     description: description,

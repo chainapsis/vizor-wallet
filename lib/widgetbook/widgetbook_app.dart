@@ -8,13 +8,21 @@ import 'package:widgetbook/widgetbook.dart';
 
 import '../src/core/theme/app_theme.dart';
 import 'address_book_use_cases.dart';
+import 'address_verify_use_cases.dart';
 import 'activity_use_cases.dart';
 import 'button_use_cases.dart';
 import 'chip_use_cases.dart';
 import 'context_menu_use_cases.dart';
 import 'color_use_cases.dart';
 import 'icon_use_cases.dart';
+import 'keystone_use_cases.dart';
+import 'mobile_shell_use_cases.dart';
+import 'receive_use_cases.dart';
+import 'received_receipt_use_cases.dart';
+import 'review_components_use_cases.dart';
 import 'screen_use_cases.dart';
+import 'send_review_status_use_cases.dart';
+import 'send_use_cases.dart';
 import 'swap_use_cases.dart';
 import 'text_field_use_cases.dart';
 import 'token_use_cases.dart';
@@ -67,15 +75,6 @@ class WidgetbookApp extends StatelessWidget {
               name: 'Onboarding',
               children: [
                 WidgetbookComponent(
-                  name: 'Accounts',
-                  useCases: [
-                    WidgetbookUseCase(
-                      name: 'Many Accounts',
-                      builder: buildAccountsManyUseCase,
-                    ),
-                  ],
-                ),
-                WidgetbookComponent(
                   name: 'Welcome',
                   useCases: [
                     WidgetbookUseCase(
@@ -94,6 +93,110 @@ class WidgetbookApp extends StatelessWidget {
                   ],
                 ),
                 WidgetbookComponent(
+                  name: 'Mobile lock',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Passcode only',
+                      builder: buildMobileUnlockPasscodeUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Face ID',
+                      builder: buildMobileUnlockFaceIdUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Face ID sign-in backdrop',
+                      builder: buildMobileUnlockBiometricBackdropUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Fingerprint',
+                      builder: buildMobileUnlockFingerprintUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Forgot passcode',
+                      builder: buildMobileForgotPasscodeSheetUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Last warning',
+                      builder: buildMobileForgotPasscodeLastWarningUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Screenshot warning',
+                      builder: buildMobileSeedScreenshotWarningSheetUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile onboarding',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Secret phrase revealed',
+                      builder: buildMobileSecretPassphraseRevealedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Secret phrase protected',
+                      builder: buildMobileSecretPassphraseProtectedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Secret phrase screenshot warning',
+                      builder:
+                          buildMobileSecretPassphraseScreenshotWarningUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Create passcode',
+                      builder: buildMobileCreatePasscodeUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Face ID opt-in',
+                      builder: buildMobileFaceIdOptInUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Fingerprint opt-in',
+                      builder: buildMobileFingerprintOptInUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile Keystone',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Connect',
+                      builder: buildMobileKeystoneConnectUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scan permission',
+                      builder: buildMobileKeystoneScanRequestingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scan denied',
+                      builder: buildMobileKeystoneScanDeniedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scan active',
+                      builder: buildMobileKeystoneScanActiveUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scan loading',
+                      builder: buildMobileKeystoneScanLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'PCZT QR default',
+                      builder: buildMobileKeystonePcztQrDefaultUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'PCZT QR mobile optimized',
+                      builder: buildMobileKeystonePcztQrOptimizedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Select account',
+                      builder: buildMobileKeystoneSelectAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Birthday height',
+                      builder: buildMobileKeystoneBirthdayUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
                   name: 'Lost Password',
                   useCases: [
                     WidgetbookUseCase(
@@ -103,6 +206,198 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Enabled',
                       builder: buildLostPasswordEnabledUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Home',
+              children: [
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Default',
+                      builder: buildMobileHomeDefaultUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No activity',
+                      builder: buildMobileHomeNoActivityUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No balance',
+                      builder: buildMobileHomeNoBalanceUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No balance keystone',
+                      builder: buildMobileHomeNoBalanceKeystoneUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Importing',
+                      builder: buildMobileHomeImportingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Accounts modal',
+                      builder: buildMobileHomeAccountsModalUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Accounts',
+              children: [
+                WidgetbookComponent(
+                  name: 'Screen',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Other account menu',
+                      builder: buildAccountsOtherMenuUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Current account menu',
+                      builder: buildAccountsCurrentMenuUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Edit account',
+                      builder: buildAccountsEditAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Profile picture',
+                      builder: buildAccountsProfilePictureUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Remove account',
+                      builder: buildAccountsRemoveUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Many accounts',
+                      builder: buildAccountsManyUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Screen',
+                      builder: buildMobileAccountsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Edit account',
+                      builder: buildMobileAccountsEditAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Remove account',
+                      builder: buildMobileAccountsRemoveAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Many accounts',
+                      builder: buildMobileAccountsManyUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Settings',
+              children: [
+                WidgetbookComponent(
+                  name: 'Screen',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Main',
+                      builder: buildSettingsMainUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Endpoint',
+                      builder: buildSettingsEndpointUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Secret passphrase gate',
+                      builder: buildSettingsSecretPassphraseGateUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Change password gate',
+                      builder: buildSettingsChangePasswordGateUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Uninstall confirm',
+                      builder: buildSettingsUninstallConfirmUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Uninstall done',
+                      builder: buildSettingsUninstallDoneUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Utility',
+              children: [
+                WidgetbookComponent(
+                  name: 'About and legal',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'About',
+                      builder: buildAboutUtilityUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Terms',
+                      builder: buildTermsUtilityUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Privacy',
+                      builder: buildPrivacyUtilityUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Receive',
+              children: [
+                WidgetbookComponent(
+                  name: 'Desktop',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Shielded',
+                      builder: buildReceiveDesktopShieldedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent',
+                      builder: buildReceiveDesktopTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Shielded modal',
+                      builder: buildReceiveDesktopShieldedModalUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent modal',
+                      builder: buildReceiveDesktopTransparentModalUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Shielded',
+                      builder: buildReceiveMobileShieldedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent',
+                      builder: buildReceiveMobileTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Shielded sheet',
+                      builder: buildReceiveMobileShieldedSheetUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent sheet',
+                      builder: buildReceiveMobileTransparentSheetUseCase,
                     ),
                   ],
                 ),
@@ -162,6 +457,22 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Address scan - Loading',
                       builder: buildSwapAddressScanModalLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile address scan - Requesting',
+                      builder: buildMobileSwapAddressScanRequestingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile address scan - Denied',
+                      builder: buildMobileSwapAddressScanDeniedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile address scan - Active',
+                      builder: buildMobileSwapAddressScanActiveUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile address scan - Loading',
+                      builder: buildMobileSwapAddressScanLoadingUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Slippage modal',
@@ -287,6 +598,144 @@ class WidgetbookApp extends StatelessWidget {
               ],
             ),
             WidgetbookFolder(
+              name: 'Send',
+              children: [
+                WidgetbookComponent(
+                  name: 'Send page',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Empty state',
+                      builder: buildSendEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Shielded - filled',
+                      builder: buildSendShieldedFilledUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Shielded - memo too long',
+                      builder: buildSendMemoTooLongUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent recipient',
+                      builder: buildSendTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Contact selected',
+                      builder: buildSendContactSelectedUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Send review',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Address',
+                      builder: buildSendReviewAddressUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Contact',
+                      builder: buildSendReviewContactUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Send status',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'In progress',
+                      builder: buildSendStatusInProgressUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Completed',
+                      builder: buildSendStatusCompletedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Failed',
+                      builder: buildSendStatusFailedUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Verify address modal',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Unknown address',
+                      builder: buildVerifyAddressUnknownUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Unknown transparent address',
+                      builder: buildVerifyAddressUnknownTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Known contact',
+                      builder: buildVerifyAddressKnownContactUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile send',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Recipient empty',
+                      builder: buildMobileSendRecipientEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient focused',
+                      builder: buildMobileSendRecipientFocusedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient contacts',
+                      builder: buildMobileSendRecipientContactsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient filled',
+                      builder: buildMobileSendRecipientFilledUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount empty',
+                      builder: buildMobileSendAmountEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount error',
+                      builder: buildMobileSendAmountErrorUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount ready',
+                      builder: buildMobileSendAmountReadyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount USD input',
+                      builder: buildMobileSendAmountUsdUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review default',
+                      builder: buildMobileSendReviewDefaultUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review with memo',
+                      builder: buildMobileSendReviewWithMemoUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'QR scan',
+                      builder: buildMobileSendQrScanUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'QR scan - loading',
+                      builder: buildMobileSendQrScanLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'QR scan - requesting',
+                      builder: buildMobileSendQrScanRequestingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'QR scan - denied',
+                      builder: buildMobileSendQrScanDeniedUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
               name: 'Address book',
               children: [
                 WidgetbookComponent(
@@ -343,45 +792,68 @@ class WidgetbookApp extends StatelessWidget {
                     ),
                   ],
                 ),
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Contacts list',
+                      builder: buildMobileContactsListUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No contacts',
+                      builder: buildMobileContactsNoContactsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Empty search',
+                      builder: buildMobileContactsEmptySearchUseCase,
+                    ),
+                  ],
+                ),
               ],
             ),
             WidgetbookFolder(
               name: 'Activity',
               children: [
                 WidgetbookComponent(
-                  name: 'Swap Activity',
+                  name: 'Page',
                   useCases: [
                     WidgetbookUseCase(
-                      name: 'In progress - Non-ZEC to ZEC',
-                      builder: buildActivitySwapProgressExternalToZecUseCase,
+                      name: 'Default',
+                      builder: buildActivityPageUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'In progress - ZEC to Non-ZEC',
-                      builder: buildActivitySwapProgressZecToExternalUseCase,
+                      name: 'Swap receive absorb',
+                      builder: buildSwapReceiveAbsorbUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Received receipt',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Transparent to transparent',
+                      builder:
+                          buildReceivedReceiptTransparentToTransparentUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Sending - ZEC to Non-ZEC',
-                      builder: buildActivitySwapSendingZecToExternalUseCase,
+                      name: 'Transparent to shielded',
+                      builder: buildReceivedReceiptTransparentToShieldedUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Confirming - ZEC to Non-ZEC',
-                      builder: buildActivitySwapConfirmingZecToExternalUseCase,
+                      name: 'Shielded to shielded',
+                      builder: buildReceivedReceiptShieldedToShieldedUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Success - Non-ZEC to ZEC',
-                      builder: buildActivitySwapSuccessExternalToZecUseCase,
+                      name: 'Known sender',
+                      builder: buildReceivedReceiptKnownSenderUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Success - ZEC to Non-ZEC',
-                      builder: buildActivitySwapSuccessZecToExternalUseCase,
+                      name: 'Default',
+                      builder: buildReceivedReceiptUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Failed - Non-ZEC to ZEC',
-                      builder: buildActivitySwapFailedExternalToZecUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Failed - ZEC to Non-ZEC',
-                      builder: buildActivitySwapFailedZecToExternalUseCase,
+                      name: 'In progress',
+                      builder: buildReceivedReceiptInProgressUseCase,
                     ),
                   ],
                 ),
@@ -519,6 +991,31 @@ class WidgetbookApp extends StatelessWidget {
               ],
             ),
             WidgetbookComponent(
+              name: 'Mobile Shell',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Top nav variants',
+                  builder: buildMobileTopNavVariantsUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Tab bar',
+                  builder: buildMobileTabBarUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Shell',
+                  builder: buildMobileShellUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Sheet',
+                  builder: buildMobileSheetUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Surface card and rows',
+                  builder: buildMobileSurfaceCardUseCase,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
               name: 'Loading Icon',
               useCases: [
                 WidgetbookUseCase(
@@ -548,6 +1045,31 @@ class WidgetbookApp extends StatelessWidget {
               name: 'Toast',
               useCases: [
                 WidgetbookUseCase(name: 'All', builder: buildToastUseCase),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'Review components',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Info rows',
+                  builder: buildReviewInfoRowGalleryUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Wrap card - Completed',
+                  builder: buildReviewWrapCardCompletedUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Wrap card - Failed (fixed dark)',
+                  builder: buildReviewWrapCardFailedUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'List rows',
+                  builder: buildReviewListRowGalleryUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Buttons stack',
+                  builder: buildReviewButtonsStackUseCase,
+                ),
               ],
             ),
             WidgetbookComponent(

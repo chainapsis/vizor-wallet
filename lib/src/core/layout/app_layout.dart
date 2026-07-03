@@ -1,10 +1,13 @@
 import 'dart:io' show Platform;
 
 import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
+
+import 'app_form_factor.dart';
+
+export 'app_form_factor.dart';
 
 /// Two fixed-aspect-ratio layouts the desktop app supports.
 ///
@@ -50,20 +53,13 @@ enum AppLayoutMode {
   }
 }
 
-/// True on the desktop platforms that `window_manager` supports and where
-/// layout switching is meaningful.
-bool get isDesktopLayoutPlatform {
-  if (kIsWeb) return false;
-  return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
-}
-
 /// Decision boundary for inferring the current layout mode from the
 /// window's width/height ratio — the midpoint between the two
 /// configured aspect ratios. Above it the window is "landscape enough"
 /// to imply [AppLayoutMode.large]; below it it's "portrait enough" to
 /// imply [AppLayoutMode.small].
 const double _largeRatioThreshold = (1080.0 / 720.0 + (50.0 * 1.3) / 133.0) / 2;
-const double _macOSWindowedTitlebarInset = 32.0;
+const double _windowsContentTopInset = 0.0;
 
 /// Initialize the OS window for desktop at startup.
 ///
@@ -100,34 +96,6 @@ Future<void> showDesktopWindow() async {
   if (!isDesktopLayoutPlatform) return;
   await windowManager.show();
   await windowManager.focus();
-}
-
-/// Re-pin window_manager's per-mode constraints after another layer flips
-/// the NSWindow styleMask.
-///
-/// The current startup path sets `.fullSizeContentView` natively before Dart
-/// runs, so this helper is not needed during initial launch. It remains useful
-/// for any future path that mutates the styleMask after window_manager has
-/// already applied constraints.
-///
-/// `setMinimumSize` doesn't strictly need the re-issue (window_manager
-/// writes `mainWindow.minSize` directly with no styleMask branch), but
-/// it's grouped here as a cheap belt-and-suspenders that keeps the
-/// "constraints" set conceptually atomic.
-///
-/// Pure constraint refresh — does NOT touch the window's current size,
-/// so it is safe to call from any future styleMask-changing path
-/// without snapping a user-resized window back to a default.
-Future<void> reapplyDesktopWindowConstraints({
-  AppLayoutMode mode = AppLayoutMode.large,
-}) async {
-  if (!isDesktopLayoutPlatform) return;
-  if (Platform.isWindows) {
-    await _applyWindowsClientAreaLayout(mode, resize: false);
-  } else {
-    await windowManager.setMinimumSize(mode.minimumSize);
-    await windowManager.setAspectRatio(mode.aspectRatio);
-  }
 }
 
 @immutable
@@ -239,7 +207,9 @@ Future<void> _applyWindowsClientAreaLayout(
   await DesktopWindowBootstrap.applyWindowsClientAreaLayout(
     windowSize: mode.defaultSize,
     minimumWindowSize: mode.minimumSize,
-    contentTopInset: _macOSWindowedTitlebarInset,
+    // Windows targets the redesigned content area directly. Its native frame is
+    // added by the plugin after the Flutter client-area size is selected.
+    contentTopInset: _windowsContentTopInset,
     resize: resize,
     center: center,
   );

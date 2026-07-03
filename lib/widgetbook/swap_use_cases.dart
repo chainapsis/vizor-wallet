@@ -5,6 +5,8 @@ import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../src/core/layout/app_desktop_shell.dart';
+import '../src/core/layout/app_pane_scroll_scaffold.dart';
+import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_back_link.dart';
 import '../src/core/widgets/app_button.dart';
@@ -13,6 +15,7 @@ import '../src/core/widgets/app_pane_modal_overlay.dart';
 import '../src/features/swap/models/swap_fiat_amount.dart';
 import '../src/features/swap/models/swap_models.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
+import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import '../src/features/swap/widgets/swap_address_edit_modal.dart';
 import '../src/features/swap/widgets/swap_asset_selector_modal.dart';
 import '../src/features/swap/widgets/swap_composer_panel.dart';
@@ -83,7 +86,7 @@ Widget buildSwapAddressModalFigmaNode7UseCase(BuildContext context) {
   return _SwapPageModalFrame(
     child: SwapAddressEditModal(
       state: _figmaNode3State,
-      onSubmitted: (_, _, _, _) {},
+      onSubmitted: (_, _) {},
       onScan: () {},
       onOpenContacts: () {},
       onCancel: () {},
@@ -129,6 +132,54 @@ Widget buildSwapAddressScanModalLoadingUseCase(BuildContext context) {
     ),
   );
 }
+
+Widget buildMobileSwapAddressScanRequestingUseCase(BuildContext context) {
+  return const _MobileScanCardFrame(
+    child: MobileAddressScanCardContent(
+      status: AddressQrCameraStatus.requesting,
+      onTorch: _noop,
+      onClose: _noop,
+      onRetry: _noop,
+    ),
+  );
+}
+
+Widget buildMobileSwapAddressScanDeniedUseCase(BuildContext context) {
+  return const _MobileScanCardFrame(
+    child: MobileAddressScanCardContent(
+      status: AddressQrCameraStatus.denied,
+      onTorch: _noop,
+      onClose: _noop,
+      onRetry: _noop,
+    ),
+  );
+}
+
+Widget buildMobileSwapAddressScanActiveUseCase(BuildContext context) {
+  return const _MobileScanCardFrame(
+    child: MobileAddressScanCardContent(
+      status: AddressQrCameraStatus.active,
+      cameraView: _MobileScanCameraPreview(),
+      onTorch: _noop,
+      onClose: _noop,
+      onRetry: _noop,
+    ),
+  );
+}
+
+Widget buildMobileSwapAddressScanLoadingUseCase(BuildContext context) {
+  return const _MobileScanCardFrame(
+    child: MobileAddressScanCardContent(
+      status: AddressQrCameraStatus.loading,
+      cameraView: _MobileScanCameraPreview(),
+      onTorch: _noop,
+      onClose: _noop,
+      onRetry: _noop,
+    ),
+  );
+}
+
+void _noop() {}
 
 Widget buildSwapSlippageModalUseCase(BuildContext context) {
   return _SwapPageModalFrame(
@@ -188,7 +239,6 @@ Widget buildSwapReviewDefaultUseCase(BuildContext context) {
     child: _SwapReviewPreview(
       quote: _figmaReviewDefaultQuote,
       addressPlan: _figmaExternalToZecAddressPlan,
-      accountLabel: 'John',
       slippageToleranceText: '0.25 USDC (0.5%)',
     ),
   );
@@ -200,7 +250,6 @@ Widget buildSwapReviewZecToExternalUseCase(BuildContext context) {
     child: _SwapReviewPreview(
       quote: _figmaReviewZecToExternalQuote,
       addressPlan: _figmaZecToExternalAddressPlan,
-      accountLabel: 'John',
       slippageToleranceText: '0.001 ZEC (0.5%)',
     ),
   );
@@ -212,7 +261,6 @@ Widget buildSwapReviewLargeLeftAmountUseCase(BuildContext context) {
     child: _SwapReviewPreview(
       quote: _figmaReviewLargeQuote,
       addressPlan: _figmaExternalShitToZecAddressPlan,
-      accountLabel: 'John',
       slippageToleranceText: r'0.25 $SHIT (0.5%)',
       payFiatText: r'$999.123M',
       receiveFiatText: r'$110.24',
@@ -226,7 +274,6 @@ Widget buildSwapReviewLargeRightAmountUseCase(BuildContext context) {
     child: _SwapReviewPreview(
       quote: _figmaReviewLargeRightQuote,
       addressPlan: _figmaZecToShitAddressPlan,
-      accountLabel: 'John',
       slippageToleranceText: '0.001 ZEC (0.5%)',
       payFiatText: r'$110.24',
       receiveFiatText: r'$999.123M',
@@ -240,7 +287,6 @@ Widget buildSwapReviewLargeAmountsUseCase(BuildContext context) {
     child: _SwapReviewPreview(
       quote: _figmaReviewLargeBothQuote,
       addressPlan: _figmaExternalShitToZecAddressPlan,
-      accountLabel: 'John',
       slippageToleranceText: r'0.25 $SHIT (0.5%)',
       payFiatText: r'$999.123M',
       receiveFiatText: r'$999.123M',
@@ -313,7 +359,7 @@ Widget buildSwapStatusProgressUseCase(BuildContext context) {
   return _SwapStatusPageFrame(
     backLabel: 'Activity',
     child: _SwapStatusPreview(
-      title: 'Swapping ...',
+      title: 'Swap in progress...',
       badgeKind: SwapStatusBadgeKind.liveQuote,
       activeTab: SwapStatusTab.progress,
       progressIndex: 0,
@@ -327,7 +373,7 @@ Widget buildSwapStatusProgressNextStepUseCase(BuildContext context) {
   return _SwapStatusPageFrame(
     backLabel: 'Activity',
     child: _SwapStatusPreview(
-      title: 'Swapping ...',
+      title: 'Swap in progress...',
       badgeKind: SwapStatusBadgeKind.liveQuote,
       activeTab: SwapStatusTab.progress,
       progressIndex: 1,
@@ -341,7 +387,7 @@ Widget buildSwapStatusLargeLeftAmountUseCase(BuildContext context) {
   return _SwapStatusPageFrame(
     backLabel: 'Activity',
     child: _SwapStatusPreview(
-      title: 'Swapping ...',
+      title: 'Swap in progress...',
       badgeKind: SwapStatusBadgeKind.liveQuote,
       activeTab: SwapStatusTab.progress,
       progressIndex: 0,
@@ -361,7 +407,7 @@ Widget buildSwapStatusLargeRightAmountUseCase(BuildContext context) {
   return _SwapStatusPageFrame(
     backLabel: 'Activity',
     child: _SwapStatusPreview(
-      title: 'Swapping ...',
+      title: 'Swap in progress...',
       badgeKind: SwapStatusBadgeKind.liveQuote,
       activeTab: SwapStatusTab.progress,
       progressIndex: 0,
@@ -381,7 +427,7 @@ Widget buildSwapStatusLargeAmountsUseCase(BuildContext context) {
   return _SwapStatusPageFrame(
     backLabel: 'Activity',
     child: _SwapStatusPreview(
-      title: 'Swapping ...',
+      title: 'Swap in progress...',
       badgeKind: SwapStatusBadgeKind.liveQuote,
       activeTab: SwapStatusTab.progress,
       progressIndex: 0,
@@ -417,16 +463,16 @@ Widget buildSwapStatusCapturedFiatUseCase(BuildContext context) {
 }
 
 Widget buildSwapStatusDetailsCollapsedUseCase(BuildContext context) {
-  return _SwapStatusPageFrame(
+  return const _SwapStatusPageFrame(
     backLabel: 'Activity',
-    child: _SwapStatusDetailsTogglePreview(initiallyExpanded: false),
+    child: _SwapStatusDetailsPreview(),
   );
 }
 
 Widget buildSwapStatusDetailsExpandedUseCase(BuildContext context) {
-  return _SwapStatusPageFrame(
+  return const _SwapStatusPageFrame(
     backLabel: 'Activity',
-    child: _SwapStatusDetailsTogglePreview(initiallyExpanded: true),
+    child: _SwapStatusDetailsPreview(),
   );
 }
 
@@ -449,6 +495,7 @@ Widget buildSwapStatusFailedUseCase(BuildContext context) {
     child: _SwapStatusPreview(
       title: 'Swap failed',
       badgeKind: SwapStatusBadgeKind.failed,
+      statusLabel: 'Failed',
       showTabs: false,
       steps: const [],
       details: _designFailedDetails,
@@ -745,7 +792,7 @@ const _designProgressSteps = <SwapStatusStepData>[
   ),
 ];
 
-const _designAccountProfilePictureId = 'knight';
+const _designAccountProfilePictureId = 'pfp-01';
 
 const _designTransactionDetails = <SwapStatusDetailRowData>[
   SwapStatusDetailRowData(
@@ -938,54 +985,20 @@ class _SwapFlowPageFrame extends StatelessWidget {
             child: AppDesktopShell(
               sidebar: const _PreviewSwapSidebar(),
               pane: AppDesktopPane(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.md,
-                  AppSpacing.md,
-                  AppSpacing.md,
-                  0,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: AppBackLink(
-                        label: backLabel,
-                        minWidth: 60,
-                        onTap: () {},
-                      ),
+                padding: EdgeInsets.zero,
+                child: AppPaneScrollScaffold(
+                  toolbar: AppPaneToolbar(
+                    leading: AppBackLink(
+                      label: backLabel,
+                      minWidth: 60,
+                      onTap: () {},
                     ),
-                    const SizedBox(height: AppSpacing.s),
-                    Expanded(
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          return Stack(
-                            children: [
-                              Positioned.fill(
-                                child: SingleChildScrollView(
-                                  child: ConstrainedBox(
-                                    constraints: BoxConstraints(
-                                      minHeight: constraints.maxHeight,
-                                    ),
-                                    child: Align(
-                                      alignment: childAlignment,
-                                      child: child,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              if (constraints.maxHeight >= 520)
-                                const Positioned(
-                                  left: 0,
-                                  bottom: AppSpacing.md,
-                                  child: SwapNearIntentsAttribution(),
-                                ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                  ],
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.sm,
+                  ),
+                  child: Align(alignment: childAlignment, child: child),
                 ),
               ),
             ),
@@ -1018,7 +1031,6 @@ class _SwapReviewPreview extends StatelessWidget {
   const _SwapReviewPreview({
     required this.quote,
     required this.addressPlan,
-    required this.accountLabel,
     this.slippageToleranceText,
     this.payFiatText,
     this.receiveFiatText,
@@ -1026,7 +1038,6 @@ class _SwapReviewPreview extends StatelessWidget {
 
   final SwapQuote quote;
   final SwapAddressPlan addressPlan;
-  final String accountLabel;
   final String? slippageToleranceText;
   final String? payFiatText;
   final String? receiveFiatText;
@@ -1039,15 +1050,15 @@ class _SwapReviewPreview extends StatelessWidget {
         SwapReviewPageContent(
           quote: quote,
           addressPlan: addressPlan,
-          accountLabel: accountLabel,
           expired: false,
           amountWarning: null,
           startError: null,
           slippageToleranceTextOverride: slippageToleranceText,
           payFiatTextOverride: payFiatText,
           receiveFiatTextOverride: receiveFiatText,
+          onCopy: (_) {},
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AppSpacing.base),
         SwapReviewPageActions(
           expired: false,
           starting: false,
@@ -1069,15 +1080,14 @@ class _SwapStatusPreview extends StatefulWidget {
     required this.details,
     this.activeTab = SwapStatusTab.progress,
     this.progressIndex = 0,
-    this.detailsExpanded = false,
     this.showTabs = true,
+    this.statusLabel = 'Completed',
     this.payAsset = SwapAsset.usdc,
     this.receiveAsset = SwapAsset.zec,
     this.payFiatText = '\$110.24',
     this.receiveFiatText = '\$110.24',
     this.payAmountText = '999,999.99 USDC',
     this.receiveAmountText = '0.251 ZEC',
-    this.onToggleDetails,
   });
 
   final String title;
@@ -1086,15 +1096,14 @@ class _SwapStatusPreview extends StatefulWidget {
   final List<SwapStatusDetailRowData> details;
   final SwapStatusTab activeTab;
   final int progressIndex;
-  final bool detailsExpanded;
   final bool showTabs;
+  final String statusLabel;
   final SwapAsset payAsset;
   final SwapAsset receiveAsset;
   final String payFiatText;
   final String receiveFiatText;
   final String payAmountText;
   final String receiveAmountText;
-  final VoidCallback? onToggleDetails;
 
   @override
   State<_SwapStatusPreview> createState() => _SwapStatusPreviewState();
@@ -1102,16 +1111,12 @@ class _SwapStatusPreview extends StatefulWidget {
 
 class _SwapStatusPreviewState extends State<_SwapStatusPreview> {
   late var _activeTab = widget.activeTab;
-  late var _detailsExpanded = widget.detailsExpanded;
 
   @override
   void didUpdateWidget(covariant _SwapStatusPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.activeTab != widget.activeTab) {
       _activeTab = widget.activeTab;
-    }
-    if (oldWidget.detailsExpanded != widget.detailsExpanded) {
-      _detailsExpanded = widget.detailsExpanded;
     }
   }
 
@@ -1121,16 +1126,16 @@ class _SwapStatusPreviewState extends State<_SwapStatusPreview> {
       title: widget.title,
       payAsset: widget.payAsset,
       receiveAsset: widget.receiveAsset,
-      payFiatText: widget.payFiatText,
-      receiveFiatText: widget.receiveFiatText,
       payAmountText: widget.payAmountText,
       receiveAmountText: widget.receiveAmountText,
+      payDetailText: widget.payFiatText,
+      receiveDetailText: widget.receiveFiatText,
+      statusLabel: widget.statusLabel,
       badgeKind: widget.badgeKind,
       progressIndex: widget.progressIndex,
       activeTab: _activeTab,
       steps: widget.steps,
       details: widget.details,
-      detailsExpanded: _detailsExpanded,
       showTabs: widget.showTabs,
       onTabChanged: widget.showTabs
           ? (tab) {
@@ -1139,46 +1144,22 @@ class _SwapStatusPreviewState extends State<_SwapStatusPreview> {
               });
             }
           : null,
-      onToggleDetails:
-          widget.onToggleDetails ??
-          () {
-            setState(() {
-              _detailsExpanded = !_detailsExpanded;
-            });
-          },
-      onOpenExplorer: () {},
+      onCopy: (_) {},
     );
   }
 }
 
-class _SwapStatusDetailsTogglePreview extends StatefulWidget {
-  const _SwapStatusDetailsTogglePreview({required this.initiallyExpanded});
-
-  final bool initiallyExpanded;
-
-  @override
-  State<_SwapStatusDetailsTogglePreview> createState() =>
-      _SwapStatusDetailsTogglePreviewState();
-}
-
-class _SwapStatusDetailsTogglePreviewState
-    extends State<_SwapStatusDetailsTogglePreview> {
-  late var _expanded = widget.initiallyExpanded;
+class _SwapStatusDetailsPreview extends StatelessWidget {
+  const _SwapStatusDetailsPreview();
 
   @override
   Widget build(BuildContext context) {
     return _SwapStatusPreview(
-      title: 'Swapping ...',
+      title: 'Swap in progress...',
       badgeKind: SwapStatusBadgeKind.liveQuote,
       activeTab: SwapStatusTab.details,
-      detailsExpanded: _expanded,
       steps: _designProgressSteps,
       details: _designTransactionDetails,
-      onToggleDetails: () {
-        setState(() {
-          _expanded = !_expanded;
-        });
-      },
     );
   }
 }
@@ -1227,6 +1208,20 @@ class _SwapWidgetFrame extends StatelessWidget {
   }
 }
 
+class _SwapPreviewPageTitle extends StatelessWidget {
+  const _SwapPreviewPageTitle();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Text(
+      'Swap',
+      textAlign: TextAlign.center,
+      style: appSerifDisplayStyle(color: colors.text.accent),
+    );
+  }
+}
+
 class _SwapPageFrame extends StatelessWidget {
   const _SwapPageFrame({required this.child});
 
@@ -1235,95 +1230,82 @@ class _SwapPageFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth.isFinite
-            ? constraints.maxWidth
-            : 1080.0;
-        final height = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : 720.0;
+    return SizedBox(
+      width: 1080,
+      height: 720,
+      child: ColoredBox(
+        color: colors.background.base,
+        child: AppDesktopShell(
+          sidebar: const _PreviewSwapSidebar(),
+          pane: AppDesktopPane(
+            padding: EdgeInsets.zero,
+            child: AppPaneScrollScaffold(
+              toolbar: const AppPaneToolbar(
+                leading: AppBackLink(label: 'Back', minWidth: 60, onTap: _noop),
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.s,
+                      vertical: AppSpacing.sm,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const _SwapPreviewPageTitle(),
+                        const SizedBox(height: AppSpacing.md),
+                        child,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
-        return SizedBox(
-          width: width,
-          height: height,
-          child: ColoredBox(
-            color: colors.background.base,
-            child: AppDesktopShell(
-              sidebar: const _PreviewSwapSidebar(),
-              pane: AppDesktopPane(
-                padding: const EdgeInsets.all(AppSpacing.md),
+/// Phone-sized scrim frame that bottom-anchors the scan card in the shared
+/// [MobileModalCard], mirroring the live swap dialog so the camera card fills
+/// the rounded surface and the permission card hugs its height. Scaled to fit
+/// the widgetbook viewport.
+class _MobileScanCardFrame extends StatelessWidget {
+  const _MobileScanCardFrame({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: SizedBox(
+          width: 393,
+          height: 852,
+          child: MediaQuery(
+            data: const MediaQueryData(size: Size(393, 852)),
+            child: ColoredBox(
+              color: colors.background.neutralScrim,
+              child: SafeArea(
+                bottom: false,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: AppBackLink(
-                        label: 'Back',
-                        minWidth: 60,
-                        onTap: () {},
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.s),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.s,
-                        ),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final bodyHeight = constraints.maxHeight.isFinite
-                                ? constraints.maxHeight
-                                : 0.0;
-                            return Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Positioned.fill(
-                                  child: SingleChildScrollView(
-                                    child: ConstrainedBox(
-                                      constraints: BoxConstraints(
-                                        minHeight: constraints.maxHeight,
-                                      ),
-                                      child: Center(
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              'Swap',
-                                              style: AppTypography.displaySmall
-                                                  .copyWith(
-                                                    color: colors.text.accent,
-                                                  ),
-                                            ),
-                                            const SizedBox(
-                                              height: AppSpacing.md,
-                                            ),
-                                            child,
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                if (bodyHeight >= 520)
-                                  const Positioned(
-                                    left: 0,
-                                    bottom: 0,
-                                    child: SwapNearIntentsAttribution(),
-                                  ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                    ),
+                    const Spacer(),
+                    MobileModalCard(child: child),
                   ],
                 ),
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -1336,77 +1318,57 @@ class _SwapPageModalFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth.isFinite
-            ? constraints.maxWidth
-            : 1080.0;
-        final height = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : 720.0;
-
-        return SizedBox(
-          width: width,
-          height: height,
-          child: ColoredBox(
-            color: colors.background.base,
-            child: AppDesktopShell(
-              sidebar: const _PreviewSwapSidebar(),
-              pane: AppDesktopPane(
-                padding: EdgeInsets.zero,
-                child: Stack(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: AppBackLink(
-                              label: 'Back',
-                              minWidth: 60,
-                              onTap: () {},
+    return SizedBox(
+      width: 1080,
+      height: 720,
+      child: ColoredBox(
+        color: colors.background.base,
+        child: AppDesktopShell(
+          sidebar: const _PreviewSwapSidebar(),
+          pane: AppDesktopPane(
+            padding: EdgeInsets.zero,
+            child: Stack(
+              children: [
+                AppPaneScrollScaffold(
+                  toolbar: const AppPaneToolbar(
+                    leading: AppBackLink(
+                      label: 'Back',
+                      minWidth: 60,
+                      onTap: _noop,
+                    ),
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.s,
+                          vertical: AppSpacing.sm,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const _SwapPreviewPageTitle(),
+                            const SizedBox(height: AppSpacing.md),
+                            _SwapComposerPreview(
+                              initialState: _figmaNode3State,
+                              actionLabel: 'Add refund address',
+                              showActionButton: false,
                             ),
-                          ),
-                          const SizedBox(height: AppSpacing.s),
-                          Expanded(
-                            child: Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    'Swap',
-                                    style: AppTypography.displaySmall.copyWith(
-                                      color: colors.text.accent,
-                                    ),
-                                  ),
-                                  const SizedBox(height: AppSpacing.md),
-                                  _SwapComposerPreview(
-                                    initialState: _figmaNode3State,
-                                    actionLabel: 'Add refund address',
-                                    showActionButton: false,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+                            const SizedBox(height: AppSpacing.md),
+                            const SwapNearIntentsAttribution(centered: true),
+                          ],
+                        ),
                       ),
                     ),
-                    const Positioned(
-                      left: AppSpacing.md,
-                      bottom: 56,
-                      child: SwapNearIntentsAttribution(),
-                    ),
-                    AppPaneModalOverlay(onDismiss: () {}, child: child),
-                  ],
+                  ),
                 ),
-              ),
+                AppPaneModalOverlay(onDismiss: _noop, child: child),
+              ],
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -1741,18 +1703,23 @@ class _SwapComposerPreviewState extends State<_SwapComposerPreview> {
               widget.zecAvailableZatoshi ?? BigInt.from(1234560000),
         ),
         if (widget.showActionButton) ...[
-          const SizedBox(height: 38),
-          SizedBox(
-            width: 256,
-            child: AppButton(
-              onPressed: () {},
-              variant: AppButtonVariant.secondary,
-              size: AppButtonSize.large,
-              child: SizedBox(
-                width: 184,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(widget.actionLabel, maxLines: 1),
+          const SizedBox(height: AppSpacing.md),
+          const SwapNearIntentsAttribution(centered: true),
+          const SizedBox(height: AppSpacing.md),
+          Center(
+            child: SizedBox(
+              width: 232,
+              child: AppButton(
+                onPressed: () {},
+                variant: AppButtonVariant.primary,
+                size: AppButtonSize.large,
+                minWidth: 232,
+                child: SizedBox(
+                  width: 168,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(widget.actionLabel, maxLines: 1),
+                  ),
                 ),
               ),
             ),
@@ -1817,6 +1784,38 @@ class _AddressQrCameraPreview extends StatelessWidget {
           ),
           DecoratedBox(decoration: BoxDecoration(color: overlayColor)),
         ],
+      ),
+    );
+  }
+}
+
+/// Stand-in for the live camera feed in the mobile scan-card use cases
+/// (widgetbook has no camera): just a Zcash QR on a dark surface for the
+/// card's viewfinder to frame — no caption (the card owns its own caption).
+class _MobileScanCameraPreview extends StatelessWidget {
+  const _MobileScanCameraPreview();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(color: Color(0xFF2E3232)),
+      child: Center(
+        child: Container(
+          width: 200,
+          height: 200,
+          padding: const EdgeInsets.all(10),
+          color: const Color(0xFFFFFFFF),
+          child: PrettyQrView.data(
+            data: 'zcash:u1examplezcashaddressforpreviewonly',
+            decoration: const PrettyQrDecoration(
+              quietZone: PrettyQrQuietZone.zero,
+              shape: PrettyQrSmoothSymbol(
+                roundFactor: 0,
+                color: Color(0xFF141818),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

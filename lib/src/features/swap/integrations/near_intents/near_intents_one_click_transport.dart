@@ -1,11 +1,19 @@
 part of 'near_intents_one_click_swap_adapter.dart';
 
 class OneClickApiException implements Exception {
-  const OneClickApiException(this.message, {this.operation, this.statusCode});
+  const OneClickApiException(
+    this.message, {
+    this.operation,
+    this.statusCode,
+    this.providerMessage,
+    this.responseBody,
+  });
 
   final String message;
   final String? operation;
   final int? statusCode;
+  final String? providerMessage;
+  final String? responseBody;
 
   @override
   String toString() => 'OneClickApiException: $message';
@@ -109,7 +117,24 @@ void _expectSuccess(OneClickHttpResponse response, String operation) {
     '(${response.statusCode}): ${response.body}',
     operation: operation,
     statusCode: response.statusCode,
+    providerMessage: _providerMessageFromResponse(response.body),
+    responseBody: response.body,
   );
+}
+
+String? _providerMessageFromResponse(String body) {
+  try {
+    final decoded = jsonDecode(body);
+    if (decoded is Map<String, dynamic>) {
+      final message = decoded['message'];
+      if (message is String && message.trim().isNotEmpty) {
+        return message.trim();
+      }
+    }
+  } catch (_) {
+    return null;
+  }
+  return null;
 }
 
 Map<String, Object?> _withoutNulls(Map<String, Object?> value) {

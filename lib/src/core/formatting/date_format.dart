@@ -28,6 +28,15 @@ String formatMonthDayYear(DateTime date) {
   return '${monthAbbreviation(local.month)} ${local.day}, ${local.year}';
 }
 
+/// Formats a timestamp as `25 May, 13:30` (Figma send status format) in the
+/// local time zone.
+String formatDayMonthTime(DateTime date) {
+  final local = date.toLocal();
+  final hh = local.hour.toString().padLeft(2, '0');
+  final mm = local.minute.toString().padLeft(2, '0');
+  return '${local.day} ${monthAbbreviation(local.month)}, $hh:$mm';
+}
+
 /// Parses a flexible date value into a local-zone [DateTime].
 ///
 /// Accepts a [DateTime] (returned as-is), a numeric epoch (values above

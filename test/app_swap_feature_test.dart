@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -16,6 +17,11 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import 'fakes/fake_sync_notifier.dart';
+
+final _swapFeatureToggleProvider =
+    NotifierProvider<_SwapFeatureToggleNotifier, bool>(
+      _SwapFeatureToggleNotifier.new,
+    );
 
 void main() {
   testWidgets('disabled swap route redirects to home', (tester) async {
@@ -42,6 +48,33 @@ void main() {
 
     expect(find.byType(SwapActivityDetailScreen), findsNothing);
     expect(find.byType(HomeScreen), findsOneWidget);
+  });
+
+  testWidgets('enabling swap preserves the current route', (tester) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        swapFeatureOverride: swapFeatureEnabledProvider.overrideWith(
+          (ref) => ref.watch(_swapFeatureToggleProvider),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Activity').first);
+    await tester.pumpAndSettle();
+    expect(find.byType(ActivityScreen), findsOneWidget);
+    expect(find.byType(HomeScreen), findsNothing);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ZcashWalletApp)),
+      listen: false,
+    );
+    container.read(_swapFeatureToggleProvider.notifier).setEnabled(true);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ActivityScreen), findsOneWidget);
+    expect(find.byType(HomeScreen), findsNothing);
   });
 
   testWidgets('disabled swap hides home swap activity surface', (tester) async {
@@ -107,7 +140,7 @@ void main() {
     );
     await _pumpUntilPresent(tester, find.text('Swapping...'));
 
-    expect(find.text('Recent Activity'), findsOneWidget);
+    expect(find.text('Recent activity'), findsOneWidget);
     expect(find.text('Swapping...'), findsOneWidget);
     expect(find.text('-1.0000 ZEC'), findsOneWidget);
 
@@ -118,7 +151,7 @@ void main() {
       find.byKey(const ValueKey('swap_activity_detail_page')),
       findsOneWidget,
     );
-    expect(find.text('Swapping ...'), findsOneWidget);
+    expect(find.text('Swap in progress...'), findsOneWidget);
 
     await tester.tap(find.bySemanticsLabel('Back to Home'));
     await _pumpUntilAbsent(tester, find.byType(SwapActivityDetailScreen));
@@ -172,6 +205,7 @@ SwapIntentRecord _swapActivityRecord({required String id}) {
 Widget _appHarness(
   String initialLocation, {
   bool? swapEnabled,
+  Override? swapFeatureOverride,
   String network = 'main',
   SwapActivityStore? swapActivityStore,
 }) {
@@ -180,8 +214,10 @@ Widget _appHarness(
       appBootstrapProvider.overrideWithValue(
         _bootstrap(initialLocation, network: network),
       ),
-      syncProvider.overrideWith(FakeSyncNotifier.new),
-      if (swapEnabled != null)
+      syncProvider.overrideWith(() => FakeSyncNotifier(_syncedSyncState)),
+      if (swapFeatureOverride != null)
+        swapFeatureOverride
+      else if (swapEnabled != null)
         swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
       swapIntentProvider.overrideWithValue(const _FakeSwapProvider()),
       if (swapActivityStore != null)
@@ -189,6 +225,15 @@ Widget _appHarness(
     ],
     child: const ZcashWalletApp(),
   );
+}
+
+class _SwapFeatureToggleNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void setEnabled(bool enabled) {
+    state = enabled;
+  }
 }
 
 Future<void> _pumpUntilPresent(WidgetTester tester, Finder finder) async {
@@ -226,6 +271,11 @@ AppBootstrapState _bootstrap(
     passwordRotationRecoveryFailed: false,
   );
 }
+
+final _syncedSyncState = SyncState(
+  accountUuid: 'account-1',
+  hasAccountScopedData: true,
+);
 
 class _FakeSwapActivityStore implements SwapActivityStore {
   const _FakeSwapActivityStore(this.records);

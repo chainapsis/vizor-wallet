@@ -5,8 +5,13 @@
 ```bash
 # Always use fvm, never bare flutter
 fvm flutter run
-fvm flutter test
+fvm flutter test      # mobile-tagged tests auto-skip (dart_test.yaml)
 fvm flutter analyze
+
+# Mobile form factor: mobile-targeted runs and tests pass the token
+# define. Details in the "Design Token Form Factor" section below.
+fvm flutter run --dart-define=VIZOR_FORM_FACTOR=mobile
+fvm flutter test --tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile
 
 # Rust tests (run from project root or rust/)
 cd rust && cargo test
@@ -25,6 +30,115 @@ log stream --predicate 'subsystem == "frb_user"' --level info
 
 ```
 
+## Design Token Form Factor (VIZOR_FORM_FACTOR)
+
+UI design tokens (typography, component sizing) are selected at **build
+time**, not runtime. The Figma `Sizing` and `Fonts` variable collections
+have Desktop and Mobile modes; both are compiled in as const sets, and
+`--dart-define=VIZOR_FORM_FACTOR=desktop|mobile` (default: `desktop`)
+decides which one the unsuffixed token classes (`AppTypography.*`,
+`AppInputSizing.*`, ...) resolve to. The unused set is tree-shaken from
+release builds. Source of truth:
+`lib/src/core/layout/app_form_factor.dart` (`kAppFormFactor`).
+
+### When the define is required
+
+- **Every mobile-targeted invocation** — `run`, `build`, `test`, and
+  `drive` alike. The test binary is compiled per-lane like any other
+  build, so widget tests that assert mobile-mode UI need the define too
+  (full lane command in "Test lanes" below).
+- Desktop (macOS) runs, widgetbook, and plain `fvm flutter test` need no
+  flag — the default is `desktop`.
+
+### What happens when you forget it
+
+- **Debug app run on a phone**: fails fast at startup (assert in
+  `lib/main.dart`) with the exact flag to pass.
+- **Tests**: the default lane never runs mobile-tagged tests (they
+  auto-skip — see "Test lanes" below), so the only risk is the mobile
+  lane itself: `--run-skipped` without the define resolves desktop
+  values. `test/mobile_lane_sanity_test.dart` fails first, by name, in
+  that case.
+- **Release builds**: no guard either — release/CI lanes for iOS/Android
+  must hardcode the define or they ship desktop tokens.
+
+### Test lanes
+
+A single `flutter test` invocation compiles exactly one form factor —
+the define cannot vary per test. Mobile-UI tests are opt-in via the
+`mobile` tag:
+
+- A test file that asserts mobile-mode UI MUST start with
+  `@Tags(['mobile'])`.
+- `dart_test.yaml` marks the `mobile` tag as skipped by default, so the
+  plain desktop lane (`fvm flutter test`, no flags) never runs them —
+  they report as skipped with the mobile-lane command as the reason.
+- The mobile lane re-enables them:
+  `fvm flutter test --tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile`
+  (`--tags mobile` scopes the run to mobile tests, `--run-skipped`
+  lifts the tag's default skip, the define compiles the mobile token
+  set). Note `--run-skipped` lifts every skip inside the selected
+  tests, so don't use `skip:` to park a broken mobile test — comment it
+  out or fix it.
+- `test/mobile_lane_sanity_test.dart` (tagged `mobile`) asserts the
+  define, so a mobile-lane run missing `--dart-define` fails loudly by
+  name instead of as confusing metric mismatches.
+
+Untagged tests may run in either lane and must be lane-agnostic:
+
+- Compare against token constants, not literal numbers:
+  `expect(style, AppTypography.bodyMedium)` passes in both lanes;
+  `expect(style.fontSize, 14)` passes only in the desktop lane.
+- To pin one mode regardless of lane, reference the explicit sets:
+  `AppTypographyDesktop` / `AppTypographyMobile`,
+  `AppAssetSizeDesktop` / `AppAssetSizeMobile`,
+  `AppButtonSizingDesktop` / `AppButtonSizingMobile`,
+  `AppInputSizingDesktop` / `AppInputSizingMobile`.
+- `test/core/theme/design_tokens_test.dart` follows these rules and
+  passes in both lanes — use it as the reference.
+
+### Rules for new code
+
+- App code uses only the unsuffixed selectors. Reference the
+  `*Desktop` / `*Mobile` sets directly only in tooling that must show
+  both modes inside one binary (widgetbook galleries, token tests).
+- New tokens with per-mode values follow the same pattern: a `*Desktop`
+  + `*Mobile` const namespace pair plus a const selector in the
+  unsuffixed class. The `Spacing`, `Radii`, `Units`, and `Window` groups
+  are identical across Figma modes and stay single-mode (`AppSpacing`,
+  `AppRadii`, `AppWindowSizing`).
+- Form-factor branching in app code uses `kAppFormFactor` (const, so the
+  dead branch is tree-shaken) — never `Platform.isIOS`-style checks.
+  Runtime `Platform` checks remain only for OS-specific *behavior*
+  (keychain, background sync), not for choosing UI metrics or layout
+  shells.
+- Widgetbook is exempt from the platform/define match check: previewing
+  mobile tokens on a desktop host is legitimate —
+  `fvm flutter run -t lib/widgetbook.dart --dart-define=VIZOR_FORM_FACTOR=mobile`.
+  Only `lib/main.dart` asserts the match.
+
+## Figma Layer Interpretation
+
+When reading or implementing Figma designs, distinguish app UI from
+operating-system chrome and presentation-only background layers.
+
+- Ignore layers named `_MacOS Light Mode` and `_MacOS Dark Mode`. These are
+  operating-system screenshots/images placed behind the design for presentation
+  context only, and are not part of the app UI.
+- In a `Screen` frame, ignore any `Controls` layer that is a sibling of
+  `Window Contents`. This represents the native OS window title/status bar
+  controls, not app content.
+- If a Figma screen uses this structure, treat the meaningful app UI as starting
+  inside `Window Contents`, specifically from the `Trailing Pane` layer onward.
+- Do not recreate, style, test, or otherwise implement the ignored OS/background
+  layers unless the user explicitly asks to work on native window chrome.
+
+### Hardware Wallet QR Codes
+
+Hardware-wallet PCZT QR codes prioritize scan reliability over Figma parity.
+Use black-on-white square modules with an explicit quiet zone. Do not apply
+decorative QR treatments to codes that Keystone devices need to scan.
+
 ## UI Copy Conventions
 
 - **Sentence case is the project default for all user-facing strings**: button
@@ -33,9 +147,13 @@ log stream --predicate 'subsystem == "frb_user"' --level info
   states, page titles. Only capitalize the first word and proper nouns. Keep
   proper-noun acronyms in their canonical form (`ZEC`, `USDC`, `USDT`, `NEAR`,
   `Vizor`, `Keystone`, `Zcash`, `Ethereum`).
+- Figma-authored display headings may keep title case.
 - This applies to interpolated labels too: `'$symbol deposit tx'`, not
   `'$symbol Deposit tx'`. The asset symbol carries its own casing; the rest of
   the label is sentence case.
+- **Exception**: sidebar entries and screen titles may use Title Case (e.g.
+  onboarding step labels `Secret Passphrase`, `Wallet Birthday Height`) — do
+  not sentence-case them in copy sweeps.
 - Existing rationale and full audit are in `qa-copy-review.csv` and
   `copy-review-20260528-1554.csv` at the repo root. Reference these before
   introducing new copy in this project.
@@ -48,6 +166,9 @@ log stream --predicate 'subsystem == "frb_user"' --level info
 
 When asked to prepare user-facing release notes or a changelog for a release,
 read `release_notes/README.md` and create `release_notes/vX.Y.Z.md`.
+Unless the request explicitly says otherwise, draft desktop release notes for
+Windows, Linux, and macOS from desktop user-facing changes only. Exclude
+mobile-only changes.
 
 ### clear-app.sh
 
@@ -63,13 +184,14 @@ node scripts/figma-export.js \
   --output assets/illustrations/foo.png \
   [--scale 1|2|3]  # default 1
   [--format png|jpg|svg|pdf]  # default png
+  [--force]  # required to overwrite a git-tracked output
 ```
 
 `fileKey` and `nodeId` come from the Figma URL — `figma.com/design/<fileKey>/<name>?node-id=<nodeId>`. The node-id in the URL uses a dash (`258-5229`); the script expects the canonical colon form (`258:5229`).
 
 `FIGMA_TOKEN` (read scope is enough, Settings → Security → "Generate new token") must be set. Keep it in `~/.zshenv` rather than `~/.zshrc` — Claude Code's Bash tool spawns a non-interactive zsh which only sources `.zshenv` by default.
 
-Output is minimal: start line, "downloading rendered image", and either `ok: <path> (<KB>)` or `fail: <msg>` with a non-zero exit.
+Output is minimal: start line, "downloading rendered image", and either `ok: <path> (<KB>, <WxH> for PNG)` or `fail: <msg>` with a non-zero exit. Check the printed dimensions before trusting the file — a wrong node ID still renders "successfully", usually as a tiny junk image. Overwriting a git-tracked output is refused without `--force`; verify the render at an untracked path first.
 
 ## Architecture
 
@@ -102,13 +224,16 @@ What this means for our DB shape:
 - Calling `create_account()` later is not a clean rescue mechanism for an `Imported`-only DB because that path itself depends on seed-aware initialization and seed relevance.
 
 **Account deletion and reset invariants.** Per-account deletion is allowed for
-`Imported` accounts and for a `Derived` account only if another `Derived`
-account remains. Dart enforces this in `AccountNotifier.removeAccount`, and
-Rust `delete_account` repeats the check inside the wallet DB write lock so the
-invariant does not depend on a single UI caller. Deleting the last remaining
-account is not a per-account delete; the Accounts UI treats it as a full wallet
-reset, clearing the wallet DB, secure storage, active account state, and routing
-back to onboarding.
+any listed account while another account remains, including the initial
+`Derived` seed-anchor account. Deleting that account can leave the wallet DB
+containing only `Imported` accounts, which is the same migration tradeoff
+accepted for Keystone-first onboarding: current schema and UFVK-tolerant
+migrations should work, but a future seed-requiring migration may need a product
+recovery path. Deleting the last remaining account is not a per-account delete;
+the Accounts UI treats it as a full wallet reset, clearing the wallet DB, secure
+storage, active account state, and routing back to onboarding. Dart
+`AccountNotifier.removeAccount` and Rust `delete_account` still validate the
+target account exists before removing account-scoped wallet rows.
 
 **Account identification**: `AccountUuid` (UUID string like `"550e8400-e29b-41d4-a716-446655440000"`). Passed as `String` between Dart and Rust via `Uuid::parse_str()` / `Uuid::to_string()`.
 
@@ -125,6 +250,14 @@ back to onboarding.
   `lib/src/core/security/password_policy.dart` for all password validation.
 - The charset validation message must stay exactly:
   `Use only English letters, numbers, and symbols.`
+- **Mobile passcode**: the mobile form factor sets and unlocks the wallet
+  with a 6-digit passcode instead of a typed password. The digit string
+  is stored verbatim as the wallet password through the same
+  `appSecurityProvider` prepare/commit path — there is no separate
+  credential model. `kWalletPasswordMinLength` is form-factor dependent
+  (6 on mobile, 8 on desktop) because the security provider enforces it
+  on commit; the mobile passcode screens additionally require exactly
+  6 digits (`kMobilePasscodeLength`).
 
 ### Dart Provider Structure
 
@@ -252,7 +385,7 @@ rust/src/
 │   ├── mod.rs          # pub mod keys, sync, sync_engine, keystone
 │   ├── keys.rs         # Key derivation, mnemonic, account creation (Derived + Imported),
 │   │                    # list_accounts, ensure_db_initialized, parse_account_uuid,
-│   │                    # delete_account with last-Derived seed-anchor guard,
+│   │                    # delete_account with account existence check and row cleanup,
 │   │                    # init_db_and_create_account (software first-account bootstrap),
 │   │                    # import_hardware_account (Keystone UFVK import;
 │   │                    # Keystone-first is allowed)
@@ -607,10 +740,41 @@ Important desktop design rule:
 - Any opaque `Container`, `ColoredBox`, decoration color, or other filled background will cover the native effect in that region.
 - Treat transparency as opt-in per region: only paint solid backgrounds where the UI should actually be solid.
 
+### Mobile Bottom Safe Area (iOS proportional padding)
+
+Mobile bottom-sheet bodies and the floating tab bar wrap their bottom
+edge in `MobileBottomSafeArea`
+(`lib/src/core/layout/mobile/mobile_bottom_safe_area.dart`), not raw
+`SafeArea(top: false)`.
+
+- The rule: on iOS, when the wrapped content's own bottom padding is
+  `kIosHomeIndicatorClearance` (16) or more, the bottom safe-area inset
+  is skipped so the bottom gap equals the side padding. Android always
+  honors the inset — navigation-bar modes vary per device.
+- Why: the iOS home indicator is an overlay occupying only the bottom
+  ~13pt of the screen (8pt offset + 5pt bar), so it floats inside 16px
+  of empty padding; stacking the 34pt inset on top of that padding
+  makes the bottom gap visually heavier than the sides.
+- `bottomPadding` must equal the bottom padding the wrapped content
+  actually provides below its last control — when changing a sheet's
+  padding token, update the argument with it.
+- Tab bar (`AppMobileShell`): the gap below the bar is 16 on iOS
+  (matching its 16px side margins) and the Figma 12 + inset on Android.
+- Keyboard avoidance is unaffected — `viewInsets` is a separate channel
+  from the `viewPadding` this consumes.
+- Platform branching uses `defaultTargetPlatform` (overridable in
+  widget tests), not `dart:io` `Platform` checks.
+- New sheets follow `MobileBottomSafeArea(bottomPadding: token)` >
+  `Padding(...)`; both platform geometries are pinned in
+  `test/core/layout/mobile/mobile_bottom_safe_area_test.dart`.
+
 ## Testing
 
 - Rust unit tests: `cd rust && cargo test` — 11 tests covering key derivation, address encoding / Orchard-only UA derivation, determinism, and PROPOSAL_STORE lifecycle (idempotent discard, consume-on-entry, replay rejection). Tests that need a DB use `tempfile::tempdir()`.
-- Dart unit tests: `fvm flutter test`
+- Dart unit tests: `fvm flutter test` (mobile-tagged tests auto-skip).
+  Mobile-UI tests:
+  `fvm flutter test --tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile`.
+  Lane rules in "Design Token Form Factor" above.
 - Integration tests: `fvm flutter test integration_test/` (requires device/simulator)
 - Flutter regtest E2E notes:
   - Run app tests with `--dart-define=ZCASH_DEFAULT_NETWORK=regtest`; do not use the old `ZCASH_USE_E2E_STORAGE` path. Secure storage and wallet DB names are network-scoped.
@@ -618,6 +782,14 @@ Important desktop design rule:
   - Use `ZCASH_E2E_LIGHTWALLETD_URL` only as the endpoint override, and keep Rust API calls on the same network as `kZcashDefaultNetworkName`.
   - Mempool receive E2E should use external zcashd/lightwalletd funding when testing true inbound tx discovery, not another in-app account.
   - To prove mempool behavior while sync is active, pre-mine enough regtest blocks and pass the debug-only Rust throttle env vars inline: `ZCASH_E2E_SYNC_BATCH_SIZE` and `ZCASH_E2E_SYNC_BATCH_DELAY_MS`.
+- Mobile (iOS simulator) regtest E2E:
+  - One-shot runner: `./scripts/e2e/flutter-ios-regtest-mobile-full.sh`; per-scenario runners are `scripts/e2e/flutter-ios-regtest-mobile-*.sh`. Same heaviness rule as desktop: do not run unless explicitly asked.
+  - Tests live in `integration_test/regtest_mobile_*_test.dart` and share `integration_test/support/mobile_regtest_flow.dart` (pump/tap helpers, regtest-guarded cleanup, mobile flow primitives). Desktop regtest tests keep their per-file helpers; do not merge them.
+  - Mobile runs need THREE defines: `VIZOR_FORM_FACTOR=mobile`, `ZCASH_DEFAULT_NETWORK=regtest`, `ZCASH_E2E_LIGHTWALLETD_URL` — `run_mobile_e2e` in `scripts/e2e/lib-mobile.sh` injects them.
+  - Device selection: `SIMULATOR_UDID` env wins; otherwise the single booted simulator. The runner refuses to pick among multiple booted sims.
+  - Each `flutter test integration_test` invocation reinstalls the app: the wallet DB dies with the container while the iOS Keychain persists, so in-test `cleanupE2eWalletState()` (deleteAll + db files, regtest-guarded) runs at test start AND teardown. Cross-invocation wallet reuse is impossible by design.
+  - The simulator shares the host loopback: `127.0.0.1` URLs, the in-test lightwalletd proxy, and the python E2E driver all work unchanged. Android emulators would need `10.0.2.2` and are out of scope.
+  - Desktop scenarios without mobile counterparts (feature gaps, add when the features land): custom-endpoint privacy (no mobile endpoint settings UI), shield-transparent ×2 (no mobile transparent balance / shield UI), mempool during-sync / expiry variants.
 - Zcash regtest Rust integration tests:
   - One-shot runner from repo root: `./run-regtest-rust-tests.sh`
   - The runner always starts by tearing down any existing regtest containers and resetting `.regtest/`, so each run starts from the same clean chain/wallet state.

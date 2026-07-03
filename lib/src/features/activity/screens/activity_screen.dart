@@ -1,20 +1,18 @@
 import 'dart:async';
-import 'dart:math' as math;
 
-import 'package:flutter/material.dart' show Scrollbar;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/swap_feature_config.dart';
+import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
-import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -26,37 +24,31 @@ import '../activity_row_mapper.dart';
 import '../models/activity_row_data.dart';
 import '../swap_activity_row_items_provider.dart';
 import '../swap_activity_row_mapper.dart';
-import '../widgets/activity_table.dart';
+import '../widgets/activity_feed.dart';
 import 'activity_transaction_status_screen.dart';
 
+/// Loads the full transaction history for one account; injectable so
+/// widget tests can avoid the Rust FFI.
+typedef ActivityHistoryLoader =
+    Future<List<rust_sync.TransactionInfo>> Function(String accountUuid);
+
 class ActivityScreen extends ConsumerStatefulWidget {
-  const ActivityScreen({super.key});
+  const ActivityScreen({this.historyLoader, super.key});
+
+  final ActivityHistoryLoader? historyLoader;
 
   @override
   ConsumerState<ActivityScreen> createState() => _ActivityScreenState();
 }
 
 class _ActivityScreenState extends ConsumerState<ActivityScreen> {
-  static const _activityRowsPerPage = 6;
-  // Figma frame keeps a 32px Back row plus a 616px Activity panel.
-  static const double _activityPaneMinHeight = 648;
-  static const double _activityTitleBlockHeight =
-      AppBackLink.height +
-      (AppSpacing.s * 2) +
-      44 +
-      AppSpacing.sm +
-      16 +
-      AppSpacing.sm;
-
-  final ScrollController _scrollController = ScrollController();
   List<rust_sync.TransactionInfo>? _transactions;
   String? _transactionsAccountUuid;
   bool _isLoading = true;
   String? _error;
-  int _currentPage = 1;
   String? _activeAccountUuid;
-  bool _isHovered = false;
-  bool _canScroll = false;
+  int _transactionLoadGeneration = 0;
+  bool _pendingTransactionRefresh = false;
   Timer? _swapActivityRefreshTimer;
   String? _swapActivityRefreshAccountUuid;
 
@@ -64,46 +56,50 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   void initState() {
     super.initState();
     _activeAccountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    _loadTransactions(showLoading: true);
+    _loadTransactions(showLoading: true, clearExisting: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
       _syncSwapActivityStatusRefresh();
-      _updateCanScroll();
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant ActivityScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _updateCanScroll();
     });
   }
 
   @override
   void dispose() {
     _swapActivityRefreshTimer?.cancel();
-    _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<List<rust_sync.TransactionInfo>> _loadHistory(
+    String accountUuid,
+  ) async {
+    final loader = widget.historyLoader;
+    if (loader != null) return loader(accountUuid);
+    final dbPath = await getWalletDbPath();
+    final endpoint = ref.read(rpcEndpointProvider);
+    return rust_sync.getTransactionHistory(
+      dbPath: dbPath,
+      network: endpoint.walletNetworkName,
+      accountUuid: accountUuid,
+    );
   }
 
   Future<void> _loadTransactions({
     bool showLoading = false,
-    bool resetPage = false,
+    bool clearExisting = false,
   }) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    final generation = ++_transactionLoadGeneration;
+    _pendingTransactionRefresh = false;
     _activeAccountUuid = accountUuid;
 
-    if ((showLoading || resetPage) && mounted) {
+    if ((showLoading || clearExisting) && mounted) {
       setState(() {
         if (showLoading) {
           _isLoading = true;
           _error = null;
         }
-        if (resetPage) {
-          _currentPage = 1;
+        if (clearExisting) {
           _transactions = null;
           _transactionsAccountUuid = accountUuid;
         }
@@ -117,21 +113,13 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         _transactionsAccountUuid = null;
         _isLoading = false;
         _error = null;
-        _currentPage = 1;
       });
       return;
     }
 
     try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      final txs = await rust_sync.getTransactionHistory(
-        dbPath: dbPath,
-        network: endpoint.walletNetworkName,
-        accountUuid: accountUuid,
-      );
-      if (!mounted) return;
-      if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+      final txs = await _loadHistory(accountUuid);
+      if (!_isCurrentTransactionLoad(generation, accountUuid)) {
         return;
       }
       setState(() {
@@ -139,49 +127,66 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         _transactionsAccountUuid = accountUuid;
         _isLoading = false;
         _error = null;
-        if (resetPage) _currentPage = 1;
       });
+      _runPendingTransactionRefreshIfNeeded(generation, accountUuid);
     } catch (e, st) {
       log('Activity: transaction load failed: $e\n$st');
-      if (!mounted) return;
-      if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+      if (!_isCurrentTransactionLoad(generation, accountUuid)) {
         return;
       }
+      final hasExistingTransactions =
+          _transactionsAccountUuid == accountUuid && _transactions != null;
+      if (hasExistingTransactions && !clearExisting) return;
       setState(() {
         _transactionsAccountUuid = accountUuid;
         _error = 'Activity could not be loaded.';
         _isLoading = false;
       });
+      _runPendingTransactionRefreshIfNeeded(generation, accountUuid);
     }
   }
 
-  void _updateCanScroll() {
-    if (!_scrollController.hasClients) return;
-    final canScroll = _scrollController.position.maxScrollExtent > 0;
-    if (canScroll == _canScroll) return;
-    setState(() {
-      _canScroll = canScroll;
-    });
+  bool _isCurrentTransactionLoad(int generation, String? accountUuid) {
+    return mounted &&
+        generation == _transactionLoadGeneration &&
+        accountUuid == ref.read(accountProvider).value?.activeAccountUuid;
   }
 
-  void _setPage(int page) {
-    if (page == _currentPage) return;
-    setState(() {
-      _currentPage = page;
-    });
-    if (_scrollController.hasClients) {
-      unawaited(
-        _scrollController.animateTo(
-          0,
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-        ),
-      );
+  void _runPendingTransactionRefreshIfNeeded(
+    int generation,
+    String accountUuid,
+  ) {
+    if (!_pendingTransactionRefresh) return;
+    if (!_isCurrentTransactionLoad(generation, accountUuid)) return;
+    _pendingTransactionRefresh = false;
+    unawaited(_loadTransactions());
+  }
+
+  void _refreshTransactionsAfterSyncChange() {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+    final hasLoadedTransactions =
+        _transactionsAccountUuid == accountUuid && _transactions != null;
+    if (hasLoadedTransactions) {
+      unawaited(_loadTransactions());
+      return;
     }
+    if (_isLoading) {
+      _pendingTransactionRefresh = true;
+      return;
+    }
+    unawaited(_loadTransactions(showLoading: true, clearExisting: true));
   }
 
   void _openTransactionStatus(rust_sync.TransactionInfo transaction) {
     unawaited(_pushTransactionStatus(transaction));
+  }
+
+  String? _absorbedReceiveAmountText(rust_sync.TransactionInfo? transaction) {
+    if (transaction == null) return null;
+    final amount = transaction.displayAmount;
+    if (amount == BigInt.zero) return null;
+    return ZecAmount.fromZatoshi(amount).signedActivity.toString();
   }
 
   void _openSwapStatus(String intentId) {
@@ -284,7 +289,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     ref.listen<AsyncValue<AccountState>>(accountProvider, (previous, next) {
       final nextUuid = next.value?.activeAccountUuid;
       if (nextUuid != _activeAccountUuid) {
-        unawaited(_loadTransactions(showLoading: true, resetPage: true));
+        unawaited(_loadTransactions(showLoading: true, clearExisting: true));
         _syncSwapActivityStatusRefresh();
       }
     });
@@ -292,38 +297,46 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       final prevSig = _recentSignature(previous?.value);
       final nextSig = _recentSignature(next.value);
       if (prevSig != nextSig) {
-        unawaited(_loadTransactions(resetPage: true));
+        _refreshTransactionsAfterSyncChange();
       }
     });
 
-    final syncState = ref.watch(syncProvider).value;
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
-    final sync = (syncState ?? SyncState()).scopedToAccount(accountUuid);
-    final hasSyncForActiveAccount =
-        syncState?.hasDataForAccount(accountUuid) ?? false;
     final loadedTransactions = _transactionsAccountUuid == accountUuid
         ? _transactions
         : null;
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final transactions =
-        loadedTransactions ??
-        (hasSyncForActiveAccount
-            ? sync.recentTransactions
-            : const <rust_sync.TransactionInfo>[]);
+        loadedTransactions ?? const <rust_sync.TransactionInfo>[];
     final canRenderTransactions =
-        accountUuid != null &&
-        (loadedTransactions != null || hasSyncForActiveAccount);
+        accountUuid != null && loadedTransactions != null;
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final swapItems = accountUuid == null || !swapFeatureEnabled
         ? const <SwapActivityRowItem>[]
         : ref.watch(swapActivityRowItemsProvider(accountUuid)).value ??
               const <SwapActivityRowItem>[];
-    final entries = <_ActivityEntry>[
-      if (canRenderTransactions)
-        for (final tx in transactions)
+    // Absorb swap-leg transactions into their swap rows: the matched ZEC
+    // payout feeds the tappable 'Received ZEC' sub row, and our own ZEC
+    // deposit broadcast is suppressed as a duplicate of the swap row itself.
+    final absorption = canRenderTransactions
+        ? matchSwapActivityLegAbsorption(
+            swapItems: swapItems,
+            transactions: transactions,
+          )
+        : SwapActivityLegAbsorption.empty;
+    final swapReceiveTxByIntent = absorption.receiveTxByIntent;
+
+    final entries = <_ActivityEntry>[];
+    var sourceOrder = 0;
+    if (canRenderTransactions) {
+      for (final tx in transactions) {
+        if (absorption.absorbs(tx)) continue;
+        entries.add(
           _ActivityEntry(
-            pendingRank: _transactionPendingRank(tx),
-            timestamp: _transactionActivityTimestamp(tx),
+            sortKey: activitySortKeyForTransaction(
+              tx,
+              sourceOrder: sourceOrder++,
+            ),
             row: buildTransactionActivityRow(
               context: context,
               transaction: tx,
@@ -331,229 +344,207 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               onTap: () => _openTransactionStatus(tx),
             ),
           ),
-      for (final item in swapItems)
+        );
+      }
+    }
+    for (final item in swapItems) {
+      entries.add(
         _ActivityEntry(
-          pendingRank: 0,
-          timestamp: item.activityTimestamp,
+          sortKey: activitySortKeyForSwapItem(item, sourceOrder: sourceOrder++),
           row: buildSwapActivityRow(
             context: context,
             item: item,
             privacyModeEnabled: privacyModeEnabled,
             onTap: () => _openSwapStatus(item.intentId),
+            receivedAmountText: _absorbedReceiveAmountText(
+              swapReceiveTxByIntent[item.intentId],
+            ),
+            onReceivedLegTap: switch (swapReceiveTxByIntent[item.intentId]) {
+              null => null,
+              final tx => () => _openTransactionStatus(tx),
+            },
           ),
         ),
-    ]..sort(_compareActivityEntries);
-    final entriesAfterFirstPage = math.max(
-      0,
-      entries.length - _activityRowsPerPage,
-    );
-    final totalPages =
-        1 + (entriesAfterFirstPage / _activityRowsPerPage).ceil();
-    final currentPage = math.min(math.max(_currentPage, 1), totalPages);
-    final firstEntryIndex = currentPage == 1
-        ? 0
-        : _activityRowsPerPage + ((currentPage - 2) * _activityRowsPerPage);
-    final rows = entries
-        .skip(firstEntryIndex)
-        .take(_activityRowsPerPage)
-        .map((entry) => entry.row)
-        .toList(growable: false);
+      );
+    }
+    entries.sort(_compareActivityEntries);
+    final sections = _activityFeedSections(entries);
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final paneHeight = _activityPaneHeight(
-              viewportHeight: constraints.maxHeight - AppSpacing.md,
-              rows: rows,
-              showPagination: totalPages > 1,
-            );
-            return NotificationListener<ScrollMetricsNotification>(
-              onNotification: (_) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  _updateCanScroll();
-                });
-                return false;
-              },
-              child: MouseRegion(
-                onEnter: (_) {
-                  if (!_isHovered) {
-                    setState(() {
-                      _isHovered = true;
-                    });
-                  }
-                },
-                onExit: (_) {
-                  if (_isHovered) {
-                    setState(() {
-                      _isHovered = false;
-                    });
-                  }
-                },
-                child: Scrollbar(
-                  key: const ValueKey('activity_screen_scrollbar'),
-                  controller: _scrollController,
-                  thumbVisibility:
-                      isDesktopLayoutPlatform && _isHovered && _canScroll,
-                  child: SingleChildScrollView(
-                    key: const ValueKey('activity_screen_scroll_view'),
-                    controller: _scrollController,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppSpacing.md,
-                        AppSpacing.md,
-                        AppSpacing.md,
-                        0,
-                      ),
-                      child: SizedBox(
-                        height: paneHeight,
-                        child: _ActivityPane(
-                          rows: rows,
-                          isLoading:
-                              _isLoading &&
-                              !canRenderTransactions &&
-                              rows.isEmpty,
-                          errorText: rows.isEmpty && loadedTransactions == null
-                              ? _error
-                              : null,
-                          currentPage: currentPage,
-                          totalPages: totalPages,
-                          onPageChanged: _setPage,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
+        child: AppPaneSliverScrollScaffold(
+          toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
+          padding: const EdgeInsets.only(top: AppSpacing.sm),
+          slivers: [
+            ActivityFeedSliver(
+              sections: sections,
+              rowKeyPrefix: 'activity_screen',
+              isLoading:
+                  _isLoading && !canRenderTransactions && sections.isEmpty,
+              errorText: sections.isEmpty && loadedTransactions == null
+                  ? _error
+                  : null,
+            ),
+          ],
         ),
       ),
-    );
-  }
-
-  double _activityPaneHeight({
-    required double viewportHeight,
-    required List<ActivityRowData> rows,
-    required bool showPagination,
-  }) {
-    return math.max(
-      math.max(viewportHeight, _activityPaneMinHeight),
-      _activityTitleBlockHeight +
-          estimateActivityTableContentHeight(
-            rows: rows,
-            showPagination: showPagination,
-          ),
-    );
-  }
-}
-
-class _ActivityPane extends StatelessWidget {
-  const _ActivityPane({
-    required this.rows,
-    required this.isLoading,
-    required this.errorText,
-    required this.currentPage,
-    required this.totalPages,
-    required this.onPageChanged,
-  });
-
-  final List<ActivityRowData> rows;
-  final bool isLoading;
-  final String? errorText;
-  final int currentPage;
-  final int totalPages;
-  final ValueChanged<int> onPageChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Align(
-          alignment: Alignment.centerLeft,
-          child: AppRouteBackLink(minWidth: 60),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(
-              top: AppSpacing.s,
-              bottom: AppSpacing.s,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Text(
-                    'Activity',
-                    style: AppTypography.displaySmall.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                const Center(child: AppDecorativeDivider(width: 256)),
-                const SizedBox(height: AppSpacing.sm),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xs,
-                    ),
-                    child: ActivityTable(
-                      rows: rows,
-                      rowKeyPrefix: 'activity_screen',
-                      isLoading: isLoading,
-                      errorText: errorText,
-                      showPagination: true,
-                      pinPaginationToBottom: true,
-                      currentPage: currentPage,
-                      totalPages: totalPages,
-                      onPageChanged: onPageChanged,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
 
 class _ActivityEntry {
-  const _ActivityEntry({
-    required this.pendingRank,
-    required this.timestamp,
-    required this.row,
-  });
+  const _ActivityEntry({required this.sortKey, required this.row});
 
-  final int pendingRank;
-  final DateTime? timestamp;
+  final ActivityEntrySortKey sortKey;
   final ActivityRowData row;
 }
 
 int _compareActivityEntries(_ActivityEntry a, _ActivityEntry b) {
-  final pendingComparison = b.pendingRank.compareTo(a.pendingRank);
-  if (pendingComparison != 0) return pendingComparison;
+  return compareActivityEntrySortKeys(a.sortKey, b.sortKey);
+}
+
+@visibleForTesting
+class ActivityEntrySortKey {
+  const ActivityEntrySortKey({
+    required this.timestamp,
+    required this.isPendingTransaction,
+    required this.sourceOrder,
+  });
+
+  final DateTime? timestamp;
+  final bool isPendingTransaction;
+  final int sourceOrder;
+}
+
+@visibleForTesting
+ActivityEntrySortKey activitySortKeyForTransaction(
+  rust_sync.TransactionInfo tx, {
+  required int sourceOrder,
+}) {
+  return ActivityEntrySortKey(
+    timestamp: _transactionActivityTimestamp(tx),
+    isPendingTransaction: isPendingActivityTransaction(tx),
+    sourceOrder: sourceOrder,
+  );
+}
+
+@visibleForTesting
+ActivityEntrySortKey activitySortKeyForSwapItem(
+  SwapActivityRowItem item, {
+  required int sourceOrder,
+}) {
+  return ActivityEntrySortKey(
+    timestamp: item.activityTimestamp,
+    isPendingTransaction: false,
+    sourceOrder: sourceOrder,
+  );
+}
+
+@visibleForTesting
+bool isPendingActivityTransaction(rust_sync.TransactionInfo tx) {
+  return tx.minedHeight == BigInt.zero && !tx.expiredUnmined;
+}
+
+@visibleForTesting
+int compareActivityEntrySortKeys(
+  ActivityEntrySortKey a,
+  ActivityEntrySortKey b,
+) {
+  final aMissingTimestampPending =
+      a.isPendingTransaction && a.timestamp == null;
+  final bMissingTimestampPending =
+      b.isPendingTransaction && b.timestamp == null;
+  if (aMissingTimestampPending != bMissingTimestampPending) {
+    return aMissingTimestampPending ? -1 : 1;
+  }
   final aTime = a.timestamp;
   final bTime = b.timestamp;
+  final timeComparison = _compareActivityTimestamps(aTime, bTime);
+  if (timeComparison != 0) return timeComparison;
+  return a.sourceOrder.compareTo(b.sourceOrder);
+}
+
+int _compareActivityTimestamps(DateTime? aTime, DateTime? bTime) {
   if (aTime == null && bTime == null) return 0;
   if (aTime == null) return 1;
   if (bTime == null) return -1;
   return bTime.compareTo(aTime);
 }
 
-int _transactionPendingRank(rust_sync.TransactionInfo tx) {
-  return tx.minedHeight == BigInt.zero && !tx.expiredUnmined ? 1 : 0;
-}
-
 DateTime? _transactionActivityTimestamp(rust_sync.TransactionInfo tx) {
   final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
   if (seconds <= BigInt.zero) return null;
   return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
+}
+
+List<ActivityFeedSectionData> _activityFeedSections(
+  List<_ActivityEntry> entries,
+) {
+  final sections = <ActivityFeedSectionData>[];
+  List<ActivityRowData>? currentRows;
+  String? currentTitle;
+
+  for (final entry in entries) {
+    final title = activitySectionTitleForSortKey(entry.sortKey);
+    if (title != currentTitle) {
+      currentTitle = title;
+      currentRows = <ActivityRowData>[];
+      sections.add(ActivityFeedSectionData(title: title, rows: currentRows));
+    }
+    currentRows!.add(entry.row);
+  }
+
+  return sections;
+}
+
+@visibleForTesting
+String activitySectionTitleForSortKey(
+  ActivityEntrySortKey sortKey, {
+  DateTime? now,
+}) {
+  if (sortKey.isPendingTransaction && sortKey.timestamp == null) {
+    return 'This week';
+  }
+  return activitySectionTitleForTimestamp(sortKey.timestamp, now: now);
+}
+
+@visibleForTesting
+String activitySectionTitleForTimestamp(DateTime? timestamp, {DateTime? now}) {
+  if (timestamp == null) return 'Earlier';
+
+  final local = timestamp.toLocal();
+  final reference = now ?? DateTime.now();
+  final weekStart = _startOfWeek(reference);
+  final nextWeekStart = weekStart.add(const Duration(days: 7));
+  if (!local.isBefore(weekStart) && local.isBefore(nextWeekStart)) {
+    return 'This week';
+  }
+
+  return '${_monthName(local.month)} ${local.year}';
+}
+
+DateTime _startOfWeek(DateTime date) {
+  final localDate = DateTime(date.year, date.month, date.day);
+  return localDate.subtract(Duration(days: date.weekday - DateTime.monday));
+}
+
+String _monthName(int month) {
+  const months = [
+    '',
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  return months[month];
 }

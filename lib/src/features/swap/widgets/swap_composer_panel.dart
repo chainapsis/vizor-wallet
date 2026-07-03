@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../models/swap_address_formatting.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_models.dart';
@@ -13,6 +14,7 @@ import 'swap_asset_icon.dart';
 class SwapComposerPanel extends StatefulWidget {
   const SwapComposerPanel({
     required this.state,
+    this.width = 396,
     required this.onAmountChanged,
     required this.onAmountFiatChanged,
     required this.onReceiveAmountChanged,
@@ -31,6 +33,10 @@ class SwapComposerPanel extends StatefulWidget {
   });
 
   final SwapState state;
+
+  /// Panel width — 396 on the desktop pane; mobile callers can pass their
+  /// content width.
+  final double width;
   final ValueChanged<String> onAmountChanged;
   final ValueChanged<String> onAmountFiatChanged;
   final ValueChanged<String> onReceiveAmountChanged;
@@ -146,7 +152,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
           onChanged: payInputIsFiat
               ? widget.onAmountFiatChanged
               : widget.onAmountChanged,
-          hintText: payInputIsFiat ? '0.00' : (sendsZec ? '0.0000' : '0.00'),
+          hintText: payInputIsFiat ? '0.00' : '0',
           prefixText: payInputIsFiat ? r'$' : null,
           maxFractionDigits: payInputIsFiat
               ? null
@@ -179,6 +185,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                   ),
                   showModeIcon: payActive,
                   active: payInputIsFiat,
+                  emphasized: true,
                   onTap: () =>
                       widget.onToggleFiatInputMode(SwapAmountInputSide.pay),
                 ),
@@ -193,12 +200,13 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                   ),
                   showModeIcon: payActive,
                   active: payInputIsFiat,
+                  emphasized: true,
                   onTap: () =>
                       widget.onToggleFiatInputMode(SwapAmountInputSide.pay),
                 ),
                 trailing: _AddressTrigger(
                   value: state.destinationText,
-                  emptyText: 'Add Refund address...',
+                  emptyText: 'Add refund address...',
                   onTap: widget.onOpenDestinationAddress,
                 ),
               ),
@@ -213,11 +221,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
           onChanged: receiveInputIsFiat
               ? widget.onReceiveAmountFiatChanged
               : widget.onReceiveAmountChanged,
-          hintText: receiveInputIsFiat
-              ? '0.00'
-              : (state.direction.toSymbol(state.externalAsset) == 'ZEC'
-                    ? '0.0000'
-                    : '0.00'),
+          hintText: receiveInputIsFiat ? '0.00' : '0',
           prefixText: receiveInputIsFiat ? r'$' : null,
           maxFractionDigits: receiveInputIsFiat
               ? null
@@ -246,7 +250,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 ),
                 trailing: _AddressTrigger(
                   value: state.destinationText,
-                  emptyText: 'Add Recipient address...',
+                  emptyText: 'Add recipient address...',
                   onTap: widget.onOpenDestinationAddress,
                 ),
               )
@@ -271,7 +275,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
 
     return Center(
       child: SizedBox(
-        width: 400,
+        width: widget.width,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -282,6 +286,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
               rateText: rateText,
               slippageBps: state.slippageBps,
               settingsOpen: widget.slippageSettingsOpen,
+              settingsEnabled: !state.quoteLoading,
               onSettingsTap: widget.onOpenSlippageSettings,
             ),
             if (quoteError != null) ...[
@@ -300,12 +305,14 @@ class _SwapTicketFooter extends StatelessWidget {
     required this.rateText,
     required this.slippageBps,
     required this.settingsOpen,
+    required this.settingsEnabled,
     required this.onSettingsTap,
   });
 
   final String rateText;
   final int slippageBps;
   final bool settingsOpen;
+  final bool settingsEnabled;
   final VoidCallback onSettingsTap;
 
   @override
@@ -321,6 +328,7 @@ class _SwapTicketFooter extends StatelessWidget {
           _SlippageControl(
             label: formatSwapSlippage(slippageBps),
             selected: settingsOpen,
+            enabled: settingsEnabled,
             onTap: onSettingsTap,
           ),
         ],
@@ -352,6 +360,7 @@ class _SwapRateInline extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.labelLarge.copyWith(
+              fontWeight: FontWeight.w400,
               color: colors.text.secondary,
             ),
           ),
@@ -382,19 +391,23 @@ class _SwapTicketShell extends StatelessWidget {
       height: 336,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: colors.background.base,
+        color: colors.background.ground,
         borderRadius: BorderRadius.circular(28),
+        boxShadow: appSurfaceShadow(colors),
       ),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Column(children: [payCard, const SizedBox(height: 16), receiveCard]),
           Positioned(
-            top: 148,
-            left: 176,
-            child: _SwapDirectionButton(
-              key: ValueKey('swap_direction_${targetDirection.name}'),
-              onTap: onToggleDirection,
+            top: 147,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: _SwapDirectionButton(
+                key: ValueKey('swap_direction_${targetDirection.name}'),
+                onTap: onToggleDirection,
+              ),
             ),
           ),
         ],
@@ -429,7 +442,7 @@ class _SwapAmountCard extends StatelessWidget {
       curve: Curves.easeOutCubic,
       padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
       decoration: BoxDecoration(
-        color: active ? colors.background.ground : null,
+        color: active ? colors.background.base : null,
         borderRadius: BorderRadius.circular(24),
       ),
       child: Column(
@@ -444,8 +457,8 @@ class _SwapAmountCard extends StatelessWidget {
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: colors.text.secondary,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.muted,
                     ),
                   ),
                 ),
@@ -494,17 +507,24 @@ class _SwapAmountInput extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final valueStyle = AppTypography.displaySmall.copyWith(
-      color: colors.text.accent,
-      fontWeight: FontWeight.w400,
-    );
+    final valueStyle = appSerifDisplayStyle(color: colors.text.accent);
     return Row(
       children: [
-        if (prefixText != null)
+        if (prefixText != null) ...[
+          // The fiat '$' prefix renders one step larger than the 32px amount
+          // (YoungSerif-Regular 36/44, letter-spacing -0.72) in the secondary
+          // text color, while the digits stay accent.
           Text(
             prefixText!,
-            style: valueStyle.copyWith(color: colors.text.accent),
+            style: valueStyle.copyWith(
+              fontSize: 36,
+              height: 44 / 36,
+              letterSpacing: -0.72,
+              color: colors.text.secondary,
+            ),
           ),
+          const SizedBox(width: 4),
+        ],
         Expanded(
           child: TextField(
             controller: controller,
@@ -512,6 +532,9 @@ class _SwapAmountInput extends StatelessWidget {
             onChanged: onChanged,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
+              // The decimal-pad key follows the device locale, so map a
+              // comma to the period the validator below expects.
+              const CommaToDotInputFormatter(),
               _DecimalAmountInputFormatter(
                 maxFractionDigits: maxFractionDigits,
               ),
@@ -554,12 +577,14 @@ class _SwapFiatValueText extends StatelessWidget {
     required this.text,
     this.showModeIcon = false,
     this.active = false,
+    this.emphasized = false,
     this.onTap,
   });
 
   final String text;
   final bool showModeIcon;
   final bool active;
+  final bool emphasized;
   final VoidCallback? onTap;
 
   @override
@@ -584,7 +609,8 @@ class _SwapFiatValueText extends StatelessWidget {
               text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelMedium.copyWith(
+              style: AppTypography.labelLarge.copyWith(
+                fontWeight: emphasized ? FontWeight.w600 : FontWeight.w400,
                 color: colors.text.secondary,
               ),
             ),
@@ -627,7 +653,9 @@ class _AddressTrigger extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 196),
+          // Wide enough for the full 'Add recipient address...' empty label;
+          // the footer's Expanded leading absorbs the difference.
+          constraints: const BoxConstraints(maxWidth: 240),
           height: 32,
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Row(
@@ -649,7 +677,8 @@ class _AddressTrigger extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelLarge.copyWith(
-                    color: hasValue ? colors.text.accent : colors.text.primary,
+                    fontWeight: FontWeight.w600,
+                    color: colors.text.accent,
                   ),
                 ),
               ),
@@ -703,9 +732,10 @@ class _MaxAmountTrigger extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.right,
                   style: AppTypography.labelLarge.copyWith(
+                    fontWeight: FontWeight.w400,
                     color: hasError
                         ? colors.text.destructive
-                        : colors.text.secondary,
+                        : colors.text.accent,
                   ),
                 ),
               ),
@@ -860,7 +890,7 @@ class _TokenPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
-      constraints: BoxConstraints(maxWidth: showChevron ? 136 : 112),
+      constraints: BoxConstraints(maxWidth: showChevron ? 140 : 116),
       height: 32,
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -871,7 +901,7 @@ class _TokenPill extends StatelessWidget {
             size: 32,
             showChainBadge: showChainBadge,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 72),
             child: Column(
@@ -883,6 +913,7 @@ class _TokenPill extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelLarge.copyWith(
+                    fontWeight: FontWeight.w600,
                     color: colors.text.accent,
                   ),
                 ),
@@ -891,7 +922,8 @@ class _TokenPill extends StatelessWidget {
                     label!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelSmall.copyWith(
+                    style: AppTypography.labelLarge.copyWith(
+                      fontWeight: FontWeight.w400,
                       color: colors.text.secondary,
                     ),
                   ),
@@ -919,10 +951,7 @@ String _amountMetaText(
   required SwapAmountInputMode inputMode,
 }) {
   if (inputMode == SwapAmountInputMode.fiat) {
-    return swapTokenAmountDisplayText(
-      asset: asset,
-      tokenAmountText: tokenAmountText,
-    );
+    return swapTokenAmountDisplayText(tokenAmountText: tokenAmountText);
   }
   return swapFiatDisplayText(
     state,
@@ -935,24 +964,26 @@ class _SlippageControl extends StatelessWidget {
   const _SlippageControl({
     required this.label,
     required this.selected,
+    required this.enabled,
     required this.onTap,
   });
 
   final String label;
   final bool selected;
+  final bool enabled;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MouseRegion(
-      cursor: SystemMouseCursors.click,
+      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       child: GestureDetector(
         key: const ValueKey('swap_settings_button'),
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
+        onTap: enabled ? onTap : null,
         child: Container(
-          height: 28,
+          height: 24,
           alignment: Alignment.center,
           padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
           decoration: BoxDecoration(
@@ -967,11 +998,18 @@ class _SlippageControl extends StatelessWidget {
               Text(
                 label,
                 style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.secondary,
+                  fontWeight: FontWeight.w400,
+                  color: colors.text.secondary.withValues(
+                    alpha: enabled ? 1 : 0.45,
+                  ),
                 ),
               ),
               const SizedBox(width: 2),
-              AppIcon(AppIcons.cog, size: 16, color: colors.icon.muted),
+              AppIcon(
+                AppIcons.cog,
+                size: 16,
+                color: colors.icon.muted.withValues(alpha: enabled ? 1 : 0.45),
+              ),
             ],
           ),
         ),

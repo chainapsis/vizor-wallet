@@ -238,7 +238,7 @@ pub(crate) async fn send_transaction(
 /// Open the deprecated transparent-address transaction stream with a
 /// bounded wait for response headers. Individual stream messages must
 /// still be read with [`next_stream_message`] to bound an idle stream.
-pub(super) async fn get_taddress_txids(
+pub(crate) async fn get_taddress_txids(
     client: &mut CompactTxStreamerClient<Channel>,
     address: String,
     start_height: u64,
@@ -268,7 +268,7 @@ pub(super) async fn get_taddress_txids(
 
 /// Read the next server-streaming message with a bounded idle wait.
 /// `Ok(None)` remains the server's normal EOF signal.
-pub(super) async fn next_stream_message<T>(
+pub(crate) async fn next_stream_message<T>(
     stream: &mut tonic::Streaming<T>,
     label: &str,
 ) -> Result<Option<T>, SyncError> {

@@ -8,18 +8,18 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
-import '../../../core/profile_pictures.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_back_link.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
-import '../../address_book/providers/address_book_provider.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_fiat_value_formatting.dart';
 import '../models/swap_models.dart';
 import '../providers/swap_state_provider.dart';
-import '../widgets/swap_near_intents_attribution.dart';
 import '../widgets/swap_review_page_content.dart';
 
 class SwapReviewScreen extends ConsumerStatefulWidget {
@@ -30,6 +30,7 @@ class SwapReviewScreen extends ConsumerStatefulWidget {
 }
 
 class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
+  final _toastOverlayContextKey = GlobalKey();
   var _hadReviewState = false;
   var _startingIntent = false;
 
@@ -42,25 +43,16 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     });
   }
 
-  String? _accountLabelFor(AccountState? accountState, String? accountUuid) {
-    if (accountUuid == null || accountUuid.trim().isEmpty) return null;
-    for (final account in accountState?.accounts ?? const <AccountInfo>[]) {
-      if (account.uuid == accountUuid) return account.name;
-    }
-    return null;
-  }
-
-  String _accountProfilePictureIdFor(
-    AccountState? accountState,
-    String? accountUuid,
-  ) {
-    if (accountUuid == null || accountUuid.trim().isEmpty) {
-      return kDefaultProfilePictureId;
-    }
-    for (final account in accountState?.accounts ?? const <AccountInfo>[]) {
-      if (account.uuid == accountUuid) return account.profilePictureId;
-    }
-    return kDefaultProfilePictureId;
+  void _copyAddress(String value) {
+    final address = value.trim();
+    if (address.isEmpty) return;
+    final toastContext = _toastOverlayContextKey.currentContext;
+    if (toastContext == null || !toastContext.mounted) return;
+    copyTextWithToast(
+      toastContext,
+      text: address,
+      toastMessage: 'Address copied',
+    );
   }
 
   void _returnToSwap() {
@@ -111,8 +103,6 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     final swapState = ref.watch(swapStateProvider);
     final quote = swapState.reviewQuote;
     final addressPlan = swapState.reviewAddressPlan;
-    final addressBookContacts =
-        ref.watch(addressBookProvider).value?.contacts ?? const [];
     if (!swapState.reviewVisible || quote == null || addressPlan == null) {
       if (!_hadReviewState || !_startingIntent) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -124,114 +114,87 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     _hadReviewState = true;
 
     final accountState = ref.watch(accountProvider).value;
+    // The balance gate is pinned to the account the quote was created for.
+    // The swap provider clears reviewVisible on account switch, so the two
+    // accounts are equal whenever this screen renders content — pinning the
+    // review account keeps the gate correct even if that invariant changes.
     final sync = ref.watch(
       syncProvider.select(
         (value) => (value.value ?? SyncState()).scopedToAccount(
-          accountState?.activeAccountUuid,
+          swapState.reviewAccountUuid ?? accountState?.activeAccountUuid,
         ),
       ),
     );
-    final accountLabel = _accountLabelFor(
-      accountState,
-      swapState.reviewAccountUuid,
-    );
-    final accountProfilePictureId = _accountProfilePictureIdFor(
-      accountState,
-      swapState.reviewAccountUuid,
-    );
     final startBlockedReason =
-        _reviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
-            ? "You don't have enough ZEC for this swap. Try a smaller amount."
-            : null;
+        swapReviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
+        ? "You don't have enough ZEC for this swap. Try a smaller amount."
+        : null;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.md,
-          0,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        padding: EdgeInsets.zero,
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: AppBackLink(
-                label: 'Swap',
-                minWidth: 60,
-                onTap: _returnToSwap,
+            AppPaneScrollScaffold(
+              toolbar: AppPaneToolbar(
+                leading: AppBackLink(
+                  label: 'Swap',
+                  minWidth: 60,
+                  onTap: _returnToSwap,
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.sm,
+              ),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SwapReviewPageContent(
+                      quote: quote,
+                      addressPlan: addressPlan,
+                      expired: swapState.quoteExpired,
+                      amountWarning: swapState.reviewAmountDifferenceWarning,
+                      startError: swapState.statusError,
+                      startBlockedReason: startBlockedReason,
+                      payFiatTextOverride: swapReviewFiatTextForAsset(
+                        swapState,
+                        quote: quote,
+                        asset: quote.sellAsset,
+                        amount: quote.sellAmount,
+                      ),
+                      receiveFiatTextOverride: swapReviewFiatTextForAsset(
+                        swapState,
+                        quote: quote,
+                        asset: quote.receiveAsset,
+                        amount: quote.receiveAmount,
+                      ),
+                      onCopy: _copyAddress,
+                    ),
+                    const SizedBox(height: AppSpacing.base),
+                    SwapReviewPageActions(
+                      expired: swapState.quoteExpired,
+                      starting: swapState.startSubmitting,
+                      startBlockedReason: startBlockedReason,
+                      sendsZec: quote.direction.sendsZec,
+                      onReviewAgain: _reviewAgain,
+                      onCancelReview: _returnToSwap,
+                      onStartIntent: _startIntent,
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: AppSpacing.s),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return Stack(
-                    children: [
-                      Positioned.fill(
-                        child: SwapReviewPageScrollArea(
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              minHeight: constraints.maxHeight,
-                            ),
-                            child: Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SwapReviewPageContent(
-                                    quote: quote,
-                                    addressPlan: addressPlan,
-                                    addressBookContacts: addressBookContacts,
-                                    accountLabel: accountLabel,
-                                    accountProfilePictureId:
-                                        accountProfilePictureId,
-                                    expired: swapState.quoteExpired,
-                                    amountWarning:
-                                        swapState.reviewAmountDifferenceWarning,
-                                    startError: swapState.statusError,
-                                    startBlockedReason: startBlockedReason,
-                                    payFiatTextOverride:
-                                        _reviewFiatTextForAsset(
-                                          swapState,
-                                          quote: quote,
-                                          asset: quote.sellAsset,
-                                          amount: quote.sellAmount,
-                                        ),
-                                    receiveFiatTextOverride:
-                                        _reviewFiatTextForAsset(
-                                          swapState,
-                                          quote: quote,
-                                          asset: quote.receiveAsset,
-                                          amount: quote.receiveAmount,
-                                        ),
-                                  ),
-                                  const SizedBox(height: AppSpacing.sm),
-                                  SwapReviewPageActions(
-                                    expired: swapState.quoteExpired,
-                                    starting: swapState.startSubmitting,
-                                    startBlockedReason: startBlockedReason,
-                                    sendsZec: quote.direction.sendsZec,
-                                    onReviewAgain: _reviewAgain,
-                                    onCancelReview: _returnToSwap,
-                                    onStartIntent: _startIntent,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (constraints.maxHeight >= 520)
-                        const Positioned(
-                          left: 0,
-                          bottom: AppSpacing.md,
-                          child: SwapNearIntentsAttribution(),
-                        ),
-                    ],
-                  );
-                },
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AppToastHost(
+                  key: const ValueKey('swap_review_toast_host'),
+                  child: SizedBox.expand(key: _toastOverlayContextKey),
+                ),
               ),
             ),
           ],
@@ -241,7 +204,8 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
   }
 }
 
-String? _reviewFiatTextForAsset(
+/// Shared with the mobile review screen.
+String? swapReviewFiatTextForAsset(
   SwapState state, {
   required SwapQuote quote,
   required SwapAsset asset,
@@ -270,7 +234,11 @@ double? _reviewQuoteUsdValueForAsset(
   return null;
 }
 
-bool _reviewQuoteExceedsAvailableZec(SwapQuote quote, BigInt availableZatoshi) {
+/// Shared with the mobile review screen.
+bool swapReviewQuoteExceedsAvailableZec(
+  SwapQuote quote,
+  BigInt availableZatoshi,
+) {
   if (!quote.direction.sendsZec) return false;
   final amountText = quote.sellAmountText.split(' ').first.trim();
   final amount = parseZecAmount(amountText);

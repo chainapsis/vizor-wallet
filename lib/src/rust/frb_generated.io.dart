@@ -343,6 +343,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<SoftwareWalletDiscoveredAccount>
+  dco_decode_list_software_wallet_discovered_account(dynamic raw);
+
+  @protected
+  List<SoftwareWalletImportAccount>
+  dco_decode_list_software_wallet_import_account(dynamic raw);
+
+  @protected
   List<SubtreeRoot> dco_decode_list_subtree_root(dynamic raw);
 
   @protected
@@ -497,6 +505,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SignedVoteCommitmentsView dco_decode_signed_vote_commitments_view(
     dynamic raw,
   );
+
+  @protected
+  SoftwareWalletDiscoveredAccount dco_decode_software_wallet_discovered_account(
+    dynamic raw,
+  );
+
+  @protected
+  SoftwareWalletImportAccount dco_decode_software_wallet_import_account(
+    dynamic raw,
+  );
+
+  @protected
+  SoftwareWalletImportDiscoveryResult
+  dco_decode_software_wallet_import_discovery_result(dynamic raw);
+
+  @protected
+  SoftwareWalletImportWithDiscoveryResult
+  dco_decode_software_wallet_import_with_discovery_result(dynamic raw);
 
   @protected
   SubtreeIndices dco_decode_subtree_indices(dynamic raw);
@@ -973,6 +999,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<SoftwareWalletDiscoveredAccount>
+  sse_decode_list_software_wallet_discovered_account(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<SoftwareWalletImportAccount>
+  sse_decode_list_software_wallet_import_account(SseDeserializer deserializer);
+
+  @protected
   List<SubtreeRoot> sse_decode_list_subtree_root(SseDeserializer deserializer);
 
   @protected
@@ -1161,6 +1197,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SignedVoteCommitmentsView sse_decode_signed_vote_commitments_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SoftwareWalletDiscoveredAccount sse_decode_software_wallet_discovered_account(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SoftwareWalletImportAccount sse_decode_software_wallet_import_account(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SoftwareWalletImportDiscoveryResult
+  sse_decode_software_wallet_import_discovery_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SoftwareWalletImportWithDiscoveryResult
+  sse_decode_software_wallet_import_with_discovery_result(
     SseDeserializer deserializer,
   );
 
@@ -1754,6 +1812,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_software_wallet_discovered_account(
+    List<SoftwareWalletDiscoveredAccount> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_software_wallet_import_account(
+    List<SoftwareWalletImportAccount> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_subtree_root(
     List<SubtreeRoot> self,
     SseSerializer serializer,
@@ -1984,6 +2054,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_signed_vote_commitments_view(
     SignedVoteCommitmentsView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_software_wallet_discovered_account(
+    SoftwareWalletDiscoveredAccount self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_software_wallet_import_account(
+    SoftwareWalletImportAccount self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_software_wallet_import_discovery_result(
+    SoftwareWalletImportDiscoveryResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_software_wallet_import_with_discovery_result(
+    SoftwareWalletImportWithDiscoveryResult self,
     SseSerializer serializer,
   );
 

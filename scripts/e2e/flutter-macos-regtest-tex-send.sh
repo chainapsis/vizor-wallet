@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SENDER_MNEMONIC="winter shiver fetch refuse absurd mail pistol eight market lounge manual roast miracle ethics found child scare curve congress renew salute pig better used"
+RECEIVER_MNEMONIC="return try reason flat civil wolf dwarf announce toddler uphold equip range neck proof gauge east rifle swim tray twin venue fossil will version"
+SHIELDED_AMOUNT="1.25"
+CONFIRMING_BLOCKS="${E2E_CONFIRMING_BLOCKS:-10}"
+LIGHTWALLETD_URL="${E2E_LIGHTWALLETD_URL:-http://127.0.0.1:9067}"
+ZCASHD_RPC_URL="${E2E_ZCASHD_RPC_URL:-http://127.0.0.1:18232}"
+FLUTTER_DEVICE="${FLUTTER_DEVICE:-macos}"
+RESET_REGTEST="${RESET_REGTEST:-1}"
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "missing required command: $1" >&2
+    exit 1
+  fi
+}
+
+json_field() {
+  python3 - "$1" "$2" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+print(data[sys.argv[2]])
+PY
+}
+
+require_cmd cargo
+require_cmd docker
+require_cmd fvm
+require_cmd python3
+
+cd "$ROOT_DIR"
+
+if [[ "$RESET_REGTEST" == "1" ]]; then
+  scripts/regtest/reset.sh
+fi
+scripts/regtest/up.sh
+
+sender_addresses_json="$(cd rust && cargo run --quiet --example regtest_wallet_addresses -- "$SENDER_MNEMONIC")"
+receiver_addresses_json="$(cd rust && cargo run --quiet --example regtest_wallet_addresses -- "$RECEIVER_MNEMONIC")"
+sender_unified_address="$(json_field "$sender_addresses_json" unifiedAddress)"
+receiver_tex_address="$(json_field "$receiver_addresses_json" texAddress)"
+
+echo "funding sender shielded address with ${SHIELDED_AMOUNT} TAZ"
+scripts/regtest/fund-wallet.sh "$sender_unified_address" "$SHIELDED_AMOUNT" "$CONFIRMING_BLOCKS" >/dev/null
+
+echo "running Flutter macOS TEX send integration test"
+fvm flutter test \
+  integration_test/regtest_tex_send_test.dart \
+  -d "$FLUTTER_DEVICE" \
+  --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
+  --dart-define=ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN=true \
+  --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \
+  --dart-define=ZCASH_E2E_ZCASHD_RPC_URL="$ZCASHD_RPC_URL" \
+  --dart-define=ZCASH_E2E_TEX_ADDRESS="$receiver_tex_address"

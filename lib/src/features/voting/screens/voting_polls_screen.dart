@@ -8,21 +8,28 @@ import '../../../core/formatting/date_format.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
+import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
-import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
+import '../voting_error_messages.dart';
 import '../voting_poll_ordering.dart';
 import '../voting_flow_models.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_config_settings_panel.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+
+const _votingBetaLabelAsset = 'assets/illustrations/voting_beta_label.png';
+const _votingBetaLabelWidth = 42.0;
+const _votingBetaLabelHeight = 24.0;
+const _votingBetaLabelCenterDx = 34.0;
+const _votingBetaLabelTopOffset = -10.0;
+const _votingHeaderTitleHeight = 33.0;
 
 class VotingPollsScreen extends ConsumerStatefulWidget {
   const VotingPollsScreen({super.key});
@@ -71,22 +78,21 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _VotingTopBar(onSettings: _openSettings),
-                const SizedBox(height: AppSpacing.s),
+                const AppPaneToolbar(backLinkMinWidth: 60),
+                _VotingHeader(onSettings: _openSettings),
                 Expanded(
                   child: _entryRefreshInFlight && !rounds.hasValue
-                      ? const Center(child: CircularProgressIndicator())
+                      ? const VotingPaneLoading()
                       : (_pollListRefreshInFlight || _entryRefreshInFlight) &&
                             rounds.hasValue
                       ? _buildRoundList(rounds.requireValue)
                       : rounds.when(
                           skipLoadingOnRefresh: false,
                           skipLoadingOnReload: false,
-                          loading: () =>
-                              const Center(child: CircularProgressIndicator()),
+                          loading: () => const VotingPaneLoading(),
                           error: (error, _) => _VotingMessage(
                             title: "Couldn't load voting rounds",
-                            message: error.toString(),
+                            message: friendlyVotingErrorMessage(error),
                             actionLabel: 'Try again',
                             onAction: () => _reloadRoundsWithFreshConfig(),
                           ),
@@ -262,110 +268,102 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
   }
 }
 
-class _VotingTopBar extends StatelessWidget {
-  const _VotingTopBar({required this.onSettings});
+class _VotingHeader extends StatelessWidget {
+  const _VotingHeader({required this.onSettings});
 
   final VoidCallback onSettings;
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.md,
-        AppSpacing.md,
-        0,
-      ),
-      child: SizedBox(
-        height: AppBackLink.height,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: AppRouteBackLink(minWidth: 60),
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: _VotingTopBarIconButton(
-                icon: AppIcons.cog,
-                tooltip: 'Voting config',
-                semanticLabel: 'Voting config settings',
-                onTap: onSettings,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _VotingTopBarIconButton extends StatefulWidget {
-  const _VotingTopBarIconButton({
-    required this.icon,
-    required this.tooltip,
-    required this.semanticLabel,
-    required this.onTap,
-  });
-
-  final String icon;
-  final String tooltip;
-  final String semanticLabel;
-  final VoidCallback onTap;
-
-  @override
-  State<_VotingTopBarIconButton> createState() =>
-      _VotingTopBarIconButtonState();
-}
-
-class _VotingTopBarIconButtonState extends State<_VotingTopBarIconButton> {
-  bool _hovered = false;
+  // Matches the poll list track (VotingPaneListView.maxWidth) so the title and
+  // the gear align with the list below.
+  static const _contentMaxWidth = 560.0;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return AppTooltip(
-      message: widget.tooltip,
-      child: Semantics(
-        button: true,
-        label: widget.semanticLabel,
-        child: ExcludeSemantics(
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            onEnter: (_) => _setHovered(true),
-            onExit: (_) => _setHovered(false),
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: widget.onTap,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 120),
-                width: AppBackLink.height,
-                height: AppBackLink.height,
-                decoration: BoxDecoration(
-                  color: _hovered ? colors.state.hover : null,
-                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
-                ),
-                child: Center(
-                  child: AppIcon(
-                    widget.icon,
-                    size: 20,
-                    color: colors.icon.accent,
-                  ),
+    // Redesign header: a centered "Vote" title with a filters row beneath it.
+    // The settings gear sits at the trailing edge of that row (moved out of the
+    // pane toolbar, which now carries only the back link). The Basic/New/Active
+    // status tabs and the search affordance are deferred until the redesign
+    // finalizes their semantics, so the tab slot is intentionally empty.
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: _contentMaxWidth),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            AppSpacing.xs,
+            AppSpacing.md,
+            AppSpacing.sm,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                key: const ValueKey('voting_header_title_row'),
+                height: _votingHeaderTitleHeight,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.topCenter,
+                  children: [
+                    Text(
+                      'Vote',
+                      key: const ValueKey('voting_header_title'),
+                      style: AppTypography.headlineLarge.copyWith(
+                        color: context.colors.text.accent,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    Positioned(
+                      top: _votingBetaLabelTopOffset,
+                      child: Transform.translate(
+                        offset: const Offset(_votingBetaLabelCenterDx, 0),
+                        child: const _VotingBetaLabel(),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
+              const SizedBox(height: AppSpacing.sm),
+              SizedBox(
+                height: 24,
+                child: Row(
+                  children: [
+                    const Spacer(),
+                    AppIconHoverButton(
+                      icon: AppIcons.cog,
+                      tooltip: 'Voting config',
+                      semanticLabel: 'Voting config settings',
+                      onTap: onSettings,
+                      size: 24,
+                      iconSize: 16,
+                      borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                      hoverColor: context.colors.state.hover,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+}
 
-  void _setHovered(bool hovered) {
-    if (_hovered == hovered) return;
-    setState(() {
-      _hovered = hovered;
-    });
+class _VotingBetaLabel extends StatelessWidget {
+  const _VotingBetaLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      key: ValueKey('voting_header_beta_label'),
+      width: _votingBetaLabelWidth,
+      height: _votingBetaLabelHeight,
+      child: Image(
+        image: AssetImage(_votingBetaLabelAsset),
+        fit: BoxFit.contain,
+        semanticLabel: 'Beta',
+      ),
+    );
   }
 }
 

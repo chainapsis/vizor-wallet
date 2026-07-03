@@ -1,3 +1,4 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 class FakeSyncNotifier extends SyncNotifier {
@@ -7,4 +8,12 @@ class FakeSyncNotifier extends SyncNotifier {
 
   @override
   Future<SyncState> build() async => initialState ?? SyncState();
+
+  void emit(SyncState next) {
+    state = AsyncData(next);
+  }
+
+  void setSyncState(SyncState nextState) {
+    state = AsyncData(nextState);
+  }
 }

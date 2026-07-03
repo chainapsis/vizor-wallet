@@ -12,18 +12,15 @@ import '../../core/widgets/app_tooltip.dart';
 import '../settings/widgets/custom_endpoint_settings_panel.dart';
 import 'shared/onboarding_welcome_art.dart';
 
-/// Welcome-specific button width. The redesigned Figma CTA stack is 256 dp
-/// wide (node 1136:17519).
-const double _welcomeActionWidth = 256;
+const double _welcomeCanvasHeight = 720;
+const double _welcomePaneWidth = 420;
+const double _welcomeActionWidth = 196;
+const double _welcomeBackButtonTop = AppSpacing.base + AppSpacing.xs;
+const double _welcomeLegalFooterWidth = 154;
+const double _welcomeLegalFooterHeight = 36;
 
-/// Onboarding entry point — the Figma "Split View" at node 215:2688
-/// (light) / 215:2888 (dark).
-///
-/// The outer 8 dp gap around the content pane is deliberately transparent
-/// so the native macOS acrylic / Windows blur shows through; only the
-/// inner "Trailing Pane" is opaque (`background.ground` with an 8 dp
-/// corner radius). The transparent-first rule is documented in CLAUDE.md
-/// under "Window Transparency".
+/// Onboarding entry point — Figma `_Welcome` at node 4034:62997
+/// (light) / 4363:117257 (dark).
 ///
 /// The screen targets the large (landscape) desktop layout by design.
 /// On entry it asks [AppLayoutNotifier] to switch to
@@ -56,69 +53,32 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Transparent so the flutter_acrylic window effect on the native
-      // surface shows through the outer gap below.
       backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: Padding(
-          // Only the 8 dp gap around the pane is transparent — this is
-          // the strip where the native acrylic is visible.
-          padding: const EdgeInsets.all(AppSpacing.xs),
-          child: _Pane(
-            showBackButton: widget.showBackButton,
-            showEndpointSettings: _showEndpointSettings,
-            onShowEndpointSettings: () {
-              setState(() {
-                _showEndpointSettings = true;
-              });
-            },
-            onDismissEndpointSettings: () {
-              setState(() {
-                _showEndpointSettings = false;
-              });
-            },
-            child: const _Content(),
-          ),
-        ),
+      body: _Pane(
+        showBackButton: widget.showBackButton,
+        showEndpointSettings: _showEndpointSettings,
+        onShowEndpointSettings: () {
+          setState(() {
+            _showEndpointSettings = true;
+          });
+        },
+        onDismissEndpointSettings: () {
+          setState(() {
+            _showEndpointSettings = false;
+          });
+        },
+        child: const _Content(),
       ),
     );
   }
 }
 
-/// Opaque card that wraps the onboarding content.
+/// Responsive welcome layout from the 1080 x 720 Figma baseline.
 ///
-/// The backdrop illustration fills the whole pane, while the bottom-anchored
-/// UI column is treated as a fixed-size 1064 × 672 dp design block — the
-/// dimensions of Figma's welcome pane inside the 1080 × 720 window
-/// (node 215:2665). At the default window size, the backdrop and foreground
-/// design block both land on the Figma pixels. When the user grows the window,
-/// the backdrop scales to avoid empty pane bands and the foreground block stays
-/// centered so CTA positions remain stable.
-///
-/// Alignment is height-adaptive:
-///   * pane height >= 672 dp → `Alignment.center`. The canvas fits
-///     with symmetric `bg.ground` strips top and bottom, which
-///     reads as intentional letterboxing when the user drags the
-///     window taller than Figma's pane.
-///   * pane height <  672 dp → `Alignment.bottomCenter`. The canvas
-///     overflows the pane; bottom-anchoring keeps the UI CTAs
-///     visible and lets the backdrop's soft top fade clip off,
-///     which is far less load-bearing than the interactive footer.
-///
-/// Horizontal overflow always clips symmetrically (center component of both
-/// alignments), and the rounded-rect clip on the surrounding Container swallows
-/// the overflow evenly. Rationale: CTA positions are more load-bearing than
-/// the backdrop's exact pixel scale, so the content remains rigid while the
-/// background scales independently to cover larger panes.
-///
-/// Two theme variants of the backdrop (261:6662 light / 303:1477 dark)
-/// pre-compose the masked layering on the Figma side; the Dart side
-/// just picks the right PNG per [AppTheme] without reproducing the
-/// masking math.
-///
-/// No ambient pane shadow — the Figma dark variant ships one, but the
-/// team decided it adds no depth in the transparent-window + acrylic
-/// context the app actually runs in.
+/// The Figma file includes macOS wallpaper, menu bar, dock, and window
+/// controls around this node. Per AGENTS.md those layers are OS chrome and
+/// are ignored; the implemented app starts at `Window Contents > Trailing
+/// Pane`, with a fixed 420px lead pane and a responsive trailing hero pane.
 class _Pane extends StatelessWidget {
   const _Pane({
     required this.child,
@@ -134,62 +94,65 @@ class _Pane extends StatelessWidget {
   final VoidCallback onShowEndpointSettings;
   final VoidCallback onDismissEndpointSettings;
 
-  /// Fixed foreground design-canvas dimensions pulled from Figma's Welcome BG
-  /// frame (node 1300:34883). The 1080 × 720 desktop window leaves a
-  /// 1064 × 672 pane after the outer 8 dp gap and native titlebar safe area.
-  static const double _canvasWidth = 1064;
-  static const double _canvasHeight = 672;
-
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
       width: double.infinity,
       height: double.infinity,
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      clipBehavior: Clip.antiAlias,
+      color: colors.background.ground,
       child: Stack(
         children: [
-          const Positioned.fill(
-            child: OnboardingWelcomeBackdrop(
-              fit: BoxFit.fitWidth,
-              alignment: Alignment.bottomCenter,
-            ),
-          ),
-          // OverflowBox with tight canvas-sized constraints parks the
-          // foreground design block at its native 1064 × 672 regardless of the
-          // pane's actual dimensions. The more obvious
-          // `Container.alignment: Alignment.center` can't carry this:
-          // internally it wraps in an `Align`, which loosens the child's min
-          // constraints but keeps `max` capped to the parent's incoming bounds.
-          //
-          // Alignment is chosen per-frame by pane height:
-          //   * pane height >= _canvasHeight (672) → `Alignment.center`.
-          //   * pane height <  _canvasHeight       → `Alignment.bottomCenter`,
-          //     protecting the interactive CTA column when space is tight.
           Positioned.fill(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final alignment = constraints.maxHeight < _canvasHeight
-                    ? Alignment.bottomCenter
-                    : Alignment.center;
-                return OverflowBox(
-                  alignment: alignment,
-                  minWidth: _canvasWidth,
-                  maxWidth: _canvasWidth,
-                  minHeight: _canvasHeight,
-                  maxHeight: _canvasHeight,
-                  child: SizedBox(
-                    width: _canvasWidth,
-                    height: _canvasHeight,
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppSpacing.md),
+                final heroWidth = (constraints.maxWidth - _welcomePaneWidth)
+                    .clamp(0.0, double.infinity);
+                return Stack(
+                  children: [
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      width: _welcomePaneWidth,
+                      height: constraints.maxHeight,
                       child: child,
                     ),
-                  ),
+                    Positioned(
+                      left: _welcomePaneWidth,
+                      top: 0,
+                      width: heroWidth,
+                      height: constraints.maxHeight,
+                      child: _WelcomeHeroPane(
+                        width: heroWidth,
+                        height: constraints.maxHeight,
+                      ),
+                    ),
+                    if (!showBackButton)
+                      Positioned(
+                        right: AppSpacing.md,
+                        top: AppSpacing.md,
+                        child: _WelcomeIconButton(
+                          key: ValueKey('welcome_endpoint_settings_button'),
+                          icon: AppIcons.cog,
+                          tooltip: 'Endpoint settings',
+                          semanticLabel: 'Endpoint settings',
+                          onTap: onShowEndpointSettings,
+                        ),
+                      ),
+                    if (!showBackButton && showEndpointSettings)
+                      AppPaneModalOverlay(
+                        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                        onDismiss: onDismissEndpointSettings,
+                        child: CustomEndpointSettingsPanel(
+                          key: const ValueKey(
+                            'welcome_endpoint_settings_modal',
+                          ),
+                          restartSyncAfterUpdate: false,
+                          onClose: onDismissEndpointSettings,
+                          onUpdated: onDismissEndpointSettings,
+                        ),
+                      ),
+                  ],
                 );
               },
             ),
@@ -197,33 +160,89 @@ class _Pane extends StatelessWidget {
           if (showBackButton)
             const Positioned(
               left: AppSpacing.md,
-              top: AppSpacing.md,
+              top: _welcomeBackButtonTop,
               child: _BackRow(),
             ),
-          if (!showBackButton)
-            Positioned(
-              right: AppSpacing.md,
-              top: AppSpacing.md,
-              child: _WelcomeIconButton(
-                key: const ValueKey('welcome_endpoint_settings_button'),
-                icon: AppIcons.cog,
-                tooltip: 'Endpoint settings',
-                semanticLabel: 'Endpoint settings',
-                onTap: onShowEndpointSettings,
-              ),
-            ),
-          if (!showBackButton && showEndpointSettings)
-            AppPaneModalOverlay(
-              borderRadius: BorderRadius.circular(AppRadii.xSmall),
-              onDismiss: onDismissEndpointSettings,
-              child: CustomEndpointSettingsPanel(
-                key: const ValueKey('welcome_endpoint_settings_modal'),
-                restartSyncAfterUpdate: false,
-                onClose: onDismissEndpointSettings,
-                onUpdated: onDismissEndpointSettings,
-              ),
-            ),
         ],
+      ),
+    );
+  }
+}
+
+class _WelcomeHeroPane extends StatelessWidget {
+  const _WelcomeHeroPane({required this.width, required this.height});
+
+  static final _foregroundColor = AppTextColors.light.inverse;
+  static const _textBottomInset = _welcomeCanvasHeight - 493;
+  static const _wordmarkTopInset = _welcomeCanvasHeight - 628;
+
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
+    final asset = isDark
+        ? 'assets/illustrations/welcome_hero_dark.png'
+        : 'assets/illustrations/welcome_hero_light.png';
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadii.large),
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            Positioned.fill(
+              child: Transform.flip(
+                flipX: true,
+                child: Image.asset(
+                  asset,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.center,
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: const [Colors.transparent, Color(0xFF1D1D1D)],
+                    stops: const [0.47237, 0.97439],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: height - _textBottomInset,
+              child: Text(
+                'Private money.\nBy default',
+                textAlign: TextAlign.center,
+                style: AppTypography.displayMedium.copyWith(
+                  color: _foregroundColor,
+                  height: 48 / 45,
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: height - _wordmarkTopInset,
+              child: Center(
+                child: VizorWordmark(
+                  width: 96,
+                  height: 36,
+                  color: _foregroundColor,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -337,28 +356,44 @@ class _BackRow extends StatelessWidget {
   }
 }
 
-/// Vizor logo + title block + buttons + legal footer.
-///
-/// Mirrors the Figma layout hierarchy: `Content Area` owns the 24 dp outer
-/// padding, this `Container` adds 64 dp top padding and centers `_Welcome
-/// Content`, whose main content and legal footer are separated by 32 dp.
+/// Badge + title + buttons from the Figma left welcome pane, with the
+/// legal footer pinned to the pane bottom (Figma: text bottom 45px above
+/// the pane edge — 13px inside the 32px vertical padding).
 class _Content extends StatelessWidget {
   const _Content();
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.xl),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const _MainWelcomeContent(),
-            const SizedBox(height: AppSpacing.base),
-            // const _LegalFooter(),
-          ],
-        ),
+    return const Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.base,
       ),
+      child: Stack(
+        children: [
+          Center(child: _MainWelcomeContent()),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: EdgeInsets.only(bottom: 13),
+              child: _LegalFooterSpace(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LegalFooterSpace extends StatelessWidget {
+  const _LegalFooterSpace();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      key: ValueKey('welcome_legal_footer_space'),
+      width: _welcomeLegalFooterWidth,
+      height: _welcomeLegalFooterHeight,
     );
   }
 }
@@ -372,7 +407,7 @@ class _MainWelcomeContent extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         _TitleBlock(),
-        SizedBox(height: AppSpacing.xl),
+        SizedBox(height: AppSpacing.base),
         _WelcomeButtonsWrap(),
       ],
     );
@@ -388,27 +423,26 @@ class _TitleBlock extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const _VizorLogo(),
-        const SizedBox(height: AppSpacing.md),
-        Text(
-          'Private money. By default.',
-          style: AppTypography.displayLarge.copyWith(color: colors.text.accent),
-          textAlign: TextAlign.center,
+        Image.asset(
+          'assets/illustrations/welcome_badge.png',
+          width: 50,
+          height: 50,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SizedBox(
+          width: 218,
+          child: Text(
+            'Get started\nwith Vizor',
+            style: AppTypography.headlineLarge.copyWith(
+              color: colors.text.accent,
+              height: 33 / 32,
+            ),
+            textAlign: TextAlign.center,
+          ),
         ),
       ],
     );
   }
-}
-
-/// Brand wordmark rendered above the title.
-///
-/// `VizorWordmark` owns the Figma logo frame metrics so the welcome and
-/// unlock screens stay visually consistent.
-class _VizorLogo extends StatelessWidget {
-  const _VizorLogo();
-
-  @override
-  Widget build(BuildContext context) => const VizorWordmark();
 }
 
 class _WelcomeButtonsWrap extends StatelessWidget {
@@ -453,7 +487,7 @@ class _WalletButtonsStack extends StatelessWidget {
           variant: AppButtonVariant.primary,
           minWidth: _welcomeActionWidth,
           leading: const AppIcon(AppIcons.addNew),
-          child: const Text('Create a new wallet'),
+          child: const Text('Create a wallet'),
         ),
         const SizedBox(height: AppSpacing.s),
         AppButton(
@@ -475,25 +509,22 @@ class _OrDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Opacity(
-      opacity: 0.4,
-      child: SizedBox(
-        width: _welcomeActionWidth,
-        height: 16,
-        child: Row(
-          children: [
-            Expanded(child: _OrDividerLine(color: colors.text.secondary)),
-            const SizedBox(width: AppSpacing.sm),
-            Text(
-              'or',
-              style: AppTypography.labelMedium.copyWith(
-                color: colors.text.secondary,
-              ),
+    return SizedBox(
+      width: _welcomeActionWidth,
+      height: 14,
+      child: Row(
+        children: [
+          Expanded(child: _OrDividerLine(color: colors.border.regular)),
+          const SizedBox(width: AppSpacing.s),
+          Text(
+            'OR',
+            style: AppTypography.labelSmall.copyWith(
+              color: colors.text.secondary,
             ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(child: _OrDividerLine(color: colors.text.secondary)),
-          ],
-        ),
+          ),
+          const SizedBox(width: AppSpacing.s),
+          Expanded(child: _OrDividerLine(color: colors.border.regular)),
+        ],
       ),
     );
   }
@@ -506,91 +537,15 @@ class _OrDividerLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(AppRadii.full),
+    return Center(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(AppRadii.small),
+        ),
+        // Current `_Divider` component: 1.5px hairline pill.
+        child: const SizedBox(height: 1.5, width: double.infinity),
       ),
-      child: const SizedBox(height: 1),
     );
   }
 }
-
-// class _LegalFooter extends StatelessWidget {
-//   const _LegalFooter();
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     final colors = context.colors;
-//     // Body uses `text.muted` per Figma. Link emphasis uses
-//     // `text.secondary` as the closest semantic token to Figma's
-//     // hardcoded `#4D5252` — in light mode the token resolves to
-//     // `#626767`, one step lighter than the literal, but this preserves
-//     // legibility in dark mode where the literal would disappear into
-//     // the background.
-//     final bodyStyle = AppTypography.bodySmall.copyWith(
-//       color: colors.text.muted,
-//     );
-//     final linkStyle = AppTypography.bodySmall.copyWith(
-//       color: colors.text.secondary,
-//       decoration: TextDecoration.underline,
-//       decorationColor: colors.text.secondary,
-//     );
-//
-//     return Text.rich(
-//       TextSpan(
-//         children: [
-//           const TextSpan(text: 'By using Vizor you agree to our '),
-//           WidgetSpan(
-//             alignment: PlaceholderAlignment.baseline,
-//             baseline: TextBaseline.alphabetic,
-//             child: _LegalFooterLink(
-//               label: 'Terms',
-//               style: linkStyle,
-//               onTap: () => context.push('/terms'),
-//             ),
-//           ),
-//           const TextSpan(text: ' and '),
-//           WidgetSpan(
-//             alignment: PlaceholderAlignment.baseline,
-//             baseline: TextBaseline.alphabetic,
-//             child: _LegalFooterLink(
-//               label: 'Privacy',
-//               style: linkStyle,
-//               onTap: () => context.push('/privacy'),
-//             ),
-//           ),
-//         ],
-//         style: bodyStyle,
-//       ),
-//       textAlign: TextAlign.center,
-//     );
-//   }
-// }
-//
-// class _LegalFooterLink extends StatelessWidget {
-//   const _LegalFooterLink({
-//     required this.label,
-//     required this.style,
-//     required this.onTap,
-//   });
-//
-//   final String label;
-//   final TextStyle style;
-//   final VoidCallback onTap;
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     return Semantics(
-//       link: true,
-//       child: MouseRegion(
-//         cursor: SystemMouseCursors.click,
-//         child: GestureDetector(
-//           behavior: HitTestBehavior.opaque,
-//           onTap: onTap,
-//           child: Text(label, style: style),
-//         ),
-//       ),
-//     );
-//   }
-// }

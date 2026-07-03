@@ -1,14 +1,6 @@
 import 'dart:async';
-import 'dart:math' as math;
 
-import 'package:flutter/material.dart'
-    show
-        Colors,
-        Scaffold,
-        Scrollbar,
-        ScrollbarTheme,
-        ScrollbarThemeData,
-        WidgetStatePropertyAll;
+import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,17 +10,16 @@ import '../../../app_bootstrap.dart';
 import '../../../core/config/app_version_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
+import '../../../core/navigation/app_back_resolver.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
-import '../../../core/widgets/app_decorative_divider.dart';
+import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../onboarding/shared/onboarding_welcome_art.dart';
 
-const _utilityPageScrollbarKey = ValueKey('utility-page-scrollbar');
-const _backLinkContentGap = AppSpacing.s;
-const _legalUpdatedLabel = 'Last Update:  ';
-const _paragraphWidth = 352.0;
-const _maxSidebarPaneContentWidth = 752.0;
+const _utilityContentWidth = 420.0;
 const _vizorGithubUrl = 'https://github.com/chainapsis/vizor-wallet/';
 const _vizorWebsiteUrl = 'https://vizor.cash';
 
@@ -37,21 +28,20 @@ const _aboutParagraphs = [
     heading: 'Built by the Keplr team',
     body:
         'We built Keplr, the wallet used by millions across Cosmos, Ethereum, '
-        'and Bitcoin. Vizor is our take on what a Zcash wallet should feel '
-        'like.',
+        'and Bitcoin. Vizor is our take on what a Zcash wallet should feel like.',
   ),
   _UtilityParagraphData(
     heading: 'Designed for shielded Zcash',
     body:
         'Vizor is built around shielded transactions, where the sender, '
         'recipient, and amount stay private. Transparent Zcash works too, but '
-        'private is the default here.',
+        'private is the default.',
   ),
   _UtilityParagraphData(
-    heading: 'Open source, verifiable, and self-custodial',
+    heading: 'Open source, self-custodied',
     body:
-        "Vizor is Apache licensed. Your keys stay on your device. We don't "
-        "see your balances or your transactions.",
+        'Vizor is Apache licensed. Your keys stay on your device.\n'
+        "We don't see your balances or your transactions.",
   ),
 ];
 
@@ -80,32 +70,47 @@ class AboutScreen extends StatelessWidget {
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
-        child: const _AboutScrollView(),
+        child: const _UtilityPane(
+          // Design: back chevron sits 16px into the pane, same as settings.
+          // The 16px inset is the AppPaneToolbar default.
+          toolbar: AppPaneToolbar(),
+          child: _AboutContent(),
+        ),
       ),
     );
   }
 }
 
 class TermsScreen extends StatelessWidget {
-  const TermsScreen({super.key});
+  const TermsScreen({super.key, this.forceFullPane = false});
+
+  /// Onboarding entries (the welcome legal footer) render the bare
+  /// full-width pane even when a wallet exists.
+  final bool forceFullPane;
 
   @override
   Widget build(BuildContext context) {
-    return const _LegalScreen(
-      title: 'Terms of Use',
+    return _LegalScreen(
+      title: 'Terms of Usage',
       paragraphs: _legalParagraphs,
+      forceFullPane: forceFullPane,
     );
   }
 }
 
 class PrivacyPolicyScreen extends StatelessWidget {
-  const PrivacyPolicyScreen({super.key});
+  const PrivacyPolicyScreen({super.key, this.forceFullPane = false});
+
+  /// Onboarding entries (the welcome legal footer) render the bare
+  /// full-width pane even when a wallet exists.
+  final bool forceFullPane;
 
   @override
   Widget build(BuildContext context) {
-    return const _LegalScreen(
+    return _LegalScreen(
       title: 'Privacy Policy',
       paragraphs: _legalParagraphs,
+      forceFullPane: forceFullPane,
     );
   }
 }
@@ -118,34 +123,86 @@ class _AboutContent extends StatelessWidget {
     return const Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        Opacity(opacity: 0.5, child: VizorWordmark(width: 74, height: 27.925)),
+        SizedBox(height: AppSpacing.base),
         _UtilityPageTitle(
           title: 'About Vizor Wallet',
           subtitle: kVizorAboutVersionLabel,
         ),
-        SizedBox(height: AppSpacing.md),
-        AppDecorativeDivider(width: 256),
-        SizedBox(height: AppSpacing.md),
-        _UtilityParagraphList(paragraphs: _aboutParagraphs),
+        SizedBox(height: AppSpacing.base),
+        _UtilitySurface(
+          child: _UtilityParagraphList(paragraphs: _aboutParagraphs),
+        ),
+        SizedBox(height: AppSpacing.base),
         _AboutLinkRow(),
-        SizedBox(height: AppSpacing.md),
-        VizorWordmark(width: 74, height: 27.925),
       ],
     );
   }
 }
 
-class _LegalScreen extends StatelessWidget {
-  const _LegalScreen({required this.title, required this.paragraphs});
+class _LegalScreen extends ConsumerWidget {
+  const _LegalScreen({
+    required this.title,
+    required this.paragraphs,
+    this.forceFullPane = false,
+  });
 
   final String title;
   final List<_UtilityParagraphData> paragraphs;
+  final bool forceFullPane;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final content = _LegalContent(title: title, paragraphs: paragraphs);
+
+    // In the design these pages live inside the regular desktop shell with
+    // the glass nav sidebar. Pre-wallet they are public legal routes, so
+    // there is no account/sidebar context to show — fall back to the bare
+    // full-width pane. Onboarding entries force the bare pane too: the
+    // welcome screen has no sidebar, so terms/privacy opened from it
+    // shouldn't grow one.
+    if (!forceFullPane && _hasWallet(ref)) {
+      return AppDesktopShell(
+        sidebar: const AppMainSidebar(),
+        pane: AppDesktopPane(
+          padding: EdgeInsets.zero,
+          child: _UtilityPane(
+            toolbar: const AppPaneToolbar(
+              // The 16px inset is the AppPaneToolbar default.
+              leading: _UtilityBackButton(),
+            ),
+            child: content,
+          ),
+        ),
+      );
+    }
+
+    // Full-window pane: the toolbar-corner back link would crowd the macOS
+    // window controls, so the back row drops below them at the welcome
+    // screen's spot (window-absolute 24,40 → 16,32 inside the 8px-padded
+    // pane).
     return _FullPaneShell(
-      child: _LegalScrollView(title: title, paragraphs: paragraphs),
+      child: Stack(
+        children: [
+          _UtilityPane(
+            toolbar: const AppPaneToolbar(leading: SizedBox.shrink()),
+            child: content,
+          ),
+          const Positioned(
+            left: AppSpacing.sm,
+            top: AppSpacing.base,
+            child: _UtilityBackButton(),
+          ),
+        ],
+      ),
     );
   }
+}
+
+bool _hasWallet(WidgetRef ref) {
+  final bootstrap = ref.watch(appBootstrapProvider);
+  final wallet = ref.watch(walletProvider).value;
+  return wallet?.hasWallet ?? bootstrap.hasWallet;
 }
 
 class _FullPaneShell extends StatelessWidget {
@@ -156,7 +213,7 @@ class _FullPaneShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: context.colors.macosUtility.window,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.xs),
@@ -167,160 +224,25 @@ class _FullPaneShell extends StatelessWidget {
   }
 }
 
-class _AboutScrollView extends StatefulWidget {
-  const _AboutScrollView();
+class _UtilityPane extends StatelessWidget {
+  const _UtilityPane({required this.toolbar, required this.child});
 
-  @override
-  State<_AboutScrollView> createState() => _AboutScrollViewState();
-}
-
-class _AboutScrollViewState extends State<_AboutScrollView> {
-  final _scrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _UtilityScrollbar(
-      controller: _scrollController,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            controller: _scrollController,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: AppRouteBackLink(),
-                    ),
-                    const SizedBox(height: _backLinkContentGap),
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: math.max(
-                          0,
-                          constraints.maxHeight -
-                              (AppSpacing.md * 2) -
-                              AppBackLink.height -
-                              _backLinkContentGap,
-                        ),
-                      ),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(
-                            maxWidth: _maxSidebarPaneContentWidth,
-                          ),
-                          child: const _AboutContent(),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _LegalScrollView extends StatefulWidget {
-  const _LegalScrollView({required this.title, required this.paragraphs});
-
-  final String title;
-  final List<_UtilityParagraphData> paragraphs;
-
-  @override
-  State<_LegalScrollView> createState() => _LegalScrollViewState();
-}
-
-class _LegalScrollViewState extends State<_LegalScrollView> {
-  final _scrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _UtilityScrollbar(
-      controller: _scrollController,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            controller: _scrollController,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: _UtilityBackButton(),
-                    ),
-                    const SizedBox(height: _backLinkContentGap),
-                    Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _UtilityPageTitle(
-                            title: widget.title,
-                            subtitle: _legalUpdatedLabel,
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                          const AppDecorativeDivider(width: 256),
-                          const SizedBox(height: AppSpacing.md),
-                          _UtilityParagraphList(paragraphs: widget.paragraphs),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _UtilityScrollbar extends StatelessWidget {
-  const _UtilityScrollbar({required this.controller, required this.child});
-
-  final ScrollController controller;
+  final Widget toolbar;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return ScrollbarTheme(
-      data: ScrollbarThemeData(
-        thumbColor: WidgetStatePropertyAll(colors.background.overlay),
-        thickness: const WidgetStatePropertyAll(6),
-        radius: const Radius.circular(AppRadii.full),
-        thumbVisibility: const WidgetStatePropertyAll(true),
-        trackVisibility: const WidgetStatePropertyAll(false),
-        crossAxisMargin: 3,
-        mainAxisMargin: 3,
+    return AppPaneScrollScaffold(
+      toolbar: toolbar,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s,
+        vertical: AppSpacing.sm,
       ),
-      child: Scrollbar(
-        key: _utilityPageScrollbarKey,
-        controller: controller,
-        child: child,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: _utilityContentWidth),
+          child: child,
+        ),
       ),
     );
   }
@@ -331,35 +253,38 @@ class _UtilityBackButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return AppBackLink(
-      label: 'Back',
-      semanticsLabel: context.canPop()
-          ? 'Back'
-          : 'Back to ${_defaultFallbackLabel(ref)}',
-      onTap: () => _navigateBack(context, ref),
-    );
-  }
-
-  void _navigateBack(BuildContext context, WidgetRef ref) {
+    // Mirror the standard pane toolbar: the back link is labeled with its
+    // destination ("Settings", "Home", ...), never a generic "Back".
     if (context.canPop()) {
-      context.pop();
-      return;
+      final target = AppBackResolver.resolve(context);
+      return AppBackLink(
+        label: target.label,
+        onTap: () => target.navigate(context),
+      );
     }
-    context.go(_defaultFallbackPath(ref));
+    final hasWallet = _hasWallet(ref);
+    final label = hasWallet ? 'Home' : 'Welcome';
+    final path = hasWallet ? '/home' : '/welcome';
+    return AppBackLink(label: label, onTap: () => context.go(path));
   }
+}
 
-  String _defaultFallbackPath(WidgetRef ref) {
-    return _hasWallet(ref) ? '/home' : '/welcome';
-  }
+class _LegalContent extends StatelessWidget {
+  const _LegalContent({required this.title, required this.paragraphs});
 
-  String _defaultFallbackLabel(WidgetRef ref) {
-    return _hasWallet(ref) ? 'Home' : 'Welcome';
-  }
+  final String title;
+  final List<_UtilityParagraphData> paragraphs;
 
-  bool _hasWallet(WidgetRef ref) {
-    final bootstrap = ref.read(appBootstrapProvider);
-    final wallet = ref.read(walletProvider).value;
-    return wallet?.hasWallet ?? bootstrap.hasWallet;
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _UtilityPageTitle(title: title, subtitle: kVizorAboutVersionLabel),
+        const SizedBox(height: AppSpacing.base),
+        _UtilitySurface(child: _UtilityParagraphList(paragraphs: paragraphs)),
+      ],
+    );
   }
 }
 
@@ -378,7 +303,9 @@ class _UtilityPageTitle extends StatelessWidget {
         Text(
           title,
           textAlign: TextAlign.center,
-          style: AppTypography.displaySmall.copyWith(color: colors.text.accent),
+          style: AppTypography.headlineLarge.copyWith(
+            color: colors.text.accent,
+          ),
         ),
         const SizedBox(height: AppSpacing.s),
         Text(
@@ -398,23 +325,61 @@ class _UtilityParagraphList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: _paragraphWidth,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var i = 0; i < paragraphs.length; i++) ...[
-              _UtilityParagraph(paragraph: paragraphs[i]),
-              if (i < paragraphs.length - 1)
-                const SizedBox(height: AppSpacing.md),
-            ],
-          ],
-        ),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < paragraphs.length; i++) ...[
+          _UtilityParagraph(paragraph: paragraphs[i]),
+          if (i < paragraphs.length - 1) const SizedBox(height: AppSpacing.md),
+        ],
+      ],
     );
   }
+}
+
+class _UtilitySurface extends StatelessWidget {
+  const _UtilitySurface({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.base,
+      ),
+      decoration: BoxDecoration(
+        // Figma: semantic/foreground/neutral/ground in both modes
+        // (#ffffff light, #1b1f1f dark).
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: _utilitySurfaceShadow(colors),
+      ),
+      child: child,
+    );
+  }
+}
+
+// Figma "Shadow Surface" — four layers of Semantic/Shadows/Subtle
+// (alpha 0 in dark mode, so the card reads from fill contrast alone).
+List<BoxShadow> _utilitySurfaceShadow(AppColors colors) {
+  return [
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 1),
+      blurRadius: 2,
+    ),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 2),
+      blurRadius: 4,
+    ),
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+  ];
 }
 
 class _UtilityParagraph extends StatelessWidget {
@@ -450,18 +415,21 @@ class _AboutLinkRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const SizedBox(
-      width: _paragraphWidth,
+      width: double.infinity,
       child: Wrap(
-        spacing: AppSpacing.md,
+        alignment: WrapAlignment.center,
+        spacing: AppSpacing.s,
         runSpacing: AppSpacing.xs,
         children: [
-          _AboutTextLink(
-            label: 'GitHub',
+          _AboutLinkButton(
+            label: 'Github',
+            icon: AppIcons.github,
             semanticsLabel: 'Open Vizor GitHub',
             url: _vizorGithubUrl,
           ),
-          _AboutTextLink(
+          _AboutLinkButton(
             label: 'Website',
+            icon: AppIcons.globe,
             semanticsLabel: 'Open Vizor website',
             url: _vizorWebsiteUrl,
           ),
@@ -471,53 +439,35 @@ class _AboutLinkRow extends StatelessWidget {
   }
 }
 
-class _AboutTextLink extends StatefulWidget {
-  const _AboutTextLink({
+class _AboutLinkButton extends StatelessWidget {
+  const _AboutLinkButton({
     required this.label,
+    required this.icon,
     required this.semanticsLabel,
     required this.url,
   });
 
+  // Figma buttons stack: 24px ghost pills with a 16px icon and Label M.
+  static const _height = 24.0;
+
   final String label;
+  final String icon;
   final String semanticsLabel;
   final String url;
 
   @override
-  State<_AboutTextLink> createState() => _AboutTextLinkState();
-}
-
-class _AboutTextLinkState extends State<_AboutTextLink> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final textColor = colors.text.accent;
     return Semantics(
       button: true,
       link: true,
-      label: widget.semanticsLabel,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => unawaited(_launchAboutUrl(widget.url)),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text(
-              widget.label,
-              style: AppTypography.labelLarge.copyWith(
-                color: textColor,
-                decoration: _hovered
-                    ? TextDecoration.underline
-                    : TextDecoration.none,
-                decorationColor: textColor,
-              ),
-            ),
-          ),
-        ),
+      label: semanticsLabel,
+      child: AppButton(
+        onPressed: () => unawaited(_launchAboutUrl(url)),
+        variant: AppButtonVariant.ghost,
+        size: AppButtonSize.medium,
+        height: _height,
+        leading: AppIcon(icon),
+        child: Text(label),
       ),
     );
   }

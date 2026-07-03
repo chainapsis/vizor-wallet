@@ -8,7 +8,6 @@ import 'package:go_router/go_router.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/voting/voting_config_provider.dart';
@@ -20,6 +19,7 @@ import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
+import '../widgets/voting_pane_scroll_area.dart';
 
 class VotingSubmissionConfirmationScreen extends ConsumerStatefulWidget {
   const VotingSubmissionConfirmationScreen({
@@ -84,32 +84,30 @@ class _VotingSubmissionConfirmationScreenState
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: session.when(
-            skipLoadingOnRefresh: false,
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) {
-              final cachedState = _lastSubmissionState;
-              if (cachedState != null) {
-                return _buildSubmissionContent(
-                  state: cachedState,
-                  jobKey: jobKey,
-                  loadError: error,
-                );
-              }
-              return _ConfirmationScaffold(
-                confirmed: false,
-                title: 'Submission not complete',
-                pollTitle: 'Token holder voting',
-                message: "Couldn't load submission details: $error",
-                votingPower: 'Not available',
+        child: session.when(
+          skipLoadingOnRefresh: false,
+          loading: () => const VotingPaneStateView(child: VotingPaneLoading()),
+          error: (error, _) {
+            final cachedState = _lastSubmissionState;
+            if (cachedState != null) {
+              return _buildSubmissionContent(
+                state: cachedState,
+                jobKey: jobKey,
+                loadError: error,
               );
-            },
-            data: (state) {
-              return _buildSubmissionContent(state: state, jobKey: jobKey);
-            },
-          ),
+            }
+            return _ConfirmationScaffold(
+              confirmed: false,
+              title: 'Submission not complete',
+              pollTitle: 'Token holder voting',
+              message:
+                  "Couldn't load submission details: ${friendlyVotingErrorMessage(error)}",
+              votingPower: 'Not available',
+            );
+          },
+          data: (state) {
+            return _buildSubmissionContent(state: state, jobKey: jobKey);
+          },
         ),
       ),
     );
@@ -414,126 +412,134 @@ class _ConfirmationScaffold extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: AppRouteBackLink(),
-            ),
+            const AppPaneToolbar(),
             Expanded(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Spacer(),
-                      Row(
-                        children: [
-                          Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: colors.background.inverse,
-                              borderRadius: BorderRadius.circular(
-                                AppRadii.full,
-                              ),
-                            ),
-                            child: Icon(
-                              Icons.how_to_vote,
-                              color: colors.text.inverse,
-                              size: 24,
-                            ),
-                          ),
-                          Transform.translate(
-                            offset: const Offset(-6, 0),
-                            child: Container(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.md,
+                  0,
+                  AppSpacing.md,
+                  AppSpacing.md,
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Spacer(),
+                        Row(
+                          children: [
+                            Container(
                               width: 48,
                               height: 48,
                               decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    colors.background.utilitySuccessSubtle,
-                                    colors.background.utilitySuccessStrong,
-                                  ],
-                                ),
-                                border: Border.all(
-                                  color: colors.background.base,
-                                  width: 2,
-                                ),
+                                color: colors.background.inverse,
                                 borderRadius: BorderRadius.circular(
                                   AppRadii.full,
                                 ),
                               ),
                               child: Icon(
-                                confirmed
-                                    ? Icons.verified
-                                    : Icons.error_outline,
-                                color: confirmed
-                                    ? colors.text.success
-                                    : colors.text.warning,
+                                Icons.how_to_vote,
+                                color: colors.text.inverse,
                                 size: 24,
                               ),
                             ),
+                            Transform.translate(
+                              offset: const Offset(-6, 0),
+                              child: Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      colors.background.utilitySuccessSubtle,
+                                      colors.background.utilitySuccessStrong,
+                                    ],
+                                  ),
+                                  border: Border.all(
+                                    color: colors.background.base,
+                                    width: 2,
+                                  ),
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadii.full,
+                                  ),
+                                ),
+                                child: Icon(
+                                  confirmed
+                                      ? Icons.verified
+                                      : Icons.error_outline,
+                                  color: confirmed
+                                      ? colors.text.success
+                                      : colors.text.warning,
+                                  size: 24,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          title,
+                          style: AppTypography.headlineMedium.copyWith(
+                            color: colors.text.accent,
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        title,
-                        style: AppTypography.headlineMedium.copyWith(
-                          color: colors.text.accent,
                         ),
-                      ),
-                      const SizedBox(height: AppSpacing.xxs),
-                      Text(
-                        message,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: colors.text.secondary,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      _ReceiptCard(
-                        rows: [
-                          _ReceiptRow(label: 'Voting round', value: pollTitle),
-                          _ReceiptRow(
-                            label: 'Voting power',
-                            value: votingPower,
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          message,
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: colors.text.secondary,
                           ),
-                        ],
-                      ),
-                      const Spacer(flex: 2),
-                      SizedBox(
-                        width: double.infinity,
-                        child: AppButton(
-                          onPressed: doneEnabled
-                              ? onDone ?? () => context.go('/voting')
-                              : null,
-                          variant: AppButtonVariant.primary,
-                          child: Text(doneLabel),
                         ),
-                      ),
-                      if (onRetry != null && retryLabel != null) ...[
-                        const SizedBox(height: AppSpacing.xs),
+                        const SizedBox(height: AppSpacing.md),
+                        _ReceiptCard(
+                          rows: [
+                            _ReceiptRow(
+                              label: 'Voting round',
+                              value: pollTitle,
+                            ),
+                            _ReceiptRow(
+                              label: 'Voting power',
+                              value: votingPower,
+                            ),
+                          ],
+                        ),
+                        const Spacer(flex: 2),
                         SizedBox(
                           width: double.infinity,
                           child: AppButton(
-                            onPressed: onRetry,
-                            variant: AppButtonVariant.secondary,
-                            child: Text(retryLabel!),
+                            onPressed: doneEnabled
+                                ? onDone ?? () => context.go('/voting')
+                                : null,
+                            variant: AppButtonVariant.primary,
+                            child: Text(doneLabel),
                           ),
                         ),
-                      ],
-                      if (returnErrorMessage != null) ...[
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          returnErrorMessage!,
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.warning,
+                        if (onRetry != null && retryLabel != null) ...[
+                          const SizedBox(height: AppSpacing.xs),
+                          SizedBox(
+                            width: double.infinity,
+                            child: AppButton(
+                              onPressed: onRetry,
+                              variant: AppButtonVariant.secondary,
+                              child: Text(retryLabel!),
+                            ),
                           ),
-                        ),
+                        ],
+                        if (returnErrorMessage != null) ...[
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            returnErrorMessage!,
+                            style: AppTypography.bodyMedium.copyWith(
+                              color: colors.text.warning,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),

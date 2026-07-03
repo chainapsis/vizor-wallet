@@ -21,9 +21,13 @@ class _FakeReceiveAddressService extends ReceiveAddressService {
 }
 
 class _FakeSwapSyncNotifier extends SyncNotifier {
-  _FakeSwapSyncNotifier(this.spendableBalance);
+  _FakeSwapSyncNotifier(
+    this.spendableBalance, {
+    this.recentTransactions = const [],
+  });
 
   final BigInt spendableBalance;
+  final List<rust_sync.TransactionInfo> recentTransactions;
   var restartCount = 0;
 
   @override
@@ -32,6 +36,7 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
     hasAccountScopedData: true,
     spendableBalance: spendableBalance,
     totalBalance: spendableBalance,
+    recentTransactions: recentTransactions,
   );
 
   @override
@@ -961,7 +966,7 @@ AddressBookContact _addressBookContact({
     label: label,
     network: network,
     address: address,
-    profilePictureId: 'knight',
+    profilePictureId: 'pfp-01',
     createdAtMs: 1,
     updatedAtMs: 1,
   );

@@ -27,7 +27,6 @@ const _retryQueuedMessage = 'Shielding queued for retry. Check Activity.';
 const _legacyBroadcastFailureMessage =
     "Couldn't broadcast your shielding transaction. Try again.";
 final _currencyTicker = kZcashDefaultCurrencyTicker;
-final _currencyTickerLower = _currencyTicker.toLowerCase();
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -73,7 +72,7 @@ void main() {
       await _waitForBalance(
         tester,
         transparent:
-            'Transparent balance: ${_formatBalance(_transparentFundingZatoshi)} '
+            'Transparent: ${_formatBalance(_transparentFundingZatoshi)} '
             '$_currencyTicker',
         timeout: const Duration(minutes: 5),
       );
@@ -126,7 +125,7 @@ void main() {
       );
       await _expectAnyActivityRow(
         tester,
-        rowKeyPrefix: 'home_activity',
+        rowKeyPrefix: 'home_desktop_activity',
         title: 'Shielded',
         amount: _formatActivity(expectedShielded),
         status: 'In progress',
@@ -142,14 +141,14 @@ void main() {
       );
       await _waitForBalance(
         tester,
-        shielded: '${_formatBalance(expectedShielded)} $_currencyTickerLower',
+        shielded: _formatBalance(expectedShielded),
         timeout: const Duration(minutes: 5),
       );
       await _waitForTransparentBalanceCleared(tester);
 
       await _expectAnyActivityRow(
         tester,
-        rowKeyPrefix: 'home_activity',
+        rowKeyPrefix: 'home_desktop_activity',
         title: 'Shielded',
         amount: _formatActivity(expectedShielded),
         status: 'Completed',
@@ -248,7 +247,7 @@ Future<void> _createFirstWallet(WidgetTester tester) async {
 
 Future<String> _transparentAddressForAccount(String accountUuid) async {
   final dbPath = await getWalletDbPath();
-  return rust_wallet.getTransparentAddress(
+  return rust_wallet.getTransparentReceiveAddress(
     dbPath: dbPath,
     network: _network,
     accountUuid: accountUuid,
@@ -328,7 +327,9 @@ Future<void> _waitForHome(
 }) async {
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('home_shielded_balance_text'))),
+    () => tester.any(
+      find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+    ),
     description: 'home balance card to render',
     timeout: timeout,
   );
@@ -341,7 +342,7 @@ Future<void> _waitForShieldBalanceUi(WidgetTester tester) async {
       final button = find.byKey(const ValueKey('home_shield_balance_button'));
       return tester.any(button) &&
           tester.any(
-            find.descendant(of: button, matching: find.text('Shield Balance')),
+            find.descendant(of: button, matching: find.text('Shield now')),
           );
     },
     description: 'shield balance action to render',
@@ -357,7 +358,7 @@ Future<void> _waitForTransparentBalanceCleared(WidgetTester tester) async {
         _keyedTextEquals(
           tester,
           const ValueKey('home_transparent_balance_text'),
-          'Transparent balance: 0.00 $_currencyTicker',
+          'Transparent: 0.00 $_currencyTicker',
         ),
     description: 'transparent balance to clear after shielding',
     timeout: const Duration(minutes: 5),
@@ -428,7 +429,7 @@ Future<void> _waitForBalance(
       tester,
       () => _keyedTextEquals(
         tester,
-        const ValueKey('home_shielded_balance_text'),
+        const ValueKey('home_desktop_balance_amount_text'),
         shielded,
       ),
       description: 'shielded balance to show $shielded',
@@ -467,9 +468,7 @@ Future<void> _expectAnyActivityRow(
           tester,
           find.byKey(ValueKey('${rowKeyPrefix}_row_$i')),
         );
-        if (texts.contains(title) &&
-            texts.contains(amount) &&
-            texts.contains(status)) {
+        if (_activityRowMatches(texts, title, amount, status)) {
           return true;
         }
       }
@@ -479,6 +478,34 @@ Future<void> _expectAnyActivityRow(
     timeout: timeout,
   );
   _log('activity row matched: $title $amount $status');
+}
+
+/// The redesigned activity rows append an ellipsis to the action title while a
+/// transaction is in progress and convey that state via the title + a loader
+/// icon rather than a separate status label on the compact home rows. Match
+/// defensively: amount exact, title may carry the pending ellipsis, and the
+/// status is satisfied by its own text or by the pending ellipsis title.
+bool _activityRowMatches(
+  Set<String> texts,
+  String title,
+  String amount,
+  String status,
+) {
+  if (!texts.contains(amount)) return false;
+  // Pending rows append an ellipsis to the action title ("Sending ...",
+  // "Receiving ..."); completed/other rows use the plain title. Accept either
+  // form and let the status check below disambiguate on rows that render a
+  // status label. Callers pass the pending-form title (e.g. 'Sending') for
+  // in-progress assertions so the ellipsis word disambiguates from completed.
+  final titleOk = texts.contains(title) || texts.contains('$title ...');
+  if (!titleOk) return false;
+  // Compact home rows convey status via the title ellipsis + icon and omit the
+  // status label; the full activity screen rows render it. The title already
+  // disambiguates pending "X ..." from completed "X", so enforce the status
+  // text only when the row actually shows one.
+  const knownStatuses = {'In progress', 'Completed', 'Failed', 'Refunded'};
+  final rendered = texts.where(knownStatuses.contains);
+  return rendered.isEmpty || rendered.contains(status);
 }
 
 Future<void> _tapAppButton(

@@ -1,33 +1,46 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
-import 'package:qr_flutter/qr_flutter.dart';
+import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
 enum KeystonePcztQrStagePhase { preparing, ready, working, failed }
 
+const _scanOptimizedQrInk = Color(0xFF000000);
+
 class KeystonePcztQrStage extends StatelessWidget {
   const KeystonePcztQrStage({
     required this.phase,
     required this.urParts,
     required this.error,
+    this.size = 230,
+    this.scanOptimized = true,
+    this.frameInterval = const Duration(milliseconds: 100),
     super.key,
   });
 
   final KeystonePcztQrStagePhase phase;
   final List<String> urParts;
   final String? error;
+  final double size;
+  final bool scanOptimized;
+  final Duration frameInterval;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
-      width: 230,
-      height: 230,
+      width: size,
+      height: size,
       child: switch (phase) {
-        KeystonePcztQrStagePhase.ready => _AnimatedKeystoneQr(urParts: urParts),
+        KeystonePcztQrStagePhase.ready => _AnimatedKeystoneQr(
+          urParts: urParts,
+          size: size,
+          scanOptimized: scanOptimized,
+          frameInterval: frameInterval,
+        ),
         KeystonePcztQrStagePhase.failed => Center(
           child: Text(
             error ?? 'Keystone signing could not be prepared.',
@@ -61,9 +74,17 @@ class _QrStageLoader extends StatelessWidget {
 }
 
 class _AnimatedKeystoneQr extends StatefulWidget {
-  const _AnimatedKeystoneQr({required this.urParts});
+  const _AnimatedKeystoneQr({
+    required this.urParts,
+    required this.size,
+    required this.scanOptimized,
+    required this.frameInterval,
+  });
 
   final List<String> urParts;
+  final double size;
+  final bool scanOptimized;
+  final Duration frameInterval;
 
   @override
   State<_AnimatedKeystoneQr> createState() => _AnimatedKeystoneQrState();
@@ -72,6 +93,7 @@ class _AnimatedKeystoneQr extends StatefulWidget {
 class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   int _index = 0;
   Timer? _timer;
+  final Map<int, QrImage> _frames = {};
 
   @override
   void initState() {
@@ -82,16 +104,30 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   @override
   void didUpdateWidget(covariant _AnimatedKeystoneQr oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.urParts != widget.urParts) {
+    if (oldWidget.urParts != widget.urParts ||
+        oldWidget.scanOptimized != widget.scanOptimized ||
+        oldWidget.frameInterval != widget.frameInterval) {
       _index = 0;
+      _frames.clear();
       _startTimer();
     }
+  }
+
+  QrImage _frameAt(int index) {
+    return _frames[index] ??= QrImage(
+      QrCode.fromData(
+        data: widget.urParts[index],
+        errorCorrectLevel: widget.scanOptimized
+            ? QrErrorCorrectLevel.M
+            : QrErrorCorrectLevel.L,
+      ),
+    );
   }
 
   void _startTimer() {
     _timer?.cancel();
     if (widget.urParts.length <= 1) return;
-    _timer = Timer.periodic(const Duration(milliseconds: 250), (_) {
+    _timer = Timer.periodic(widget.frameInterval, (_) {
       if (!mounted) return;
       setState(() {
         _index = (_index + 1) % widget.urParts.length;
@@ -108,25 +144,103 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   @override
   Widget build(BuildContext context) {
     if (widget.urParts.isEmpty) return const SizedBox.shrink();
-    return DecoratedBox(
-      decoration: const BoxDecoration(color: Color(0xFFFFFFFF)),
-      child: Padding(
-        padding: const EdgeInsets.all(2),
-        child: QrImageView(
-          data: widget.urParts[_index],
-          size: 226,
-          backgroundColor: const Color(0xFFFFFFFF),
-          eyeStyle: const QrEyeStyle(
-            eyeShape: QrEyeShape.square,
-            color: Color(0xFF141818),
+    // Hardware-wallet PCZT QR is scan-first: use high-contrast square modules
+    // on the QR surface with an explicit quiet zone. The decorative Figma
+    // treatment is retained only for explicit non-scanning previews.
+    // Figma (render-measured from 4654:62168 / 4654:63922): the decorative QR
+    // ink is drawn directly on the modal panel in both themes, using the
+    // accent icon token with bullseye finder eyes painted over the symbol's
+    // own eye pattern; the eye knockout matches the panel color.
+    final colors = context.colors;
+    final moduleColor = colors.icon.accent;
+    final frame = _frameAt(_index);
+    if (widget.scanOptimized) {
+      return SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: ColoredBox(
+          color: colors.surface.qrCode,
+          child: PrettyQrView(
+            qrImage: frame,
+            decoration: const PrettyQrDecoration(
+              quietZone: PrettyQrQuietZone.modules(3),
+              shape: PrettyQrSquaresSymbol(color: _scanOptimizedQrInk),
+            ),
           ),
-          dataModuleStyle: const QrDataModuleStyle(
-            dataModuleShape: QrDataModuleShape.square,
-            color: Color(0xFF141818),
-          ),
-          errorCorrectionLevel: QrErrorCorrectLevel.L,
         ),
+      );
+    }
+    return SizedBox(
+      width: widget.size,
+      height: widget.size,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          PrettyQrView(
+            qrImage: frame,
+            decoration: PrettyQrDecoration(
+              quietZone: PrettyQrQuietZone.zero,
+              shape: PrettyQrSmoothSymbol(color: moduleColor),
+            ),
+          ),
+          CustomPaint(
+            painter: _BullseyeFinderEyesPainter(
+              moduleCount: frame.moduleCount,
+              moduleColor: moduleColor,
+              knockoutColor: context.colors.background.base,
+            ),
+          ),
+        ],
       ),
     );
+  }
+}
+
+/// Replaces the smooth symbol's square finder patterns with the Figma
+/// bullseye eyes: a one-module-thick ring (outer Ø 7 modules) around a
+/// three-module center disc.
+class _BullseyeFinderEyesPainter extends CustomPainter {
+  const _BullseyeFinderEyesPainter({
+    required this.moduleCount,
+    required this.moduleColor,
+    required this.knockoutColor,
+  });
+
+  final int moduleCount;
+  final Color moduleColor;
+  final Color knockoutColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final m = size.width / moduleCount;
+    final knockout = Paint()..color = knockoutColor;
+    final ring = Paint()
+      ..color = moduleColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = m;
+    final disc = Paint()..color = moduleColor;
+
+    for (final origin in [
+      Offset.zero,
+      Offset((moduleCount - 7) * m, 0),
+      Offset(0, (moduleCount - 7) * m),
+    ]) {
+      // Cover the symbol's own finder pattern (7×7 modules, slightly
+      // inflated so no anti-aliased fringe survives underneath).
+      canvas.drawRect(
+        Rect.fromLTWH(origin.dx - 0.5, origin.dy - 0.5, 7 * m + 1, 7 * m + 1),
+        knockout,
+      );
+      final center = origin + Offset(3.5 * m, 3.5 * m);
+      canvas.drawCircle(center, 3 * m, ring);
+      canvas.drawCircle(center, 1.5 * m, disc);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_BullseyeFinderEyesPainter oldDelegate) {
+    return moduleCount != oldDelegate.moduleCount ||
+        moduleColor != oldDelegate.moduleColor ||
+        knockoutColor != oldDelegate.knockoutColor;
   }
 }

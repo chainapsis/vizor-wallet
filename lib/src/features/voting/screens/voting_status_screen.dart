@@ -212,7 +212,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
                 onClear: _clearError,
               );
             }
-            return const Center(child: CircularProgressIndicator());
+            return const VotingPaneLoading();
           },
           error: (error, _) => _StatusContent(
             phase: VotingSessionPhase.error,

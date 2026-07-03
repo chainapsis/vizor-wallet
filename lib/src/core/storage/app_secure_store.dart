@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart'
         TargetPlatform,
         debugPrint,
         defaultTargetPlatform,
+        kDebugMode,
         kIsWeb,
         visibleForTesting;
 import 'package:flutter/services.dart' show PlatformException;
@@ -33,6 +34,9 @@ const _accountMnemonicKeyPrefix = 'zcash_account_mnemonic_';
 const _accountMnemonicMigrationCompleteKey =
     'zcash_mnemonic_storage_migrated_v1';
 const _votingHotkeyKeyPrefix = 'zcash_account_voting_hotkey_';
+const _e2eUseFirstUnlockMnemonicKeychain = bool.fromEnvironment(
+  'ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN',
+);
 
 class PasswordRotationRecoveryFailedException implements Exception {
   const PasswordRotationRecoveryFailedException();
@@ -104,7 +108,9 @@ class AppSecureStore {
           : AndroidOptions(sharedPreferencesName: service),
       mOptions: MacOsOptions(
         accountName: macOsService,
-        accessibility: KeychainAccessibility.unlocked,
+        accessibility: kDebugMode && _e2eUseFirstUnlockMnemonicKeychain
+            ? KeychainAccessibility.first_unlock
+            : KeychainAccessibility.unlocked,
         usesDataProtectionKeychain: true,
       ),
     );

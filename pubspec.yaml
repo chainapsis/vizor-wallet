@@ -49,13 +49,12 @@ dependencies:
   mobile_scanner:
     git:
       url: https://github.com/chainapsis/mobile_scanner.git
-      ref: 7932282afb502abfac2f5f9fc860491372e56eda
+      ref: 2a594fd6e592fd723cf03e02337a65d83cf8aa1a
   desktop_window_bootstrap:
     git:
       url: https://github.com/chainapsis/desktop_window_bootstrap.git
-      ref: 01beee7
+      ref: 16b1b30e08004e91521cc511db098f9561dfeb0a
   crypto: ^3.0.7
-  flutter_foreground_task: ^9.2.1
   window_manager: ^0.5.1
   url_launcher: ^6.3.2
   # Renders the Figma-exported icon SVGs under `assets/icons/`.
@@ -64,6 +63,9 @@ dependencies:
   # without re-exporting.
   flutter_svg: ^2.0.10+1
   pretty_qr_code: ^3.6.0
+  # Platform share sheet for the receive screen's share action.
+  share_plus: ^12.0.1
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_test:
@@ -108,16 +110,6 @@ flutter:
     - assets/swap/chains/
 
   fonts:
-    - family: Manrope
-      fonts:
-        - asset: assets/fonts/Manrope-Regular.ttf
-          weight: 400
-        - asset: assets/fonts/Manrope-SemiBold.ttf
-          weight: 600
-        - asset: assets/fonts/Manrope-Bold.ttf
-          weight: 700
-        - asset: assets/fonts/Manrope-ExtraBold.ttf
-          weight: 800
     - family: Inter
       fonts:
         - asset: assets/fonts/Inter-Regular.ttf
@@ -146,9 +138,9 @@ flutter:
           weight: 400
         - asset: assets/fonts/GeistMono-Medium.ttf
           weight: 500
-    - family: Libre Caslon Text
+    - family: Young Serif
       fonts:
-        # Static Regular TTF aligned with the Google Fonts web distribution.
-        # The onboarding designs only use the Regular weight.
-        - asset: assets/fonts/LibreCaslonText-Regular.ttf
+        # Upstream Young Serif assets; the serif family behind the
+        # AppTypography display/headline tokens.
+        - asset: assets/fonts/YoungSerif-Regular.ttf
           weight: 400

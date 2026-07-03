@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' as material;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -14,8 +16,10 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
+import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
+import 'import_account_discovery_modal.dart';
 import 'import_birthday_estimator.dart';
 import 'import_birthday_calendar_overlay.dart';
 import 'import_birthday_unknown_height_modal.dart';
@@ -23,10 +27,18 @@ import 'import_split_view.dart';
 
 enum ImportBirthdayTab { date, blockHeight }
 
-enum _ImportWalletSubmitPhase { idle, stoppingSync, importing }
+enum _ImportWalletSubmitPhase {
+  idle,
+  discoveringAccounts,
+  stoppingSync,
+  importing,
+}
 
 class ImportWalletBirthdayScreen extends ConsumerStatefulWidget {
-  const ImportWalletBirthdayScreen({required this.args, super.key});
+  const ImportWalletBirthdayScreen({
+    required this.args,
+    super.key,
+  });
 
   final ImportBirthdayArgs args;
 
@@ -37,10 +49,13 @@ class ImportWalletBirthdayScreen extends ConsumerStatefulWidget {
 
 class _ImportWalletBirthdayScreenState
     extends ConsumerState<ImportWalletBirthdayScreen> {
-  static const _titleWidth = 574.0;
-  static const _subtitleWidth = 270.0;
+  static const _manualHeightErrorText =
+      "Doesn't seem like a legit block height";
+  static const _titleWidth = 396.0;
+  static const _subtitleWidth = 226.0;
   static const _widgetWidth = 304.0;
-  static const _buttonWidth = 256.0;
+  static const _fieldWidth = 256.0;
+  static const _buttonWidth = 230.0;
   static const _messageHeight = 16.0;
 
   late final TextEditingController _manualHeightController;
@@ -54,6 +69,10 @@ class _ImportWalletBirthdayScreenState
   bool _isCalendarOpen = false;
   bool _isUnknownBirthdayConfirmOpen = false;
   _ImportWalletSubmitPhase _submitPhase = _ImportWalletSubmitPhase.idle;
+  List<rust_wallet.SoftwareWalletDiscoveredAccount>?
+  _accountDiscoveryCandidates;
+  Completer<List<int>?>? _accountDiscoveryCompleter;
+  bool _accountDiscoveryAllowsEmptySelection = true;
   String? _metadataError;
   String? _submitError;
   DateTime? _calendarInitialDate;
@@ -77,6 +96,7 @@ class _ImportWalletBirthdayScreenState
 
   @override
   void dispose() {
+    _completeAccountDiscovery(null);
     _manualHeightFocusNode
       ..removeListener(_handleFocusChanged)
       ..dispose();
@@ -223,6 +243,39 @@ class _ImportWalletBirthdayScreenState
     });
   }
 
+  void _confirmAccountDiscovery(List<int> accountIndices) {
+    _completeAccountDiscovery(accountIndices, updateState: true);
+  }
+
+  void _dismissAccountDiscovery() {
+    _completeAccountDiscovery(null, updateState: true);
+    setState(() {
+      _submitPhase = _ImportWalletSubmitPhase.idle;
+    });
+  }
+
+  void _completeAccountDiscovery(
+    List<int>? accountIndices, {
+    bool updateState = false,
+  }) {
+    final completer = _accountDiscoveryCompleter;
+    void clearDiscoveryState() {
+      _accountDiscoveryCandidates = null;
+      _accountDiscoveryCompleter = null;
+      _accountDiscoveryAllowsEmptySelection = true;
+    }
+
+    if (updateState && mounted) {
+      setState(clearDiscoveryState);
+    } else {
+      clearDiscoveryState();
+    }
+
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(accountIndices);
+    }
+  }
+
   Future<void> _confirmUnknownBirthday() async {
     if (_isSubmitting) return;
     setState(() {
@@ -274,12 +327,19 @@ class _ImportWalletBirthdayScreenState
     try {
       final security = ref.read(appSecurityProvider);
       if (!security.isPasswordConfigured) {
+        final selectedAdditionalAccountIndices =
+            await _resolveAdditionalAccountIndices(
+              mnemonic: mnemonic,
+              birthdayHeight: birthdayHeight,
+            );
+        if (selectedAdditionalAccountIndices == null) return;
         if (!mounted) return;
         context.go(
           '/import/set-password',
           extra: SetPasswordScreenArgs.importWallet(
             mnemonic: mnemonic,
             birthdayHeight: birthdayHeight,
+            selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
           ),
         );
         return;
@@ -287,12 +347,26 @@ class _ImportWalletBirthdayScreenState
 
       final accountNotifier = ref.read(accountProvider.notifier);
       final router = GoRouter.of(context);
-      await runWithSyncPausedForAccountMutation(
+      final imported = await runWithSyncPausedForAccountMutation(
         ref,
-        () => accountNotifier.importAccount(
-          mnemonic: mnemonic,
-          birthdayHeight: birthdayHeight,
-        ),
+        () async {
+          final selectedAdditionalAccountIndices =
+              await _resolveAdditionalAccountIndices(
+                mnemonic: mnemonic,
+                birthdayHeight: birthdayHeight,
+              );
+          if (selectedAdditionalAccountIndices == null) return false;
+          if (!mounted) return false;
+          setState(() {
+            _submitPhase = _ImportWalletSubmitPhase.importing;
+          });
+          await accountNotifier.importAccount(
+            mnemonic: mnemonic,
+            birthdayHeight: birthdayHeight,
+            additionalAccountIndices: selectedAdditionalAccountIndices,
+          );
+          return true;
+        },
         onStoppingSync: () {
           if (!mounted) return;
           setState(() {
@@ -306,6 +380,7 @@ class _ImportWalletBirthdayScreenState
           });
         },
       );
+      if (!imported || !mounted) return;
       router.go('/home');
     } catch (e, st) {
       log('ImportWalletBirthdayScreen._submit: ERROR: $e\n$st');
@@ -316,6 +391,35 @@ class _ImportWalletBirthdayScreenState
       });
       return;
     }
+  }
+
+  Future<List<int>?> _resolveAdditionalAccountIndices({
+    required String mnemonic,
+    required int birthdayHeight,
+  }) async {
+    setState(() {
+      _submitPhase = _ImportWalletSubmitPhase.discoveringAccounts;
+    });
+
+    final discovery = await ref
+        .read(accountProvider.notifier)
+        .discoverAdditionalSoftwareAccounts(
+          mnemonic: mnemonic,
+          birthdayHeight: birthdayHeight,
+        );
+    if (!mounted) return null;
+    final candidates = discovery.accounts;
+    if (candidates.isEmpty) return const [];
+
+    final completer = Completer<List<int>?>();
+    setState(() {
+      _accountDiscoveryCandidates = candidates;
+      _accountDiscoveryCompleter = completer;
+      _accountDiscoveryAllowsEmptySelection =
+          !discovery.primaryAccountAlreadyExists;
+      _submitPhase = _ImportWalletSubmitPhase.idle;
+    });
+    return completer.future;
   }
 
   int? _resolvedBirthdayHeight() {
@@ -343,13 +447,13 @@ class _ImportWalletBirthdayScreenState
     final text = _manualHeightController.text.trim();
     if (text.isEmpty) return null;
     final parsed = _parseManualHeight(text);
-    if (parsed == null) return "That doesn't look like a valid block height.";
+    if (parsed == null) return _manualHeightErrorText;
     if (parsed < _minimumBirthdayHeight) {
-      return "That doesn't look like a valid block height.";
+      return _manualHeightErrorText;
     }
     final maximumHeight = _metadata?.tipHeight;
     if (maximumHeight != null && parsed > maximumHeight) {
-      return "That doesn't look like a valid block height.";
+      return _manualHeightErrorText;
     }
     if (_metadataError != null) return _metadataError;
     return null;
@@ -365,7 +469,6 @@ class _ImportWalletBirthdayScreenState
   }
 
   String? get _dateMessage {
-    if (_submitError != null && _submitError!.isNotEmpty) return _submitError;
     if (_metadataError != null) return _metadataError;
     return null;
   }
@@ -385,6 +488,7 @@ class _ImportWalletBirthdayScreenState
     final calendarFirstDate = _calendarFirstDate;
     final calendarLastDate = _calendarLastDate;
     final buttonLabel = switch (_submitPhase) {
+      _ImportWalletSubmitPhase.discoveringAccounts => 'Checking accounts...',
       _ImportWalletSubmitPhase.stoppingSync => 'Stop syncing...',
       _ImportWalletSubmitPhase.importing => 'Importing...',
       _ImportWalletSubmitPhase.idle =>
@@ -394,7 +498,23 @@ class _ImportWalletBirthdayScreenState
     };
 
     return ImportOnboardingTrailingPane(
-      overlay: _isUnknownBirthdayConfirmOpen
+      backTarget: OnboardingBackTarget.callback(
+        label: ImportOnboardingStep.secretPassphrase.label,
+        onTap: () => context.go(
+          '/import',
+          extra: ImportSecretPassphraseArgs(mnemonic: widget.args.mnemonic),
+        ),
+      ),
+      overlay: _accountDiscoveryCandidates != null
+          ? ImportAccountDiscoveryModal(
+              accounts: _accountDiscoveryCandidates!,
+              allowEmptySelection: _accountDiscoveryAllowsEmptySelection,
+              bip44CoinType: ref.read(rpcEndpointProvider).network.coinType,
+              loadTransparentBalance: _loadAccountDiscoveryTransparentBalance,
+              onConfirm: _confirmAccountDiscovery,
+              onCancel: _dismissAccountDiscovery,
+            )
+          : _isUnknownBirthdayConfirmOpen
           ? ImportBirthdayUnknownHeightModal(
               onConfirm: _confirmUnknownBirthday,
               onCancel: _dismissUnknownBirthdayConfirmation,
@@ -411,13 +531,6 @@ class _ImportWalletBirthdayScreenState
           : null,
       child: Column(
         children: [
-          _BackRow(
-            onTap: () => context.go(
-              '/import',
-              extra: ImportSecretPassphraseArgs(mnemonic: widget.args.mnemonic),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s),
           Expanded(
             child: Column(
               children: [
@@ -433,7 +546,7 @@ class _ImportWalletBirthdayScreenState
                           SizedBox(
                             width: _titleWidth,
                             child: Text(
-                              'Around when did you\ncreate your wallet?',
+                              'Around when did you create your wallet?',
                               style: AppTypography.displayLarge.copyWith(
                                 color: context.colors.text.accent,
                               ),
@@ -444,14 +557,16 @@ class _ImportWalletBirthdayScreenState
                           SizedBox(
                             width: _subtitleWidth,
                             child: Text(
-                              'It helps us import your wallet faster.',
+                              'Zcash (ZEC) built around financial privacy '
+                              '& self-custody.',
                               style: AppTypography.bodyMedium.copyWith(
-                                color: context.colors.text.accent,
+                                color: context.colors.text.primary,
                               ),
                               textAlign: TextAlign.center,
                             ),
                           ),
-                          const SizedBox(height: AppSpacing.lg),
+                          // Figma On Page Content gap (Spacing/base = 32).
+                          const SizedBox(height: AppSpacing.base),
                           SizedBox(
                             width: _widgetWidth,
                             child: Column(
@@ -464,7 +579,7 @@ class _ImportWalletBirthdayScreenState
                                 const SizedBox(height: AppSpacing.md),
                                 if (activeTab == ImportBirthdayTab.date)
                                   _DatePickerField(
-                                    width: _widgetWidth,
+                                    width: _fieldWidth,
                                     valueText: _selectedDate == null
                                         ? null
                                         : _formatDate(_selectedDate!),
@@ -475,7 +590,7 @@ class _ImportWalletBirthdayScreenState
                                   _BlockHeightField(
                                     controller: _manualHeightController,
                                     focusNode: _manualHeightFocusNode,
-                                    width: _widgetWidth,
+                                    width: _fieldWidth,
                                     errorText: _manualHeightError,
                                     onChanged: (value) {
                                       setState(() {
@@ -485,7 +600,7 @@ class _ImportWalletBirthdayScreenState
                                   ),
                                 const SizedBox(height: AppSpacing.xxs),
                                 SizedBox(
-                                  width: _widgetWidth,
+                                  width: _fieldWidth,
                                   height: _messageHeight,
                                   child: activeTab == ImportBirthdayTab.date
                                       ? _InlineMessage(text: _dateMessage)
@@ -503,10 +618,15 @@ class _ImportWalletBirthdayScreenState
                 ),
                 const SizedBox(height: AppSpacing.md),
                 SizedBox(
-                  width: _buttonWidth,
+                  width: _widgetWidth,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (_submitError != null &&
+                          _submitError!.trim().isNotEmpty) ...[
+                        _InlineMessage(text: _submitError, centered: true),
+                        const SizedBox(height: AppSpacing.s),
+                      ],
                       AppButton(
                         key: const ValueKey('import_birthday_submit_button'),
                         onPressed: _isSubmitEnabled ? _submit : null,
@@ -515,7 +635,7 @@ class _ImportWalletBirthdayScreenState
                         trailing: const AppIcon(AppIcons.chevronForward),
                         child: Text(buttonLabel),
                       ),
-                      const SizedBox(height: AppSpacing.xs),
+                      const SizedBox(height: AppSpacing.s),
                       AppButton(
                         key: const ValueKey('import_birthday_skip_button'),
                         onPressed: _isSubmitting
@@ -536,46 +656,16 @@ class _ImportWalletBirthdayScreenState
       ),
     );
   }
-}
 
-class _BackRow extends StatelessWidget {
-  const _BackRow({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      height: 32,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onTap,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.chevronBackward,
-                  size: AppIconSize.medium,
-                  color: colors.text.accent,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+  Future<BigInt> _loadAccountDiscoveryTransparentBalance(
+    rust_wallet.SoftwareWalletDiscoveredAccount account,
+  ) {
+    return ref
+        .read(accountProvider.notifier)
+        .previewSoftwareAccountTransparentBalance(
+          mnemonic: widget.args.mnemonic,
+          accountIndex: account.zip32AccountIndex,
+        );
   }
 }
 
@@ -588,49 +678,52 @@ class _BirthdayTabRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _TabLabel(
-          label: 'Enter the Date',
-          active: activeTab == ImportBirthdayTab.date,
-          onTap: () => onTabSelected(ImportBirthdayTab.date),
-          activeColor: colors.text.accent,
-          inactiveColor: colors.text.muted,
-        ),
-        const SizedBox(width: 10),
-        _TabLabel(
-          label: 'Enter the Block Height',
-          active: activeTab == ImportBirthdayTab.blockHeight,
-          onTap: () => onTabSelected(ImportBirthdayTab.blockHeight),
-          activeColor: colors.text.accent,
-          inactiveColor: colors.text.muted,
-        ),
-      ],
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _TabLabel(
+            iconName: AppIcons.calendar,
+            label: 'Enter the date',
+            active: activeTab == ImportBirthdayTab.date,
+            onTap: () => onTabSelected(ImportBirthdayTab.date),
+            color: colors.text.accent,
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          _TabLabel(
+            iconName: AppIcons.block,
+            label: 'Enter the block height',
+            active: activeTab == ImportBirthdayTab.blockHeight,
+            onTap: () => onTabSelected(ImportBirthdayTab.blockHeight),
+            color: colors.text.accent,
+          ),
+        ],
+      ),
     );
   }
 }
 
 class _TabLabel extends StatelessWidget {
   const _TabLabel({
+    required this.iconName,
     required this.label,
     required this.active,
     required this.onTap,
-    required this.activeColor,
-    required this.inactiveColor,
+    required this.color,
   });
 
+  final String iconName;
   final String label;
   final bool active;
   final VoidCallback onTap;
-  final Color activeColor;
-  final Color inactiveColor;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
     final style = active
-        ? AppTypography.bodyMediumStrong.copyWith(color: activeColor)
-        : AppTypography.bodyMedium.copyWith(color: inactiveColor);
+        ? AppTypography.bodyMediumStrong.copyWith(color: color)
+        : AppTypography.bodyMedium.copyWith(color: color);
     return Semantics(
       button: true,
       selected: active,
@@ -639,7 +732,26 @@ class _TabLabel extends StatelessWidget {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onTap,
-          child: Text(label, style: style),
+          child: Opacity(
+            opacity: active ? 1 : 0.5,
+            child: SizedBox(
+              height: 25,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xxs,
+                  vertical: 2,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppIcon(iconName, size: 16, color: color),
+                    const SizedBox(width: AppSpacing.xxs),
+                    Text(label, style: style, textAlign: TextAlign.center),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -676,24 +788,28 @@ class _DatePickerField extends StatelessWidget {
           child: Container(
             width: width,
             height: 46,
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+            padding: const EdgeInsets.only(left: AppSpacing.s, right: 10),
             decoration: BoxDecoration(
-              color: colors.background.base,
+              color: colors.surface.input,
               borderRadius: BorderRadius.circular(AppRadii.small),
-              border: Border.all(color: colors.border.medium, width: 1.5),
+              border: Border.all(color: const Color(0x00000000), width: 1.5),
+              boxShadow: _birthdayFieldSurfaceShadow(colors),
             ),
             child: Row(
               children: [
                 Expanded(
                   child: Text(
                     valueText ?? 'mm/dd/yyyy',
-                    style: AppTypography.labelLarge.copyWith(color: valueColor),
+                    style: AppTypography.labelLarge.copyWith(
+                      color: valueColor,
+                      fontWeight: FontWeight.w400,
+                    ),
                   ),
                 ),
                 AppIcon(
                   AppIcons.calendar,
                   size: 20,
-                  color: enabled ? colors.icon.accent : colors.icon.regular,
+                  color: enabled ? colors.icon.accent : colors.icon.disabled,
                 ),
               ],
             ),
@@ -726,16 +842,24 @@ class _BlockHeightField extends StatelessWidget {
     final borderColor = hasError
         ? colors.border.utilityDestructive
         : focusNode.hasFocus
-        ? colors.border.medium
-        : colors.border.subtle;
+        ? colors.background.inverse
+        : const Color(0x00000000);
 
     return Container(
       width: width,
       height: 46,
       decoration: BoxDecoration(
-        color: colors.background.base,
+        color: hasError
+            ? Color.alphaBlend(
+                colors.background.utilityDestructiveAlphaSubtle,
+                colors.surface.input,
+              )
+            : colors.surface.input,
         borderRadius: BorderRadius.circular(AppRadii.small),
         border: Border.all(color: borderColor, width: 1.5),
+        boxShadow: hasError
+            ? const <BoxShadow>[]
+            : _birthdayFieldSurfaceShadow(colors),
       ),
       child: Row(
         children: [
@@ -758,12 +882,14 @@ class _BlockHeightField extends StatelessWidget {
               onChanged: onChanged,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.accent,
+                fontWeight: FontWeight.w500,
               ),
               cursorColor: colors.text.accent,
               decoration: material.InputDecoration.collapsed(
-                hintText: 'Block Height',
+                hintText: 'Block height',
                 hintStyle: AppTypography.labelLarge.copyWith(
                   color: colors.text.muted,
+                  fontWeight: FontWeight.w400,
                 ),
               ),
             ),
@@ -776,9 +902,10 @@ class _BlockHeightField extends StatelessWidget {
 }
 
 class _InlineMessage extends StatelessWidget {
-  const _InlineMessage({required this.text});
+  const _InlineMessage({required this.text, this.centered = false});
 
   final String? text;
+  final bool centered;
 
   @override
   Widget build(BuildContext context) {
@@ -786,21 +913,47 @@ class _InlineMessage extends StatelessWidget {
       return const SizedBox.shrink();
     }
     final colors = context.colors;
+    final errorColor = colors.border.utilityDestructive;
+    final messageText = Text(
+      text!,
+      textAlign: centered ? TextAlign.center : null,
+      style: AppTypography.labelLarge.copyWith(
+        color: errorColor,
+        fontWeight: FontWeight.w400,
+      ),
+    );
     return Row(
+      mainAxisAlignment: centered
+          ? MainAxisAlignment.center
+          : MainAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AppIcon(AppIcons.warning, size: 16, color: colors.text.destructive),
+        AppIcon(AppIcons.warning, size: 16, color: errorColor),
         const SizedBox(width: AppSpacing.xxs),
-        Expanded(
-          child: Text(
-            text!,
-            style: AppTypography.labelMedium.copyWith(
-              color: colors.text.destructive,
-            ),
-          ),
-        ),
+        if (centered)
+          Flexible(child: messageText)
+        else
+          Expanded(child: messageText),
       ],
     );
   }
+}
+
+List<BoxShadow> _birthdayFieldSurfaceShadow(AppColors colors) {
+  return [
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 2),
+      blurRadius: 4,
+    ),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 1),
+      blurRadius: 2,
+    ),
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+  ];
 }
 
 DateTime _clampDate(DateTime value, DateTime min, DateTime max) {

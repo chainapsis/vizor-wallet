@@ -13,68 +13,92 @@ import 'keystone_onboarding_flow.dart';
 class KeystoneHowToConnectScreen extends ConsumerWidget {
   const KeystoneHowToConnectScreen({super.key});
 
-  static const _buttonWidth = 256.0;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return KeystoneOnboardingTrailingPane(
-      child: Column(
-        children: [
-          const KeystoneBackRow(routePath: '/welcome'),
-          const SizedBox(height: AppSpacing.xs),
-          Expanded(
-            child: _HeroLayout(buttonWidth: _buttonWidth, ref: ref),
-          ),
-        ],
+      backTarget: const OnboardingBackTarget.route(
+        label: 'Welcome',
+        routePath: '/welcome',
       ),
+      bodyPadding: EdgeInsets.zero,
+      child: _HeroLayout(ref: ref),
     );
   }
 }
 
 class _HeroLayout extends StatelessWidget {
-  const _HeroLayout({required this.buttonWidth, required this.ref});
+  const _HeroLayout({required this.ref});
 
-  final double buttonWidth;
   final WidgetRef ref;
+
+  static const double _contentAreaWidth = 420;
+  static const double _contentPaddingX = 12;
+  static const double _contentPaddingY = 16;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const Expanded(
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: AppSpacing.s),
-            child: Center(child: _HeroBlock()),
+        Expanded(
+          child: Center(
+            child: SizedBox(
+              width: _contentAreaWidth,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: _contentPaddingX,
+                  vertical: _contentPaddingY,
+                ),
+                child: Column(
+                  children: [
+                    const Expanded(child: _OnPageContent()),
+                    _ButtonStack(ref: ref),
+                  ],
+                ),
+              ),
+            ),
           ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        AppButton(
-          onPressed: () {
-            ref.read(keystoneOnboardingProvider.notifier).resetScan();
-            context.go(KeystoneOnboardingStep.scanQrCode.routePath);
-          },
-          variant: AppButtonVariant.primary,
-          minWidth: buttonWidth,
-          trailing: const AppIcon(AppIcons.chevronForward),
-          child: const Text("I'm ready now"),
         ),
       ],
     );
   }
 }
 
-class _HeroBlock extends StatelessWidget {
-  const _HeroBlock();
+class _OnPageContent extends StatelessWidget {
+  const _OnPageContent();
+
+  static const double _sectionGap = 32;
 
   @override
   Widget build(BuildContext context) {
     return const Column(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         _TitleBlock(),
-        SizedBox(height: AppSpacing.base),
-        _CardsRow(),
+        SizedBox(height: _sectionGap),
+        _KeystoneInstructionsPanel(),
       ],
+    );
+  }
+}
+
+class _ButtonStack extends StatelessWidget {
+  const _ButtonStack({required this.ref});
+
+  final WidgetRef ref;
+
+  static const double _buttonMinWidth = 196;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppButton(
+      onPressed: () {
+        ref.read(keystoneOnboardingProvider.notifier).resetScan();
+        context.go(KeystoneOnboardingStep.scanQrCode.routePath);
+      },
+      variant: AppButtonVariant.primary,
+      minWidth: _buttonMinWidth,
+      trailing: const AppIcon(AppIcons.chevronForward),
+      child: const Text("I'm ready now"),
     );
   }
 }
@@ -86,21 +110,27 @@ class _TitleBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Column(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          'Connect Keystone',
-          style: AppTypography.displayMedium.copyWith(
-            color: colors.text.accent,
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.center,
+          child: Text(
+            'Connect Keystone',
+            style: AppTypography.displayLarge.copyWith(
+              fontFamily: 'Young Serif',
+              fontWeight: FontWeight.w400,
+              color: colors.text.accent,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.visible,
+            softWrap: false,
+            textAlign: TextAlign.center,
           ),
-          textAlign: TextAlign.center,
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
           'Prepare your Keystone wallet',
-          style: AppTypography.bodyMediumStrong.copyWith(
-            color: colors.text.accent,
-          ),
+          style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
           textAlign: TextAlign.center,
         ),
       ],
@@ -108,91 +138,61 @@ class _TitleBlock extends StatelessWidget {
   }
 }
 
-class _CardsRow extends StatelessWidget {
-  const _CardsRow();
+class _KeystoneInstructionsPanel extends StatelessWidget {
+  const _KeystoneInstructionsPanel();
 
-  static const _width = 588.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      width: _width,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: _KeystoneStartCard(kind: _KeystoneStartCardKind.prep),
-          ),
-          SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: _KeystoneStartCard(kind: _KeystoneStartCardKind.next),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-enum _KeystoneStartCardKind { prep, next }
-
-class _KeystoneStartCard extends StatelessWidget {
-  const _KeystoneStartCard({required this.kind});
-
-  final _KeystoneStartCardKind kind;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xxs,
-        vertical: AppSpacing.xs,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _KeystoneCardTop(kind: kind),
-          const SizedBox(height: AppSpacing.sm),
-          _KeystoneCardContent(kind: kind),
-        ],
-      ),
-    );
-  }
-}
-
-class _KeystoneCardTop extends StatelessWidget {
-  const _KeystoneCardTop({required this.kind});
-
-  final _KeystoneStartCardKind kind;
-
-  bool get _isPrep => kind == _KeystoneStartCardKind.prep;
+  static const double _minHeight = 392;
+  static const _radius = BorderRadius.all(Radius.circular(24));
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = context.appTheme == AppThemeData.dark;
+    final fill = isDark ? colors.background.base : colors.background.ground;
+
     return Container(
-      height: 96,
-      padding: const EdgeInsets.all(AppSpacing.xs),
-      decoration: BoxDecoration(
-        color: _isPrep ? colors.background.inverse : colors.background.base,
-        borderRadius: BorderRadius.circular(AppRadii.small),
-        border: _isPrep ? Border.all(color: colors.border.subtleOpacity) : null,
+      width: double.infinity,
+      constraints: const BoxConstraints(minHeight: _minHeight),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.md,
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: AppIcon(
-              _isPrep ? AppIcons.importWallet : AppIcons.qr,
-              size: AppIconSize.large,
-              color: _isPrep ? colors.icon.inverse : colors.icon.accent,
-            ),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: _radius,
+        boxShadow: [
+          BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+          BoxShadow(
+            color: colors.shadows.subtle,
+            offset: const Offset(0, 1),
+            blurRadius: 2,
           ),
-          _CardLabelLine(
-            number: _isPrep ? '1' : '2',
-            label: _isPrep ? 'Before you start' : 'Next step',
-            inverse: _isPrep,
+          BoxShadow(
+            color: colors.shadows.subtle,
+            offset: const Offset(0, 2),
+            blurRadius: 4,
+          ),
+          BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+        ],
+      ),
+      child: const Column(
+        children: [
+          _InstructionSection(
+            iconName: AppIcons.importWallet,
+            stepNumber: 1,
+            title: 'Check Keystone firmware',
+            body: null,
+            action: _FirmwareBodyWithLink(),
+          ),
+          SizedBox(height: AppSpacing.md),
+          _Divider(),
+          SizedBox(height: AppSpacing.md),
+          _InstructionSection(
+            iconName: AppIcons.qr,
+            stepNumber: 2,
+            title: 'Prepare to connect',
+            body: null,
+            action: _ConnectionSteps(),
           ),
         ],
       ),
@@ -200,29 +200,93 @@ class _KeystoneCardTop extends StatelessWidget {
   }
 }
 
-class _CardLabelLine extends StatelessWidget {
-  const _CardLabelLine({
-    required this.number,
-    required this.label,
-    required this.inverse,
+class _Divider extends StatelessWidget {
+  const _Divider();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: context.colors.border.regular,
+        borderRadius: BorderRadius.circular(AppRadii.small),
+      ),
+      child: const SizedBox(height: 1, width: double.infinity),
+    );
+  }
+}
+
+class _InstructionSection extends StatelessWidget {
+  const _InstructionSection({
+    required this.iconName,
+    required this.stepNumber,
+    required this.title,
+    required this.body,
+    required this.action,
   });
 
-  final String number;
-  final String label;
-  final bool inverse;
+  final String iconName;
+  final int stepNumber;
+  final String title;
+  final String? body;
+  final Widget action;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.xxs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _InstructionHeader(
+            iconName: iconName,
+            stepNumber: stepNumber,
+            title: title,
+          ),
+          if (body case final body?) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              body,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.primary,
+              ),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.sm),
+          action,
+        ],
+      ),
+    );
+  }
+}
+
+class _InstructionHeader extends StatelessWidget {
+  const _InstructionHeader({
+    required this.iconName,
+    required this.stepNumber,
+    required this.title,
+  });
+
+  final String iconName;
+  final int stepNumber;
+  final String title;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        _StepBadge(text: number, inverse: inverse),
+        AppIcon(iconName, size: 24, color: colors.icon.accent),
         const SizedBox(width: AppSpacing.xs),
-        Text(
-          label,
-          style: AppTypography.codeMedium.copyWith(
-            color: inverse ? colors.text.inverse : colors.text.secondary,
+        Expanded(
+          child: Text(
+            '$stepNumber. $title',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.bodyLarge.copyWith(
+              color: colors.text.accent,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],
@@ -230,98 +294,51 @@ class _CardLabelLine extends StatelessWidget {
   }
 }
 
-class _StepBadge extends StatelessWidget {
-  const _StepBadge({required this.text, required this.inverse});
-
-  static const double _radius = 4;
-
-  final String text;
-  final bool inverse;
+class _FirmwareBodyWithLink extends StatelessWidget {
+  const _FirmwareBodyWithLink();
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      width: 21,
-      height: 21,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: inverse
-            ? colors.background.base
-            : colors.background.neutralStrongOpacity,
-        borderRadius: BorderRadius.circular(_radius),
-      ),
-      child: Text(
-        text,
-        style: AppTypography.codeMedium.copyWith(color: colors.text.accent),
-      ),
+    final bodyStyle = AppTypography.bodyMedium.copyWith(
+      color: context.colors.text.primary,
     );
-  }
-}
-
-class _KeystoneCardContent extends StatelessWidget {
-  const _KeystoneCardContent({required this.kind});
-
-  final _KeystoneStartCardKind kind;
-
-  bool get _isPrep => kind == _KeystoneStartCardKind.prep;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: AppSpacing.s,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _isPrep ? 'Check your firmware' : 'Prepare to connect',
-            style: AppTypography.bodyLarge.copyWith(
-              color: colors.text.accent,
-              fontWeight: FontWeight.w500,
-            ),
+    return Text.rich(
+      TextSpan(
+        style: bodyStyle,
+        children: const [
+          TextSpan(
+            text:
+                'Make sure your Keystone is on the latest Cypherpunk firmware. ',
           ),
-          const SizedBox(height: AppSpacing.s),
-          if (_isPrep) const _FirmwareCardBody() else const _ConnectionSteps(),
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: _FirmwareInlineLink(),
+          ),
         ],
       ),
     );
   }
 }
 
-class _FirmwareCardBody extends StatelessWidget {
-  const _FirmwareCardBody();
+class _FirmwareInlineLink extends StatelessWidget {
+  const _FirmwareInlineLink();
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 256,
-          child: Text(
-            'Vizor only works with Keystone devices running the Cypherpunk '
-            'firmware. Update or install it before continuing.',
-            style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.primary,
-            ),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.s),
-        AppButton(
-          onPressed: _openKeystoneFirmware,
-          variant: AppButtonVariant.ghost,
-          size: AppButtonSize.medium,
-          minWidth: 96,
-          iconGap: 0,
-          leading: const AppIcon(AppIcons.link),
-          child: const Text('Get Cypherpunk firmware'),
-        ),
-      ],
+    return Semantics(
+      button: true,
+      link: true,
+      label: 'Download Keystone firmware',
+      child: AppButton(
+        onPressed: _openKeystoneFirmware,
+        variant: AppButtonVariant.ghost,
+        size: AppButtonSize.small,
+        height: 24,
+        contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+        iconGap: AppSpacing.xxs,
+        leading: const AppIcon(AppIcons.link),
+        child: const Text('link'),
+      ),
     );
   }
 }
@@ -329,47 +346,98 @@ class _FirmwareCardBody extends StatelessWidget {
 class _ConnectionSteps extends StatelessWidget {
   const _ConnectionSteps();
 
-  static const _steps = [
-    'Unlock your Keystone.',
-    'Tap the ⋯ menu, then Connect Software Wallet.',
-    "Vizor isn't listed. Select Zodl, it uses the same method.",
-    'Allow camera access when prompted. Vizor scans the QR through your webcam.',
+  static const _keystoneSteps = [
+    'Tap ••• (top right), then Connect software wallet.',
+    'Select Vizor (or ZODL)',
   ];
+  static const _vizorSteps = ['Scan the dynamic QR code on your Keystone.'];
 
   static const _markerWidth = 15.0;
   static const _markerGap = 6.0;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (var i = 0; i < _steps.length; i++)
-          _ConnectionStepRow(index: i + 1, text: _steps[i]),
+        _ConnectionStepGroup(
+          title: 'On your Keystone',
+          startIndex: 1,
+          steps: _keystoneSteps,
+        ),
+        SizedBox(height: AppSpacing.sm),
+        _ConnectionStepGroup(
+          title: 'On Vizor',
+          startIndex: 3,
+          steps: _vizorSteps,
+        ),
+      ],
+    );
+  }
+}
+
+class _ConnectionStepGroup extends StatelessWidget {
+  const _ConnectionStepGroup({
+    required this.title,
+    required this.startIndex,
+    required this.steps,
+  });
+
+  final String title;
+  final int startIndex;
+  final List<String> steps;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: AppTypography.bodyMediumStrong.copyWith(
+            color: context.colors.text.accent,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xxs),
+        for (var i = 0; i < steps.length; i++)
+          _ConnectionStepRow(
+            index: startIndex + i,
+            text: steps[i],
+            isFirstInGroup: i == 0,
+          ),
       ],
     );
   }
 }
 
 class _ConnectionStepRow extends StatelessWidget {
-  const _ConnectionStepRow({required this.index, required this.text});
+  const _ConnectionStepRow({
+    required this.index,
+    required this.text,
+    required this.isFirstInGroup,
+  });
 
   final int index;
   final String text;
+  final bool isFirstInGroup;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final style = AppTypography.bodyMedium.copyWith(color: colors.text.primary);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: _ConnectionSteps._markerWidth,
-          child: Text('$index.', style: style, textAlign: TextAlign.right),
-        ),
-        const SizedBox(width: _ConnectionSteps._markerGap),
-        Expanded(child: Text(text, style: style)),
-      ],
+    return Padding(
+      padding: EdgeInsets.only(top: isFirstInGroup ? 0 : AppSpacing.xxs),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: _ConnectionSteps._markerWidth,
+            child: Text('$index.', style: style, textAlign: TextAlign.right),
+          ),
+          const SizedBox(width: _ConnectionSteps._markerGap),
+          Expanded(child: Text(text, style: style)),
+        ],
+      ),
     );
   }
 }

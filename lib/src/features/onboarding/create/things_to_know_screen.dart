@@ -11,60 +11,13 @@ class ThingsToKnowScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const OnboardingTrailingPane(child: _Content());
-  }
-}
-
-class _Content extends StatelessWidget {
-  const _Content();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Column(
-      children: [
-        _BackRow(),
-        SizedBox(height: AppSpacing.xs),
-        Expanded(child: _HeroLayout()),
-      ],
-    );
-  }
-}
-
-class _BackRow extends StatelessWidget {
-  const _BackRow();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      height: 32,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => context.go(OnboardingStep.addressTypes.routePath),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.chevronBackward,
-                  size: AppIconSize.medium,
-                  color: colors.text.accent,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+    return OnboardingTrailingPane(
+      backTarget: OnboardingBackTarget.route(
+        label: OnboardingStep.addressTypes.label,
+        routePath: OnboardingStep.addressTypes.routePath,
       ),
+      bodyPadding: EdgeInsets.zero,
+      child: const _HeroLayout(),
     );
   }
 }
@@ -72,82 +25,143 @@ class _BackRow extends StatelessWidget {
 class _HeroLayout extends StatelessWidget {
   const _HeroLayout();
 
+  static const double _contentAreaWidth = 420;
+  static const double _contentPaddingX = 12;
+  static const double _contentPaddingY = 16;
+
   @override
   Widget build(BuildContext context) {
     return const Column(
       children: [
-        Expanded(child: Center(child: _HeroBlock())),
-        SizedBox(height: AppSpacing.md),
-        _ButtonStack(),
+        Expanded(
+          child: Center(
+            child: SizedBox(
+              width: _contentAreaWidth,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: _contentPaddingX,
+                  vertical: _contentPaddingY,
+                ),
+                child: Column(
+                  children: [
+                    Expanded(child: _OnPageContent()),
+                    _ButtonStack(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
 }
 
-class _HeroBlock extends StatelessWidget {
-  const _HeroBlock();
+class _OnPageContent extends StatelessWidget {
+  const _OnPageContent();
+
+  static const double _sectionGap = 32;
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _TitleBlock(),
+        SizedBox(height: _sectionGap),
+        _ThingsToKnowPanel(),
+      ],
+    );
+  }
+}
+
+class _TitleBlock extends StatelessWidget {
+  const _TitleBlock();
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Column(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          'Things to Know',
-          style: AppTypography.displayLarge.copyWith(color: colors.text.accent),
-          textAlign: TextAlign.center,
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.center,
+          child: Text(
+            'Things to know',
+            style: AppTypography.displayLarge.copyWith(
+              color: colors.text.accent,
+            ),
+            textAlign: TextAlign.center,
+          ),
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'A few tips before you start.',
-          style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
+          'Zcash has two address types.\n'
+          'One for privacy, one for transparency.',
+          style: AppTypography.bodyMediumStrong.copyWith(
+            color: colors.text.accent,
+          ),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: AppSpacing.lg),
-        const _InfoColumns(),
       ],
     );
   }
 }
 
-class _InfoColumns extends StatelessWidget {
-  const _InfoColumns();
+class _ThingsToKnowPanel extends StatelessWidget {
+  const _ThingsToKnowPanel();
+
+  static const _radius = BorderRadius.all(Radius.circular(24));
+  static const double _verticalPadding = 32;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final fill = colors.background.ground;
+
     return Container(
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: _verticalPadding,
+      ),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: _radius,
+        boxShadow: [
+          BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+          BoxShadow(
+            color: colors.shadows.subtle,
+            offset: const Offset(0, 1),
+            blurRadius: 2,
+          ),
+          BoxShadow(
+            color: colors.shadows.subtle,
+            offset: const Offset(0, 2),
+            blurRadius: 4,
+          ),
+          BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+        ],
+      ),
+      child: const Column(
         children: [
-          const _InfoColumn(
+          _InfoSection(
             title: 'Time to sync',
             body:
-                'Your balance may be incomplete until your wallet finishes '
-                'syncing. Syncing directly with the Zcash network protects '
-                'your privacy, but takes time. Your funds are safe in the '
-                'meantime.',
+                'Your wallet syncs directly with the Zcash network instead '
+                'of relying on a server. This protects your privacy, but '
+                'takes a moment. Your funds are safe while the app catches up.',
             iconName: AppIcons.time,
           ),
-          const SizedBox(width: AppSpacing.lg),
-          Container(
-            width: 1,
-            height: 145,
-            decoration: BoxDecoration(
-              color: colors.background.inverse.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(AppRadii.full),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.lg),
-          const _InfoColumn(
+          SizedBox(height: AppSpacing.sm),
+          _Divider(),
+          SizedBox(height: AppSpacing.sm),
+          _InfoSection(
             title: 'How to keep privacy',
             body:
-                "Most exchanges don't let you withdraw to a shielded address. "
-                'Use your transparent address, then shield your ZEC after it '
-                'arrives.',
+                "Some exchanges can't send to shielded addresses. If you're "
+                'withdrawing from an exchange, use your transparent address. '
+                'You can shield your ZEC after it arrives.',
             iconName: AppIcons.shieldKeyholeOutline,
           ),
         ],
@@ -156,8 +170,23 @@ class _InfoColumns extends StatelessWidget {
   }
 }
 
-class _InfoColumn extends StatelessWidget {
-  const _InfoColumn({
+class _Divider extends StatelessWidget {
+  const _Divider();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: context.colors.border.regular,
+        borderRadius: BorderRadius.circular(AppRadii.small),
+      ),
+      child: const SizedBox(height: 1, width: double.infinity),
+    );
+  }
+}
+
+class _InfoSection extends StatelessWidget {
+  const _InfoSection({
     required this.title,
     required this.body,
     required this.iconName,
@@ -170,25 +199,25 @@ class _InfoColumn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SizedBox(
-      width: 256,
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.xxs),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              AppIcon(iconName, size: 24, color: colors.icon.accent),
+              const SizedBox(width: AppSpacing.xs),
               Expanded(
                 child: Text(
                   title,
                   style: AppTypography.bodyLarge.copyWith(
                     color: colors.text.accent,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-              const SizedBox(width: AppSpacing.xxs),
-              AppIcon(iconName, size: 20, color: colors.text.brandCrimson),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -207,7 +236,7 @@ class _InfoColumn extends StatelessWidget {
 class _ButtonStack extends StatelessWidget {
   const _ButtonStack();
 
-  static const double _buttonWidth = 256;
+  static const double _buttonWidth = 196;
 
   @override
   Widget build(BuildContext context) {
@@ -216,7 +245,7 @@ class _ButtonStack extends StatelessWidget {
       variant: AppButtonVariant.primary,
       minWidth: _buttonWidth,
       trailing: const AppIcon(AppIcons.chevronForward),
-      child: const Text('Good to know'),
+      child: const Text('Tell me how Zcash works'),
     );
   }
 }

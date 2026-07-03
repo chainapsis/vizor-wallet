@@ -32,6 +32,22 @@ void main() {
     );
   });
 
+  testWidgets('hides legal links while preserving footer space', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_welcomeScreen());
+
+    expect(find.text('Terms'), findsNothing);
+    expect(find.text('Privacy'), findsNothing);
+
+    final footerSpace = find.byKey(
+      const ValueKey('welcome_legal_footer_space'),
+    );
+    expect(footerSpace, findsOneWidget);
+    expect(tester.getSize(footerSpace), const Size(154, 36));
+  });
+
   testWidgets('opens endpoint settings modal from welcome', (tester) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(_welcomeScreen());
@@ -95,13 +111,13 @@ void main() {
 }
 
 Future<void> _loadAppFonts() async {
-  final libreCaslonText = FontLoader('Libre Caslon Text')
-    ..addFont(rootBundle.load('assets/fonts/LibreCaslonText-Regular.ttf'));
+  final youngSerif = FontLoader('Young Serif')
+    ..addFont(rootBundle.load('assets/fonts/YoungSerif-Regular.ttf'));
   final geist = FontLoader('Geist')
     ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
     ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
 
-  await Future.wait([libreCaslonText.load(), geist.load()]);
+  await Future.wait([youngSerif.load(), geist.load()]);
 }
 
 Future<void> _setDesktopViewport(WidgetTester tester) async {

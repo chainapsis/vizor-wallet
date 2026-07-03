@@ -9,19 +9,20 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
-import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/widgets/app_profile_picture.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
 import '../../../providers/windows_update_provider.dart';
-import '../../accounts/widgets/account_name_modal.dart';
+import '../../accounts/widgets/account_modal_card.dart';
+import '../../accounts/widgets/account_edit_modal.dart';
 import '../../accounts/widgets/account_profile_picture_modal.dart';
+import '../settings_platform.dart';
 
 const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
   SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
@@ -40,6 +41,13 @@ enum _SettingsModalType { accountName, profilePicture, theme, updates }
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   _SettingsModalType? _activeModal;
 
+  // Edit-account drafts for the picker round-trip (same model as the
+  // accounts screen): the in-progress name and picked picture survive
+  // while the picker temporarily replaces the edit modal.
+  String? _editDraftName;
+  String? _editDraftProfilePictureId;
+  bool _pfpPickerFromEdit = false;
+
   void _showModal(_SettingsModalType modal) {
     setState(() {
       _activeModal = modal;
@@ -49,13 +57,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   void _closeModal() {
     setState(() {
       _activeModal = null;
+      _editDraftName = null;
+      _editDraftProfilePictureId = null;
+      _pfpPickerFromEdit = false;
     });
   }
 
-  Future<void> _updateAccountName(String name) async {
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    if (accountUuid == null) return;
-    await ref.read(accountProvider.notifier).renameAccount(accountUuid, name);
+  void _openEditProfilePicturePicker() {
+    setState(() {
+      _pfpPickerFromEdit = true;
+      _activeModal = _SettingsModalType.profilePicture;
+    });
+  }
+
+  void _returnToEditAccountModal({String? pickedProfilePictureId}) {
+    setState(() {
+      if (pickedProfilePictureId != null) {
+        _editDraftProfilePictureId = pickedProfilePictureId;
+      }
+      _pfpPickerFromEdit = false;
+      _activeModal = _SettingsModalType.accountName;
+    });
+  }
+
+  Future<void> _commitEditAccount(String name) async {
+    final accountState = ref.read(accountProvider).value;
+    final account = accountState?.activeAccount;
+    if (account == null) return;
+    final notifier = ref.read(accountProvider.notifier);
+    if (name.trim() != account.name.trim()) {
+      await notifier.renameAccount(account.uuid, name);
+    }
+    final draftPicture = _editDraftProfilePictureId;
+    if (draftPicture != null && draftPicture != account.profilePictureId) {
+      await notifier.updateProfilePicture(account.uuid, draftPicture);
+    }
     if (!mounted) return;
     _closeModal();
   }
@@ -78,6 +114,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // The edit-account modals bind to the ACTIVE account, and the sidebar
+    // stays interactive under the pane overlay — switching accounts while a
+    // modal is open must drop the previous account's drafts so Update can't
+    // commit them to the newly selected account.
+    ref.listen(
+      accountProvider.select((state) => state.value?.activeAccountUuid),
+      (previous, next) {
+        if (previous == next) return;
+        if (_editDraftName == null && _editDraftProfilePictureId == null) {
+          return;
+        }
+        setState(() {
+          _editDraftName = null;
+          _editDraftProfilePictureId = null;
+        });
+      },
+    );
     final accountState = ref.watch(accountProvider).value;
     final activeAccountName = accountState?.activeAccount?.name ?? 'Wallet 1';
     final activeProfilePictureId =
@@ -91,6 +144,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final updateState = Platform.isWindows
         ? ref.watch(windowsUpdateProvider)
         : null;
+    final showUninstall = settingsUninstallSupported();
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -98,10 +152,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         padding: EdgeInsets.zero,
         child: Stack(
           children: [
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
+            AppPaneScrollScaffold(
+              toolbar: const AppPaneToolbar(
+                // Design: back chevron sits 16px into the pane on every
+                // settings/utility screen. The 16px inset is the
+                // AppPaneToolbar default, so no padding override is needed.
+                backLinkMinWidth: 60,
+              ),
               child: _SettingsPane(
                 accountName: activeAccountName,
+                profilePictureId: activeProfilePictureId,
                 profilePictureLabel: _profilePictureLabel(
                   activeProfilePictureId,
                 ),
@@ -121,27 +181,54 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onProfilePicture: hasActiveAccount
                     ? () => _showModal(_SettingsModalType.profilePicture)
                     : null,
+                onAddressBook: () => context.push('/address-book'),
                 onTheme: () => _showModal(_SettingsModalType.theme),
                 onUpdates: updateState == null
                     ? null
                     : () => _showModal(_SettingsModalType.updates),
+                onAbout: () => context.push('/about'),
+                onUninstall: showUninstall
+                    ? () => context.go('/settings/uninstall')
+                    : null,
               ),
             ),
             if (_activeModal != null)
               AppPaneModalOverlay(
                 onDismiss: _closeModal,
                 child: switch (_activeModal!) {
-                  _SettingsModalType.accountName => AccountNameModal(
+                  _SettingsModalType.accountName => AccountEditModal(
+                    accountUuid: accountState?.activeAccountUuid ?? '',
                     accountName: activeAccountName,
-                    profilePictureId: activeProfilePictureId,
+                    initialName: _editDraftName ?? activeAccountName,
+                    profilePictureId:
+                        _editDraftProfilePictureId ?? activeProfilePictureId,
+                    profilePictureChanged:
+                        (_editDraftProfilePictureId ??
+                            activeProfilePictureId) !=
+                        activeProfilePictureId,
+                    onEditProfilePicture: _openEditProfilePicturePicker,
+                    onNameChanged: (name) => _editDraftName = name,
                     onCancel: _closeModal,
-                    onUpdate: _updateAccountName,
+                    onUpdate: _commitEditAccount,
                   ),
                   _SettingsModalType.profilePicture =>
                     AccountProfilePictureModal(
-                      currentProfilePictureId: activeProfilePictureId,
-                      onCancel: _closeModal,
-                      onUpdate: _updateProfilePicture,
+                      currentProfilePictureId: _pfpPickerFromEdit
+                          ? (_editDraftProfilePictureId ??
+                                activeProfilePictureId)
+                          : activeProfilePictureId,
+                      onCancel: _pfpPickerFromEdit
+                          ? () => _returnToEditAccountModal()
+                          : _closeModal,
+                      onUpdate: (profilePictureId) async {
+                        if (_pfpPickerFromEdit) {
+                          _returnToEditAccountModal(
+                            pickedProfilePictureId: profilePictureId,
+                          );
+                          return;
+                        }
+                        await _updateProfilePicture(profilePictureId);
+                      },
                     ),
                   _SettingsModalType.theme => _ThemeModal(
                     currentMode: themeMode,
@@ -189,6 +276,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 class _SettingsPane extends StatelessWidget {
   const _SettingsPane({
     required this.accountName,
+    required this.profilePictureId,
     required this.profilePictureLabel,
     required this.activeAccountIsHardware,
     required this.endpointLabel,
@@ -199,11 +287,15 @@ class _SettingsPane extends StatelessWidget {
     required this.onEndpoint,
     required this.onAccountName,
     required this.onProfilePicture,
+    required this.onAddressBook,
     required this.onTheme,
     required this.onUpdates,
+    required this.onAbout,
+    required this.onUninstall,
   });
 
   final String accountName;
+  final String profilePictureId;
   final String profilePictureLabel;
   final bool activeAccountIsHardware;
   final String endpointLabel;
@@ -214,60 +306,58 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback onEndpoint;
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
+  final VoidCallback onAddressBook;
   final VoidCallback onTheme;
   final VoidCallback? onUpdates;
+  final VoidCallback onAbout;
+  final VoidCallback? onUninstall;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-    return SizedBox.expand(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Align(alignment: Alignment.centerLeft, child: AppRouteBackLink()),
-          const SizedBox(height: AppSpacing.s),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 752),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Settings',
-                        textAlign: TextAlign.center,
-                        style: AppTypography.displaySmall.copyWith(
-                          color: colors.text.accent,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      const AppDecorativeDivider(width: 256),
-                      const SizedBox(height: AppSpacing.sm),
-                      _SettingsList(
-                        accountName: accountName,
-                        profilePictureLabel: profilePictureLabel,
-                        activeAccountIsHardware: activeAccountIsHardware,
-                        endpointLabel: endpointLabel,
-                        themeLabel: themeLabel,
-                        updateLabel: updateLabel,
-                        onSeedPhrase: onSeedPhrase,
-                        onChangePassword: onChangePassword,
-                        onEndpoint: onEndpoint,
-                        onAccountName: onAccountName,
-                        onProfilePicture: onProfilePicture,
-                        onTheme: onTheme,
-                        onUpdates: onUpdates,
-                      ),
-                    ],
-                  ),
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Settings',
+                textAlign: TextAlign.center,
+                style: AppTypography.headlineLarge.copyWith(
+                  color: colors.text.accent,
                 ),
               ),
-            ),
+              const SizedBox(height: AppSpacing.base),
+              _SettingsList(
+                accountName: accountName,
+                profilePictureId: profilePictureId,
+                profilePictureLabel: profilePictureLabel,
+                activeAccountIsHardware: activeAccountIsHardware,
+                endpointLabel: endpointLabel,
+                themeLabel: themeLabel,
+                updateLabel: updateLabel,
+                onSeedPhrase: onSeedPhrase,
+                onChangePassword: onChangePassword,
+                onEndpoint: onEndpoint,
+                onAccountName: onAccountName,
+                onProfilePicture: onProfilePicture,
+                onAddressBook: onAddressBook,
+                onTheme: onTheme,
+                onUpdates: onUpdates,
+                onAbout: onAbout,
+                onUninstall: onUninstall,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -276,6 +366,7 @@ class _SettingsPane extends StatelessWidget {
 class _SettingsList extends StatelessWidget {
   const _SettingsList({
     required this.accountName,
+    required this.profilePictureId,
     required this.profilePictureLabel,
     required this.activeAccountIsHardware,
     required this.endpointLabel,
@@ -286,11 +377,15 @@ class _SettingsList extends StatelessWidget {
     required this.onEndpoint,
     required this.onAccountName,
     required this.onProfilePicture,
+    required this.onAddressBook,
     required this.onTheme,
     required this.onUpdates,
+    required this.onAbout,
+    required this.onUninstall,
   });
 
   final String accountName;
+  final String profilePictureId;
   final String profilePictureLabel;
   final bool activeAccountIsHardware;
   final String endpointLabel;
@@ -301,8 +396,11 @@ class _SettingsList extends StatelessWidget {
   final VoidCallback onEndpoint;
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
+  final VoidCallback onAddressBook;
   final VoidCallback onTheme;
   final VoidCallback? onUpdates;
+  final VoidCallback onAbout;
+  final VoidCallback? onUninstall;
 
   @override
   Widget build(BuildContext context) {
@@ -314,34 +412,38 @@ class _SettingsList extends StatelessWidget {
           rows: [
             _SettingsRow(
               iconName: AppIcons.key,
-              label: 'Secret Passphrase',
-              value: activeAccountIsHardware ? 'Unavailable' : 'View',
+              label: 'Secret passphrase',
               onTap: activeAccountIsHardware ? null : onSeedPhrase,
             ),
-            const _SettingsRowDivider(),
             _SettingsRow(
               iconName: AppIcons.lock,
               label: 'Password',
-              value: 'Change',
               onTap: onChangePassword,
             ),
-            const _SettingsRowDivider(),
             _SettingsRow(
-              iconName: AppIcons.users,
-              label: 'Profile Picture',
+              iconName: AppIcons.user,
+              label: 'Profile picture',
               value: profilePictureLabel,
+              valueLeading: AppProfilePicture(
+                profilePictureId: profilePictureId,
+                size: AppProfilePictureSize.medium,
+              ),
               onTap: onProfilePicture,
             ),
-            const _SettingsRowDivider(),
             _SettingsRow(
               iconName: AppIcons.scroll,
-              label: 'Account Name',
+              label: 'Account name',
               value: accountName,
               onTap: onAccountName,
             ),
+            _SettingsRow(
+              iconName: AppIcons.users,
+              label: 'Contacts',
+              onTap: onAddressBook,
+            ),
           ],
         ),
-        const SizedBox(height: AppSpacing.s),
+        const SizedBox(height: AppSpacing.md),
         _SettingsBlock(
           title: 'System',
           rows: [
@@ -351,109 +453,47 @@ class _SettingsList extends StatelessWidget {
               value: endpointLabel,
               onTap: onEndpoint,
             ),
-            const _SettingsRowDivider(),
             _SettingsRow(
               iconName: AppIcons.theme,
               label: 'Theme',
               value: themeLabel,
               onTap: onTheme,
             ),
-            if (updateLabel != null && onUpdates != null) ...[
-              const _SettingsRowDivider(),
+            if (updateLabel != null && onUpdates != null)
               _SettingsRow(
                 iconName: AppIcons.sync,
                 label: 'Updates',
-                value: updateLabel!,
+                value: updateLabel,
                 onTap: onUpdates,
               ),
-            ],
           ],
         ),
-      ],
-    );
-  }
-}
-
-class _SettingsModalCard extends StatelessWidget {
-  const _SettingsModalCard({required this.header, required this.child});
-
-  final Widget header;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 312,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.md,
-      ),
-      decoration: BoxDecoration(
-        color: context.colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          header,
-          const SizedBox(height: AppSpacing.md),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _ModalHeader extends StatelessWidget {
-  const _ModalHeader({required this.leading, required this.title});
-
-  final Widget leading;
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        leading,
-        const SizedBox(width: AppSpacing.xs),
-        Flexible(
-          child: Text(
-            title,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.bodyLarge.copyWith(
-              color: context.colors.text.accent,
-              fontWeight: FontWeight.w500,
+        const SizedBox(height: AppSpacing.md),
+        _SettingsBlock(
+          title: 'Misc',
+          rows: [
+            _SettingsRow(
+              iconName: AppIcons.vizor,
+              label: 'About Vizor',
+              onTap: onAbout,
             ),
+          ],
+        ),
+        if (onUninstall != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          _SettingsBlock(
+            title: 'Danger zone',
+            rows: [
+              _SettingsRow(
+                iconName: AppIcons.trash,
+                label: 'Uninstall Vizor',
+                destructive: true,
+                onTap: onUninstall!,
+              ),
+            ],
           ),
-        ),
+        ],
       ],
-    );
-  }
-}
-
-class _ModalUtilityIcon extends StatelessWidget {
-  const _ModalUtilityIcon({required this.iconName});
-
-  final String iconName;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return Container(
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(
-        color: colors.background.neutralSubtleOpacity,
-        shape: BoxShape.circle,
-      ),
-      child: Center(
-        child: AppIcon(
-          iconName,
-          size: AppIconSize.medium,
-          color: colors.icon.accent,
-        ),
-      ),
     );
   }
 }
@@ -474,13 +514,18 @@ class _ThemeModal extends StatefulWidget {
 }
 
 class _ThemeModalState extends State<_ThemeModal> {
-  static const _buttonWidth = 280.0;
-
   late ThemeMode _selectedMode = widget.currentMode;
   bool _isSubmitting = false;
   String? _submitError;
 
   bool get _canUpdate => !_isSubmitting && _selectedMode != widget.currentMode;
+
+  void _select(ThemeMode mode) {
+    setState(() {
+      _submitError = null;
+      _selectedMode = mode;
+    });
+  }
 
   Future<void> _submit() async {
     if (!_canUpdate) return;
@@ -506,46 +551,39 @@ class _ThemeModalState extends State<_ThemeModal> {
 
   @override
   Widget build(BuildContext context) {
-    return _SettingsModalCard(
-      header: const _ModalHeader(
-        leading: _ModalUtilityIcon(iconName: AppIcons.theme),
-        title: 'Theme',
-      ),
+    return AccountModalCard(
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Column(
-            children: [
-              _ThemeOptionCard(
-                iconName: AppIcons.monitor,
-                label: 'System (Auto)',
-                selected: _selectedMode == ThemeMode.system,
-                onTap: () => setState(() {
-                  _submitError = null;
-                  _selectedMode = ThemeMode.system;
-                }),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              _ThemeOptionCard(
-                iconName: AppIcons.day,
-                label: 'Light Mode',
-                selected: _selectedMode == ThemeMode.light,
-                onTap: () => setState(() {
-                  _submitError = null;
-                  _selectedMode = ThemeMode.light;
-                }),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              _ThemeOptionCard(
-                iconName: AppIcons.night,
-                label: 'Dark Mode',
-                selected: _selectedMode == ThemeMode.dark,
-                onTap: () => setState(() {
-                  _submitError = null;
-                  _selectedMode = ThemeMode.dark;
-                }),
-              ),
-            ],
+          Text(
+            'Theme',
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.bodyLarge.copyWith(
+              color: context.colors.text.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _ThemeOptionCard(
+            iconName: AppIcons.monitor,
+            label: 'System (Auto)',
+            selected: _selectedMode == ThemeMode.system,
+            onTap: () => _select(ThemeMode.system),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          _ThemeOptionCard(
+            iconName: AppIcons.day,
+            label: 'Light',
+            selected: _selectedMode == ThemeMode.light,
+            onTap: () => _select(ThemeMode.light),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          _ThemeOptionCard(
+            iconName: AppIcons.night,
+            label: 'Dark',
+            selected: _selectedMode == ThemeMode.dark,
+            onTap: () => _select(ThemeMode.dark),
           ),
           const SizedBox(height: AppSpacing.md),
           if (_submitError != null) ...[
@@ -558,18 +596,10 @@ class _ThemeModalState extends State<_ThemeModal> {
             ),
             const SizedBox(height: AppSpacing.xs),
           ],
-          AppButton(
-            onPressed: _canUpdate ? _submit : null,
-            variant: AppButtonVariant.primary,
-            minWidth: _buttonWidth,
-            child: Text(_isSubmitting ? 'Updating...' : 'Update'),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          AppButton(
-            onPressed: _isSubmitting ? null : widget.onCancel,
-            variant: AppButtonVariant.ghost,
-            minWidth: _buttonWidth,
-            child: const Text('Cancel'),
+          AccountModalActions(
+            onCancel: _isSubmitting ? null : widget.onCancel,
+            actionLabel: _isSubmitting ? 'Updating...' : 'Update',
+            onAction: _canUpdate ? _submit : null,
           ),
         ],
       ),
@@ -580,8 +610,6 @@ class _ThemeModalState extends State<_ThemeModal> {
 class _WindowsUpdateModal extends ConsumerWidget {
   const _WindowsUpdateModal({required this.onCancel});
 
-  static const _buttonWidth = 280.0;
-
   final VoidCallback onCancel;
 
   @override
@@ -589,14 +617,20 @@ class _WindowsUpdateModal extends ConsumerWidget {
     final state = ref.watch(windowsUpdateProvider);
     final primary = _primaryAction(ref, state);
 
-    return _SettingsModalCard(
-      header: const _ModalHeader(
-        leading: _ModalUtilityIcon(iconName: AppIcons.sync),
-        title: 'Updates',
-      ),
+    return AccountModalCard(
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Text(
+            'Updates',
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.bodyLarge.copyWith(
+              color: context.colors.text.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
           _UpdateInfoRow(label: 'Current', value: state.currentVersion),
           if (state.availableVersion.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.xxs),
@@ -619,18 +653,10 @@ class _WindowsUpdateModal extends ConsumerWidget {
             _UpdateProgressBar(progress: state.downloadProgress),
           ],
           const SizedBox(height: AppSpacing.md),
-          AppButton(
-            onPressed: primary.onPressed,
-            variant: AppButtonVariant.primary,
-            minWidth: _buttonWidth,
-            child: Text(primary.label),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          AppButton(
-            onPressed: state.isBusy ? null : onCancel,
-            variant: AppButtonVariant.ghost,
-            minWidth: _buttonWidth,
-            child: const Text('Cancel'),
+          AccountModalActions(
+            onCancel: state.isBusy ? null : onCancel,
+            actionLabel: primary.label,
+            onAction: primary.onPressed,
           ),
         ],
       ),
@@ -719,33 +745,30 @@ class _UpdateInfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 280,
-      child: Row(
-        children: [
-          SizedBox(
-            width: 72,
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelMedium.copyWith(
-                color: context.colors.text.secondary,
-              ),
+    return Row(
+      children: [
+        SizedBox(
+          width: 72,
+          child: Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.labelMedium.copyWith(
+              color: context.colors.text.secondary,
             ),
           ),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: Text(
-              value.isEmpty ? '-' : value,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-              style: AppTypography.labelLarge.copyWith(
-                color: context.colors.text.accent,
-              ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: Text(
+            value.isEmpty ? '-' : value,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.right,
+            style: AppTypography.labelLarge.copyWith(
+              color: context.colors.text.accent,
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -761,7 +784,6 @@ class _UpdateProgressBar extends StatelessWidget {
     final factor = progress.clamp(0, 100) / 100;
 
     return Container(
-      width: 280,
       height: 4,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -803,27 +825,39 @@ class _ThemeOptionCard extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
-          width: 280,
           height: 40,
           padding: const EdgeInsets.only(
             left: AppSpacing.xs,
             right: AppSpacing.s,
           ),
           decoration: BoxDecoration(
+            color: colors.background.ground,
             borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: Border.all(
-              color: selected ? colors.border.strong : colors.border.regular,
-              width: selected ? 2 : 1.5,
-              strokeAlign: BorderSide.strokeAlignInside,
-            ),
+            boxShadow: _settingsSurfaceShadow(colors),
           ),
+          foregroundDecoration: selected
+              ? BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppRadii.medium),
+                  border: Border.all(
+                    color: colors.border.strong,
+                    width: 2,
+                    strokeAlign: BorderSide.strokeAlignInside,
+                  ),
+                )
+              : null,
           child: Row(
             children: [
               SizedBox(
                 width: 32,
                 height: 32,
                 child: Center(
-                  child: AppIcon(iconName, size: 18, color: colors.icon.accent),
+                  child: AppIcon(
+                    iconName,
+                    size: 18,
+                    color: selected
+                        ? colors.icon.accent
+                        : colors.icon.accent.withValues(alpha: 0.5),
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
@@ -831,8 +865,9 @@ class _ThemeOptionCard extends StatelessWidget {
                 child: Text(
                   label,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelLarge.copyWith(
+                  style: AppTypography.labelMedium.copyWith(
                     color: colors.text.accent,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                   ),
                 ),
               ),
@@ -885,41 +920,36 @@ class _SettingsBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(
-          height: 24,
-          child: Padding(
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.md,
+      ),
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: _settingsSurfaceShadow(colors),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                title,
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
+            child: Text(
+              title,
+              style: AppTypography.labelMedium.copyWith(
+                fontWeight: FontWeight.w400,
+                color: colors.text.secondary,
               ),
             ),
           ),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows),
-      ],
-    );
-  }
-}
-
-class _SettingsRowDivider extends StatelessWidget {
-  const _SettingsRowDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      child: DecoratedBox(
-        decoration: BoxDecoration(color: context.colors.border.subtle),
-        child: const SizedBox(height: 1),
+          const SizedBox(height: AppSpacing.s),
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.xs),
+            rows[i],
+          ],
+        ],
       ),
     );
   }
@@ -929,13 +959,17 @@ class _SettingsRow extends StatefulWidget {
   const _SettingsRow({
     required this.iconName,
     required this.label,
-    required this.value,
+    this.value,
+    this.valueLeading,
+    this.destructive = false,
     this.onTap,
   });
 
   final String iconName;
   final String label;
-  final String value;
+  final String? value;
+  final Widget? valueLeading;
+  final bool destructive;
   final VoidCallback? onTap;
 
   @override
@@ -977,51 +1011,64 @@ class _SettingsRowState extends State<_SettingsRow> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isInteractive = widget.onTap != null;
+    final contentColor = widget.destructive
+        ? colors.text.destructive
+        : colors.text.accent;
+    final iconColor = widget.destructive
+        ? colors.text.destructive
+        : colors.icon.muted;
+    final chevronColor = widget.destructive
+        ? colors.text.destructive
+        : colors.icon.accent;
+
+    Widget content = Row(
+      children: [
+        AppIcon(widget.iconName, size: 20, color: iconColor),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: Text(
+            widget.label,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.labelMedium.copyWith(color: contentColor),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        if (widget.valueLeading != null) ...[
+          widget.valueLeading!,
+          const SizedBox(width: AppSpacing.xxs),
+        ],
+        if (widget.value != null) ...[
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 260),
+            child: Text(
+              widget.value!,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: AppTypography.labelMedium.copyWith(color: contentColor),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xxs),
+        ],
+        AppIcon(AppIcons.chevronForward, size: 16, color: chevronColor),
+      ],
+    );
+    if (!isInteractive) {
+      content = Opacity(opacity: 0.5, child: content);
+    }
+
     final row = Stack(
       clipBehavior: Clip.none,
       children: [
         Container(
-          height: 40,
+          height: 44,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           decoration: BoxDecoration(
             color: isInteractive && _hovered
                 ? _settingsRowHoverBackgroundColor(context)
                 : null,
-            borderRadius: BorderRadius.circular(AppRadii.xSmall),
+            borderRadius: BorderRadius.circular(AppRadii.small),
           ),
-          child: Row(
-            children: [
-              _SettingsRowIcon(iconName: widget.iconName),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Text(
-                  widget.label,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 260),
-                child: Text(
-                  widget.value,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              AppIcon(
-                AppIcons.chevronForward,
-                size: 16,
-                color: colors.icon.accent,
-              ),
-            ],
-          ),
+          child: content,
         ),
         if (isInteractive && _focused)
           Positioned(
@@ -1033,7 +1080,7 @@ class _SettingsRowState extends State<_SettingsRow> {
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   border: Border.all(color: colors.state.focusRing, width: 2),
-                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                  borderRadius: BorderRadius.circular(AppRadii.small),
                 ),
               ),
             ),
@@ -1077,24 +1124,5 @@ Color _settingsRowHoverBackgroundColor(BuildContext context) {
   return isDark ? colors.background.raised : colors.background.base;
 }
 
-class _SettingsRowIcon extends StatelessWidget {
-  const _SettingsRowIcon({required this.iconName});
-
-  final String iconName;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return Container(
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(
-        color: colors.background.neutralSubtleOpacity,
-        shape: BoxShape.circle,
-      ),
-      alignment: Alignment.center,
-      child: AppIcon(iconName, size: 16, color: colors.icon.regular),
-    );
-  }
-}
+List<BoxShadow> _settingsSurfaceShadow(AppColors colors) =>
+    appSurfaceShadow(colors);

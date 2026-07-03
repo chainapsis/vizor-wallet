@@ -19,6 +19,8 @@ class AppChip extends StatelessWidget {
     this.trailing,
     this.type = AppChipType.defaultText,
     this.width,
+    this.minWidth,
+    this.labelOverflow = TextOverflow.ellipsis,
   });
 
   final String? leadingText;
@@ -27,28 +29,30 @@ class AppChip extends StatelessWidget {
   final Widget? trailing;
   final AppChipType type;
   final double? width;
+  final double? minWidth;
+  final TextOverflow? labelOverflow;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final resolvedWidth =
-        width ??
-        switch (type) {
-          AppChipType.defaultText => 80.0,
-          AppChipType.icons => null,
-        };
+    final defaultFixedWidth = switch (type) {
+      AppChipType.defaultText => 80.0,
+      AppChipType.icons => null,
+    };
+    final fixedWidth = width ?? (minWidth == null ? defaultFixedWidth : null);
+    final resolvedMinWidth = fixedWidth ?? minWidth ?? 0;
     final hasLeadingIcon = leading != null;
     final hasTrailingIcon = trailing != null;
     return ConstrainedBox(
       constraints: BoxConstraints(
         minHeight: 26,
-        minWidth: resolvedWidth ?? 0,
-        maxWidth: resolvedWidth ?? double.infinity,
+        minWidth: resolvedMinWidth,
+        maxWidth: fixedWidth ?? double.infinity,
       ),
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xxs),
         child: Row(
-          mainAxisSize: resolvedWidth == null
+          mainAxisSize: fixedWidth == null
               ? MainAxisSize.min
               : MainAxisSize.max,
           children: [
@@ -69,14 +73,12 @@ class AppChip extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.xxs),
             ],
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.accent,
-                ),
+            _AppChipLabel(
+              fixedWidth: fixedWidth != null,
+              label: label,
+              overflow: labelOverflow,
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.accent,
               ),
             ),
             if (hasTrailingIcon) ...[
@@ -91,5 +93,26 @@ class AppChip extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _AppChipLabel extends StatelessWidget {
+  const _AppChipLabel({
+    required this.fixedWidth,
+    required this.label,
+    required this.overflow,
+    required this.style,
+  });
+
+  final bool fixedWidth;
+  final String label;
+  final TextOverflow? overflow;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Text(label, maxLines: 1, overflow: overflow, style: style);
+    if (!fixedWidth) return text;
+    return Flexible(child: text);
   }
 }

@@ -5,10 +5,13 @@ import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../main.dart' show log;
-import 'core/config/rpc_endpoint_config.dart';
 import 'core/profile_pictures.dart';
+import 'core/config/app_version_config.dart';
+import 'core/config/rpc_endpoint_config.dart';
+import 'core/config/swap_remote_enable_config.dart';
 import 'core/storage/app_secure_store.dart';
 import 'core/storage/wallet_paths.dart';
 import 'providers/account_models.dart';
@@ -18,6 +21,9 @@ import 'rust/api/wallet.dart' as rust_wallet;
 const _accountsKey = 'zcash_accounts';
 const _activeAccountKey = 'zcash_active_account';
 const _networkKey = 'zcash_wallet_network';
+// Mirrors kBiometricUnlockEnabledKey in providers/biometric_unlock_provider.dart;
+// kept local to avoid a bootstrap → provider import cycle.
+const _biometricUnlockEnabledKey = 'zcash_biometric_unlock_enabled';
 const _backgroundSyncChannel = MethodChannel(
   'com.zcash.wallet/background_sync',
 );
@@ -53,6 +59,8 @@ class AppBootstrapState {
     required this.isPasswordConfigured,
     required this.isUnlocked,
     required this.passwordRotationRecoveryFailed,
+    this.swapEnabledOverrideCachedForRelease = false,
+    this.biometricUnlockEnabled = false,
     this.failureKind,
     this.failureMessage,
   });
@@ -64,6 +72,12 @@ class AppBootstrapState {
   final RpcEndpointConfig rpcEndpointConfig;
   final ThemeMode themeMode;
   final bool privacyModeEnabled;
+  final bool swapEnabledOverrideCachedForRelease;
+
+  /// Whether biometric unlock was enabled at startup, read synchronously from
+  /// secure storage. The unlock screen uses this to paint the biometric
+  /// backdrop on the first frame before the async availability probe resolves.
+  final bool biometricUnlockEnabled;
   final bool isPasswordConfigured;
   final bool isUnlocked;
   final bool passwordRotationRecoveryFailed;
@@ -238,6 +252,9 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     await _seedNativeRpcEndpointMirror(rpcEndpointConfig);
     final themeMode = await _readThemeMode(storage);
     final privacyModeEnabled = await _readPrivacyModeEnabled(storage);
+    final swapEnabledOverrideCachedForRelease =
+        await _readSwapEnabledOverrideCachedForRelease();
+    final biometricUnlockEnabled = await _readBiometricUnlockEnabled(storage);
     final isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;
     if (hasWalletDb) {
@@ -338,6 +355,8 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       rpcEndpointConfig: rpcEndpointConfig,
       themeMode: themeMode,
       privacyModeEnabled: privacyModeEnabled,
+      swapEnabledOverrideCachedForRelease: swapEnabledOverrideCachedForRelease,
+      biometricUnlockEnabled: biometricUnlockEnabled,
       isPasswordConfigured: isPasswordConfigured,
       isUnlocked: isUnlocked,
       passwordRotationRecoveryFailed: passwordRotationRecoveryFailed,
@@ -410,8 +429,9 @@ AccountInfo mergeBootstrappedAccountInfo({
     // Rust can recover Keystone accounts when older stored metadata lost this bit.
     isHardware: (storedAccount?.isHardware ?? false) || rustAccount.isHardware,
     isSeedAnchor: rustAccount.isSeedAnchor,
-    profilePictureId:
-        storedAccount?.profilePictureId ?? kDefaultProfilePictureId,
+    profilePictureId: normalizeProfilePictureId(
+      storedAccount?.profilePictureId ?? kDefaultProfilePictureId,
+    ),
   );
 }
 
@@ -496,6 +516,30 @@ Future<bool> _readPrivacyModeEnabled(AppSecureStore storage) async {
     rethrow;
   } catch (e) {
     log('bootstrap: failed to read privacy mode: $e');
+    return false;
+  }
+}
+
+Future<bool> _readBiometricUnlockEnabled(AppSecureStore storage) async {
+  // The enabled flag is written via writePlain (unencrypted), so it must be
+  // read back via readPlain to match the biometric unlock provider's storage.
+  try {
+    return (await storage.readPlain(_biometricUnlockEnabledKey)) == 'true';
+  } on SecureStorageUnavailableException {
+    rethrow;
+  } catch (e) {
+    log('bootstrap: failed to read biometric unlock flag: $e');
+    return false;
+  }
+}
+
+Future<bool> _readSwapEnabledOverrideCachedForRelease() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(swapEnabledOverrideStorageKey(kVizorReleaseVersion)) ??
+        false;
+  } catch (e) {
+    log('bootstrap: failed to read swap override cache: $e');
     return false;
   }
 }

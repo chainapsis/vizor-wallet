@@ -141,20 +141,20 @@ class _AccountActionsMenu extends StatelessWidget {
     return AppContextMenu(
       children: [
         AppContextMenuItem(
-          iconName: AppIcons.scroll,
-          label: 'Edit Name',
+          iconName: AppIcons.edit,
+          label: 'Edit name',
           onTap: _noop,
         ),
         const SizedBox(height: AppSpacing.xxs),
         AppContextMenuItem(
           iconName: AppIcons.user,
-          label: 'Change Picture',
+          label: 'Change picture',
           onTap: _noop,
         ),
-        const AppContextMenuDivider(),
+        const SizedBox(height: AppSpacing.xxs),
         AppContextMenuItem(
           iconName: AppIcons.trash,
-          label: 'Remove Account',
+          label: 'Remove account',
           destructive: true,
           onTap: _noop,
         ),

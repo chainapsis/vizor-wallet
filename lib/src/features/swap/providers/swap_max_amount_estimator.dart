@@ -32,7 +32,7 @@ class RustSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
     final spendableZatoshi = sync.spendableBalance;
     final estimateAddress = await _ref
         .read(receiveAddressServiceProvider)
-        .loadTransparentAddress(accountUuid: accountUuid);
+        .loadTransparentReceiveAddress(accountUuid: accountUuid);
     final legacyV5Pczt = shouldAllowLegacyV5PcztFallbackForAccount(
       accountUuid: accountUuid,
       isHardwareAccount: _ref.read(accountProvider.notifier).isHardwareAccount,

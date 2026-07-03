@@ -70,16 +70,15 @@ class ReceiveAddressService {
     return _transparentAddressCache[accountUuid];
   }
 
-  Future<String> loadTransparentAddress({required String accountUuid}) async {
-    final cached = _transparentAddressCache[accountUuid];
-    if (cached != null) return cached;
-
+  Future<String> loadTransparentReceiveAddress({
+    required String accountUuid,
+  }) async {
     final dbPath = await getWalletDbPath();
     final network = _network;
 
     final transparentAddress = await _withDatabaseLockRetry(
       operationName: 'load transparent receive address',
-      operation: () => rust_wallet.getTransparentAddress(
+      operation: () => rust_wallet.getTransparentReceiveAddress(
         dbPath: dbPath,
         network: network,
         accountUuid: accountUuid,

@@ -3,7 +3,9 @@ import 'package:flutter/widgets.dart';
 import '../../core/privacy/privacy_mask.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
+import '../../rust/api/sync.dart' as rust_sync;
 import '../swap/models/swap_models.dart';
+import 'activity_amount_text.dart';
 import 'activity_row_mapper.dart';
 import 'models/activity_row_data.dart';
 
@@ -24,6 +26,8 @@ class SwapActivityRowItem {
     this.completedAt,
     this.lastStatusCheckedAt,
     this.updatedAt,
+    this.receiveWalletTxidHex,
+    this.depositWalletTxidHex,
   });
 
   factory SwapActivityRowItem.fromRecord(SwapIntentRecord record) {
@@ -41,6 +45,10 @@ class SwapActivityRowItem {
       completedAt: record.completedAt,
       lastStatusCheckedAt: record.lastStatusCheckedAt,
       updatedAt: record.updatedAt,
+      receiveWalletTxidHex: swapChainTxidToWalletTxidHex(
+        record.destinationChainTxHash,
+      ),
+      depositWalletTxidHex: swapChainTxidToWalletTxidHex(record.depositTxHash),
     );
   }
 
@@ -57,6 +65,14 @@ class SwapActivityRowItem {
   final DateTime? completedAt;
   final DateTime? lastStatusCheckedAt;
   final DateTime? updatedAt;
+
+  /// Wallet-order txid of the ZEC payout (external→ZEC), used to absorb the
+  /// matching on-chain receive row into this swap's sub row.
+  final String? receiveWalletTxidHex;
+
+  /// Wallet-order txid of our ZEC deposit broadcast (ZEC→external), used to
+  /// suppress the duplicate standalone Sent row.
+  final String? depositWalletTxidHex;
 }
 
 List<SwapActivityRowItem> swapActivityRowItemsFromRecords(
@@ -69,7 +85,10 @@ ActivityRowData buildSwapActivityRow({
   required BuildContext context,
   required SwapActivityRowItem item,
   bool privacyModeEnabled = false,
+  bool dateOnlyTimestamp = false,
   VoidCallback? onTap,
+  String? receivedAmountText,
+  VoidCallback? onReceivedLegTap,
 }) {
   final colors = context.colors;
   final failed = _swapActivityFailed(item.status);
@@ -82,32 +101,33 @@ ActivityRowData buildSwapActivityRow({
   final progress = _swapActivityProgress(item);
 
   return ActivityRowData(
+    stableId: 'swap:${item.intentId}',
     title: _swapActivityTitle(item.status),
     leadingIconName: AppIcons.swapArrows,
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
     leadingProgressValue: complete ? null : progress?.value,
-    subtitle: _swapActivityAssetSubtitle(sellAsset) ?? item.providerLabel,
-    amountText: _swapActivityAmountText(
-      item,
-      includeSign: !(returnsFunds || timedOut),
-      privacyModeEnabled: privacyModeEnabled,
+    subtitle: returnsFunds
+        ? '${sellAsset?.symbol ?? 'ZEC'} Refunded'
+        : _swapActivityAssetSubtitle(sellAsset) ?? item.providerLabel,
+    amountText: activityAmountTextForFormFactor(
+      _swapActivityAmountText(
+        item,
+        includeSign: !(returnsFunds || timedOut),
+        privacyModeEnabled: privacyModeEnabled,
+      ),
     ),
-    amountIconName: returnsFunds ? AppIcons.arrowBack : null,
+    amountIconName: returnsFunds ? AppIcons.uturnUp : null,
     amountIconColor: returnsFunds ? colors.icon.regular : null,
-    amountColor: colors.text.accent,
-    amountSubtitle: timedOut
-        ? 'Timeout'
-        : returnsFunds
-        ? 'Refunded'
-        : null,
+    amountColor: outgoingAmountColor(colors),
+    amountSubtitle: timedOut ? 'Timeout' : null,
     amountSubtitleIconName: timedOut ? AppIcons.time : null,
     amountSubtitleIconColor: timedOut ? colors.text.secondary : null,
     statusText: _swapActivityStatusText(item.status, progress),
     statusIconName: failed
         ? AppIcons.skull
         : item.status == SwapIntentStatus.refunded
-        ? AppIcons.arrowBack
+        ? AppIcons.uturnUp
         : incompleteDeposit
         ? AppIcons.warning
         : complete
@@ -118,54 +138,66 @@ ActivityRowData buildSwapActivityRow({
         : incompleteDeposit
         ? colors.text.brandCrimson
         : colors.text.secondary,
-    timestampText: formatActivityTimestamp(item.activityTimestamp),
-    childRows: failed || returnsFunds || !_swapActivityShowsReceiveLeg(item)
-        ? const []
-        : _swapActivityChildRows(
-            context: context,
-            item: item,
-            receiveAsset: receiveAsset,
-            complete: complete,
-            privacyModeEnabled: privacyModeEnabled,
-          ),
+    timestampText: formatActivityTimestamp(
+      item.activityTimestamp,
+      dateOnly: dateOnlyTimestamp,
+    ),
+    childRows: _swapActivityChildRows(
+      context: context,
+      item: item,
+      receiveAsset: receiveAsset,
+      privacyModeEnabled: privacyModeEnabled,
+      receivedAmountText: receivedAmountText,
+      onReceivedLegTap: onReceivedLegTap,
+      dateOnlyTimestamp: dateOnlyTimestamp,
+    ),
     onTap: onTap,
   );
 }
 
+/// Results-only sub rows: a single settled leg per swap group. In-progress
+/// legs render no sub row — the parent's progress ring carries that state.
 List<ActivityRowData> _swapActivityChildRows({
   required BuildContext context,
   required SwapActivityRowItem item,
   required SwapAsset? receiveAsset,
-  required bool complete,
   required bool privacyModeEnabled,
+  required String? receivedAmountText,
+  required VoidCallback? onReceivedLegTap,
+  required bool dateOnlyTimestamp,
 }) {
   final direction = item.direction;
   if (direction == null || receiveAsset == null) return const [];
-  if (!complete && _swapActivityProgress(item) == null) {
-    return const [];
-  }
+  if (item.status != SwapIntentStatus.complete) return const [];
 
   final colors = context.colors;
-  final active = !complete;
+  final receivesZec = direction == SwapDirection.externalToZec;
+  // The absorbed on-chain receive carries the real settled amount; fall back
+  // to the quote estimate until the payout tx is matched.
+  final amountText =
+      receivesZec && receivedAmountText != null && !privacyModeEnabled
+      ? receivedAmountText
+      : _swapActivityReceiveAmountText(
+          item,
+          privacyModeEnabled: privacyModeEnabled,
+        );
   return [
     ActivityRowData(
-      title: _swapActivityChildTitle(
-        direction: direction,
-        receiveAsset: receiveAsset,
-        complete: complete,
-      ),
+      stableId:
+          'swap:${item.intentId}:${receivesZec ? 'received' : 'deposited'}',
+      title: receivesZec
+          ? 'Received ${receiveAsset.symbol}'
+          : 'Deposited ${receiveAsset.symbol}',
       leadingIconName: AppIcons.swapArrows,
       leadingBackgroundColor: colors.background.neutralSubtleOpacity,
       leadingIconColor: colors.icon.regular,
-      amountText: _swapActivityReceiveAmountText(
-        item,
-        privacyModeEnabled: privacyModeEnabled,
-      ),
-      amountColor: colors.text.accent,
-      statusText: active ? 'In progress' : 'Completed',
-      statusIconName: active ? AppIcons.loader : null,
-      statusColor: colors.text.secondary,
-      timestampText: _swapActivityChildTimestamp(item),
+      amountText: activityAmountTextForFormFactor(amountText),
+      amountColor: outgoingAmountColor(colors),
+      statusText: '',
+      timestampText: dateOnlyTimestamp
+          ? _swapActivityChildTimestamp(item, dateOnly: true)
+          : '',
+      onTap: receivesZec ? onReceivedLegTap : null,
     ),
   ];
 }
@@ -247,11 +279,84 @@ bool _swapActivityReturnsFunds(SwapActivityRowItem item) {
   return item.status == SwapIntentStatus.refunded;
 }
 
+/// Whether the swap row itself represents the outgoing ZEC deposit, so the
+/// feed may suppress the duplicate standalone Sent row. Refunded and
+/// timed-out rows render their amount unsigned (no outgoing sign), so the
+/// standalone Sent transaction must stay visible there — otherwise the feed
+/// would show a refund credit with no matching debit.
+bool swapActivityRowAbsorbsDepositLeg(SwapActivityRowItem item) {
+  return item.status != SwapIntentStatus.expired &&
+      !_swapActivityReturnsFunds(item);
+}
+
+/// Swap intents matched against the on-chain transaction list: which
+/// standalone tx rows duplicate a swap row, and the matched ZEC payout per
+/// intent. Home and the Activity screen share this so both feeds suppress
+/// the same rows; Home only consumes the suppression set (its compact rows
+/// render no children).
+class SwapActivityLegAbsorption {
+  const SwapActivityLegAbsorption({
+    required this.absorbedTxidHexes,
+    required this.receiveTxByIntent,
+  });
+
+  static const empty = SwapActivityLegAbsorption(
+    absorbedTxidHexes: <String>{},
+    receiveTxByIntent: <String, rust_sync.TransactionInfo>{},
+  );
+
+  /// Wallet-order txid hexes whose standalone rows are duplicates of a swap
+  /// row (the matched payout, or our own ZEC deposit broadcast).
+  final Set<String> absorbedTxidHexes;
+
+  /// Matched ZEC payout per intent id, feeding the tappable 'Received ZEC'
+  /// sub row on the Activity screen.
+  final Map<String, rust_sync.TransactionInfo> receiveTxByIntent;
+
+  bool absorbs(rust_sync.TransactionInfo tx) =>
+      absorbedTxidHexes.contains(tx.txidHex.toLowerCase());
+}
+
+SwapActivityLegAbsorption matchSwapActivityLegAbsorption({
+  required List<SwapActivityRowItem> swapItems,
+  required List<rust_sync.TransactionInfo> transactions,
+}) {
+  if (swapItems.isEmpty || transactions.isEmpty) {
+    return SwapActivityLegAbsorption.empty;
+  }
+  final receiveTxByIntent = <String, rust_sync.TransactionInfo>{};
+  final absorbedTxidHexes = <String>{};
+  for (final item in swapItems) {
+    final receiveHex = item.receiveWalletTxidHex;
+    // Only suppress the deposit leg while the swap row carries the signed
+    // outgoing amount; refunded/timed-out rows render unsigned, so their
+    // standalone Sent row stays visible.
+    final depositHex = swapActivityRowAbsorbsDepositLeg(item)
+        ? item.depositWalletTxidHex
+        : null;
+    if (receiveHex == null && depositHex == null) continue;
+    for (final tx in transactions) {
+      final txHex = tx.txidHex.toLowerCase();
+      if (receiveHex != null && txHex == receiveHex) {
+        receiveTxByIntent[item.intentId] = tx;
+        absorbedTxidHexes.add(txHex);
+      } else if (depositHex != null && txHex == depositHex) {
+        absorbedTxidHexes.add(txHex);
+      }
+    }
+  }
+  return SwapActivityLegAbsorption(
+    absorbedTxidHexes: absorbedTxidHexes,
+    receiveTxByIntent: receiveTxByIntent,
+  );
+}
+
 String _swapActivityTitle(SwapIntentStatus status) {
   return switch (status) {
     SwapIntentStatus.complete => 'Swapped',
-    SwapIntentStatus.failed || SwapIntentStatus.expired => 'Swap failed',
-    SwapIntentStatus.refunded => 'Swap refunded',
+    SwapIntentStatus.failed ||
+    SwapIntentStatus.expired ||
+    SwapIntentStatus.refunded => 'Swap failed',
     _ => 'Swapping...',
   };
 }
@@ -276,25 +381,14 @@ String? _swapActivityAssetSubtitle(SwapAsset? asset) {
   return '${asset.symbol} on ${asset.chainLabel}';
 }
 
-String _swapActivityChildTitle({
-  required SwapDirection direction,
-  required SwapAsset receiveAsset,
-  required bool complete,
+String _swapActivityChildTimestamp(
+  SwapActivityRowItem item, {
+  bool dateOnly = false,
 }) {
-  if (direction == SwapDirection.externalToZec) {
-    return complete
-        ? '${receiveAsset.symbol} Received'
-        : 'Receiving ${receiveAsset.symbol} ...';
-  }
-  return complete
-      ? '${receiveAsset.symbol} Deposited'
-      : 'Depositing ${receiveAsset.symbol}...';
-}
-
-String _swapActivityChildTimestamp(SwapActivityRowItem item) {
   final timestamp =
       item.completedAt ?? item.lastStatusCheckedAt ?? item.updatedAt;
   if (timestamp == null) return '--';
+  if (dateOnly) return formatActivityTimestamp(timestamp, dateOnly: true);
   return _relativeActivityTimestamp(timestamp) ??
       formatActivityTimestamp(timestamp);
 }
@@ -305,21 +399,6 @@ String? _relativeActivityTimestamp(DateTime timestamp) {
   if (elapsed.inMinutes < 1) return 'just now';
   if (elapsed.inHours < 1) return '${elapsed.inMinutes}m ago';
   return null;
-}
-
-bool _swapActivityShowsReceiveLeg(SwapActivityRowItem item) {
-  return switch (item.status) {
-    SwapIntentStatus.depositObserved ||
-    SwapIntentStatus.processing ||
-    SwapIntentStatus.providerStatusUnknown ||
-    SwapIntentStatus.complete => true,
-    SwapIntentStatus.awaitingDeposit ||
-    SwapIntentStatus.awaitingExternalDeposit ||
-    SwapIntentStatus.incompleteDeposit ||
-    SwapIntentStatus.refunded ||
-    SwapIntentStatus.expired ||
-    SwapIntentStatus.failed => false,
-  };
 }
 
 _SwapActivityProgress? _swapActivityProgress(SwapActivityRowItem item) {

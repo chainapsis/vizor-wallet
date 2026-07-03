@@ -1,6 +1,11 @@
-const kWalletPasswordMinLength = 8;
+import '../layout/app_form_factor.dart';
+
+/// Mobile sets and unlocks the wallet through the 6-digit passcode UI,
+/// so the minimum length follows the compiled form factor; desktop
+/// typed passwords keep the original 8-character floor.
+const kWalletPasswordMinLength = kAppFormFactor == AppFormFactor.mobile ? 6 : 8;
 const kWalletPasswordMinLengthMessage =
-    'Password must be at least 8 characters.';
+    'Password must be at least $kWalletPasswordMinLength characters.';
 const kWalletPasswordAsciiMessage =
     'Use only English letters, numbers, and symbols.';
 const kWalletPasswordMustDifferMessage = 'Use a different password.';

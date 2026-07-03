@@ -61,8 +61,10 @@ void main() {
       });
 
       test('rejects wrong length', () {
-        expect(addressFormatIssue(AddressBookNetwork.ethereum, '0x1234'),
-            isNotNull);
+        expect(
+          addressFormatIssue(AddressBookNetwork.ethereum, '0x1234'),
+          isNotNull,
+        );
       });
 
       test('rejects non-hex characters', () {
@@ -72,6 +74,16 @@ void main() {
             '0xZZ908400098527886E0F7030069857D2E4169EE7',
           ),
           isNotNull,
+        );
+      });
+
+      test('accepts an uppercase 0X prefix', () {
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.ethereum,
+            '0X52908400098527886E0F7030069857D2E4169EE7',
+          ),
+          isNull,
         );
       });
 
@@ -276,7 +288,7 @@ void main() {
         expect(
           addressFormatIssue(
             AddressBookNetwork.zcash,
-            't1RT8gKM9Q5b3VgVbNFhUgGfYwhzaQ4r7d',
+            't1HsdDMzmJfq4vc7T17XYjEkLMLvbgM1fCi',
           ),
           isNull,
         );
@@ -298,6 +310,37 @@ void main() {
           addressFormatIssue(
             AddressBookNetwork.zcash,
             't3Vz22vK5z2LcKEdg16Yv4FFneEL1zg9ojd',
+          ),
+          isNull,
+        );
+      });
+
+      test('accepts TEX addresses for the active Zcash network', () {
+        const mainnetTex = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
+        const testnetTex = 'textest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy';
+        const regtestTex = 'texregtest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy';
+
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.zcash,
+            mainnetTex,
+            zcashNetwork: ZcashNetwork.mainnet,
+          ),
+          isNull,
+        );
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.zcash,
+            testnetTex,
+            zcashNetwork: ZcashNetwork.testnet,
+          ),
+          isNull,
+        );
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.zcash,
+            regtestTex,
+            zcashNetwork: ZcashNetwork.regtest,
           ),
           isNull,
         );
@@ -332,7 +375,15 @@ void main() {
         expect(
           addressFormatIssue(
             AddressBookNetwork.zcash,
-            'tmRT8gKM9Q5b3VgVbNFhUgGfYwhzaQ4r7d',
+            'tm9iNYCVAhLLa4rJtfqqHauR5xL1REdpiDs',
+            zcashNetwork: ZcashNetwork.mainnet,
+          ),
+          isNotNull,
+        );
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.zcash,
+            'textest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy',
             zcashNetwork: ZcashNetwork.mainnet,
           ),
           isNotNull,
@@ -340,8 +391,7 @@ void main() {
       });
 
       test('honours the active Zcash network for its own prefixes', () {
-        const testnetUa =
-            'utest1qpw508d6qejxtdg4y5r3zarvary0c5xw7kqqqqqq';
+        const testnetUa = 'utest1qpw508d6qejxtdg4y5r3zarvary0c5xw7kqqqqqq';
         expect(
           addressFormatIssue(
             AddressBookNetwork.zcash,
@@ -350,12 +400,44 @@ void main() {
           ),
           isNull,
         );
-        // A mainnet UA is not valid on testnet.
+        // A mainnet t-addr is not valid on testnet.
         expect(
           addressFormatIssue(
             AddressBookNetwork.zcash,
-            't1RT8gKM9Q5b3VgVbNFhUgGfYwhzaQ4r7d',
+            't1HsdDMzmJfq4vc7T17XYjEkLMLvbgM1fCi',
             zcashNetwork: ZcashNetwork.testnet,
+          ),
+          isNotNull,
+        );
+      });
+
+      test('accepts a checksum-valid testnet t-addr on testnet', () {
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.zcash,
+            'tm9iNYCVAhLLa4rJtfqqHauR5xL1REdpiDs',
+            zcashNetwork: ZcashNetwork.testnet,
+          ),
+          isNull,
+        );
+      });
+
+      test('rejects a t-addr with a corrupted Base58Check checksum', () {
+        // Last character of the valid vector flipped (i -> j).
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.zcash,
+            't1HsdDMzmJfq4vc7T17XYjEkLMLvbgM1fCj',
+          ),
+          isNotNull,
+        );
+      });
+
+      test('rejects checksum-free base58 padding behind a t1 prefix', () {
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.zcash,
+            't1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz',
           ),
           isNotNull,
         );
@@ -419,6 +501,31 @@ void main() {
           isNotNull,
         );
       });
+
+      test('rejects charset-valid strings that do not decode to 32 bytes', () {
+        for (final addr in [
+          // 34 chars of '2' decodes to ~25 bytes — structurally impossible.
+          '2222222222222222222222222222222222',
+          // 44 chars of 'z' decodes to 33 bytes — too large for a pubkey.
+          'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz',
+        ]) {
+          expect(
+            addressFormatIssue(AddressBookNetwork.solana, addr),
+            isNotNull,
+            reason: addr,
+          );
+        }
+      });
+
+      test('accepts the 32-char system program address (32 zero bytes)', () {
+        expect(
+          addressFormatIssue(
+            AddressBookNetwork.solana,
+            '11111111111111111111111111111111',
+          ),
+          isNull,
+        );
+      });
     });
 
     group('NEAR', () {
@@ -452,7 +559,9 @@ void main() {
 
       test('rejects uppercase / invalid characters', () {
         expect(
-            addressFormatIssue(AddressBookNetwork.near, 'Alice.NEAR'), isNotNull);
+          addressFormatIssue(AddressBookNetwork.near, 'Alice.NEAR'),
+          isNotNull,
+        );
         expect(addressFormatIssue(AddressBookNetwork.near, 'a'), isNotNull);
       });
 
@@ -477,6 +586,49 @@ void main() {
             reason: acct,
           );
         }
+      });
+
+      test('warns on bare top-level names without blocking the hard gate', () {
+        for (final acct in ['alice', 'aurora', 'sweat']) {
+          final finding = addressFormatCheck(AddressBookNetwork.near, acct);
+          expect(
+            finding?.severity,
+            AddressFormatSeverity.warning,
+            reason: acct,
+          );
+          expect(finding?.message, contains('.near'), reason: acct);
+          // The error-only view used by the swap hard gate stays silent, so
+          // real registrar-created top-level accounts are never blocked.
+          expect(
+            addressFormatIssue(AddressBookNetwork.near, acct),
+            isNull,
+            reason: acct,
+          );
+        }
+      });
+
+      test('does not warn on dotted names or implicit accounts', () {
+        for (final acct in [
+          'alice.near',
+          'token.sweat',
+          // NEAR-implicit (64 hex).
+          '98793cd91a3f870fb126f66285808c7e094afcfc4eda8a970f6648cdf0dbdb24',
+          // ETH-implicit (0x + 40 lowercase hex).
+          '0x32400084c286cf3e17e7b677ea9583e60a000324',
+        ]) {
+          expect(
+            addressFormatCheck(AddressBookNetwork.near, acct),
+            isNull,
+            reason: acct,
+          );
+        }
+      });
+
+      test('grammar violations are error severity, not warnings', () {
+        expect(
+          addressFormatCheck(AddressBookNetwork.near, 'Alice.NEAR')?.severity,
+          AddressFormatSeverity.error,
+        );
       });
     });
   });

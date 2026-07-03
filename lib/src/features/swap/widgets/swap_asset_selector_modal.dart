@@ -2,8 +2,10 @@ import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_modal_card.dart';
 import '../models/swap_models.dart';
 import 'swap_asset_icon.dart';
 import 'swap_modal_controls.dart';
@@ -79,34 +81,46 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
     final colors = context.colors;
     final assets = _filteredAssets;
     final hasQuery = _queryController.text.isNotEmpty;
+    // Spec: the 1.5dp border slot is transparent at rest and only paints the
+    // active token (Border/Neutral/medium) when the field is focused or filled.
     final searchBorderColor = _focusNode.hasFocus || hasQuery
         ? colors.border.medium
-        : colors.border.regular;
+        : colors.border.medium.withValues(alpha: 0);
+
+    // On mobile the swap modal route wraps this in the shared
+    // MobileModalCard (base surface, radius 32, bottom-anchored), so the
+    // surface is full-width, draws no card, and the list scrolls within a
+    // bounded height that the card hugs. Desktop keeps the fixed card.
+    final isMobile = kAppFormFactor == AppFormFactor.mobile;
 
     return Container(
       key: const ValueKey('swap_external_asset_menu'),
-      width: 312,
-      height: 440,
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
+      width: isMobile ? double.infinity : 312,
+      height: isMobile ? null : 440,
+      // Container requires a decoration to clip; the mobile card (with no
+      // decoration here) is clipped by the MobileModalCard surface.
+      clipBehavior: isMobile ? Clip.none : Clip.antiAlias,
+      // Desktop fills to the card edge (bottom 0); mobile hugs, so the
+      // content needs its own bottom breathing room.
+      padding: EdgeInsets.fromLTRB(16, 24, 16, isMobile ? AppSpacing.md : 0),
+      decoration: isMobile
+          ? null
+          : BoxDecoration(
+              color: colors.background.base,
+              borderRadius: BorderRadius.circular(AppRadii.large),
+              boxShadow: appModalShadow,
+            ),
       child: Column(
+        mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              SwapModalIconBadge(
-                iconName: AppIcons.coins,
-                iconColor: colors.icon.regular,
-              ),
-              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'Select asset',
                   style: AppTypography.bodyLarge.copyWith(
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                     color: colors.text.accent,
                   ),
                 ),
@@ -117,7 +131,7 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
           Container(
             height: 46,
             decoration: BoxDecoration(
-              color: colors.background.base,
+              color: colors.background.ground,
               border: Border.all(color: searchBorderColor, width: 1.5),
               borderRadius: BorderRadius.circular(AppRadii.small),
             ),
@@ -143,6 +157,8 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
                       focusNode: _focusNode,
                       onChanged: (_) => setState(() {}),
                       textInputAction: TextInputAction.search,
+                      // Inputs/Field master: typed value Label M Medium,
+                      // placeholder Label M Regular (Geist 14/16, -0.06).
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                       ),
@@ -150,6 +166,7 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
                       decoration: InputDecoration.collapsed(
                         hintText: 'Search token or chain',
                         hintStyle: AppTypography.labelLarge.copyWith(
+                          fontWeight: FontWeight.w400,
                           color: colors.text.muted,
                         ),
                       ),
@@ -169,7 +186,9 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
             ),
           ),
           const SizedBox(height: 8),
-          Expanded(
+          _swapAssetListArea(
+            isMobile,
+            bounded: assets.isNotEmpty,
             child: assets.isEmpty
                 ? Center(
                     child: SizedBox(
@@ -177,7 +196,9 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
                       child: Text(
                         'No tokens or chains found',
                         textAlign: TextAlign.center,
+                        // Spec: Label M Regular (Geist 14/16, weight 400).
                         style: AppTypography.labelLarge.copyWith(
+                          fontWeight: FontWeight.w400,
                           color: colors.text.secondary,
                         ),
                       ),
@@ -202,9 +223,10 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
                         child: ListView.separated(
                           controller: _scrollController,
                           padding: EdgeInsets.zero,
+                          shrinkWrap: isMobile,
                           itemCount: assets.length,
                           separatorBuilder: (_, _) =>
-                              const SizedBox(height: AppSpacing.xxs),
+                              const SizedBox(height: AppSpacing.xs),
                           itemBuilder: (context, index) {
                             final asset = assets[index];
                             return _AssetMenuRow(
@@ -222,6 +244,26 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
       ),
     );
   }
+}
+
+/// Desktop fills the fixed-height card with the list ([Expanded]); mobile
+/// lets the card hug its content, so a populated list scrolls within a
+/// bounded height ([ConstrainedBox] + a shrink-wrapped list), matching the
+/// other mobile list sheets. The empty state ([bounded] false) hugs its
+/// text instead of reserving the full bound.
+Widget _swapAssetListArea(
+  bool mobile, {
+  bool bounded = true,
+  required Widget child,
+}) {
+  if (!mobile) return Expanded(child: child);
+  if (bounded) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 420),
+      child: child,
+    );
+  }
+  return child;
 }
 
 class _AssetMenuRow extends StatelessWidget {
@@ -246,10 +288,10 @@ class _AssetMenuRow extends StatelessWidget {
         onTap: onTap,
         child: Container(
           height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           decoration: BoxDecoration(
             color: selected ? colors.background.neutralSubtleOpacity : null,
-            borderRadius: BorderRadius.circular(AppRadii.xSmall),
+            borderRadius: BorderRadius.circular(AppRadii.small),
           ),
           child: Row(
             children: [
@@ -277,7 +319,11 @@ class _AssetMenuRow extends StatelessWidget {
                       asset.chainLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelMedium.copyWith(
+                      // Spec: chain name is Label M Regular (Geist 14/16, -0.06,
+                      // weight 400) — same metrics as the ticker above, regular
+                      // weight. labelMedium would be 13/14 Medium, which is wrong.
+                      style: AppTypography.labelLarge.copyWith(
+                        fontWeight: FontWeight.w400,
                         color: colors.text.secondary,
                       ),
                     ),

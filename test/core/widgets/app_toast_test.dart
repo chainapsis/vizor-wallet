@@ -53,6 +53,27 @@ void main() {
     expect(icon.color, AppThemeData.light.colors.icon.inverse);
   });
 
+  testWidgets('AppToast clears inherited text decoration', (tester) async {
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        theme: AppThemeData.light,
+        child: DefaultTextStyle(
+          style: TextStyle(
+            decoration: TextDecoration.underline,
+            decorationColor: Colors.yellow,
+          ),
+          child: Center(child: AppToast(message: 'Address copied')),
+        ),
+      ),
+    );
+
+    final textContext = tester.element(find.text('Address copied'));
+    expect(
+      DefaultTextStyle.of(textContext).style.decoration,
+      TextDecoration.none,
+    );
+  });
+
   testWidgets('showAppToast displays a top-centered transient toast', (
     tester,
   ) async {
@@ -87,6 +108,63 @@ void main() {
     await tester.pump();
 
     expect(find.text('Address copied'), findsNothing);
+  });
+
+  testWidgets('toast clears the status bar when the host ignores SafeArea', (
+    tester,
+  ) async {
+    const statusBarHeight = 59.0;
+    await tester.pumpWidget(
+      _ThemedHarness(
+        theme: AppThemeData.light,
+        child: MediaQuery(
+          data: const MediaQueryData(
+            padding: EdgeInsets.only(top: statusBarHeight),
+          ),
+          child: const SizedBox(
+            width: 400,
+            height: 600,
+            child: AppToastHost(
+              child: _ToastTrigger(message: 'Address copied'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Show toast'));
+    await tester.pump();
+
+    final hostTop = tester.getTopLeft(find.byType(AppToastHost)).dy;
+    final toastTop = tester.getTopLeft(find.byType(AppToast)).dy;
+    expect(toastTop, hostTop + statusBarHeight + AppSpacing.xs);
+  });
+
+  testWidgets('a long message wraps inside the pill instead of overflowing', (
+    tester,
+  ) async {
+    const message =
+        "We couldn't refresh your shielded address. Try again, or use "
+        'your current one.';
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        theme: AppThemeData.light,
+        child: SizedBox(
+          width: 393,
+          height: 600,
+          child: AppToastHost(child: _ToastTrigger(message: message)),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Show toast'));
+    await tester.pump();
+
+    // No RenderFlex overflow: the toast stays within the host bounds.
+    expect(tester.takeException(), isNull);
+    final toastRight = tester.getTopRight(find.byType(AppToast)).dx;
+    final hostRight = tester.getTopRight(find.byType(AppToastHost)).dx;
+    expect(toastRight, lessThanOrEqualTo(hostRight - AppSpacing.sm + 0.01));
   });
 
   testWidgets('showAppToast can use the active host from an ancestor context', (
@@ -142,6 +220,71 @@ void main() {
       expect(find.text('Restored Parent Toast'), findsOneWidget);
     },
   );
+
+  testWidgets('toast from a root-navigator modal renders above the modal', (
+    tester,
+  ) async {
+    // A host-bearing screen (e.g. mobile home) covered by a root-navigator
+    // bottom sheet (e.g. the accounts sheet). Copying from the sheet must
+    // surface the toast in the root overlay ABOVE the sheet, not inside the
+    // host the sheet covers (which would render it behind the scrim).
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: const AppToastHost(
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: _OpenModalButton(),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open modal'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Copy from modal'));
+    await tester.pump();
+
+    // Renders (the captured theme keeps AppToast.build from throwing) ...
+    expect(find.text('Modal Toast'), findsOneWidget);
+    // ... and from the root overlay, not inside the covered host.
+    expect(
+      find.descendant(
+        of: find.byType(AppToastHost),
+        matching: find.text('Modal Toast'),
+      ),
+      findsNothing,
+    );
+  });
+}
+
+class _OpenModalButton extends StatelessWidget {
+  const _OpenModalButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: TextButton(
+        onPressed: () => showModalBottomSheet<void>(
+          context: context,
+          useRootNavigator: true,
+          builder: (_) => AppTheme(
+            data: AppThemeData.light,
+            child: Builder(
+              builder: (sheetContext) => TextButton(
+                onPressed: () => showAppToast(sheetContext, 'Modal Toast'),
+                child: const Text('Copy from modal'),
+              ),
+            ),
+          ),
+        ),
+        child: const Text('Open modal'),
+      ),
+    );
+  }
 }
 
 class _ThemedHarness extends StatelessWidget {

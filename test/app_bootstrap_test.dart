@@ -4,6 +4,17 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 
 void main() {
+  test('AccountInfo.fromJson normalizes legacy profile picture ids', () {
+    final account = AccountInfo.fromJson({
+      'uuid': 'account-1',
+      'name': 'Legacy Samurai',
+      'order': 0,
+      'profilePictureId': 'samurai',
+    });
+
+    expect(account.profilePictureId, 'pfp-03');
+  });
+
   test('mergeBootstrappedAccountInfo keeps stored UI metadata', () {
     const rustAccount = AccountInfo(
       uuid: 'account-1',
@@ -17,7 +28,7 @@ void main() {
       order: 9,
       isHardware: true,
       isSeedAnchor: false,
-      profilePictureId: 'knight-04',
+      profilePictureId: 'pfp-04',
     );
 
     final merged = mergeBootstrappedAccountInfo(
@@ -31,8 +42,33 @@ void main() {
     expect(merged.order, 9);
     expect(merged.isHardware, isTrue);
     expect(merged.isSeedAnchor, isTrue);
-    expect(merged.profilePictureId, 'knight-04');
+    expect(merged.profilePictureId, 'pfp-04');
   });
+
+  test(
+    'mergeBootstrappedAccountInfo normalizes legacy profile picture ids',
+    () {
+      const rustAccount = AccountInfo(
+        uuid: 'account-1',
+        name: 'Rust Name',
+        order: 0,
+      );
+      const storedAccount = AccountInfo(
+        uuid: 'account-1',
+        name: 'Stored Name',
+        order: 0,
+        profilePictureId: 'samurai',
+      );
+
+      final merged = mergeBootstrappedAccountInfo(
+        rustAccount: rustAccount,
+        storedAccount: storedAccount,
+        order: 0,
+      );
+
+      expect(merged.profilePictureId, 'pfp-03');
+    },
+  );
 
   test('mergeBootstrappedAccountInfo falls back to Rust metadata', () {
     const rustAccount = AccountInfo(

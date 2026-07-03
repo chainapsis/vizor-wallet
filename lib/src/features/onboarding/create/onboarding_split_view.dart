@@ -6,6 +6,9 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/motion/onboarding_motion.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../shared/onboarding_chrome.dart';
+
+export '../shared/onboarding_chrome.dart' show OnboardingBackTarget;
 
 class OnboardingSecretPassphraseRevealedNotifier extends Notifier<bool> {
   @override
@@ -55,6 +58,8 @@ enum OnboardingStep {
 }
 
 extension OnboardingStepX on OnboardingStep {
+  // Sidebar step labels follow the Figma sidebar verbatim (mixed casing as
+  // drawn) — see the sentence-case exception in AGENTS.md.
   String get label => switch (this) {
     OnboardingStep.intro => 'Intro to Zcash',
     OnboardingStep.addressTypes => 'Address types',
@@ -131,6 +136,7 @@ class OnboardingSplitViewShell extends ConsumerWidget {
 
     return AppDesktopShell(
       sidebarWidth: 256,
+      background: _OnboardingWindowBackground(activeStep: activeStep),
       sidebar: SlideTransition(
         position: sidebarOffset,
         child: _Sidebar(
@@ -144,14 +150,61 @@ class OnboardingSplitViewShell extends ConsumerWidget {
   }
 }
 
-class OnboardingTrailingPane extends StatelessWidget {
-  const OnboardingTrailingPane({required this.child, super.key});
+class _OnboardingWindowBackground extends StatelessWidget {
+  const _OnboardingWindowBackground({required this.activeStep});
 
-  final Widget child;
+  final OnboardingStep activeStep;
 
   @override
   Widget build(BuildContext context) {
-    return AppDesktopPane(child: child);
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
+    final asset = switch (activeStep) {
+      OnboardingStep.secretPassphrase =>
+        isDark
+            ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
+            : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
+      // Figma uses the same castle line-art for both themes (alpha-only
+      // strokes composite against the window color), so one asset serves
+      // light and dark.
+      OnboardingStep.setPassword =>
+        'assets/illustrations/onboarding_set_password_background_light.png',
+      _ => null,
+    };
+
+    if (asset == null) {
+      return const SizedBox.shrink();
+    }
+
+    return DecoratedBox(
+      decoration: BoxDecoration(color: context.colors.background.window),
+      child: Image.asset(
+        asset,
+        fit: BoxFit.cover,
+        alignment: Alignment.topCenter,
+      ),
+    );
+  }
+}
+
+class OnboardingTrailingPane extends StatelessWidget {
+  const OnboardingTrailingPane({
+    required this.child,
+    this.backTarget,
+    this.bodyPadding = const EdgeInsets.fromLTRB(12, 16, 12, 16),
+    super.key,
+  });
+
+  final Widget child;
+  final OnboardingBackTarget? backTarget;
+  final EdgeInsetsGeometry bodyPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    return OnboardingPaneChrome(
+      backTarget: backTarget,
+      bodyPadding: bodyPadding,
+      child: child,
+    );
   }
 }
 
@@ -168,62 +221,31 @@ class _Sidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppDesktopSidebarSurface(
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: AnimatedSwitcher(
-              duration: kOnboardingForwardDuration,
-              reverseDuration: kOnboardingReverseDuration,
-              switchInCurve: kOnboardingForwardCurve,
-              switchOutCurve: kOnboardingReverseCurve,
-              transitionBuilder: _fadeTransition,
-              child: KeyedSubtree(
-                key: ValueKey('${activeStep.name}:$secretPassphraseRevealed'),
-                child: _SidebarIllustration(
-                  step: activeStep,
-                  secretPassphraseRevealed: secretPassphraseRevealed,
-                ),
-              ),
-            ),
+    return OnboardingSidebarChrome(
+      steps: [
+        for (final step in _steps)
+          OnboardingSidebarStepData(
+            label: step.label,
+            iconName: step.iconName,
+            active: step == activeStep,
           ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.xs),
-              child: AnimatedSwitcher(
-                duration: kOnboardingForwardDuration,
-                reverseDuration: kOnboardingReverseDuration,
-                switchInCurve: kOnboardingForwardCurve,
-                switchOutCurve: kOnboardingReverseCurve,
-                transitionBuilder: _fadeTransition,
-                child: KeyedSubtree(
-                  key: ValueKey(activeStep),
-                  child: _SidebarNav(
-                    activeStep: activeStep,
-                    showPasswordStep: showPasswordStep,
-                  ),
-                ),
-              ),
-            ),
+      ],
+      illustration: AnimatedSwitcher(
+        duration: kOnboardingForwardDuration,
+        reverseDuration: kOnboardingReverseDuration,
+        switchInCurve: kOnboardingForwardCurve,
+        switchOutCurve: kOnboardingReverseCurve,
+        transitionBuilder: _fadeTransition,
+        child: KeyedSubtree(
+          key: ValueKey('${activeStep.name}:$secretPassphraseRevealed'),
+          child: _SidebarIllustration(
+            step: activeStep,
+            secretPassphraseRevealed: secretPassphraseRevealed,
           ),
-        ],
+        ),
       ),
     );
   }
-
-  Widget _fadeTransition(Widget child, Animation<double> animation) {
-    return FadeTransition(opacity: animation, child: child);
-  }
-}
-
-class _SidebarNav extends StatelessWidget {
-  const _SidebarNav({required this.activeStep, required this.showPasswordStep});
-
-  final OnboardingStep activeStep;
-  final bool showPasswordStep;
 
   List<OnboardingStep> get _steps => [
     OnboardingStep.intro,
@@ -233,63 +255,8 @@ class _SidebarNav extends StatelessWidget {
     if (showPasswordStep) OnboardingStep.setPassword,
   ];
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.xs),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < _steps.length; i++) ...[
-            _OnboardingSidebarItem(
-              label: _steps[i].label,
-              iconName: _steps[i].iconName,
-              active: _steps[i] == activeStep,
-            ),
-            if (i != _steps.length - 1) const SizedBox(height: AppSpacing.xs),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _OnboardingSidebarItem extends StatelessWidget {
-  const _OnboardingSidebarItem({
-    required this.label,
-    required this.iconName,
-    required this.active,
-  });
-
-  final String label;
-  final String iconName;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: active ? colors.state.selectedOpacity : null,
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      padding: const EdgeInsets.only(
-        left: AppSpacing.xs,
-        top: AppSpacing.xs,
-        bottom: AppSpacing.xs,
-      ),
-      child: Row(
-        children: [
-          AppIcon(iconName, size: 20, color: colors.icon.accent),
-          const SizedBox(width: AppSpacing.s),
-          Text(
-            label,
-            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
-          ),
-        ],
-      ),
-    );
+  Widget _fadeTransition(Widget child, Animation<double> animation) {
+    return FadeTransition(opacity: animation, child: child);
   }
 }
 
@@ -303,7 +270,7 @@ class _SidebarIllustration extends StatelessWidget {
   final bool secretPassphraseRevealed;
 
   static const _frameWidth = 256.0;
-  static const _frameHeight = 405.0;
+  static const _frameHeight = 430.0;
 
   @override
   Widget build(BuildContext context) {
@@ -319,8 +286,8 @@ class _SidebarIllustration extends StatelessWidget {
             : 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_light.png',
       OnboardingStep.setPassword =>
         isDark
-            ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_open_dark.png'
-            : 'assets/illustrations/onboarding_secret_passphrase_sidebar_open_light.png',
+            ? 'assets/illustrations/onboarding_set_password_sidebar_dark.png'
+            : 'assets/illustrations/onboarding_set_password_sidebar_light.png',
       OnboardingStep.thingsToKnow =>
         isDark
             ? 'assets/illustrations/onboarding_things_to_know_sidebar_dark.png'
@@ -340,7 +307,11 @@ class _SidebarIllustration extends StatelessWidget {
         child: SizedBox(
           width: _frameWidth,
           height: _frameHeight,
-          child: Image.asset(asset, fit: BoxFit.cover),
+          child: Image.asset(
+            asset,
+            fit: BoxFit.cover,
+            alignment: Alignment.bottomCenter,
+          ),
         ),
       ),
     );

@@ -24,6 +24,7 @@ void main() {
       '/tmp/zcash_wallet.db.voting-journal',
       '/tmp/zcash_wallet.db.voting-wal',
       '/tmp/zcash_wallet.db.voting-shm',
+      '/tmp/zcash_wallet.db.receive.redb',
     ]);
   });
 
@@ -39,6 +40,7 @@ void main() {
       '.voting-journal',
       '.voting-wal',
       '.voting-shm',
+      '.receive.redb',
     ]);
   });
 

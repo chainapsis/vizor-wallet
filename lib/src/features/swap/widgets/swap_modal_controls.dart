@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_tappable.dart';
 
 class SwapModalIconBadge extends StatelessWidget {
   const SwapModalIconBadge({
@@ -34,25 +35,26 @@ class SwapInlineIconButton extends StatelessWidget {
   const SwapInlineIconButton({
     required this.iconName,
     required this.onTap,
+    this.size = 20,
     super.key,
   });
 
   final String iconName;
   final VoidCallback onTap;
 
+  /// Tap-target / glyph size. Defaults to 20 (desktop field); mobile modal
+  /// fields pass [AppInputSizing.iconSize] (24).
+  final double size;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          width: 20,
-          height: 20,
-          child: AppIcon(iconName, size: 20, color: colors.icon.accent),
-        ),
+    return AppTappable(
+      onTap: onTap,
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: AppIcon(iconName, size: size, color: colors.icon.accent),
       ),
     );
   }

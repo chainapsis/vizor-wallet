@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_polls_screen.dart';
@@ -17,6 +19,78 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart';
 
 void main() {
   setUp(resetVotingPollListRecentRefreshForTests);
+
+  testWidgets('header shows the Figma beta badge beside the title', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final router = GoRouter(
+      initialLocation: '/voting',
+      routes: [
+        GoRoute(path: '/voting', builder: (_, _) => const VotingPollsScreen()),
+        GoRoute(path: '/accounts', builder: (_, _) => const Text('accounts')),
+        GoRoute(path: '/home', builder: (_, _) => const Text('home')),
+        GoRoute(
+          path: '/address-book',
+          builder: (_, _) => const Text('address book'),
+        ),
+        GoRoute(path: '/activity', builder: (_, _) => const Text('activity')),
+        GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
+        GoRoute(path: '/about', builder: (_, _) => const Text('about')),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap),
+          accountProvider.overrideWith(_SoftwareAccountNotifier.new),
+          syncProvider.overrideWith(_NoopSyncNotifier.new),
+          swapFeatureEnabledProvider.overrideWithValue(false),
+          votingConfigProvider.overrideWith(_TrackingVotingConfigNotifier.new),
+          votingRoundsProvider.overrideWith(_TrackingVotingRoundsNotifier.new),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.light, child: child!),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final rowFinder = find.byKey(const ValueKey('voting_header_title_row'));
+    final titleFinder = find.byKey(const ValueKey('voting_header_title'));
+    final betaFinder = find.byKey(const ValueKey('voting_header_beta_label'));
+    expect(rowFinder, findsOneWidget);
+    expect(titleFinder, findsOneWidget);
+    expect(betaFinder, findsOneWidget);
+    expect(tester.getSize(betaFinder), const Size(42, 24));
+    expect(
+      tester.getCenter(titleFinder).dx,
+      closeTo(tester.getCenter(rowFinder).dx, 0.5),
+    );
+    expect(
+      tester.getCenter(betaFinder).dx,
+      closeTo(tester.getCenter(titleFinder).dx + 34, 0.5),
+    );
+    expect(
+      tester.getTopLeft(betaFinder).dy,
+      closeTo(tester.getTopLeft(rowFinder).dy - 10, 0.5),
+    );
+
+    final betaImage = tester.widget<Image>(
+      find.descendant(of: betaFinder, matching: find.byType(Image)),
+    );
+    expect(
+      (betaImage.image as AssetImage).assetName,
+      'assets/illustrations/voting_beta_label.png',
+    );
+  });
 
   testWidgets('poll list reloads when screen opens and route returns', (
     tester,
@@ -52,6 +126,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap),
           accountProvider.overrideWith(_SoftwareAccountNotifier.new),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
           swapFeatureEnabledProvider.overrideWithValue(false),
@@ -76,7 +151,11 @@ void main() {
     expect(roundsNotifier.reloadCount, 1);
     expect(configNotifier.refreshCount, 1);
 
-    await tester.tap(find.byKey(const ValueKey('sidebar_voting_button')));
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(VotingPollsScreen)),
+      listen: false,
+    );
+    container.read(votingPollListRefreshRequestProvider.notifier).request();
     await tester.pumpAndSettle();
 
     expect(roundsNotifier.reloadCount, 2);
@@ -142,6 +221,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            appBootstrapProvider.overrideWithValue(_bootstrap),
             accountProvider.overrideWith(_SoftwareAccountNotifier.new),
             syncProvider.overrideWith(_NoopSyncNotifier.new),
             swapFeatureEnabledProvider.overrideWithValue(false),
@@ -209,6 +289,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap),
           accountProvider.overrideWith(() {
             accountNotifier = _SwitchingAccountNotifier();
             return accountNotifier;
@@ -276,6 +357,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap),
           accountProvider.overrideWith(_SoftwareAccountNotifier.new),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
           swapFeatureEnabledProvider.overrideWithValue(false),
@@ -327,6 +409,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            appBootstrapProvider.overrideWithValue(_bootstrap),
             accountProvider.overrideWith(_SoftwareAccountNotifier.new),
             syncProvider.overrideWith(_NoopSyncNotifier.new),
             swapFeatureEnabledProvider.overrideWithValue(false),
@@ -367,6 +450,23 @@ void main() {
     },
   );
 }
+
+final _bootstrap = AppBootstrapState(
+  initialLocation: '/voting',
+  initialAccountState: const AccountState(
+    accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1softwareaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
 
 class _TrackingVotingConfigNotifier extends VotingConfigNotifier {
   _TrackingVotingConfigNotifier({Future<void>? buildGate})

@@ -15,17 +15,29 @@ import 'package:zcash_wallet/src/features/onboarding/keystone/keystone_onboardin
 void main() {
   setUpAll(_loadAppFonts);
 
-  testWidgets('renders the redesigned Keystone start content', (tester) async {
+  testWidgets('renders the Keystone start content', (tester) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(_keystoneScreen());
 
     expect(find.text('Connect Keystone'), findsOneWidget);
     expect(find.text('Prepare your Keystone wallet'), findsOneWidget);
-    expect(find.text('Before you start'), findsOneWidget);
-    expect(find.text('Check your firmware'), findsOneWidget);
-    expect(find.text('Get Cypherpunk firmware'), findsOneWidget);
-    expect(find.text('Next step'), findsOneWidget);
-    expect(find.text('Prepare to connect'), findsOneWidget);
+    expect(find.text('1. Check Keystone firmware'), findsOneWidget);
+    expect(find.textContaining('Make sure your Keystone'), findsOneWidget);
+    expect(find.text('link'), findsOneWidget);
+    expect(find.text('Download firmware'), findsNothing);
+    expect(find.text('2. Prepare to connect'), findsOneWidget);
+    expect(find.text('On your Keystone'), findsOneWidget);
+    expect(find.text('Unlock it.'), findsNothing);
+    expect(
+      find.text('Tap ••• (top right), then Connect software wallet.'),
+      findsOneWidget,
+    );
+    expect(find.text('Select Vizor (or ZODL)'), findsOneWidget);
+    expect(find.text('On Vizor'), findsOneWidget);
+    expect(
+      find.text('Scan the dynamic QR code on your Keystone.'),
+      findsOneWidget,
+    );
     expect(find.text("I'm ready now"), findsOneWidget);
   });
 
@@ -55,26 +67,23 @@ void main() {
     expect(find.text('Scan QR route'), findsOneWidget);
   });
 
-  test(
-    'sidebar metadata matches the redesigned Keystone navigation labels',
-    () {
-      expect(KeystoneOnboardingStep.howToConnect.iconName, AppIcons.book);
-      expect(KeystoneOnboardingStep.selectAccount.label, 'Select Account');
-      expect(KeystoneOnboardingStep.selectAccount.iconName, AppIcons.user);
-    },
-  );
+  test('sidebar metadata matches the Keystone navigation labels', () {
+    expect(KeystoneOnboardingStep.howToConnect.iconName, AppIcons.book);
+    expect(KeystoneOnboardingStep.selectAccount.label, 'Select Account');
+    expect(KeystoneOnboardingStep.selectAccount.iconName, AppIcons.user);
+  });
 }
 
 Future<void> _loadAppFonts() async {
-  final libreCaslonText = FontLoader('Libre Caslon Text')
-    ..addFont(rootBundle.load('assets/fonts/LibreCaslonText-Regular.ttf'));
+  final youngSerif = FontLoader('Young Serif')
+    ..addFont(rootBundle.load('assets/fonts/YoungSerif-Regular.ttf'));
   final geist = FontLoader('Geist')
     ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
     ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
   final geistMono = FontLoader('Geist Mono')
     ..addFont(rootBundle.load('assets/fonts/GeistMono-Medium.ttf'));
 
-  await Future.wait([libreCaslonText.load(), geist.load(), geistMono.load()]);
+  await Future.wait([youngSerif.load(), geist.load(), geistMono.load()]);
 }
 
 Future<void> _setDesktopViewport(WidgetTester tester) async {

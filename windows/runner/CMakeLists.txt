@@ -45,6 +45,11 @@ configure_file(
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
 
+# Compile sources as UTF-8 so non-ASCII bytes in source/comments don't raise
+# C4819, which apply_standard_settings' /W4 /WX would promote to a hard build
+# error on non-UTF-8 codepage hosts (e.g. Korean cp949).
+target_compile_options(${BINARY_NAME} PRIVATE "/utf-8")
+
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_MAJOR=${FLUTTER_VERSION_MAJOR}")
@@ -98,9 +103,12 @@ set(VELOPACK_LIBC_IMPLIB "${VELOPACK_LIBC_ROOT}/lib/velopack_libc_win_x64_msvc.d
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "advapi32.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "secur32.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "bcrypt.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "crypt32.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "credui.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "runtimeobject.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "shell32.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "version.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "winhttp.lib")

@@ -1,0 +1,6 @@
+tags:
+  # Mobile-UI tests are opt-in: skipped in the default (desktop) lane,
+  # re-enabled by the mobile lane command in the skip reason below.
+  # See "Design Token Form Factor" in AGENTS.md.
+  mobile:
+    skip: "mobile token lane only: fvm flutter test --tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile"
