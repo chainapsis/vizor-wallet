@@ -217,6 +217,27 @@ void main() {
     expect(find.bySemanticsLabel('Delete digit'), findsNothing);
   });
 
+  testWidgets('digits register on pointer down before tap up', (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.bySemanticsLabel('Digit 1')),
+    );
+    await tester.pump();
+
+    var dots = tester.widget<PasscodeDots>(find.byType(PasscodeDots));
+    expect(dots.filled, 1);
+
+    await gesture.moveBy(const Offset(40, 0));
+    await tester.pump();
+
+    dots = tester.widget<PasscodeDots>(find.byType(PasscodeDots));
+    expect(dots.filled, 1);
+
+    await gesture.up();
+  });
+
   group('haptics', () {
     setUp(() {
       FlutterSecureStorage.setMockInitialValues({});
