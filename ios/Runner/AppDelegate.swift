@@ -330,7 +330,20 @@ final class SecureScreenshotShield {
   }
 
   private func attachLayerIfNeeded() {
-    guard !isLayerAttached else { return }
+    // Re-graft if not attached, or if the window we grafted into is gone or is
+    // no longer the key window — a UIScene can reconnect and hand us a fresh
+    // UIWindow. Without this, `isLayerAttached` would latch to a dead window and
+    // silently stop blanking: a screenshot would then capture the secret in
+    // plaintext with no error and no fallback.
+    if isLayerAttached {
+      if let attached = shieldedWindow, attached === Self.keyWindow() {
+        return
+      }
+      removeGeometryObservers()
+      isLayerAttached = false
+      shieldedWindow = nil
+      canvasLayer = nil
+    }
     guard let window = Self.keyWindow() else { return }
 
     secureField.isUserInteractionEnabled = false
@@ -420,6 +433,14 @@ final class SecureScreenshotShield {
         object: nil, queue: .main, using: reassert
       ),
     ]
+  }
+
+  private func removeGeometryObservers() {
+    let nc = NotificationCenter.default
+    for observer in geometryObservers {
+      nc.removeObserver(observer)
+    }
+    geometryObservers.removeAll()
   }
 
   private static func keyWindow() -> UIWindow? {
