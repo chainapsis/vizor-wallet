@@ -75,8 +75,10 @@ void main() {
     expect(find.byKey(const ValueKey('mobile_send_status_sending')), findsOne);
     expect(find.text('Sending...'), findsOneWidget);
     expect(
-      find.text('Wait till your transaction got submitted to the '
-          'blockchain...'),
+      find.text(
+        'Wait till your transaction got submitted to the '
+        'blockchain...',
+      ),
       findsOneWidget,
     );
     expect(
@@ -195,10 +197,11 @@ void main() {
     await tester.pump();
 
     expect(find.text('Queued to send'), findsOneWidget);
-    expect(
-      find.textContaining('will be submitted automatically'),
-      findsOneWidget,
+    final subtitleFinder = find.textContaining(
+      'will be submitted automatically',
     );
+    expect(subtitleFinder, findsOneWidget);
+    expect(tester.getSize(subtitleFinder).width, greaterThan(300));
   });
 
   testWidgets('broadcast failure shows the failed state with light haptic', (

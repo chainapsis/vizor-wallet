@@ -260,16 +260,31 @@ class _MobileSendStatusScreenState
                                     ),
                                   ),
                                   const SizedBox(height: AppSpacing.s),
-                                  ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                      maxWidth: _statusSubtitleWidth,
-                                    ),
-                                    child: Text(
-                                      _subtitle,
-                                      textAlign: TextAlign.center,
-                                      style: AppTypography.bodyMediumStrong
-                                          .copyWith(color: colors.text.primary),
-                                    ),
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final subtitleMaxWidth =
+                                          _phase ==
+                                              _MobileSendStatusPhase
+                                                  .pendingBroadcast
+                                          ? constraints.maxWidth
+                                          : math.min(
+                                              _statusSubtitleWidth,
+                                              constraints.maxWidth,
+                                            );
+                                      return ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          maxWidth: subtitleMaxWidth,
+                                        ),
+                                        child: Text(
+                                          _subtitle,
+                                          textAlign: TextAlign.center,
+                                          style: AppTypography.bodyMediumStrong
+                                              .copyWith(
+                                                color: colors.text.primary,
+                                              ),
+                                        ),
+                                      );
+                                    },
                                   ),
                                 ],
                               ),
@@ -405,8 +420,7 @@ class _StatusBadgeState extends State<_StatusBadge>
           AnimatedBuilder(
             animation: _ripple,
             builder: (context, _) {
-              final showHalo =
-                  widget.phase == _MobileSendStatusPhase.succeeded;
+              final showHalo = widget.phase == _MobileSendStatusPhase.succeeded;
               final t = _ripple.value;
               // The halo settles at 175px within the first part of the
               // run; the pulse keeps expanding past the screen edge
