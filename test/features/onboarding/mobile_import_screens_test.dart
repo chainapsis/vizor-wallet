@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_manual_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_review_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
@@ -108,6 +109,31 @@ Widget _reviewApp({
         screenshotStream: screenshotStream,
         privacyOverlayController: privacyOverlayController,
       ),
+    ),
+  );
+}
+
+Widget _manualScreenshotApp({
+  required Stream<void> screenshotStream,
+  required SensitivePrivacyOverlayController privacyOverlayController,
+}) {
+  final router = GoRouter(
+    initialLocation: '/import/manual',
+    routes: [
+      GoRoute(
+        path: '/import/manual',
+        builder: (_, _) => MobileImportManualScreen(
+          wordListOverride: _validMnemonic.split(' '),
+          screenshotStream: screenshotStream,
+          privacyOverlayController: privacyOverlayController,
+        ),
+      ),
+    ],
+  );
+  return ProviderScope(
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
 }
@@ -461,6 +487,54 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     expect(find.text('Clipboard is empty'), findsNothing);
   });
+
+  testWidgets(
+    'manual entry keeps the shield while its warning sheet is open under '
+    'real go_router routing',
+    (tester) async {
+      final screenshots = StreamController<void>();
+      addTearDown(screenshots.close);
+      final privacyController = SensitivePrivacyOverlayController(
+        initiallySafe: false,
+      );
+      addTearDown(privacyController.dispose);
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async => null,
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+
+      await tester.pumpWidget(
+        _manualScreenshotApp(
+          screenshotStream: screenshots.stream,
+          privacyOverlayController: privacyController,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_import_manual_field')),
+        'abandon',
+      );
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+
+      screenshots.add(null);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MobileSeedScreenshotWarningSheet), findsOneWidget);
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+      final route = ModalRoute.of(
+        tester.element(find.byType(MobileImportManualScreen)),
+      );
+      expect(route?.secondaryAnimation?.status, AnimationStatus.dismissed);
+    },
+  );
 }
 
 class _RustApiFake implements RustLibApi {
