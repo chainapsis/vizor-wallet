@@ -90,7 +90,7 @@ const _mobileKeystoneQrPromptGap = AppSpacing.base;
 const _mobileKeystonePromptBlockHeight = 56.0;
 const _mobileKeystonePromptLineGap = 2.0;
 const _mobileKeystonePromptInlineGap = 6.0;
-const _mobileKeystoneScanProgressGap = 4.0;
+const _mobileKeystoneScanProgressHold = Duration(milliseconds: 360);
 const _mobileKeystoneLightText = Color(0xFFFFFFFF);
 const _mobileKeystoneOrange = Color(0xFFF98F0E);
 
@@ -158,6 +158,7 @@ class _MobileKeystonePcztSigningFlowState
   bool _proofsFailed = false;
   bool _decoding = false;
   bool _restartCameraOnResume = false;
+  bool _scanProgressStarted = false;
   int _scanProgress = 0;
   int _scanSessionResetToken = 0;
   String? _scanHint;
@@ -233,6 +234,7 @@ class _MobileKeystonePcztSigningFlowState
     setState(() {
       _stage = _SignStage.scanning;
       _scanHint = null;
+      _scanProgressStarted = false;
       _scanProgress = 0;
     });
   }
@@ -247,14 +249,31 @@ class _MobileKeystonePcztSigningFlowState
 
   void _handleScanProgress(int progress) {
     final clamped = progress.clamp(0, 100);
-    if (!mounted || _scanProgress == clamped) return;
-    setState(() => _scanProgress = clamped);
+    if (!mounted ||
+        (_scanProgressStarted &&
+            _scanProgress == clamped &&
+            _scanHint == null)) {
+      return;
+    }
+    setState(() {
+      _scanProgressStarted = true;
+      _scanProgress = clamped;
+      _scanHint = null;
+    });
   }
 
   Future<void> _handleScanComplete(ScanResult result) async {
     if (_decoding || _stage != _SignStage.scanning) return;
     setState(() {
       _decoding = true;
+      _scanProgressStarted = true;
+      _scanProgress = 100;
+      _scanHint = null;
+    });
+    await Future<void>.delayed(_mobileKeystoneScanProgressHold);
+    if (!mounted || _stage != _SignStage.scanning) return;
+    setState(() {
+      _scanProgressStarted = false;
       _scanHint = widget.readingSignatureLabel;
     });
 
@@ -268,6 +287,8 @@ class _MobileKeystonePcztSigningFlowState
       setState(() {
         _decoding = false;
         _scanSessionResetToken++;
+        _scanProgressStarted = false;
+        _scanProgress = 0;
         _scanHint =
             'This QR code could not be decoded as a Keystone signature.';
       });
@@ -314,8 +335,12 @@ class _MobileKeystonePcztSigningFlowState
     final message = error.toString().contains('Unexpected UR type')
         ? 'Open the signed transaction QR on Keystone, then scan again.'
         : 'Keep the QR code steady and fully visible.';
-    if (_scanHint == message) return;
-    setState(() => _scanHint = message);
+    if (_scanHint == message && !_scanProgressStarted) return;
+    setState(() {
+      _scanHint = message;
+      _scanProgressStarted = false;
+      _scanProgress = 0;
+    });
   }
 
   void _cancel() {
@@ -338,6 +363,7 @@ class _MobileKeystonePcztSigningFlowState
     setState(() {
       _stage = _SignStage.showQr;
       _scanHint = null;
+      _scanProgressStarted = false;
       _scanProgress = 0;
       _scanSessionResetToken++;
     });
@@ -438,6 +464,16 @@ class _MobileKeystonePcztSigningFlowState
       child: SafeArea(
         child: Column(
           children: [
+            // Warm the flutter_svg cache for the scanner's return-to-QR icon
+            // while Step 1 is on screen. It is an async SvgPicture.asset (unlike
+            // the flashlight's synchronous font glyph), so without this it paints
+            // blank on the first, uncached frame of Step 2 and looks "missing".
+            const Offstage(
+              child: AppIcon(
+                AppIcons.qr,
+                size: _mobileKeystoneQrActionIconSize,
+              ),
+            ),
             _KeystoneSigningTopNav(
               color: colors.icon.accent,
               trackColor: colors.background.overlay,
@@ -586,9 +622,8 @@ class _MobileKeystonePcztSigningFlowState
     if (scanController == null) return const SizedBox.shrink();
     final scanSessionResetToken = (_stage, _scanSessionResetToken);
 
-    final caption = _decoding
-        ? _scanHint ?? widget.readingSignatureLabel
-        : _scanHint ?? widget.scanCaption;
+    final caption = _scannerCaption;
+    final showProgressCaption = _showScannerProgressCaption;
 
     return ColoredBox(
       key: _key('scanner_card'),
@@ -612,7 +647,7 @@ class _MobileKeystonePcztSigningFlowState
                 ),
               )
               .toDouble();
-          final viewfinderTop = _scannerTopFor(
+          final desiredViewfinderTop = _scannerTopFor(
             constraints,
             designTop: _mobileKeystoneScanWindowTop,
             height: _mobileKeystoneScanWindowSize,
@@ -633,6 +668,17 @@ class _MobileKeystonePcztSigningFlowState
                 _mobileKeystoneScanActionSize -
                 AppSpacing.xxs,
           );
+          final maxViewfinderTop = math.max(
+            0.0,
+            maxActionTop -
+                _mobileKeystoneScanMinActionGap -
+                _mobileKeystoneScanCaptionHeight -
+                _mobileKeystoneScanMinCaptionGap -
+                _mobileKeystoneScanWindowSize,
+          );
+          final viewfinderTop = desiredViewfinderTop
+              .clamp(0.0, maxViewfinderTop)
+              .toDouble();
           final minCaptionTop =
               viewfinderTop +
               _mobileKeystoneScanWindowSize +
@@ -676,7 +722,6 @@ class _MobileKeystonePcztSigningFlowState
                 controller: scanController,
                 expectedUrType: 'zcash-pczt',
                 scanSessionResetToken: scanSessionResetToken,
-                scanWindow: scanWindow,
                 errorBuilder: (context, error) => const SizedBox.shrink(),
                 onProgress: _handleScanProgress,
                 onDecodeError: _handleDecodeError,
@@ -707,22 +752,6 @@ class _MobileKeystonePcztSigningFlowState
                   ),
                 ),
               ),
-              if (_scanProgress > 0 && _scanProgress < 100 && !_decoding)
-                Positioned(
-                  left: viewfinderLeft,
-                  top:
-                      viewfinderTop +
-                      _mobileKeystoneScanWindowSize +
-                      _mobileKeystoneScanProgressGap,
-                  width: _mobileKeystoneScanWindowSize,
-                  child: Center(
-                    child: _KeystoneScannerProgressBar(
-                      key: _key('scan_progress_bar'),
-                      fillKey: _key('scan_progress_fill'),
-                      progress: _scanProgress / 100,
-                    ),
-                  ),
-                ),
               if (!widget.forceScannerActiveForTesting)
                 MobileScanCameraErrorOverlay(
                   controller: scanController,
@@ -771,11 +800,17 @@ class _MobileKeystonePcztSigningFlowState
                 child: SizedBox(
                   key: _key('scan_caption'),
                   width: _mobileKeystoneScanCaptionWidth,
-                  child: _KeystoneSigningPromptText(
-                    text: caption,
-                    color: _mobileKeystoneLightText,
-                    maxLines: 3,
-                  ),
+                  child: showProgressCaption
+                      ? _KeystoneScannerProgressCaption(
+                          progress: _scanProgress,
+                          color: _mobileKeystoneLightText,
+                          maxLines: 3,
+                        )
+                      : _KeystoneSigningPromptText(
+                          text: caption,
+                          color: _mobileKeystoneLightText,
+                          maxLines: 3,
+                        ),
                 ),
               ),
               Positioned(
@@ -843,6 +878,15 @@ class _MobileKeystonePcztSigningFlowState
       math.max(0.0, constraints.maxHeight - height - AppSpacing.xxs),
     );
   }
+
+  String get _scannerCaption {
+    if (_decoding) return _scanHint ?? widget.readingSignatureLabel;
+    if (_scanHint != null) return _scanHint!;
+    return widget.scanCaption;
+  }
+
+  bool get _showScannerProgressCaption =>
+      _scanHint == null && _scanProgressStarted;
 }
 
 class _MobileKeystoneQrPlaceholder extends StatefulWidget {
@@ -1000,52 +1044,6 @@ class _KeystoneSigningTopNav extends StatelessWidget {
   }
 }
 
-class _KeystoneScannerProgressBar extends StatelessWidget {
-  const _KeystoneScannerProgressBar({
-    required this.progress,
-    required this.fillKey,
-    super.key,
-  });
-
-  static const _width = 128.0;
-  static const _height = 6.0;
-
-  final double progress;
-  final Key fillKey;
-
-  @override
-  Widget build(BuildContext context) {
-    final normalized = progress.clamp(0.0, 1.0).toDouble();
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppRadii.full),
-      child: SizedBox(
-        width: _width,
-        height: _height,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: _mobileKeystoneLightText.withValues(alpha: 0.4),
-              ),
-            ),
-            FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: normalized,
-              child: DecoratedBox(
-                key: fillKey,
-                decoration: const BoxDecoration(
-                  color: _mobileKeystoneLightText,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _KeystoneSigningTitle extends StatelessWidget {
   const _KeystoneSigningTitle({
     required this.title,
@@ -1085,6 +1083,35 @@ class _KeystoneSigningTitle extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _KeystoneScannerProgressCaption extends StatelessWidget {
+  const _KeystoneScannerProgressCaption({
+    required this.progress,
+    required this.color,
+    this.maxLines = 2,
+  });
+
+  final int progress;
+  final Color color;
+  final int maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: progress.toDouble()),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      builder: (context, animatedProgress, child) {
+        final percent = animatedProgress.round().clamp(0, 100);
+        return _KeystoneSigningPromptText(
+          text: 'Scanning... $percent%',
+          color: color,
+          maxLines: maxLines,
+        );
+      },
     );
   }
 }

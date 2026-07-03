@@ -299,8 +299,13 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
           controller: _controller,
           onDetect: _onDetect,
           errorBuilder: widget.errorBuilder,
+          // Send an explicit full-preview rect rather than null: the native
+          // plugin keeps `scanWindow` (the Vision regionOfInterest) as a
+          // process-global that stop/dispose never clears, so a null window
+          // silently inherits whatever ROI the previous scanner left behind.
+          // A full-preview rect resets detection to the whole visible preview.
           scanWindow:
-              widget.scanWindow ?? QrScanner.scanWindowFor(constraints.biggest),
+              widget.scanWindow ?? (Offset.zero & constraints.biggest),
           scanWindowUpdateThreshold: QrScanner.scanWindowUpdateThreshold,
         );
       },

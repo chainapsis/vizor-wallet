@@ -182,14 +182,17 @@ void main() {
   ) async {
     await _pumpUseCase(tester, buildMobileKeystoneSigningScannerUseCase);
     await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(tester.takeException(), isNull);
     expect(find.text('Step 2/2'), findsOneWidget);
     expect(find.text('Confirm with Keystone'), findsOneWidget);
     expect(
       find.text('Scan the QR code on your Keystone to finish sending'),
-      findsOneWidget,
+      findsNothing,
     );
+    expect(find.text('Scanning... 50%'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_keystone_signing_widgetbook_camera')),
       findsOneWidget,
@@ -198,7 +201,7 @@ void main() {
       find.byKey(
         const ValueKey('mobile_keystone_signing_widgetbook_scan_progress_bar'),
       ),
-      findsOneWidget,
+      findsNothing,
     );
   });
 

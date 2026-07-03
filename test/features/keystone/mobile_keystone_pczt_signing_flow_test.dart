@@ -14,6 +14,12 @@ import 'package:zcash_wallet/src/features/keystone/widgets/mobile_keystone_pczt_
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
 
 void main() {
+  Future<void> pumpPastScanCompleteHold(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+  }
+
   testWidgets('shows an animated QR skeleton while preparing PCZT', (
     tester,
   ) async {
@@ -479,7 +485,7 @@ void main() {
     );
   });
 
-  testWidgets('shows animated UR scan progress below the viewfinder', (
+  testWidgets('shows animated UR scan progress in the scanner caption', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(393, 852);
@@ -543,37 +549,188 @@ void main() {
     final progressBar = find.byKey(
       const ValueKey('test_keystone_sign_scan_progress_bar'),
     );
-    final progressFill = find.byKey(
-      const ValueKey('test_keystone_sign_scan_progress_fill'),
-    );
     expect(progressBar, findsNothing);
-
-    reportProgress!(50);
-    await tester.pump();
-
-    expect(progressBar, findsOneWidget);
-    expect(tester.getSize(progressBar), const Size(128, 6));
-    final progressTopLeft = tester.getTopLeft(progressBar);
-    expect(progressTopLeft.dx, closeTo(133.5, 0.01));
-    expect(progressTopLeft.dy, closeTo(582, 0.01));
-    expect(tester.getSize(progressFill).width, closeTo(64, 0.01));
-    expect(tester.getSize(progressFill).height, closeTo(6, 0.01));
     expect(
       find.text('Scan the QR code on your Keystone to confirm'),
       findsOneWidget,
     );
-    expect(find.text('Scanning... 50%'), findsNothing);
+
+    reportProgress!(50);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(progressBar, findsNothing);
+    expect(find.text('Scanning... 0%'), findsNothing);
+    expect(find.text('Scanning... 50%'), findsOneWidget);
 
     reportProgress!(100);
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(progressBar, findsNothing);
+    expect(find.text('Scanning... 100%'), findsOneWidget);
+  });
+
+  testWidgets('scan progress replaces stale scanner hints', (tester) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    ValueChanged<ScanResult>? completeScan;
+    ValueChanged<int>? reportProgress;
+
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, _) => Center(
+            child: TextButton(
+              key: const ValueKey('open_signing'),
+              onPressed: () => context.push('/sign'),
+              child: const Text('Open signing'),
+            ),
+          ),
+        ),
+        GoRoute(
+          path: '/sign',
+          builder: (_, _) => MobileKeystonePcztSigningFlow(
+            title: 'Confirm transaction',
+            description: 'Scan with Keystone.',
+            keyPrefix: 'test_keystone_sign',
+            preparePczt: (_, _) async => MobileKeystonePcztSigningPayload(
+              urParts: const ['ur:zcash-pczt/test'],
+              pcztWithProofs: Future.value(const [1, 2, 3]),
+            ),
+            scannerBuilder: (_, onComplete, onProgress, _) {
+              completeScan = onComplete;
+              reportProgress = onProgress;
+              return const SizedBox(key: ValueKey('fake_keystone_scanner'));
+            },
+            forceScannerActiveForTesting: true,
+            signedPcztDecoder: (_) async => throw StateError('invalid pczt'),
+            onSigned: (_, _, _, _) async {},
+            friendlyError: (_) => 'Keystone signing failed.',
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.light, child: child!),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('open_signing')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('test_keystone_sign_get_signature')),
+    );
+    await tester.pump();
+
+    completeScan!(const ScanResult(urType: 'zcash-pczt', data: [1, 2, 3]));
+    await pumpPastScanCompleteHold(tester);
+
+    expect(
+      find.text('This QR code could not be decoded as a Keystone signature.'),
+      findsOneWidget,
+    );
+
+    reportProgress!(50);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.text('This QR code could not be decoded as a Keystone signature.'),
+      findsNothing,
+    );
+    expect(find.text('Scanning... 50%'), findsOneWidget);
+  });
+
+  testWidgets('shows complete scan progress before reading the signature', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    ValueChanged<ScanResult>? completeScan;
+
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, _) => Center(
+            child: TextButton(
+              key: const ValueKey('open_signing'),
+              onPressed: () => context.push('/sign'),
+              child: const Text('Open signing'),
+            ),
+          ),
+        ),
+        GoRoute(
+          path: '/sign',
+          builder: (_, _) => MobileKeystonePcztSigningFlow(
+            title: 'Confirm transaction',
+            description: 'Scan with Keystone.',
+            keyPrefix: 'test_keystone_sign',
+            preparePczt: (_, _) async => MobileKeystonePcztSigningPayload(
+              urParts: const ['ur:zcash-pczt/test'],
+              pcztWithProofs: Future.value(const [1, 2, 3]),
+            ),
+            scannerBuilder: (_, onComplete, _, _) {
+              completeScan = onComplete;
+              return const SizedBox(key: ValueKey('fake_keystone_scanner'));
+            },
+            forceScannerActiveForTesting: true,
+            signedPcztDecoder: (_) async => Uint8List.fromList(const [9]),
+            onSigned: (_, _, _, _) async {},
+            friendlyError: (_) => 'Keystone signing failed.',
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.light, child: child!),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('open_signing')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('test_keystone_sign_get_signature')),
+    );
+    await tester.pump();
+
+    completeScan!(const ScanResult(urType: 'zcash-pczt', data: [1, 2, 3]));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Scanning... 100%'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Scanning... 100%'), findsNothing);
+    expect(find.text('Reading signature...'), findsOneWidget);
   });
 
   testWidgets(
     'keeps scanner caption clear of the viewfinder on short screens',
     (tester) async {
-      tester.view.physicalSize = const Size(393, 667);
+      const screenSize = Size(320, 568);
+      tester.view.physicalSize = screenSize;
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       Rect? scanWindow;
@@ -604,6 +761,7 @@ void main() {
               scannerBuilder: (_, _, _, _) =>
                   const SizedBox(key: ValueKey('fake_keystone_scanner')),
               forceScannerActiveForTesting: true,
+              startInScannerForTesting: true,
               onScanWindowForTesting: (value) => scanWindow = value,
               onSigned: (_, _, _, _) async {},
               friendlyError: (_) => 'Keystone signing failed.',
@@ -624,10 +782,6 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('open_signing')));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('test_keystone_sign_get_signature')),
-      );
-      await tester.pump();
 
       final viewfinder = find.byKey(
         const ValueKey('test_keystone_sign_scan_viewfinder'),
@@ -651,7 +805,10 @@ void main() {
 
       expect(captionTop, greaterThanOrEqualTo(viewfinderBottom + 12));
       expect(actionTop, greaterThanOrEqualTo(captionBottom + 16));
-      expect(tester.getBottomLeft(flashlight).dy, lessThanOrEqualTo(667));
+      expect(
+        tester.getBottomLeft(flashlight).dy,
+        lessThanOrEqualTo(screenSize.height),
+      );
       expect(scanWindow, isNotNull);
       final actualScanWindow = scanWindow!;
       expect(actualScanWindow.left, closeTo(viewfinderTopLeft.dx, 0.01));
@@ -728,15 +885,13 @@ void main() {
     await tester.pump();
 
     completeScan!(const ScanResult(urType: 'zcash-pczt', data: [1]));
-    await tester.pump();
-    await tester.pump();
+    await pumpPastScanCompleteHold(tester);
 
     expect(signedCalls, 1);
     expect(find.text('Transaction could not be broadcast.'), findsOneWidget);
 
     completeScan!(const ScanResult(urType: 'zcash-pczt', data: [1]));
-    await tester.pump();
-    await tester.pump();
+    await pumpPastScanCompleteHold(tester);
 
     expect(signedCalls, 1);
     expect(find.text('Transaction could not be broadcast.'), findsOneWidget);
@@ -815,8 +970,7 @@ void main() {
     await tester.pump();
 
     completeScan!(const ScanResult(urType: 'zcash-pczt', data: [1]));
-    await tester.pump();
-    await tester.pump();
+    await pumpPastScanCompleteHold(tester);
 
     expect(decodeCalls, 1);
     expect(signedCalls, 0);
@@ -827,8 +981,7 @@ void main() {
     expect(retryResetToken, isNot(equals(initialResetToken)));
 
     completeScan!(const ScanResult(urType: 'zcash-pczt', data: [1]));
-    await tester.pump();
-    await tester.pump();
+    await pumpPastScanCompleteHold(tester);
 
     expect(decodeCalls, 2);
     expect(signedCalls, 1);
@@ -918,8 +1071,7 @@ void main() {
     );
 
     completeScan!(const ScanResult(urType: 'zcash-pczt', data: [1]));
-    await tester.pump();
-    await tester.pump();
+    await pumpPastScanCompleteHold(tester);
 
     expect(find.text('Broadcasting ZEC deposit...'), findsOneWidget);
 
