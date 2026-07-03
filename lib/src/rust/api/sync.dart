@@ -4,9 +4,10 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `parse_network_and_migrate`, `run_full_sync_internal`
+// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -1061,17 +1062,18 @@ class KeystoneMigrationSigningRequest {
           signingBatchLimit == other.signingBatchLimit;
 }
 
+/// One signed message in the compact "signatures-only" Keystone response: the
+/// produced spend-authorization signatures for request message `id`. Replaces
+/// the prior full-signed-PCZT payload. Dart builds this from the decoded
+/// `KeystoneSigResult` and feeds it into the migration completion calls.
 class KeystoneSignedMigrationMessage {
   final String id;
-  final Uint8List signedPczt;
+  final List<KeystoneActionSig> sigs;
 
-  const KeystoneSignedMigrationMessage({
-    required this.id,
-    required this.signedPczt,
-  });
+  const KeystoneSignedMigrationMessage({required this.id, required this.sigs});
 
   @override
-  int get hashCode => id.hashCode ^ signedPczt.hashCode;
+  int get hashCode => id.hashCode ^ sigs.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1079,7 +1081,7 @@ class KeystoneSignedMigrationMessage {
       other is KeystoneSignedMigrationMessage &&
           runtimeType == other.runtimeType &&
           id == other.id &&
-          signedPczt == other.signedPczt;
+          sigs == other.sigs;
 }
 
 class MigrationScheduledBroadcast {

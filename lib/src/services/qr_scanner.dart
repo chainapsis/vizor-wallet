@@ -156,6 +156,7 @@ class AnimatedUrScannerView extends StatefulWidget {
   const AnimatedUrScannerView({
     required this.expectedUrType,
     required this.onComplete,
+    this.additionalExpectedUrTypes = const [],
     this.onProgress,
     this.onDecodeError,
     this.errorBuilder,
@@ -166,6 +167,7 @@ class AnimatedUrScannerView extends StatefulWidget {
   });
 
   final String expectedUrType;
+  final List<String> additionalExpectedUrTypes;
   final ValueChanged<ScanResult> onComplete;
   final ValueChanged<int>? onProgress;
   final ValueChanged<Object>? onDecodeError;
@@ -183,6 +185,11 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
   late bool _ownsController;
   bool _complete = false;
   final Set<String> _seenParts = {};
+
+  List<String> get _acceptedUrTypes => <String>{
+    widget.expectedUrType.toLowerCase(),
+    ...widget.additionalExpectedUrTypes.map((type) => type.toLowerCase()),
+  }.toList(growable: false);
 
   @override
   void initState() {
@@ -226,6 +233,10 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
       _setController();
       _resetScanSession();
     } else if (oldWidget.expectedUrType != widget.expectedUrType ||
+        !_sameStringList(
+          oldWidget.additionalExpectedUrTypes,
+          widget.additionalExpectedUrTypes,
+        ) ||
         oldWidget.scanSessionResetToken != widget.scanSessionResetToken) {
       _resetScanSession();
     }
@@ -248,11 +259,20 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
     final normalized = value.toLowerCase();
     if (_seenParts.contains(normalized)) return;
 
+    final partUrType = _urTypeFromPart(value);
+    final acceptedUrTypes = _acceptedUrTypes;
+    if (partUrType != null && !acceptedUrTypes.contains(partUrType)) {
+      widget.onDecodeError?.call(
+        'Unexpected UR type $partUrType, expected ${acceptedUrTypes.join(', ')}',
+      );
+      return;
+    }
+
     final UrDecodeResult result;
     try {
       result = await rust_keystone.decodeUrPart(
         part_: value,
-        expectedUrType: widget.expectedUrType,
+        expectedUrType: partUrType ?? widget.expectedUrType,
       );
     } catch (e) {
       if (!mounted) return;
@@ -275,9 +295,40 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
     if (result.complete && result.data != null) {
       _complete = true;
       widget.onComplete(
-        ScanResult(urType: result.urType ?? '', data: result.data!),
+        ScanResult(
+          urType: result.urType ?? partUrType ?? widget.expectedUrType,
+          data: result.data!,
+        ),
       );
     }
+  }
+
+  /// Extract the UR type (e.g. `zcash-batch-sig-result`) from a UR part string, or
+  /// null when the string is not a UR. Lets the scanner route a part to the
+  /// right expected type when more than one UR type is accepted.
+  String? _urTypeFromPart(String value) {
+    final normalized = value.trim().toLowerCase();
+    const prefix = 'ur:';
+    if (!normalized.startsWith(prefix)) {
+      return null;
+    }
+    final typeStart = prefix.length;
+    final typeEnd = normalized.indexOf('/', typeStart);
+    if (typeEnd <= typeStart) {
+      return null;
+    }
+    return normalized.substring(typeStart, typeEnd);
+  }
+
+  /// Order-sensitive string list equality, used to detect a changed
+  /// `additionalExpectedUrTypes` across widget updates.
+  bool _sameStringList(List<String> a, List<String> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   bool _shouldResetScanSessionAfterError(Object error) {

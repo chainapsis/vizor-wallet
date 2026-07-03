@@ -186,9 +186,13 @@ pub(crate) struct KeystoneMigrationSigningRequest {
     pub signing_batch_limit: u32,
 }
 
+/// One signed message in the compact "signatures-only" response: the produced
+/// spend-authorization signatures for the request message `id`, correlated to
+/// the wallet's held proofs-PCZT for that id. Replaces the old full-signed-PCZT
+/// payload; the wallet re-applies these via [`super::pczt::apply_sigs_and_extract`].
 pub(crate) struct KeystoneSignedMigrationMessage {
     pub id: String,
-    pub signed_pczt: Vec<u8>,
+    pub sigs: Vec<crate::wallet::keystone::DecodedActionSig>,
 }
 
 pub(crate) struct KeystoneMigrationProofStatus {
@@ -1095,7 +1099,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
 ) -> Result<IronwoodMigrationResult, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let signed_by_id = signed_migration_messages_by_id(request_id, signed_messages)?;
-    let signed_pczt = signed_by_id
+    let split_sigs = signed_by_id
         .get("denominations")
         .ok_or("Keystone result did not include the denomination split")?;
     if signed_by_id.len() != 1 {
@@ -1149,18 +1153,15 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
         }
     };
 
-    let extracted_split = match super::pczt::extract_transaction_from_pczt(
-        &stored.pczt_with_proofs,
-        signed_pczt,
-        None,
-        None,
-    ) {
-        Ok(extracted) => extracted,
-        Err(e) => {
-            reset_denomination_request_after_failed_completion(request_id);
-            return Err(e);
-        }
-    };
+    let extracted_split =
+        match super::pczt::apply_sigs_and_extract(&stored.pczt_with_proofs, split_sigs, None, None)
+        {
+            Ok(extracted) => extracted,
+            Err(e) => {
+                reset_denomination_request_after_failed_completion(request_id);
+                return Err(e);
+            }
+        };
 
     let txid = extracted_split.txid.to_string();
     let prepared_refs = stored
@@ -1335,7 +1336,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
 ) -> Result<IronwoodMigrationResult, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let signed_by_id = signed_migration_messages_by_id(request_id, signed_messages)?;
-    let signed_split_pczt = signed_by_id
+    let split_sigs = signed_by_id
         .get("denominations")
         .ok_or("Keystone result did not include the denomination split")?;
     if super::migration::active_migration_run(db_path, account_uuid, network)?.is_some() {
@@ -1404,9 +1405,9 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
         }
     }
 
-    let extracted_split = match super::pczt::extract_transaction_from_pczt(
+    let extracted_split = match super::pczt::apply_sigs_and_extract(
         &stored.split_pczt_with_proofs,
-        signed_split_pczt,
+        split_sigs,
         None,
         None,
     ) {
@@ -1442,7 +1443,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
                     note_version: child.selected_note.note_version,
                     nullifier_hex: None,
                 };
-                let signed_pczt = signed_by_id
+                let sigs = signed_by_id
                     .get(&child.id)
                     .ok_or_else(|| format!("Keystone result missing {}", child.id))?
                     .clone();
@@ -1450,7 +1451,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
                     message_id: child.id.clone(),
                     child_index: index as u32,
                     base_pczt: child.base_pczt.clone(),
-                    signed_pczt,
+                    sigs,
                     target_height: child.target_height,
                     expiry_height: child.expiry_height,
                     value_zatoshi: child.migrated_zatoshi,
@@ -1699,15 +1700,15 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
     let completion_result = (|| -> Result<super::migration::PendingMigrationTotals, String> {
         let mut pending_inserts = Vec::with_capacity(stored.messages.len());
         for message in stored.messages.clone() {
-            let signed_pczt = signed_by_id
+            let sigs = signed_by_id
                 .get(&message.id)
                 .ok_or_else(|| format!("Keystone result missing {}", message.id))?;
-            let extracted = super::pczt::extract_transaction_from_pczt(
+            let extracted = super::pczt::apply_sigs_and_extract(
                 message
                     .pczt_with_proofs
                     .as_ref()
                     .ok_or("Keystone migration proof missing")?,
-                signed_pczt,
+                sigs,
                 None,
                 None,
             )?;
@@ -2025,6 +2026,10 @@ fn prepare_software_migration_run(
                 &child.orchard_spend_action_indices,
                 &usk,
             )?;
+            // Persist only the produced signatures, matching the hardware
+            // "signatures-only" path's compact storage form rather than the
+            // full signed PCZT.
+            let sigs = super::pczt::extract_compact_sigs_from_signed_pczt(&signed_pczt)?;
             let selected_note = super::migration::PreparedOrchardNoteRef {
                 txid_hex: format!("{}", split.txid),
                 output_index: child.selected_note.output_index,
@@ -2036,7 +2041,7 @@ fn prepare_software_migration_run(
                 message_id: child.id.clone(),
                 child_index: index as u32,
                 base_pczt: child.base_pczt.clone(),
-                signed_pczt,
+                sigs,
                 target_height: child.target_height,
                 expiry_height: child.expiry_height,
                 value_zatoshi: child.migrated_zatoshi,
@@ -2690,7 +2695,7 @@ fn reset_single_qr_request_after_failed_completion(request_id: &str) {
 fn signed_migration_messages_by_id(
     request_id: &str,
     signed_messages: Vec<KeystoneSignedMigrationMessage>,
-) -> Result<HashMap<String, Vec<u8>>, String> {
+) -> Result<HashMap<String, Vec<crate::wallet::keystone::DecodedActionSig>>, String> {
     if signed_messages.is_empty() {
         return Err(format!(
             "Keystone returned no signed messages for request {request_id}"
@@ -2702,13 +2707,13 @@ fn signed_migration_messages_by_id(
         if message.id.is_empty() {
             return Err("Keystone signed message id is empty".to_string());
         }
-        if message.signed_pczt.is_empty() {
-            return Err(format!("Keystone signed message {} is empty", message.id));
+        if message.sigs.is_empty() {
+            return Err(format!(
+                "Keystone signed message {} carried no signatures",
+                message.id
+            ));
         }
-        if by_id
-            .insert(message.id.clone(), message.signed_pczt)
-            .is_some()
-        {
+        if by_id.insert(message.id.clone(), message.sigs).is_some() {
             return Err(format!("Duplicate signed Keystone message {}", message.id));
         }
     }
@@ -2974,7 +2979,7 @@ fn create_orchard_denomination_split_pczt(
         orchard_inputs.len(),
         split_outputs.len(),
     )?;
-    let redacted_pczt = super::pczt::redact_pczt_for_signer(&built_pczt.bytes)?;
+    let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built_pczt.bytes)?;
 
     Ok(Some(CreatedDenominationSplitPczt {
         base_pczt: built_pczt.bytes,
@@ -3247,6 +3252,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
             BuildConfig::Standard {
                 sapling_anchor: None,
                 orchard_anchor: Some(dummy_anchor),
+                #[cfg(zcash_unstable = "nu6.3")]
                 ironwood_anchor: Some(orchard::Anchor::empty_tree()),
             },
         )
@@ -3280,8 +3286,8 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     if selected_value <= fee_amount {
         return Ok(None);
     }
-    let migrated_amount =
-        (selected_value - fee_amount).ok_or("Predicted migration amount underflow".to_string())?;
+    let migrated_amount: Zatoshis = (selected_value - fee_amount)
+        .ok_or_else(|| "Predicted migration amount underflow".to_string())?;
     let builder = if migrated_amount
         == Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
             .map_err(|_| "Bad migration minimum output")?
@@ -3296,7 +3302,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
         .map_err(|e| format!("Build predicted migration PCZT failed: {e}"))?;
     let expiry_height = u32::from(build_result.pczt_parts.expiry_height);
     let built_pczt = pczt_from_build_result(build_result, network, account_derivation, 1, 0)?;
-    let redacted_pczt = super::pczt::redact_pczt_for_signer(&built_pczt.bytes)?;
+    let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built_pczt.bytes)?;
     let target_height_u32: u32 = target_height.into();
 
     Ok(Some(CreatedMigrationPczt {
@@ -3428,6 +3434,7 @@ fn create_orchard_to_ironwood_transaction_from_note(
             BuildConfig::Standard {
                 sapling_anchor: None,
                 orchard_anchor: Some(orchard_anchor),
+                #[cfg(zcash_unstable = "nu6.3")]
                 ironwood_anchor: Some(orchard::Anchor::empty_tree()),
             },
         )
@@ -3463,8 +3470,8 @@ fn create_orchard_to_ironwood_transaction_from_note(
     if selected_value <= fee_amount {
         return Ok(None);
     }
-    let migrated_amount =
-        (selected_value - fee_amount).ok_or("Exact-note migration amount underflow".to_string())?;
+    let migrated_amount: Zatoshis = (selected_value - fee_amount)
+        .ok_or_else(|| "Exact-note migration amount underflow".to_string())?;
     let builder = if migrated_amount
         == Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
             .map_err(|_| "Bad migration minimum output")?
@@ -3593,6 +3600,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
             BuildConfig::Standard {
                 sapling_anchor: None,
                 orchard_anchor: Some(orchard_anchor),
+                #[cfg(zcash_unstable = "nu6.3")]
                 ironwood_anchor: Some(orchard::Anchor::empty_tree()),
             },
         )
@@ -3628,8 +3636,8 @@ fn create_orchard_to_ironwood_pczt_from_note(
     if selected_value <= fee_amount {
         return Ok(None);
     }
-    let migrated_amount =
-        (selected_value - fee_amount).ok_or("Exact-note migration amount underflow".to_string())?;
+    let migrated_amount: Zatoshis = (selected_value - fee_amount)
+        .ok_or_else(|| "Exact-note migration amount underflow".to_string())?;
     let builder = if migrated_amount
         == Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
             .map_err(|_| "Bad migration minimum output")?
@@ -3650,7 +3658,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         orchard_inputs.len(),
         0,
     )?;
-    let redacted_pczt = super::pczt::redact_pczt_for_signer(&built_pczt.bytes)?;
+    let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built_pczt.bytes)?;
     let target_height_u32: u32 = target_height.into();
 
     Ok(Some(CreatedMigrationPczt {
@@ -3741,6 +3749,7 @@ fn make_orchard_split_builder(
         BuildConfig::Standard {
             sapling_anchor: None,
             orchard_anchor: Some(orchard_anchor),
+            #[cfg(zcash_unstable = "nu6.3")]
             ironwood_anchor: Some(orchard::Anchor::empty_tree()),
         },
     )
@@ -4245,8 +4254,14 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
     let sapling_output_count = sapling_crypto::builder::BundleType::DEFAULT
         .num_outputs(sapling_input_count, 0)
         .map_err(|e| format!("Max Sapling bundle size failed: {e:?}"))?;
-    let orchard_action_count = ::orchard::BundleProtocol::LegacyOrchard
-        .transactional_action_count(orchard_input_count, 0)
+    // Legacy/V5 Orchard send path, so count actions under the post-NU6.2 bundle
+    // version's default flags (matches librustzcash's `transactional_action_count`).
+    let orchard_action_count = ::orchard::builder::BundleType::DEFAULT
+        .num_actions(
+            ::orchard::bundle::BundleVersion::orchard_v2().default_flags(),
+            orchard_input_count,
+            0,
+        )
         .map_err(|e| format!("Max Orchard bundle size failed: {e:?}"))?;
 
     let fee = fee_rule
@@ -4542,27 +4557,20 @@ fn finalize_presigned_migration_children(
             .as_deref()
             .ok_or("Prepared migration note nullifier unavailable")?;
 
-        // Keep this before proof creation. V6 signatures survive the anchor
-        // update, but Orchard proofs depend on the real anchor.
+        // Set the real anchor/witness on the base before proving — Orchard
+        // proofs depend on the real anchor. The stored spend-authorization
+        // signatures are anchor-independent (the ZIP-244 spend-auth sighash does
+        // not commit to the anchor), so we apply them directly onto the proofed
+        // base via the compact path instead of re-anchoring a full signed PCZT.
         let base_pczt = super::pczt::set_orchard_anchor_and_witness(
             &child.base_pczt,
             orchard_anchor,
             &orchard_witness,
             current_note_nullifier_hex,
         )?;
-        let signed_pczt = super::pczt::set_orchard_anchor_and_witness(
-            &child.signed_pczt,
-            orchard_anchor,
-            &orchard_witness,
-            current_note_nullifier_hex,
-        )?;
         let pczt_with_proofs = super::pczt::add_proofs_to_pczt(&base_pczt, None, None)?;
-        let extracted = super::pczt::extract_transaction_from_pczt(
-            &pczt_with_proofs,
-            &signed_pczt,
-            None,
-            None,
-        )?;
+        let extracted =
+            super::pczt::apply_sigs_and_extract(&pczt_with_proofs, &child.sigs, None, None)?;
         pending_inserts.push(super::migration::PendingMigrationTxInsert {
             txid_hex: extracted.txid.to_string(),
             raw_tx: extracted.raw_tx,
@@ -5548,8 +5556,10 @@ mod tests {
             ReceiverRequirement::Require,
         )
         .unwrap();
-        let (ua, _) = db
-            .get_next_available_address(account_id, ua_request)
+        // Use the account's existing default address (no allocation) so the test
+        // setup doesn't trip the transparent gap limit on a fresh account.
+        let ua = db
+            .get_last_generated_address_matching(account_id, ua_request)
             .unwrap()
             .unwrap();
         let taddr = *ua.transparent().unwrap();
@@ -5877,8 +5887,13 @@ mod tests {
         assert_eq!(u64::from(standard_undersized_fee), 10_000);
     }
 
+    /// Builds a real IO-finalized v6 Orchard split PCZT, shared by the version and
+    /// signer-redaction tests below. Every action's spend is wallet-controlled (the
+    /// real spend plus the fabricated zero-value spend paired with the change
+    /// output), so all of them carry the wallet `fvk` on the wire and are signable
+    /// with the returned spending key.
     #[cfg(zcash_unstable = "nu6.3")]
-    fn orchard_denomination_split_pczt_uses_v6_for_change_outputs() {
+    fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
         let network = WalletNetwork::LocalIronwoodTestnet;
         let target_height = 120;
         let sk = orchard::keys::SpendingKey::from_bytes([7; 32]).unwrap();
@@ -5929,6 +5944,13 @@ mod tests {
 
         assert_eq!(build_result.pczt_parts.version, TxVersion::V6);
         let built_pczt = pczt_from_build_result(build_result, network, None, 1, 1).unwrap();
+        (built_pczt, sk)
+    }
+
+    #[test]
+    #[cfg(zcash_unstable = "nu6.3")]
+    fn orchard_denomination_split_pczt_uses_v6_for_change_outputs() {
+        let (built_pczt, _sk) = built_v6_split_pczt();
         crate::wallet::sync::pczt::redact_pczt_for_signer(&built_pczt.bytes).unwrap();
     }
 
@@ -5978,6 +6000,100 @@ mod tests {
     }
 
     #[test]
+    #[cfg(zcash_unstable = "nu6.3")]
+    fn batch_signer_redaction_clears_spend_fvks_and_signatures() {
+        use pczt::roles::redactor::Redactor;
+        use pczt::roles::signer::Signer;
+
+        let (built_pczt, sk) = built_v6_split_pczt();
+
+        // Give the request-time PCZT spend_auth_sigs to strip. Migration children
+        // carry IO-finalizer dummy signatures at request time; this split fixture's
+        // actions are all wallet-controlled instead, so sign them with the wallet
+        // spending key.
+        let request_bytes = {
+            let parsed = pczt::Pczt::parse(&built_pczt.bytes).unwrap();
+            let action_count = parsed.orchard().actions().len();
+            let mut signer = Signer::new(parsed).unwrap();
+            let ask = orchard::keys::SpendAuthorizingKey::from(&sk);
+            for index in 0..action_count {
+                signer.sign_orchard(index, &ask).unwrap();
+            }
+            signer.finish().serialize()
+        };
+        assert!(
+            pczt::Pczt::parse(&request_bytes)
+                .unwrap()
+                .orchard()
+                .actions()
+                .iter()
+                .any(|action| action.spend().spend_auth_sig().is_some()),
+            "fixture must carry a spend_auth_sig for the sig-clearing to be meaningful",
+        );
+
+        let standard = crate::wallet::sync::pczt::redact_pczt_for_signer(&request_bytes).unwrap();
+        let batch =
+            crate::wallet::sync::pczt::redact_pczt_for_batch_signer(&request_bytes).unwrap();
+
+        // The batch redaction must not send any request-time spend_auth_sig (only
+        // wallet-side signatures exist before the device signs).
+        let batch_parsed = pczt::Pczt::parse(&batch).unwrap();
+        assert!(
+            batch_parsed
+                .orchard()
+                .actions()
+                .iter()
+                .all(|action| action.spend().spend_auth_sig().is_none()),
+            "batch redaction must clear every spend_auth_sig",
+        );
+
+        // Exactness: the batch redaction equals the standard signer redaction plus
+        // precisely the spend fvk + spend_auth_sig clears — no other field changes.
+        let with_extra_clears = |bytes: &[u8]| {
+            let parsed = pczt::Pczt::parse(bytes).unwrap();
+            Redactor::new(parsed)
+                .redact_orchard_with(|mut r| {
+                    r.redact_actions(|mut ar| {
+                        ar.clear_spend_fvk();
+                        ar.clear_spend_auth_sig();
+                    });
+                })
+                .redact_ironwood_with(|mut r| {
+                    r.redact_actions(|mut ar| {
+                        ar.clear_spend_fvk();
+                        ar.clear_spend_auth_sig();
+                    });
+                })
+                .finish()
+                .serialize()
+        };
+        assert_eq!(batch, with_extra_clears(&standard));
+
+        // Guard that the fvk clear is not vacuous: clearing only the signatures must
+        // not reproduce the batch redaction, i.e. the wire fvk was present and cleared.
+        let sigs_only_cleared = {
+            let parsed = pczt::Pczt::parse(&standard).unwrap();
+            Redactor::new(parsed)
+                .redact_orchard_with(|mut r| {
+                    r.redact_actions(|mut ar| {
+                        ar.clear_spend_auth_sig();
+                    });
+                })
+                .redact_ironwood_with(|mut r| {
+                    r.redact_actions(|mut ar| {
+                        ar.clear_spend_auth_sig();
+                    });
+                })
+                .finish()
+                .serialize()
+        };
+        assert_ne!(
+            batch, sigs_only_cleared,
+            "batch redaction must also clear the wire spend fvks",
+        );
+    }
+
+    #[test]
     #[ignore = "slow librustzcash transaction-construction regression (~100s); run explicitly when touching shielding transaction construction"]
     fn many_utxo_shielding_builds_with_conservative_zip317_fee() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -6006,8 +6122,10 @@ mod tests {
             ReceiverRequirement::Require,
         )
         .unwrap();
-        let (ua, _) = db
-            .get_next_available_address(account_id, ua_request)
+        // Use the account's existing default address (no allocation) so the test
+        // setup doesn't trip the transparent gap limit on a fresh account.
+        let ua = db
+            .get_last_generated_address_matching(account_id, ua_request)
             .unwrap()
             .unwrap();
         let taddr = *ua.transparent().unwrap();

@@ -166,7 +166,11 @@ pub(crate) struct SignedMigrationPcztInsert {
     pub message_id: String,
     pub child_index: u32,
     pub base_pczt: Vec<u8>,
-    pub signed_pczt: Vec<u8>,
+    /// The produced spend-authorization signatures for this child, persisted in
+    /// place of a full signed PCZT (the "signatures-only" round-trip). Stored
+    /// encrypted as a compact blob; the wallet re-applies them onto the
+    /// re-proofed base at finalization time.
+    pub sigs: Vec<crate::wallet::keystone::DecodedActionSig>,
     pub target_height: u32,
     pub expiry_height: u32,
     pub value_zatoshi: u64,
@@ -177,7 +181,9 @@ pub(crate) struct SignedMigrationPcztInsert {
 
 pub(crate) struct SignedMigrationPczt {
     pub base_pczt: Vec<u8>,
-    pub signed_pczt: Vec<u8>,
+    /// Decoded compact spend-authorization signatures for this child (see
+    /// [`SignedMigrationPcztInsert::sigs`]).
+    pub sigs: Vec<crate::wallet::keystone::DecodedActionSig>,
     pub target_height: u32,
     pub expiry_height: u32,
     pub value_zatoshi: u64,
@@ -719,8 +725,13 @@ fn insert_signed_child_pczts_with_tx(
             password,
             salt.as_slice(),
         )?;
+        // The `encrypted_signed_pczt` column now holds the compact signatures
+        // blob (not a full signed PCZT); the column name is retained to avoid a
+        // schema migration.
         let encrypted_signed_pczt = secret_payload::encrypt_payload(
-            Zeroizing::new(child.signed_pczt),
+            Zeroizing::new(crate::wallet::keystone::encode_compact_action_sigs(
+                &child.sigs,
+            )),
             password,
             salt.as_slice(),
         )?;
@@ -808,11 +819,12 @@ pub(crate) fn signed_child_pczts_for_run(
             password,
             salt.as_slice(),
         )?;
-        let signed_pczt = secret_payload::decrypt_payload(
+        let sigs_blob = secret_payload::decrypt_payload(
             encrypted_signed_pczt.as_bytes(),
             password,
             salt.as_slice(),
         )?;
+        let sigs = crate::wallet::keystone::decode_compact_action_sigs(sigs_blob.as_slice())?;
         let selected_note = serde_json::from_str::<PreparedOrchardNoteRef>(&selected_note_json)
             .map_err(|e| format!("Decode signed migration PCZT note: {e}"))?;
         let metadata = serde_json::from_str::<PendingMigrationTxMetadata>(&metadata_json)
@@ -820,7 +832,7 @@ pub(crate) fn signed_child_pczts_for_run(
 
         signed.push(SignedMigrationPczt {
             base_pczt: base_pczt.to_vec(),
-            signed_pczt: signed_pczt.to_vec(),
+            sigs,
             target_height,
             expiry_height,
             value_zatoshi,

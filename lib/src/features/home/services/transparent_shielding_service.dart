@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
@@ -53,6 +54,48 @@ String? shieldBalanceErrorDetails(Object error) {
   return message.isEmpty ? null : message;
 }
 
+/// Whether [error] indicates the macOS native mnemonic store has no usable
+/// secret for the account (as opposed to any other shielding failure). Used to
+/// decide when to fall back from the native path to the Dart mnemonic-bytes
+/// path; all other errors are rethrown.
+bool _isNativeMnemonicUnavailable(Object error) {
+  final message = error.toString().toLowerCase();
+  return message.contains('secure storage salt not found') ||
+      message.contains('mnemonic not found for account');
+}
+
+/// Shields the account's transparent balance using the Dart-side mnemonic
+/// bytes read from secure storage. This is the non-macOS path and the fallback
+/// the macOS native path uses when its stored mnemonic is unavailable. The
+/// mnemonic bytes are zeroed before returning.
+Future<rust_sync.ShieldTransparentResult> _shieldTransparentBalanceWithMnemonicBytes({
+  required WidgetRef ref,
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+}) async {
+  final accountNotifier = ref.read(accountProvider.notifier);
+  final mnemonicBytes = await accountNotifier.getMnemonicBytesForAccount(
+    accountUuid,
+  );
+  if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+    throw Exception('Mnemonic not found for the active account.');
+  }
+
+  try {
+    return await rust_sync.shieldTransparentBalance(
+      dbPath: dbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      network: network,
+      accountUuid: accountUuid,
+      mnemonicBytes: mnemonicBytes,
+    );
+  } finally {
+    mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+  }
+}
+
 Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
   required WidgetRef ref,
   required String accountUuid,
@@ -72,42 +115,44 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
     attemptedEndpoint = endpoint;
 
     late final rust_sync.ShieldTransparentResult result;
-    late final Future<rust_sync.ShieldTransparentResult> resultFuture;
 
-    if (Platform.isMacOS) {
+    if (Platform.isMacOS && !kDebugMode) {
       final password = ref
           .read(appSecurityProvider.notifier)
           .requireSessionPasswordForNativeSecretUse();
-      resultFuture = rust_sync.shieldTransparentBalanceWithMacosStoredMnemonic(
-        dbPath: dbPath,
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        network: endpoint.walletNetworkName,
-        accountUuid: accountUuid,
-        password: password,
-      );
-    } else {
-      final accountNotifier = ref.read(accountProvider.notifier);
-      final mnemonicBytes = await accountNotifier.getMnemonicBytesForAccount(
-        accountUuid,
-      );
-      if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
-        throw Exception('Mnemonic not found for the active account.');
-      }
-
       try {
-        resultFuture = rust_sync.shieldTransparentBalance(
+        result = await rust_sync.shieldTransparentBalanceWithMacosStoredMnemonic(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
           network: endpoint.walletNetworkName,
           accountUuid: accountUuid,
-          mnemonicBytes: mnemonicBytes,
+          password: password,
         );
-      } finally {
-        mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+      } catch (e) {
+        if (!_isNativeMnemonicUnavailable(e)) {
+          rethrow;
+        }
+        log(
+          '$logContext: native macOS mnemonic unavailable, falling back to '
+          'Dart mnemonic storage: $e',
+        );
+        result = await _shieldTransparentBalanceWithMnemonicBytes(
+          ref: ref,
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: endpoint.walletNetworkName,
+          accountUuid: accountUuid,
+        );
       }
+    } else {
+      result = await _shieldTransparentBalanceWithMnemonicBytes(
+        ref: ref,
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        network: endpoint.walletNetworkName,
+        accountUuid: accountUuid,
+      );
     }
-
-    result = await resultFuture;
     log(
       '$logContext: shielded transparent balance txids=${result.txids} '
       'status=${result.status} '

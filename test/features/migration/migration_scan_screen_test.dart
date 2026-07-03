@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -30,7 +28,7 @@ void main() {
     expect(find.text('migration route'), findsOneWidget);
   });
 
-  testWidgets('completion from pushed route returns scanned bytes', (
+  testWidgets('completion from pushed route returns scanned signed QR', (
     tester,
   ) async {
     await tester.pumpWidget(_scanHarness(initialLocation: '/migration'));
@@ -40,7 +38,7 @@ void main() {
     await tester.tap(find.text('Complete scan'));
     await tester.pumpAndSettle();
 
-    expect(find.text('scan result: 1,2,3'), findsOneWidget);
+    expect(find.text('scan result: zcash-sign-result 1,2,3'), findsOneWidget);
   });
 }
 
@@ -99,7 +97,7 @@ class _MigrationRoute extends StatefulWidget {
 }
 
 class _MigrationRouteState extends State<_MigrationRoute> {
-  Uint8List? _result;
+  MigrationSignedQrResult? _result;
 
   @override
   Widget build(BuildContext context) {
@@ -112,13 +110,16 @@ class _MigrationRouteState extends State<_MigrationRoute> {
             const Text('migration route'),
             TextButton(
               onPressed: () async {
-                final bytes = await context.push<Uint8List>('/migration/scan');
+                final signedQr = await context.push<MigrationSignedQrResult>(
+                  '/migration/scan',
+                );
                 if (!mounted) return;
-                setState(() => _result = bytes);
+                setState(() => _result = signedQr);
               },
               child: const Text('Open scan'),
             ),
-            if (result != null) Text('scan result: ${result.join(',')}'),
+            if (result != null)
+              Text('scan result: ${result.urType} ${result.cbor.join(',')}'),
           ],
         ),
       ),

@@ -81,6 +81,18 @@ const kZcashDefaultNetworkRaw = String.fromEnvironment(
   defaultValue: 'main',
 );
 
+/// Ironwood mainnet-masquerade build flag. When true (set via
+/// `--dart-define=ZCASH_IRONWOOD_MASQUERADE=true`), this build runs as `networkName=main` (so it
+/// derives mainnet 133'/u1 keys and a normal-mode Keystone works) BUT against the private Ironwood
+/// test chain that masquerades as mainnet. It isolates the keychain (see
+/// [secureStoreServiceForNetwork]) and surfaces the Ironwood migration flow so this build can never
+/// touch a real mainnet wallet. OFF by default — a normal build is unaffected.
+const kZcashIronwoodMasqueradeEnvKey = 'ZCASH_IRONWOOD_MASQUERADE';
+const kZcashIronwoodMasquerade = bool.fromEnvironment(
+  kZcashIronwoodMasqueradeEnvKey,
+  defaultValue: false,
+);
+
 final String kZcashDefaultNetworkName = normalizeZcashNetworkName(
   kZcashDefaultNetworkRaw,
 );
@@ -113,6 +125,13 @@ ZcashNetwork zcashNetworkFromName(String networkName) {
 
 String secureStoreServiceForNetwork(String networkName) {
   final network = normalizeZcashNetworkName(networkName);
+  // Ironwood mainnet-masquerade: a `main`-network build pointed at the Ironwood test chain must
+  // NEVER share the real mainnet wallet's keychain. The keychain service is a fixed string (not
+  // bundle-scoped), so isolate it here under a distinct service. The masquerade build then can't
+  // read/write real mainnet secrets even though it runs as `main`.
+  if (kZcashIronwoodMasquerade && network == 'main') {
+    return 'com.keplr.vizor.ironwood.secure_store';
+  }
   return network == 'main'
       ? 'com.keplr.vizor.secure_store'
       : 'com.keplr.vizor.$network.secure_store';

@@ -32,6 +32,7 @@ class KeystoneQrScannerCard extends StatefulWidget {
     required this.onDecodeError,
     required this.onComplete,
     required this.unavailableMessage,
+    this.additionalExpectedUrTypes = const [],
     this.decodingLabel = 'Reading QR...',
     this.cardWidth,
     this.cameraHeight,
@@ -39,6 +40,7 @@ class KeystoneQrScannerCard extends StatefulWidget {
   });
 
   final String expectedUrType;
+  final List<String> additionalExpectedUrTypes;
   final bool decoding;
   final String? error;
   final ValueChanged<int> onProgress;
@@ -432,6 +434,8 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                         AnimatedUrScannerView(
                                           controller: _controller,
                                           expectedUrType: widget.expectedUrType,
+                                          additionalExpectedUrTypes:
+                                              widget.additionalExpectedUrTypes,
                                           scanSessionResetToken:
                                               _scanSessionResetToken,
                                           onProgress: _handleScanProgress,
