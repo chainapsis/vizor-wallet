@@ -319,9 +319,9 @@ class _MobileSendStatusScreenState
   }
 }
 
-/// The 64px status circle plus its Figma-comment animations: a green
-/// halo + expanding pulse on success ("circle grow smooth animation")
-/// and a damped left-right shake on failure.
+/// The 64px status circle plus its Figma-comment animations: a single
+/// expanding pulse on success ("circle grow smooth animation") and a
+/// damped left-right shake on failure.
 class _StatusBadge extends StatefulWidget {
   const _StatusBadge({required this.phase});
 
@@ -342,21 +342,10 @@ class _StatusBadgeState extends State<_StatusBadge>
     duration: const Duration(milliseconds: 500),
   );
 
-  // Resting halo diameter and pulse end diameter from the Figma
-  // keyframe frames (Status Animation at 175 / 839 / 1403).
-  static const _restingHaloSize = 175.0;
+  // Pulse end diameter from the Figma keyframe frames (Status Animation
+  // at 839 / 1403).
   static const _pulseMaxSize = 1440.0;
   static const _shakeAmplitude = 20.0;
-
-  @override
-  void initState() {
-    super.initState();
-    // Mounted directly in the succeeded state (no transition to
-    // animate): show the resting halo without replaying the pulse.
-    if (widget.phase == _MobileSendStatusPhase.succeeded) {
-      _ripple.value = 1;
-    }
-  }
 
   @override
   void didUpdateWidget(covariant _StatusBadge oldWidget) {
@@ -420,36 +409,21 @@ class _StatusBadgeState extends State<_StatusBadge>
           AnimatedBuilder(
             animation: _ripple,
             builder: (context, _) {
-              final showHalo = widget.phase == _MobileSendStatusPhase.succeeded;
+              final showPulse =
+                  widget.phase == _MobileSendStatusPhase.succeeded;
               final t = _ripple.value;
-              // The halo settles at 175px within the first part of the
-              // run; the pulse keeps expanding past the screen edge
-              // while fading out.
-              final haloT = Curves.easeOutCubic.transform(
-                math.min(1.0, t / 0.4),
-              );
-              final haloSize = lerpDouble(
-                _statusCircleSize,
-                _restingHaloSize,
-                haloT,
-              )!;
+              final pulseVisible = showPulse && t > 0 && t < 1;
+              if (!pulseVisible) return const SizedBox.shrink();
               final pulseSize = lerpDouble(
                 _statusCircleSize,
                 _pulseMaxSize,
                 Curves.easeOut.transform(t),
               )!;
-              final pulseVisible = showHalo && t > 0 && t < 1;
               return IgnorePointer(
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.center,
-                  children: [
-                    _RippleCircle(
-                      size: pulseSize,
-                      opacity: pulseVisible ? 1 - t : 0,
-                    ),
-                    _RippleCircle(size: haloSize, opacity: showHalo ? 1 : 0),
-                  ],
+                child: _RippleCircle(
+                  key: const ValueKey('mobile_send_status_success_ripple'),
+                  size: pulseSize,
+                  opacity: 1 - t,
                 ),
               );
             },
@@ -489,7 +463,7 @@ class _StatusBadgeState extends State<_StatusBadge>
 /// gradient from transparent center to `#00A460` at the rim, drawn at
 /// 60% opacity.
 class _RippleCircle extends StatelessWidget {
-  const _RippleCircle({required this.size, required this.opacity});
+  const _RippleCircle({required this.size, required this.opacity, super.key});
 
   final double size;
   final double opacity;

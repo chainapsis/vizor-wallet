@@ -145,6 +145,10 @@ void main() {
       find.byKey(const ValueKey('mobile_send_status_icon_success')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey('mobile_send_status_success_ripple')),
+      findsNothing,
+    );
   });
 
   testWidgets('pending broadcast keeps the spinner and shows the retry copy', (
