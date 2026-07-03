@@ -454,9 +454,16 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
   final sourceAsset = swapActivitySellAsset(intent);
   final receiveAsset = swapActivityReceiveAsset(intent);
   final providerInfo = intent.providerRefundInfo;
+  final requiredDepositText =
+      _firstNonEmpty([providerInfo?.minimumDepositText, intent.sellAmount]) ??
+      intent.sellAmount;
   final missingDepositText = sourceAsset == null
       ? null
-      : _swapActivityMissingDepositText(intent, sourceAsset);
+      : _swapActivityMissingDepositText(
+          sourceAsset: sourceAsset,
+          requiredDepositText: requiredDepositText,
+          depositedAmountText: providerInfo?.depositedAmountText,
+        );
   final deadlineText = _swapActivityTimestampLabel(intent.depositDeadline);
 
   return [
@@ -481,7 +488,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
       ),
     SwapStatusDetailRowData(
       label: 'Required deposit',
-      value: intent.sellAmount,
+      value: requiredDepositText,
     ),
     if (providerInfo?.depositedAmountText != null)
       SwapStatusDetailRowData(
@@ -762,14 +769,13 @@ bool swapActivityShowsDepositPage(
       );
 }
 
-String? _swapActivityMissingDepositText(
-  SwapIntent intent,
-  SwapAsset sourceAsset,
-) {
-  final requiredAmount = _numericAmount(intent.sellAmount);
-  final depositedAmount = _numericAmount(
-    intent.providerRefundInfo?.depositedAmountText ?? '',
-  );
+String? _swapActivityMissingDepositText({
+  required SwapAsset sourceAsset,
+  required String requiredDepositText,
+  required String? depositedAmountText,
+}) {
+  final requiredAmount = _numericAmount(requiredDepositText);
+  final depositedAmount = _numericAmount(depositedAmountText ?? '');
   if (requiredAmount == null || depositedAmount == null) return null;
   final missingAmount = requiredAmount - depositedAmount;
   if (!missingAmount.isFinite || missingAmount <= 0) return null;

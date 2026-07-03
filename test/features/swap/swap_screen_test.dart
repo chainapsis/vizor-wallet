@@ -6279,6 +6279,7 @@ void main() {
 
     expect(swapProvider.requests, hasLength(1));
     expect(swapProvider.requests.single.direction, SwapDirection.externalToZec);
+    expect(swapProvider.requests.single.mode, SwapQuoteMode.flexInput);
     expect(
       swapProvider.requests.single.destination,
       'u1actualshieldedrecipient',
@@ -6330,6 +6331,7 @@ void main() {
 
     expect(swapProvider.requests, hasLength(1));
     expect(swapProvider.requests.single.direction, SwapDirection.externalToZec);
+    expect(swapProvider.requests.single.mode, SwapQuoteMode.flexInput);
     expect(
       swapProvider.requests.single.destination,
       'u1actualshieldedrecipient',

@@ -139,14 +139,13 @@ class SwapState {
   }
 
   double? get quoteAmount =>
-      quoteMode == SwapQuoteMode.exactInput ? sellAmount : receiveAmount;
+      quoteMode.usesInputAmount ? sellAmount : receiveAmount;
 
-  String get quoteAmountText => quoteMode == SwapQuoteMode.exactInput
-      ? amountText.trim()
-      : receiveAmountText.trim();
+  String get quoteAmountText =>
+      quoteMode.usesInputAmount ? amountText.trim() : receiveAmountText.trim();
 
   String? get quoteAmountPrecisionError => swapTokenAmountPrecisionError(
-    asset: quoteMode == SwapQuoteMode.exactInput
+    asset: quoteMode.usesInputAmount
         ? direction.fromAsset(externalAsset)
         : direction.toAsset(externalAsset),
     amountText: quoteAmountText,
@@ -222,7 +221,7 @@ class SwapState {
     if (liveQuote == null || estimate == null) return null;
     if (liveQuote.direction != direction ||
         liveQuote.externalAsset != externalAsset ||
-        quoteMode != SwapQuoteMode.exactInput ||
+        !quoteMode.usesInputAmount ||
         liveQuote.sellAmount != estimate.sellAmount ||
         estimate.receiveAmount <= 0) {
       return null;
