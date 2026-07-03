@@ -417,7 +417,16 @@ final class SecureScreenshotShield {
     guard geometryObservers.isEmpty else { return }
     let nc = NotificationCenter.default
     let reassert: (Notification) -> Void = { [weak self] _ in
-      DispatchQueue.main.async { self?.reassertWindowGeometry() }
+      DispatchQueue.main.async {
+        guard let self else { return }
+        // A scene reconnect can swap in a fresh key window while a secret is
+        // still on screen, and Dart will not re-send setSensitiveContentVisible
+        // (the token set is unchanged). Re-graft to the live window here — a
+        // no-op when the window is unchanged — before re-pinning geometry, so
+        // the new window is inside the secure canvas and stays blanked.
+        if self.isLayerAttached { self.attachLayerIfNeeded() }
+        self.reassertWindowGeometry()
+      }
     }
     geometryObservers = [
       nc.addObserver(
