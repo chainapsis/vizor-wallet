@@ -393,14 +393,46 @@ class _MobileKeystoneSigningFrame extends StatelessWidget {
   Widget _buildScannerPreview(
     BuildContext context,
     ValueChanged<ScanResult> onComplete,
+    ValueChanged<int> onProgress,
     Object? scanSessionResetToken,
   ) {
-    return const _MobileKeystoneSigningCameraPreview();
+    return _MobileKeystoneSigningCameraPreview(onProgress: onProgress);
   }
 }
 
-class _MobileKeystoneSigningCameraPreview extends StatelessWidget {
-  const _MobileKeystoneSigningCameraPreview();
+class _MobileKeystoneSigningCameraPreview extends StatefulWidget {
+  const _MobileKeystoneSigningCameraPreview({required this.onProgress});
+
+  final ValueChanged<int> onProgress;
+
+  @override
+  State<_MobileKeystoneSigningCameraPreview> createState() =>
+      _MobileKeystoneSigningCameraPreviewState();
+}
+
+class _MobileKeystoneSigningCameraPreviewState
+    extends State<_MobileKeystoneSigningCameraPreview> {
+  @override
+  void initState() {
+    super.initState();
+    _emitPreviewProgress();
+  }
+
+  @override
+  void didUpdateWidget(
+    covariant _MobileKeystoneSigningCameraPreview oldWidget,
+  ) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.onProgress != widget.onProgress) {
+      _emitPreviewProgress();
+    }
+  }
+
+  void _emitPreviewProgress() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onProgress(50);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

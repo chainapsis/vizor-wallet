@@ -194,6 +194,12 @@ void main() {
       find.byKey(const ValueKey('mobile_keystone_signing_widgetbook_camera')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(
+        const ValueKey('mobile_keystone_signing_widgetbook_scan_progress_bar'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('mobile Keystone select account use case lists seeded accounts', (

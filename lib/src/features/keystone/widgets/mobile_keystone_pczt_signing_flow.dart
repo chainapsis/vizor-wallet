@@ -58,6 +58,7 @@ typedef MobileKeystonePcztScannerBuilder =
     Widget Function(
       BuildContext context,
       ValueChanged<ScanResult> onComplete,
+      ValueChanged<int> onProgress,
       Object? scanSessionResetToken,
     );
 
@@ -89,6 +90,7 @@ const _mobileKeystoneQrPromptGap = AppSpacing.base;
 const _mobileKeystonePromptBlockHeight = 56.0;
 const _mobileKeystonePromptLineGap = 2.0;
 const _mobileKeystonePromptInlineGap = 6.0;
+const _mobileKeystoneScanProgressGap = 4.0;
 const _mobileKeystoneLightText = Color(0xFFFFFFFF);
 const _mobileKeystoneOrange = Color(0xFFF98F0E);
 
@@ -241,6 +243,12 @@ class _MobileKeystonePcztSigningFlowState
       formats: QrScanner.formats,
       detectionSpeed: QrScanner.detectionSpeed,
     );
+  }
+
+  void _handleScanProgress(int progress) {
+    final clamped = progress.clamp(0, 100);
+    if (!mounted || _scanProgress == clamped) return;
+    setState(() => _scanProgress = clamped);
   }
 
   Future<void> _handleScanComplete(ScanResult result) async {
@@ -580,10 +588,7 @@ class _MobileKeystonePcztSigningFlowState
 
     final caption = _decoding
         ? _scanHint ?? widget.readingSignatureLabel
-        : _scanHint ??
-              (_scanProgress > 0
-                  ? 'Scanning... $_scanProgress%'
-                  : widget.scanCaption);
+        : _scanHint ?? widget.scanCaption;
 
     return ColoredBox(
       key: _key('scanner_card'),
@@ -664,6 +669,7 @@ class _MobileKeystonePcztSigningFlowState
               widget.scannerBuilder?.call(
                 context,
                 (result) => unawaited(_handleScanComplete(result)),
+                _handleScanProgress,
                 scanSessionResetToken,
               ) ??
               AnimatedUrScannerView(
@@ -672,10 +678,7 @@ class _MobileKeystonePcztSigningFlowState
                 scanSessionResetToken: scanSessionResetToken,
                 scanWindow: scanWindow,
                 errorBuilder: (context, error) => const SizedBox.shrink(),
-                onProgress: (progress) {
-                  if (!mounted || _scanProgress == progress) return;
-                  setState(() => _scanProgress = progress);
-                },
+                onProgress: _handleScanProgress,
                 onDecodeError: _handleDecodeError,
                 onComplete: (result) => unawaited(_handleScanComplete(result)),
               );
@@ -704,6 +707,22 @@ class _MobileKeystonePcztSigningFlowState
                   ),
                 ),
               ),
+              if (_scanProgress > 0 && _scanProgress < 100 && !_decoding)
+                Positioned(
+                  left: viewfinderLeft,
+                  top:
+                      viewfinderTop +
+                      _mobileKeystoneScanWindowSize +
+                      _mobileKeystoneScanProgressGap,
+                  width: _mobileKeystoneScanWindowSize,
+                  child: Center(
+                    child: _KeystoneScannerProgressBar(
+                      key: _key('scan_progress_bar'),
+                      fillKey: _key('scan_progress_fill'),
+                      progress: _scanProgress / 100,
+                    ),
+                  ),
+                ),
               if (!widget.forceScannerActiveForTesting)
                 MobileScanCameraErrorOverlay(
                   controller: scanController,
@@ -796,8 +815,8 @@ class _MobileKeystonePcztSigningFlowState
                   controlKey: _key('qr_action'),
                   semanticLabel: 'Show transaction QR',
                   onTap: _decoding ? null : _backToQr,
-                  child: Icon(
-                    Icons.qr_code_2_outlined,
+                  child: AppIcon(
+                    AppIcons.qr,
                     color: _mobileKeystoneLightText.withValues(
                       alpha: _decoding ? 0.4 : 1,
                     ),
@@ -976,6 +995,52 @@ class _KeystoneSigningTopNav extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _KeystoneScannerProgressBar extends StatelessWidget {
+  const _KeystoneScannerProgressBar({
+    required this.progress,
+    required this.fillKey,
+    super.key,
+  });
+
+  static const _width = 128.0;
+  static const _height = 6.0;
+
+  final double progress;
+  final Key fillKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final normalized = progress.clamp(0.0, 1.0).toDouble();
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadii.full),
+      child: SizedBox(
+        width: _width,
+        height: _height,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: _mobileKeystoneLightText.withValues(alpha: 0.4),
+              ),
+            ),
+            FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: normalized,
+              child: DecoratedBox(
+                key: fillKey,
+                decoration: const BoxDecoration(
+                  color: _mobileKeystoneLightText,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
