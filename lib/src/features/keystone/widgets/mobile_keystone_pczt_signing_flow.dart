@@ -374,7 +374,7 @@ class _MobileKeystonePcztSigningFlowState
 
   Future<void> _toggleTorchIfRunning() async {
     final scanController = _scanController;
-    if (scanController == null || !scanController.value.isRunning) return;
+    if (scanController == null) return;
     try {
       await scanController.toggleTorch();
     } catch (e, st) {
@@ -684,7 +684,10 @@ class _MobileKeystonePcztSigningFlowState
             fit: StackFit.expand,
             children: [
               Positioned.fill(child: scannerView),
-              const _KeystoneScannerScrim(),
+              _KeystoneScannerScrim(
+                holeRect: scanWindow,
+                holeKey: _key('scan_scrim_hole'),
+              ),
               Positioned(
                 left: viewfinderLeft,
                 top: viewfinderTop,
@@ -767,25 +770,15 @@ class _MobileKeystonePcztSigningFlowState
                         _mobileKeystoneScanActionSize,
                   ),
                 ),
-                child: ValueListenableBuilder<MobileScannerState>(
-                  valueListenable: scanController,
-                  builder: (context, scannerState, _) {
-                    final flashlightEnabled = scannerState.isRunning;
-                    return _KeystoneScannerIconButton(
-                      controlKey: _key('flashlight_action'),
-                      semanticLabel: 'Toggle flashlight',
-                      onTap: flashlightEnabled
-                          ? () => unawaited(_toggleTorchIfRunning())
-                          : null,
-                      child: Icon(
-                        Icons.flashlight_on_outlined,
-                        color: _mobileKeystoneLightText.withValues(
-                          alpha: flashlightEnabled ? 1 : 0.4,
-                        ),
-                        size: _mobileKeystoneFlashlightIconSize,
-                      ),
-                    );
-                  },
+                child: _KeystoneScannerIconButton(
+                  controlKey: _key('flashlight_action'),
+                  semanticLabel: 'Toggle flashlight',
+                  onTap: () => unawaited(_toggleTorchIfRunning()),
+                  child: const Icon(
+                    Icons.flashlight_on_outlined,
+                    color: _mobileKeystoneLightText,
+                    size: _mobileKeystoneFlashlightIconSize,
+                  ),
                 ),
               ),
               Positioned(
@@ -803,8 +796,8 @@ class _MobileKeystonePcztSigningFlowState
                   controlKey: _key('qr_action'),
                   semanticLabel: 'Show transaction QR',
                   onTap: _decoding ? null : _backToQr,
-                  child: AppIcon(
-                    AppIcons.qr,
+                  child: Icon(
+                    Icons.qr_code_2_outlined,
                     color: _mobileKeystoneLightText.withValues(
                       alpha: _decoding ? 0.4 : 1,
                     ),
@@ -1118,7 +1111,10 @@ class _KeystoneScanPromptIcon extends StatelessWidget {
 }
 
 class _KeystoneScannerScrim extends StatelessWidget {
-  const _KeystoneScannerScrim();
+  const _KeystoneScannerScrim({required this.holeRect, required this.holeKey});
+
+  final Rect holeRect;
+  final Key holeKey;
 
   @override
   Widget build(BuildContext context) {
@@ -1133,8 +1129,10 @@ class _KeystoneScannerScrim extends StatelessWidget {
               backgroundBlendMode: BlendMode.dstOut,
             ),
           ),
-          Center(
+          Positioned.fromRect(
+            rect: holeRect,
             child: Container(
+              key: holeKey,
               width: _mobileKeystoneScanWindowSize,
               height: _mobileKeystoneScanWindowSize,
               decoration: BoxDecoration(

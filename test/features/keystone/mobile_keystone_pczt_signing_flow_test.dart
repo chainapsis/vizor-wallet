@@ -436,10 +436,15 @@ void main() {
     final flashlight = find.byKey(
       const ValueKey('test_keystone_sign_flashlight_action'),
     );
+    final scrimHole = find.byKey(
+      const ValueKey('test_keystone_sign_scan_scrim_hole'),
+    );
     final qrAction = find.byKey(const ValueKey('test_keystone_sign_qr_action'));
 
     expect(tester.getTopLeft(viewfinder), const Offset(55, 293));
     expect(tester.getSize(viewfinder), const Size(285, 285));
+    expect(tester.getTopLeft(scrimHole), const Offset(55, 293));
+    expect(tester.getSize(scrimHole), const Size(285, 285));
     expect(tester.getTopLeft(caption), const Offset(65, 628));
     expect(tester.getSize(caption).width, 263);
     expect(tester.getTopLeft(flashlight), const Offset(32, 762));
@@ -450,7 +455,7 @@ void main() {
     );
     expect(
       tester.widget<GestureDetector>(flashlightTapTarget.first).onTap,
-      isNull,
+      isNotNull,
     );
     expect(tester.getTopLeft(qrAction), const Offset(321, 762));
     expect(tester.getSize(qrAction), const Size(40, 40));
@@ -466,8 +471,8 @@ void main() {
     expect(
       find.byWidgetPredicate(
         (widget) =>
-            widget is AppIcon &&
-            widget.name == AppIcons.qr &&
+            widget is Icon &&
+            widget.icon == Icons.qr_code_2_outlined &&
             widget.size == 26,
       ),
       findsOneWidget,
@@ -542,6 +547,9 @@ void main() {
       final flashlight = find.byKey(
         const ValueKey('test_keystone_sign_flashlight_action'),
       );
+      final scrimHole = find.byKey(
+        const ValueKey('test_keystone_sign_scan_scrim_hole'),
+      );
 
       final viewfinderTopLeft = tester.getTopLeft(viewfinder);
       final viewfinderSize = tester.getSize(viewfinder);
@@ -559,6 +567,10 @@ void main() {
       expect(actualScanWindow.top, closeTo(viewfinderTopLeft.dy, 0.01));
       expect(actualScanWindow.width, closeTo(viewfinderSize.width, 0.01));
       expect(actualScanWindow.height, closeTo(viewfinderSize.height, 0.01));
+      expect(tester.getTopLeft(scrimHole), viewfinderTopLeft);
+      final scrimHoleSize = tester.getSize(scrimHole);
+      expect(scrimHoleSize.width, closeTo(viewfinderSize.width, 0.01));
+      expect(scrimHoleSize.height, closeTo(viewfinderSize.height, 0.01));
     },
   );
 
