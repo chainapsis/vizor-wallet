@@ -7,6 +7,7 @@ DIST_DIR="$ROOT_DIR/dist/linux"
 BUILD_MODE="release"
 ARCHIVE="true"
 FLAVORS=()
+DEFAULT_MULTISIG_COORDINATOR_URL="http://zcash-multisig-coordinator2-dev-764987680.us-west-2.elb.amazonaws.com"
 
 usage() {
   cat <<USAGE
@@ -31,6 +32,7 @@ Environment:
   VIZOR_RELEASE_REPOSITORY       owner/name repository for update metadata.
   VIZOR_UPDATE_CHECK_ENABLED     true only for builds that should check updates.
   VIZOR_COINGECKO_PRICE_BASE_URL Home price API base URL.
+  ZCASH_MULTISIG_COORDINATOR_URL Multisig coordinator API base URL.
   FVM_BIN                        fvm executable path. Default: fvm.
 
 Default flavors: mainnet,testnet
@@ -190,6 +192,7 @@ build_flavor() {
       --dart-define="VIZOR_RELEASE_REPOSITORY=${VIZOR_RELEASE_REPOSITORY:-}"
       --dart-define="VIZOR_UPDATE_CHECK_ENABLED=${VIZOR_UPDATE_CHECK_ENABLED:-false}"
       --dart-define="VIZOR_COINGECKO_PRICE_BASE_URL=${VIZOR_COINGECKO_PRICE_BASE_URL:-https://api.coingecko.com/api/v3}"
+      --dart-define="ZCASH_MULTISIG_COORDINATOR_URL=${ZCASH_MULTISIG_COORDINATOR_URL:-$DEFAULT_MULTISIG_COORDINATOR_URL}"
     )
     if [[ -n "${VIZOR_RELEASE_VERSION:-}" ]]; then
       release_build_name="${VIZOR_RELEASE_BUILD_NAME:-$VIZOR_RELEASE_VERSION}"

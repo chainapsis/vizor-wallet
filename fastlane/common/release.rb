@@ -4,6 +4,8 @@ require "shellwords"
 require "uri"
 
 module VizorRelease
+  DEFAULT_MULTISIG_COORDINATOR_URL = "http://zcash-multisig-coordinator2-dev-764987680.us-west-2.elb.amazonaws.com".freeze
+
   module_function
 
   def shell_escape(value)
@@ -37,6 +39,11 @@ module VizorRelease
 
   def release_boolean_env(key)
     ENV[key].to_s.downcase == "true"
+  end
+
+  def multisig_coordinator_url
+    value = ENV["ZCASH_MULTISIG_COORDINATOR_URL"].to_s.strip
+    value.empty? ? DEFAULT_MULTISIG_COORDINATOR_URL : value
   end
 
   def release_tag

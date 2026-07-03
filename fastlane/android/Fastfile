@@ -77,6 +77,7 @@ platform :android do
   lane :build do
     metadata = android_release_metadata
     coingecko_price_base_url = ENV.fetch("VIZOR_COINGECKO_PRICE_BASE_URL", "https://api.coingecko.com/api/v3")
+    multisig_coordinator_url = VizorRelease.multisig_coordinator_url
 
     sh(
       [
@@ -88,6 +89,7 @@ platform :android do
         "--dart-define=VIZOR_FORM_FACTOR=mobile",
         "--dart-define=#{shell_escape("VIZOR_RELEASE_VERSION=#{metadata.fetch(:asset_version)}")}",
         "--dart-define=#{shell_escape("VIZOR_COINGECKO_PRICE_BASE_URL=#{coingecko_price_base_url}")}",
+        "--dart-define=#{shell_escape("ZCASH_MULTISIG_COORDINATOR_URL=#{multisig_coordinator_url}")}",
         "--build-name", shell_escape(metadata.fetch(:version)),
         "--build-number", shell_escape(metadata.fetch(:build_number))
       ].join(" ")

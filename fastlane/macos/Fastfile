@@ -1004,10 +1004,12 @@ platform :mac do
 
         Bundler.with_unbundled_env do
           coingecko_price_base_url = ENV.fetch("VIZOR_COINGECKO_PRICE_BASE_URL", "https://api.coingecko.com/api/v3")
+          multisig_coordinator_url = VizorRelease.multisig_coordinator_url
           dart_defines = [
             "ZCASH_DEFAULT_NETWORK=#{metadata[:zcash_default_network]}",
             "VIZOR_RELEASE_VERSION=#{metadata[:asset_version]}",
-            "VIZOR_COINGECKO_PRICE_BASE_URL=#{coingecko_price_base_url}"
+            "VIZOR_COINGECKO_PRICE_BASE_URL=#{coingecko_price_base_url}",
+            "ZCASH_MULTISIG_COORDINATOR_URL=#{multisig_coordinator_url}"
           ]
           sh(
             [
