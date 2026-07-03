@@ -81,6 +81,10 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
 
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
+  // True while a route is pushed on top of this screen. The privacy overlay
+  // drives a global native shield token, so an offstage-but-mounted secret
+  // screen would otherwise keep blanking the pushed (non-secret) screens.
+  bool _coveredByPush = false;
   late final bool _ownsPrivacyController;
   late final SensitivePrivacyOverlayController _privacyController;
 
@@ -173,10 +177,14 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
   }
 
   void _confirm() {
-    context.push(
-      '/import/birthday',
-      extra: ImportBirthdayArgs(mnemonic: _words.join(' ')),
-    );
+    // Drop the native shield before pushing so birthday and the screens after
+    // it are not blanked; restore it if the user comes back.
+    setState(() => _coveredByPush = true);
+    context
+        .push('/import/birthday', extra: ImportBirthdayArgs(mnemonic: _words.join(' ')))
+        .then((_) {
+          if (mounted) setState(() => _coveredByPush = false);
+        });
   }
 
   void _openManual() {
@@ -190,8 +198,9 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
     final colors = context.colors;
     return SensitivePrivacyOverlay(
       // Protect only once words are on screen — the empty paste form has
-      // nothing to blank. Matches the `_onScreenshot` guard.
-      sensitiveContentVisible: _words.isNotEmpty,
+      // nothing to blank. Matches the `_onScreenshot` guard. Drops while a next
+      // step is pushed on top so it does not blank those screens.
+      sensitiveContentVisible: _words.isNotEmpty && !_coveredByPush,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
         progress: mobileImportProgress(1),

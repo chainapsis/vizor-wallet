@@ -32,11 +32,18 @@ Widget _app(String initialLocation) {
   );
 }
 
-Widget _entryAppWithBirthdayProbe() {
+Widget _entryAppWithBirthdayProbe({
+  SensitivePrivacyOverlayController? privacyOverlayController,
+}) {
   final router = GoRouter(
     initialLocation: '/import',
     routes: [
-      GoRoute(path: '/import', builder: (_, _) => const MobileImportScreen()),
+      GoRoute(
+        path: '/import',
+        builder: (_, _) => MobileImportScreen(
+          privacyOverlayController: privacyOverlayController,
+        ),
+      ),
       GoRoute(
         path: '/import/birthday',
         builder: (_, state) {
@@ -254,6 +261,34 @@ void main() {
 
       privacyController.markSafe();
       await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'drops the shield once the next step is pushed on top',
+    (tester) async {
+      final privacyController = SensitivePrivacyOverlayController(
+        initiallySafe: false,
+      );
+      addTearDown(privacyController.dispose);
+      _mockClipboard(tester, _validMnemonic);
+
+      await tester.pumpWidget(
+        _entryAppWithBirthdayProbe(privacyOverlayController: privacyController),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
+      await tester.pumpAndSettle();
+      // Pasted words + unsafe controller: the shield covers the import entry.
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('mobile_import_confirm')));
+      await tester.pumpAndSettle();
+      // The birthday step is pushed on top; the offstage import screen drops
+      // its shield so the global native token no longer blanks that screen.
+      expect(find.text('Birthday: $_validMnemonic'), findsOneWidget);
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
     },
   );
