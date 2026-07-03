@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart' show Colors, Icons;
+import 'package:flutter/material.dart' show Colors, Icons, TextDecoration;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -77,7 +77,7 @@ const _mobileKeystoneScanActionSize = 40.0;
 const _mobileKeystoneFlashlightIconSize = 30.0;
 const _mobileKeystoneQrActionIconSize = 26.0;
 const _mobileKeystoneProgressTrackWidth = 196.0;
-const _mobileKeystoneStepOneProgress = 60.0 / _mobileKeystoneProgressTrackWidth;
+const _mobileKeystoneStepOneProgress = 0.5;
 const _mobileKeystoneStepTwoProgress = 1.0;
 const _mobileKeystoneScanCaption =
     'Scan the QR code on your Keystone to confirm';
@@ -388,7 +388,10 @@ class _MobileKeystonePcztSigningFlowState
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _cancel();
       },
-      child: SizedBox.expand(key: _key('screen'), child: child),
+      child: DefaultTextStyle.merge(
+        style: const TextStyle(decoration: TextDecoration.none),
+        child: SizedBox.expand(key: _key('screen'), child: child),
+      ),
     );
   }
 
@@ -867,7 +870,7 @@ class _KeystoneSigningTopNav extends StatelessWidget {
           Center(
             child: SizedBox(
               key: trackKey,
-              width: 196,
+              width: _mobileKeystoneProgressTrackWidth,
               height: 6,
               child: DecoratedBox(
                 decoration: BoxDecoration(

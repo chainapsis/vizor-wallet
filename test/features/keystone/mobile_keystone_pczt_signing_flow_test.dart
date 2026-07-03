@@ -158,7 +158,7 @@ void main() {
             find.byKey(const ValueKey('test_keystone_sign_progress_fill')),
           )
           .width,
-      closeTo(60, 0.01),
+      closeTo(98, 0.01),
     );
     expect(
       find.byWidgetPredicate(
@@ -177,6 +177,90 @@ void main() {
             widget.size == 20,
       ),
       findsOneWidget,
+    );
+  });
+
+  testWidgets('clears fallback text decorations on full-screen routes', (
+    tester,
+  ) async {
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, _) => Center(
+            child: TextButton(
+              key: const ValueKey('open_signing'),
+              onPressed: () => context.push('/sign'),
+              child: const Text('Open signing'),
+            ),
+          ),
+        ),
+        GoRoute(
+          path: '/sign',
+          builder: (_, _) => DefaultTextStyle(
+            style: const TextStyle(decoration: TextDecoration.underline),
+            child: MobileKeystonePcztSigningFlow(
+              title: 'Confirm transaction',
+              description: 'Scan with Keystone.',
+              keyPrefix: 'test_keystone_sign',
+              preparePczt: (_, _) async => MobileKeystonePcztSigningPayload(
+                urParts: const ['ur:zcash-pczt/test'],
+                pcztWithProofs: Future.value(const [1, 2, 3]),
+              ),
+              scannerBuilder: (_, _, _) =>
+                  const SizedBox(key: ValueKey('fake_keystone_scanner')),
+              forceScannerActiveForTesting: true,
+              onSigned: (_, _, _, _) async {},
+              friendlyError: (_) => 'Keystone signing failed.',
+            ),
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.light, child: child!),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('open_signing')));
+    await tester.pumpAndSettle();
+
+    expect(
+      DefaultTextStyle.of(
+        tester.element(find.text('Step 1/2')),
+      ).style.decoration,
+      TextDecoration.none,
+    );
+    expect(
+      DefaultTextStyle.of(
+        tester.element(find.text('Scan with Keystone')),
+      ).style.decoration,
+      TextDecoration.none,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('test_keystone_sign_get_signature')),
+    );
+    await tester.pump();
+
+    expect(
+      DefaultTextStyle.of(
+        tester.element(find.text('Step 2/2')),
+      ).style.decoration,
+      TextDecoration.none,
+    );
+    expect(
+      DefaultTextStyle.of(
+        tester.element(find.text('Confirm with Keystone')),
+      ).style.decoration,
+      TextDecoration.none,
     );
   });
 
