@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../../../main.dart' show log;
 import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
@@ -195,7 +196,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final accountState = ref.read(accountProvider).value;
     final accountUuid = accountState?.activeAccountUuid;
     if (accountUuid == null) {
-      showAppToast(context, "Address couldn't be copied");
+      showAppToast(context, AppLocalizations.of(context).toastAddressCopyFailed);
       return;
     }
 
@@ -215,16 +216,20 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         return;
       }
       if (address.trim().isEmpty) {
-        showAppToast(context, "Address couldn't be copied");
+        showAppToast(context, AppLocalizations.of(context).toastAddressCopyFailed);
         return;
       }
 
       if (!mounted) return;
-      copyTextWithToast(context, text: address, toastMessage: 'Address copied');
+      copyTextWithToast(
+        context,
+        text: address,
+        toastMessage: AppLocalizations.of(context).toastAddressCopied,
+      );
     } catch (e) {
       log('AppMainSidebar: ERROR copying shielded address: $e');
       if (!mounted) return;
-      showAppToast(context, "Address couldn't be copied");
+      showAppToast(context, AppLocalizations.of(context).toastAddressCopyFailed);
     } finally {
       if (mounted) {
         setState(() {
@@ -252,7 +257,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
           );
       if (!mounted) return;
       if (address.trim().isEmpty) {
-        showAppToast(context, "Address couldn't be copied");
+        showAppToast(context, AppLocalizations.of(context).toastAddressCopyFailed);
         return;
       }
 
@@ -260,12 +265,12 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       copyTextWithToast(
         context,
         text: address,
-        toastMessage: 'Shielded address copied',
+        toastMessage: AppLocalizations.of(context).toastShieldedAddressCopied,
       );
     } catch (e) {
       log('AppMainSidebar: ERROR copying account shielded address: $e');
       if (!mounted) return;
-      showAppToast(context, "Address couldn't be copied");
+      showAppToast(context, AppLocalizations.of(context).toastAddressCopyFailed);
     } finally {
       if (mounted) {
         setState(() => _isCopyingAddress = false);
@@ -385,7 +390,9 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     SizedBox(height: headerNavGap),
                     AppSidebarItem(
                       key: const ValueKey('sidebar_home_button'),
-                      label: isImporting ? 'Importing...' : 'Home',
+                      label: isImporting
+                          ? AppLocalizations.of(context).navImporting
+                          : AppLocalizations.of(context).navHome,
                       iconName: isImporting ? AppIcons.loader : AppIcons.home,
                       iconAnimated: !isImporting,
                       active: _homeShouldBeActive,
@@ -395,7 +402,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       const SizedBox(height: AppSpacing.xs),
                       AppSidebarItem(
                         key: const ValueKey('sidebar_swap_button'),
-                        label: 'Swap',
+                        label: AppLocalizations.of(context).navSwap,
                         iconName: AppIcons.swapArrows,
                         active: _matches('/swap'),
                         onTap: isImporting ? null : () => _navigateTo('/swap'),
@@ -404,7 +411,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(
                       key: const ValueKey('sidebar_voting_button'),
-                      label: 'Vote',
+                      label: AppLocalizations.of(context).navVote,
                       iconName: AppIcons.scroll,
                       active: _matches('/voting'),
                       // Stays tappable while active: _navigateTo requests a
@@ -414,7 +421,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(
                       key: const ValueKey('sidebar_activity_button'),
-                      label: 'Activity',
+                      label: AppLocalizations.of(context).navActivity,
                       iconName: AppIcons.history,
                       active: _matches('/activity'),
                       // Stays tappable on detail subroutes (tx/swap status)
@@ -423,14 +430,14 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     ),
                     const Spacer(),
                     AppSidebarItem(
-                      label: 'Settings',
+                      label: AppLocalizations.of(context).settingsTitle,
                       iconName: AppIcons.cog,
                       active: _matches('/settings'),
                       onTap: _openSettings,
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(
-                      label: 'Sign out',
+                      label: AppLocalizations.of(context).navSignOut,
                       iconName: AppIcons.logOut,
                       onTap: _isSigningOut ? null : _handleSignOut,
                     ),
@@ -621,7 +628,9 @@ class _SidebarHideBalanceButton extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: privacyModeEnabled ? 'Show balance' : 'Hide balance',
+      label: privacyModeEnabled
+          ? AppLocalizations.of(context).sidebarShowBalance
+          : AppLocalizations.of(context).sidebarHideBalance,
       child: MouseRegion(
         cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
         child: GestureDetector(
@@ -662,7 +671,7 @@ class _SidebarCopyAddressButton extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: 'Copy shielded address',
+      label: AppLocalizations.of(context).sidebarCopyShieldedAddress,
       child: MouseRegion(
         cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
         child: GestureDetector(
@@ -762,7 +771,7 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                 Padding(
                   padding: const EdgeInsets.all(AppSpacing.xxs),
                   child: Text(
-                    'My accounts',
+                    AppLocalizations.of(context).sidebarMyAccounts,
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.muted,
                       fontWeight: FontWeight.w400,
@@ -838,7 +847,7 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                             borderRadius: BorderRadius.circular(AppRadii.full),
                           ),
                           child: Text(
-                            'Manage',
+                            AppLocalizations.of(context).sidebarManage,
                             style: AppTypography.labelLarge.copyWith(
                               color: colors.button.secondary.label,
                             ),
@@ -1035,7 +1044,8 @@ class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
   }
 
   bool get _isSyncing =>
-      SyncStatusLabel.from(widget.sync).kind == SyncStatusKind.syncing;
+      SyncStatusLabel.from(widget.sync, AppLocalizations.of(context)).kind ==
+      SyncStatusKind.syncing;
 
   bool get _shouldAnimate {
     if (!_isSyncing) {
@@ -1080,7 +1090,10 @@ class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final status = SyncStatusLabel.from(widget.sync);
+    final status = SyncStatusLabel.from(
+      widget.sync,
+      AppLocalizations.of(context),
+    );
     final textColor = switch (status.kind) {
       SyncStatusKind.syncing => colors.sync.textSyncing,
       SyncStatusKind.failed => colors.sync.textError,

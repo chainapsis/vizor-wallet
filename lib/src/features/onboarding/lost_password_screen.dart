@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../../../main.dart' show log;
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
@@ -113,8 +114,8 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
       setState(() {
         _isResetting = false;
         _error = e.kind == DeviceOwnerAuthErrorKind.unavailable
-            ? kWalletResetDeviceAuthRequiredMessage
-            : kWalletResetDeviceAuthFailedMessage;
+            ? AppLocalizations.of(context).deviceAuthRequired
+            : AppLocalizations.of(context).deviceAuthFailed;
       });
     } catch (e, st) {
       log('LostPasswordScreen._handleReset: ERROR: $e\n$st');
@@ -123,7 +124,7 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
         _isResetting = false;
         // Auth already succeeded; the wipe itself failed. Surface it instead of
         // silently falling back to the default status line.
-        _error = kWalletResetFailedMessage;
+        _error = AppLocalizations.of(context).walletResetFailed;
       });
     }
   }
@@ -141,7 +142,10 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
       return Future.value(true);
     }
     try {
-      return await verifyDeviceOwnerForWalletReset(ref);
+      return await verifyDeviceOwnerForWalletReset(
+        ref,
+        reason: AppLocalizations.of(context).deviceAuthConfirmReset,
+      );
     } on DeviceOwnerAuthException catch (e, st) {
       if (e.kind == DeviceOwnerAuthErrorKind.noLocalCredential) {
         log(
@@ -225,9 +229,9 @@ class _LostPasswordContent extends StatelessWidget {
       color: colors.text.accent,
     );
     final buttonLabel = remainingSeconds > 0
-        ? 'Reset after ${remainingSeconds}s...'
-        : 'Reset Vizor';
-    final statusText = error ?? 'This cannot be undone.';
+        ? AppLocalizations.of(context).onbResetAfterSeconds(remainingSeconds)
+        : AppLocalizations.of(context).accountsResetVizor;
+    final statusText = error ?? AppLocalizations.of(context).onbCannotBeUndone;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -245,7 +249,7 @@ class _LostPasswordContent extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Lost password?',
+              AppLocalizations.of(context).onbLostPassword,
               style: AppTypography.displayMedium.copyWith(
                 color: colors.text.accent,
                 height: 48 / 45,
@@ -260,19 +264,13 @@ class _LostPasswordContent extends StatelessWidget {
               TextSpan(
                 style: bodyStyle,
                 children: [
-                  const TextSpan(
-                    text:
-                        "If you've lost your password, the only way to recover\nyour account is to ",
-                  ),
+                  TextSpan(text: AppLocalizations.of(context).onbLostPasswordBodyPrefix),
                   TextSpan(
-                    text: 'completely reset Vizor app',
+                    text: AppLocalizations.of(context).onbLostPasswordReset,
                     style: strongStyle,
                   ),
-                  const TextSpan(
-                    text:
-                        ', which\nmeans deleting all accounts and requiring you to\n',
-                  ),
-                  TextSpan(text: 'import accounts again', style: strongStyle),
+                  TextSpan(text: AppLocalizations.of(context).onbLostPasswordBodyMiddle),
+                  TextSpan(text: AppLocalizations.of(context).onbLostPasswordReimport, style: strongStyle),
                   const TextSpan(text: '.'),
                 ],
               ),
@@ -311,7 +309,7 @@ class _LostPasswordContent extends StatelessWidget {
                     onPressed: onBack,
                     variant: AppButtonVariant.ghost,
                     minWidth: _destructiveButtonWidth,
-                    child: const Text('Cancel'),
+                    child: Text(AppLocalizations.of(context).commonCancel),
                   ),
                 ],
               ),

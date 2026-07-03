@@ -12,6 +12,7 @@ import '../models/swap_detail_tooltips.dart';
 import '../models/swap_fiat_value_formatting.dart';
 import 'swap_amount_text.dart';
 import 'swap_review_info.dart';
+import '../../../../l10n/app_localizations.dart';
 
 /// Content width inside the 420 content area (Figma ' Review' frame).
 const double _swapReviewContentWidth = 396;
@@ -62,7 +63,7 @@ class SwapReviewPageContent extends StatelessWidget {
         children: [
           if (showTitle) ...[
             Text(
-              'Review swap',
+              AppLocalizations.of(context).swapReviewSwap,
               key: const ValueKey('swap_review_title'),
               textAlign: TextAlign.center,
               style: AppTypography.bodyLarge.copyWith(
@@ -73,8 +74,8 @@ class SwapReviewPageContent extends StatelessWidget {
             const SizedBox(height: AppSpacing.base),
           ],
           SwapReviewInfo(
-            pay: _paySideData(),
-            receive: _receiveSideData(),
+            pay: _paySideData(context),
+            receive: _receiveSideData(context),
             onCopy: onCopy,
           ),
           const SizedBox(height: AppSpacing.base),
@@ -91,8 +92,8 @@ class SwapReviewPageContent extends StatelessWidget {
           ],
           if (expired) ...[
             const SizedBox(height: AppSpacing.sm),
-            const _ReviewNotice(
-              message: 'Quote expired. Review again for an updated rate.',
+            _ReviewNotice(
+              message: AppLocalizations.of(context).swapQuoteExpiredNotice,
             ),
           ],
           if (startError != null) ...[
@@ -108,14 +109,14 @@ class SwapReviewPageContent extends StatelessWidget {
     );
   }
 
-  SwapReviewInfoSideData _paySideData() {
+  SwapReviewInfoSideData _paySideData(BuildContext context) {
     final sendsZec = quote.direction.sendsZec;
     // ZEC side shows the fiat value; the external pay side (external→ZEC)
     // shows the refund address.
     if (sendsZec) {
       return SwapReviewInfoSideData(
         asset: quote.sellAsset,
-        label: "You're paying",
+        label: AppLocalizations.of(context).swapYourePaying,
         amountText: quote.sellAmountText,
         detailText: payFiatTextOverride ?? _payFiatText(quote),
       );
@@ -123,21 +124,23 @@ class SwapReviewPageContent extends StatelessWidget {
     final refundAddress = addressPlan.oneClickRefundTo.trim();
     return SwapReviewInfoSideData(
       asset: quote.sellAsset,
-      label: "You're paying",
+      label: AppLocalizations.of(context).swapYourePaying,
       amountText: quote.sellAmountText,
-      detailText: 'Refund to: ${compactSwapAddress(refundAddress)}',
+      detailText: AppLocalizations.of(context).swapRefundToAddress(
+        compactSwapAddress(refundAddress),
+      ),
       detailCopyText: refundAddress,
     );
   }
 
-  SwapReviewInfoSideData _receiveSideData() {
+  SwapReviewInfoSideData _receiveSideData(BuildContext context) {
     final sendsZec = quote.direction.sendsZec;
     // ZEC side shows the fiat value; the external receive side (ZEC→external)
     // shows the recipient address with its chain label.
     if (!sendsZec) {
       return SwapReviewInfoSideData(
         asset: quote.receiveAsset,
-        label: "You're receiving",
+        label: AppLocalizations.of(context).swapYoureReceiving,
         amountText: quote.receiveEstimateText,
         detailText: receiveFiatTextOverride ?? _receiveFiatText(quote),
       );
@@ -145,11 +148,12 @@ class SwapReviewPageContent extends StatelessWidget {
     final recipientAddress = addressPlan.userExternalAddress.trim();
     return SwapReviewInfoSideData(
       asset: quote.receiveAsset,
-      label: "You're receiving",
+      label: AppLocalizations.of(context).swapYoureReceiving,
       amountText: quote.receiveEstimateText,
-      detailText:
-          'To: ${compactSwapAddress(recipientAddress)} '
-          'on ${quote.receiveAsset.chainLabel}',
+      detailText: AppLocalizations.of(context).swapToAddressOnChain(
+        compactSwapAddress(recipientAddress),
+        quote.receiveAsset.chainLabel,
+      ),
       detailCopyText: recipientAddress,
     );
   }
@@ -177,14 +181,17 @@ class SwapReviewPageActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final startingLabel = sendsZec ? 'Sending' : 'Locking quote';
+    final l10n = AppLocalizations.of(context);
+    final startingLabel = sendsZec
+        ? l10n.swapVerbSending
+        : l10n.swapVerbLockingQuote;
     final primaryLabel = expired
-        ? 'Review again'
+        ? l10n.swapReviewAgain
         : startBlockedReason != null
-        ? 'Not enough ZEC'
+        ? l10n.swapNotEnoughZec
         : starting
         ? startingLabel
-        : 'Confirm swap';
+        : l10n.swapConfirmSwap;
     final showPrimaryArrow =
         !expired && !starting && startBlockedReason == null;
     return SizedBox(
@@ -226,7 +233,7 @@ class SwapReviewPageActions extends StatelessWidget {
             variant: AppButtonVariant.ghost,
             size: AppButtonSize.large,
             minWidth: 196,
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context).commonCancel),
           ),
         ],
       ),
@@ -257,17 +264,18 @@ class _SwapReviewDetailCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ReviewListRow(
-              label: 'Slippage tolerance',
+              label: AppLocalizations.of(context).swapSlippageToleranceLabel,
               value:
                   slippageToleranceTextOverride ??
                   swapReviewSlippageToleranceText(quote),
             ),
             ReviewListRow(
-              label: 'Guaranteed minimum',
+              label: AppLocalizations.of(context).swapGuaranteedMinimumLabel,
               value: compactSwapAmountText(quote.minimumReceiveText),
               trailingIconName: AppIcons.help,
               trailingIconColor: colors.icon.muted,
               trailingIconTooltip: swapMinimumReceiveTooltip(
+                AppLocalizations.of(context),
                 quote.receiveAsset.symbol,
               ),
             ),
@@ -275,11 +283,11 @@ class _SwapReviewDetailCard extends StatelessWidget {
         ),
         const ReviewWrapDivider(),
         ReviewListRow(
-          label: 'Swap fee',
+          label: AppLocalizations.of(context).swapFeeLabel,
           value: quote.feeLabel,
           trailingIconName: AppIcons.help,
           trailingIconColor: colors.icon.muted,
-          trailingIconTooltip: swapFeeTooltip,
+          trailingIconTooltip: swapFeeTooltip(AppLocalizations.of(context)),
         ),
       ],
     );

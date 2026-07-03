@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/widgets/review_info_row.dart';
 import 'package:zcash_wallet/src/core/widgets/review_wrap_card.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_review_content_view.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_review_layout.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 const _address =
     'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
@@ -324,6 +325,9 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(data: AppThemeData.light, child: child),
     ),
   );

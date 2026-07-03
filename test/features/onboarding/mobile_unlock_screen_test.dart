@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 /// Just enough of the Rust secret API for password verifier checks.
 class _RustSecretApiFake implements RustLibApi {
@@ -133,6 +134,9 @@ Widget _app({
         biometricUnlockServiceProvider.overrideWithValue(biometric),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
       home: MobileUnlockScreen(autoPromptBiometric: autoPromptBiometric),
     ),

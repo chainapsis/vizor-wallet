@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 /// Skips the secure-storage write so toggling works without a platform
 /// channel in widget tests.
@@ -103,6 +104,9 @@ Widget _app(
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
     ),

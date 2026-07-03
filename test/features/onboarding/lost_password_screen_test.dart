@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/device_owner_auth_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/services/device_owner_auth.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 class _FakeDeviceOwnerAuth extends DeviceOwnerAuth {
   _FakeDeviceOwnerAuth({required this.result, bool hasOsResetGate = true})
@@ -106,7 +107,10 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [deviceOwnerAuthProvider.overrideWithValue(auth)],
-        child: const MaterialApp(
+        child: MaterialApp(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: AppTheme(
             data: AppThemeData.light,
             child: LostPasswordScreen(
@@ -140,7 +144,10 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [deviceOwnerAuthProvider.overrideWithValue(auth)],
-        child: const MaterialApp(
+        child: MaterialApp(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: AppTheme(
             data: AppThemeData.light,
             child: LostPasswordScreen(
@@ -178,6 +185,9 @@ void main() {
       ProviderScope(
         overrides: [deviceOwnerAuthProvider.overrideWithValue(auth)],
         child: MaterialApp(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: AppTheme(
             data: AppThemeData.light,
             child: LostPasswordScreen(
@@ -215,6 +225,9 @@ void main() {
       ProviderScope(
         overrides: [deviceOwnerAuthProvider.overrideWithValue(auth)],
         child: MaterialApp(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: AppTheme(
             data: AppThemeData.light,
             child: LostPasswordScreen(
@@ -321,6 +334,9 @@ void main() {
         child: ProviderScope(
           overrides: [deviceOwnerAuthProvider.overrideWithValue(auth)],
           child: MaterialApp(
+            localizationsDelegates:
+                AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
             home: LostPasswordScreen(
               initialCountdownSeconds: 0,
               countdownEnabled: false,

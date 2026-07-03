@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/motion/onboarding_motion.dart';
 import '../../../core/theme/app_theme.dart';
@@ -60,12 +61,12 @@ enum OnboardingStep {
 extension OnboardingStepX on OnboardingStep {
   // Sidebar step labels follow the Figma sidebar verbatim (mixed casing as
   // drawn) — see the sentence-case exception in AGENTS.md.
-  String get label => switch (this) {
-    OnboardingStep.intro => 'Intro to Zcash',
-    OnboardingStep.addressTypes => 'Address types',
-    OnboardingStep.thingsToKnow => 'Things to know',
-    OnboardingStep.secretPassphrase => 'Secret Passphrase',
-    OnboardingStep.setPassword => 'Set Password',
+  String label(BuildContext context) => switch (this) {
+    OnboardingStep.intro => AppLocalizations.of(context).onbStepIntro,
+    OnboardingStep.addressTypes => AppLocalizations.of(context).onbStepAddressTypes,
+    OnboardingStep.thingsToKnow => AppLocalizations.of(context).onbStepThingsToKnow,
+    OnboardingStep.secretPassphrase => AppLocalizations.of(context).onbSecretPassphrase,
+    OnboardingStep.setPassword => AppLocalizations.of(context).onbSetPassword,
   };
 
   String get iconName => switch (this) {
@@ -225,7 +226,7 @@ class _Sidebar extends StatelessWidget {
       steps: [
         for (final step in _steps)
           OnboardingSidebarStepData(
-            label: step.label,
+            label: step.label(context),
             iconName: step.iconName,
             active: step == activeStep,
           ),

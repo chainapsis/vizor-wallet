@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   const failureLabels = {
@@ -733,6 +734,9 @@ Widget _sidebarHarness(
       swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         // The syncing sidebar's shimmer and glow animate forever. Tests default
@@ -741,7 +745,7 @@ Widget _sidebarHarness(
         data: MediaQuery.of(
           context,
         ).copyWith(disableAnimations: disableAnimations),
-        child: AppTheme(data: themeData, child: child!),
+        child: _localizedAppTheme(data: themeData, child: child!),
       ),
     ),
   );
@@ -854,4 +858,14 @@ class _FakeSyncNotifier extends SyncNotifier {
 
   @override
   Future<SyncState> build() async => initialState;
+}
+
+/// Wraps [AppTheme] in a [Localizations] scope so widgets under test can
+/// resolve [AppLocalizations] without a full MaterialApp harness.
+Widget _localizedAppTheme({required AppThemeData data, required Widget child}) {
+  return Localizations(
+    locale: const Locale('en'),
+    delegates: AppLocalizations.localizationsDelegates,
+    child: AppTheme(data: data, child: child),
+  );
 }

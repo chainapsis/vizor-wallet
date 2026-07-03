@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart' show TextInputAction;
 import 'package:flutter/widgets.dart';
 
+import '../../../../../l10n/app_localizations.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -94,7 +95,7 @@ class _MobileSwapAddressEditModalState
 
   bool get _canSubmit => _formatError == null;
 
-  String? get _formatError {
+  AddressFormatFinding? get _formatError {
     final trimmed = _controller.text.trim();
     if (trimmed.isEmpty) return null;
     final network = AddressBookNetwork.tryFromChainTicker(
@@ -110,16 +111,17 @@ class _MobileSwapAddressEditModalState
     final sendsZec = widget.state.direction.sendsZec;
     final asset = widget.state.externalAsset;
     final title = sendsZec
-        ? '${asset.symbol} recipient address'
-        : '${asset.symbol} refund address';
-    final hint = widget.state.destinationFieldHint;
+        ? AppLocalizations.of(context).swapRecipientAddressTitle(asset.symbol)
+        : AppLocalizations.of(context).swapRefundAddressTitle(asset.symbol);
+    final hint = widget.state.destinationFieldHint(
+      AppLocalizations.of(context),
+    );
     final description = sendsZec
-        ? 'Your ${asset.symbol} will be delivered to this address.'
-        : "If the swap fails or the rate moves, you'll be refunded in "
-              '${asset.symbol} on ${asset.chainLabel}, minus the fee.';
+        ? AppLocalizations.of(context).swapDeliveredToAddress(asset.symbol)
+        : AppLocalizations.of(context).swapRefundsReturnedAs(asset.symbol, asset.chainLabel);
     final rememberLabel = sendsZec
-        ? 'Remember this address for recipients'
-        : 'Remember this address for refunds';
+        ? AppLocalizations.of(context).swapRememberRecipients
+        : AppLocalizations.of(context).swapRememberRefunds;
     final formatError = _formatError;
 
     // MobileModalScaffold supplies the title, the pinned close button and the
@@ -179,7 +181,10 @@ class _MobileSwapAddressEditModalState
                 : Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      formatError,
+                      addressFormatFindingMessage(
+                        formatError,
+                        AppLocalizations.of(context),
+                      ),
                       key: const ValueKey('swap_destination_format_error'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -205,7 +210,7 @@ class _MobileSwapAddressEditModalState
             key: const ValueKey('swap_address_update_button'),
             expand: true,
             onPressed: _canSubmit ? _submit : null,
-            child: const Text('Update'),
+            child: Text(AppLocalizations.of(context).swapUpdateAction),
           ),
           const SizedBox(height: 12),
           AppButton(
@@ -213,7 +218,7 @@ class _MobileSwapAddressEditModalState
             variant: AppButtonVariant.ghost,
             expand: true,
             onPressed: widget.onCancel,
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context).commonCancel),
           ),
         ],
       ),

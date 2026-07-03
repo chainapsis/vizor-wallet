@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/address_book/screens/mobile/mobile_address_book_screen.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   setUp(() async {
@@ -272,6 +273,9 @@ Widget _harness(AddressBookRepository repo) {
   return ProviderScope(
     overrides: [addressBookRepositoryProvider.overrideWithValue(repo)],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

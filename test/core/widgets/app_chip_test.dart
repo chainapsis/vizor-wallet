@@ -3,13 +3,17 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_chip.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('AppChip can use min width without truncating the label', (
     tester,
   ) async {
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: Directionality(
@@ -39,7 +43,10 @@ void main() {
 
   testWidgets('AppChip keeps default text chips fixed width', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: Directionality(

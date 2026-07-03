@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets(
@@ -193,6 +194,9 @@ Widget _backResolverHarness({required String initialLocation}) {
   );
 
   return MaterialApp.router(
+    localizationsDelegates:
+        AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   );

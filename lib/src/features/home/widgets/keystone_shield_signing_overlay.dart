@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/storage/wallet_paths.dart';
@@ -17,6 +18,8 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../send/services/sapling_params.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
+import '../services/transparent_shielding_service.dart'
+    show shieldPcztBroadcastStatusMessage;
 
 enum _KeystoneShieldPhase {
   preparing,
@@ -122,8 +125,7 @@ class _KeystoneShieldSigningOverlayState
           if (!mounted) return;
           setState(() {
             _phase = _KeystoneShieldPhase.failed;
-            _error =
-                'Shielding was cancelled before proving parameters were downloaded.';
+            _error = AppLocalizations.of(context).shieldCancelledParamsDownload;
           });
           return;
         }
@@ -270,16 +272,7 @@ class _KeystoneShieldSigningOverlayState
   String _pcztBroadcastStatusMessage(
     rust_sync.ExtractAndBroadcastPcztResult result,
   ) {
-    if (result.status == 'broadcast_unknown') {
-      return result.message ??
-          'The shield transaction may have reached the network, but confirmation timed out. Check activity before trying again.';
-    }
-    if (result.status == 'broadcasted_storage_failed') {
-      return result.message ??
-          'The shield transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.';
-    }
-    return result.message ??
-        'The shield transaction status is uncertain. Check activity before trying again.';
+    return shieldPcztBroadcastStatusMessage(result, AppLocalizations.of(context));
   }
 
   String? _postBroadcastErrorMessage(Object error) {
@@ -289,25 +282,26 @@ class _KeystoneShieldSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    final l10n = AppLocalizations.of(context);
     final lower = error.toString().toLowerCase();
     if (lower.contains('sync')) {
-      return 'Sync the wallet before shielding transparent balance.';
+      return l10n.shieldErrorSyncFirst;
     }
     if (lower.contains('threshold') ||
         lower.contains('too small') ||
         lower.contains('no transparent funds')) {
-      return 'Transparent balance is too small to shield after fees.';
+      return l10n.shieldErrorTooSmall;
     }
     if (lower.contains('sapling') || lower.contains('download')) {
-      return 'Required proving parameters could not be prepared.';
+      return l10n.keystoneShieldParamsError;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
-      return 'Shield transaction could not be broadcast.';
+      return l10n.shieldErrorBroadcastFailed;
     }
     if (lower.contains('extract') || lower.contains('pczt')) {
-      return 'Keystone signature could not be applied.';
+      return l10n.keystoneShieldSignatureError;
     }
-    return 'Shield balance failed. Please try again.';
+    return l10n.shieldErrorRetry;
   }
 
   void _cancelToHome() {
@@ -328,8 +322,7 @@ class _KeystoneShieldSigningOverlayState
       _KeystoneShieldPhase.broadcasting => KeystoneSigningModalPhase.preparing,
     };
     final error = isBroadcastWarning
-        ? _statusMessage ??
-              'The shield transaction status is uncertain. Check activity before trying again.'
+        ? _statusMessage ?? AppLocalizations.of(context).shieldTxUncertain
         : _error;
 
     return Stack(
@@ -342,27 +335,27 @@ class _KeystoneShieldSigningOverlayState
             urParts: _urParts,
             error: error,
             title: isBroadcasting
-                ? 'Broadcasting shield tx'
-                : 'Sign tx on your Keystone',
+                ? AppLocalizations.of(context).keystoneShieldBroadcasting
+                : AppLocalizations.of(context).keystoneShieldSignTitle,
             subtitle: isBroadcasting
-                ? 'Submitting transaction'
-                : 'Scan the QR code to sign',
+                ? AppLocalizations.of(context).keystoneShieldSubmitting
+                : AppLocalizations.of(context).keystoneShieldScanToSign,
             instruction: isBroadcasting
-                ? 'Keep Vizor open while the transaction is sent.'
+                ? AppLocalizations.of(context).keystoneShieldKeepOpen
                 : isFailed || isBroadcastWarning
                 ? null
-                : 'After you scanned, click Get Signature.',
+                : AppLocalizations.of(context).sendAfterScanGetSignature,
             primaryLabel: isFailed || isBroadcastWarning || isBroadcasting
                 ? null
-                : 'Get Signature',
+                : AppLocalizations.of(context).sendGetSignature,
             onPrimary: _phase == _KeystoneShieldPhase.ready
                 ? () => unawaited(_getSignature())
                 : null,
             secondaryLabel: isBroadcasting
                 ? null
                 : isFailed || isBroadcastWarning
-                ? 'Back to Wallet'
-                : 'Reject',
+                ? AppLocalizations.of(context).keystoneShieldBackToWallet
+                : AppLocalizations.of(context).keystoneShieldReject,
             onSecondary: _cancelToHome,
           ),
         ),

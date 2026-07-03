@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../../l10n/app_localizations.dart';
 import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/formatting/address_display.dart';
 import '../../../../core/formatting/zec_amount.dart';
@@ -35,6 +36,7 @@ typedef MobileSendBroadcastRunner =
     Future<SendBroadcastOutcome> Function({
       required WidgetRef ref,
       required SendReviewArgs args,
+      required AppLocalizations l10n,
       KeystoneBroadcastArgs? keystone,
       required Future<bool> Function() confirmSaplingParamsDownload,
       Future<bool> Function()? shouldAbort,
@@ -112,9 +114,11 @@ class _MobileSendStatusScreenState
 
   Future<void> _startBroadcast() async {
     final runner = widget.broadcastRunner ?? runSendBroadcast;
+    final l10n = AppLocalizations.of(context);
     final outcome = await runner(
       ref: ref,
       args: widget.args,
+      l10n: l10n,
       keystone: widget.keystone,
       confirmSaplingParamsDownload: _confirmSaplingParamsDownload,
       shouldAbort: () async => !mounted,
@@ -168,7 +172,7 @@ class _MobileSendStatusScreenState
     if (launched || !mounted) return;
     await Clipboard.setData(ClipboardData(text: _protocolTxid ?? txid));
     if (!mounted) return;
-    showAppToast(context, 'Transaction Hash Copied');
+    showAppToast(context, AppLocalizations.of(context).activityTxHashCopied);
   }
 
   @override
@@ -177,7 +181,7 @@ class _MobileSendStatusScreenState
     final args = widget.args;
     final statusMessage = _statusMessage?.trim();
     final error = _phase == _MobileSendStatusPhase.failed
-        ? _error ?? "Transaction couldn't be sent."
+        ? _error ?? AppLocalizations.of(context).sendTxCouldNotBeSent
         : null;
     final txid = _protocolTxid;
     final amountFiatText = fiatTextForZatoshi(
@@ -187,6 +191,7 @@ class _MobileSendStatusScreenState
     final recipientPoolLabel = _recipientPoolLabel(
       args.addressType,
       isShielded: args.isShielded,
+      l10n: AppLocalizations.of(context),
     );
     // Resolve the recipient to a saved contact / own account so the To row
     // shows a name + avatar — parity with desktop send status and the
@@ -244,7 +249,7 @@ class _MobileSendStatusScreenState
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               MobileReviewInfoRow(
-                                label: 'Amount',
+                                label: AppLocalizations.of(context).navAmount,
                                 value: ZecAmount.fromZatoshi(
                                   args.amountZatoshi,
                                 ).activityDetail.toString(),
@@ -317,6 +322,7 @@ class _MobileSendStatusScreenState
                           memo: args.memo,
                           timestampText: formatActivityTimestamp(
                             _completedAt ?? _startedAt,
+                            l10n: AppLocalizations.of(context),
                           ),
                           txidText: txid == null ? null : truncatedTxid(txid),
                           onOpenExplorer: txid == null
@@ -360,11 +366,12 @@ class _MobileSendStatusScreenState
   }
 
   String get _title {
+    final l10n = AppLocalizations.of(context);
     return switch (_phase) {
-      _MobileSendStatusPhase.sending => 'Sending...',
-      _MobileSendStatusPhase.pendingBroadcast => 'Sending...',
-      _MobileSendStatusPhase.succeeded => 'Sent successfully',
-      _MobileSendStatusPhase.failed => 'Send failed',
+      _MobileSendStatusPhase.sending => l10n.activitySendingEllipsis,
+      _MobileSendStatusPhase.pendingBroadcast => l10n.activitySendingEllipsis,
+      _MobileSendStatusPhase.succeeded => l10n.activitySentSuccessfully,
+      _MobileSendStatusPhase.failed => l10n.activitySendFailed,
     };
   }
 
@@ -387,12 +394,16 @@ class _MobileSendStatusScreenState
   }
 }
 
-String _recipientPoolLabel(String addressType, {required bool isShielded}) {
+String _recipientPoolLabel(
+  String addressType, {
+  required bool isShielded,
+  required AppLocalizations l10n,
+}) {
   return switch (addressType.trim().toLowerCase()) {
     'tex' => 'TEX',
-    'unified' || 'sapling' => 'Shielded',
-    'transparent' => 'Transparent',
-    _ => isShielded ? 'Shielded' : 'Transparent',
+    'unified' || 'sapling' => l10n.receiveShielded,
+    'transparent' => l10n.receiveTransparent,
+    _ => isShielded ? l10n.receiveShielded : l10n.receiveTransparent,
   };
 }
 
@@ -430,7 +441,7 @@ class _DetailCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ListRow(
-            label: 'Status',
+            label: AppLocalizations.of(context).navStatus,
             labelColor: phase == _MobileSendStatusPhase.failed
                 ? colors.text.destructive
                 : null,
@@ -439,20 +450,20 @@ class _DetailCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           if (memoText != null && memoText.isNotEmpty) ...[
             _ListRow(
-              label: 'Message',
+              label: AppLocalizations.of(context).activityMessage,
               value: _ValueWithIcon(text: _previewMemo(memoText)),
             ),
             const SizedBox(height: AppSpacing.xs),
           ],
           _ListRow(
-            label: 'Timestamp',
+            label: AppLocalizations.of(context).activityTimestamp,
             value: _ValueWithIcon(text: timestampText),
           ),
           if (txidText != null) ...[
             const SizedBox(height: AppSpacing.xs),
             _ListRow(
               key: const ValueKey('mobile_send_status_txid'),
-              label: 'Tx ID',
+              label: AppLocalizations.of(context).activityTxId,
               value: _ValueWithIcon(
                 text: txidText,
                 iconName: AppIcons.arrowTopRight,
@@ -464,7 +475,7 @@ class _DetailCard extends StatelessWidget {
           Container(height: 1, color: colors.border.regular),
           const SizedBox(height: AppSpacing.sm),
           _ListRow(
-            label: 'Tx fee',
+            label: AppLocalizations.of(context).txFeeSheetTitle,
             labelStyle: AppTypography.labelLarge,
             value: _ValueWithIcon(
               text: feeText,
@@ -587,21 +598,22 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final l10n = AppLocalizations.of(context);
     final (iconName, text, color) = switch (phase) {
       _MobileSendStatusPhase.sending ||
       _MobileSendStatusPhase.pendingBroadcast => (
         AppIcons.loader,
-        'In progress',
+        l10n.activityInProgress,
         colors.text.secondary,
       ),
       _MobileSendStatusPhase.succeeded => (
         AppIcons.checkCircle,
-        'Completed',
+        l10n.activityCompleted,
         colors.text.positiveStrong,
       ),
       _MobileSendStatusPhase.failed => (
         AppIcons.cross,
-        'Failed, funds returned',
+        l10n.activityFailedFundsReturned,
         colors.text.destructive,
       ),
     };

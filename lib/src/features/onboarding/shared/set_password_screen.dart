@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../../main.dart' show log;
 import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
@@ -45,7 +46,10 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
   }
 
   String? get _passwordPolicyError =>
-      validateWalletPassword(_passwordController.text);
+      validateWalletPasswordLocalized(
+        _passwordController.text,
+        AppLocalizations.of(context),
+      );
   bool get _matches =>
       _confirmController.text.isNotEmpty &&
       _confirmController.text == _passwordController.text;
@@ -60,7 +64,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
   String? get _confirmMessage {
     final value = _confirmController.text;
     if (value.isEmpty || _passwordPolicyError != null || _matches) return null;
-    return 'Passwords do not match.';
+    return AppLocalizations.of(context).onbPasswordsDoNotMatch;
   }
 
   Future<void> _submit() async {
@@ -154,7 +158,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       if (!mounted) return;
       setState(() {
         _submitPhase = _SetPasswordSubmitPhase.idle;
-        _submitError = onboardingSubmitErrorMessage(e);
+        _submitError = onboardingSubmitErrorMessage(e, AppLocalizations.of(context));
       });
       return;
     }
@@ -177,7 +181,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       onSubmit: _submit,
     );
     final backTarget = onboarding_chrome.OnboardingBackTarget.route(
-      label: _backLabel(args.flow),
+      label: _backLabel(context, args.flow),
       routePath: args.backRoutePath,
       routeExtra: args.backRouteExtra,
     );
@@ -198,13 +202,15 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     };
   }
 
-  String _backLabel(SetPasswordFlow flow) => switch (flow) {
-    SetPasswordFlow.create => OnboardingStep.secretPassphrase.label,
-    SetPasswordFlow.importWallet =>
-      ImportOnboardingStep.walletBirthdayHeight.label,
-    SetPasswordFlow.importKeystone =>
-      KeystoneOnboardingStep.walletBirthdayHeight.label,
-  };
+  String _backLabel(BuildContext context, SetPasswordFlow flow) =>
+      switch (flow) {
+        SetPasswordFlow.create =>
+          OnboardingStep.secretPassphrase.label(context),
+        SetPasswordFlow.importWallet =>
+          ImportOnboardingStep.walletBirthdayHeight.label(context),
+        SetPasswordFlow.importKeystone =>
+          KeystoneOnboardingStep.walletBirthdayHeight.label(context),
+      };
 }
 
 class _SetPasswordContent extends StatelessWidget {
@@ -231,7 +237,9 @@ class _SetPasswordContent extends StatelessWidget {
   final Future<void> Function() onSubmit;
 
   static const _contentWidth = 396.0;
-  static const _mainHeight = 248.0;
+  // 248 in Figma; +8 headroom for taller localized labels (ko) so the
+  // confirm-field block never overflows the fixed form area.
+  static const _mainHeight = 256.0;
   static const _formWidth = 256.0;
   static const _buttonMinWidth = 196.0;
   static const _fieldGroupGap = 12.0;
@@ -322,9 +330,9 @@ class _SetPasswordOnPageContent extends StatelessWidget {
                             _SetPasswordContent._fieldReservedMessageHeight,
                         child: PasswordTextField(
                           key: const ValueKey('set_password_password_field'),
-                          label: 'Password',
+                          label: AppLocalizations.of(context).settingsPassword,
                           labelStyle: fieldLabelStyle,
-                          hintText: 'Min. 8 characters and symbols',
+                          hintText: AppLocalizations.of(context).onbPasswordHint,
                           controller: passwordController,
                           messageText: passwordMessage,
                           tone: passwordMessage == null
@@ -346,9 +354,9 @@ class _SetPasswordOnPageContent extends StatelessWidget {
                             _SetPasswordContent._fieldReservedMessageHeight,
                         child: PasswordTextField(
                           key: const ValueKey('set_password_confirm_field'),
-                          label: 'Confirm password',
+                          label: AppLocalizations.of(context).onbConfirmPassword,
                           labelStyle: fieldLabelStyle,
-                          hintText: 'Confirm password',
+                          hintText: AppLocalizations.of(context).onbConfirmPassword,
                           controller: confirmController,
                           messageText: confirmMessage,
                           tone: confirmMessage == null
@@ -385,7 +393,7 @@ class _SetPasswordTitle extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'Set Password',
+            AppLocalizations.of(context).onbSetPassword,
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),
@@ -394,7 +402,7 @@ class _SetPasswordTitle extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Set password for signing in to Vizor wallet.',
+          AppLocalizations.of(context).onbSetPasswordSubtitle,
           style: AppTypography.bodyMediumStrong.copyWith(
             color: colors.text.accent,
           ),
@@ -443,9 +451,9 @@ class _SetPasswordBottomActions extends StatelessWidget {
           minWidth: _SetPasswordContent._buttonMinWidth,
           trailing: const AppIcon(AppIcons.chevronForward),
           child: Text(switch (submitPhase) {
-            _SetPasswordSubmitPhase.stoppingSync => 'Stop syncing...',
-            _SetPasswordSubmitPhase.settingPassword => 'Setting password...',
-            _SetPasswordSubmitPhase.idle => 'Set password & finish',
+            _SetPasswordSubmitPhase.stoppingSync => AppLocalizations.of(context).onbStopSyncing,
+            _SetPasswordSubmitPhase.settingPassword => AppLocalizations.of(context).onbSettingPassword,
+            _SetPasswordSubmitPhase.idle => AppLocalizations.of(context).onbSetPasswordFinish,
           }),
         ),
       ],

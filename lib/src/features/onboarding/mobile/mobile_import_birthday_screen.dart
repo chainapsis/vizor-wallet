@@ -5,6 +5,8 @@ import 'package:flutter/material.dart' show TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../l10n/app_localizations.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
@@ -258,9 +260,7 @@ class _MobileImportBirthdayScreenState
           if (!mounted) return;
           setState(() {
             _submitPhase = _MobileImportSubmitPhase.idle;
-            _error =
-                "Couldn't estimate a height for that date. Enter a block "
-                'height instead.';
+            _error = AppLocalizations.of(context).onbEstimateFailed;
           });
         }
     }
@@ -300,7 +300,7 @@ class _MobileImportBirthdayScreenState
         if (!mounted) return;
         setState(() {
           _submitPhase = _MobileImportSubmitPhase.idle;
-          _error = onboardingSubmitErrorMessage(e);
+          _error = onboardingSubmitErrorMessage(e, AppLocalizations.of(context));
         });
       }
       return;
@@ -339,7 +339,7 @@ class _MobileImportBirthdayScreenState
         if (!mounted) return;
         setState(() {
           _submitPhase = _MobileImportSubmitPhase.idle;
-          _error = onboardingSubmitErrorMessage(e);
+          _error = onboardingSubmitErrorMessage(e, AppLocalizations.of(context));
         });
       }
       return;
@@ -398,7 +398,7 @@ class _MobileImportBirthdayScreenState
       if (!mounted) return;
       setState(() {
         _submitPhase = _MobileImportSubmitPhase.idle;
-        _error = onboardingSubmitErrorMessage(e);
+        _error = onboardingSubmitErrorMessage(e, AppLocalizations.of(context));
       });
       return;
     }
@@ -454,10 +454,10 @@ class _MobileImportBirthdayScreenState
 
   String? get _statusMessage => switch (_submitPhase) {
     _MobileImportSubmitPhase.idle => null,
-    _MobileImportSubmitPhase.estimating => 'Estimating height...',
-    _MobileImportSubmitPhase.discoveringAccounts => 'Checking accounts...',
-    _MobileImportSubmitPhase.stoppingSync => 'Pausing sync...',
-    _MobileImportSubmitPhase.importing => 'Importing wallet...',
+    _MobileImportSubmitPhase.estimating => AppLocalizations.of(context).onbEstimatingHeight,
+    _MobileImportSubmitPhase.discoveringAccounts => AppLocalizations.of(context).onbCheckingAccounts,
+    _MobileImportSubmitPhase.stoppingSync => AppLocalizations.of(context).onbPausingSync,
+    _MobileImportSubmitPhase.importing => AppLocalizations.of(context).onbImportingWallet,
   };
 
   String _formattedDate(DateTime date) => Platform.isIOS
@@ -473,9 +473,9 @@ class _MobileImportBirthdayScreenState
     final needsDate = isDateMode && _selectedDate == null;
     final primaryLabel = needsDate
         ? Platform.isIOS
-              ? 'Select month'
-              : 'Select date'
-        : 'Next';
+              ? AppLocalizations.of(context).onbSelectMonth
+              : AppLocalizations.of(context).onbSelectDate
+        : AppLocalizations.of(context).commonNext;
     final primaryTrailing = needsDate
         ? AppIcons.calendar
         : AppIcons.chevronForward;
@@ -483,9 +483,9 @@ class _MobileImportBirthdayScreenState
     return MobileOnboardingStepScaffold(
       progress: widget.progress ?? mobileImportProgress(2),
       onBack: _isSubmitting ? null : () => Navigator.of(context).maybePop(),
-      title: 'Around when did you create your wallet?',
+      title: AppLocalizations.of(context).onbBirthdayTitle,
       // Two 25 px lines like the Figma subtitle block.
-      subtitle: 'An estimate is enough — sync starts\nfrom there.',
+      subtitle: AppLocalizations.of(context).onbBirthdaySubtitle,
       // Keep the primary flow action last in the bottom stack. The
       // earliest-height fallback remains a text action above it and still
       // requires confirmation before scanning from zero.
@@ -496,7 +496,7 @@ class _MobileImportBirthdayScreenState
           _BottomTextAction(
             key: const ValueKey('mobile_import_birthday_skip'),
             onPressed: _busy ? null : () => unawaited(_skipBirthday()),
-            label: 'I don’t remember',
+            label: AppLocalizations.of(context).onbDontRemember,
           ),
           const SizedBox(height: AppSpacing.xs),
           AppButton(
@@ -523,7 +523,7 @@ class _MobileImportBirthdayScreenState
                 _ModeTab(
                   key: const ValueKey('mobile_import_birthday_mode_date'),
                   iconName: AppIcons.calendar,
-                  label: Platform.isIOS ? 'Enter the month' : 'Enter the date',
+                  label: Platform.isIOS ? AppLocalizations.of(context).onbEnterMonth : AppLocalizations.of(context).onbEnterDate,
                   selected: isDateMode,
                   onTap: () => _setMode(_BirthdayEntryMode.date),
                 ),
@@ -531,7 +531,7 @@ class _MobileImportBirthdayScreenState
                 _ModeTab(
                   key: const ValueKey('mobile_import_birthday_mode_height'),
                   iconName: AppIcons.block,
-                  label: 'Enter the block height',
+                  label: AppLocalizations.of(context).onbEnterBlockHeight,
                   selected: !isDateMode,
                   onTap: () => _setMode(_BirthdayEntryMode.blockHeight),
                 ),
@@ -560,7 +560,7 @@ class _MobileImportBirthdayScreenState
                             if (_heightController.text.isEmpty)
                               IgnorePointer(
                                 child: Text(
-                                  'Block height',
+                                  AppLocalizations.of(context).onbBlockHeight,
                                   maxLines: 1,
                                   style: AppTypography.headlineSmall.copyWith(
                                     color: colors.text.muted,
@@ -633,8 +633,11 @@ class _MobileImportBirthdayScreenState
           else if (!isDateMode)
             Text(
               _metadata == null
-                  ? 'At least $_minHeight.'
-                  : 'Between $_minHeight and ${_metadata!.tipHeight}.',
+                  ? AppLocalizations.of(context).onbAtLeastHeight('$_minHeight')
+                  : AppLocalizations.of(context).onbBetweenHeights(
+                      '$_minHeight',
+                      '${_metadata!.tipHeight}',
+                    ),
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(color: colors.text.muted),
             ),
@@ -804,7 +807,7 @@ class _DateFieldButton extends StatelessWidget {
     final colors = context.colors;
     return Semantics(
       button: true,
-      label: Platform.isIOS ? 'Pick a month' : 'Pick a date',
+      label: Platform.isIOS ? AppLocalizations.of(context).onbPickMonth : AppLocalizations.of(context).onbPickDate,
       child: GestureDetector(
         key: const ValueKey('mobile_import_birthday_date'),
         behavior: HitTestBehavior.opaque,
@@ -814,7 +817,10 @@ class _DateFieldButton extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  formatted ?? (Platform.isIOS ? 'mm/yyyy' : 'mm/dd/yyyy'),
+                  formatted ??
+                      (Platform.isIOS
+                          ? AppLocalizations.of(context).onbMonthHint
+                          : AppLocalizations.of(context).onbDateHint),
                   key: const ValueKey('mobile_import_birthday_date_text'),
                   maxLines: 1,
                   style: AppTypography.headlineSmall.copyWith(

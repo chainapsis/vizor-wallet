@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/widgets/app_profile_picture_picker_modal.dart';
 
 /// Accounts-facing wrapper around the shared
@@ -23,7 +24,7 @@ class AccountProfilePictureModal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppProfilePicturePickerModal(
-      title: 'Select profile picture',
+      title: AppLocalizations.of(context).accountsSelectProfilePicture,
       currentProfilePictureId: currentProfilePictureId,
       onCancel: onCancel,
       onUpdate: onUpdate,

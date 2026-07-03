@@ -14,10 +14,14 @@ import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 Widget _app() {
   return ProviderScope(
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
       home: const MobilePasscodeScreen(
         args: SetPasswordScreenArgs.create(mnemonic: 'stub mnemonic words'),
@@ -53,6 +57,9 @@ Widget _importApp({required _RecordingAccountNotifier accountNotifier}) {
       syncProvider.overrideWith(() => _NoopSyncNotifier()),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),

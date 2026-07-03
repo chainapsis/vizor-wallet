@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 const _validMnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse access accident';
@@ -22,6 +23,9 @@ Widget _app(String initialLocation) {
   );
   return ProviderScope(
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
@@ -44,6 +48,9 @@ Widget _entryAppWithBirthdayProbe() {
   );
   return ProviderScope(
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

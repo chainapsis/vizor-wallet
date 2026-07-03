@@ -6,12 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/settings/settings_platform.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/locale_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
@@ -64,6 +66,38 @@ void main() {
     await tester.pump();
 
     expect(_hasFocusRing(tester), isTrue);
+  });
+
+  testWidgets('language modal selects Korean and updates the row', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_settingsHarness());
+    await tester.pump();
+
+    // Row starts on System (Auto) — no stored preference follows the OS.
+    expect(find.text('Language'), findsOneWidget);
+    expect(find.text('System (Auto)'), findsWidgets);
+
+    await tester.ensureVisible(find.text('Language'));
+    await tester.pump();
+    await tester.tap(find.text('Language'));
+    await tester.pump();
+
+    // Modal shows both options; Update is disabled until a change is made.
+    expect(find.text('한국어'), findsOneWidget);
+    await tester.tap(find.text('한국어'));
+    await tester.pump();
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
+    // Modal closed and the row value now shows the selected language.
+    expect(find.text('Update'), findsNothing);
+    expect(find.text('한국어'), findsOneWidget);
   });
 
   testWidgets('uninstall setting is hidden on Windows', (tester) async {
@@ -135,9 +169,13 @@ Widget _settingsHarness() {
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap),
       syncProvider.overrideWith(FakeSyncNotifier.new),
+      // Skips the secure-storage write, which is unavailable in widget tests.
+      localeProvider.overrideWith(_InMemoryLocaleNotifier.new),
     ],
     child: MaterialApp.router(
       routerConfig: router,
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
@@ -159,6 +197,18 @@ final _bootstrap = AppBootstrapState(
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
 );
+
+class _InMemoryLocaleNotifier extends LocaleNotifier {
+  @override
+  Future<void> set(Locale locale) async {
+    state = locale;
+  }
+
+  @override
+  Future<void> clearToSystem() async {
+    state = null;
+  }
+}
 
 Color? _rowBackgroundColor(WidgetTester tester, String label) {
   final container = tester.widget<Container>(_rowContainerFinder(label));

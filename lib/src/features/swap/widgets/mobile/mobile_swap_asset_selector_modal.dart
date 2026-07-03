@@ -8,6 +8,7 @@ import '../../../../core/widgets/mobile_text_field.dart';
 import '../../models/swap_models.dart';
 import '../swap_asset_icon.dart';
 import '../swap_modal_controls.dart';
+import '../../../../../l10n/app_localizations.dart';
 
 /// Mobile asset picker — built on [MobileModalScaffold] with the asset
 /// `_Modal Type` variant (8px title-to-body gap, no bottom inset) so the
@@ -123,7 +124,7 @@ class _MobileSwapAssetSelectorModalState
 
     return MobileModalScaffold(
       key: const ValueKey('swap_external_asset_menu'),
-      title: 'Select asset',
+      title: AppLocalizations.of(context).swapSelectAsset,
       onClose: widget.onClose,
       // Asset `_Modal Type` variant: 8px title-to-body gap; a small bottom
       // inset so the list isn't flush against the card edge.
@@ -137,7 +138,7 @@ class _MobileSwapAssetSelectorModalState
             fieldKey: const ValueKey('swap_asset_search_field'),
             controller: _queryController,
             focusNode: _focusNode,
-            hintText: 'Search token or chain',
+            hintText: AppLocalizations.of(context).swapSearchTokenOrChain,
             textInputAction: TextInputAction.search,
             onChanged: (_) => setState(() {}),
             leading: SizedBox(
@@ -173,7 +174,7 @@ class _MobileSwapAssetSelectorModalState
                     child: SizedBox(
                       width: 112,
                       child: Text(
-                        'No tokens or chains found',
+                        AppLocalizations.of(context).swapNoTokensFound,
                         textAlign: TextAlign.center,
                         style: AppTypography.labelLarge.copyWith(
                           color: colors.text.secondary,

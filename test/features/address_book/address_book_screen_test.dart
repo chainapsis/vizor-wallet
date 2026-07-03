@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/features/address_book/screens/address_book_scre
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('does not show a loading spinner while contacts load', (
@@ -804,8 +805,11 @@ Widget _addressBookHarness(
       syncProvider.overrideWith(() => _FakeSyncNotifier(SyncState())),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => _localizedAppTheme(data: AppThemeData.light, child: child!),
     ),
   );
 }
@@ -909,4 +913,14 @@ class _FakeSyncNotifier extends SyncNotifier {
 
   @override
   Future<SyncState> build() async => initialState;
+}
+
+/// Wraps [AppTheme] in a [Localizations] scope so widgets under test can
+/// resolve [AppLocalizations] without a full MaterialApp harness.
+Widget _localizedAppTheme({required AppThemeData data, required Widget child}) {
+  return Localizations(
+    locale: const Locale('en'),
+    delegates: AppLocalizations.localizationsDelegates,
+    child: AppTheme(data: data, child: child),
+  );
 }

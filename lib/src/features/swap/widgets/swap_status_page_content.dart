@@ -15,6 +15,7 @@ import '../models/swap_detail_tooltips.dart';
 import '../models/swap_models.dart';
 import '../models/swap_status_presentation.dart';
 import 'swap_review_info.dart';
+import '../../../../l10n/app_localizations.dart';
 
 export '../models/swap_status_presentation.dart';
 
@@ -226,14 +227,14 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
           SwapReviewInfo(
             pay: SwapReviewInfoSideData(
               asset: widget.payAsset,
-              label: "You're paying",
+              label: AppLocalizations.of(context).swapYourePaying,
               amountText: widget.payAmountText,
               detailText: widget.payDetailText,
               detailCopyText: widget.payDetailCopyText,
             ),
             receive: SwapReviewInfoSideData(
               asset: widget.receiveAsset,
-              label: "You're receiving",
+              label: AppLocalizations.of(context).swapYoureReceiving,
               amountText: widget.receiveAmountText,
               detailText: widget.receiveDetailText,
               detailCopyText: widget.receiveDetailCopyText,
@@ -305,13 +306,15 @@ class _StatusTabs extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             _StatusTabLabel(
-              label: 'Swap Progress',
+              keyName: 'swap_status_tab_progress',
+              label: AppLocalizations.of(context).swapProgressTab,
               active: activeTab == SwapStatusTab.progress,
               onTap: () => onChanged?.call(SwapStatusTab.progress),
             ),
             const SizedBox(width: AppSpacing.xs),
             _StatusTabLabel(
-              label: 'Transaction details',
+              keyName: 'swap_status_tab_details',
+              label: AppLocalizations.of(context).swapTransactionDetailsTab,
               active: activeTab == SwapStatusTab.details,
               onTap: () => onChanged?.call(SwapStatusTab.details),
             ),
@@ -324,11 +327,13 @@ class _StatusTabs extends StatelessWidget {
 
 class _StatusTabLabel extends StatelessWidget {
   const _StatusTabLabel({
+    required this.keyName,
     required this.label,
     required this.active,
     required this.onTap,
   });
 
+  final String keyName;
   final String label;
   final bool active;
   final VoidCallback? onTap;
@@ -344,11 +349,7 @@ class _StatusTabLabel extends StatelessWidget {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
-        key: ValueKey(
-          label == 'Transaction details'
-              ? 'swap_status_tab_details'
-              : 'swap_status_tab_progress',
-        ),
+        key: ValueKey(keyName),
         behavior: HitTestBehavior.opaque,
         onTap: active ? null : onTap,
         child: Padding(
@@ -667,7 +668,7 @@ class _SwapTerminalDetails extends StatelessWidget {
 List<Widget> _detailRowsWithFeeDivider(List<SwapStatusDetailRowData> rows) {
   if (rows.isEmpty) return const [];
   final lastIndex = rows.length - 1;
-  final dividerBeforeLast = rows.length > 1 && _isFeeRow(rows[lastIndex].label);
+  final dividerBeforeLast = rows.length > 1 && _isFeeRow(rows[lastIndex]);
   return [
     for (var index = 0; index < rows.length; index++) ...[
       if (index == lastIndex && dividerBeforeLast) const _DetailDivider(),
@@ -676,11 +677,13 @@ List<Widget> _detailRowsWithFeeDivider(List<SwapStatusDetailRowData> rows) {
   ];
 }
 
-bool _isFeeRow(String label) {
-  return label == 'Swap fee' ||
-      label == 'Total fees' ||
-      label == 'Tx fee' ||
-      label == 'Refund fee';
+bool _isFeeRow(SwapStatusDetailRowData row) {
+  return switch (row.kind) {
+    SwapStatusDetailRowKind.swapFee ||
+    SwapStatusDetailRowKind.totalFees ||
+    SwapStatusDetailRowKind.refundFee => true,
+    _ => false,
+  };
 }
 
 class _DetailDivider extends StatelessWidget {
@@ -717,7 +720,7 @@ class _StatusRow extends StatelessWidget {
         : colors.text.positiveStrong;
     return ReviewListRow(
       key: const ValueKey('swap_status_summary_row'),
-      label: 'Status',
+      label: AppLocalizations.of(context).swapStatusRowLabel,
       value: label,
       valueColor: signalColor,
       leadingIconName: failed ? AppIcons.warning : AppIcons.checkCircle,
@@ -743,7 +746,7 @@ class _DetailRow extends StatelessWidget {
           onTap: () => copyTextWithToast(
             context,
             text: row.copyText ?? row.value,
-            toastMessage: 'Copied',
+            toastMessage: AppLocalizations.of(context).toastCopied,
           ),
           child: cell,
         ),
@@ -774,7 +777,8 @@ class _DetailRow extends StatelessWidget {
         trailingIconName: AppIcons.help,
         trailingIconColor: colors.icon.muted,
         trailingIconTooltip:
-            row.helpTooltip ?? _swapStatusHelpTooltip(row.label),
+            row.helpTooltip ??
+                _swapStatusHelpTooltip(context, row.label),
       );
     }
 
@@ -893,14 +897,7 @@ class _DetailRow extends StatelessWidget {
 bool _shouldScaleDetailValue(SwapStatusDetailRowData row) {
   final source = row.copyText?.trim();
   if (source == null || source.isEmpty || source.length <= 18) return false;
-
-  final label = row.label.toLowerCase();
-  return label.contains('address') ||
-      label.contains('recipient') ||
-      label.contains('refund') ||
-      label == 'tx id' ||
-      label.contains(' tx') ||
-      (label.startsWith('deposit ') && label.endsWith(' to'));
+  return row.scaleValueToFit;
 }
 
 class _StatusDetailActionIcon extends StatelessWidget {
@@ -935,13 +932,14 @@ class _StatusDetailActionIcon extends StatelessWidget {
   }
 }
 
-String _swapStatusHelpTooltip(String label) {
-  return switch (label) {
-    'Swap fee' => swapFeeTooltip,
-    'Guaranteed minimum' => swapGenericMinimumReceiveTooltip,
-    'Total fees' => swapTotalFeesTooltip,
-    _ => swapStatusDetailTooltip,
-  };
+String _swapStatusHelpTooltip(BuildContext context, String label) {
+  final l10n = AppLocalizations.of(context);
+  if (label == l10n.swapFeeLabel) return swapFeeTooltip(l10n);
+  if (label == l10n.swapGuaranteedMinimumLabel) {
+    return swapGenericMinimumReceiveTooltip(l10n);
+  }
+  if (label == l10n.swapTotalFeesLabel) return swapTotalFeesTooltip(l10n);
+  return swapStatusDetailTooltip(l10n);
 }
 
 /// Animated wrapper around [SwapProgressRoute]: walks the displayed active

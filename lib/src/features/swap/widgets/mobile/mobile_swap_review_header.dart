@@ -5,6 +5,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../domain/swap_contract.dart';
 import '../swap_asset_icon.dart';
+import '../../../../../l10n/app_localizations.dart';
 
 /// One serif row of the mobile swap review header.
 class MobileSwapReviewHeaderRow {
@@ -154,8 +155,10 @@ class _HeaderRow extends StatelessWidget {
                             title:
                                 row.addressNetworkLabel ??
                                 (row.asset.isNativeZec
-                                    ? 'Zcash address'
-                                    : '${row.asset.chainLabel} address'),
+                                    ? AppLocalizations.of(context).swapZcashAddress
+                                    : AppLocalizations.of(context).swapChainAddress(
+                                        row.asset.chainLabel,
+                                      )),
                             address: fullAddress,
                             leading: SwapAssetIcon(
                               asset: row.asset,
@@ -202,7 +205,7 @@ class _FullAddressButton extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.xxs),
               Text(
-                'Full address',
+                AppLocalizations.of(context).swapFullAddress,
                 style: AppTypography.labelLarge.copyWith(
                   color: colors.button.ghost.label,
                 ),

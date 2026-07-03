@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 const _txidHex =
     '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -706,9 +707,12 @@ Future<void> _pumpScreen(
         ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
       ],
       child: MaterialApp.router(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         routerConfig: router,
         builder: (_, child) =>
-            AppTheme(data: AppThemeData.light, child: child!),
+            _localizedAppTheme(data: AppThemeData.light, child: child!),
       ),
     ),
   );
@@ -742,4 +746,14 @@ class _FakeAddressBookRepository implements AddressBookRepository {
 
   @override
   Future<void> saveContacts(List<AddressBookContact> contacts) async {}
+}
+
+/// Wraps [AppTheme] in a [Localizations] scope so widgets under test can
+/// resolve [AppLocalizations] without a full MaterialApp harness.
+Widget _localizedAppTheme({required AppThemeData data, required Widget child}) {
+  return Localizations(
+    locale: const Locale('en'),
+    delegates: AppLocalizations.localizationsDelegates,
+    child: AppTheme(data: data, child: child),
+  );
 }

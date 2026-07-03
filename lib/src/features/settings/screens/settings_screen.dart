@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
@@ -16,6 +17,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/locale_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
 import '../../../providers/windows_update_provider.dart';
@@ -36,7 +38,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-enum _SettingsModalType { accountName, profilePicture, theme, updates }
+enum _SettingsModalType { accountName, profilePicture, theme, language, updates }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   _SettingsModalType? _activeModal;
@@ -102,6 +104,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _closeModal();
   }
 
+  Future<void> _updateLanguage(Locale? locale) async {
+    final notifier = ref.read(localeProvider.notifier);
+    if (locale == null) {
+      await notifier.clearToSystem();
+    } else {
+      await notifier.set(locale);
+    }
+    if (!mounted) return;
+    _closeModal();
+  }
+
   Future<void> _updateProfilePicture(String profilePictureId) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
@@ -131,6 +144,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         });
       },
     );
+    final l10n = AppLocalizations.of(context);
     final accountState = ref.watch(accountProvider).value;
     final activeAccountName = accountState?.activeAccount?.name ?? 'Wallet 1';
     final activeProfilePictureId =
@@ -140,6 +154,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final activeAccountIsHardware =
         accountState?.activeAccount?.isHardware ?? false;
     final themeMode = ref.watch(themeModeProvider);
+    // Null preference means System (Auto): the app follows the OS locale.
+    final currentLocale = ref.watch(localeProvider);
     final endpointLabel = ref.watch(rpcEndpointProvider).hostPort;
     final updateState = Platform.isWindows
         ? ref.watch(windowsUpdateProvider)
@@ -163,14 +179,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 accountName: activeAccountName,
                 profilePictureId: activeProfilePictureId,
                 profilePictureLabel: _profilePictureLabel(
+                  l10n,
                   activeProfilePictureId,
                 ),
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
-                themeLabel: _themeLabel(themeMode),
+                themeLabel: _themeLabel(l10n, themeMode),
+                languageLabel: _languageLabel(
+                  AppLocalizations.of(context),
+                  currentLocale,
+                ),
                 updateLabel: updateState == null
                     ? null
-                    : _updateLabel(updateState),
+                    : _updateLabel(l10n, updateState),
                 onSeedPhrase: () => context.push('/settings/secret-passphrase'),
                 onChangePassword: () =>
                     context.push('/settings/change-password'),
@@ -183,6 +204,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     : null,
                 onAddressBook: () => context.push('/address-book'),
                 onTheme: () => _showModal(_SettingsModalType.theme),
+                onLanguage: () => _showModal(_SettingsModalType.language),
                 onUpdates: updateState == null
                     ? null
                     : () => _showModal(_SettingsModalType.updates),
@@ -235,6 +257,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onCancel: _closeModal,
                     onUpdate: _updateTheme,
                   ),
+                  _SettingsModalType.language => _LanguageModal(
+                    currentLocale: currentLocale,
+                    onCancel: _closeModal,
+                    onUpdate: _updateLanguage,
+                  ),
                   _SettingsModalType.updates => _WindowsUpdateModal(
                     onCancel: _closeModal,
                   ),
@@ -246,29 +273,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  static String _themeLabel(ThemeMode mode) {
+  static String _themeLabel(AppLocalizations l10n, ThemeMode mode) {
     return switch (mode) {
-      ThemeMode.system => 'System',
-      ThemeMode.light => 'Light',
-      ThemeMode.dark => 'Dark',
+      ThemeMode.system => l10n.settingsThemeSystem,
+      ThemeMode.light => l10n.settingsThemeLight,
+      ThemeMode.dark => l10n.settingsThemeDark,
     };
   }
 
-  static String _profilePictureLabel(String profilePictureId) {
-    return findProfilePictureOption(profilePictureId)?.label ?? 'Custom';
+  // Language names stay in their own language ("English" / "한국어") so a user
+  // stuck in the wrong locale can always find theirs — never localize them.
+  // Only the System (Auto) label localizes.
+  static String _languageLabel(AppLocalizations l10n, Locale? locale) {
+    if (locale == null) return l10n.settingsThemeSystemAuto;
+    return locale.languageCode == 'ko' ? '한국어' : 'English';
   }
 
-  static String _updateLabel(WindowsUpdateState state) {
-    if (!state.supported) return 'Unavailable';
+  static String _profilePictureLabel(
+    AppLocalizations l10n,
+    String profilePictureId,
+  ) {
+    return findProfilePictureOption(profilePictureId)?.label ??
+        l10n.settingsProfilePictureCustom;
+  }
+
+  static String _updateLabel(AppLocalizations l10n, WindowsUpdateState state) {
+    if (!state.supported) return l10n.settingsUpdateUnavailable;
     return switch (state.status) {
-      WindowsUpdateStatus.checking => 'Checking',
-      WindowsUpdateStatus.available => 'Available',
+      WindowsUpdateStatus.checking => l10n.settingsUpdateChecking,
+      WindowsUpdateStatus.available => l10n.settingsUpdateAvailable,
       WindowsUpdateStatus.downloading => '${state.downloadProgress}%',
-      WindowsUpdateStatus.ready => 'Restart',
-      WindowsUpdateStatus.applying => 'Applying',
-      WindowsUpdateStatus.failed => 'Failed',
-      WindowsUpdateStatus.noUpdate => 'Up to date',
-      _ => 'Check',
+      WindowsUpdateStatus.ready => l10n.settingsUpdateRestart,
+      WindowsUpdateStatus.applying => l10n.settingsUpdateApplying,
+      WindowsUpdateStatus.failed => l10n.settingsUpdateFailed,
+      WindowsUpdateStatus.noUpdate => l10n.settingsUpdateUpToDate,
+      _ => l10n.settingsUpdateCheck,
     };
   }
 }
@@ -281,6 +320,7 @@ class _SettingsPane extends StatelessWidget {
     required this.activeAccountIsHardware,
     required this.endpointLabel,
     required this.themeLabel,
+    required this.languageLabel,
     required this.updateLabel,
     required this.onSeedPhrase,
     required this.onChangePassword,
@@ -289,6 +329,7 @@ class _SettingsPane extends StatelessWidget {
     required this.onProfilePicture,
     required this.onAddressBook,
     required this.onTheme,
+    required this.onLanguage,
     required this.onUpdates,
     required this.onAbout,
     required this.onUninstall,
@@ -300,6 +341,7 @@ class _SettingsPane extends StatelessWidget {
   final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
+  final String languageLabel;
   final String? updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
@@ -308,6 +350,7 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback? onProfilePicture;
   final VoidCallback onAddressBook;
   final VoidCallback onTheme;
+  final VoidCallback onLanguage;
   final VoidCallback? onUpdates;
   final VoidCallback onAbout;
   final VoidCallback? onUninstall;
@@ -328,7 +371,7 @@ class _SettingsPane extends StatelessWidget {
             children: [
               const SizedBox(height: AppSpacing.sm),
               Text(
-                'Settings',
+                AppLocalizations.of(context).settingsTitle,
                 textAlign: TextAlign.center,
                 style: AppTypography.headlineLarge.copyWith(
                   color: colors.text.accent,
@@ -342,6 +385,7 @@ class _SettingsPane extends StatelessWidget {
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
                 themeLabel: themeLabel,
+                languageLabel: languageLabel,
                 updateLabel: updateLabel,
                 onSeedPhrase: onSeedPhrase,
                 onChangePassword: onChangePassword,
@@ -350,6 +394,7 @@ class _SettingsPane extends StatelessWidget {
                 onProfilePicture: onProfilePicture,
                 onAddressBook: onAddressBook,
                 onTheme: onTheme,
+                onLanguage: onLanguage,
                 onUpdates: onUpdates,
                 onAbout: onAbout,
                 onUninstall: onUninstall,
@@ -371,6 +416,7 @@ class _SettingsList extends StatelessWidget {
     required this.activeAccountIsHardware,
     required this.endpointLabel,
     required this.themeLabel,
+    required this.languageLabel,
     required this.updateLabel,
     required this.onSeedPhrase,
     required this.onChangePassword,
@@ -379,6 +425,7 @@ class _SettingsList extends StatelessWidget {
     required this.onProfilePicture,
     required this.onAddressBook,
     required this.onTheme,
+    required this.onLanguage,
     required this.onUpdates,
     required this.onAbout,
     required this.onUninstall,
@@ -390,6 +437,7 @@ class _SettingsList extends StatelessWidget {
   final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
+  final String languageLabel;
   final String? updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
@@ -398,31 +446,34 @@ class _SettingsList extends StatelessWidget {
   final VoidCallback? onProfilePicture;
   final VoidCallback onAddressBook;
   final VoidCallback onTheme;
+  final VoidCallback onLanguage;
   final VoidCallback? onUpdates;
   final VoidCallback onAbout;
   final VoidCallback? onUninstall;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _SettingsBlock(
-          title: 'Account',
+          title: l10n.settingsSectionAccount,
           rows: [
             _SettingsRow(
               iconName: AppIcons.key,
-              label: 'Secret passphrase',
+              label: l10n.settingsSecretPassphrase,
               onTap: activeAccountIsHardware ? null : onSeedPhrase,
             ),
             _SettingsRow(
               iconName: AppIcons.lock,
-              label: 'Password',
+              label: l10n.settingsPassword,
               onTap: onChangePassword,
             ),
             _SettingsRow(
               iconName: AppIcons.user,
-              label: 'Profile picture',
+              label: l10n.settingsProfilePicture,
               value: profilePictureLabel,
               valueLeading: AppProfilePicture(
                 profilePictureId: profilePictureId,
@@ -432,37 +483,44 @@ class _SettingsList extends StatelessWidget {
             ),
             _SettingsRow(
               iconName: AppIcons.scroll,
-              label: 'Account name',
+              label: l10n.settingsAccountName,
               value: accountName,
               onTap: onAccountName,
             ),
             _SettingsRow(
               iconName: AppIcons.users,
-              label: 'Contacts',
+              label: l10n.settingsContacts,
               onTap: onAddressBook,
             ),
           ],
         ),
         const SizedBox(height: AppSpacing.md),
         _SettingsBlock(
-          title: 'System',
+          title: l10n.settingsSectionSystem,
           rows: [
             _SettingsRow(
               iconName: AppIcons.endpoint,
-              label: 'Endpoint',
+              label: l10n.settingsEndpoint,
               value: endpointLabel,
               onTap: onEndpoint,
             ),
             _SettingsRow(
               iconName: AppIcons.theme,
-              label: 'Theme',
+              label: l10n.settingsTheme,
               value: themeLabel,
               onTap: onTheme,
             ),
+            if (kLanguageFeatureEnabled)
+              _SettingsRow(
+                iconName: AppIcons.globe,
+                label: l10n.settingsLanguage,
+                value: languageLabel,
+                onTap: onLanguage,
+              ),
             if (updateLabel != null && onUpdates != null)
               _SettingsRow(
                 iconName: AppIcons.sync,
-                label: 'Updates',
+                label: l10n.settingsUpdates,
                 value: updateLabel,
                 onTap: onUpdates,
               ),
@@ -470,11 +528,11 @@ class _SettingsList extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.md),
         _SettingsBlock(
-          title: 'Misc',
+          title: l10n.settingsSectionMisc,
           rows: [
             _SettingsRow(
               iconName: AppIcons.vizor,
-              label: 'About Vizor',
+              label: l10n.settingsAboutVizor,
               onTap: onAbout,
             ),
           ],
@@ -482,11 +540,11 @@ class _SettingsList extends StatelessWidget {
         if (onUninstall != null) ...[
           const SizedBox(height: AppSpacing.md),
           _SettingsBlock(
-            title: 'Danger zone',
+            title: l10n.settingsSectionDangerZone,
             rows: [
               _SettingsRow(
                 iconName: AppIcons.trash,
-                label: 'Uninstall Vizor',
+                label: l10n.settingsUninstallVizor,
                 destructive: true,
                 onTap: onUninstall!,
               ),
@@ -538,7 +596,7 @@ class _ThemeModalState extends State<_ThemeModal> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _submitError = "Couldn't update theme.";
+        _submitError = AppLocalizations.of(context).settingsThemeUpdateError;
       });
     } finally {
       if (mounted) {
@@ -551,13 +609,15 @@ class _ThemeModalState extends State<_ThemeModal> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
     return AccountModalCard(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Theme',
+            l10n.settingsTheme,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyLarge.copyWith(
               color: context.colors.text.accent,
@@ -567,21 +627,21 @@ class _ThemeModalState extends State<_ThemeModal> {
           const SizedBox(height: AppSpacing.md),
           _ThemeOptionCard(
             iconName: AppIcons.monitor,
-            label: 'System (Auto)',
+            label: l10n.settingsThemeSystemAuto,
             selected: _selectedMode == ThemeMode.system,
             onTap: () => _select(ThemeMode.system),
           ),
           const SizedBox(height: AppSpacing.xs),
           _ThemeOptionCard(
             iconName: AppIcons.day,
-            label: 'Light',
+            label: l10n.settingsThemeLight,
             selected: _selectedMode == ThemeMode.light,
             onTap: () => _select(ThemeMode.light),
           ),
           const SizedBox(height: AppSpacing.xs),
           _ThemeOptionCard(
             iconName: AppIcons.night,
-            label: 'Dark',
+            label: l10n.settingsThemeDark,
             selected: _selectedMode == ThemeMode.dark,
             onTap: () => _select(ThemeMode.dark),
           ),
@@ -598,7 +658,124 @@ class _ThemeModalState extends State<_ThemeModal> {
           ],
           AccountModalActions(
             onCancel: _isSubmitting ? null : widget.onCancel,
-            actionLabel: _isSubmitting ? 'Updating...' : 'Update',
+            cancelLabel: l10n.commonCancel,
+            actionLabel: _isSubmitting ? l10n.commonUpdating : l10n.commonUpdate,
+            onAction: _canUpdate ? _submit : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LanguageModal extends StatefulWidget {
+  const _LanguageModal({
+    required this.currentLocale,
+    required this.onCancel,
+    required this.onUpdate,
+  });
+
+  /// Null means System (Auto).
+  final Locale? currentLocale;
+  final VoidCallback onCancel;
+  final Future<void> Function(Locale? locale) onUpdate;
+
+  @override
+  State<_LanguageModal> createState() => _LanguageModalState();
+}
+
+class _LanguageModalState extends State<_LanguageModal> {
+  late Locale? _selectedLocale = widget.currentLocale;
+  bool _isSubmitting = false;
+  String? _submitError;
+
+  bool get _canUpdate =>
+      !_isSubmitting &&
+      _selectedLocale?.languageCode != widget.currentLocale?.languageCode;
+
+  void _select(Locale? locale) {
+    setState(() {
+      _submitError = null;
+      _selectedLocale = locale;
+    });
+  }
+
+  Future<void> _submit() async {
+    if (!_canUpdate) return;
+    setState(() {
+      _isSubmitting = true;
+      _submitError = null;
+    });
+    try {
+      await widget.onUpdate(_selectedLocale);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _submitError = AppLocalizations.of(context).settingsLanguageUpdateError;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
+    return AccountModalCard(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            l10n.settingsLanguage,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.bodyLarge.copyWith(
+              color: context.colors.text.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          // Option labels stay in their own language — see _languageLabel.
+          _ThemeOptionCard(
+            iconName: AppIcons.monitor,
+            label: l10n.settingsThemeSystemAuto,
+            selected: _selectedLocale == null,
+            onTap: () => _select(null),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          _ThemeOptionCard(
+            iconName: AppIcons.globe,
+            label: 'English',
+            selected: _selectedLocale?.languageCode == 'en',
+            onTap: () => _select(kEnglishLocale),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          _ThemeOptionCard(
+            iconName: AppIcons.globe,
+            label: '한국어',
+            selected: _selectedLocale?.languageCode == 'ko',
+            onTap: () => _select(kKoreanLocale),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          if (_submitError != null) ...[
+            Text(
+              _submitError!,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.destructive,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+          ],
+          AccountModalActions(
+            onCancel: _isSubmitting ? null : widget.onCancel,
+            cancelLabel: l10n.commonCancel,
+            actionLabel: _isSubmitting ? l10n.commonUpdating : l10n.commonUpdate,
             onAction: _canUpdate ? _submit : null,
           ),
         ],
@@ -614,8 +791,9 @@ class _WindowsUpdateModal extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final state = ref.watch(windowsUpdateProvider);
-    final primary = _primaryAction(ref, state);
+    final primary = _primaryAction(l10n, ref, state);
 
     return AccountModalCard(
       child: Column(
@@ -623,7 +801,7 @@ class _WindowsUpdateModal extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Updates',
+            l10n.settingsUpdates,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyLarge.copyWith(
               color: context.colors.text.accent,
@@ -631,14 +809,20 @@ class _WindowsUpdateModal extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          _UpdateInfoRow(label: 'Current', value: state.currentVersion),
+          _UpdateInfoRow(
+            label: l10n.settingsUpdateCurrent,
+            value: state.currentVersion,
+          ),
           if (state.availableVersion.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.xxs),
-            _UpdateInfoRow(label: 'Available', value: state.availableVersion),
+            _UpdateInfoRow(
+              label: l10n.settingsUpdateAvailable,
+              value: state.availableVersion,
+            ),
           ],
           const SizedBox(height: AppSpacing.s),
           Text(
-            _statusText(state),
+            _statusText(l10n, state),
             textAlign: TextAlign.center,
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
@@ -655,6 +839,7 @@ class _WindowsUpdateModal extends ConsumerWidget {
           const SizedBox(height: AppSpacing.md),
           AccountModalActions(
             onCancel: state.isBusy ? null : onCancel,
+            cancelLabel: l10n.commonCancel,
             actionLabel: primary.label,
             onAction: primary.onPressed,
           ),
@@ -664,30 +849,31 @@ class _WindowsUpdateModal extends ConsumerWidget {
   }
 
   static _UpdatePrimaryAction _primaryAction(
+    AppLocalizations l10n,
     WidgetRef ref,
     WindowsUpdateState state,
   ) {
     if (!state.supported) {
-      return const _UpdatePrimaryAction(label: 'Check for updates');
+      return _UpdatePrimaryAction(label: l10n.settingsUpdateActionCheck);
     }
     return switch (state.status) {
-      WindowsUpdateStatus.checking => const _UpdatePrimaryAction(
-        label: 'Checking...',
+      WindowsUpdateStatus.checking => _UpdatePrimaryAction(
+        label: l10n.settingsUpdateActionChecking,
       ),
-      WindowsUpdateStatus.downloading => const _UpdatePrimaryAction(
-        label: 'Downloading...',
+      WindowsUpdateStatus.downloading => _UpdatePrimaryAction(
+        label: l10n.settingsUpdateActionDownloading,
       ),
-      WindowsUpdateStatus.applying => const _UpdatePrimaryAction(
-        label: 'Restarting...',
+      WindowsUpdateStatus.applying => _UpdatePrimaryAction(
+        label: l10n.settingsUpdateActionRestarting,
       ),
       WindowsUpdateStatus.available => _UpdatePrimaryAction(
-        label: 'Download update',
+        label: l10n.settingsUpdateActionDownload,
         onPressed: () {
           unawaited(ref.read(windowsUpdateProvider.notifier).downloadUpdate());
         },
       ),
       WindowsUpdateStatus.ready => _UpdatePrimaryAction(
-        label: 'Restart to update',
+        label: l10n.settingsUpdateActionRestartToUpdate,
         onPressed: () {
           unawaited(
             ref.read(windowsUpdateProvider.notifier).applyUpdateAndRestart(),
@@ -695,13 +881,13 @@ class _WindowsUpdateModal extends ConsumerWidget {
         },
       ),
       WindowsUpdateStatus.failed => _UpdatePrimaryAction(
-        label: 'Try again',
+        label: l10n.settingsUpdateActionTryAgain,
         onPressed: () {
           unawaited(ref.read(windowsUpdateProvider.notifier).checkForUpdates());
         },
       ),
       _ => _UpdatePrimaryAction(
-        label: 'Check for updates',
+        label: l10n.settingsUpdateActionCheck,
         onPressed: () {
           unawaited(ref.read(windowsUpdateProvider.notifier).checkForUpdates());
         },
@@ -709,23 +895,27 @@ class _WindowsUpdateModal extends ConsumerWidget {
     };
   }
 
-  static String _statusText(WindowsUpdateState state) {
+  static String _statusText(AppLocalizations l10n, WindowsUpdateState state) {
     if (!state.supported) {
-      return 'Updates are available in the installed Windows app.';
+      return l10n.settingsUpdateStatusWindowsOnly;
     }
     return switch (state.status) {
-      WindowsUpdateStatus.checking => 'Checking for updates.',
-      WindowsUpdateStatus.noUpdate => 'Vizor is up to date.',
-      WindowsUpdateStatus.available =>
-        'Version ${state.availableVersion} is available.',
-      WindowsUpdateStatus.downloading =>
-        'Downloading ${state.downloadProgress}%.',
-      WindowsUpdateStatus.ready =>
-        'Version ${state.availableVersion} is ready.',
-      WindowsUpdateStatus.applying => 'Restarting Vizor.',
-      WindowsUpdateStatus.failed =>
-        state.message.isEmpty ? "Couldn't check for updates." : state.message,
-      _ => 'Ready to check for updates.',
+      WindowsUpdateStatus.checking => l10n.settingsUpdateStatusChecking,
+      WindowsUpdateStatus.noUpdate => l10n.settingsUpdateStatusUpToDate,
+      WindowsUpdateStatus.available => l10n.settingsUpdateStatusAvailable(
+        state.availableVersion,
+      ),
+      WindowsUpdateStatus.downloading => l10n.settingsUpdateStatusDownloading(
+        state.downloadProgress,
+      ),
+      WindowsUpdateStatus.ready => l10n.settingsUpdateStatusReady(
+        state.availableVersion,
+      ),
+      WindowsUpdateStatus.applying => l10n.settingsUpdateStatusApplying,
+      WindowsUpdateStatus.failed => state.message.isEmpty
+          ? l10n.settingsUpdateStatusCheckFailed
+          : state.message,
+      _ => l10n.settingsUpdateStatusIdle,
     };
   }
 }

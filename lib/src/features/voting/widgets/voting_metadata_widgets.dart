@@ -8,6 +8,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class VotingMetadataBadge extends StatelessWidget {
   const VotingMetadataBadge(this.label, {super.key});
@@ -42,13 +43,13 @@ class VotingMetadataBadge extends StatelessWidget {
 class VotingForumLinkButton extends StatelessWidget {
   const VotingForumLinkButton({
     required this.uri,
-    this.label = 'Forum discussion',
+    this.label,
     this.size = AppButtonSize.small,
     super.key,
   });
 
   final Uri uri;
-  final String label;
+  final String? label;
   final AppButtonSize size;
 
   @override
@@ -60,7 +61,7 @@ class VotingForumLinkButton extends StatelessWidget {
       variant: AppButtonVariant.ghost,
       size: size,
       leading: const AppIcon(AppIcons.link),
-      child: Text(label),
+      child: Text(label ?? AppLocalizations.of(context).votingForumDiscussion),
     );
   }
 }
@@ -69,14 +70,14 @@ class VotingProposalMetadataRow extends StatelessWidget {
   const VotingProposalMetadataRow({
     required this.zipBadges,
     required this.forumUri,
-    this.forumLabel = 'Forum discussion',
+    this.forumLabel,
     this.trailing,
     super.key,
   });
 
   final List<String> zipBadges;
   final Uri? forumUri;
-  final String forumLabel;
+  final String? forumLabel;
   final Widget? trailing;
 
   @override
@@ -181,7 +182,9 @@ class VotingProposalCard extends StatelessWidget {
             !proposal.options.any((option) => option.index == selectedChoice)
         ? VotingOptionView(
             index: selectedChoice,
-            label: 'Choice $selectedChoice',
+            label: AppLocalizations.of(context).votingChoiceLabel(
+              '$selectedChoice',
+            ),
           )
         : null;
     final titleStyle = AppTypography.headlineSmall.copyWith(
@@ -321,10 +324,10 @@ class _VotingProposalOptionRow extends StatelessWidget {
               : colors.text.secondary
         : colors.text.secondary.withValues(alpha: 0.48);
     final trailingLabel = selected
-        ? 'Selected'
+        ? AppLocalizations.of(context).votingSelected
         : readOnly
         ? null
-        : 'Choose';
+        : AppLocalizations.of(context).votingChoose;
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadii.small),
       onTap: interactive
@@ -506,7 +509,7 @@ class _VotingViewMoreButton extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              expanded ? 'View less' : 'View more',
+              expanded ? AppLocalizations.of(context).votingViewLess : AppLocalizations.of(context).votingViewMore,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
                 height: 20 / 14,

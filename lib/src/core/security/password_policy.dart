@@ -1,3 +1,4 @@
+import '../../../l10n/app_localizations.dart';
 import '../layout/app_form_factor.dart';
 
 /// Mobile sets and unlocks the wallet through the 6-digit passcode UI,
@@ -32,4 +33,29 @@ String? validateRequiredWalletPassword(String value) {
 
 bool isWalletPasswordValid(String value) {
   return value.isNotEmpty && validateWalletPassword(value) == null;
+}
+
+/// Localized variants for UI validation. The English consts above remain the
+/// programmatic layer's copy (provider throws, tests); screens resolve
+/// messages through the active [AppLocalizations].
+String? validateWalletPasswordLocalized(
+  String value,
+  AppLocalizations l10n,
+) {
+  if (value.isEmpty) return null;
+  if (!isWalletPasswordAsciiOnly(value)) {
+    return l10n.passwordAsciiOnly;
+  }
+  if (value.length < kWalletPasswordMinLength) {
+    return l10n.passwordTooShort(kWalletPasswordMinLength);
+  }
+  return null;
+}
+
+String? validateRequiredWalletPasswordLocalized(
+  String value,
+  AppLocalizations l10n,
+) {
+  if (value.isEmpty) return l10n.passwordTooShort(kWalletPasswordMinLength);
+  return validateWalletPasswordLocalized(value, l10n);
 }

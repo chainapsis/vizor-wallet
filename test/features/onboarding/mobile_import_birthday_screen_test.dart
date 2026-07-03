@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 AppBootstrapState _bootstrap() => AppBootstrapState(
   initialLocation: '/import/birthday',
@@ -37,6 +38,9 @@ Widget _app({Future<void> Function(int height)? onHeightConfirmed}) {
   return ProviderScope(
     overrides: [appBootstrapProvider.overrideWithValue(_bootstrap())],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
       home: MobileImportBirthdayScreen(
         args: const ImportBirthdayArgs(mnemonic: 'stub mnemonic'),
@@ -82,6 +86,9 @@ Widget _routerApp({
       syncProvider.overrideWith(() => _NoopSyncNotifier()),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),

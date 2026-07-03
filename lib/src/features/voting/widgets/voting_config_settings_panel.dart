@@ -17,6 +17,7 @@ import '../../../providers/voting/voting_service_providers.dart';
 import '../../../providers/voting/voting_submission_guard_provider.dart';
 import '../../../services/voting/voting_config_loader.dart';
 import '../../../services/voting/voting_models.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class VotingConfigSettingsPanel extends ConsumerStatefulWidget {
   const VotingConfigSettingsPanel({
@@ -104,7 +105,7 @@ class _VotingConfigSettingsPanelState
       return _submitError;
     }
     if (name.length > _maxSourceNameLength) {
-      return 'Title must be $_maxSourceNameLength characters or less.';
+      return AppLocalizations.of(context).votingTitleTooLong(_maxSourceNameLength);
     }
     return null;
   }
@@ -354,12 +355,12 @@ class _VotingConfigSettingsPanelState
     String? excludingId,
   }) {
     if (_sameSourceLocation(input, kDefaultStaticVotingConfigSource)) {
-      return 'This source URL is already added.';
+      return AppLocalizations.of(context).votingSourceAlreadyAdded;
     }
     for (final saved in source.savedSources) {
       if (saved.id == excludingId) continue;
       if (_sameSourceLocation(input, saved.sourceUrl)) {
-        return 'This source URL is already added.';
+        return AppLocalizations.of(context).votingSourceAlreadyAdded;
       }
     }
     return null;
@@ -369,10 +370,10 @@ class _VotingConfigSettingsPanelState
     if (error is StaticVotingConfigSourceMalformed) return error.message;
     if (error is DuplicateVotingConfigSource) return error.message;
     if (error is VotingHttpException) {
-      return "Couldn't load voting config from that source.";
+      return AppLocalizations.of(context).votingConfigLoadFailed;
     }
     final text = error.toString().trim();
-    return text.isEmpty ? "Couldn't update voting config." : text;
+    return text.isEmpty ? AppLocalizations.of(context).votingConfigUpdateFailed : text;
   }
 
   @override
@@ -429,7 +430,7 @@ class _VotingConfigSettingsPanelState
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           _SourceCard(
-                            title: 'Token holder voting',
+                            title: AppLocalizations.of(context).votingTokenHolderVoting,
                             sourceUrl: kDefaultStaticVotingConfigSource,
                             isDefault: true,
                             selected: selectedSource.isDefault,
@@ -447,7 +448,7 @@ class _VotingConfigSettingsPanelState
                           if (showUnsavedActiveSource) ...[
                             const SizedBox(height: AppSpacing.xs),
                             _SourceCard(
-                              title: 'Custom source',
+                              title: AppLocalizations.of(context).votingCustomSource,
                               sourceUrl: source.sourceUrl,
                               selected:
                                   !selectedSource.isDefault &&
@@ -528,7 +529,9 @@ class _VotingConfigSettingsPanelState
                                   minWidth: 128,
                                   trailing: const AppIcon(AppIcons.check),
                                   child: Text(
-                                    _isSavingSelection ? 'Saving...' : 'Save',
+                                    _isSavingSelection
+                                        ? AppLocalizations.of(context).votingSaving
+                                        : AppLocalizations.of(context).commonSave,
                                   ),
                                 ),
                                 const SizedBox(width: AppSpacing.xs),
@@ -540,7 +543,7 @@ class _VotingConfigSettingsPanelState
                                   variant: AppButtonVariant.secondary,
                                   minWidth: 220,
                                   leading: const AppIcon(AppIcons.addNew),
-                                  child: const Text('Add custom source'),
+                                  child: Text(AppLocalizations.of(context).votingAddCustomSource),
                                 ),
                               ],
                             ),
@@ -653,25 +656,25 @@ class _SourceCard extends StatelessWidget {
                   const SizedBox(width: AppSpacing.sm),
                   AppIconHoverButton(
                     icon: AppIcons.copy,
-                    semanticLabel: 'Copy source URL',
+                    semanticLabel: AppLocalizations.of(context).votingCopySourceUrl,
                     onTap: () {
                       copyTextWithToast(
                         context,
                         text: sourceUrl,
-                        toastMessage: 'Source URL copied.',
+                        toastMessage: AppLocalizations.of(context).votingSourceUrlCopied,
                       );
                     },
                   ),
                   if (onEdit != null)
                     AppIconHoverButton(
                       icon: AppIcons.options,
-                      semanticLabel: 'Edit saved source',
+                      semanticLabel: AppLocalizations.of(context).votingEditSavedSource,
                       onTap: onEdit!,
                     ),
                   if (onDelete != null)
                     AppIconHoverButton(
                       icon: AppIcons.trash,
-                      semanticLabel: 'Delete saved source',
+                      semanticLabel: AppLocalizations.of(context).votingDeleteSavedSource,
                       onTap: onDelete!,
                     ),
                 ],
@@ -725,7 +728,9 @@ class _EditorCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              isEditing ? 'Edit custom source' : 'Add custom source',
+              isEditing
+                  ? AppLocalizations.of(context).votingEditCustomSource
+                  : AppLocalizations.of(context).votingAddCustomSource,
               style: AppTypography.headlineSmall.copyWith(
                 color: colors.text.accent,
               ),
@@ -734,7 +739,7 @@ class _EditorCard extends StatelessWidget {
             SizedBox(
               height: nameMessage == null ? 66 : 82,
               child: AppTextField(
-                label: 'Title',
+                label: AppLocalizations.of(context).votingTitleField,
                 controller: nameController,
                 autofocus: !isEditing,
                 inputHorizontalPadding: AppSpacing.s,
@@ -750,7 +755,7 @@ class _EditorCard extends StatelessWidget {
             SizedBox(
               height: urlMessage == null ? 66 : 82,
               child: AppTextField(
-                label: 'Static config URL',
+                label: AppLocalizations.of(context).votingStaticConfigUrl,
                 controller: urlController,
                 inputHorizontalPadding: AppSpacing.s,
                 keyboardType: TextInputType.url,
@@ -771,7 +776,7 @@ class _EditorCard extends StatelessWidget {
                   onPressed: isSubmitting ? null : onCancel,
                   variant: AppButtonVariant.secondary,
                   minWidth: 128,
-                  child: const Text('Cancel'),
+                  child: Text(AppLocalizations.of(context).commonCancel),
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 AppButton(
@@ -779,7 +784,9 @@ class _EditorCard extends StatelessWidget {
                   variant: AppButtonVariant.primary,
                   minWidth: 160,
                   trailing: const AppIcon(AppIcons.chevronForward),
-                  child: Text(isSubmitting ? 'Validating...' : 'Save'),
+                  child: Text(
+                    isSubmitting ? AppLocalizations.of(context).votingValidating : AppLocalizations.of(context).commonSave,
+                  ),
                 ),
               ],
             ),
@@ -840,7 +847,7 @@ class _DefaultBadge extends StatelessWidget {
           vertical: 2,
         ),
         child: Text(
-          'Default',
+          AppLocalizations.of(context).votingDefault,
           style: AppTypography.labelSmall.copyWith(
             color: colors.text.secondary,
           ),
@@ -865,7 +872,7 @@ class _ActiveBadge extends StatelessWidget {
           vertical: 2,
         ),
         child: Text(
-          'Active',
+          AppLocalizations.of(context).votingStateActive,
           style: AppTypography.labelSmall.copyWith(
             color: colors.text.brandCrimson,
           ),
@@ -890,7 +897,7 @@ class _PanelHeader extends StatelessWidget {
         children: [
           Center(
             child: Text(
-              'Voting config',
+              AppLocalizations.of(context).votingConfigTooltip,
               style: AppTypography.headlineMedium.copyWith(
                 color: colors.text.accent,
               ),
@@ -901,7 +908,7 @@ class _PanelHeader extends StatelessWidget {
               right: 0,
               child: AppIconHoverButton(
                 icon: AppIcons.cross,
-                semanticLabel: 'Close voting config settings',
+                semanticLabel: AppLocalizations.of(context).votingCloseConfigSettings,
                 onTap: onClose!,
               ),
             ),

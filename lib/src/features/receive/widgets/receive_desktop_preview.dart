@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart' show Colors;
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
@@ -173,28 +174,40 @@ class _PreviewSidebar extends StatelessWidget {
               ),
             ],
           ),
-          child: const Padding(
-            padding: EdgeInsets.fromLTRB(16, 48, 16, 24),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _AccountHeader(),
-                SizedBox(height: AppSpacing.md),
+                const _AccountHeader(),
+                const SizedBox(height: AppSpacing.md),
                 _SidebarItem(
                   iconName: AppIcons.home,
-                  label: 'Home',
+                  label: AppLocalizations.of(context).navHome,
                   active: true,
                 ),
-                SizedBox(height: AppSpacing.xs),
-                _SidebarItem(iconName: AppIcons.swapArrows, label: 'Swap'),
-                SizedBox(height: AppSpacing.xs),
-                _SidebarItem(iconName: AppIcons.history, label: 'Activity'),
-                Spacer(),
-                _SidebarItem(iconName: AppIcons.cog, label: 'Settings'),
-                SizedBox(height: AppSpacing.xs),
-                _SidebarItem(iconName: AppIcons.logOut, label: 'Sign out'),
-                SizedBox(height: AppSpacing.md),
-                _SyncStatus(),
+                const SizedBox(height: AppSpacing.xs),
+                _SidebarItem(
+                  iconName: AppIcons.swapArrows,
+                  label: AppLocalizations.of(context).navSwap,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                _SidebarItem(
+                  iconName: AppIcons.history,
+                  label: AppLocalizations.of(context).navActivity,
+                ),
+                const Spacer(),
+                _SidebarItem(
+                  iconName: AppIcons.cog,
+                  label: AppLocalizations.of(context).settingsTitle,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                _SidebarItem(
+                  iconName: AppIcons.logOut,
+                  label: AppLocalizations.of(context).navSignOut,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                const _SyncStatus(),
               ],
             ),
           ),
@@ -223,7 +236,7 @@ class _AccountHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Username',
+                AppLocalizations.of(context).previewUsername,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppTypography.labelMedium.copyWith(
@@ -361,7 +374,7 @@ class _ReceivePaneContent extends StatelessWidget {
           top: AppSpacing.xs,
           child: AppBackLink(
             key: const ValueKey('receive_preview_pane_back_button'),
-            label: 'Home',
+            label: AppLocalizations.of(context).navHome,
             minWidth: 60,
             onTap: () {},
           ),
@@ -400,7 +413,7 @@ class _ReceiveContentArea extends StatelessWidget {
                 width: 256,
                 height: 33,
                 child: Text(
-                  'Receive ZEC',
+                  AppLocalizations.of(context).receiveTitle('ZEC'),
                   maxLines: 1,
                   style: AppTypography.headlineLarge.copyWith(
                     color: context.colors.text.accent,
@@ -547,14 +560,14 @@ class _PreviewReceiveTabs extends StatelessWidget {
           Row(
             children: [
               _PreviewReceiveTab(
-                label: 'Shielded',
+                label: AppLocalizations.of(context).receiveShielded,
                 iconName: AppIcons.shieldKeyhole,
                 active: isShielded,
                 activeTextColor: activeText,
                 inactiveTextColor: colors.text.accent,
               ),
               _PreviewReceiveTab(
-                label: 'Transparent',
+                label: AppLocalizations.of(context).receiveTransparent,
                 iconName: AppIcons.transparentBalance,
                 active: !isShielded,
                 activeTextColor: activeText,
@@ -847,7 +860,9 @@ class _CopyAddressButton extends StatelessWidget {
     return _FixedPillButton(
       width: 230,
       height: 44,
-      label: isShielded ? 'Copy shielded address' : 'Copy transparent address',
+      label: isShielded
+          ? AppLocalizations.of(context).sidebarCopyShieldedAddress
+          : AppLocalizations.of(context).receiveCopyTransparentAddress,
       iconName: isShielded
           ? AppIcons.shieldKeyhole
           : AppIcons.transparentBalance,
@@ -971,57 +986,50 @@ class _ReceiveInfoModal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final title = isShielded ? 'Shielded address' : 'Transparent address';
+    final title = isShielded
+        ? AppLocalizations.of(context).receiveShieldedAddressTitle
+        : AppLocalizations.of(context).receiveTransparentAddressTitle;
     final subtitle = isShielded
-        ? 'Strong privacy by default.'
-        : 'Publicly visible';
+        ? AppLocalizations.of(context).receiveShieldedSubtitle
+        : AppLocalizations.of(context).receiveTransparentSubtitle;
     final items = isShielded
-        ? const [
+        ? [
             _InfoItemData(
               iconName: AppIcons.shieldKeyhole,
               height: 63,
-              text:
-                  'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.',
+              text: AppLocalizations.of(context).receivePreviewShieldedPrivacy,
             ),
             _InfoItemData(
               iconName: AppIcons.renew,
               height: 63,
-              text:
-                  'A new Zcash shielded address\ngenerated every time you '
-                  'open the\nreceive page or click renew button.',
+              text: AppLocalizations.of(context).receivePreviewShieldedRenew,
             ),
             _InfoItemData(
               iconName: AppIcons.wallet,
               height: 63,
-              text:
-                  'Each new address is a diversified\naddress derived from '
-                  'the same key.\nThey all receive to the same wallet.',
+              text: AppLocalizations.of(context).receivePreviewShieldedDiversified,
             ),
           ]
-        : const [
+        : [
             _InfoItemData(
               iconName: AppIcons.unlock,
               height: 42,
-              text:
-                  'All tx details - sender, receiver, and amount - are publicly visible on-chain.',
+              text: AppLocalizations.of(context).receiveTransparentInfoPublicPointer,
             ),
             _InfoItemData(
               iconName: AppIcons.dragon,
               height: 84,
-              text:
-                  'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.',
+              text: AppLocalizations.of(context).receiveTransparentInfoExchanges,
             ),
             _InfoItemData(
               iconName: AppIcons.renew,
               height: 105,
-              text:
-                  'After this address receives ZEC and Vizor syncs, your next transparent address will automatically change. Previous addresses still belong to this wallet.',
+              text: AppLocalizations.of(context).receiveTransparentInfoRotation,
             ),
             _InfoItemData(
               iconName: AppIcons.shieldAsset,
               height: 105,
-              text:
-                  "After receiving ZEC to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won't be able to send it.",
+              text: AppLocalizations.of(context).receiveTransparentShieldGuideBody,
             ),
           ];
 

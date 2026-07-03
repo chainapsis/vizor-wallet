@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/core/widgets/review_wrap_card.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_review_content_view.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_status_content_view.dart';
 import 'package:zcash_wallet/widgetbook/send_review_status_use_cases.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('review address use case renders the review layout', (
@@ -79,6 +80,9 @@ Future<void> _pumpUseCase(WidgetTester tester, WidgetBuilder builder) async {
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(
         data: AppThemeData.light,
         child: Center(

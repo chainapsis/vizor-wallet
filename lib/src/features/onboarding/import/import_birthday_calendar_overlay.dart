@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_form_factor.dart';
@@ -76,7 +77,15 @@ class _ImportBirthdayCalendarPanelState
   // within the same box so mode switches and paging never reflow the
   // panel (VZR-75).
   static const _modeAreaHeight = _cellSize * 7;
-  static const _weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  List<String> _weekdays(BuildContext context) {
+    final locale = Localizations.localeOf(context).toString();
+    final formatter = DateFormat.E(locale);
+    // 2023-01-01 is a Sunday; the grid always starts on Sunday.
+    return List.generate(
+      7,
+      (index) => formatter.format(DateTime(2023, 1, 1 + index)),
+    );
+  }
 
   late DateTime _visibleMonth;
   late int _visibleYearPageStart;
@@ -112,7 +121,7 @@ class _ImportBirthdayCalendarPanelState
 
   String get _titleLabel {
     return switch (_selectionMode) {
-      _CalendarSelectionMode.day => _formatMonth(_visibleMonth),
+      _CalendarSelectionMode.day => _formatMonth(context, _visibleMonth),
       _CalendarSelectionMode.month => '${_visibleMonth.year}',
       _CalendarSelectionMode.year =>
         '$_visibleYearPageStart - ${_visibleYearPageStart + 11}',
@@ -251,7 +260,7 @@ class _ImportBirthdayCalendarPanelState
                 child: switch (_selectionMode) {
                   _CalendarSelectionMode.day => Column(
                     children: [
-                      _WeekdayRow(weekdays: _weekdays),
+                      _WeekdayRow(weekdays: _weekdays(context)),
                       _DayGrid(
                         visibleMonth: _visibleMonth,
                         selectedDate: widget.selectedDate,
@@ -419,20 +428,7 @@ class _MonthGrid extends StatelessWidget {
     required this.onMonthSelected,
   });
 
-  static const _monthLabels = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
+  static const _monthCount = 12;
 
   final int visibleYear;
   final DateTime selectedMonth;
@@ -448,9 +444,11 @@ class _MonthGrid extends StatelessWidget {
       width: width,
       child: Wrap(
         children: [
-          for (var index = 0; index < _monthLabels.length; index++)
+          for (var index = 0; index < _monthCount; index++)
             _MonthCell(
-              label: _monthLabels[index],
+              label: DateFormat.MMM(
+                Localizations.localeOf(context).toString(),
+              ).format(DateTime(2000, index + 1)),
               month: DateTime(visibleYear, index + 1),
               selectedMonth: selectedMonth,
               firstMonth: firstMonth,
@@ -799,20 +797,7 @@ int _yearPageStartFor(int year) {
   return year - ((year - 1) % pageSize);
 }
 
-String _formatMonth(DateTime date) {
-  const monthNames = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  return '${monthNames[date.month - 1]} ${date.year}';
+String _formatMonth(BuildContext context, DateTime date) {
+  return DateFormat.yMMMM(Localizations.localeOf(context).toString())
+      .format(date);
 }

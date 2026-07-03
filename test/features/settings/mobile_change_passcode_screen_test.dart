@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 /// Intercepts the two security calls the screen makes so no secure
 /// storage is touched.
@@ -134,6 +135,9 @@ Widget _app(
         ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),

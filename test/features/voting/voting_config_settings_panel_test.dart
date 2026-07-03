@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
     as rust_config;
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('default source does not duplicate the current URL', (
@@ -228,7 +229,7 @@ Future<void> _pumpPanel(
       child: WidgetsApp(
         color: const Color(0xFFFFFFFF),
         builder: (context, _) {
-          return AppTheme(
+          return _localizedAppTheme(
             data: AppThemeData.light,
             child: const AppToastHost(
               child: Center(child: VotingConfigSettingsPanel()),
@@ -327,4 +328,14 @@ class _FakeVotingConfigSourceStore implements VotingConfigSourceStore {
   Future<void> writeSavedSourcesJson(String savedSourcesJson) async {
     this.savedSourcesJson = savedSourcesJson;
   }
+}
+
+/// Wraps [AppTheme] in a [Localizations] scope so widgets under test can
+/// resolve [AppLocalizations] without a full MaterialApp harness.
+Widget _localizedAppTheme({required AppThemeData data, required Widget child}) {
+  return Localizations(
+    locale: const Locale('en'),
+    delegates: AppLocalizations.localizationsDelegates,
+    child: AppTheme(data: data, child: child),
+  );
 }

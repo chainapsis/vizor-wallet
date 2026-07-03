@@ -10,7 +10,9 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/device_owner_auth_provider.dart';
+import '../../../providers/locale_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../../l10n/app_localizations.dart';
 
 const kForgotPasscodeLastWarningArmDelay = Duration(seconds: 3);
 const _kForgotPasscodeCountdownTick = Duration(seconds: 1);
@@ -28,7 +30,7 @@ class ForgotPasscodeSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileModalScaffold(
-      title: 'Forgot Passcode?',
+      title: AppLocalizations.of(context).onbForgotPasscodeTitle,
       onClose: () => Navigator.of(context).pop(false),
       bodyGap: AppSpacing.md,
       bottomPadding: AppSpacing.base,
@@ -37,10 +39,7 @@ class ForgotPasscodeSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            "If you can't remember your passcode, the only way to "
-            'recover your account is to completely reset the Vizor app, '
-            'which means deleting all accounts and requiring you to '
-            'import accounts again.',
+            AppLocalizations.of(context).onbForgotPasscodeBody,
             style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -50,7 +49,7 @@ class ForgotPasscodeSheet extends StatelessWidget {
             constrainContent: true,
             minWidth: _kForgotPasscodeButtonMinWidth,
             onPressed: () => Navigator.of(context).pop(true),
-            child: const _ModalButtonLabel('Continue to reset Vizor'),
+            child: _ModalButtonLabel(AppLocalizations.of(context).onbContinueToReset),
           ),
           const SizedBox(height: AppSpacing.s),
           AppButton(
@@ -60,7 +59,7 @@ class ForgotPasscodeSheet extends StatelessWidget {
             constrainContent: true,
             minWidth: _kForgotPasscodeButtonMinWidth,
             onPressed: () => Navigator.of(context).pop(false),
-            child: const _ModalButtonLabel('Cancel'),
+            child: _ModalButtonLabel(AppLocalizations.of(context).commonCancel),
           ),
         ],
       ),
@@ -120,10 +119,11 @@ class _ForgotPasscodeLastWarningContentState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final resetLabel =
-        _armed ? 'Reset Vizor' : 'Reset after ${_remainingSeconds}s...';
+    final resetLabel = _armed
+        ? AppLocalizations.of(context).onbResetVizor
+        : AppLocalizations.of(context).onbResetAfterSeconds(_remainingSeconds);
     return MobileModalScaffold(
-      title: 'Are you sure?',
+      title: AppLocalizations.of(context).onbAreYouSure,
       onClose: () => Navigator.of(context).pop(false),
       bodyGap: AppSpacing.md,
       bottomPadding: AppSpacing.base,
@@ -137,13 +137,13 @@ class _ForgotPasscodeLastWarningContentState
                 // Figma 4885:23490 emphasises the irreversible line in the
                 // destructive magenta; the follow-up sits in plain accent.
                 TextSpan(
-                  text: "This can't be undone.\n",
+                  text: AppLocalizations.of(context).onbCantBeUndone,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: colors.text.destructive,
                   ),
                 ),
                 TextSpan(
-                  text: 'Proceed on your responsibility.',
+                  text: AppLocalizations.of(context).onbProceedResponsibility,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: colors.text.accent,
                   ),
@@ -170,7 +170,7 @@ class _ForgotPasscodeLastWarningContentState
             constrainContent: true,
             minWidth: _kForgotPasscodeButtonMinWidth,
             onPressed: () => Navigator.of(context).pop(false),
-            child: const _ModalButtonLabel('Cancel'),
+            child: _ModalButtonLabel(AppLocalizations.of(context).commonCancel),
           ),
         ],
       ),
@@ -197,7 +197,10 @@ class _ModalButtonLabel extends StatelessWidget {
 /// again. The caller routes to `/welcome` on success and owns error
 /// presentation.
 Future<bool> resetWalletForForgottenPasscode(WidgetRef ref) async {
-  final verified = await verifyDeviceOwnerForWalletReset(ref);
+  final verified = await verifyDeviceOwnerForWalletReset(
+    ref,
+    reason: ref.read(appLocalizationsProvider).deviceAuthConfirmReset,
+  );
   if (!verified) return false;
 
   final syncNotifier = ref.read(syncProvider.notifier);

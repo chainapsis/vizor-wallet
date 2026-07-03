@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemNavigator;
 
+import '../../../l10n/app_localizations.dart';
 import '../layout/app_form_factor.dart';
 import '../theme/app_theme.dart';
 
@@ -178,10 +179,15 @@ class _MobileExitBackHintOverlay {
 
     late final OverlayEntry entry;
     entry = OverlayEntry(
-      builder: (_) => AppTheme(
+      builder: (context) => AppTheme(
         data: theme,
-        child: const _MobileExitBackHint(
-          message: MobileExitBackGuard.exitHintMessage,
+        child: _MobileExitBackHint(
+          message:
+              Localizations.of<AppLocalizations>(
+                context,
+                AppLocalizations,
+              )?.mobileExitBackHint ??
+              MobileExitBackGuard.exitHintMessage,
         ),
       ),
     );

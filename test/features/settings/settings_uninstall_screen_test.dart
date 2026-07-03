@@ -68,6 +68,10 @@ Future<void> _runUninstallFlow(
     await tester.pumpAndSettle();
 
     if (openFromSettings) {
+      // The danger-zone row sits below the fold now that the settings list
+      // includes the Language row.
+      await tester.ensureVisible(find.text('Uninstall Vizor'));
+      await tester.pump();
       await tester.tap(find.text('Uninstall Vizor'));
       await tester.pumpAndSettle();
     }

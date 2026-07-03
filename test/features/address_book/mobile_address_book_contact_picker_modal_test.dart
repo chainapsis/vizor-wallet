@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/address_book/widgets/address_book_contact_picker_modal.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('mobile contact picker keeps a stable list viewport', (
@@ -85,6 +86,9 @@ Widget _harness(List<AddressBookContact> contacts) {
       ),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       builder: (_, navigator) =>
           AppTheme(data: AppThemeData.light, child: navigator!),
       home: MediaQuery(

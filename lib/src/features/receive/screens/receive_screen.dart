@@ -6,6 +6,7 @@ import 'package:flutter/material.dart'
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -22,9 +23,6 @@ import '../../../providers/receive_address_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../widgets/receive_address_widgets.dart';
-
-const _renewShieldedAddressErrorMessage =
-    "We couldn't refresh your shielded address. Try again, or use your current one.";
 
 bool _shouldRefreshTransparentAddressAfterSyncUpdate(
   SyncState previous,
@@ -75,7 +73,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorText = 'No active account';
+        _errorText = AppLocalizations.of(context).receiveNoActiveAccount;
       });
       return;
     }
@@ -247,10 +245,14 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       }
       setState(() {
         _isRenewingShielded = false;
-        _errorText = '$_renewShieldedAddressErrorMessage\nDetails: $e';
+        _errorText = AppLocalizations.of(
+          context,
+        ).receiveRenewShieldedErrorDetails('$e');
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(_renewShieldedAddressErrorMessage)),
+        SnackBar(
+          content: Text(AppLocalizations.of(context).receiveRenewShieldedError),
+        ),
       );
     }
   }
@@ -258,7 +260,11 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   void _copySelectedAddress() {
     final address = _selectedAddress;
     if (address.isEmpty) return;
-    copyTextWithToast(context, text: address, toastMessage: 'Address copied');
+    copyTextWithToast(
+      context,
+      text: address,
+      toastMessage: AppLocalizations.of(context).toastAddressCopied,
+    );
   }
 
   void _selectAddressType(ReceiveAddressType type) {
@@ -467,7 +473,9 @@ class _ReceiveContentLayout extends StatelessWidget {
                             width: 256,
                             height: 33,
                             child: Text(
-                              'Receive $kZcashDefaultCurrencyTicker',
+                              AppLocalizations.of(
+                                context,
+                              ).receiveTitle(kZcashDefaultCurrencyTicker),
                               maxLines: 1,
                               style: AppTypography.headlineLarge.copyWith(
                                 color: colors.text.accent,
@@ -517,8 +525,12 @@ class _ReceiveContentLayout extends StatelessWidget {
                               : 'receive_copy_transparent_address_button',
                         ),
                         label: _isShielded
-                            ? 'Copy shielded address'
-                            : 'Copy transparent address',
+                            ? AppLocalizations.of(
+                                context,
+                              ).sidebarCopyShieldedAddress
+                            : AppLocalizations.of(
+                                context,
+                              ).receiveCopyTransparentAddress,
                         type: selectedType,
                         enabled: address.isNotEmpty && !isLoading,
                         onTap: onCopy,
@@ -656,11 +668,12 @@ class _ReceiveInfoDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final title = receiveAddressInfoTitle(type);
-    final subtitle = receiveAddressInfoSubtitle(type);
+    final l10n = AppLocalizations.of(context);
+    final title = receiveAddressInfoTitle(type, l10n);
+    final subtitle = receiveAddressInfoSubtitle(type, l10n);
     // Copy and icons come from the shared explainer content; the fixed
     // row heights are desktop-dialog layout.
-    final infoItems = receiveAddressInfoItems(type, touchUi: false);
+    final infoItems = receiveAddressInfoItems(type, touchUi: false, l10n: l10n);
     final heights = _isShielded
         ? const [63.0, 63.0, 63.0]
         : const [42.0, 84.0, 105.0, 105.0];
@@ -751,7 +764,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
               size: AppButtonSize.medium,
               height: 36,
               minWidth: 280,
-              child: const Text('Close'),
+              child: Text(AppLocalizations.of(context).commonClose),
             ),
           ),
         ],

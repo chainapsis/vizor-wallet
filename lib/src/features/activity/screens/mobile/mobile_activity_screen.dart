@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../../l10n/app_localizations.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -109,7 +110,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _error = "Couldn't load activity. Try again in a moment.";
+        _error = AppLocalizations.of(context).activityLoadErrorRetry;
       });
     }
   }
@@ -196,7 +197,10 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
           ),
         ),
     ];
-    final sections = buildActivityFeedSections(entries);
+    final sections = buildActivityFeedSections(
+      entries,
+      AppLocalizations.of(context),
+    );
 
     return SwapActivityStatusAutoRefresh(
       child: SafeArea(
@@ -204,7 +208,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         child: Column(
           children: [
             MobileTopNav.back(
-              title: 'Activity',
+              title: AppLocalizations.of(context).navActivity,
               onBack: () => context.go(
                 resolveMobileBackPath(ref, currentPath: '/activity'),
               ),

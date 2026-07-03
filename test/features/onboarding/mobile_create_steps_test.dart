@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 Widget _app(String initialLocation) {
   final router = GoRouter(
@@ -17,6 +18,9 @@ Widget _app(String initialLocation) {
   );
   return ProviderScope(
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screen
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_method_selection_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 Widget _app({
   String initialLocation = '/welcome',
@@ -24,6 +25,9 @@ Widget _app({
   );
   return ProviderScope(
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: theme, child: child!),
     ),

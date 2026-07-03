@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
@@ -63,7 +64,7 @@ const _mobileKeystoneMinQrSize = 200.0;
 const _mobileKeystoneModalMaxWidth = 393.0;
 const _mobileKeystoneModalBottomPadding = AppSpacing.base;
 const _mobileKeystoneQrInset = AppSpacing.xxs;
-const _mobileKeystoneScanCaption = 'Scan a Zcash QR code to continue';
+
 
 /// Shared mobile Keystone PCZT round trip.
 ///
@@ -79,7 +80,7 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
     required this.friendlyError,
     this.failedTitle,
     this.keyPrefix = 'mobile_keystone_sign',
-    this.readingSignatureLabel = 'Reading signature...',
+    this.readingSignatureLabel,
     this.finalizingSignatureLabel,
     this.logTag = 'MobileKeystonePcztSigningFlow',
     @visibleForTesting this.signedPcztDecoder,
@@ -92,7 +93,8 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
   final String? failedTitle;
   final String description;
   final String keyPrefix;
-  final String readingSignatureLabel;
+  /// Defaults to the localized "Reading signature..." when null.
+  final String? readingSignatureLabel;
   final String? finalizingSignatureLabel;
   final String logTag;
   final MobileKeystonePcztPrepare preparePczt;
@@ -203,7 +205,7 @@ class _MobileKeystonePcztSigningFlowState
         _decoding = false;
         _scanSessionResetToken++;
         _scanHint =
-            'This QR code could not be decoded as a Keystone signature.';
+            AppLocalizations.of(context).keystoneSignQrDecodeError;
       });
       return;
     }
@@ -219,7 +221,7 @@ class _MobileKeystonePcztSigningFlowState
       setState(() {
         _decoding = false;
         _stage = _SignStage.failed;
-        _error ??= 'Keystone signing could not be prepared.';
+        _error ??= AppLocalizations.of(context).keystoneSignPrepareError;
       });
       return;
     }
@@ -246,8 +248,8 @@ class _MobileKeystonePcztSigningFlowState
   void _handleDecodeError(Object error) {
     if (!mounted || _decoding) return;
     final message = error.toString().contains('Unexpected UR type')
-        ? 'Open the signed transaction QR on Keystone, then scan again.'
-        : 'Keep the QR code steady and fully visible.';
+        ? AppLocalizations.of(context).keystoneOpenSignedTxQr
+        : AppLocalizations.of(context).keystoneScanHoldSteady;
     if (_scanHint == message) return;
     setState(() => _scanHint = message);
   }
@@ -293,15 +295,15 @@ class _MobileKeystonePcztSigningFlowState
     final colors = context.colors;
     final title = _stage == _SignStage.failed
         ? widget.failedTitle ?? widget.title
-        : 'Confirm with Keystone';
+        : AppLocalizations.of(context).sendConfirmWithKeystone;
     final actionEnabled = _stage == _SignStage.showQr;
     final isPreparing = _stage == _SignStage.preparing;
     final isFailed = _stage == _SignStage.failed;
     final instruction = isPreparing
-        ? 'Loading the QR code ...'
+        ? AppLocalizations.of(context).keystoneLoadingQr
         : isFailed
         ? _error ?? widget.friendlyError(StateError('Keystone signing failed.'))
-        : 'After you scanned, click Get signature.';
+        : AppLocalizations.of(context).sendAfterScanGetSignature;
 
     final surface = Stack(
       key: _key('modal_surface'),
@@ -336,7 +338,7 @@ class _MobileKeystonePcztSigningFlowState
                         ),
                         const SizedBox(height: AppSpacing.xxs),
                         Text(
-                          'Scan with your Keystone',
+                          AppLocalizations.of(context).sendScanWithKeystone,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.bodyMedium.copyWith(
@@ -370,7 +372,7 @@ class _MobileKeystonePcztSigningFlowState
                     key: _key('get_signature'),
                     expand: true,
                     onPressed: actionEnabled ? _startScanning : null,
-                    child: const Text('Get signature'),
+                    child: Text(AppLocalizations.of(context).sendGetSignature),
                   ),
                   const SizedBox(height: AppSpacing.s),
                   AppButton(
@@ -378,7 +380,7 @@ class _MobileKeystonePcztSigningFlowState
                     expand: true,
                     variant: AppButtonVariant.ghost,
                     onPressed: _cancel,
-                    child: const Text('Close'),
+                    child: Text(AppLocalizations.of(context).commonClose),
                   ),
                 ],
               );
@@ -471,11 +473,15 @@ class _MobileKeystonePcztSigningFlowState
         );
 
     final caption = _decoding
-        ? _scanHint ?? widget.readingSignatureLabel
+        ? _scanHint ??
+              widget.readingSignatureLabel ??
+              AppLocalizations.of(context).keystoneReadingSignature
         : _scanHint ??
               (_scanProgress > 0
-                  ? 'Scanning... $_scanProgress%'
-                  : _mobileKeystoneScanCaption);
+                  ? AppLocalizations.of(
+                      context,
+                    ).keystoneScanningProgress(_scanProgress)
+                  : AppLocalizations.of(context).scanZcashQrCaption);
 
     return _buildModalFrame(
       MobileQrScanCard(
@@ -484,9 +490,8 @@ class _MobileKeystonePcztSigningFlowState
         closeEnabled: !_decoding,
         forceActiveForTesting: widget.forceScannerActiveForTesting,
         caption: caption,
-        permissionTitle: 'Scan the signed Keystone QR',
-        unavailableDescription:
-            'Keystone signing needs a camera on this device.',
+        permissionTitle: AppLocalizations.of(context).keystoneScanSignedKeystoneQr,
+        unavailableDescription: AppLocalizations.of(context).keystoneSignNeedsCamera,
         onClose: _cancel,
         cameraViewBuilder: (_, _) => scannerView,
       ),
@@ -582,7 +587,7 @@ class _KeystoneModalCloseButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Semantics(
-      label: 'Close Keystone signing',
+      label: AppLocalizations.of(context).keystoneCloseSigning,
       button: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,

@@ -11,6 +11,7 @@ import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
+import '../../../../l10n/app_localizations.dart';
 
 /// Mnemonic lengths the wallet accepts. The Figma frames show a fixed
 /// 24-slot card; shorter standard phrases are accepted anyway and the
@@ -28,19 +29,17 @@ List<String> tokenizeMnemonicWords(String raw) => raw
     .toList();
 
 /// Validates a candidate phrase; returns an error message or null.
-String? validateImportedMnemonic(List<String> words) {
+String? validateImportedMnemonic(List<String> words, AppLocalizations l10n) {
   if (!kMnemonicWordCounts.contains(words.length)) {
-    return 'A secret passphrase has 12, 15, 18, 21, or 24 words — '
-        'found ${words.length}.';
+    return l10n.onbPassphraseWordCountFound(words.length);
   }
   try {
     if (!rust_wallet.validateMnemonic(mnemonic: words.join(' '))) {
-      return 'These words are valid, but they do not form a valid secret '
-          'passphrase. Check the order or replace any word that looks wrong.';
+      return l10n.onbPassphraseInvalidOrder;
     }
   } catch (e) {
     log('validateImportedMnemonic: ERROR: $e');
-    return "That passphrase couldn't be checked. Try again.";
+    return l10n.onbPassphraseCheckFailed;
   }
   return null;
 }
@@ -69,7 +68,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       if (mounted) {
         showAppToast(
           context,
-          "Can't read clipboard data",
+          AppLocalizations.of(context).onbClipboardReadFailed,
           iconName: AppIcons.cross,
         );
       }
@@ -82,10 +81,15 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
         _words = const [];
         _error = null;
       });
-      showAppToast(context, 'Clipboard is empty', iconName: AppIcons.cross);
+      showAppToast(
+        context,
+        AppLocalizations.of(context).onbClipboardEmpty,
+        iconName: AppIcons.cross,
+      );
       return;
     }
-    final error = validateImportedMnemonic(words);
+    if (!mounted) return;
+    final error = validateImportedMnemonic(words, AppLocalizations.of(context));
     setState(() {
       _words = words;
       _error = error;
@@ -118,10 +122,9 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
     return MobileOnboardingStepScaffold(
       progress: mobileImportProgress(1),
       onBack: () => Navigator.of(context).maybePop(),
-      title: 'Import Wallet',
+      title: AppLocalizations.of(context).onbImportWalletTitle,
       // Line break matches the Figma subtitle wrap.
-      subtitle:
-          'Paste your Secret Passphrase or\nenter it manually word by word.',
+      subtitle: AppLocalizations.of(context).onbImportWalletSubtitleMobile,
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -144,7 +147,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
               expand: true,
               onPressed: _confirm,
               trailing: const AppIcon(AppIcons.chevronForward),
-              child: const Text('Confirm & import'),
+              child: Text(AppLocalizations.of(context).onbConfirmAndImport),
             ),
             const SizedBox(height: AppSpacing.xs),
             Semantics(
@@ -157,7 +160,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
                   height: 44,
                   child: Center(
                     child: Text(
-                      'Clear secret phrase',
+                      AppLocalizations.of(context).onbClearSecretPhrase,
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.primary,
                       ),
@@ -174,7 +177,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
               // No explicit icon color: AppButton's IconTheme tints it
               // with the label color (white on the primary fill).
               leading: const AppIcon(AppIcons.copy),
-              child: const Text('Paste secret phrase'),
+              child: Text(AppLocalizations.of(context).onbPasteSecretPhrase),
             ),
             const SizedBox(height: AppSpacing.xs),
             Semantics(
@@ -196,7 +199,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
                         ),
                         const SizedBox(width: AppSpacing.xs),
                         Text(
-                          'Enter manually',
+                          AppLocalizations.of(context).onbEnterManually,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.primary,
                           ),
@@ -218,7 +221,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
           ? ImportSlotsCard(words: _words)
           : Semantics(
               button: true,
-              label: 'Enter secret phrase manually',
+              label: AppLocalizations.of(context).onbEnterSecretPhraseManually,
               child: GestureDetector(
                 key: const ValueKey('mobile_import_slots'),
                 behavior: HitTestBehavior.opaque,

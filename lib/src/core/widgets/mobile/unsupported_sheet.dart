@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../layout/mobile/app_mobile_sheet.dart';
 import '../../theme/app_theme.dart';
 import '../app_button.dart';
@@ -12,6 +13,7 @@ Future<void> showUnsupportedSheet(BuildContext context, {String? message}) {
     context: context,
     builder: (sheetContext) {
       final colors = sheetContext.colors;
+      final l10n = AppLocalizations.of(sheetContext);
       return Padding(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.sm,
@@ -24,7 +26,7 @@ Future<void> showUnsupportedSheet(BuildContext context, {String? message}) {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Not available yet',
+              l10n.sheetNotAvailableTitle,
               textAlign: TextAlign.center,
               style: AppTypography.headlineSmall.copyWith(
                 color: colors.text.accent,
@@ -32,7 +34,7 @@ Future<void> showUnsupportedSheet(BuildContext context, {String? message}) {
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              message ?? 'This feature is still in progress.',
+              message ?? l10n.sheetNotAvailableBody,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
@@ -41,7 +43,7 @@ Future<void> showUnsupportedSheet(BuildContext context, {String? message}) {
             const SizedBox(height: AppSpacing.md),
             AppButton(
               onPressed: () => Navigator.of(sheetContext).pop(),
-              child: const Text('OK'),
+              child: Text(l10n.commonOk),
             ),
           ],
         ),

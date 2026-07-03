@@ -23,6 +23,8 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../widgets/confirm_access_card.dart';
 import '../widgets/settings_pane_backdrop.dart';
+import 'package:intl/intl.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class SettingsSeedPhraseScreen extends ConsumerStatefulWidget {
   const SettingsSeedPhraseScreen({this.privacyOverlayController, super.key});
@@ -61,7 +63,10 @@ class _SettingsSeedPhraseScreenState
   Timer? _copyResetTimer;
 
   String? get _passwordPolicyMessage =>
-      validateWalletPassword(_passwordController.text);
+      validateWalletPasswordLocalized(
+        _passwordController.text,
+        AppLocalizations.of(context),
+      );
 
   bool get _canSubmit =>
       !_isSubmitting && isWalletPasswordValid(_passwordController.text);
@@ -98,7 +103,8 @@ class _SettingsSeedPhraseScreenState
 
     setState(() {
       _clearSensitiveState(
-        passwordError: 'Active account changed. Enter your password again.',
+        passwordError:
+              AppLocalizations.of(context).settingsAccountChangedReenterPassword,
       );
     });
   }
@@ -142,8 +148,8 @@ class _SettingsSeedPhraseScreenState
       final accountState = ref.read(accountProvider).value;
       final activeAccount = accountState?.activeAccount;
       if (activeAccount == null) {
-        throw const _SeedPhraseUnavailableException(
-          'No active account is selected.',
+        throw _SeedPhraseUnavailableException(
+          AppLocalizations.of(context).settingsNoActiveAccount,
         );
       }
       final activeAccountUuid = activeAccount.uuid;
@@ -154,7 +160,7 @@ class _SettingsSeedPhraseScreenState
       if (!isValid) {
         if (!mounted) return;
         setState(() {
-          _passwordError = 'Incorrect password. Please try again.';
+          _passwordError = AppLocalizations.of(context).accountsIncorrectPassword;
           _isSubmitting = false;
         });
         return;
@@ -164,24 +170,27 @@ class _SettingsSeedPhraseScreenState
         if (!mounted) return;
         setState(() {
           _clearSensitiveState(
-            passwordError: 'Active account changed. Enter your password again.',
+            passwordError:
+              AppLocalizations.of(context).settingsAccountChangedReenterPassword,
           );
         });
         return;
       }
 
+      if (!mounted) return;
       if (activeAccount.isHardware) {
-        throw const _SeedPhraseUnavailableException(
-          'Secret passphrase is not available for hardware accounts.',
+        throw _SeedPhraseUnavailableException(
+          AppLocalizations.of(context).settingsSeedNotAvailableHardware,
         );
       }
 
       final mnemonic = await ref
           .read(accountProvider.notifier)
           .getMnemonicForAccount(activeAccountUuid);
+      if (!mounted) return;
       if (mnemonic == null || mnemonic.isEmpty) {
-        throw const _SeedPhraseUnavailableException(
-          'Secret passphrase is not available for this account.',
+        throw _SeedPhraseUnavailableException(
+          AppLocalizations.of(context).settingsSeedNotAvailable,
         );
       }
 
@@ -189,7 +198,8 @@ class _SettingsSeedPhraseScreenState
       if (_activeAccountChanged(activeAccountUuid)) {
         setState(() {
           _clearSensitiveState(
-            passwordError: 'Active account changed. Enter your password again.',
+            passwordError:
+              AppLocalizations.of(context).settingsAccountChangedReenterPassword,
           );
         });
         return;
@@ -222,7 +232,7 @@ class _SettingsSeedPhraseScreenState
       if (!mounted) return;
       setState(() {
         _revealError =
-            "Couldn't load your secret passphrase. Please try again.";
+            AppLocalizations.of(context).settingsSeedLoadFailed;
         _stage = _SettingsSeedPhraseStage.reveal;
         _isSubmitting = false;
       });
@@ -324,7 +334,7 @@ class _SettingsSeedPhraseScreenState
     final blockTime = _birthdayBlockTime;
     if (blockTime == null || blockTime <= 0) return;
     await Clipboard.setData(
-      ClipboardData(text: _formatBirthdayDate(blockTime)),
+      ClipboardData(text: _formatBirthdayDate(context, blockTime)),
     );
     _markCopied(_SeedPhraseCopyTarget.birthdayDate);
   }
@@ -376,7 +386,7 @@ class _SettingsSeedPhraseScreenState
           child: switch (_stage) {
             _SettingsSeedPhraseStage.password => Center(
               child: ConfirmAccessCard(
-                subtitle: 'To view the secret passphrase.',
+                subtitle: AppLocalizations.of(context).settingsSeedConfirmSubtitle,
                 controller: _passwordController,
                 errorText: _passwordError ?? _passwordPolicyMessage,
                 isSubmitting: _isSubmitting,
@@ -491,7 +501,7 @@ class _SeedPhraseRevealView extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Secret passphrase',
+            AppLocalizations.of(context).settingsSecretPassphrase,
             textAlign: TextAlign.center,
             style: AppTypography.headlineLarge.copyWith(
               color: colors.text.accent,
@@ -499,8 +509,7 @@ class _SeedPhraseRevealView extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.s),
           Text(
-            'This is the master key to your wallet.\n'
-            "Don't share it with anyone.",
+            AppLocalizations.of(context).settingsSeedMasterKeyBody,
             textAlign: TextAlign.center,
             style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
           ),
@@ -526,7 +535,7 @@ class _SeedPhraseRevealView extends StatelessWidget {
             _SeedPhraseErrorCard(
               message:
                   errorText ??
-                  'Secret passphrase is not available for this account.',
+                  AppLocalizations.of(context).settingsSeedNotAvailable,
             ),
         ],
       ),
@@ -568,7 +577,7 @@ class _SeedWordsCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Secret passphrase',
+                  AppLocalizations.of(context).settingsSecretPassphrase,
                   style: AppTypography.bodyLarge.copyWith(
                     color: colors.text.accent,
                     fontWeight: FontWeight.w600,
@@ -602,7 +611,7 @@ class _SeedWordsCard extends StatelessWidget {
               variant: AppButtonVariant.primary,
               size: AppButtonSize.small,
               trailing: AppIcon(phraseCopied ? AppIcons.check : AppIcons.copy),
-              child: Text(phraseCopied ? 'Copied' : 'Copy'),
+              child: Text(phraseCopied ? AppLocalizations.of(context).onbCopied : AppLocalizations.of(context).commonCopy),
             ),
           ),
         ],
@@ -638,7 +647,7 @@ class _SeedBirthdayCard extends StatelessWidget {
     final blockTime = birthdayBlockTime;
     final birthdayDate = blockTime == null || blockTime <= 0
         ? '-'
-        : _formatBirthdayDate(blockTime);
+        : _formatBirthdayDate(context, blockTime);
     final birthdayHeightText = birthdayHeight == null || birthdayHeight! <= 0
         ? '-'
         : birthdayHeight.toString();
@@ -656,7 +665,7 @@ class _SeedBirthdayCard extends StatelessWidget {
         children: [
           _SeedBirthdayRow(
             icon: AppIcons.calendar,
-            label: 'Birthday date',
+            label: AppLocalizations.of(context).settingsBirthdayDate,
             value: birthdayDate,
             loading: birthdayDateLoading,
             copied: birthdayDateCopied,
@@ -670,7 +679,7 @@ class _SeedBirthdayCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           _SeedBirthdayRow(
             icon: AppIcons.block,
-            label: 'Birthday block height',
+            label: AppLocalizations.of(context).settingsBirthdayBlockHeight,
             value: birthdayHeightText,
             loading: birthdayHeightLoading,
             copied: birthdayHeightCopied,
@@ -749,7 +758,7 @@ class _SeedBirthdayRow extends StatelessWidget {
                 minWidth: 96,
                 iconGap: 0,
                 trailing: AppIcon(copied ? AppIcons.check : AppIcons.copy),
-                child: Text(copied ? 'Copied' : 'Copy'),
+                child: Text(copied ? AppLocalizations.of(context).onbCopied : AppLocalizations.of(context).commonCopy),
               ),
             ),
           ),
@@ -799,28 +808,15 @@ class _BirthdayLoadingValue extends StatelessWidget {
   }
 }
 
-String _formatBirthdayDate(int blockTime) {
+String _formatBirthdayDate(BuildContext context, int blockTime) {
   if (blockTime <= 0) return '-';
   final value = DateTime.fromMillisecondsSinceEpoch(
     blockTime * 1000,
     isUtc: true,
   ).toLocal();
-  const months = <String>[
-    '',
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  return '${months[value.month]} ${value.day}, ${value.year}';
+  return DateFormat.yMMMMd(
+    AppLocalizations.of(context).localeName,
+  ).format(value);
 }
 
 class _SeedPhraseErrorCard extends StatelessWidget {

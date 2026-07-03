@@ -7,6 +7,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../models/swap_models.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class SwapSlippageModal extends StatefulWidget {
   const SwapSlippageModal({
@@ -136,7 +137,7 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Slippage',
+            AppLocalizations.of(context).swapSlippage,
             style: AppTypography.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
               color: colors.text.accent,
@@ -164,7 +165,7 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
           const SizedBox(height: AppSpacing.sm),
           if (_customValueInvalid) ...[
             Text(
-              'Slippage must be 0.1 - 5%',
+              AppLocalizations.of(context).swapSlippageRange,
               key: const ValueKey('swap_slippage_error_message'),
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(
@@ -176,7 +177,7 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
           AppModalActions(
             cancelKey: const ValueKey('swap_slippage_cancel_button'),
             actionKey: const ValueKey('swap_slippage_update_button'),
-            actionLabel: 'Update',
+            actionLabel: AppLocalizations.of(context).swapUpdateAction,
             onAction: canSubmit
                 ? () {
                     final value = _selectedBps;
@@ -312,7 +313,7 @@ class _SlippageCustomRadioCard extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        Text('Custom', style: fixedLabelStyle),
+                        Text(AppLocalizations.of(context).swapCustom, style: fixedLabelStyle),
                         const SizedBox(width: 4),
                         SizedBox(
                           width: inputWidth,

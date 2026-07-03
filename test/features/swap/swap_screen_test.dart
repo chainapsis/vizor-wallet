@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations_en.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
@@ -61,6 +62,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/swap_activity_fixture_intents.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 part 'support/swap_screen_test_fakes.dart';
 
@@ -766,6 +768,7 @@ void main() {
               label: 'Total fees',
               value: '~0.25 USDC',
               help: true,
+              kind: SwapStatusDetailRowKind.totalFees,
             ),
           ],
         ),
@@ -968,13 +971,13 @@ void main() {
     expect(find.text('Slippage tolerance'), findsOneWidget);
     expect(find.text('Guaranteed minimum'), findsOneWidget);
     expect(find.text('Price protection'), findsNothing);
-    expect(_tooltipWithMessage(swapFeeTooltip), findsOneWidget);
+    expect(_tooltipWithMessage(swapFeeTooltip(AppLocalizationsEn())), findsOneWidget);
     expect(
-      _tooltipWithMessage(swapGenericMinimumReceiveTooltip),
+      _tooltipWithMessage(swapGenericMinimumReceiveTooltip(AppLocalizationsEn())),
       findsOneWidget,
     );
 
-    for (final tab in ['Swap Progress', 'Transaction details']) {
+    for (final tab in ['Swap progress', 'Transaction details']) {
       expect(
         find.ancestor(
           of: find.text(tab),
@@ -1111,6 +1114,8 @@ void main() {
               value: compactAddress,
               copyable: true,
               copyText: fullAddress,
+              scaleValueToFit: true,
+              kind: SwapStatusDetailRowKind.depositAddress,
             ),
             SwapStatusDetailRowData(
               label: 'Swap fee',
@@ -1153,6 +1158,8 @@ void main() {
               copyable: true,
               copyText: fullTxHash,
               linkUri: Uri.parse('https://example.com/tx/$fullTxHash'),
+              scaleValueToFit: true,
+              kind: SwapStatusDetailRowKind.depositTx,
             ),
             const SwapStatusDetailRowData(
               label: 'Total fees',
@@ -3245,7 +3252,7 @@ void main() {
     );
     expect(find.byKey(const ValueKey('swap_status_title')), findsOneWidget);
     expect(find.text('Swap in progress...'), findsOneWidget);
-    expect(find.text('Swap Progress'), findsOneWidget);
+    expect(find.text('Swap progress'), findsOneWidget);
     expect(find.text('Transaction details'), findsOneWidget);
     expect(find.text('Activity detail'), findsNothing);
     expect(find.byKey(const ValueKey('swap_review_info')), findsOneWidget);
@@ -7764,10 +7771,13 @@ Widget _routerHarness(
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (context, child) {
         final media = MediaQuery.maybeOf(context);
-        final themed = AppTheme(data: AppThemeData.light, child: child!);
+        final themed = _localizedAppTheme(data: AppThemeData.light, child: child!);
         if (media == null) return themed;
         return MediaQuery(
           data: media.copyWith(disableAnimations: true),
@@ -7847,7 +7857,7 @@ Widget _themeHarness(Widget child) {
 }
 
 Widget _themeHarnessWithTheme(AppThemeData theme, Widget child) {
-  return AppTheme(
+  return _localizedAppTheme(
     data: theme,
     child: Directionality(textDirection: TextDirection.ltr, child: child),
   );
@@ -7861,7 +7871,7 @@ Widget _themeHarnessWithTheme(AppThemeData theme, Widget child) {
 /// `pumpWidget` calls instead of being torn down and rebuilt (which would reset
 /// any [State] between pumps).
 Widget _themeHarnessWithOverlay(Widget child) {
-  return AppTheme(
+  return _localizedAppTheme(
     data: AppThemeData.light,
     child: Directionality(
       textDirection: TextDirection.ltr,
@@ -8081,7 +8091,7 @@ SwapIntent _persistedIntent({
   String? nextAction,
   String accountUuid = 'account-1',
 }) {
-  final effectiveNextAction = nextAction ?? status.label;
+  final effectiveNextAction = nextAction ?? status.label(AppLocalizationsEn());
   return SwapIntent(
     id: id,
     pair: 'ZEC -> USDC',
@@ -8505,4 +8515,14 @@ String _fieldText(WidgetTester tester, String keyValue) {
     ),
   );
   return editable.controller.text;
+}
+
+/// Wraps [AppTheme] in a [Localizations] scope so widgets under test can
+/// resolve [AppLocalizations] without a full MaterialApp harness.
+Widget _localizedAppTheme({required AppThemeData data, required Widget child}) {
+  return Localizations(
+    locale: const Locale('en'),
+    delegates: AppLocalizations.localizationsDelegates,
+    child: AppTheme(data: data, child: child),
+  );
 }

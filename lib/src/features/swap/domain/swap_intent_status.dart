@@ -1,3 +1,5 @@
+import '../../../../l10n/app_localizations.dart';
+
 enum SwapIntentStatus {
   awaitingDeposit,
   awaitingExternalDeposit,
@@ -20,16 +22,17 @@ extension SwapIntentStatusLabels on SwapIntentStatus {
     _ => false,
   };
 
-  String get label => switch (this) {
-    SwapIntentStatus.awaitingDeposit => 'Awaiting deposit',
-    SwapIntentStatus.awaitingExternalDeposit => 'Awaiting external deposit',
-    SwapIntentStatus.depositObserved => 'Deposit observed',
-    SwapIntentStatus.processing => 'Processing',
-    SwapIntentStatus.providerStatusUnknown => 'Checking status',
-    SwapIntentStatus.incompleteDeposit => 'Incomplete deposit',
-    SwapIntentStatus.complete => 'Complete',
-    SwapIntentStatus.refunded => 'Refunded',
-    SwapIntentStatus.expired => 'Expired',
-    SwapIntentStatus.failed => 'Failed',
+  String label(AppLocalizations l10n) => switch (this) {
+    SwapIntentStatus.awaitingDeposit => l10n.swapStatusAwaitingDeposit,
+    SwapIntentStatus.awaitingExternalDeposit =>
+      l10n.swapStatusAwaitingExternalDeposit,
+    SwapIntentStatus.depositObserved => l10n.swapStatusDepositObserved,
+    SwapIntentStatus.processing => l10n.swapStatusProcessing,
+    SwapIntentStatus.providerStatusUnknown => l10n.swapStatusChecking,
+    SwapIntentStatus.incompleteDeposit => l10n.swapStatusIncompleteDeposit,
+    SwapIntentStatus.complete => l10n.swapStatusComplete,
+    SwapIntentStatus.refunded => l10n.swapStatusRefunded,
+    SwapIntentStatus.expired => l10n.swapStatusExpired,
+    SwapIntentStatus.failed => l10n.swapStatusFailed,
   };
 }

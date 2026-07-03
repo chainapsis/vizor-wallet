@@ -4,6 +4,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_tappable.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class SwapModalIconBadge extends StatelessWidget {
   const SwapModalIconBadge({
@@ -101,7 +102,7 @@ class SwapModalButtons extends StatelessWidget {
           variant: AppButtonVariant.ghost,
           size: AppButtonSize.large,
           minWidth: 280,
-          child: const Text('Cancel'),
+          child: Text(AppLocalizations.of(context).commonCancel),
         ),
       ],
     );

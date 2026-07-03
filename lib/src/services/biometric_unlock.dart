@@ -2,51 +2,54 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../../l10n/app_localizations.dart';
 
 /// What the device offers for the escrow prompt; drives copy ("Face ID",
 /// "fingerprint", or generic "biometrics") and whether opt-in surfaces render.
 enum BiometricKind { face, fingerprint, none }
 
 extension BiometricKindCopy on BiometricKind {
-  String get inlineLabel => switch (this) {
-    BiometricKind.face => 'Face ID',
-    BiometricKind.fingerprint => 'fingerprint',
-    BiometricKind.none => 'biometrics',
+  String inlineLabel(AppLocalizations l10n) => switch (this) {
+    BiometricKind.face => l10n.biometricFaceId,
+    BiometricKind.fingerprint => l10n.biometricFingerprintInline,
+    BiometricKind.none => l10n.biometricBiometricsInline,
   };
 
-  String get standaloneLabel => switch (this) {
-    BiometricKind.face => 'Face ID',
-    BiometricKind.fingerprint => 'Fingerprint',
-    BiometricKind.none => 'Biometrics',
+  String standaloneLabel(AppLocalizations l10n) => switch (this) {
+    BiometricKind.face => l10n.biometricFaceId,
+    BiometricKind.fingerprint => l10n.biometricFingerprintStandalone,
+    BiometricKind.none => l10n.biometricBiometricsStandalone,
   };
 
-  String get onboardingTitleSuffix => switch (this) {
-    BiometricKind.face => 'Face ID',
-    BiometricKind.fingerprint => 'your fingerprint',
-    BiometricKind.none => 'biometrics',
+  String onboardingTitleSuffix(AppLocalizations l10n) => switch (this) {
+    BiometricKind.face => l10n.biometricFaceId,
+    BiometricKind.fingerprint => l10n.biometricYourFingerprint,
+    BiometricKind.none => l10n.biometricBiometricsInline,
   };
 
-  String get unlockFeatureLabel => switch (this) {
-    BiometricKind.face => 'Face ID unlock',
-    BiometricKind.fingerprint => 'Fingerprint unlock',
-    BiometricKind.none => 'Biometric unlock',
+  String unlockFeatureLabel(AppLocalizations l10n) => switch (this) {
+    BiometricKind.face => l10n.biometricUnlockFeatureFace,
+    BiometricKind.fingerprint => l10n.biometricUnlockFeatureFingerprint,
+    BiometricKind.none => l10n.biometricUnlockFeatureNone,
   };
 
-  String get inlineUnlockFeatureLabel => switch (this) {
-    BiometricKind.face => 'Face ID unlock',
-    BiometricKind.fingerprint => 'fingerprint unlock',
-    BiometricKind.none => 'biometric unlock',
+  String inlineUnlockFeatureLabel(AppLocalizations l10n) => switch (this) {
+    BiometricKind.face => l10n.biometricUnlockFeatureFace,
+    BiometricKind.fingerprint => l10n.biometricUnlockFeatureInlineFingerprint,
+    BiometricKind.none => l10n.biometricUnlockFeatureInlineNone,
   };
 
-  String get changedMessage => switch (this) {
-    BiometricKind.face => 'Face ID changed. Enter your passcode.',
-    BiometricKind.fingerprint => 'Fingerprint changed. Enter your passcode.',
-    BiometricKind.none => 'Biometric unlock changed. Enter your passcode.',
+  String changedMessage(AppLocalizations l10n) => switch (this) {
+    BiometricKind.face => l10n.biometricChangedFace,
+    BiometricKind.fingerprint => l10n.biometricChangedFingerprint,
+    BiometricKind.none => l10n.biometricChangedNone,
   };
 
-  String get enableLabel => 'Enable $inlineLabel';
+  String enableLabel(AppLocalizations l10n) =>
+      l10n.biometricEnable(inlineLabel(l10n));
 
-  String get signInLabel => 'Sign in with $inlineLabel';
+  String signInLabel(AppLocalizations l10n) =>
+      l10n.biometricSignIn(inlineLabel(l10n));
 }
 
 class BiometricAvailability {

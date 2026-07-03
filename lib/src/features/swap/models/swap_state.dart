@@ -3,6 +3,7 @@ import '../../address_book/models/address_format_validator.dart';
 import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
 import 'swap_intent.dart';
+import '../../../../l10n/app_localizations.dart';
 
 const defaultSwapSlippageBps = 100;
 const swapSlippagePresetBps = <int>[50, 100, 200];
@@ -174,17 +175,16 @@ class SwapState {
   // address" — you have an Ethereum address that holds USDC), so name the
   // chain. Leading with it also keeps the relevant part visible in the narrow
   // modal field (the old "Refund address on the ET…" cut off the chain).
-  String get destinationFieldHint =>
-      direction.sendsZec
-          ? '${externalAsset.chainLabel} address or account'
-          : '${externalAsset.chainLabel} address';
+  String destinationFieldHint(AppLocalizations l10n) => direction.sendsZec
+      ? l10n.swapChainAddressOrAccount(externalAsset.chainLabel)
+      : l10n.swapChainAddress(externalAsset.chainLabel);
 
   /// Best-effort format check of [destinationText] against the external asset's
   /// chain. Returns null when empty, when the chain has no validator, or when
   /// the address looks valid; otherwise a short reason. Used as a hard gate on
   /// the swap review path so a malformed recipient/refund address cannot be
   /// committed into a 1Click quote.
-  String? get destinationAddressFormatError {
+  AddressFormatFinding? get destinationAddressFormatError {
     final trimmed = destinationText.trim();
     if (trimmed.isEmpty) return null;
     final network = AddressBookNetwork.tryFromChainTicker(
@@ -219,7 +219,7 @@ class SwapState {
     );
   }
 
-  String? get reviewAmountDifferenceWarning {
+  String? reviewAmountDifferenceWarning(AppLocalizations l10n) {
     final liveQuote = reviewQuote;
     final estimate = draftQuote;
     if (liveQuote == null || estimate == null) return null;
@@ -238,8 +238,9 @@ class SwapState {
     final percent = (absoluteDelta * 100).toStringAsFixed(
       absoluteDelta >= 0.1 ? 0 : 1,
     );
-    final directionLabel = delta < 0 ? 'lower' : 'higher';
-    return 'Live quote is $percent% $directionLabel than the earlier estimate. Check the guaranteed minimum before you continue.';
+    return delta < 0
+        ? l10n.swapQuoteChangedLower(percent)
+        : l10n.swapQuoteChangedHigher(percent);
   }
 
   SwapState copyWith({

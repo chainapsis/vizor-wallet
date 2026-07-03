@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'l10n/app_localizations.dart';
 import 'src/app_bootstrap.dart';
 import 'src/core/config/swap_feature_config.dart';
 import 'src/core/layout/app_layout.dart';
@@ -72,6 +73,7 @@ import 'src/features/voting/screens/voting_review_screen.dart';
 import 'src/features/voting/screens/voting_software_account_guard.dart';
 import 'src/features/voting/screens/voting_status_screen.dart';
 import 'src/features/voting/screens/voting_submission_confirmation_screen.dart';
+import 'src/providers/locale_provider.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
 import 'src/providers/linux_update_provider.dart';
@@ -378,16 +380,18 @@ List<RouteBase> appAuthRoutes(
   ),
   GoRoute(
     path: '/terms',
-    builder: (_, state) => kAppFormFactor == AppFormFactor.mobile
-        ? const MobileLegalScreen(title: 'Terms of Use')
+    builder: (context, state) => kAppFormFactor == AppFormFactor.mobile
+        ? MobileLegalScreen(title: AppLocalizations.of(context).legalTermsOfUse)
         : TermsScreen(
             forceFullPane: state.uri.queryParameters['from'] == 'onboarding',
           ),
   ),
   GoRoute(
     path: '/privacy',
-    builder: (_, state) => kAppFormFactor == AppFormFactor.mobile
-        ? const MobileLegalScreen(title: 'Privacy Policy')
+    builder: (context, state) => kAppFormFactor == AppFormFactor.mobile
+        ? MobileLegalScreen(
+            title: AppLocalizations.of(context).aboutPrivacyPolicy,
+          )
         : PrivacyPolicyScreen(
             forceFullPane: state.uri.queryParameters['from'] == 'onboarding',
           ),
@@ -862,6 +866,7 @@ class ZcashWalletApp extends ConsumerWidget {
     final appRouter = ref.watch(_routerProvider);
     final router = appRouter.router;
     final themeMode = ref.watch(themeModeProvider);
+    final locale = ref.watch(localeProvider);
 
     return MaterialApp.router(
       title: 'Vizor',
@@ -874,6 +879,14 @@ class ZcashWalletApp extends ConsumerWidget {
       routerDelegate: router.routerDelegate,
       backButtonDispatcher: appRouter.backButtonDispatcher,
       onNavigationNotification: appRouter.onNavigationNotification,
+      // No stored preference (null) follows the OS locale, clamped to
+      // supportedLocales with an English fallback — the whole app is
+      // translated, so Korean-system users get Korean out of the box
+      // (Keplr parity). A saved Language choice always wins. The
+      // kLanguageFeatureEnabled kill switch pins English outright.
+      locale: kLanguageFeatureEnabled ? locale : kEnglishLocale,
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
       builder: (context, child) {
         return AppThemeHost(
           themeMode: themeMode,
@@ -1110,7 +1123,8 @@ class _WindowsUpdatePrompt extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isDark = AppTheme.of(context) == AppThemeData.dark;
-    final action = _primaryAction();
+    final l10n = AppLocalizations.of(context);
+    final action = _primaryAction(l10n);
 
     return DefaultTextStyle.merge(
       style: const TextStyle(decoration: TextDecoration.none),
@@ -1149,7 +1163,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _title(),
+                            _title(l10n),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: AppTypography.labelLarge.copyWith(
@@ -1159,7 +1173,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            _message(),
+                            _message(l10n),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: AppTypography.bodySmall.copyWith(
@@ -1186,7 +1200,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
                         onPressed: onLater,
                         variant: AppButtonVariant.ghost,
                         size: AppButtonSize.small,
-                        child: const Text('Later'),
+                        child: Text(l10n.updateActionLater),
                       ),
                       const SizedBox(width: AppSpacing.xxs),
                     ],
@@ -1206,24 +1220,26 @@ class _WindowsUpdatePrompt extends StatelessWidget {
     );
   }
 
-  String _title() {
+  String _title(AppLocalizations l10n) {
     return switch (state.status) {
-      WindowsUpdateStatus.available =>
-        'Update ${state.availableVersion} available',
-      WindowsUpdateStatus.downloading => 'Downloading update',
-      WindowsUpdateStatus.ready => 'Update ready',
-      WindowsUpdateStatus.applying => 'Restarting Vizor',
-      _ => 'Update available',
+      WindowsUpdateStatus.available => l10n.updateTitleAvailableVersion(
+        state.availableVersion,
+      ),
+      WindowsUpdateStatus.downloading => l10n.updateTitleDownloading,
+      WindowsUpdateStatus.ready => l10n.updateTitleReady,
+      WindowsUpdateStatus.applying => l10n.updateTitleApplying,
+      _ => l10n.updateTitleAvailable,
     };
   }
 
-  String _message() {
+  String _message(AppLocalizations l10n) {
     return switch (state.status) {
-      WindowsUpdateStatus.available => 'Download now or keep working.',
-      WindowsUpdateStatus.downloading =>
-        '${state.downloadProgress}% downloaded.',
-      WindowsUpdateStatus.ready => 'Restart when you are ready.',
-      WindowsUpdateStatus.applying => 'Applying after Vizor closes.',
+      WindowsUpdateStatus.available => l10n.updateBodyAvailable,
+      WindowsUpdateStatus.downloading => l10n.updateBodyDownloading(
+        state.downloadProgress,
+      ),
+      WindowsUpdateStatus.ready => l10n.updateBodyReady,
+      WindowsUpdateStatus.applying => l10n.updateBodyApplying,
       _ => '',
     };
   }
@@ -1233,23 +1249,23 @@ class _WindowsUpdatePrompt extends StatelessWidget {
         state.status == WindowsUpdateStatus.ready;
   }
 
-  _WindowsUpdatePromptAction _primaryAction() {
+  _WindowsUpdatePromptAction _primaryAction(AppLocalizations l10n) {
     return switch (state.status) {
       WindowsUpdateStatus.available => _WindowsUpdatePromptAction(
-        label: 'Download',
+        label: l10n.updateActionDownload,
         onPressed: onDownload,
       ),
       WindowsUpdateStatus.ready => _WindowsUpdatePromptAction(
-        label: 'Restart',
+        label: l10n.updateActionRestart,
         onPressed: onRestart,
       ),
-      WindowsUpdateStatus.downloading => const _WindowsUpdatePromptAction(
-        label: 'Downloading',
+      WindowsUpdateStatus.downloading => _WindowsUpdatePromptAction(
+        label: l10n.updateActionDownloading,
       ),
-      WindowsUpdateStatus.applying => const _WindowsUpdatePromptAction(
-        label: 'Restarting',
+      WindowsUpdateStatus.applying => _WindowsUpdatePromptAction(
+        label: l10n.updateActionRestarting,
       ),
-      _ => const _WindowsUpdatePromptAction(label: 'Update'),
+      _ => _WindowsUpdatePromptAction(label: l10n.updateActionUpdate),
     };
   }
 }
@@ -1338,10 +1354,14 @@ class _LinuxUpdateNoticeListener extends ConsumerWidget {
         messenger.hideCurrentSnackBar();
         messenger.showSnackBar(
           SnackBar(
-            content: Text('Vizor ${update.assetVersion} is available.'),
+            content: Text(
+              AppLocalizations.of(
+                context,
+              ).updateLinuxAvailable(update.assetVersion),
+            ),
             duration: const Duration(seconds: 8),
             action: SnackBarAction(
-              label: 'View Release',
+              label: AppLocalizations.of(context).updateViewRelease,
               onPressed: () => unawaited(_openLinuxUpdateRelease(update)),
             ),
           ),
@@ -1401,7 +1421,12 @@ class _RpcEndpointFailoverToastBridge extends ConsumerWidget {
           if (!context.mounted) return;
           showNetworkFallbackToast(
             context,
-            next.message,
+            switch (next.kind) {
+              RpcEndpointFailoverEventKind.switchedToFallback =>
+                AppLocalizations.of(context).endpointFailoverSwitched,
+              RpcEndpointFailoverEventKind.switchedToPrimary =>
+                AppLocalizations.of(context).endpointFailoverRecovered,
+            },
             duration: const Duration(seconds: 4),
           );
         });

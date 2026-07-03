@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../../l10n/app_localizations.dart';
 
 /// Mobile deposit-timeout state — Figma `Swap failed` (4755:89127):
 /// the fallen-knight illustration, the "Time's up" tag, the serif
@@ -66,7 +67,7 @@ class MobileSwapTimeoutContent extends StatelessWidget {
                       ),
                       const SizedBox(width: AppSpacing.xxs),
                       Text(
-                        'Time’s up',
+                        AppLocalizations.of(context).swapTimesUp,
                         style: AppTypography.labelLarge.copyWith(
                           color: colors.text.secondary,
                         ),
@@ -77,7 +78,7 @@ class MobileSwapTimeoutContent extends StatelessWidget {
                   SizedBox(
                     width: _headlineWidth,
                     child: Text(
-                      'This deposit address is no longer valid',
+                      AppLocalizations.of(context).swapTimeoutInvalidAddress,
                       maxLines: 2,
                       textAlign: TextAlign.center,
                       style: _headlineStyle.copyWith(color: colors.text.accent),
@@ -85,7 +86,7 @@ class MobileSwapTimeoutContent extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
-                    'Please, start another swap transaction.',
+                    AppLocalizations.of(context).swapTimeoutStartAnother,
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
@@ -102,7 +103,7 @@ class MobileSwapTimeoutContent extends StatelessWidget {
               height: _buttonHeight,
               minWidth: _buttonMinWidth,
               leading: const AppIcon(AppIcons.renew, size: 20),
-              child: const Text('Restart swap'),
+              child: Text(AppLocalizations.of(context).swapRestartSwap),
             ),
           ],
         ),

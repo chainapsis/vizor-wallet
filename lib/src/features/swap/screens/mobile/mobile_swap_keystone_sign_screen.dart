@@ -15,6 +15,7 @@ import '../../models/swap_deposit_broadcast_result.dart';
 import '../../models/swap_keystone_broadcast_result.dart';
 import '../../models/swap_models.dart';
 import '../../providers/swap_hardware_signing_service.dart';
+import '../../../../../l10n/app_localizations.dart';
 
 class MobileSwapKeystoneSignArgs {
   const MobileSwapKeystoneSignArgs({required this.intent});
@@ -56,16 +57,15 @@ class _MobileSwapKeystoneSignScreenState
   @override
   Widget build(BuildContext context) {
     return MobileKeystonePcztSigningFlow(
-      title: 'Sign ZEC deposit',
-      failedTitle: 'Keystone signing failed',
+      title: AppLocalizations.of(context).swapSignZecDeposit,
+      failedTitle: AppLocalizations.of(context).swapKeystoneSigningFailed,
       description:
-          'Use your Keystone wallet to scan this transaction QR code. '
-          'Follow the steps on your device.',
+          AppLocalizations.of(context).swapScanTxQrInstructions,
       preparePczt: _preparePczt,
       onSigned: _handleSignedPczt,
       friendlyError: _friendlyError,
       keyPrefix: 'mobile_swap_keystone_sign',
-      finalizingSignatureLabel: 'Broadcasting ZEC deposit...',
+      finalizingSignatureLabel: AppLocalizations.of(context).swapBroadcastingZecDeposit,
       logTag: 'MobileSwapKeystoneSign',
     );
   }
@@ -208,29 +208,35 @@ class _MobileSwapKeystoneSignScreenState
   String _friendlyBroadcastFailureMessage(String? message) {
     final trimmed = message?.trim();
     if (trimmed == null || trimmed.isEmpty) {
-      return 'Transaction could not be broadcast.';
+      return AppLocalizations.of(context).swapTxCouldNotBroadcast;
     }
     return _friendlyError(trimmed);
   }
 
   String _friendlyError(Object error) {
     final lower = error.toString().toLowerCase();
+    final l10n = AppLocalizations.of(context);
     if (lower.contains('does not support tex')) {
-      return 'Keystone does not support TEX sends yet.';
+      return l10n.sendKeystoneNoTex;
     }
     if (lower.contains('sapling') || lower.contains('download')) {
-      return 'Required proving parameters could not be prepared.';
+      return l10n.keystoneShieldParamsError;
     }
     if (lower.contains('proposal not found')) {
-      return 'Transaction expired before it could be signed.';
+      return l10n.sendTxExpired;
     }
     if (lower.contains('pczt') || lower.contains('signature')) {
-      return 'Keystone signature could not be applied.';
+      return l10n.keystoneShieldSignatureError;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
-      return 'Transaction could not be broadcast.';
+      return l10n.swapTxCouldNotBroadcast;
     }
-    return 'ZEC deposit signing could not be completed.';
+    if (lower.contains('grpc') ||
+        lower.contains('transport error') ||
+        lower.contains('network')) {
+      return l10n.swapNetworkErrorRetry;
+    }
+    return l10n.swapZecDepositSigningFailed;
   }
 }
 

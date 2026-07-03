@@ -16,7 +16,6 @@ void main() {
 
     expect(failure.kind, SyncFailureKind.endpoint);
     expect(failure.showSettingsAction, isTrue);
-    expect(failure.actionLabel, 'Settings');
   });
 
   test('classifies temporary database lock', () {
@@ -52,6 +51,6 @@ void main() {
 
     expect(failure.kind, SyncFailureKind.unknown);
     expect(failure.rawMessage, 'unexpected failure');
-    expect(failure.actionLabel, 'Retry');
+    expect(failure.showSettingsAction, isFalse);
   });
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/config/zcash_explorer.dart';
 import '../../../core/formatting/address_display.dart';
 import '../../../core/formatting/date_format.dart';
@@ -135,7 +136,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     copyTextWithToast(
       context,
       text: txid,
-      toastMessage: 'Transaction hash copied',
+      toastMessage: AppLocalizations.of(context).activityTxHashCopied,
     );
   }
 
@@ -156,6 +157,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     final outcome = await runSendBroadcast(
       ref: ref,
       args: widget.args,
+      l10n: AppLocalizations.of(context),
       keystone: widget.keystone,
       confirmSaplingParamsDownload: _showSaplingParamsDialog,
       shouldAbort: () async => !mounted,
@@ -195,7 +197,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Scan your Keystone QR Code',
+                      AppLocalizations.of(context).sendScanKeystoneQr,
                       style: AppTypography.headlineLarge.copyWith(
                         color: colors.button.ghost.label,
                       ),
@@ -277,6 +279,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                         recipient: recipient,
                         timestampText: formatDayMonthTime(
                           _completedAt ?? _startedAt,
+                          locale: AppLocalizations.of(context).localeName,
                         ),
                         txIdText: _txid == null ? null : truncatedTxid(_txid!),
                         feeText: _formatFee(widget.args.feeZatoshi),
@@ -285,7 +288,10 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                         memoText: hasMemo ? memo : null,
                         memoExpanded: _messageExpanded,
                         noticeText: _phase == _SendStatusPhase.failed
-                            ? (_error ?? 'Send failed')
+                            ? (_error ??
+                                  AppLocalizations.of(
+                                    context,
+                                  ).activitySendFailed)
                             : _statusMessage,
                         onShowFullAddress: () =>
                             setState(() => _showVerifyAddress = true),

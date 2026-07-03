@@ -16,6 +16,7 @@ import '../voting_poll_ordering.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class VotingReviewScreen extends ConsumerStatefulWidget {
   const VotingReviewScreen({super.key, required this.roundId});
@@ -140,7 +141,12 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
           error: (error, _) => VotingPaneStateView(
             backLinkMinWidth: 60,
             child: _Message(
-              "Couldn't load review: ${friendlyVotingErrorMessage(error)}",
+              AppLocalizations.of(context).votingLoadReviewError(
+                friendlyVotingErrorMessage(
+                  error,
+                  AppLocalizations.of(context),
+                ),
+              ),
             ),
           ),
           data: (state) {
@@ -179,6 +185,7 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                     state.error == null &&
                     _shouldPrepareVotingPower(state));
             final eligibilityMessage = _votingEligibilityMessage(
+              context,
               state,
               preparing: votingPowerPreparing,
             );
@@ -203,7 +210,7 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          'Review your answers',
+                          AppLocalizations.of(context).votingReviewYourAnswers,
                           textAlign: TextAlign.center,
                           style: AppTypography.displaySmall.copyWith(
                             color: context.colors.text.accent,
@@ -219,7 +226,7 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                               selectedChoice: draft.choices[entry.value.id],
                               readOnly: true,
                               statusLabel: draft.choices[entry.value.id] == null
-                                  ? 'Skipped'
+                                  ? AppLocalizations.of(context).votingSkipped
                                   : null,
                               titleCollapsedMaxLines: 1,
                             ),
@@ -229,8 +236,8 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                         if (state.hasConfirmedVotingEligibility &&
                             draft.isEmpty) ...[
                           const SizedBox(height: AppSpacing.xs),
-                          const _Message(
-                            'Choose at least one option before submitting.',
+                          _Message(
+                            AppLocalizations.of(context).votingChooseAtLeastOne,
                           ),
                         ],
                         if (eligibilityMessage != null) ...[
@@ -251,7 +258,7 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                       onPressed: onSubmit,
                       variant: AppButtonVariant.primary,
                       minWidth: 240,
-                      child: const Text('Confirm & submit'),
+                      child: Text(AppLocalizations.of(context).votingConfirmSubmit),
                     ),
                   ),
                 ),
@@ -277,14 +284,18 @@ bool _shouldPrepareVotingPower(VotingSessionState state) {
 }
 
 String? _votingEligibilityMessage(
+  BuildContext context,
   VotingSessionState state, {
   required bool preparing,
 }) {
+  final l10n = AppLocalizations.of(context);
   if (state.hasConfirmedVotingEligibility) return null;
   final error = state.error;
-  if (error != null) return friendlyVotingErrorText(error.message);
-  if (preparing) return 'Preparing voting power.';
-  return 'Voting power unavailable.';
+  if (error != null) {
+    return friendlyVotingErrorText(error.message, l10n);
+  }
+  if (preparing) return l10n.votingPreparingPower;
+  return l10n.votingPowerUnavailable;
 }
 
 class _Message extends StatelessWidget {

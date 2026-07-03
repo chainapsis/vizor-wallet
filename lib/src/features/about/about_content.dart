@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../l10n/app_localizations.dart';
+
 /// Copy and link targets shared by the desktop and mobile About /
 /// legal screens, so the two form factors cannot drift apart.
 class AboutParagraph {
@@ -14,44 +16,28 @@ class AboutParagraph {
 const kVizorGithubUrl = 'https://github.com/chainapsis/vizor-wallet/';
 const kVizorWebsiteUrl = 'https://vizor.cash';
 
-const kAboutParagraphs = [
+List<AboutParagraph> aboutParagraphs(AppLocalizations l10n) => [
   AboutParagraph(
-    heading: 'Built by the Keplr team',
-    body:
-        'We built Keplr, the wallet used by millions across Cosmos, Ethereum, '
-        'and Bitcoin. Vizor is our take on what a Zcash wallet should feel '
-        'like.',
+    heading: l10n.aboutKeplrTeamHeading,
+    body: l10n.aboutKeplrTeamBody,
   ),
   AboutParagraph(
-    heading: 'Designed for shielded Zcash',
-    body:
-        'Vizor is built around shielded transactions, where the sender, '
-        'recipient, and amount stay private. Transparent Zcash works too, but '
-        'private is the default.',
+    heading: l10n.aboutShieldedHeading,
+    body: l10n.aboutShieldedBody,
   ),
   AboutParagraph(
-    heading: 'Open source, self-custodied',
-    body:
-        "Vizor is Apache licensed. Your keys stay on your device.\n"
-        "We don't see your balances or your transactions.",
+    heading: l10n.aboutOpenSourceHeading,
+    body: l10n.aboutOpenSourceBody,
   ),
 ];
 
-const _legalPlaceholderParagraph = AboutParagraph(
-  heading: 'From the team that brought you Keplr Wallet.',
-  body:
-      'Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the '
-      'sender, recipient, and amount.',
-);
-
-const kLegalParagraphs = [
-  _legalPlaceholderParagraph,
-  _legalPlaceholderParagraph,
-  _legalPlaceholderParagraph,
-  _legalPlaceholderParagraph,
-  _legalPlaceholderParagraph,
-  _legalPlaceholderParagraph,
-];
+List<AboutParagraph> legalParagraphs(AppLocalizations l10n) {
+  final placeholder = AboutParagraph(
+    heading: l10n.aboutLegalPlaceholderHeading,
+    body: l10n.aboutLegalPlaceholderBody,
+  );
+  return List.filled(6, placeholder);
+}
 
 Future<void> launchAboutUrl(String url) async {
   try {

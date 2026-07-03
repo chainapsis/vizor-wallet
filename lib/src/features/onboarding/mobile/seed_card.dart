@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../../l10n/app_localizations.dart';
 
 /// Dark numbered mnemonic card — Figma `Seed Card` (instance
 /// 4575:108110): 3-column word grid with two-digit gray indices, used
@@ -50,7 +51,7 @@ class SeedCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Secret Passphrase',
+                  AppLocalizations.of(context).onbSecretPassphrase,
                   style: AppTypography.headlineSmall.copyWith(
                     color: colors.text.homeCard,
                   ),
@@ -59,7 +60,7 @@ class SeedCard extends StatelessWidget {
               if (onCopy != null)
                 Semantics(
                   button: true,
-                  label: 'Copy secret passphrase',
+                  label: AppLocalizations.of(context).onbCopySecretPassphrase,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: onCopy,
@@ -67,7 +68,7 @@ class SeedCard extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          copied ? 'Copied' : 'Copy',
+                          copied ? AppLocalizations.of(context).onbCopied : AppLocalizations.of(context).commonCopy,
                           style: AppTypography.labelMedium.copyWith(
                             color: colors.text.homeCard,
                           ),

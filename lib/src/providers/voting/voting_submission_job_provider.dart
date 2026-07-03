@@ -14,6 +14,7 @@ import 'voting_session_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
+import '../locale_provider.dart';
 
 enum VotingSubmissionJobStatus {
   idle,
@@ -171,7 +172,7 @@ class VotingSubmissionJobsNotifier extends Notifier<VotingSubmissionJobsState> {
     try {
       resolvedAccountUuid = accountUuid ?? await _activeAccountUuid();
     } catch (error) {
-      state = state.setStartError(roundId, friendlyVotingErrorMessage(error));
+      state = state.setStartError(roundId, friendlyVotingErrorMessage(error, ref.read(appLocalizationsProvider)));
       return null;
     }
     if (resolvedAccountUuid == null) {
@@ -498,7 +499,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         _failJob(
           key: key,
           generation: generation,
-          message: 'Choose at least one vote before submitting.',
+          message: ref
+              .read(appLocalizationsProvider)
+              .votingChooseAtLeastOneVote,
         );
         return;
       }
@@ -686,7 +689,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _failJob(
         key: key,
         generation: generation,
-        message: 'Choose at least one vote before submitting.',
+        message: ref
+              .read(appLocalizationsProvider)
+              .votingChooseAtLeastOneVote,
       );
       return;
     }
@@ -755,7 +760,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _failJob(
         key: key,
         generation: generation,
-        message: 'Choose at least one vote before submitting.',
+        message: ref
+              .read(appLocalizationsProvider)
+              .votingChooseAtLeastOneVote,
       );
       return;
     }
@@ -870,7 +877,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _failJob(
       key: key,
       generation: generation,
-      message: _statusErrorMessage(session) ?? _genericVotingStatusErrorMessage,
+      message:
+          _statusErrorMessage(session) ??
+          ref.read(appLocalizationsProvider).votingGenericStatusError,
     );
   }
 
@@ -1069,18 +1078,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     ];
   }
 
-  String _messageFromError(Object error) => friendlyVotingErrorMessage(error);
+  String _messageFromError(Object error) => friendlyVotingErrorMessage(error, ref.read(appLocalizationsProvider));
 
   String? _statusErrorMessage(VotingSessionState state) {
     final error = state.error;
-    if (error != null) return friendlyVotingErrorText(error.message);
+    if (error != null) return friendlyVotingErrorText(error.message, ref.read(appLocalizationsProvider));
     if (state.phase != VotingSessionPhase.error) return null;
-    return _genericVotingStatusErrorMessage;
+    return ref.read(appLocalizationsProvider).votingGenericStatusError;
   }
-
-  static const _genericVotingStatusErrorMessage =
-      'Voting could not continue for this account. Retry, or switch to an '
-      'eligible account if this account cannot vote in this voting round.';
 
   bool _canRecoverWithoutDraft(VotingSessionState session) {
     final roundPlan = session.roundPlan;

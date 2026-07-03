@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 import 'app_copy_feedback.dart';
 import 'app_icon.dart';
@@ -92,7 +93,7 @@ class ReviewListRow extends StatelessWidget {
             ? () => copyTextWithToast(
                 context,
                 text: copyText!,
-                toastMessage: 'Copied',
+                toastMessage: AppLocalizations.of(context).toastCopied,
               )
             : null);
 

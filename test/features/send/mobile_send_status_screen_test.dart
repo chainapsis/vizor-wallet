@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 const _address =
     'u1l8xunezsvhq8fgzfl7404m450nwnd76zshe7f5dxv5z3w4gthawuwukdn5aalh6g'
@@ -72,6 +73,9 @@ Widget _app({
       ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(
         data: AppThemeData.light,
         child: MobileSendStatusScreen(
@@ -118,6 +122,7 @@ void main() {
             ({
               required ref,
               required args,
+              required l10n,
               keystone,
               required confirmSaplingParamsDownload,
               shouldAbort,
@@ -187,6 +192,7 @@ void main() {
             ({
               required ref,
               required args,
+              required l10n,
               keystone,
               required confirmSaplingParamsDownload,
               shouldAbort,
@@ -222,6 +228,7 @@ void main() {
             ({
               required ref,
               required args,
+              required l10n,
               keystone,
               required confirmSaplingParamsDownload,
               shouldAbort,
@@ -268,6 +275,7 @@ void main() {
               ({
                 required ref,
                 required args,
+                required l10n,
                 keystone,
                 required confirmSaplingParamsDownload,
                 shouldAbort,
@@ -316,6 +324,7 @@ void main() {
             ({
               required ref,
               required args,
+              required l10n,
               keystone,
               required confirmSaplingParamsDownload,
               shouldAbort,

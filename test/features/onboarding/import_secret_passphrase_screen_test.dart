@@ -30,6 +30,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_secret_passphrase_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   setUpAll(() {
@@ -574,6 +575,9 @@ Widget _importPassphraseScreen({
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(
         data: AppThemeData.light,
         child: Scaffold(body: body),
@@ -610,6 +614,9 @@ Widget _routerHarness(GoRouter router) {
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, child) => AppTheme(
         data: AppThemeData.light,

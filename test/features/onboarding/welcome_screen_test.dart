@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -133,6 +134,9 @@ Widget _welcomeScreen({bool showBackButton = false}) {
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(
         data: AppThemeData.light,
         child: WelcomeScreen(showBackButton: showBackButton),
@@ -147,6 +151,9 @@ Widget _welcomeRouter(GoRouter router) {
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

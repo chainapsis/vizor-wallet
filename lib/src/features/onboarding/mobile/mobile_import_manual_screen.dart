@@ -11,6 +11,7 @@ import '../shared/onboarding_flow_args.dart';
 import 'mobile_import_screens.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
+import '../../../../l10n/app_localizations.dart';
 
 /// Manual word-by-word import — Figma `Enter your Secret Passphrase`
 /// (4562:106067): one large field per word with the position counter,
@@ -105,7 +106,9 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
       final tokens = tokenizeMnemonicWords(_typed);
       final word = tokens.isEmpty ? '' : tokens.first;
       if (word.isEmpty || !_wordList.contains(word)) {
-        setState(() => _error = "'$_typed' isn't in the passphrase word list.");
+        setState(
+          () => _error = AppLocalizations.of(context).onbWordNotInList(_typed),
+        );
         _focusNode.requestFocus();
         return;
       }
@@ -165,7 +168,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
       // Light heads-up so the user knows why the fill stopped early.
       _error = stoppedAt == null
           ? null
-          : "Stopped at '$stoppedAt' — it isn't in the passphrase word list.";
+          : AppLocalizations.of(context).onbStoppedAtWord(stoppedAt!);
     });
     if (_accepted.length >= kMnemonicMaxWords) {
       _continueToBirthday();
@@ -191,7 +194,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
       _acceptWord(word);
     } else {
       setState(() {
-        _error = "'$word' isn't in the passphrase word list.";
+        _error = AppLocalizations.of(context).onbWordNotInList(word);
       });
       _focusNode.requestFocus();
     }
@@ -224,7 +227,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
 
   void _continueToBirthday() {
     final words = [..._accepted];
-    final error = validateImportedMnemonic(words);
+    final error = validateImportedMnemonic(words, AppLocalizations.of(context));
     if (error != null) {
       setState(() => _error = error);
       return;
@@ -252,7 +255,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
       expand: true,
       onPressed: nextEnabled ? _acceptTyped : null,
       trailing: const AppIcon(AppIcons.chevronForward),
-      child: const Text('Next word'),
+      child: Text(AppLocalizations.of(context).onbNextWord),
     );
     if (!_showFinish) return nextButton;
     return Column(
@@ -264,7 +267,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
           expand: true,
           onPressed: _finish,
           trailing: const AppIcon(AppIcons.chevronForward),
-          child: const Text('Confirm & import'),
+          child: Text(AppLocalizations.of(context).onbConfirmAndImport),
         ),
         const SizedBox(height: AppSpacing.xs),
         nextButton,
@@ -280,8 +283,8 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
     return MobileOnboardingStepScaffold(
       progress: mobileImportProgress(1),
       onBack: () => Navigator.of(context).maybePop(),
-      title: 'Enter your Secret Passphrase',
-      subtitle: 'Accept 12, 15, 18, 21 or 24 words',
+      title: AppLocalizations.of(context).onbEnterYourPassphrase,
+      subtitle: AppLocalizations.of(context).onbAcceptWordCounts,
       // Only the CTA is pinned — it rides up above the keyboard (Figma
       // 4746:83516). The autocomplete chips stay attached under the word
       // field and scroll with the content. The stretch Column gives the
@@ -350,7 +353,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
                   height: 36,
                   child: Center(
                     child: Text(
-                      'Undo last word',
+                      AppLocalizations.of(context).onbUndoLastWord,
                       style: AppTypography.labelMedium.copyWith(
                         color: colors.text.secondary,
                       ),

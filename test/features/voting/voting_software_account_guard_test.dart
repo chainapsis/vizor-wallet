@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_software_account_guard.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('hardware accounts can load voting child routes', (tester) async {
@@ -59,6 +60,9 @@ Widget _guardHarness() {
   );
 
   return MaterialApp.router(
+    localizationsDelegates:
+        AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   );

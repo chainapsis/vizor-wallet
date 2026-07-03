@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../../l10n/app_localizations.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/formatting/number_format.dart';
 import '../../../../core/formatting/zec_amount.dart';
@@ -420,9 +421,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _addressType != 'invalid' &&
       _addressType != 'error';
 
-  static const _hardwareTexUnsupportedText =
-      'Keystone does not support TEX sends yet.';
-  static const _notEnoughZecText = 'Not enough ZEC';
+  String get _hardwareTexUnsupportedText =>
+      AppLocalizations.of(context).sendKeystoneNoTex;
+  String get _notEnoughZecText =>
+      AppLocalizations.of(context).sendNotEnoughZec;
 
   bool get _activeAccountIsHardware {
     final uuid = ref.read(accountProvider).value?.activeAccountUuid;
@@ -747,11 +749,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   String? _maxEstimatePreconditionError() {
-    if (_activeAccountUuid == null) return 'Max amount unavailable';
-    if (!_hasValidAddress) return 'Max amount unavailable';
+    final l10n = AppLocalizations.of(context);
+    if (_activeAccountUuid == null) return l10n.sendMaxUnavailable;
+    if (!_hasValidAddress) return l10n.sendMaxUnavailable;
     if (_isHardwareTexRecipient) return _hardwareTexUnsupportedText;
     if (utf8.encode(_effectiveMemo).length > 512) {
-      return 'Message is too long';
+      return l10n.sendMessageTooLong;
     }
     return null;
   }
@@ -833,12 +836,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         );
       });
     } catch (e) {
+      if (!mounted) return;
       if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) return;
       final msg = e.toString().toLowerCase();
       _applyMaxEstimateError(
         msg.contains('insufficient')
             ? _notEnoughZecText
-            : 'Max amount unavailable',
+            : AppLocalizations.of(context).sendMaxUnavailable,
       );
     }
   }
@@ -934,14 +938,15 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       (!_isMaxMode || _hasCurrentMaxQuote);
 
   String get _amountCtaLabel {
-    if (_isResolvingMax) return 'Calculating max amount';
-    if (_amountReady) return 'Finish & review';
+    final l10n = AppLocalizations.of(context);
+    if (_isResolvingMax) return l10n.sendCalculatingMax;
+    if (_amountReady) return l10n.sendFinishReview;
 
     final error = _amountError;
     if (error != null && error.isNotEmpty) {
       return error;
     }
-    return 'Enter amount to continue';
+    return l10n.sendEnterAmountToContinue;
   }
 
   void _continueToReview() {
@@ -1063,7 +1068,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       setState(() {
         _isConfirmingSend = false;
         _phase = _SendPhase.failed;
-        _error = friendlyProposeSendError(e.toString());
+        _error = friendlyProposeSendError(
+          e.toString(),
+          AppLocalizations.of(context),
+        );
       });
       return;
     }
@@ -1211,12 +1219,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   String _fallbackAddressTypeLabel() {
+    final l10n = AppLocalizations.of(context);
     return switch (_addressType) {
-      'unified' => 'Shielded address',
-      'sapling' => 'Shielded address',
-      'transparent' => 'Transparent address',
-      'tex' => 'TEX address',
-      _ => 'Zcash address',
+      'unified' => l10n.receiveShieldedAddressTitle,
+      'sapling' => l10n.receiveShieldedAddressTitle,
+      'transparent' => l10n.receiveTransparentAddressTitle,
+      'tex' => l10n.addressTex,
+      _ => l10n.addressZcash,
     };
   }
 
@@ -1253,13 +1262,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final showRecipientFieldLayer =
         _phase == _SendPhase.compose && _step == _SendStep.recipient;
 
+    final l10n = AppLocalizations.of(context);
     final title = switch (_phase) {
       _SendPhase.compose => switch (_step) {
-        _SendStep.recipient => 'Select Recipient',
-        _SendStep.amount => 'Enter Amount',
-        _SendStep.review => 'Review Send',
+        _SendStep.recipient => l10n.sendSelectRecipient,
+        _SendStep.amount => l10n.sendEnterAmount,
+        _SendStep.review => l10n.sendReviewSend,
       },
-      _SendPhase.failed => 'Send failed',
+      _SendPhase.failed => l10n.activitySendFailed,
     };
 
     final body = switch (_phase) {
@@ -1408,12 +1418,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _RecipientLineText(
-                                  'Scan a QR Code',
+                                  AppLocalizations.of(context).sendScanAQrCode,
                                   color: colors.text.accent,
                                 ),
                                 const SizedBox(height: AppSpacing.xxs),
                                 _RecipientLineText(
-                                  'Scan an address using camera',
+                                  AppLocalizations.of(
+                                    context,
+                                  ).sendScanAddressUsingCamera,
                                   color: colors.text.secondary,
                                   fontWeight: FontWeight.w400,
                                 ),
@@ -1443,8 +1455,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                             ),
                             const SizedBox(width: AppSpacing.xxs),
                             Text(
-                              '${contacts.length} '
-                              'contact${contacts.length == 1 ? '' : 's'}',
+                              AppLocalizations.of(
+                                context,
+                              ).sendContactCount(contacts.length),
                               style: AppTypography.labelLarge.copyWith(
                                 color: colors.text.secondary,
                               ),
@@ -1547,7 +1560,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       fieldKey: const ValueKey('mobile_send_address_input'),
       controller: _addressController,
       focusNode: _addressFocus,
-      hintText: 'Zcash Address',
+      hintText: AppLocalizations.of(context).sendZcashAddressHintMobile,
       leading: SizedBox(
         width: AppInputSizing.iconWrapWidth,
         height: AppInputSizing.height,
@@ -1586,8 +1599,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               child: Center(
                 child: _AddressFieldActionButton(
                   label: _addressController.text.trim().isEmpty
-                      ? 'Paste'
-                      : 'Clear',
+                      ? AppLocalizations.of(context).sendPaste
+                      : AppLocalizations.of(context).sendClear,
+                  isPaste: _addressController.text.trim().isEmpty,
                   onTap: _addressController.text.trim().isEmpty
                       ? () => unawaited(_pasteAddress())
                       : _clearAddress,
@@ -1616,8 +1630,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   hardwareTex
                       ? _hardwareTexUnsupportedText
                       : (_addressType == 'invalid'
-                            ? 'Invalid address'
-                            : 'Address validation failed'),
+                            ? AppLocalizations.of(context).sendInvalidAddress
+                            : AppLocalizations.of(
+                                context,
+                              ).sendAddressValidationFailed),
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.text.destructive,
                   ),
@@ -1653,8 +1669,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             : null,
         child: Text(
           _addressController.text.trim().isEmpty
-              ? 'Enter address to continue'
-              : 'Continue',
+              ? AppLocalizations.of(context).sendEnterAddressToContinue
+              : AppLocalizations.of(context).commonContinue,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -1721,7 +1737,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                             child: Align(
                               alignment: Alignment.centerLeft,
                               child: Text(
-                                'Sending to',
+                                AppLocalizations.of(context).sendSendingTo,
                                 style: AppTypography.labelLarge.copyWith(
                                   color: colors.text.secondary,
                                 ),
@@ -1879,7 +1895,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           const SizedBox(width: AppSpacing.xs),
           Semantics(
             button: true,
-            label: 'Use maximum spendable balance',
+            label: AppLocalizations.of(context).sendUseMaxBalance,
             child: GestureDetector(
               key: const ValueKey('mobile_send_max_button'),
               behavior: HitTestBehavior.opaque,
@@ -1893,7 +1909,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 ),
                 alignment: Alignment.center,
                 child: Text(
-                  'Max',
+                  AppLocalizations.of(context).sendMax,
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.button.secondary.label,
                   ),
@@ -2108,8 +2124,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         child: Semantics(
           button: true,
           label: _amountInputIsUsd
-              ? 'Enter amount in ZEC'
-              : 'Enter amount in USD',
+              ? AppLocalizations.of(context).sendEnterAmountInZec
+              : AppLocalizations.of(context).sendEnterAmountInUsd,
           enabled: canToggle,
           child: GestureDetector(
             key: const ValueKey('mobile_send_amount_mode_toggle'),
@@ -2201,7 +2217,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                         children: [
                           _ReviewInfoRow(
                             leading: const _ReviewZecIcon(),
-                            title: 'Amount',
+                            title: AppLocalizations.of(context).navAmount,
                             headline: amountText,
                             headlineKey: const ValueKey(
                               'mobile_send_review_amount',
@@ -2267,7 +2283,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       : () => unawaited(_confirmAndSend()),
                   leading: const AppIcon(AppIcons.plane, size: 20),
                   child: Text(
-                    _isConfirmingSend ? 'Preparing...' : 'Confirm & Send',
+                    _isConfirmingSend
+                        ? AppLocalizations.of(context).sendPreparingEllipsis
+                        : AppLocalizations.of(context).sendConfirmAndSendMobile,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.s),
@@ -2276,7 +2294,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   expand: true,
                   variant: AppButtonVariant.ghost,
                   onPressed: _cancelSend,
-                  child: const Text('Cancel'),
+                  child: Text(AppLocalizations.of(context).commonCancel),
                 ),
               ],
             ),
@@ -2310,7 +2328,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Text(
-                  'Send failed',
+                  AppLocalizations.of(context).activitySendFailed,
                   textAlign: TextAlign.center,
                   style: AppTypography.displayLarge.copyWith(
                     color: colors.text.accent,
@@ -2318,7 +2336,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 ),
                 const SizedBox(height: AppSpacing.s),
                 Text(
-                  '$amountText to $toLabel',
+                  AppLocalizations.of(
+                    context,
+                  ).sendAmountToRecipient(amountText, toLabel),
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.secondary,
@@ -2342,7 +2362,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             child: AppButton(
               key: const ValueKey('mobile_send_try_again'),
               onPressed: () => setState(() => _phase = _SendPhase.compose),
-              child: const Text('Try again'),
+              child: Text(
+                AppLocalizations.of(context).settingsUpdateActionTryAgain,
+              ),
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
@@ -2355,7 +2377,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 height: 44,
                 child: Center(
                   child: Text(
-                    'Back to wallet',
+                    AppLocalizations.of(context).keystoneBackToWallet,
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.primary,
                     ),
@@ -2939,7 +2961,9 @@ class _ReviewAddressLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isTex = _isTexAddressType(addressType);
-    final label = isTex ? 'TEX - $address' : address;
+    final label = isTex
+        ? AppLocalizations.of(context).sendTexAddressLabel(address)
+        : address;
     return Row(
       children: [
         Expanded(
@@ -2972,7 +2996,7 @@ class _ReviewAddressLine extends StatelessWidget {
         _ReviewSmallButton(
           key: const ValueKey('mobile_send_full_address'),
           icon: AppIcons.eye,
-          label: 'Full address',
+          label: AppLocalizations.of(context).sendFullAddress,
           onTap: onFullAddress,
         ),
       ],
@@ -3058,8 +3082,12 @@ class _ReviewWrap extends StatelessWidget {
               _ReviewListRow(
                 key: const ValueKey('mobile_send_memo_row'),
                 onTap: onMemoTap,
-                leftLabel: memo.isEmpty ? null : 'Message',
-                rightLabel: memo.isEmpty ? 'Add short encrypted message' : memo,
+                leftLabel: memo.isEmpty
+                    ? null
+                    : AppLocalizations.of(context).activityMessage,
+                rightLabel: memo.isEmpty
+                    ? AppLocalizations.of(context).sendAddShortEncryptedMessage
+                    : memo,
                 rightIcon: memo.isEmpty
                     ? AppIcons.edit
                     : AppIcons.doubleArrowVertical,
@@ -3073,12 +3101,12 @@ class _ReviewWrap extends StatelessWidget {
               const SizedBox(height: AppSpacing.sm),
             ],
             _ReviewListRow(
-              leftLabel: 'Tx fee',
+              leftLabel: AppLocalizations.of(context).txFeeSheetTitle,
               rightLabel: feeText,
               rightIcon: AppIcons.help,
               rightKey: const ValueKey('mobile_send_fee'),
               onTap: onFeeInfoTap,
-              semanticLabel: 'About the transaction fee',
+              semanticLabel: AppLocalizations.of(context).sendAboutTxFee,
             ),
           ],
         ),
@@ -3229,7 +3257,7 @@ class _MemoSheetState extends State<_MemoSheet> {
     final primaryDisabled = overLimit && !primaryIsClear;
 
     return MobileModalScaffold(
-      title: 'Add Memo',
+      title: AppLocalizations.of(context).sendAddMemoTitle,
       onClose: () => Navigator.of(context).pop(),
       bodyGap: AppSpacing.s,
       bottomPadding: AppSpacing.base,
@@ -3248,7 +3276,10 @@ class _MemoSheetState extends State<_MemoSheet> {
                     height: _kMobileSendRecipientLineHeight,
                     child: Row(
                       children: [
-                        Text('Message', style: labelStyle),
+                        Text(
+                          AppLocalizations.of(context).activityMessage,
+                          style: labelStyle,
+                        ),
                         const Spacer(),
                         Text(
                           // Used/total bytes, like the Add Memo frame's
@@ -3268,7 +3299,9 @@ class _MemoSheetState extends State<_MemoSheet> {
                     key: const ValueKey('mobile_send_memo_field'),
                     controller: _controller,
                     focusNode: _focusNode,
-                    hintText: 'Only the recipient can read this',
+                    hintText: AppLocalizations.of(
+                      context,
+                    ).sendOnlyRecipientCanRead,
                     onChanged: (_) => setState(() {}),
                   ),
                   const SizedBox(height: AppSpacing.xs),
@@ -3278,7 +3311,7 @@ class _MemoSheetState extends State<_MemoSheet> {
                       alignment: Alignment.centerLeft,
                       child: overLimit
                           ? Text(
-                              'Message is too long',
+                              AppLocalizations.of(context).sendMessageTooLong,
                               style: labelStyle.copyWith(
                                 color: colors.text.destructive,
                               ),
@@ -3312,7 +3345,11 @@ class _MemoSheetState extends State<_MemoSheet> {
                       : () => Navigator.of(
                           context,
                         ).pop(primaryIsClear ? '' : _currentMemo),
-                  child: Text(primaryIsClear ? 'Clear memo' : 'Add Memo'),
+                  child: Text(
+                    primaryIsClear
+                        ? AppLocalizations.of(context).sendClearMemo
+                        : AppLocalizations.of(context).sendAddMemoTitle,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.s),
                 AppButton(
@@ -3320,7 +3357,7 @@ class _MemoSheetState extends State<_MemoSheet> {
                   expand: true,
                   variant: AppButtonVariant.ghost,
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
+                  child: Text(AppLocalizations.of(context).commonCancel),
                 ),
               ],
             ),
@@ -3687,23 +3724,21 @@ class MobileSaplingParamsSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Download Required',
+            AppLocalizations.of(context).saplingDownloadRequired,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.text.accent,
             ),
           ),
           const SizedBox(height: AppSpacing.s),
           Text(
-            'To create this private transaction, your wallet needs to '
-            'download about 50MB of cryptographic parameters.',
+            AppLocalizations.of(context).saplingDownloadBody,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.primary,
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            "This happens once, then it's done.\n"
-            'Network data charges may apply.',
+            AppLocalizations.of(context).saplingDownloadOnce,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -3712,7 +3747,7 @@ class MobileSaplingParamsSheet extends StatelessWidget {
           AppButton(
             key: const ValueKey('mobile_send_sapling_download'),
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Download'),
+            child: Text(AppLocalizations.of(context).saplingDownload),
           ),
           const SizedBox(height: AppSpacing.xs),
           Semantics(
@@ -3724,7 +3759,7 @@ class MobileSaplingParamsSheet extends StatelessWidget {
                 height: 44,
                 child: Center(
                   child: Text(
-                    'Cancel',
+                    AppLocalizations.of(context).commonCancel,
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.primary,
                     ),
@@ -3778,16 +3813,22 @@ class _RecipientLineText extends StatelessWidget {
 /// Inline action pill in the recipient field's trailing slot — Figma
 /// `Send to Focus` variants switch it between Paste and Clear.
 class _AddressFieldActionButton extends StatelessWidget {
-  const _AddressFieldActionButton({required this.label, required this.onTap});
+  const _AddressFieldActionButton({
+    required this.label,
+    required this.isPaste,
+    required this.onTap,
+  });
 
   final String label;
+
+  /// Drives the pill width and the stable test key; the display [label] is
+  /// localized and cannot be matched on.
+  final bool isPaste;
   final VoidCallback onTap;
 
-  double get _width => switch (label) {
-    'Paste' => _kMobileSendAddressPasteWidth,
-    'Clear' => _kMobileSendAddressClearWidth,
-    _ => _kMobileSendAddressPasteWidth,
-  };
+  double get _width => isPaste
+      ? _kMobileSendAddressPasteWidth
+      : _kMobileSendAddressClearWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -3800,7 +3841,7 @@ class _AddressFieldActionButton extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: SizedBox(
-          key: ValueKey('mobile_send_address_${label.toLowerCase()}'),
+          key: ValueKey('mobile_send_address_${isPaste ? 'paste' : 'clear'}'),
           width: _width,
           height: _kMobileSendAddressActionHeight,
           child: DecoratedBox(
@@ -3811,10 +3852,17 @@ class _AddressFieldActionButton extends StatelessWidget {
             child: Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                child: Text(
-                  label,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.button.secondary.label,
+                // The pill widths are tuned for the English labels; wider
+                // localized labels (ko) scale down instead of wrapping.
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.button.secondary.label,
+                    ),
                   ),
                 ),
               ),

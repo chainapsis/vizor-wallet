@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/seed_card.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 const _mnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse '
@@ -47,6 +48,9 @@ Widget _app(Widget child, {bool seedCreateMnemonic = false}) {
         ),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
       home: child,
     ),
@@ -76,6 +80,9 @@ Widget _routerApp(Stream<void> screenshotStream) {
       appSecurityProvider.overrideWith(_UnconfiguredSecurityNotifier.new),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),

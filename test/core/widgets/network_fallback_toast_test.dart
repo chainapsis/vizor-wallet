@@ -4,6 +4,7 @@ import 'package:zcash_wallet/src/core/layout/content_overlay_inset.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/network_fallback_toast.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets(
@@ -289,6 +290,9 @@ class _ThemedHarness extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(
         data: theme,
         child: Directionality(textDirection: TextDirection.ltr, child: child),

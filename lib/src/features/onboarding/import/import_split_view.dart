@@ -5,6 +5,7 @@ import '../../../core/motion/onboarding_motion.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../shared/onboarding_chrome.dart';
+import '../../../../l10n/app_localizations.dart';
 
 export '../shared/onboarding_chrome.dart' show OnboardingBackTarget;
 
@@ -17,10 +18,13 @@ enum ImportOnboardingStep {
 extension ImportOnboardingStepX on ImportOnboardingStep {
   // Sidebar step labels keep their original Title Case — see the
   // sentence-case exception in AGENTS.md (UI Copy Conventions).
-  String get label => switch (this) {
-    ImportOnboardingStep.secretPassphrase => 'Secret Passphrase',
-    ImportOnboardingStep.walletBirthdayHeight => 'Wallet Birthday Height',
-    ImportOnboardingStep.setPassword => 'Set Password',
+  String label(BuildContext context) => switch (this) {
+    ImportOnboardingStep.secretPassphrase =>
+      AppLocalizations.of(context).onbSecretPassphrase,
+    ImportOnboardingStep.walletBirthdayHeight =>
+      AppLocalizations.of(context).onbStepWalletBirthdayHeight,
+    ImportOnboardingStep.setPassword =>
+      AppLocalizations.of(context).onbSetPassword,
   };
 
   String get iconName => switch (this) {
@@ -156,7 +160,7 @@ class _Sidebar extends StatelessWidget {
       steps: [
         for (final step in _steps)
           OnboardingSidebarStepData(
-            label: step.label,
+            label: step.label(context),
             iconName: step.iconName,
             active: step == activeStep,
           ),

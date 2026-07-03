@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/review_buttons_stack.dart';
@@ -28,7 +29,7 @@ class SendReviewContentView extends StatelessWidget {
     this.fiatText,
     this.memoText,
     this.memoExpanded = false,
-    this.confirmLabel = 'Confirm & send',
+    this.confirmLabel,
     this.confirmLeadingIconName = AppIcons.plane,
     this.onConfirm,
     this.onCancel,
@@ -65,7 +66,8 @@ class SendReviewContentView extends StatelessWidget {
 
   /// Primary CTA label. The hardware-account wiring swaps in
   /// "Confirm with Keystone" while keeping the shared layout.
-  final String confirmLabel;
+  /// Defaults to the localized "Confirm & send" when null.
+  final String? confirmLabel;
 
   /// 20px leading icon on the primary CTA (plane, or QR for Keystone).
   final String confirmLeadingIconName;
@@ -81,7 +83,7 @@ class SendReviewContentView extends StatelessWidget {
     final colors = context.colors;
 
     return SendReviewContentColumn(
-      title: 'Review send',
+      title: AppLocalizations.of(context).sendReviewTitle,
       children: [
         SendReviewInfoSection(
           amountText: amountText,
@@ -102,21 +104,24 @@ class SendReviewContentView extends StatelessWidget {
               const ReviewWrapDivider(),
             ],
             ReviewListRow(
-              label: 'Tx fee',
+              label: AppLocalizations.of(context).txFeeSheetTitle,
               value: feeText,
               trailingIconName: AppIcons.help,
               trailingIconColor: colors.text.secondary,
-              trailingIconTooltip: kTxFeeHelpTooltip,
+              trailingIconTooltip: AppLocalizations.of(
+                context,
+              ).txFeeHelpTooltip,
               onPressed: onFeeHelp,
             ),
           ],
         ),
         ReviewButtonsStack(
           primaryKey: const ValueKey('send_confirm_button'),
-          primaryLabel: confirmLabel,
+          primaryLabel:
+              confirmLabel ?? AppLocalizations.of(context).sendConfirmAndSend,
           primaryLeadingIconName: confirmLeadingIconName,
           onPrimaryPressed: onConfirm,
-          secondaryLabel: 'Cancel',
+          secondaryLabel: AppLocalizations.of(context).commonCancel,
           onSecondaryPressed: onCancel,
         ),
       ],

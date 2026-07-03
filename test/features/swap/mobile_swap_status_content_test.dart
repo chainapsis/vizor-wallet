@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart' show MaterialApp, Tooltip;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations_en.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_asset.dart';
@@ -14,11 +15,15 @@ import 'package:zcash_wallet/src/features/swap/models/swap_models.dart'
 import 'package:zcash_wallet/src/features/swap/models/swap_status_presentation.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_status_content.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart'
     show mobileSwapStatusRecipientFullAddress;
 
 Widget _harness(Widget child) {
   return MaterialApp(
+    localizationsDelegates:
+        AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     builder: (_, navigator) =>
         AppTheme(data: AppThemeData.light, child: navigator!),
     home: Directionality(
@@ -122,14 +127,19 @@ SwapIntent _intent({
 }
 
 void main() {
-  const details = [
+  final details = [
     SwapStatusDetailRowData(
       label: 'Total fees',
+                kind: SwapStatusDetailRowKind.totalFees,
       value: 'Included',
       help: true,
-      helpTooltip: swapTotalFeesTooltip,
+      helpTooltip: swapTotalFeesTooltip(AppLocalizationsEn()),
     ),
-    SwapStatusDetailRowData(label: 'Timestamp', value: 'May 20, 2026 13:20'),
+    const SwapStatusDetailRowData(
+      label: 'Timestamp',
+                kind: SwapStatusDetailRowKind.timestamp,
+      value: 'May 20, 2026 13:20',
+    ),
   ];
 
   test(
@@ -180,7 +190,7 @@ void main() {
     );
     // The terminal card itself still renders.
     expect(find.text('Completed'), findsOneWidget);
-    expect(_tooltipWithMessage(swapTotalFeesTooltip), findsOneWidget);
+    expect(_tooltipWithMessage(swapTotalFeesTooltip(AppLocalizationsEn())), findsOneWidget);
   });
 
   testWidgets('in-progress (details tab) omits the View on Near Intents link', (
@@ -279,11 +289,13 @@ void main() {
             details: const [
               SwapStatusDetailRowData(
                 label: 'Deposit USDC to',
+                kind: SwapStatusDetailRowKind.depositAddress,
                 value: '0x9aDFd23 ... E4819E2',
                 copyable: true,
                 copyText: fullAddress,
               ),
-              SwapStatusDetailRowData(label: 'Swap fee', value: 'Included'),
+              SwapStatusDetailRowData(label: 'Swap fee',
+                kind: SwapStatusDetailRowKind.swapFee, value: 'Included'),
             ],
           ),
         ),
@@ -316,53 +328,66 @@ void main() {
               ),
               const SwapStatusDetailRowData(
                 label: 'USDC recipient',
+                kind: SwapStatusDetailRowKind.recipient,
                 value: '0x9aDF…Ef064',
               ),
               const SwapStatusDetailRowData(
                 label: 'USDC refund address',
+                kind: SwapStatusDetailRowKind.refundAddress,
                 value: '0xrefund…ddress',
               ),
               const SwapStatusDetailRowData(
                 label: 'Deposit USDC to',
+                kind: SwapStatusDetailRowKind.depositAddress,
                 value: '0xdeposit…ddress',
                 copyable: true,
                 copyText: '0xdeposit-address',
               ),
-              const SwapStatusDetailRowData(label: 'Memo', value: '123456'),
+              const SwapStatusDetailRowData(label: 'Memo',
+                kind: SwapStatusDetailRowKind.memo, value: '123456'),
               const SwapStatusDetailRowData(
                 label: 'Missing deposit',
+                kind: SwapStatusDetailRowKind.missingDeposit,
                 value: '40 USDC',
               ),
               const SwapStatusDetailRowData(
                 label: 'Required deposit',
+                kind: SwapStatusDetailRowKind.requiredDeposit,
                 value: '100 USDC',
               ),
               const SwapStatusDetailRowData(
                 label: 'Detected deposit',
+                kind: SwapStatusDetailRowKind.detectedDeposit,
                 value: '60 USDC',
               ),
               const SwapStatusDetailRowData(
                 label: 'Deposit deadline',
+                kind: SwapStatusDetailRowKind.depositDeadline,
                 value: 'May 20',
               ),
               const SwapStatusDetailRowData(
                 label: 'Refund fee',
+                kind: SwapStatusDetailRowKind.refundFee,
                 value: '0.25 USDC',
               ),
               const SwapStatusDetailRowData(
                 label: 'Slippage tolerance',
+                kind: SwapStatusDetailRowKind.slippageTolerance,
                 value: '0.25 USDC (0.5%)',
               ),
               const SwapStatusDetailRowData(
                 label: 'Guaranteed minimum',
+                kind: SwapStatusDetailRowKind.guaranteedMinimum,
                 value: '0.249 ZEC',
               ),
               const SwapStatusDetailRowData(
                 label: 'Timestamp',
+                kind: SwapStatusDetailRowKind.timestamp,
                 value: 'May 20',
               ),
               SwapStatusDetailRowData(
                 label: 'Tx ID',
+                kind: SwapStatusDetailRowKind.txId,
                 value: '012312…4512',
                 linkUri: Uri.parse(
                   'https://explorer.near-intents.org/?search=012312',
@@ -370,6 +395,7 @@ void main() {
               ),
               const SwapStatusDetailRowData(
                 label: 'Swap fee',
+                kind: SwapStatusDetailRowKind.swapFee,
                 value: 'Included',
               ),
             ],
@@ -442,22 +468,26 @@ void main() {
             details: [
               const SwapStatusDetailRowData(
                 label: 'USDC recipient',
+                kind: SwapStatusDetailRowKind.recipient,
                 value: '0x9aDF…Ef064',
                 copyable: true,
                 copyText: '0x9aDFd2310B3FA54A8718445c82Eb2ef1c19Ef064',
               ),
               const SwapStatusDetailRowData(
                 label: 'ZEC deposit to',
+                kind: SwapStatusDetailRowKind.depositAddress,
                 value: 't1WXCS…vy16c',
                 copyable: true,
                 copyText: 't1WXCSFXY2bSBydHrSFADJd4igsttkvy16c',
               ),
               const SwapStatusDetailRowData(
                 label: 'Total fees',
+                kind: SwapStatusDetailRowKind.totalFees,
                 value: 'Included',
               ),
               SwapStatusDetailRowData(
                 label: 'Tx ID',
+                kind: SwapStatusDetailRowKind.txId,
                 value: '0x9aDF…Ef064',
                 linkUri: Uri.parse(
                   'https://explorer.near-intents.org/transactions/'

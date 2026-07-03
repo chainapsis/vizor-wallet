@@ -294,7 +294,6 @@ class SwapIntent {
   final String? broadcastStatus;
   final DateTime? depositClaimedAt;
 
-  String get statusLabel => status.label;
 
   /// On-chain evidence that funds genuinely moved, used by the account-removal
   /// gate and the deadline-expiry carve-out.

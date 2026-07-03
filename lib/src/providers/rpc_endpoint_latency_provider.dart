@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../core/config/rpc_endpoint_config.dart';
 import '../rust/api/wallet.dart' as rust_wallet;
 
@@ -26,12 +27,12 @@ class RpcEndpointLatencySample {
   final RpcEndpointLatencyStatus status;
   final Duration? latency;
 
-  String get label {
+  String label(AppLocalizations l10n) {
     return switch (status) {
-      RpcEndpointLatencyStatus.checking => 'Checking...',
+      RpcEndpointLatencyStatus.checking => l10n.endpointLatencyChecking,
       RpcEndpointLatencyStatus.available => '${latency!.inMilliseconds}ms',
-      RpcEndpointLatencyStatus.unavailable => 'Unavailable',
-      RpcEndpointLatencyStatus.wrongNetwork => 'Wrong network',
+      RpcEndpointLatencyStatus.unavailable => l10n.endpointLatencyUnavailable,
+      RpcEndpointLatencyStatus.wrongNetwork => l10n.endpointLatencyWrongNetwork,
     };
   }
 }

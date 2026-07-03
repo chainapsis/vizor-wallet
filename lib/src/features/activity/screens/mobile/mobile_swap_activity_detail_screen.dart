@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../../l10n/app_localizations.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_toast.dart';
@@ -30,11 +31,21 @@ class MobileSwapActivityDetailScreen extends ConsumerWidget {
   final SwapActivityReturnTarget returnTarget;
   final bool autoSignZecDeposit;
 
-  String _titleFor(SwapState state, SwapIntent? intent) {
-    if (intent == null) return 'Swap';
-    if (intent.status == SwapIntentStatus.expired) return 'Swap failed';
-    if (swapActivityShowsExternalDepositPage(intent)) return 'Review quote';
-    return swapActivityStatusPresentationForIntent(state, intent).title;
+  String _titleFor(
+    SwapState state,
+    SwapIntent? intent,
+    AppLocalizations l10n,
+  ) {
+    if (intent == null) return l10n.navSwap;
+    if (intent.status == SwapIntentStatus.expired) return l10n.swapFailedTitle;
+    if (swapActivityShowsExternalDepositPage(intent)) {
+      return l10n.swapReviewQuote;
+    }
+    return swapActivityStatusPresentationForIntent(
+      state,
+      intent,
+      l10n: l10n,
+    ).title;
   }
 
   @override
@@ -56,7 +67,7 @@ class MobileSwapActivityDetailScreen extends ConsumerWidget {
           child: Column(
             children: [
               MobileTopNav.back(
-                title: _titleFor(state, intent),
+                title: _titleFor(state, intent, AppLocalizations.of(context)),
                 // Pushed from activity rows -> pop; arrived via go()
                 // from the review start -> fall back to the return
                 // target (pop would be a no-op there).

@@ -6,6 +6,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../shared/onboarding_welcome_art.dart' show VizorWordmark;
+import '../../../../l10n/app_localizations.dart';
 
 /// Mobile welcome screen — Figma `Welcome` (4750:24077): the Vizor
 /// wordmark and "Private money. By default" tagline over a single
@@ -61,7 +62,7 @@ class MobileWelcomeScreen extends StatelessWidget {
                   // rather than down on the opaque treasure.
                   const SizedBox(height: 38),
                   Text(
-                    'Private Money.\nBy default',
+                    AppLocalizations.of(context).onbPrivateMoneyMobile,
                     textAlign: TextAlign.center,
                     // Figma `Welcome` tagline — Young Serif 48 / 1.1,
                     // larger than the standard Headline XL token.
@@ -83,7 +84,7 @@ class MobileWelcomeScreen extends StatelessWidget {
                     onPressed: () => context.push('/onboarding/method'),
                     minWidth: 200,
                     trailing: const AppIcon(AppIcons.chevronForward),
-                    child: const Text('Get started'),
+                    child: Text(AppLocalizations.of(context).onbGetStartedShort),
                   ),
                 ],
               ),
@@ -94,7 +95,7 @@ class MobileWelcomeScreen extends StatelessWidget {
               top: MediaQuery.paddingOf(context).top + AppSpacing.xs,
               left: AppSpacing.s,
               child: Semantics(
-                label: 'Back',
+                label: AppLocalizations.of(context).commonBack,
                 button: true,
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,

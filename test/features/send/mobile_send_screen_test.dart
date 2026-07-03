@@ -22,6 +22,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 const _shieldedAddress =
     'u1testshieldedaddress00000000000000000000000000000000000000000000000';
@@ -212,6 +213,9 @@ Widget _app({
       ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (context, c) {
         final mediaQuery = MediaQuery.of(
@@ -238,6 +242,9 @@ Widget _amountStepWithPriceLoadingApp() {
       ownAccountAddressesProvider.overrideWith((ref) async => const {}),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(
         data: AppThemeData.light,
         child: MobileSendScreen(
@@ -339,6 +346,9 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
       ownAccountAddressesProvider.overrideWith((ref) async => const {}),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (context, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),

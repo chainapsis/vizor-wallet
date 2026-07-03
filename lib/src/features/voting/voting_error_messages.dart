@@ -1,7 +1,8 @@
+import '../../../l10n/app_localizations.dart';
 import 'voting_formatters.dart';
 
-String friendlyVotingErrorMessage(Object error) {
-  return friendlyVotingErrorText(error.toString());
+String friendlyVotingErrorMessage(Object error, AppLocalizations l10n) {
+  return friendlyVotingErrorText(error.toString(), l10n);
 }
 
 bool isVotingEligibilityErrorText(String text) {
@@ -10,6 +11,7 @@ bool isVotingEligibilityErrorText(String text) {
   return _noSpendableNotesPattern.firstMatch(message) != null ||
       _minimumVotingEligibilityPattern.firstMatch(message) != null ||
       lowerMessage.startsWith('this account is not eligible for this ') ||
+      _matchesLocalizedEligibilityMessage(lowerMessage) ||
       lowerMessage.startsWith(
         'voting requires at least one eligible shielded note bundle with 0.125 zec',
       ) ||
@@ -21,32 +23,50 @@ bool isVotingEligibilityErrorText(String text) {
       );
 }
 
-String friendlyVotingErrorText(String text) {
+String friendlyVotingErrorText(String text, AppLocalizations l10n) {
   final message = _normalizedVotingErrorText(text);
   final noSpendableNotes = _noSpendableNotesPattern.firstMatch(message);
   if (noSpendableNotes != null) {
-    final heightText = noSpendableNotes.group(1);
-    final snapshot = heightText == null
-        ? 'the voting round snapshot block'
-        : 'snapshot block ${formatBlockHeight(int.parse(heightText))}';
-    return 'This account is not eligible for this voting round. It had no eligible '
-        'shielded funds at $snapshot. Switch to an eligible account to vote.';
+    return l10n.votingNotEligibleNoFunds(
+      _snapshotLabel(l10n, noSpendableNotes.group(1)),
+    );
   }
 
   final minimumVotingEligibility = _minimumVotingEligibilityPattern.firstMatch(
     message,
   );
   if (minimumVotingEligibility != null) {
-    final heightText = minimumVotingEligibility.group(1);
-    final snapshot = heightText == null
-        ? 'the voting round snapshot block'
-        : 'snapshot block ${formatBlockHeight(int.parse(heightText))}';
-    return 'Voting requires at least one eligible shielded note bundle with '
-        '0.125 ZEC '
-        'at $snapshot. Switch to an eligible account to vote.';
+    return l10n.votingRequiresMinimumBundle(
+      _snapshotLabel(l10n, minimumVotingEligibility.group(1)),
+    );
   }
 
-  return message.isEmpty ? 'Voting session action failed.' : message;
+  return message.isEmpty ? l10n.votingSessionActionFailed : message;
+}
+
+String _snapshotLabel(AppLocalizations l10n, String? heightText) {
+  return heightText == null
+      ? l10n.votingSnapshotBlockFallback
+      : l10n.votingSnapshotBlock(formatBlockHeight(int.parse(heightText)));
+}
+
+/// Friendly eligibility messages are localized, and screens re-check stored
+/// message text; recognize the message prefix in every supported locale.
+bool _matchesLocalizedEligibilityMessage(String lowerMessage) {
+  const sentinel = '\u0000';
+  for (final locale in AppLocalizations.supportedLocales) {
+    final l10n = lookupAppLocalizations(locale);
+    for (final template in [
+      l10n.votingNotEligibleNoFunds(sentinel),
+      l10n.votingRequiresMinimumBundle(sentinel),
+    ]) {
+      final prefix = template.split(sentinel).first.trim().toLowerCase();
+      if (prefix.isNotEmpty && lowerMessage.startsWith(prefix)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 String _normalizedVotingErrorText(String text) {

@@ -23,6 +23,8 @@ import 'import_birthday_estimator.dart';
 import 'import_birthday_calendar_overlay.dart';
 import 'import_birthday_unknown_height_modal.dart';
 import 'import_split_view.dart';
+import '../../../../l10n/app_localizations.dart';
+import 'package:intl/intl.dart';
 
 enum ImportBirthdayTab { date, blockHeight }
 
@@ -48,8 +50,8 @@ class ImportWalletBirthdayScreen extends ConsumerStatefulWidget {
 
 class _ImportWalletBirthdayScreenState
     extends ConsumerState<ImportWalletBirthdayScreen> {
-  static const _manualHeightErrorText =
-      "Doesn't seem like a legit block height";
+  String get _manualHeightErrorText =>
+      AppLocalizations.of(context).onbNotLegitBlockHeight;
   static const _titleWidth = 396.0;
   static const _subtitleWidth = 226.0;
   static const _widgetWidth = 304.0;
@@ -135,7 +137,7 @@ class _ImportWalletBirthdayScreenState
       log('ImportWalletBirthdayScreen._loadMetadata: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _metadataError = 'Could not load wallet birthday metadata.';
+        _metadataError = AppLocalizations.of(context).onbBirthdayMetadataError;
       });
     }
   }
@@ -171,7 +173,7 @@ class _ImportWalletBirthdayScreenState
       if (!mounted || seq != _estimateSeq) return;
       setState(() {
         _isEstimating = false;
-        _submitError = 'Could not estimate the wallet birthday height.';
+        _submitError = AppLocalizations.of(context).onbBirthdayEstimateError;
       });
     }
   }
@@ -382,7 +384,7 @@ class _ImportWalletBirthdayScreenState
       if (!mounted) return;
       setState(() {
         _submitPhase = _ImportWalletSubmitPhase.idle;
-        _submitError = onboardingSubmitErrorMessage(e);
+        _submitError = onboardingSubmitErrorMessage(e, AppLocalizations.of(context));
       });
       return;
     }
@@ -474,18 +476,19 @@ class _ImportWalletBirthdayScreenState
     final calendarFirstDate = _calendarFirstDate;
     final calendarLastDate = _calendarLastDate;
     final buttonLabel = switch (_submitPhase) {
-      _ImportWalletSubmitPhase.discoveringAccounts => 'Checking accounts...',
-      _ImportWalletSubmitPhase.stoppingSync => 'Stop syncing...',
-      _ImportWalletSubmitPhase.importing => 'Importing...',
+      _ImportWalletSubmitPhase.discoveringAccounts =>
+        AppLocalizations.of(context).onbCheckingAccounts,
+      _ImportWalletSubmitPhase.stoppingSync => AppLocalizations.of(context).onbStopSyncing,
+      _ImportWalletSubmitPhase.importing => AppLocalizations.of(context).onbImporting,
       _ImportWalletSubmitPhase.idle =>
         activeTab == ImportBirthdayTab.date && _isEstimating
-            ? 'Estimating...'
-            : 'Continue',
+            ? AppLocalizations.of(context).onbEstimating
+            : AppLocalizations.of(context).commonContinue,
     };
 
     return ImportOnboardingTrailingPane(
       backTarget: OnboardingBackTarget.callback(
-        label: ImportOnboardingStep.secretPassphrase.label,
+        label: ImportOnboardingStep.secretPassphrase.label(context),
         onTap: () => context.go(
           '/import',
           extra: ImportSecretPassphraseArgs(mnemonic: widget.args.mnemonic),
@@ -532,7 +535,7 @@ class _ImportWalletBirthdayScreenState
                           SizedBox(
                             width: _titleWidth,
                             child: Text(
-                              'Around when did you create your wallet?',
+                              AppLocalizations.of(context).onbBirthdayTitle,
                               style: AppTypography.displayLarge.copyWith(
                                 color: context.colors.text.accent,
                               ),
@@ -543,8 +546,7 @@ class _ImportWalletBirthdayScreenState
                           SizedBox(
                             width: _subtitleWidth,
                             child: Text(
-                              'Zcash (ZEC) built around financial privacy '
-                              '& self-custody.',
+                              AppLocalizations.of(context).onbZecIntro,
                               style: AppTypography.bodyMedium.copyWith(
                                 color: context.colors.text.primary,
                               ),
@@ -568,7 +570,7 @@ class _ImportWalletBirthdayScreenState
                                     width: _fieldWidth,
                                     valueText: _selectedDate == null
                                         ? null
-                                        : _formatDate(_selectedDate!),
+                                        : _formatDate(context, _selectedDate!),
                                     enabled: !_isSubmitting,
                                     onTap: _pickDate,
                                   )
@@ -630,7 +632,7 @@ class _ImportWalletBirthdayScreenState
                         variant: AppButtonVariant.ghost,
                         minWidth: _buttonWidth,
                         trailing: const AppIcon(AppIcons.skip),
-                        child: const Text('I can’t remember'),
+                        child: Text(AppLocalizations.of(context).onbCantRemember),
                       ),
                     ],
                   ),
@@ -671,7 +673,7 @@ class _BirthdayTabRow extends StatelessWidget {
         children: [
           _TabLabel(
             iconName: AppIcons.calendar,
-            label: 'Enter the date',
+            label: AppLocalizations.of(context).onbEnterDate,
             active: activeTab == ImportBirthdayTab.date,
             onTap: () => onTabSelected(ImportBirthdayTab.date),
             color: colors.text.accent,
@@ -679,7 +681,7 @@ class _BirthdayTabRow extends StatelessWidget {
           const SizedBox(width: AppSpacing.xs),
           _TabLabel(
             iconName: AppIcons.block,
-            label: 'Enter the block height',
+            label: AppLocalizations.of(context).onbEnterBlockHeight,
             active: activeTab == ImportBirthdayTab.blockHeight,
             onTap: () => onTabSelected(ImportBirthdayTab.blockHeight),
             color: colors.text.accent,
@@ -785,7 +787,7 @@ class _DatePickerField extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    valueText ?? 'mm/dd/yyyy',
+                    valueText ?? AppLocalizations.of(context).onbDateHint,
                     style: AppTypography.labelLarge.copyWith(
                       color: valueColor,
                       fontWeight: FontWeight.w400,
@@ -872,7 +874,7 @@ class _BlockHeightField extends StatelessWidget {
               ),
               cursorColor: colors.text.accent,
               decoration: material.InputDecoration.collapsed(
-                hintText: 'Block height',
+                hintText: AppLocalizations.of(context).onbBlockHeightHint,
                 hintStyle: AppTypography.labelLarge.copyWith(
                   color: colors.text.muted,
                   fontWeight: FontWeight.w400,
@@ -955,8 +957,7 @@ DateTime _dateOnly(DateTime value) {
   return DateTime(value.year, value.month, value.day);
 }
 
-String _formatDate(DateTime date) {
-  final month = date.month.toString().padLeft(2, '0');
-  final day = date.day.toString().padLeft(2, '0');
-  return '$month/$day/${date.year}';
+String _formatDate(BuildContext context, DateTime date) {
+  return DateFormat.yMd(Localizations.localeOf(context).toString())
+      .format(date);
 }

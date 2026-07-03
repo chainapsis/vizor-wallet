@@ -23,6 +23,7 @@ import '../../../providers/wallet_mutation_guard.dart';
 import '../../swap/providers/swap_activity_store.dart';
 import '../widgets/confirm_access_card.dart';
 import '../widgets/settings_pane_backdrop.dart';
+import '../../../../l10n/app_localizations.dart';
 
 /// Full-window uninstall flow: confirm -> password gate -> removing -> done.
 ///
@@ -45,25 +46,31 @@ enum SettingsUninstallStage { confirm, gate, removing, done }
 
 // The wipe itself is pure Dart/Rust and platform-agnostic; only the copy
 // references the host platform.
-final String _wipeSubtitle =
-    'Vizor will delete wallet data and secure storage '
-    'from ${Platform.isMacOS
-        ? 'this Mac'
+String _wipeSubtitle(BuildContext context) {
+  final l10n = AppLocalizations.of(context);
+  return l10n.settingsUninstallBody(
+    Platform.isMacOS
+        ? l10n.settingsThisMac
         : Platform.isWindows
-        ? 'this PC'
-        : 'this device'}.';
+        ? l10n.settingsThisPc
+        : l10n.settingsThisDevice,
+  );
+}
 
-final String _finishSubtitle = Platform.isMacOS
-    ? 'To finish uninstallation, remove the Vizor app from Applications.'
-    : Platform.isWindows
-    ? 'To finish uninstallation, uninstall Vizor from Windows settings.'
-    : 'To finish uninstallation, remove the Vizor app from this device.';
+String _finishSubtitle(BuildContext context) {
+  final l10n = AppLocalizations.of(context);
+  return Platform.isMacOS
+      ? l10n.settingsUninstallFinishMac
+      : Platform.isWindows
+      ? l10n.settingsUninstallFinishWindows
+      : l10n.settingsUninstallFinishOther;
+}
 
 class _SettingsUninstallScreenState
     extends ConsumerState<SettingsUninstallScreen>
     with SingleTickerProviderStateMixin {
-  static const _wipeFailedMessage =
-      "Couldn't finish removing data. Please try again.";
+  String get _wipeFailedMessage =>
+      AppLocalizations.of(context).settingsRemoveDataFailed;
 
   final _passwordController = TextEditingController();
   late final AnimationController _progressController;
@@ -123,12 +130,11 @@ class _SettingsUninstallScreenState
       }
       if (!mounted) return;
       if (pendingSwapCount > 0) {
-        final plural = pendingSwapCount == 1 ? 'swap' : 'swaps';
+
         setState(() {
           _isCheckingSwaps = false;
           _confirmError =
-              'This wallet has $pendingSwapCount active $plural. '
-              'Wait for them to complete before uninstalling.';
+              AppLocalizations.of(context).settingsActiveSwapsBlockUninstall(pendingSwapCount);
         });
         return;
       }
@@ -138,7 +144,7 @@ class _SettingsUninstallScreenState
       setState(() {
         _isCheckingSwaps = false;
         _confirmError =
-            "Couldn't check for active swaps. Try again before uninstalling.";
+            AppLocalizations.of(context).settingsSwapCheckFailed;
       });
       return;
     }
@@ -167,7 +173,10 @@ class _SettingsUninstallScreenState
   Future<void> _submitGatePassword() async {
     if (_isSubmitting) return;
     if (!isWalletPasswordValid(_passwordController.text)) {
-      final policyError = validateWalletPassword(_passwordController.text);
+      final policyError = validateWalletPasswordLocalized(
+        _passwordController.text,
+        AppLocalizations.of(context),
+      );
       if (policyError == null) return;
       setState(() {
         _gateError = policyError;
@@ -187,7 +196,7 @@ class _SettingsUninstallScreenState
       if (!mounted) return;
       if (!isValid) {
         setState(() {
-          _gateError = 'Incorrect password. Please try again.';
+          _gateError = AppLocalizations.of(context).accountsIncorrectPassword;
           _isSubmitting = false;
         });
         return;
@@ -198,7 +207,7 @@ class _SettingsUninstallScreenState
       log('SettingsUninstallScreen._submitGatePassword: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _gateError = "Couldn't check your password. Please try again.";
+        _gateError = AppLocalizations.of(context).settingsPasswordCheckFailed;
         _isSubmitting = false;
       });
     }
@@ -488,8 +497,8 @@ class _UninstallConfirmView extends StatelessWidget {
 
     return _UninstallCard(
       helmetOpacity: const AlwaysStoppedAnimation(1),
-      title: 'Uninstall Vizor',
-      subtitle: _wipeSubtitle,
+      title: AppLocalizations.of(context).settingsUninstallVizor,
+      subtitle: _wipeSubtitle(context),
       subtitleWidth: 240,
       action: SizedBox(
         width: 280,
@@ -497,7 +506,7 @@ class _UninstallConfirmView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              errorText ?? 'This cannot be undone.',
+              errorText ?? AppLocalizations.of(context).settingsCannotBeUndone,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.destructive,
@@ -515,7 +524,9 @@ class _UninstallConfirmView extends StatelessWidget {
                 animated: isCheckingSwaps,
               ),
               child: Text(
-                isCheckingSwaps ? 'Checking swaps...' : 'Uninstall Vizor',
+                isCheckingSwaps
+                  ? AppLocalizations.of(context).settingsCheckingSwaps
+                  : AppLocalizations.of(context).settingsUninstallVizor,
               ),
             ),
             const SizedBox(height: AppSpacing.s),
@@ -523,7 +534,7 @@ class _UninstallConfirmView extends StatelessWidget {
               onPressed: isCheckingSwaps ? null : onCancel,
               variant: AppButtonVariant.ghost,
               minWidth: 196,
-              child: const Text('Cancel'),
+              child: Text(AppLocalizations.of(context).commonCancel),
             ),
           ],
         ),
@@ -557,7 +568,7 @@ class _UninstallGateView extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         ConfirmAccessCard(
-          subtitle: 'To uninstall Vizor.',
+          subtitle: AppLocalizations.of(context).settingsToUninstall,
           controller: passwordController,
           errorText: errorText,
           isSubmitting: isSubmitting,
@@ -570,7 +581,7 @@ class _UninstallGateView extends StatelessWidget {
           onPressed: isSubmitting ? null : onCancel,
           variant: AppButtonVariant.ghost,
           minWidth: 196,
-          child: const Text('Cancel'),
+          child: Text(AppLocalizations.of(context).commonCancel),
         ),
       ],
     );
@@ -653,9 +664,11 @@ class _UninstallDataRemovalViewState extends State<_UninstallDataRemovalView>
   Widget build(BuildContext context) {
     final colors = context.colors;
     final title = widget.isDone
-        ? 'Your data has been removed'
-        : 'Removing data...';
-    final subtitle = widget.isDone ? _finishSubtitle : _wipeSubtitle;
+        ? AppLocalizations.of(context).settingsDataRemoved
+        : AppLocalizations.of(context).settingsRemovingData;
+    final subtitle = widget.isDone
+        ? _finishSubtitle(context)
+        : _wipeSubtitle(context);
 
     return SizedBox(
       width: 420,
@@ -720,7 +733,7 @@ class _UninstallDataRemovalViewState extends State<_UninstallDataRemovalView>
                             variant: AppButtonVariant.primary,
                             size: AppButtonSize.mediumLarge,
                             minWidth: 96,
-                            child: const Text('Close Vizor'),
+                            child: Text(AppLocalizations.of(context).settingsCloseVizor),
                           )
                         : SizedBox(
                             width: 256,

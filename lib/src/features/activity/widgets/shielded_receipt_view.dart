@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/review_info_row.dart';
@@ -45,25 +46,26 @@ class ShieldedReceiptView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final l10n = AppLocalizations.of(context);
     final memo = memoText?.trim();
     final title = switch (status) {
-      ShieldedReceiptStatus.inProgress => 'Shielding in progress...',
-      ShieldedReceiptStatus.completed => 'Shielded successfully',
-      ShieldedReceiptStatus.failed => 'Shielding failed',
+      ShieldedReceiptStatus.inProgress => l10n.shieldReceiptInProgress,
+      ShieldedReceiptStatus.completed => l10n.shieldReceiptCompleted,
+      ShieldedReceiptStatus.failed => l10n.shieldReceiptFailed,
     };
     final (statusValue, statusIconName, statusColor) = switch (status) {
       ShieldedReceiptStatus.inProgress => (
-        'In progress',
+        l10n.activityInProgress,
         AppIcons.loader,
         colors.text.secondary,
       ),
       ShieldedReceiptStatus.completed => (
-        'Completed',
+        l10n.activityCompleted,
         AppIcons.checkCircle,
         colors.text.positiveStrong,
       ),
       ShieldedReceiptStatus.failed => (
-        'Failed',
+        l10n.activityFailed,
         AppIcons.cancel,
         colors.text.destructive,
       ),
@@ -89,7 +91,7 @@ class ShieldedReceiptView extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               ReviewInfoRow(
-                label: 'Amount',
+                label: l10n.navAmount,
                 value: amountText,
                 leading: ClipOval(
                   child: Image.asset(
@@ -100,18 +102,18 @@ class ShieldedReceiptView extends StatelessWidget {
                   ),
                 ),
                 bottomLeftIconName: AppIcons.transparentBalance,
-                bottomLeftText: 'From transparent balance',
+                bottomLeftText: l10n.activityFromTransparentBalance,
               ),
               const _ShieldedArrowSeparator(),
               ReviewInfoRow(
-                label: 'To',
-                value: 'Shielded balance',
+                label: l10n.activityTo,
+                value: l10n.homeShieldedBalance,
                 leading: const ReviewInfoIconCircle(
                   iconName: AppIcons.shieldKeyholeOutline,
                 ),
                 bottomLeftIconName: AppIcons.shieldKeyhole,
                 bottomLeftIconColor: colors.text.brandCrimson,
-                bottomLeftText: 'Shielded',
+                bottomLeftText: l10n.receiveShielded,
               ),
             ],
           ),
@@ -120,7 +122,7 @@ class ShieldedReceiptView extends StatelessWidget {
         ReviewWrapCard(
           children: [
             ReviewListRow(
-              label: 'Status',
+              label: l10n.navStatus,
               value: statusValue,
               valueColor: statusColor,
               leadingIconName: statusIconName,
@@ -135,9 +137,12 @@ class ShieldedReceiptView extends StatelessWidget {
                     expanded: memoExpanded,
                     onToggle: onExpandMemo,
                   ),
-                ReviewListRow(label: 'Timestamp', value: timestampText),
                 ReviewListRow(
-                  label: 'Tx ID',
+                  label: l10n.activityTimestamp,
+                  value: timestampText,
+                ),
+                ReviewListRow(
+                  label: l10n.activityTxId,
                   value: txIdText,
                   trailingIconName: AppIcons.arrowTopRight,
                   onPressed: onTxIdPressed,
@@ -147,11 +152,11 @@ class ShieldedReceiptView extends StatelessWidget {
             if (feeText != null) ...[
               const ReviewWrapDivider(),
               ReviewListRow(
-                label: 'Tx fee',
+                label: l10n.txFeeSheetTitle,
                 value: feeText!,
                 trailingIconName: AppIcons.help,
                 trailingIconColor: colors.text.secondary,
-                trailingIconTooltip: kTxFeeHelpTooltip,
+                trailingIconTooltip: l10n.txFeeHelpTooltip,
                 onPressed: onFeeHelpPressed,
               ),
             ],

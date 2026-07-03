@@ -23,6 +23,7 @@ import '../voting_routes.dart';
 import '../widgets/voting_config_settings_panel.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+import '../../../../l10n/app_localizations.dart';
 
 const _votingBetaLabelAsset = 'assets/illustrations/voting_beta_label.png';
 const _votingBetaLabelWidth = 42.0;
@@ -91,9 +92,9 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
                           skipLoadingOnReload: false,
                           loading: () => const VotingPaneLoading(),
                           error: (error, _) => _VotingMessage(
-                            title: "Couldn't load voting rounds",
-                            message: friendlyVotingErrorMessage(error),
-                            actionLabel: 'Try again',
+                            title: AppLocalizations.of(context).votingRoundsLoadFailed,
+                            message: friendlyVotingErrorMessage(error, AppLocalizations.of(context)),
+                            actionLabel: AppLocalizations.of(context).votingTryAgain,
                             onAction: () => _reloadRoundsWithFreshConfig(),
                           ),
                           data: _buildRoundList,
@@ -117,9 +118,9 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
 
   Widget _buildRoundList(List<VotingRoundView> items) {
     if (items.isEmpty) {
-      return const _VotingMessage(
-        title: 'No voting rounds available',
-        message: 'There are no token holder voting rounds to display yet.',
+      return _VotingMessage(
+        title: AppLocalizations.of(context).votingNoRounds,
+        message: AppLocalizations.of(context).votingNoRoundsBody,
       );
     }
     final sortedItems = sortVotingRoundsForPollList(items);
@@ -305,7 +306,7 @@ class _VotingHeader extends StatelessWidget {
                   alignment: Alignment.topCenter,
                   children: [
                     Text(
-                      'Vote',
+                      AppLocalizations.of(context).votingVoteTitle,
                       key: const ValueKey('voting_header_title'),
                       style: AppTypography.headlineLarge.copyWith(
                         color: context.colors.text.accent,
@@ -330,8 +331,8 @@ class _VotingHeader extends StatelessWidget {
                     const Spacer(),
                     AppIconHoverButton(
                       icon: AppIcons.cog,
-                      tooltip: 'Voting config',
-                      semanticLabel: 'Voting config settings',
+                      tooltip: AppLocalizations.of(context).votingConfigTooltip,
+                      semanticLabel: AppLocalizations.of(context).votingConfigSemantics,
                       onTap: onSettings,
                       size: 24,
                       iconSize: 16,
@@ -354,14 +355,14 @@ class _VotingBetaLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
-      key: ValueKey('voting_header_beta_label'),
+    return SizedBox(
+      key: const ValueKey('voting_header_beta_label'),
       width: _votingBetaLabelWidth,
       height: _votingBetaLabelHeight,
       child: Image(
-        image: AssetImage(_votingBetaLabelAsset),
+        image: const AssetImage(_votingBetaLabelAsset),
         fit: BoxFit.contain,
-        semanticLabel: 'Beta',
+        semanticLabel: AppLocalizations.of(context).votingBeta,
       ),
     );
   }
@@ -380,7 +381,11 @@ class _PollCard extends StatelessWidget {
     final description = _roundDescription(round.rawJson);
     final forumUri = votingRoundForumUriFromJson(round.rawJson);
     final state = _pollCardState(round);
-    final dateLabel = _roundDateLabel(round.rawJson, state);
+    final dateLabel = _roundDateLabel(
+      AppLocalizations.of(context),
+      round.rawJson,
+      state,
+    );
 
     return Material(
       color: const Color(0x00000000),
@@ -457,7 +462,7 @@ class _PollCard extends StatelessWidget {
                 onPressed: onAction,
                 variant: _actionButtonVariant(state),
                 size: AppButtonSize.medium,
-                child: Text(_actionLabel(state)),
+                child: Text(_actionLabel(AppLocalizations.of(context), state)),
               ),
             ),
           ],
@@ -474,7 +479,7 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = _statusLabel(state);
+    final label = _statusLabel(AppLocalizations.of(context), state);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       decoration: BoxDecoration(
@@ -562,29 +567,38 @@ String _roundDescription(Map<String, dynamic> json) {
   return '';
 }
 
-String? _roundDateLabel(Map<String, dynamic> json, _PollCardState state) {
+String? _roundDateLabel(
+  AppLocalizations l10n,
+  Map<String, dynamic> json,
+  _PollCardState state,
+) {
   final start = votingRoundStartDate(json);
   final end = votingRoundEndDate(json);
   if (end != null) {
     final label = switch (state) {
       _PollCardState.inProgress ||
       _PollCardState.active ||
-      _PollCardState.voted => 'Closes',
-      _PollCardState.tallying || _PollCardState.closed => 'Closed',
+      _PollCardState.voted => l10n.votingCloses,
+      _PollCardState.tallying || _PollCardState.closed => l10n.votingClosed,
     };
-    return '$label ${formatMonthDay(end)}';
+    return l10n.votingClosesOn(
+      label,
+      formatMonthDay(end, locale: l10n.localeName),
+    );
   }
-  if (start != null) return 'Starts ${formatMonthDay(start)}';
+  if (start != null) {
+    return l10n.votingStartsOn(formatMonthDay(start, locale: l10n.localeName));
+  }
   return null;
 }
 
-String _statusLabel(_PollCardState state) {
+String _statusLabel(AppLocalizations l10n, _PollCardState state) {
   return switch (state) {
-    _PollCardState.inProgress => 'In progress',
-    _PollCardState.active => 'Active',
-    _PollCardState.voted => 'Voted',
-    _PollCardState.tallying => 'Tallying',
-    _PollCardState.closed => 'Closed',
+    _PollCardState.inProgress => l10n.votingStateInProgress,
+    _PollCardState.active => l10n.votingStateActive,
+    _PollCardState.voted => l10n.votingStateVoted,
+    _PollCardState.tallying => l10n.votingStateTallying,
+    _PollCardState.closed => l10n.votingClosed,
   };
 }
 
@@ -625,12 +639,12 @@ Color _statusText(_PollCardState state) {
   };
 }
 
-String _actionLabel(_PollCardState state) {
+String _actionLabel(AppLocalizations l10n, _PollCardState state) {
   return switch (state) {
-    _PollCardState.inProgress => 'Resume',
-    _PollCardState.active => 'Start voting',
-    _PollCardState.voted => 'Review',
-    _PollCardState.tallying || _PollCardState.closed => 'View results',
+    _PollCardState.inProgress => l10n.votingResume,
+    _PollCardState.active => l10n.votingStartVoting,
+    _PollCardState.voted => l10n.votingReview,
+    _PollCardState.tallying || _PollCardState.closed => l10n.votingViewResults,
   };
 }
 

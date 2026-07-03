@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/widgetbook/keystone_use_cases.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('mobile Keystone scan permission use case renders dark card', (
@@ -164,6 +165,9 @@ Future<void> _pumpUseCase(WidgetTester tester, WidgetBuilder builder) async {
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(
         data: AppThemeData.dark,
         child: Builder(builder: builder),

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../../l10n/app_localizations.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -29,7 +30,8 @@ class ReceiveAddressInfoSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final items = receiveAddressInfoItems(type, touchUi: true);
+    final l10n = AppLocalizations.of(context);
+    final items = receiveAddressInfoItems(type, touchUi: true, l10n: l10n);
     final isShielded = type == ReceiveAddressType.shielded;
     final itemMaxLines = isShielded ? const [3, 3, 3] : const [2, 4, 5, 4];
 
@@ -55,7 +57,7 @@ class ReceiveAddressInfoSheet extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        receiveAddressInfoTitle(type),
+                        receiveAddressInfoTitle(type, l10n),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.bodyLarge.copyWith(
@@ -64,7 +66,7 @@ class ReceiveAddressInfoSheet extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        receiveAddressInfoSubtitle(type),
+                        receiveAddressInfoSubtitle(type, l10n),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.bodyMedium.copyWith(
@@ -100,7 +102,7 @@ class ReceiveAddressInfoSheet extends StatelessWidget {
                   expand: true,
                   height: _closeButtonHeight,
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Close'),
+                  child: Text(l10n.commonClose),
                 ),
               ),
             ],
@@ -111,7 +113,7 @@ class ReceiveAddressInfoSheet extends StatelessWidget {
           right: 16,
           child: Semantics(
             button: true,
-            label: 'Close',
+            label: l10n.commonClose,
             excludeSemantics: true,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,

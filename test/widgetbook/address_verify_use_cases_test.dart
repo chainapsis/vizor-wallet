@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart';
 import 'package:zcash_wallet/widgetbook/address_verify_use_cases.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('verify unknown-address use case renders', (tester) async {
@@ -48,6 +49,9 @@ Future<void> _pumpUseCase(WidgetTester tester, WidgetBuilder builder) async {
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(
         data: AppThemeData.light,
         // Scaffold stands in for Widgetbook's own Material chrome (the

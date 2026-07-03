@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -186,7 +187,7 @@ class SendComposeView extends StatelessWidget {
                           variant: AppButtonVariant.primary,
                           minWidth: reviewButtonWidth,
                           trailing: const AppIcon(AppIcons.chevronForward),
-                          child: const Text('Review'),
+                          child: Text(AppLocalizations.of(context).navReview),
                         ),
                       ),
                     ],
@@ -217,7 +218,7 @@ class SendComposeView extends StatelessWidget {
     };
     return AppTextField(
       key: const ValueKey('send_address_field'),
-      label: 'Send to',
+      label: AppLocalizations.of(context).sendSendTo,
       rightSlot: _SendRecipientLink(onTap: onContactsPressed),
       initialValue: recipientText,
       hintText: recipientHint,
@@ -234,7 +235,7 @@ class SendComposeView extends StatelessWidget {
 
     return AppTextField(
       key: const ValueKey('send_amount_field'),
-      label: 'Amount',
+      label: AppLocalizations.of(context).navAmount,
       rightLabel: maxLabel,
       initialValue: amountText,
       hintText: amountHint,
@@ -265,7 +266,7 @@ class SendComposeView extends StatelessWidget {
         final isError = memoError != null && memoError!.trim().isNotEmpty;
         return AppTextField(
           key: const ValueKey('send_memo_field'),
-          label: 'Message',
+          label: AppLocalizations.of(context).activityMessage,
           rightSlot: Text(
             memoCounter,
             style: AppTypography.labelMedium.copyWith(
@@ -290,7 +291,9 @@ class SendComposeView extends StatelessWidget {
           ),
           showClearButton: true,
           clearButtonRequiresText: false,
-          clearButtonSemanticLabel: 'Close message',
+          clearButtonSemanticLabel: AppLocalizations.of(
+            context,
+          ).sendCloseMessage,
         );
     }
   }
@@ -313,7 +316,7 @@ class _SendRecipientLink extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Contacts',
+            AppLocalizations.of(context).settingsContacts,
             style: AppTypography.labelMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -331,7 +334,7 @@ class _SendRecipientLink extends StatelessWidget {
     if (onTap == null) return row;
     return Semantics(
       button: true,
-      label: 'Open contacts',
+      label: AppLocalizations.of(context).sendOpenContacts,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
@@ -375,7 +378,7 @@ class _SendAddMemoCard extends StatelessWidget {
               AppIcon(AppIcons.scroll, size: 16, color: colors.icon.accent),
               const SizedBox(width: AppSpacing.xxs),
               Text(
-                'Add a memo',
+                AppLocalizations.of(context).sendAddMemo,
                 style: AppTypography.labelMedium.copyWith(
                   color: colors.text.accent,
                 ),
@@ -384,7 +387,7 @@ class _SendAddMemoCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Encrypted, for shielded addresses only.',
+            AppLocalizations.of(context).sendEncryptedShieldedOnly,
             textAlign: TextAlign.center,
             style: AppTypography.labelMedium.copyWith(color: colors.text.muted),
           ),

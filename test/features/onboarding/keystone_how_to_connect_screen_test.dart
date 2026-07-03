@@ -2,7 +2,7 @@ import 'dart:ui' show Size;
 
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
-import 'package:flutter/widgets.dart' show Text, Widget;
+import 'package:flutter/widgets.dart' show Builder, SizedBox, Text, Widget;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/keystone/keystone_how_to_connect_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/keystone/keystone_onboarding_flow.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -67,10 +68,25 @@ void main() {
     expect(find.text('Scan QR route'), findsOneWidget);
   });
 
-  test('sidebar metadata matches the Keystone navigation labels', () {
+  testWidgets('sidebar metadata matches the Keystone navigation labels', (
+    tester,
+  ) async {
     expect(KeystoneOnboardingStep.howToConnect.iconName, AppIcons.book);
-    expect(KeystoneOnboardingStep.selectAccount.label, 'Select Account');
     expect(KeystoneOnboardingStep.selectAccount.iconName, AppIcons.user);
+    late String label;
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Builder(
+          builder: (context) {
+            label = KeystoneOnboardingStep.selectAccount.label(context);
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    expect(label, 'Select Account');
   });
 }
 
@@ -99,6 +115,9 @@ Widget _keystoneScreen() {
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(
         data: AppThemeData.light,
         child: const KeystoneHowToConnectScreen(),
@@ -113,6 +132,9 @@ Widget _routerHarness(GoRouter router) {
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

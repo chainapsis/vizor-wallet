@@ -61,6 +61,7 @@ import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
 import 'round_plan_test_utils.dart';
 import 'tx_event_json_test_utils.dart';
 import '../../services/voting/fake_voting_http.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   setUpAll(() {
@@ -2807,9 +2808,12 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
-              AppTheme(data: AppThemeData.light, child: child!),
+              _localizedAppTheme(data: AppThemeData.light, child: child!),
         ),
       ),
     );
@@ -3475,8 +3479,11 @@ Widget _statusHarness({
   );
 
   return MaterialApp.router(
+    localizationsDelegates:
+        AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     routerConfig: router,
-    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+    builder: (_, child) => _localizedAppTheme(data: AppThemeData.light, child: child!),
   );
 }
 
@@ -3520,8 +3527,11 @@ Widget _proposalHarness({String? initialLocation}) {
   );
 
   return MaterialApp.router(
+    localizationsDelegates:
+        AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     routerConfig: router,
-    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+    builder: (_, child) => _localizedAppTheme(data: AppThemeData.light, child: child!),
   );
 }
 
@@ -3551,8 +3561,11 @@ Widget _submissionHarness({Widget votingRoute = const Text('voting route')}) {
   );
 
   return MaterialApp.router(
+    localizationsDelegates:
+        AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     routerConfig: router,
-    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+    builder: (_, child) => _localizedAppTheme(data: AppThemeData.light, child: child!),
   );
 }
 
@@ -3580,8 +3593,11 @@ Widget _resultsHarness({String? initialLocation}) {
   );
 
   return MaterialApp.router(
+    localizationsDelegates:
+        AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     routerConfig: router,
-    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+    builder: (_, child) => _localizedAppTheme(data: AppThemeData.light, child: child!),
   );
 }
 
@@ -5169,4 +5185,14 @@ class _RustApiFake implements RustLibApi {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Wraps [AppTheme] in a [Localizations] scope so widgets under test can
+/// resolve [AppLocalizations] without a full MaterialApp harness.
+Widget _localizedAppTheme({required AppThemeData data, required Widget child}) {
+  return Localizations(
+    locale: const Locale('en'),
+    delegates: AppLocalizations.localizationsDelegates,
+    child: AppTheme(data: data, child: child),
+  );
 }

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -32,13 +33,13 @@ class _IntroZcashScreenState extends ConsumerState<IntroZcashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return const OnboardingTrailingPane(
+    return OnboardingTrailingPane(
       backTarget: OnboardingBackTarget.route(
-        label: 'Welcome',
+        label: AppLocalizations.of(context).onbWelcomeStep,
         routePath: '/welcome',
       ),
       bodyPadding: EdgeInsets.zero,
-      child: _HeroLayout(),
+      child: const _HeroLayout(),
     );
   }
 }
@@ -110,7 +111,7 @@ class _TitleBlock extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'The Shielded World',
+            AppLocalizations.of(context).onbShieldedWorld,
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),
@@ -121,7 +122,7 @@ class _TitleBlock extends StatelessWidget {
         SizedBox(
           width: 226,
           child: Text(
-            'Zcash (ZEC) built around financial privacy & self-custody.',
+            AppLocalizations.of(context).onbZecIntro,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.primary,
             ),
@@ -137,7 +138,9 @@ class _ShieldedInfoCard extends StatelessWidget {
   const _ShieldedInfoCard();
 
   static const double _cardWidth = 396;
-  static const double _height = 163;
+  // 163 in Figma; +8 headroom so three lines of taller localized (ko) body
+  // text fit without overflowing the fixed card.
+  static const double _height = 171;
   static const double _textWidth = 334;
   static const double _patternWidth = 1086.243;
   static const double _patternHeight = 1220.409;
@@ -194,9 +197,7 @@ class _ShieldedInfoCard extends StatelessWidget {
                   SizedBox(
                     width: _textWidth,
                     child: Text(
-                      'Unlike Bitcoin or Ethereum, shielded Zcash '
-                      'transactions hide the sender, recipient, and amount '
-                      '— verified by cryptography, not trust.',
+                      AppLocalizations.of(context).onbZecPrivacyBody,
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.homeCard,
                       ),
@@ -240,8 +241,7 @@ class _SetupIntroText extends StatelessWidget {
       child: SizedBox(
         width: double.infinity,
         child: Text(
-          "You're a few steps away from your first private wallet.\n"
-          "Let's get you set up.",
+          AppLocalizations.of(context).onbFewStepsAwayDesktop,
           style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           textAlign: TextAlign.center,
         ),
@@ -269,7 +269,7 @@ class _ButtonStack extends StatelessWidget {
                 variant: AppButtonVariant.primary,
                 minWidth: _buttonMinWidth,
                 trailing: const AppIcon(AppIcons.chevronForward),
-                child: const Text('Tell me how Zcash works'),
+                child: Text(AppLocalizations.of(context).onbTellMeHow),
               ),
               const SizedBox(height: AppSpacing.s),
               AppButton(
@@ -278,7 +278,7 @@ class _ButtonStack extends StatelessWidget {
                 variant: AppButtonVariant.ghost,
                 minWidth: _buttonMinWidth,
                 trailing: const AppIcon(AppIcons.skip),
-                child: const Text('I know how to use Zcash'),
+                child: Text(AppLocalizations.of(context).onbIKnowZcash),
               ),
             ],
           ),

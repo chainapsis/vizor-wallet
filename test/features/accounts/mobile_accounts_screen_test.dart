@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 AccountInfo _account(String uuid, String name, {bool isSeedAnchor = false}) =>
     AccountInfo(
@@ -80,6 +81,9 @@ Widget _app(
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),
@@ -160,6 +164,9 @@ Widget _nestedShellApp(AccountState accounts, ValueNotifier<int> tabTaps) {
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
       home: AppMobileShell(
         body: Navigator(
@@ -183,6 +190,9 @@ Widget _nestedShellApp(AccountState accounts, ValueNotifier<int> tabTaps) {
 
 Widget _profilePictureSheetHarness() {
   return MaterialApp(
+    localizationsDelegates:
+        AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     home: Builder(
       builder: (context) => GestureDetector(

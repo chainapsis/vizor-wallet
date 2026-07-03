@@ -6,6 +6,7 @@ import 'package:zcash_wallet/src/features/activity/activity_amount_text.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   Future<ActivityRowData> mapRow(
@@ -14,16 +15,20 @@ void main() {
   ) async {
     late ActivityRowData row;
     await tester.pumpWidget(
-      AppTheme(
-        data: AppThemeData.light,
-        child: Builder(
+      Localizations(
+        locale: const Locale('en'),
+        delegates: AppLocalizations.localizationsDelegates,
+        child: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
           builder: (context) {
             row = buildTransactionActivityRow(
               context: context,
               transaction: transaction,
             );
-            return const SizedBox.shrink();
-          },
+              return const SizedBox.shrink();
+            },
+          ),
         ),
       ),
     );

@@ -9,6 +9,7 @@ import '../../models/swap_address_formatting.dart';
 import '../../models/swap_fiat_amount.dart';
 import '../../models/swap_models.dart';
 import '../swap_asset_icon.dart';
+import '../../../../../l10n/app_localizations.dart';
 
 /// Mobile swap composer ticket — Figma `Swap` (4686:101421): the white
 /// rounded wrapper holding the pay card (base fill), the inverse switch
@@ -157,7 +158,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
       // relayout entirely. A deliberate product step away from the Figma
       // filled frames, which hide the labels once a value is entered.
       showTitle: true,
-      title: 'You pay',
+      title: AppLocalizations.of(context).swapYouPay,
       titleTrailing: sendsZec
           ? _MaxAmountTrigger(
               availableText: widget.zecAvailableText,
@@ -179,7 +180,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
             : state.direction.fromAsset(state.externalAsset).decimals,
       ),
       asset: sendsZec
-          ? const _CurrencyPicker(asset: SwapAsset.zec, label: 'Zcash')
+          ? _CurrencyPicker(asset: SwapAsset.zec, label: AppLocalizations.of(context).swapZcashLabel)
           : _CurrencyPicker(
               key: const ValueKey('swap_external_asset_selector'),
               asset: state.externalAsset,
@@ -203,7 +204,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
           ? null
           : _AddressChip(
               value: state.destinationText,
-              emptyText: 'Add refund address...',
+              emptyText: AppLocalizations.of(context).swapAddRefundAddress,
               onTap: widget.onOpenDestinationAddress,
             ),
     );
@@ -211,7 +212,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
     final receiveCard = _SwapCard(
       filled: receiveActive,
       showTitle: true,
-      title: 'You receive',
+      title: AppLocalizations.of(context).swapYouReceive,
       amount: _SwapAmountInput(
         key: const ValueKey('swap_receive_amount_field'),
         controller: _receiveAmountController,
@@ -232,7 +233,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
               showChainBadge: true,
               onTap: widget.onOpenExternalAssetPicker,
             )
-          : const _CurrencyPicker(asset: SwapAsset.zec, label: 'Zcash'),
+          : _CurrencyPicker(asset: SwapAsset.zec, label: AppLocalizations.of(context).swapZcashLabel),
       fiat: _FiatModeToggle(
         text: _amountMetaText(
           state,
@@ -248,7 +249,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
       addressChip: sendsZec
           ? _AddressChip(
               value: state.destinationText,
-              emptyText: 'Add recipient address...',
+              emptyText: AppLocalizations.of(context).swapAddRecipientAddress,
               onTap: widget.onOpenDestinationAddress,
             )
           : null,

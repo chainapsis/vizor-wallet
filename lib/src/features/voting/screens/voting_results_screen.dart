@@ -20,6 +20,7 @@ import '../voting_flow_models.dart';
 import '../voting_poll_ordering.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+import '../../../../l10n/app_localizations.dart';
 
 const int _ballotDivisorZatoshi = 12500000;
 const _pendingTallyRefreshInterval = Duration(seconds: 10);
@@ -88,7 +89,12 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
                   }
                   _clearPendingTallyRefresh();
                   return _Message(
-                    "Couldn't load results: ${friendlyVotingErrorMessage(error)}",
+                    AppLocalizations.of(context).votingLoadResultsError(
+                      friendlyVotingErrorMessage(
+                        error,
+                        AppLocalizations.of(context),
+                      ),
+                    ),
                   );
                 },
                 data: (result) {
@@ -97,8 +103,12 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
                     _clearPendingTallyRefresh();
                     if (session.hasError) {
                       return _Message(
-                        "Couldn't load voting round details: "
-                        "${friendlyVotingErrorMessage(session.error!)}",
+                        AppLocalizations.of(context).votingLoadRoundDetailsError(
+                          friendlyVotingErrorMessage(
+                            session.error!,
+                            AppLocalizations.of(context),
+                          ),
+                        ),
                       );
                     }
                     return const VotingPaneLoading();
@@ -115,21 +125,24 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _ResultsHeader(
-                          title: _roundTitle(round),
+                          title: _roundTitle(
+                            round,
+                            AppLocalizations.of(context),
+                          ),
                           snapshotHeight: round.snapshotHeight,
                           description: _roundDescription(round) ?? '',
                           forumUri: votingRoundForumUriFromJson(round.rawJson),
                         ),
                         const SizedBox(height: AppSpacing.md),
                         Text(
-                          'Results',
+                          AppLocalizations.of(context).votingResults,
                           style: AppTypography.headlineSmall.copyWith(
                             color: context.colors.text.accent,
                           ),
                         ),
                         const SizedBox(height: AppSpacing.s),
                         if (proposals.isEmpty)
-                          const _Message('No proposals in this round.')
+                          _Message(AppLocalizations.of(context).votingNoProposalsInRound)
                         else
                           for (var index = 0; index < proposals.length; index++)
                             Padding(
@@ -167,7 +180,7 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
 
   Widget _pendingResults() {
     _schedulePendingTallyRefresh();
-    return const _Message('Results pending...');
+    return _Message(AppLocalizations.of(context).votingResultsPending);
   }
 
   void _schedulePendingTallyRefresh() {
@@ -322,7 +335,7 @@ class _ResultCard extends StatelessWidget {
                 if (selectedLabel != null)
                   Expanded(
                     child: Text(
-                      'Voted: $selectedLabel',
+                      AppLocalizations.of(context).votingVotedLabel(selectedLabel),
                       style: AppTypography.bodySmall.copyWith(
                         color: context.colors.text.secondary,
                       ),
@@ -332,7 +345,7 @@ class _ResultCard extends StatelessWidget {
                   const Spacer(),
                 if (total > 0)
                   Text(
-                    'Total: ${_formatTallyZec(total)}',
+                    AppLocalizations.of(context).votingTotalLabel(_formatTallyZec(total)),
                     style: AppTypography.bodySmall.copyWith(
                       color: context.colors.text.secondary,
                     ),
@@ -461,9 +474,9 @@ bool _isTallyNotReadyError(Object error) {
   return error is VotingHttpException && error.statusCode == 404;
 }
 
-String _roundTitle(VotingRoundDetails round) {
+String _roundTitle(VotingRoundDetails round, AppLocalizations l10n) {
   final title = round.title.trim();
-  return title.isEmpty ? 'Voting results' : title;
+  return title.isEmpty ? l10n.votingResultsFallbackTitle : title;
 }
 
 String? _roundDescription(VotingRoundDetails round) {

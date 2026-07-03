@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -172,8 +173,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           if (!mounted) return;
           setState(() {
             _keystonePhase = KeystoneSigningModalPhase.failed;
-            _keystoneError =
-                'Signing was cancelled before proving parameters were downloaded.';
+            _keystoneError = AppLocalizations.of(
+              context,
+            ).sendSigningCancelledParams;
           });
           return;
         }
@@ -238,15 +240,16 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   String _friendlyKeystoneError(String raw) {
+    final l10n = AppLocalizations.of(context);
     final lower = raw.toLowerCase();
     if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
-      return 'Transaction expired before it could be signed.';
+      return l10n.sendTxExpired;
     }
     if (lower.contains('sapling') || lower.contains('download')) {
-      return 'Required proving parameters could not be prepared.';
+      return l10n.keystoneShieldParamsError;
     }
-    return 'Keystone signing could not be prepared. Return to Send and try again.';
+    return l10n.sendKeystonePrepareError;
   }
 
   Future<void> _cancelKeystoneSigning() async {
@@ -325,8 +328,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                 memoText: hasMemo ? memo : null,
                 memoExpanded: _messageExpanded,
                 confirmLabel: isHardware
-                    ? 'Confirm with Keystone'
-                    : 'Confirm & send',
+                    ? AppLocalizations.of(context).sendConfirmWithKeystone
+                    : AppLocalizations.of(context).sendConfirmAndSend,
                 confirmLeadingIconName: isHardware
                     ? AppIcons.qr
                     : AppIcons.plane,
@@ -351,20 +354,20 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                   phase: keystonePhase,
                   urParts: _keystoneUrParts,
                   error: _keystoneError,
-                  title: 'Confirm with Keystone',
-                  subtitle: 'Scan with your Keystone',
+                  title: AppLocalizations.of(context).sendConfirmWithKeystone,
+                  subtitle: AppLocalizations.of(context).sendScanWithKeystone,
                   instruction: _keystonePcztWithProofs == null
-                      ? 'Scan now. Signature import unlocks after proofs are ready.'
-                      : 'After you scanned, click Get signature.',
+                      ? AppLocalizations.of(context).sendScanNowProofs
+                      : AppLocalizations.of(context).sendAfterScanGetSignature,
                   primaryLabel: _keystonePcztWithProofs == null
-                      ? 'Preparing'
-                      : 'Get signature',
+                      ? AppLocalizations.of(context).sendPreparing
+                      : AppLocalizations.of(context).sendGetSignature,
                   onPrimary:
                       keystonePhase == KeystoneSigningModalPhase.ready &&
                           _keystonePcztWithProofs != null
                       ? () => unawaited(_getKeystoneSignature())
                       : null,
-                  secondaryLabel: 'Cancel',
+                  secondaryLabel: AppLocalizations.of(context).commonCancel,
                   onSecondary: () => unawaited(_cancelKeystoneSigning()),
                 ),
               ),

@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 final _hardwareIntent = SwapIntent(
   id: 'swap-mobile-hardware',
@@ -167,6 +168,9 @@ Widget _app(GoRouter router, {_FakeSwapProvider? swapProvider}) {
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

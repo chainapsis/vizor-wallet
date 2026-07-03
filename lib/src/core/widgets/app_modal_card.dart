@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 import 'app_button.dart';
 
@@ -61,7 +62,7 @@ class AppModalActions extends StatelessWidget {
     required this.onCancel,
     required this.actionLabel,
     required this.onAction,
-    this.cancelLabel = 'Cancel',
+    this.cancelLabel,
     this.actionVariant = AppButtonVariant.primary,
     this.actionMinWidth = kAppModalButtonMinWidth,
     this.actionLeading,
@@ -71,7 +72,9 @@ class AppModalActions extends StatelessWidget {
   });
 
   final VoidCallback? onCancel;
-  final String cancelLabel;
+
+  /// Defaults to the localized "Cancel" when null.
+  final String? cancelLabel;
   final String actionLabel;
   final VoidCallback? onAction;
   final AppButtonVariant actionVariant;
@@ -137,7 +140,7 @@ class AppModalActions extends StatelessWidget {
       children: [
         buildButton(
           key: cancelKey,
-          label: cancelLabel,
+          label: cancelLabel ?? AppLocalizations.of(context).commonCancel,
           onPressed: onCancel,
           variant: AppButtonVariant.ghost,
         ),

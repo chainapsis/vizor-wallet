@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_
 import 'package:zcash_wallet/src/features/receive/widgets/mobile/receive_address_info_sheet.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
 import 'package:zcash_wallet/widgetbook/receive_use_cases.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('receive mobile shielded use case renders receive screen', (
@@ -159,6 +160,9 @@ Future<void> _pumpReceiveMobileUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(
         data: AppThemeData.dark,
         child: Builder(builder: builder),

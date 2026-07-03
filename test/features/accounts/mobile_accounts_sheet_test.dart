@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 const _accounts = AccountState(
   accounts: [
@@ -116,6 +117,9 @@ Widget _app({
       receiveAddressServiceProvider.overrideWithValue(addressService),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
       home: AppToastHost(
         child: Builder(

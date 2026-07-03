@@ -6,6 +6,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:widgetbook/widgetbook.dart';
 
+import '../l10n/app_localizations.dart';
 import '../src/core/theme/app_theme.dart';
 import 'address_book_use_cases.dart';
 import 'address_verify_use_cases.dart';
@@ -54,6 +55,10 @@ class WidgetbookApp extends StatelessWidget {
     return Widgetbook.material(
       initialRoute: _initialRoute,
       addons: [
+        LocalizationAddon(
+          locales: AppLocalizations.supportedLocales,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+        ),
         ThemeAddon<AppThemeData>(
           themes: const [
             WidgetbookTheme(name: 'Dark', data: AppThemeData.dark),

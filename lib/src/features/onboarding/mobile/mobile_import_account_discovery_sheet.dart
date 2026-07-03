@@ -8,6 +8,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
+import '../../../../l10n/app_localizations.dart';
 
 typedef MobileImportAccountTransparentBalanceLoader =
     Future<BigInt> Function(
@@ -194,14 +195,14 @@ class _MobileImportAccountDiscoverySheetState
 
     return MobileModalScaffold(
       key: const ValueKey('mobile_import_account_discovery_sheet'),
-      title: 'Additional accounts found',
+      title: AppLocalizations.of(context).onbAdditionalAccountsFound,
       onClose: widget.onCancel,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Choose the additional accounts to import.',
+            AppLocalizations.of(context).onbChooseAdditionalAccounts,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -260,7 +261,7 @@ class _MobileImportAccountDiscoverySheetState
             key: const ValueKey('mobile_import_account_discovery_confirm'),
             expand: true,
             onPressed: canConfirm ? _confirm : null,
-            child: const Text('Import'),
+            child: Text(AppLocalizations.of(context).onbImportAction),
           ),
           const SizedBox(height: AppSpacing.xs),
           AppButton(
@@ -268,7 +269,7 @@ class _MobileImportAccountDiscoverySheetState
             variant: AppButtonVariant.ghost,
             expand: true,
             onPressed: widget.onCancel,
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context).commonCancel),
           ),
         ],
       ),
@@ -406,7 +407,7 @@ class _TransparentBalancePreviewLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final balanceText = switch (state.status) {
-      _TransparentBalanceStatus.loading => 'Loading',
+      _TransparentBalanceStatus.loading => AppLocalizations.of(context).onbBalanceLoading,
       _TransparentBalanceStatus.failed => '-',
       _TransparentBalanceStatus.loaded => ZecAmount.fromZatoshi(
         state.zatoshi ?? BigInt.zero,
@@ -422,7 +423,7 @@ class _TransparentBalancePreviewLabel extends StatelessWidget {
       key: const ValueKey('mobile_import_account_discovery_balance_label'),
       children: [
         Text(
-          'Transparent',
+          AppLocalizations.of(context).onbTransparentLabel,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: AppTypography.labelMedium.copyWith(

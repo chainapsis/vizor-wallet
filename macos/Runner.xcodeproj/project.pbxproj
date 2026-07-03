@@ -26,6 +26,7 @@
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
 		33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC10F02044A3C60003C045 /* AppDelegate.swift */; };
 		33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F42044A3C60003C045 /* MainMenu.xib */; };
+		C0DE2B5001AB12CD34EF0004 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = C0DE2B5001AB12CD34EF0003 /* InfoPlist.strings */; };
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
 		8A0F5C532F8B001200A1C001 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 8A0F5C522F8B001200A1C001 /* AppIcon.icon */; };
 		8A0F5C542F8B001200A1C001 /* TestnetAppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 8A0F5C552F8B001200A1C001 /* TestnetAppIcon.icon */; };
@@ -74,6 +75,8 @@
 		33CC10F02044A3C60003C045 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		8A0F5C522F8B001200A1C001 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = AppIcon.icon; path = Runner/AppIcon.icon; sourceTree = "<group>"; };
 		8A0F5C552F8B001200A1C001 /* TestnetAppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = TestnetAppIcon.icon; path = Runner/TestnetAppIcon.icon; sourceTree = "<group>"; };
+		C0DE2B5001AB12CD34EF0001 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		C0DE2B5001AB12CD34EF0002 /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		33CC10F52044A3C60003C045 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		33CC10F72044A3C60003C045 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Runner/Info.plist; sourceTree = "<group>"; };
 		33CC11122044BFA00003C045 /* MainFlutterWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainFlutterWindow.swift; sourceTree = "<group>"; };
@@ -173,6 +176,7 @@
 				8A0F5C522F8B001200A1C001 /* AppIcon.icon */,
 				8A0F5C552F8B001200A1C001 /* TestnetAppIcon.icon */,
 				33CC10F42044A3C60003C045 /* MainMenu.xib */,
+				C0DE2B5001AB12CD34EF0003 /* InfoPlist.strings */,
 				33CC10F72044A3C60003C045 /* Info.plist */,
 			);
 			name = Resources;
@@ -296,6 +300,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				ko,
 				Base,
 			);
 			mainGroup = 33CC10E42044A3C60003C045;
@@ -328,6 +333,7 @@
 				8A0F5C532F8B001200A1C001 /* AppIcon.icon in Resources */,
 				8A0F5C542F8B001200A1C001 /* TestnetAppIcon.icon in Resources */,
 				33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */,
+				C0DE2B5001AB12CD34EF0004 /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -470,6 +476,16 @@
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
+		C0DE2B5001AB12CD34EF0003 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				C0DE2B5001AB12CD34EF0001 /* en */,
+				C0DE2B5001AB12CD34EF0002 /* ko */,
+			);
+			name = InfoPlist.strings;
+			path = Runner;
+			sourceTree = "<group>";
+		};
 		33CC10F42044A3C60003C045 /* MainMenu.xib */ = {
 			isa = PBXVariantGroup;
 			children = (

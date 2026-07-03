@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -53,7 +54,7 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                   children: [
                     const SizedBox(height: AppSpacing.md),
                     Text(
-                      'Welcome to Vizor',
+                      AppLocalizations.of(context).onbWelcomeToVizor,
                       textAlign: TextAlign.center,
                       style: AppTypography.displayLarge.copyWith(
                         color: colors.text.accent,
@@ -61,7 +62,7 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      'Select the method you want.',
+                      AppLocalizations.of(context).onbSelectMethod,
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMediumStrong.copyWith(
                         color: colors.text.primary,
@@ -79,7 +80,7 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                                 'mobile_welcome_create',
                               ),
                               iconName: AppIcons.addNew,
-                              label: 'Create wallet',
+                              label: AppLocalizations.of(context).onbCreateWallet,
                               illustration:
                                   'assets/illustrations/method_create_dark.png',
                               // The create knight is taller than the card and
@@ -94,7 +95,7 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                                 'mobile_welcome_import',
                               ),
                               iconName: AppIcons.importWallet,
-                              label: 'Import wallet',
+                              label: AppLocalizations.of(context).onbImportWallet,
                               illustration:
                                   'assets/illustrations/method_import_dark.png',
                               onTap: () => context.push('/import'),
@@ -105,7 +106,7 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                                 'mobile_welcome_keystone',
                               ),
                               iconName: AppIcons.qr,
-                              label: 'Connect Keystone',
+                              label: AppLocalizations.of(context).navConnectKeystone,
                               illustration: isDark
                                   ? 'assets/illustrations/method_keystone_dark.png'
                                   : 'assets/illustrations/method_keystone_light.png',
@@ -357,10 +358,10 @@ class _MethodLegalFooter extends StatelessWidget {
           TextSpan(
             style: base,
             children: [
-              const TextSpan(text: 'By using Vizor you agree to our '),
-              TextSpan(text: 'Terms', style: emphasis),
-              const TextSpan(text: ' and '),
-              TextSpan(text: 'Privacy', style: emphasis),
+              TextSpan(text: AppLocalizations.of(context).onbAgreePrefix),
+              TextSpan(text: AppLocalizations.of(context).onbTerms, style: emphasis),
+              TextSpan(text: AppLocalizations.of(context).onbAnd),
+              TextSpan(text: AppLocalizations.of(context).onbPrivacy, style: emphasis),
             ],
           ),
           textAlign: TextAlign.center,

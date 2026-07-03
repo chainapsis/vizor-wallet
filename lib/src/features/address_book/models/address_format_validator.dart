@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../../../l10n/app_localizations.dart' show AppLocalizations;
 import '../../../core/config/network_config.dart';
 import '../../../core/crypto/base58check.dart';
 import '../../../core/crypto/bech32.dart';
@@ -13,17 +14,45 @@ import 'address_book_contact.dart';
 /// enough to deserve a second look (surface it, never block on it).
 enum AddressFormatSeverity { error, warning }
 
-/// A format finding for an address, carrying a short user-facing [message]
-/// and its [severity].
+/// The specific issue behind a finding; UI code resolves it to a localized
+/// message via [addressFormatFindingMessage].
+enum AddressFormatIssueKind {
+  invalidEvm,
+  invalidBitcoin,
+  invalidSolana,
+  invalidZcash,
+  invalidNear,
+  nearBareName,
+}
+
+/// A format finding for an address, carrying its issue [kind] and [severity].
+///
+/// The validator stays localization-free; callers resolve the user-facing
+/// message with [addressFormatFindingMessage].
 class AddressFormatFinding {
-  const AddressFormatFinding.error(this.message)
+  const AddressFormatFinding.error(this.kind)
     : severity = AddressFormatSeverity.error;
 
-  const AddressFormatFinding.warning(this.message)
+  const AddressFormatFinding.warning(this.kind)
     : severity = AddressFormatSeverity.warning;
 
-  final String message;
+  final AddressFormatIssueKind kind;
   final AddressFormatSeverity severity;
+}
+
+/// Localized user-facing message for [finding].
+String addressFormatFindingMessage(
+  AddressFormatFinding finding,
+  AppLocalizations l10n,
+) {
+  return switch (finding.kind) {
+    AddressFormatIssueKind.invalidEvm => l10n.abInvalidEvm,
+    AddressFormatIssueKind.invalidBitcoin => l10n.abInvalidBitcoin,
+    AddressFormatIssueKind.invalidSolana => l10n.abInvalidSolana,
+    AddressFormatIssueKind.invalidZcash => l10n.abInvalidZcash,
+    AddressFormatIssueKind.invalidNear => l10n.abInvalidNear,
+    AddressFormatIssueKind.nearBareName => l10n.abNearHint,
+  };
 }
 
 /// Conservative, best-effort address format check keyed on [network].
@@ -62,18 +91,22 @@ AddressFormatFinding? addressFormatCheck(
   if (network.isEvm) {
     return _isEvmAddress(trimmed)
         ? null
-        : const AddressFormatFinding.error('Invalid EVM address');
+        : const AddressFormatFinding.error(AddressFormatIssueKind.invalidEvm);
   }
 
   switch (network) {
     case AddressBookNetwork.bitcoin:
       return _isBitcoinAddress(trimmed)
           ? null
-          : const AddressFormatFinding.error('Invalid Bitcoin address');
+          : const AddressFormatFinding.error(
+              AddressFormatIssueKind.invalidBitcoin,
+            );
     case AddressBookNetwork.solana:
       return _isSolanaAddress(trimmed)
           ? null
-          : const AddressFormatFinding.error('Invalid Solana address');
+          : const AddressFormatFinding.error(
+              AddressFormatIssueKind.invalidSolana,
+            );
     case AddressBookNetwork.near:
       return _nearFinding(trimmed);
     case AddressBookNetwork.zcash:
@@ -82,7 +115,9 @@ AddressFormatFinding? addressFormatCheck(
             zcashNetwork ?? zcashNetworkFromName(kZcashDefaultNetworkName),
           )
           ? null
-          : const AddressFormatFinding.error('Invalid Zcash address');
+          : const AddressFormatFinding.error(
+              AddressFormatIssueKind.invalidZcash,
+            );
     default:
       return null;
   }
@@ -94,7 +129,7 @@ AddressFormatFinding? addressFormatCheck(
 /// callers that block submission (the swap review/destination paths) never
 /// reject a syntactically valid address. Callers that can display advisory
 /// text should use [addressFormatCheck] directly.
-String? addressFormatIssue(
+AddressFormatFinding? addressFormatIssue(
   AddressBookNetwork network,
   String address, {
   ZcashNetwork? zcashNetwork,
@@ -105,9 +140,7 @@ String? addressFormatIssue(
     zcashNetwork: zcashNetwork,
   );
   if (finding == null) return null;
-  return finding.severity == AddressFormatSeverity.error
-      ? finding.message
-      : null;
+  return finding.severity == AddressFormatSeverity.error ? finding : null;
 }
 
 final _evm = RegExp(r'^0[xX][0-9a-fA-F]{40}$');
@@ -172,7 +205,7 @@ AddressFormatFinding? _nearFinding(String value) {
   final isNamed =
       value.length >= 2 && value.length <= 64 && _nearNamed.hasMatch(value);
   if (!isNamed) {
-    return const AddressFormatFinding.error('Invalid NEAR address');
+    return const AddressFormatFinding.error(AddressFormatIssueKind.invalidNear);
   }
   // Bare top-level names (`alice`) are syntactically valid, but on mainnet
   // only the protocol registrar can create them — real ones (`aurora`,
@@ -180,7 +213,7 @@ AddressFormatFinding? _nearFinding(String value) {
   // suffix. Warn without blocking.
   if (!value.contains('.')) {
     return const AddressFormatFinding.warning(
-      'NEAR accounts usually end in .near — double-check this address',
+      AddressFormatIssueKind.nearBareName,
     );
   }
   return null;

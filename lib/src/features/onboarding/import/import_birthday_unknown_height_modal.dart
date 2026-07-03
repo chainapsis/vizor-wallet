@@ -5,6 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class ImportBirthdayUnknownHeightModal extends StatelessWidget {
   const ImportBirthdayUnknownHeightModal({
@@ -57,7 +58,7 @@ class ImportBirthdayUnknownHeightModal extends StatelessWidget {
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Text(
-                    'Import from the earliest height?',
+                    AppLocalizations.of(context).onbUnknownHeightTitle,
                     style: AppTypography.bodyLarge.copyWith(
                       color: colors.text.accent,
                       fontWeight: FontWeight.w500,
@@ -73,16 +74,14 @@ class ImportBirthdayUnknownHeightModal extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'If you continue without a wallet birthday, Vizor will '
-                    'scan from the earliest supported shielded height. This '
-                    'is safe, but the first sync can take a very long time.',
+                    AppLocalizations.of(context).onbUnknownHeightBody,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.accent,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    'Choosing even an approximate date will be much faster.',
+                    AppLocalizations.of(context).onbUnknownHeightHint,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
                     ),
@@ -95,7 +94,7 @@ class ImportBirthdayUnknownHeightModal extends StatelessWidget {
               key: const ValueKey('unknown_birthday_confirm_button'),
               onPressed: onConfirm,
               minWidth: 280,
-              child: const Text('Continue Anyway'),
+              child: Text(AppLocalizations.of(context).onbContinueAnyway),
             ),
             const SizedBox(height: AppSpacing.s),
             AppButton(
@@ -103,7 +102,7 @@ class ImportBirthdayUnknownHeightModal extends StatelessWidget {
               onPressed: onCancel,
               variant: AppButtonVariant.ghost,
               minWidth: 280,
-              child: const Text('Go Back'),
+              child: Text(AppLocalizations.of(context).onbGoBack),
             ),
           ],
         ),

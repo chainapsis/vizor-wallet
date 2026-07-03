@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/widgets/dot_qr_shape.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_asset.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_timeout_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_deposit_tokens_page_content.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 Widget _harness(
   Widget child, {
@@ -20,6 +21,9 @@ Widget _harness(
   double width = 361,
 }) {
   return MaterialApp(
+    localizationsDelegates:
+        AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     builder: (_, navigator) =>
         AppTheme(data: AppThemeData.dark, child: navigator!),
     home: MediaQuery(

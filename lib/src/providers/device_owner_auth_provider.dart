@@ -13,8 +13,8 @@ final deviceOwnerAuthProvider = Provider<DeviceOwnerAuth>(
   (ref) => DeviceOwnerAuth(),
 );
 
-Future<bool> verifyDeviceOwnerForWalletReset(WidgetRef ref) {
+Future<bool> verifyDeviceOwnerForWalletReset(WidgetRef ref, {String? reason}) {
   return ref
       .read(deviceOwnerAuthProvider)
-      .verify(reason: kWalletResetDeviceAuthReason);
+      .verify(reason: reason ?? kWalletResetDeviceAuthReason);
 }

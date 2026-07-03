@@ -1,40 +1,43 @@
-const _monthAbbreviations = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
+import 'package:intl/intl.dart';
 
-/// Abbreviated English month name for a 1-indexed [month] (1 = Jan, 12 = Dec).
-String monthAbbreviation(int month) => _monthAbbreviations[month - 1];
+/// Clamps [locale] to one whose date symbols are actually loaded.
+///
+/// Inside the app the `flutter_localizations` delegates initialize date
+/// symbols for every supported locale. Pure Dart unit tests never run those
+/// delegates, so an explicit locale would throw `LocaleDataException`;
+/// falling back to null keeps intl's built-in default (English) working.
+String? intlSafeLocale(String? locale) {
+  if (locale == null) return null;
+  try {
+    return DateFormat.localeExists(locale) ? locale : null;
+  } catch (_) {
+    return null;
+  }
+}
 
-/// Formats a date as `Jan 5` in the local time zone.
-String formatMonthDay(DateTime date) {
-  final local = date.toLocal();
-  return '${monthAbbreviation(local.month)} ${local.day}';
+/// Formats a date as `Jan 5` in the local time zone. Pass the active
+/// `l10n.localeName` for localized month names; null keeps English.
+String formatMonthDay(DateTime date, {String? locale}) {
+  return DateFormat.MMMd(intlSafeLocale(locale)).format(date.toLocal());
 }
 
 /// Formats a date as `Jan 5, 2026` in the local time zone.
-String formatMonthDayYear(DateTime date) {
-  final local = date.toLocal();
-  return '${monthAbbreviation(local.month)} ${local.day}, ${local.year}';
+String formatMonthDayYear(DateTime date, {String? locale}) {
+  return DateFormat.yMMMd(intlSafeLocale(locale)).format(date.toLocal());
 }
 
 /// Formats a timestamp as `25 May, 13:30` (Figma send status format) in the
-/// local time zone.
-String formatDayMonthTime(DateTime date) {
+/// local time zone. Non-English locales use their own day/month order
+/// (e.g. Korean `7월 3일, 12:18`).
+String formatDayMonthTime(DateTime date, {String? locale}) {
+  final safe = intlSafeLocale(locale);
   final local = date.toLocal();
-  final hh = local.hour.toString().padLeft(2, '0');
-  final mm = local.minute.toString().padLeft(2, '0');
-  return '${local.day} ${monthAbbreviation(local.month)}, $hh:$mm';
+  if (safe == null || safe.startsWith('en')) {
+    return DateFormat('d MMM, HH:mm', safe).format(local);
+  }
+  final day = DateFormat.MMMd(safe).format(local);
+  final time = DateFormat('HH:mm', safe).format(local);
+  return '$day, $time';
 }
 
 /// Parses a flexible date value into a local-zone [DateTime].

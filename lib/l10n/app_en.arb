@@ -1,0 +1,2208 @@
+{
+  "@@locale": "en",
+  "settingsTitle": "Settings",
+  "settingsSectionAccount": "Account",
+  "settingsSectionSystem": "System",
+  "settingsSectionMisc": "Misc",
+  "settingsSectionDangerZone": "Danger zone",
+  "settingsSecretPassphrase": "Secret passphrase",
+  "settingsPassword": "Password",
+  "settingsProfilePicture": "Profile picture",
+  "settingsProfilePictureCustom": "Custom",
+  "settingsAccountName": "Account name",
+  "settingsContacts": "Contacts",
+  "settingsEndpoint": "Endpoint",
+  "settingsTheme": "Theme",
+  "settingsLanguage": "Language",
+  "settingsUpdates": "Updates",
+  "settingsAboutVizor": "About Vizor",
+  "settingsUninstallVizor": "Uninstall Vizor",
+  "settingsThemeSystem": "System",
+  "settingsThemeSystemAuto": "System (Auto)",
+  "settingsThemeLight": "Light",
+  "settingsThemeDark": "Dark",
+  "settingsThemeUpdateError": "Couldn't update theme.",
+  "settingsLanguageUpdateError": "Couldn't update language.",
+  "commonCancel": "Cancel",
+  "commonUpdate": "Update",
+  "commonUpdating": "Updating...",
+  "settingsUpdateCurrent": "Current",
+  "settingsUpdateAvailable": "Available",
+  "settingsUpdateUnavailable": "Unavailable",
+  "settingsUpdateChecking": "Checking",
+  "settingsUpdateRestart": "Restart",
+  "settingsUpdateApplying": "Applying",
+  "settingsUpdateFailed": "Failed",
+  "settingsUpdateUpToDate": "Up to date",
+  "settingsUpdateCheck": "Check",
+  "settingsUpdateActionCheck": "Check for updates",
+  "settingsUpdateActionChecking": "Checking...",
+  "settingsUpdateActionDownloading": "Downloading...",
+  "settingsUpdateActionRestarting": "Restarting...",
+  "settingsUpdateActionDownload": "Download update",
+  "settingsUpdateActionRestartToUpdate": "Restart to update",
+  "settingsUpdateActionTryAgain": "Try again",
+  "settingsUpdateStatusWindowsOnly": "Updates are available in the installed Windows app.",
+  "settingsUpdateStatusChecking": "Checking for updates.",
+  "settingsUpdateStatusUpToDate": "Vizor is up to date.",
+  "settingsUpdateStatusAvailable": "Version {version} is available.",
+  "@settingsUpdateStatusAvailable": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsUpdateStatusDownloading": "Downloading {progress}%.",
+  "@settingsUpdateStatusDownloading": {
+    "placeholders": {
+      "progress": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsUpdateStatusReady": "Version {version} is ready.",
+  "@settingsUpdateStatusReady": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsUpdateStatusApplying": "Restarting Vizor.",
+  "settingsUpdateStatusCheckFailed": "Couldn't check for updates.",
+  "settingsUpdateStatusIdle": "Ready to check for updates.",
+  "commonBack": "Back",
+  "commonClose": "Close",
+  "commonOk": "OK",
+  "commonRetry": "Retry",
+  "commonDone": "Done",
+  "commonNext": "Next",
+  "commonContinue": "Continue",
+  "commonCopy": "Copy",
+  "commonSave": "Save",
+  "commonRemove": "Remove",
+  "commonEdit": "Edit",
+  "commonAdd": "Add",
+  "commonConfirm": "Confirm",
+  "commonDismiss": "Dismiss",
+  "homeNoticePasswordRotationFailed": "We couldn't verify the previous password change. Try again or restart Vizor.",
+  "navHome": "Home",
+  "navSend": "Send",
+  "navReceive": "Receive",
+  "navSwap": "Swap",
+  "navVote": "Vote",
+  "navActivity": "Activity",
+  "navAccounts": "Accounts",
+  "navSignOut": "Sign out",
+  "navAmount": "Amount",
+  "navReview": "Review",
+  "navStatus": "Status",
+  "navTransaction": "Transaction",
+  "navChangePassword": "Change password",
+  "navConnectKeystone": "Connect Keystone",
+  "navVotingRound": "Voting round",
+  "navSubmitted": "Submitted",
+  "navResults": "Results",
+  "navImporting": "Importing...",
+  "sidebarMyAccounts": "My accounts",
+  "sidebarManage": "Manage",
+  "sidebarShowBalance": "Show balance",
+  "sidebarHideBalance": "Hide balance",
+  "sidebarCopyShieldedAddress": "Copy shielded address",
+  "toastCopied": "Copied",
+  "toastAddressCopied": "Address copied",
+  "toastAddressCopyFailed": "Address couldn't be copied",
+  "toastShieldedAddressCopied": "Shielded address copied",
+  "syncStatusSyncingLabel": "{pct}% Syncing...",
+  "@syncStatusSyncingLabel": {
+    "placeholders": {
+      "pct": {
+        "type": "String"
+      }
+    }
+  },
+  "syncStatusSyncingSemantics": "Syncing {pct} percent",
+  "@syncStatusSyncingSemantics": {
+    "placeholders": {
+      "pct": {
+        "type": "String"
+      }
+    }
+  },
+  "syncStatusFailedLabel": "Syncing failed. {reason}...",
+  "@syncStatusFailedLabel": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "syncStatusFailedSemantics": "Syncing failed. {reason}",
+  "@syncStatusFailedSemantics": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "syncStatusSynced": "Vizor is synced",
+  "syncFailureNetwork": "Network error",
+  "syncFailureEndpoint": "Endpoint error",
+  "syncFailureDatabaseBusy": "Wallet data busy",
+  "syncFailureDatabaseFatal": "Wallet data error",
+  "syncFailureChainRecovery": "Chain recovery",
+  "syncFailureParse": "Data error",
+  "syncFailureUnknown": "Unknown error",
+  "syncUserMessageNetwork": "Network connection lost. We'll keep trying automatically.",
+  "syncUserMessageEndpoint": "Cannot reach the configured Zcash endpoint. Check your endpoint settings.",
+  "syncUserMessageDatabaseBusy": "Wallet data is busy. We'll try syncing again automatically.",
+  "syncUserMessageDatabaseFatal": "Wallet data could not be read. Restart the app and retry sync.",
+  "syncUserMessageChainRecovery": "The chain changed while syncing. We'll keep trying to recover.",
+  "syncUserMessageParse": "Sync data could not be processed. Retry sync or check your endpoint.",
+  "syncUserMessageUnknown": "Sync failed. Retry sync to continue.",
+  "homeShieldNoActiveAccount": "No active account.",
+  "homeErrorGeneric": "Something went wrong. Try again in a moment.\n\nDetails: {details}",
+  "@homeErrorGeneric": {
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "homeTransparentBalanceLabel": "Transparent: {balance}",
+  "@homeTransparentBalanceLabel": {
+    "placeholders": {
+      "balance": {
+        "type": "String"
+      }
+    }
+  },
+  "homeShielding": "Shielding...",
+  "homeShieldNow": "Shield now",
+  "homeImportingAccount": "Importing {name}\nKeep Vizor open & running.",
+  "@homeImportingAccount": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "homeImportingGeneric": "It might take some time.\nKeep Vizor open & running.",
+  "homeShieldedBalance": "Shielded balance",
+  "homeReceiveFirstZec": "Receive your first ZEC",
+  "homeLoadingActivity": "Loading activity...",
+  "homeNoActivity": "No activity, yet...",
+  "homeFirstTxPrompt": "How about running your first ZEC tx?",
+  "homeRecentActivity": "Recent activity",
+  "homeSeeAll": "See all",
+  "shieldQueuedRetry": "Shielding queued for retry. Check Activity.",
+  "homeShieldComplete": "Shielding complete",
+  "shieldErrorNoPassphrase": "Secret Passphrase isn't available for this account.",
+  "shieldErrorWaitForSync": "Wait for sync to finish, then shield.",
+  "shieldErrorTooSmall": "Transparent balance is too small to shield after fees.",
+  "shieldErrorBroadcast": "Couldn't broadcast your shielding transaction. Try again.",
+  "shieldErrorGeneric": "Couldn't shield your balance. Try again.",
+  "shieldTxBroadcastUnknown": "The shield transaction may have reached the network, but confirmation timed out. Check activity before trying again.",
+  "shieldTxStorageFailed": "The shield transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.",
+  "shieldTxUncertain": "The shield transaction status is uncertain. Check activity before trying again.",
+  "keystoneShieldParamsError": "Required proving parameters could not be prepared.",
+  "keystoneShieldSignatureError": "Keystone signature could not be applied.",
+  "keystoneShieldFinalizeError": "Shield transaction could not be finalized.",
+  "keystoneShieldPrepareError": "Keystone signing could not be prepared.",
+  "keystoneShieldQrDecodeError": "This QR code could not be decoded as a Keystone signature.",
+  "keystoneShieldOpenSignedQr": "Open the signed shield QR on Keystone, then scan again.",
+  "keystoneScanHoldSteady": "Keep the QR code steady and fully visible.",
+  "keystoneToggleFlashlight": "Toggle flashlight",
+  "keystoneCancelSigning": "Cancel signing",
+  "keystoneShieldBroadcasting": "Broadcasting shield tx",
+  "keystoneShieldTransparentBalance": "Shield transparent balance",
+  "keystoneShieldKeepOpen": "Keep Vizor open while the transaction is sent.",
+  "keystoneShieldScanInstructions": "Use your Keystone wallet to scan this shielding QR code. Follow the steps on your device.",
+  "keystoneCameraDenied": "Camera access is off. Allow it in Settings to scan Keystone signatures.",
+  "keystoneCameraUnavailable": "The camera is unavailable right now.",
+  "keystoneReadingSignature": "Reading signature...",
+  "keystoneScanningProgress": "Scanning... {progress}%",
+  "@keystoneScanningProgress": {
+    "placeholders": {
+      "progress": {
+        "type": "int"
+      }
+    }
+  },
+  "keystoneScanSignedQr": "Scan the signed QR on your Keystone",
+  "keystoneBackToWallet": "Back to wallet",
+  "keystoneShowQr": "Show QR",
+  "keystoneBroadcastingEllipsis": "Broadcasting...",
+  "keystoneNextStep": "Next step",
+  "homeShield": "Shield",
+  "homeFirstTxPromptWrapped": "How about running your\nfirst ZEC tx?",
+  "homeHangTight": "Hang tight ... It might take some time. Keep Vizor open & running.",
+  "receiveNoActiveAccount": "No active account",
+  "receiveRenewShieldedError": "We couldn't refresh your shielded address. Try again, or use your current one.",
+  "receiveRenewShieldedErrorDetails": "We couldn't refresh your shielded address. Try again, or use your current one.\nDetails: {details}",
+  "@receiveRenewShieldedErrorDetails": {
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "receiveTitle": "Receive {ticker}",
+  "@receiveTitle": {
+    "placeholders": {
+      "ticker": {
+        "type": "String"
+      }
+    }
+  },
+  "receiveCopyTransparentAddress": "Copy transparent address",
+  "receiveShareShieldedAddress": "Share shielded address",
+  "receiveShareTransparentAddress": "Share transparent address",
+  "receiveShielded": "Shielded",
+  "receiveTransparent": "Transparent",
+  "receiveQrUnavailable": "QR unavailable",
+  "previewUsername": "Username",
+  "aboutKeplrTeamHeading": "Built by the Keplr team",
+  "aboutKeplrTeamBody": "We built Keplr, the wallet used by millions across Cosmos, Ethereum, and Bitcoin. Vizor is our take on what a Zcash wallet should feel like.",
+  "aboutShieldedHeading": "Designed for shielded Zcash",
+  "aboutShieldedBody": "Vizor is built around shielded transactions, where the sender, recipient, and amount stay private. Transparent Zcash works too, but private is the default.",
+  "aboutOpenSourceHeading": "Open source, self-custodied",
+  "aboutOpenSourceBody": "Vizor is Apache licensed. Your keys stay on your device.\nWe don't see your balances or your transactions.",
+  "aboutLegalPlaceholderHeading": "From the team that brought you Keplr Wallet.",
+  "aboutLegalPlaceholderBody": "Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the sender, recipient, and amount.",
+  "aboutTermsOfUsage": "Terms of Usage",
+  "aboutPrivacyPolicy": "Privacy Policy",
+  "aboutVizorWallet": "About Vizor Wallet",
+  "aboutWelcome": "Welcome",
+  "aboutOpenGithub": "Open Vizor GitHub",
+  "aboutWebsite": "Website",
+  "aboutOpenWebsite": "Open Vizor website",
+  "activitySendFailed": "Send failed",
+  "activitySending": "Sending",
+  "activityReceiving": "Receiving",
+  "activityReceived": "Received",
+  "activitySent": "Sent",
+  "activityShielded": "Shielded",
+  "activityRefunded": "Refunded",
+  "activityFailed": "Failed",
+  "activityInProgress": "In progress",
+  "activityCompleted": "Completed",
+  "activityMixed": "Mixed",
+  "activityEarlier": "Earlier",
+  "activityJustNow": "just now",
+  "activityMinutesAgo": "{minutes}m ago",
+  "@activityMinutesAgo": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "activityThisWeek": "This week",
+  "activityTodayAt": "Today, {time}",
+  "@activityTodayAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "activityYesterdayAt": "Yesterday, {time}",
+  "@activityYesterdayAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "activityDateAt": "{date}, {time}",
+  "@activityDateAt": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "activityNoActiveAccount": "No active account.",
+  "activityTxLoadError": "Transaction could not be loaded.",
+  "activityTxRefreshError": "Latest transaction status could not be refreshed.",
+  "activityTxHashCopied": "Transaction hash copied",
+  "activityLoadingTx": "Loading transaction…",
+  "activityLoadError": "Activity could not be loaded.",
+  "activityTimestamp": "Timestamp",
+  "activityTxId": "Tx ID",
+  "activityFrom": "From",
+  "activityTo": "To",
+  "activityShowFullAddress": "Show full address",
+  "activityFromTransparentBalance": "From transparent balance",
+  "activityReceivingEllipsis": "Receiving...",
+  "activitySendingEllipsis": "Sending...",
+  "activitySentSuccessfully": "Sent successfully",
+  "swapFailedTitle": "Swap failed",
+  "swapReviewQuote": "Review quote",
+  "shieldReceiptInProgress": "Shielding in progress...",
+  "shieldReceiptCompleted": "Shielded successfully",
+  "shieldReceiptFailed": "Shielding failed",
+  "receiveReceiptInProgress": "Receive in progress...",
+  "receiveReceiptCompleted": "Received successfully",
+  "receiveReceiptFailed": "Receive failed",
+  "receivedFeeTooltip": "Network fee paid by the sender to process this transaction.",
+  "activityNetworkFee": "Network fee",
+  "activityMessage": "Message",
+  "activityFailedFundsReturned": "Failed, funds returned",
+  "sendTitle": "Send {ticker}",
+  "@sendTitle": {
+    "placeholders": {
+      "ticker": {
+        "type": "String"
+      }
+    }
+  },
+  "sendKeystoneNoTex": "Keystone does not support TEX sends yet.",
+  "sendInsufficientBalance": "Insufficient balance",
+  "sendInsufficientShieldedBalance": "Insufficient shielded balance",
+  "sendInsufficientBalanceCoverFee": "Insufficient balance to cover fee",
+  "sendInsufficientShieldedBalanceCoverFee": "Insufficient shielded balance to cover fee",
+  "sendInsufficientBalanceIncludingFee": "Insufficient balance including fee",
+  "sendInsufficientShieldedBalanceIncludingFee": "Insufficient shielded balance including fee",
+  "sendInsufficientBalanceWithFee": "Insufficient balance (fee: {fee})",
+  "@sendInsufficientBalanceWithFee": {
+    "placeholders": {
+      "fee": {
+        "type": "String"
+      }
+    }
+  },
+  "sendInsufficientShieldedBalanceWithFee": "Insufficient shielded balance (fee: {fee})",
+  "@sendInsufficientShieldedBalanceWithFee": {
+    "placeholders": {
+      "fee": {
+        "type": "String"
+      }
+    }
+  },
+  "sendMessageTooLong": "Message is too long",
+  "sendMessageShieldedOnly": "Message is only available for shielded addresses",
+  "sendNoActiveAccount": "No active account",
+  "sendEnterValidAddressForMax": "Enter a valid address to use Max",
+  "sendMaxUnavailable": "Max amount unavailable",
+  "sendInvalidAmount": "Invalid amount",
+  "sendCalculatingMax": "Calculating max amount",
+  "sendEnterValidAddress": "Enter a valid address",
+  "sendInvalidAddress": "Invalid address",
+  "sendAddressValidationFailed": "Address validation failed",
+  "sendSendTo": "Send to",
+  "sendZcashAddressHint": "Zcash address",
+  "sendZcashAddressHintMobile": "Zcash Address",
+  "sendAddMessageHint": "Add a message",
+  "sendCloseMessage": "Close message",
+  "sendContactsZcashTitle": "Contacts Zcash",
+  "sendNoZcashContacts": "No Zcash contacts",
+  "sendOpenContacts": "Open contacts",
+  "sendSpendableTooltipTitle": "Your spendable balance may be lower than your total balance.",
+  "sendSpendableTooltipBody": "Funds need confirmations before they can be spent: 3 for change from your own wallet, 10 for funds received from others. Shielded notes also need to be fully scanned. They'll become available shortly.",
+  "sendMaxLabel": "Max: {amount}",
+  "@sendMaxLabel": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "sendUseMaxBalance": "Use maximum spendable balance",
+  "sendSpendableInfo": "Spendable balance info",
+  "sendAddMemo": "Add a memo",
+  "sendEncryptedShieldedOnly": "Encrypted, for shielded addresses only.",
+  "sendScanKeystoneQr": "Scan your Keystone QR Code",
+  "keystoneSendQrDecodeError": "This QR code could not be decoded as a Keystone transaction signature.",
+  "keystoneOpenSignedTxQr": "Open the signed transaction QR on Keystone, then scan again.",
+  "keystoneScanQrTitle": "Scan QR Code",
+  "keystoneHoldQrSteady": "Hold the QR code steady in front of your camera",
+  "keystoneCameraOnly": "Keystone signing uses camera QR scanning only. Connect a camera and try again.",
+  "sendSigningCancelledParams": "Signing was cancelled before proving parameters were downloaded.",
+  "sendTxExpired": "Transaction expired before it could be signed.",
+  "sendKeystonePrepareError": "Keystone signing could not be prepared. Return to Send and try again.",
+  "sendKeystonePrepareErrorGoBack": "Keystone signing could not be prepared. Go back and try again.",
+  "sendConfirmWithKeystone": "Confirm with Keystone",
+  "sendConfirmAndSend": "Confirm & send",
+  "sendConfirmAndSendMobile": "Confirm & Send",
+  "sendScanWithKeystone": "Scan with your Keystone",
+  "sendAfterScanGetSignature": "After you scanned, click Get signature.",
+  "sendScanNowProofs": "Scan now. Signature import unlocks after proofs are ready.",
+  "sendPreparing": "Preparing",
+  "sendPreparingEllipsis": "Preparing...",
+  "sendGetSignature": "Get signature",
+  "sendNotEnoughZec": "Not enough ZEC",
+  "sendFinishReview": "Finish & review",
+  "sendEnterAmountToContinue": "Enter amount to continue",
+  "sendEnterAddressToContinue": "Enter address to continue",
+  "addressTex": "TEX address",
+  "sendSelectRecipient": "Select Recipient",
+  "sendEnterAmount": "Enter Amount",
+  "sendReviewSend": "Review Send",
+  "sendScanAQrCode": "Scan a QR Code",
+  "sendScanAddressUsingCamera": "Scan an address using camera",
+  "sendContactCount": "{count, plural, =1{1 contact} other{{count} contacts}}",
+  "@sendContactCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sendPaste": "Paste",
+  "sendClear": "Clear",
+  "sendSendingTo": "Sending to",
+  "sendMax": "Max",
+  "sendEnterAmountInZec": "Enter amount in ZEC",
+  "sendEnterAmountInUsd": "Enter amount in USD",
+  "sendFullAddress": "Full address",
+  "sendAddShortEncryptedMessage": "Add short encrypted message",
+  "sendAboutTxFee": "About the transaction fee",
+  "sendAddMemoTitle": "Add Memo",
+  "sendOnlyRecipientCanRead": "Only the recipient can read this",
+  "sendClearMemo": "Clear memo",
+  "sendReviewTitle": "Review send",
+  "sendCollapse": "Collapse",
+  "sendTexAddressLabel": "TEX - {address}",
+  "@sendTexAddressLabel": {
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "sendInProgressTitle": "Send in progress...",
+  "sendAmountToRecipient": "{amount} to {recipient}",
+  "@sendAmountToRecipient": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      },
+      "recipient": {
+        "type": "String"
+      }
+    }
+  },
+  "sendConfirmTransaction": "Confirm transaction",
+  "sendErrorInsufficientForAmountFee": "Insufficient shielded balance to cover amount and fee.",
+  "sendErrorNetwork": "Network error. Check your connection and try again.",
+  "sendErrorPartialBroadcast": "Some parts of this transaction were sent. Open Activity to see what went through before you try again.",
+  "sendErrorBroadcastRejected": "The network rejected this transaction. Try again.",
+  "sendErrorBroadcastRejectedLater": "The network rejected this transaction. Try again later.",
+  "sendErrorExpiredTryAgain": "Transaction expired before it could be sent. Try again.",
+  "sendErrorExpired": "Transaction expired before it could be sent.",
+  "sendErrorGenericShort": "Send failed. Try again.",
+  "sendErrorCheckStatus": "Transaction couldn't be sent. Go back to your wallet and check the latest status.",
+  "saplingDownloadRequired": "Download Required",
+  "saplingDownloadBody": "To create this private transaction, your wallet needs to download about 50MB of cryptographic parameters.",
+  "saplingDownloadOnce": "This happens once, then it's done.\nNetwork data charges may apply.",
+  "saplingDownload": "Download",
+  "accountsAddAccount": "Add account",
+  "accountsCurrent": "Current",
+  "accountsOther": "Other",
+  "accountsAccountActions": "Account actions",
+  "accountsEditAccount": "Edit account",
+  "accountsCopyAddress": "Copy address",
+  "accountsSendZec": "Send ZEC",
+  "accountsRemoveAccount": "Remove account",
+  "accountsOptionsFor": "Account options for {name}",
+  "@accountsOptionsFor": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "accountsRemoveResetWarning": "Removing this account will completely reset the Vizor app. This means deleting all accounts and requiring you to import accounts again.\nThis cannot be undone.",
+  "accountsRemoveWarning": "Are you sure you want to remove this account? This action can't be reverted.\nYou will have to re-import your account.",
+  "accountsResetVizor": "Reset Vizor",
+  "accountsCheckingSwaps": "Checking this account for active swaps before removal.",
+  "accountsSwapCheckFailed": "Couldn't check this account for active swaps. Try again before removing it.",
+  "accountsActiveSwaps": "This account has {count, plural, =1{1 active swap} other{{count} active swaps}}. Complete or remove them from swap activity before removing this account.",
+  "@accountsActiveSwaps": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "accountsIncorrectPassword": "Incorrect password. Please try again.",
+  "accountsEnterPassword": "Enter your password",
+  "accountsCheckingPassword": "Checking password...",
+  "accountsStoppingSync": "Stopping sync...",
+  "accountsResetting": "Resetting...",
+  "accountsRemoving": "Removing account...",
+  "accountsChangeProfilePicture": "Change profile picture",
+  "accountsSelectProfilePicture": "Select profile picture",
+  "accountsClearAccountName": "Clear account name",
+  "accountsSaveEdits": "Save edits",
+  "accountsUpdatePicture": "Update picture",
+  "accountsOtherAccounts": "Other accounts",
+  "accountsManageAccounts": "Manage accounts",
+  "accountsNameHint": "1-20 characters",
+  "accountsNameLengthMessage": "Use up to 20 characters.",
+  "accountsUpdateError": "Couldn't update account.",
+  "abSearch": "Search",
+  "abSearchHint": "Search for label or network",
+  "abEditContact": "Edit contact",
+  "abRemoveContact": "Remove contact",
+  "abNoContactsYet": "No contacts yet",
+  "abAddFirstContact": "Add your first contact to get started.",
+  "abNoContactsFound": "No contacts were found",
+  "abModifySearch": "Try to modify your search",
+  "abAddContact": "Add contact",
+  "abAddressLabel": "Address label",
+  "abAddLabelHint": "Add label 1-20 characters",
+  "abAddress": "Address",
+  "abAddAddressHint": "Add address",
+  "abScanAddressQr": "Scan address QR",
+  "abChangeContactPicture": "Change contact picture",
+  "abChainAndAddress": "Chain & address",
+  "abSelectNetwork": "Select network",
+  "abSelectContactPicture": "Select contact picture",
+  "abSearchNetworkHint": "Search network",
+  "abNoNetworksFound": "No networks found",
+  "abContactWillBeRemoved": "This contact will be removed.",
+  "abNamedContactWillBeRemoved": "{name} will be removed from your contacts.",
+  "@abNamedContactWillBeRemoved": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "abLoadError": "Couldn't load your contacts. Try again, or contact support if this keeps happening.",
+  "abSaveError": "Couldn't save contact. Try again.",
+  "abRemoveError": "Couldn't remove contact. Try again.",
+  "abNoContactsFoundShort": "No contacts found",
+  "abSearchContacts": "Search contacts",
+  "abCloseContacts": "Close contacts",
+  "abClearSearch": "Clear search",
+  "abQrNoAddress": "QR code did not include an address.",
+  "abClearName": "Clear name",
+  "abClearAddress": "Clear address",
+  "abNetwork": "Network",
+  "abName": "Name",
+  "abAddNameHint": "Add a name",
+  "abAddAnAddressHint": "Add an address",
+  "abSaveContact": "Save contact",
+  "abRemoveContactQuestion": "Remove contact?",
+  "abNoPastTxEffect": "This does not affect any past transactions.",
+  "abInvalidEvm": "Invalid EVM address",
+  "abInvalidBitcoin": "Invalid Bitcoin address",
+  "abInvalidSolana": "Invalid Solana address",
+  "abInvalidZcash": "Invalid Zcash address",
+  "abInvalidNear": "Invalid NEAR address",
+  "abNearHint": "NEAR accounts usually end in .near — double-check this address",
+  "abAddLabelError": "Add a label",
+  "abLabelLength": "Use 1-20 characters",
+  "abAddAddressError": "Add an address",
+  "abScanNetworkQr": "Scan {network} QR code",
+  "@abScanNetworkQr": {
+    "placeholders": {
+      "network": {
+        "type": "String"
+      }
+    }
+  },
+  "keystoneScanReadingQr": "Reading QR...",
+  "cameraNoneFound": "No camera found",
+  "cameraLoading": "Loading camera...",
+  "cameraDefault": "Default camera",
+  "cameraDefaultSuffix": "{name} (Default)",
+  "@cameraDefaultSuffix": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "cameraOpenError": "No camera could be opened. Check that a camera is connected and not in use by another app.",
+  "cameraDeniedWindowsTitle": "Enable Windows camera access",
+  "cameraDeniedTitle": "You've denied the Camera access",
+  "cameraDeniedWindowsDesc": "Turn on Camera access and Let desktop apps access your camera in Windows Settings.",
+  "cameraDeniedDesc": "Request again, or enable manually\nin the System settings.",
+  "cameraAllow": "Allow camera",
+  "cameraRequestAgain": "Request again",
+  "cameraOpenSettings": "Open settings",
+  "cameraEnableAccess": "Enable camera access",
+  "cameraKeystoneRequired": "A camera is required to connect Keystone.\nYou can revert this in settings anytime later.",
+  "cameraUnavailableTitle": "Camera unavailable",
+  "troubleScanning": "Trouble scanning?",
+  "troubleTipFullScreen": "Tap the QR code on your Keystone to show it full screen. This is the easiest fix.",
+  "troubleTipDistance": "Move your Keystone a few inches further from the camera so it can focus.",
+  "troubleTipLighting": "Make sure the room is well-lit and the QR code isn't reflecting glare.",
+  "troubleTipContinuity": "On a Mac, you can use Continuity Camera to scan with your iPhone instead.",
+  "cameraLabel": "Camera",
+  "cameraSelect": "Select Camera",
+  "cameraDetailDefault": "Default",
+  "cameraDetailExternal": "External",
+  "cameraDetailFront": "Front",
+  "cameraDetailBack": "Back",
+  "cameraDetailNormal": "Normal",
+  "cameraDetailWide": "Wide",
+  "cameraDetailZoom": "Zoom",
+  "keystonePrepareWallet": "Prepare your Keystone wallet",
+  "keystoneStepCheckFirmware": "1. Check Keystone firmware",
+  "keystoneStepPrepareConnect": "2. Prepare to connect",
+  "keystoneOnYourKeystone": "On your Keystone",
+  "keystoneStepTapConnect": "Tap ••• (top right), then Connect software wallet.",
+  "keystoneStepSelectVizor": "Select Vizor (or ZODL)",
+  "keystoneOnVizor": "On Vizor",
+  "keystoneStepScanDynamicQr": "Scan the dynamic QR code on your Keystone.",
+  "keystoneFirmwareNote": "Make sure your Keystone is on the latest Cypherpunk firmware. ",
+  "keystoneDownloadFirmware": "Download Keystone firmware",
+  "keystoneNoZcashAccounts": "No Zcash accounts were found on this Keystone QR.",
+  "keystoneAccountQrDecodeError": "This QR code could not be decoded as a Keystone Zcash account.",
+  "keystoneOpenAccountQr": "Open the Zcash account QR on Keystone, then scan again.",
+  "keystoneReadingAccounts": "Reading accounts...",
+  "keystoneImportCameraOnly": "Keystone import uses camera QR scanning only. Connect a camera and try again.",
+  "keystoneSelectAccount": "Select account",
+  "keystoneAccountsFound": "{count, plural, =1{1 account found} other{{count} accounts found}}",
+  "@keystoneAccountsFound": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "keystoneAccountFallback": "Account {index}",
+  "@keystoneAccountFallback": {
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "keystoneScanAccountQr": "Scan the Keystone account QR",
+  "onbEstimatingHeight": "Estimating height...",
+  "onbCheckingAccounts": "Checking accounts...",
+  "onbPausingSync": "Pausing sync...",
+  "onbImportingWallet": "Importing wallet...",
+  "onbSelectMonth": "Select month",
+  "onbSelectDate": "Select date",
+  "onbBirthdayTitle": "Around when did you create your wallet?",
+  "onbBirthdaySubtitle": "An estimate is enough — sync starts\nfrom there.",
+  "onbDontRemember": "I don’t remember",
+  "onbEnterMonth": "Enter the month",
+  "onbEnterDate": "Enter the date",
+  "onbEnterBlockHeight": "Enter the block height",
+  "onbBlockHeight": "Block height",
+  "onbAtLeastHeight": "At least {height}.",
+  "@onbAtLeastHeight": {
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "onbBetweenHeights": "Between {min} and {max}.",
+  "@onbBetweenHeights": {
+    "placeholders": {
+      "min": {
+        "type": "String"
+      },
+      "max": {
+        "type": "String"
+      }
+    }
+  },
+  "onbPickMonth": "Pick a month",
+  "onbPickDate": "Pick a date",
+  "onbEstimateFailed": "Couldn't estimate a height for that date. Enter a block height instead.",
+  "scanZcashQrCaption": "Scan a Zcash QR code to continue",
+  "scanAddressQrTitle": "Scan the address QR code",
+  "scanNeedsCamera": "QR scanning needs a camera on this device.",
+  "scanAddressNeedsCamera": "Address QR scanning needs a camera on this device.",
+  "scanAddressRequiresCamera": "Address QR scanning requires a camera on this device.",
+  "scanCloseScanner": "Close scanner",
+  "scanLoadingEllipsis": "Loading...",
+  "scanLoading": "Loading",
+  "scanGrantCameraAccess": "Grant access to your camera",
+  "scanQrNoAddress": "QR code did not include an address.",
+  "scanCameraDeniedTitle": "You've denied camera access",
+  "keystoneLoadingQr": "Loading the QR code ...",
+  "keystoneSignQrDecodeError": "This QR code could not be decoded as a Keystone signature.",
+  "keystoneSignPrepareError": "Keystone signing could not be prepared.",
+  "keystoneScanSignedKeystoneQr": "Scan the signed Keystone QR",
+  "keystoneSignNeedsCamera": "Keystone signing needs a camera on this device.",
+  "keystoneCloseSigning": "Close Keystone signing",
+  "onbWelcomeToVizor": "Welcome to Vizor",
+  "onbSelectMethod": "Select the method you want.",
+  "onbCreateWallet": "Create wallet",
+  "onbImportWallet": "Import wallet",
+  "onbAgreePrefix": "By using Vizor you agree to our ",
+  "onbTerms": "Terms",
+  "onbPrivacy": "Privacy",
+  "onbEndpointSettings": "Endpoint settings",
+  "onbPrivateMoney": "Private money.\nBy default",
+  "onbGetStarted": "Get started\nwith Vizor",
+  "onbCreateAWallet": "Create a wallet",
+  "onbImportAWallet": "Import a wallet",
+  "onbIncorrectPassword": "Incorrect password. Try again.",
+  "onbWelcomeBack": "Welcome back",
+  "onbEnterPasswordToOpen": "Enter your password to open Vizor.",
+  "onbEnterPassword": "Enter password",
+  "onbUnlockVizor": "Unlock Vizor",
+  "onbForgotPassword": "Forgot password?",
+  "onbResetAfterSeconds": "Reset after {seconds}s...",
+  "@onbResetAfterSeconds": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "onbCannotBeUndone": "This cannot be undone.",
+  "onbLostPassword": "Lost password?",
+  "onbLostPasswordBodyPrefix": "If you've lost your password, the only way to recover\nyour account is to ",
+  "onbLostPasswordReset": "completely reset Vizor app",
+  "onbLostPasswordBodyMiddle": ", which\nmeans deleting all accounts and requiring you to\n",
+  "onbLostPasswordReimport": "import accounts again",
+  "walletResetFailed": "Couldn't reset Vizor. Please try again.",
+  "storageDbUpdateStillFailed": "The wallet database update still failed.",
+  "storageStillUnavailable": "Secure storage is still unavailable.",
+  "storageRetrying": "Retrying",
+  "storageQuit": "Quit",
+  "storageDbUpdateTitle": "Unable to update wallet database",
+  "storageOpenFailedTitle": "Unable to open Vizor",
+  "storageUnlockKeyring": "Unlock your keyring",
+  "storageLockedTitle": "Secure storage is locked",
+  "storageDbUpdateBody": "Vizor needs to update the local wallet database before opening this version. Try again, or quit and restart Vizor.",
+  "storageStartupBody": "Vizor could not load the local startup state. Try again, or quit and restart Vizor.",
+  "storageKeyringBody": "Vizor needs access to the system keyring before it can open your wallet. Unlock the keyring, then try again.",
+  "storageSecureBody": "Vizor needs access to secure storage before it can open your wallet. Unlock secure storage, then try again.",
+  "onbPasswordsDoNotMatch": "Passwords do not match.",
+  "onbPasswordHint": "Min. 8 characters and symbols",
+  "onbConfirmPassword": "Confirm password",
+  "onbSetPassword": "Set Password",
+  "onbSetPasswordSubtitle": "Set password for signing in to Vizor wallet.",
+  "onbStopSyncing": "Stop syncing...",
+  "onbSettingPassword": "Setting password...",
+  "onbSetPasswordFinish": "Set password & finish",
+  "onbSecretPassphrase": "Secret Passphrase",
+  "onbMasterKeySubtitle": "The master key to your wallet.",
+  "onbCreatingWallet": "Creating wallet...",
+  "onbRevealPhrase": "Reveal the phrase",
+  "onbAboutToSeePrefix": "You are about to see your ",
+  "onbAboutToSeeSuffix": "Secret Passphrase.",
+  "onbPhraseWarning": "This phrase is the master key to your funds. Keep it safe, keep it secret. If you lose it, no one can help you recover your wallet. Not even us.",
+  "onbCopied": "Copied",
+  "onbWelcomeStep": "Welcome",
+  "onbShieldedWorld": "The Shielded World",
+  "onbZecIntro": "Zcash (ZEC) built around financial privacy & self-custody.",
+  "onbZecPrivacyBody": "Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the sender, recipient, and amount — verified by cryptography, not trust.",
+  "onbTellMeHow": "Tell me how Zcash works",
+  "onbIKnowZcash": "I know how to use Zcash",
+  "onbStepIntro": "Intro to Zcash",
+  "onbStepAddressTypes": "Address types",
+  "onbStepThingsToKnow": "Things to know",
+  "onbZcashAddressTypes": "Zcash Address Types",
+  "onbTwoAddressTypes": "Zcash has two address types.\nOne for privacy, one for transparency.",
+  "onbAddressStartsWith": "Address starts with ",
+  "onbShieldedAddressSuffix": " for legacy). Only you can see your account balance and transaction history.",
+  "onbShieldedAddressOr": " (or ",
+  "onbTransparentAddressBody": "Address starts with t, similar to Bitcoin, your address' balance and transaction history are publicly visible.",
+  "onbThingsToKnow": "Things to know",
+  "onbTimeToSync": "Time to sync",
+  "onbTimeToSyncBody": "Your wallet syncs directly with the Zcash network instead of relying on a server. This protects your privacy, but takes a moment. Your funds are safe while the app catches up.",
+  "onbKeepPrivacy": "How to keep privacy",
+  "onbKeepPrivacyBody": "Some exchanges can't send to shielded addresses. If you're withdrawing from an exchange, use your transparent address. You can shield your ZEC after it arrives.",
+  "keystoneSendScanInstructions": "Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.",
+  "activityNoActivityYet": "No activity yet",
+  "activityShieldedSender": "Shielded sender",
+  "activityUnknownSender": "Unknown sender",
+  "addressUnified": "Unified address",
+  "addressZcash": "Zcash address",
+  "receiveGenerateNewShielded": "Generate new shielded address",
+  "receiveAboutAddressType": "About this address type",
+  "receiveShieldedAddressTitle": "Shielded address",
+  "receiveTransparentAddressTitle": "Transparent address",
+  "receiveShieldedSubtitle": "Strong privacy by default.",
+  "receiveTransparentSubtitle": "Publicly visible",
+  "receiveShieldedInfoPrivacyTouch": "Tx details — sender, receiver, and amount — are encrypted on-chain & hidden.",
+  "receiveShieldedInfoPrivacyPointer": "Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.",
+  "receiveShieldedInfoRenewTap": "A new Zcash shielded address is generated only when you tap the renew button.",
+  "receiveShieldedInfoRenewClick": "A new Zcash shielded address is generated only when you click the renew button.",
+  "receiveShieldedInfoDiversified": "Each new address is a diversified address derived from the same key. They all receive to the same wallet.",
+  "receiveTransparentInfoPublicTouch": "All tx details — sender, receiver, and amount — are publicly visible on-chain.",
+  "receiveTransparentInfoPublicPointer": "All tx details - sender, receiver, and amount - are publicly visible on-chain.",
+  "receiveTransparentInfoExchanges": "Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.",
+  "receiveTransparentInfoRotation": "After this address receives ZEC and Vizor syncs, your next transparent address will automatically change. Previous addresses still belong to this wallet.",
+  "receiveTransparentInfoShieldGuide": "After receiving {ticker} to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won't be able to send it.",
+  "@receiveTransparentInfoShieldGuide": {
+    "placeholders": {
+      "ticker": {
+        "type": "String"
+      }
+    }
+  },
+  "inputClearText": "Clear text",
+  "backToLabel": "Back to {label}",
+  "@backToLabel": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "txFeeHelpTooltip": "Fee paid to the Zcash network to process this transaction.",
+  "txFeeSheetTitle": "Tx fee",
+  "txFeeSheetBody": "The network fee is set by the Zcash protocol (ZIP 317) based on the transaction size. Vizor adds no extra fee.",
+  "sheetNotAvailableTitle": "Not available yet",
+  "sheetNotAvailableBody": "This feature is still in progress.",
+  "onbStepWalletBirthdayHeight": "Wallet Birthday Height",
+  "onbStepHowToConnect": "How to Connect",
+  "onbStepScanQrCode": "Scan QR Code",
+  "onbStepSelectAccount": "Select Account",
+  "onbBirthdayMetadataError": "Could not load wallet birthday metadata.",
+  "onbBirthdayEstimateError": "Could not estimate the wallet birthday height.",
+  "onbImporting": "Importing...",
+  "onbEstimating": "Estimating...",
+  "onbCantRemember": "I can’t remember",
+  "onbDateHint": "mm/dd/yyyy",
+  "onbBlockHeightHint": "Block height",
+  "onbUnknownHeightTitle": "Import from the earliest height?",
+  "onbUnknownHeightBody": "If you continue without a wallet birthday, Vizor will scan from the earliest supported shielded height. This is safe, but the first sync can take a very long time.",
+  "onbUnknownHeightHint": "Choosing even an approximate date will be much faster.",
+  "onbContinueAnyway": "Continue Anyway",
+  "onbGoBack": "Go Back",
+  "onbErrorDuplicateAccount": "This account is already in your wallet.",
+  "onbErrorDuplicateKeystoneAccount": "This Keystone account is already in your wallet.",
+  "onbErrorCurrentBlockHeight": "We need the current Zcash block height to create your wallet. Check your network connection and try again.",
+  "onbZecIntroMobile": "Zcash (ZEC) built around financial\nprivacy & self-custody.",
+  "onbFewStepsAway": "You're a few steps away from your first private wallet. Let's get you set up.",
+  "onbTwoAddressTypesMobile": "Zcash has two addresses types.\nOne for Privacy, one for Transparency.",
+  "onbShieldedAddress": "Shielded Address",
+  "onbTransparentAddress": "Transparent Address",
+  "onbShieldedAddressBodyMobile": "Address starts with u1 (or zs for legacy).\nOnly you can see your account balance and transaction history.",
+  "onbBeforeYouDiveIn": "Before you dive in.",
+  "onbInvalidPassphraseWordCount": "Enter a valid secret passphrase with 12, 15, 18, 21, or 24 words.",
+  "onbWelcomeAdventurer": "Welcome, adventurer",
+  "onbImportByPassphrase": "Import your wallet by entering your secret passphrase.",
+  "onbWordHint": "Word",
+  "onbPassphraseWordCountFound": "A secret passphrase has 12, 15, 18, 21, or 24 words — found {count}.",
+  "@onbPassphraseWordCountFound": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "onbPassphraseInvalidOrder": "These words are valid, but they do not form a valid secret passphrase. Check the order or replace any word that looks wrong.",
+  "onbPassphraseCheckFailed": "That passphrase couldn't be checked. Try again.",
+  "onbImportWalletTitle": "Import Wallet",
+  "onbImportWalletSubtitleMobile": "Paste your Secret Passphrase or\nenter it manually word by word.",
+  "onbConfirmAndImport": "Confirm & import",
+  "onbClearSecretPhrase": "Clear secret phrase",
+  "onbPasteSecretPhrase": "Paste secret phrase",
+  "onbEnterManually": "Enter manually",
+  "onbEnterSecretPhraseManually": "Enter secret phrase manually",
+  "onbClipboardEmpty": "Clipboard is empty",
+  "onbClipboardReadFailed": "Can't read clipboard data",
+  "onbUnlockBiometricReason": "Unlock your wallet",
+  "onbIncorrectPasscode": "Incorrect Passcode",
+  "onbWelcomeBackMobile": "Welcome Back",
+  "onbOpeningWallet": "Opening your wallet...",
+  "onbEnterPasscodeToOpen": "Enter your passcode to open Vizor",
+  "onbMasterKeySubtitleMobile": "The Master Key to your wallet.",
+  "onbRevealPhraseMobile": "Reveal phrase",
+  "onbAboutToSeeMobile": "You are about to see your\nSecret Passphrase.",
+  "keystoneConnectTitle": "Connect Keystone",
+  "keystoneCheckFirmware": "Check Keystone firmware",
+  "keystonePrepareToConnect": "Prepare to connect",
+  "keystoneFirmwareBody": "Make sure your Keystone is on the latest Cypherpunk firmware. ",
+  "keystoneLink": "link",
+  "keystoneNoAccountsFound": "No Zcash accounts were found on this Keystone QR.",
+  "keystoneConfirmSelection": "Confirm selection",
+  "biometricFaceId": "Face ID",
+  "biometricFingerprintInline": "fingerprint",
+  "biometricBiometricsInline": "biometrics",
+  "biometricFingerprintStandalone": "Fingerprint",
+  "biometricBiometricsStandalone": "Biometrics",
+  "biometricYourFingerprint": "your fingerprint",
+  "biometricUnlockFeatureFace": "Face ID unlock",
+  "biometricUnlockFeatureFingerprint": "Fingerprint unlock",
+  "biometricUnlockFeatureNone": "Biometric unlock",
+  "biometricUnlockFeatureInlineFingerprint": "fingerprint unlock",
+  "biometricUnlockFeatureInlineNone": "biometric unlock",
+  "biometricChangedFace": "Face ID changed. Enter your passcode.",
+  "biometricChangedFingerprint": "Fingerprint changed. Enter your passcode.",
+  "biometricChangedNone": "Biometric unlock changed. Enter your passcode.",
+  "biometricEnable": "Enable {method}",
+  "@biometricEnable": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricSignIn": "Sign in with {method}",
+  "@biometricSignIn": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricFeatureOff": "{feature} off",
+  "@biometricFeatureOff": {
+    "placeholders": {
+      "feature": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricFeatureOn": "{feature} on",
+  "@biometricFeatureOn": {
+    "placeholders": {
+      "feature": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricSetUpFirst": "Set up {method} in your device settings first.",
+  "@biometricSetUpFirst": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricUpdateFailed": "Couldn't update {feature}.",
+  "@biometricUpdateFailed": {
+    "placeholders": {
+      "feature": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricTurnOffTitle": "Turn off {feature}?",
+  "@biometricTurnOffTitle": {
+    "placeholders": {
+      "feature": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricTurnOffBody": "You will use your passcode to unlock Vizor. You can turn {feature} back on in settings anytime.",
+  "@biometricTurnOffBody": {
+    "placeholders": {
+      "feature": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricEnableFailed": "Couldn't enable {method}. You can try again in settings.",
+  "@biometricEnableFailed": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "onbBiometricsTitle": "Unlock your wallet\nwith {method}",
+  "@onbBiometricsTitle": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "onbBiometricsSubtitle": "This is an easy and fast way to sign in.\nYou can switch back to passcode anytime.",
+  "onbNotNow": "Not now",
+  "passcodeDigitLabel": "Digit {digit}",
+  "@passcodeDigitLabel": {
+    "placeholders": {
+      "digit": {
+        "type": "int"
+      }
+    }
+  },
+  "passcodeHelpLabel": "Passcode help",
+  "passcodeDeleteDigit": "Delete digit",
+  "onbCopySecretPassphrase": "Copy secret passphrase",
+  "onbPrivateMoneyMobile": "Private Money.\nBy default",
+  "onbGetStartedShort": "Get started",
+  "onbAnd": " and ",
+  "onbOr": "OR",
+  "keystoneSubmittingTransaction": "Submitting the transaction",
+  "onbMonthHint": "mm/yyyy",
+  "onbForgotPasscodeTitle": "Forgot Passcode?",
+  "onbForgotPasscodeBody": "If you can't remember your passcode, the only way to recover your account is to completely reset the Vizor app, which means deleting all accounts and requiring you to import accounts again.",
+  "onbContinueToReset": "Continue to reset Vizor",
+  "onbResetVizor": "Reset Vizor",
+  "onbAreYouSure": "Are you sure?",
+  "onbCantBeUndone": "This can't be undone.\n",
+  "onbProceedResponsibility": "Proceed on your responsibility.",
+  "onbSettingUpWallet": "Setting up your wallet...",
+  "onbReenterPasscode": "Re-enter your passcode.",
+  "onbSixDigitsLength": "6 digits length",
+  "onbConfirmPasscode": "Confirm Passcode",
+  "onbCreatePasscode": "Create Passcode",
+  "onbAdditionalAccountsFound": "Additional accounts found",
+  "onbChooseAdditionalAccounts": "Choose the additional accounts to import.",
+  "onbImportAction": "Import",
+  "onbBalanceLoading": "Loading",
+  "onbTransparentLabel": "Transparent",
+  "onbContinueAnywayLower": "Continue anyway",
+  "onbGoBackLower": "Go back",
+  "onbWordNotInList": "'{word}' isn't in the passphrase word list.",
+  "@onbWordNotInList": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "onbStoppedAtWord": "Stopped at '{word}' — it isn't in the passphrase word list.",
+  "@onbStoppedAtWord": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "onbNextWord": "Next word",
+  "onbEnterYourPassphrase": "Enter your Secret Passphrase",
+  "onbAcceptWordCounts": "Accept 12, 15, 18, 21 or 24 words",
+  "onbUndoLastWord": "Undo last word",
+  "swapStatusAwaitingDeposit": "Awaiting deposit",
+  "swapStatusAwaitingExternalDeposit": "Awaiting external deposit",
+  "swapStatusDepositObserved": "Deposit observed",
+  "swapStatusProcessing": "Processing",
+  "swapStatusChecking": "Checking status",
+  "swapStatusIncompleteDeposit": "Incomplete deposit",
+  "swapStatusComplete": "Complete",
+  "swapStatusRefunded": "Refunded",
+  "swapStatusExpired": "Expired",
+  "swapStatusFailed": "Failed",
+  "swapTitleCompleted": "Swap completed",
+  "swapTitleFailed": "Swap failed",
+  "swapTitleInProgress": "Swap in progress...",
+  "swapToAddressOnChain": "To: {address} on {chain}",
+  "@swapToAddressOnChain": {
+    "placeholders": {
+      "address": {
+        "type": "String"
+      },
+      "chain": {
+        "type": "String"
+      }
+    }
+  },
+  "swapRefundToAddress": "Refund to: {address}",
+  "@swapRefundToAddress": {
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "swapVerbSending": "Sending",
+  "swapVerbDepositing": "Depositing",
+  "swapSymbolSent": "{symbol} sent",
+  "@swapSymbolSent": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapSymbolDeposited": "{symbol} Deposited",
+  "@swapSymbolDeposited": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapDeliverSymbol": "Deliver {symbol}",
+  "@swapDeliverSymbol": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapSendSymbol": "Send {symbol}",
+  "@swapSendSymbol": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapDepositSymbol": "Deposit {symbol}",
+  "@swapDepositSymbol": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapLastCheckJustNow": "Last check: just now",
+  "swapLastCheckMinutesAgo": "Last check: {minutes}m ago",
+  "@swapLastCheckMinutesAgo": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "swapStepSourceDesc": "Confirm waiting for the source chain and provider to recognise the deposit",
+  "swapStepDepositConfirmation": "Deposit confirmation",
+  "swapStepDepositConfirmationActive": "Deposit confirmation...",
+  "swapStepConfirmingDesc": "Confirming the deposit before the swap route starts.",
+  "swapStepSwapTitle": "Swap",
+  "swapStepSwapActive": "Swap...",
+  "swapStepSwapDesc": "The provider is executing the swap route.",
+  "swapStepDeliveryDesc": "Delivering the output asset to the recipient address.",
+  "swapRealizedSlippageLabel": "Realized slippage",
+  "swapNotReported": "Not reported",
+  "swapTimestampLabel": "Timestamp",
+  "swapDepositTxLabel": "{symbol} deposit tx",
+  "@swapDepositTxLabel": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapRefundedToLabel": "{symbol} refunded to",
+  "@swapRefundedToLabel": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapTotalFeesLabel": "Total fees",
+  "swapIncluded": "Included",
+  "swapRecipientLabel": "{symbol} recipient",
+  "@swapRecipientLabel": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapRefundAddressLabel": "{symbol} refund address",
+  "@swapRefundAddressLabel": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapDepositToLabel": "Deposit {symbol} to",
+  "@swapDepositToLabel": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapMemoLabel": "Memo",
+  "swapSlippageToleranceLabel": "Slippage tolerance",
+  "swapConfiguredQuote": "Configured quote",
+  "swapGuaranteedMinimumLabel": "Guaranteed minimum",
+  "swapDeliveryTxLabel": "{symbol} delivery tx",
+  "@swapDeliveryTxLabel": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapFeeLabel": "Swap fee",
+  "swapIncludedInRate": "Included in shown rate",
+  "swapTxIdLabel": "Tx ID",
+  "swapMissingDepositLabel": "Missing deposit",
+  "swapRequiredDepositLabel": "Required deposit",
+  "swapDetectedDepositLabel": "Detected deposit",
+  "swapDepositDeadlineRowLabel": "Deposit deadline",
+  "swapRefundFeeLabel": "Refund fee",
+  "swapHoursShort": "{count, plural, =1{1hr} other{{count}hrs}}",
+  "@swapHoursShort": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "swapMinutesShort": "{count, plural, =1{1min} other{{count}mins}}",
+  "@swapMinutesShort": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "swapSendFromSourceChain": "Send {symbol} from source chain",
+  "@swapSendFromSourceChain": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapDepositLabelShort": "{symbol} deposit",
+  "@swapDepositLabelShort": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapSourceDepositLabel": "{symbol} source deposit",
+  "@swapSourceDepositLabel": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapDepositTxHashLabel": "{symbol} deposit tx hash",
+  "@swapDepositTxHashLabel": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapDepositTxHashHint": "{symbol} source-chain transaction hash",
+  "@swapDepositTxHashHint": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapSubmitDeposit": "Submit {symbol} deposit",
+  "@swapSubmitDeposit": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapDoNotReuseAddress": "Do not reuse this address",
+  "swapMinReceiveTooltip": "The lowest amount of {symbol} you'll get after slippage. You may get more, never less.",
+  "@swapMinReceiveTooltip": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapGenericMinReceiveTooltip": "The lowest amount you'll get after slippage. You may get more, never less.",
+  "swapFeeTooltipText": "Covers our fee and the route providers' costs to process this swap. Already included in the rate above.",
+  "swapStatusDetailTooltipText": "Details are based on the latest swap record and provider status.",
+  "swapProgressTab": "Swap progress",
+  "swapTransactionDetailsTab": "Transaction details",
+  "swapStatusRowLabel": "Status",
+  "swapRefundsReturnedAs": "If the swap fails or the rate moves, you'll be refunded in {symbol} on {chain}, minus the fee.",
+  "@swapRefundsReturnedAs": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      },
+      "chain": {
+        "type": "String"
+      }
+    }
+  },
+  "swapReviewSwap": "Review swap",
+  "swapQuoteExpiredNotice": "Quote expired. Review again for an updated rate.",
+  "swapYourePaying": "You're paying",
+  "swapYoureReceiving": "You're receiving",
+  "swapYouPaid": "You paid",
+  "swapYouReceived": "You received",
+  "swapVerbLockingQuote": "Locking quote",
+  "swapReviewAgain": "Review again",
+  "swapNotEnoughZec": "Not enough ZEC",
+  "swapConfirmSwap": "Confirm swap",
+  "swapToShort": "To: {address}",
+  "@swapToShort": {
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "swapRecipientAddressTitle": "{symbol} recipient address",
+  "@swapRecipientAddressTitle": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapRefundAddressTitle": "{symbol} refund address",
+  "@swapRefundAddressTitle": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapRecipientFieldLabel": "Recipient",
+  "swapRefundToFieldLabel": "Refund to",
+  "swapDeliveredToAddress": "Your {symbol} will be delivered to this address.",
+  "@swapDeliveredToAddress": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapRememberRecipients": "Remember this address for recipients",
+  "swapRememberRefunds": "Remember this address for refunds",
+  "swapUpdateAction": "Update",
+  "swapIveDepositedTokens": "I’ve deposited tokens",
+  "swapIveDeposited": "I've deposited",
+  "swapDepositZec": "Deposit ZEC",
+  "swapDepositTokensTitle": "Deposit tokens",
+  "swapChecking": "Checking",
+  "swapTimesUp": "Time’s up",
+  "swapDepositExpiredBody": "This deposit address is no longer valid.\nPlease, start another swap transaction.",
+  "swapRestartSwap": "Restart swap",
+  "swapDepositWithin": "Deposit within",
+  "swapAmountToDeposit": "Amount to deposit",
+  "swapAmountLabel": "Amount",
+  "swapAmountCopiedMobile": "Amount copied",
+  "swapAmountCopiedDesktop": "Amount Copied",
+  "swapOneTimeAddress": "One-time address",
+  "swapMemoCopied": "Memo copied",
+  "swapSigningCancelledBeforeParams": "Signing was cancelled before proving parameters were downloaded.",
+  "swapTxStatusUncertain": "The transaction status is uncertain. Refresh activity before trying again.",
+  "swapZecDepositAction": "ZEC deposit",
+  "swapBroadcastingAction": "Broadcasting {action}",
+  "@swapBroadcastingAction": {
+    "placeholders": {
+      "action": {
+        "type": "String"
+      }
+    }
+  },
+  "swapSignActionOnKeystone": "Sign {action} on Keystone",
+  "@swapSignActionOnKeystone": {
+    "placeholders": {
+      "action": {
+        "type": "String"
+      }
+    }
+  },
+  "swapSubmittingTransaction": "Submitting transaction",
+  "swapScanToSign": "Scan to sign",
+  "swapAfterScannedClickGetSignature": "After you scanned, click Get signature.",
+  "swapGetSignature": "Get signature",
+  "swapBackToActivity": "Back to activity",
+  "swapTxCouldNotBroadcast": "Transaction could not be broadcast.",
+  "swapZecDepositSigningFailed": "ZEC deposit signing could not be completed.",
+  "swapYouPay": "You pay",
+  "swapYouReceive": "You receive",
+  "swapZcashLabel": "Zcash",
+  "swapAddRefundAddress": "Add refund address...",
+  "swapAddRecipientAddress": "Add recipient address...",
+  "swapMaxAvailable": "Max: {amount}",
+  "@swapMaxAvailable": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "swapZecDepositSent": "ZEC deposit sent",
+  "swapCheckingZecDeposit": "Checking ZEC deposit",
+  "swapToTruncated": "To: {address}",
+  "@swapToTruncated": {
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "swapCouldntLoad": "Couldn't load this swap. Try again or pull to refresh.",
+  "swapReturnToActivity": "Return to Activity and select a saved swap.",
+  "swapSignZecDeposit": "Sign ZEC deposit",
+  "swapKeystoneSigningFailed": "Keystone signing failed",
+  "swapScanTxQrInstructions": "Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.",
+  "swapBroadcastingZecDeposit": "Broadcasting ZEC deposit...",
+  "swapAlreadyInContacts": "Already in your contacts",
+  "swapAlreadyInAddressBook": "Already in your address book",
+  "swapTitle": "Swap",
+  "swapGettingQuote": "Getting quote",
+  "swapAddRecipientAddressAction": "Add recipient address",
+  "swapAddRefundAddressAction": "Add refund address",
+  "swapContinueToReview": "Continue to review",
+  "swapQrNoAddress": "QR code did not include an address.",
+  "swapSelectAsset": "Select asset",
+  "swapSearchTokenOrChain": "Search token or chain",
+  "swapNoTokensFound": "No tokens or chains found",
+  "swapSlippage": "Slippage",
+  "swapSlippageRange": "Slippage must be 0.1 - 5%",
+  "swapCustom": "Custom",
+  "swapTimeoutInvalidAddress": "This deposit address is no longer valid",
+  "swapTimeoutStartAnother": "Please, start another swap transaction.",
+  "swapToPrefix": "To",
+  "swapFromPrefix": "From",
+  "swapConfirmAndSwap": "Confirm & swap",
+  "swapPoweredBy": "Powered by",
+  "swapErrAmountTooLow": "Amount is too low for this swap.\nTry a larger amount.",
+  "swapErrAmountPrecision": "Amount has too many decimal places.\nUse fewer decimals and try again.",
+  "swapErrInvalidRoute": "This route or address was rejected.\nEdit the details and request a new quote.",
+  "swapErrNoQuote": "No quote is available for this route or amount.\nAdjust the amount, slippage, or asset and try again.",
+  "swapErrZecDepositFunding": "Not enough spendable ZEC to cover this swap and its network fee.\nTry a smaller amount or use Max.",
+  "swapErrWalletPreflight": "ZEC deposit could not be prepared.\nCheck your balance and try again.",
+  "swapErrDepositNotFound": "Deposit is not indexed yet.\nCheck again in a few minutes.",
+  "swapErrDepositRejected": "Deposit transaction was rejected.\nCheck the address, memo, and tx hash.",
+  "swapErrUnsupportedPairNoResend": "Swap status uses an unsupported asset pair.\nDo not resend funds. Try again later.",
+  "swapErrAssetUnavailable": "This asset is not available for swap right now.\nChoose another asset or try again later.",
+  "swapErrServiceUnavailableNoResend": "Swap service is temporarily unavailable.\nDo not resend funds. Try again later.",
+  "swapErrServiceUnavailable": "Swap service is temporarily unavailable.\nTry again later.",
+  "swapErrQuoteTimeout": "Quote request timed out.\nCheck your connection and try again.",
+  "swapErrTimeoutNoResend": "Request timed out.\nDo not resend funds. Try again later.",
+  "swapErrTimeout": "Request timed out.\nCheck your connection and try again.",
+  "swapErrProcessingNoResend": "Swap service is still processing.\nDo not resend funds. Try again later.",
+  "swapErrProcessing": "Swap service is still processing.\nWait a moment and try again.",
+  "swapErrQuoteUnverified": "Quote response could not be verified.\nTry again later.",
+  "swapErrResponseUnverified": "Swap response could not be verified.\nTry again later.",
+  "swapErrTokenList": "Swap tokens could not be loaded.\nTry again later.",
+  "swapErrQuoteUnavailable": "Quote is unavailable right now.\nTry again later.",
+  "swapErrStartFailed": "Swap could not be started.\nTry again later.",
+  "swapErrRefreshFailed": "Could not refresh swap status.\nTry again later.",
+  "swapErrSubmitDepositFailed": "Deposit status could not be submitted.\nTry again later.",
+  "swapErrSendZecDepositFailed": "ZEC deposit could not be sent.\nTry again later.",
+  "swapErrNoActiveAccount": "No active account",
+  "swapErrInsufficientShieldedForFee": "Insufficient shielded balance to cover fee",
+  "swapErrMaxUnavailable": "Max amount unavailable",
+  "swapBadgeCompleted": "Completed",
+  "swapBadgeNeedsAttention": "Needs attention",
+  "swapBadgeInProgress": "In progress",
+  "swapZcashAddress": "Zcash address",
+  "swapChainAddress": "{chain} address",
+  "@swapChainAddress": {
+    "placeholders": {
+      "chain": {
+        "type": "String"
+      }
+    }
+  },
+  "swapFullAddress": "Full address",
+  "votingNotEligibleNoFunds": "This account is not eligible for this voting round. It had no eligible shielded funds at {snapshot}. Switch to an eligible account to vote.",
+  "@votingNotEligibleNoFunds": {
+    "placeholders": {
+      "snapshot": {
+        "type": "String"
+      }
+    }
+  },
+  "votingRequiresMinimumBundle": "Voting requires at least one eligible shielded note bundle with 0.125 ZEC at {snapshot}. Switch to an eligible account to vote.",
+  "@votingRequiresMinimumBundle": {
+    "placeholders": {
+      "snapshot": {
+        "type": "String"
+      }
+    }
+  },
+  "votingSnapshotBlockFallback": "the voting round snapshot block",
+  "votingSnapshotBlock": "snapshot block {height}",
+  "@votingSnapshotBlock": {
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "votingSessionActionFailed": "Voting session action failed.",
+  "votingTryAgain": "Try again",
+  "votingNoRounds": "No voting rounds available",
+  "votingNoRoundsBody": "There are no token holder voting rounds to display yet.",
+  "votingVoteTitle": "Vote",
+  "votingConfigTooltip": "Voting config",
+  "votingConfigSemantics": "Voting config settings",
+  "votingBeta": "Beta",
+  "votingCloses": "Closes",
+  "votingClosed": "Closed",
+  "votingClosesOn": "{label} {date}",
+  "@votingClosesOn": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "votingStartsOn": "Starts {date}",
+  "@votingStartsOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "votingStateInProgress": "In progress",
+  "votingStateActive": "Active",
+  "votingStateVoted": "Voted",
+  "votingStateTallying": "Tallying",
+  "votingResume": "Resume",
+  "votingStartVoting": "Start voting",
+  "votingReview": "Review",
+  "votingViewResults": "View results",
+  "votingRoundUnavailable": "Voting round unavailable",
+  "votingRoundLoadFailed": "The selected voting round could not be loaded.",
+  "votingTokenHolderVoting": "Token holder voting",
+  "votingPowerUnavailable": "Voting power unavailable.",
+  "votingPreparingPower": "Preparing voting power.",
+  "votingNoProposals": "No proposals",
+  "votingNoProposalsBody": "This voting round does not contain any proposals.",
+  "votingRetryEligibility": "Retry eligibility",
+  "votingNotEligible": "Not eligible",
+  "votingReviewAnswers": "Review answers",
+  "votingSkipUnanswered": "Skip unanswered questions?",
+  "votingSkipUnansweredBody": "You have not answered {skipped} of {total} questions. The review screen will mark them as skipped, and skipped questions will not be submitted.",
+  "@votingSkipUnansweredBody": {
+    "placeholders": {
+      "skipped": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "votingContinueToReview": "Continue to review",
+  "votingKeepVoting": "Keep voting",
+  "votingNotEligibleRound": "Not eligible for this voting round",
+  "votingActive": "Voting active",
+  "votingEndsOn": "Ends {date}",
+  "@votingEndsOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "votingSkipped": "Skipped",
+  "votingVoteInProgress": "Vote in progress",
+  "votingUnfinishedVote": "You have an unfinished vote for this round. Resume to complete the submission.",
+  "votingContinueVoting": "Continue voting",
+  "votingForumDiscussion": "Forum discussion",
+  "votingChoiceLabel": "Choice {choice}",
+  "@votingChoiceLabel": {
+    "placeholders": {
+      "choice": {
+        "type": "String"
+      }
+    }
+  },
+  "votingSelected": "Selected",
+  "votingChoose": "Choose",
+  "votingViewLess": "View less",
+  "votingViewMore": "View more",
+  "votingReviewYourAnswers": "Review your answers",
+  "votingChooseAtLeastOne": "Choose at least one option before submitting.",
+  "votingConfirmSubmit": "Confirm & submit",
+  "votingResults": "Results",
+  "votingNoProposalsInRound": "No proposals in this round.",
+  "votingResultsPending": "Results pending...",
+  "votingVotedLabel": "Voted: {label}",
+  "@votingVotedLabel": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "votingTotalLabel": "Total: {amount}",
+  "@votingTotalLabel": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "votingResultsTitle": "Voting results",
+  "votingSubmissionNotComplete": "Submission not complete",
+  "votingNotAvailable": "Not available",
+  "votingNotSubmittedBody": "This account has not completed submission for this voting round.",
+  "votingCheckingEligibility": "Checking voting eligibility for this account.",
+  "votingEligibilityNotConfirmed": "Voting eligibility has not been confirmed for this account.",
+  "votingSubmissionConfirmed": "Submission confirmed!",
+  "votingSubmissionPublished": "Your vote was successfully published and cannot be changed.",
+  "votingRoundLabel": "Voting round",
+  "votingPowerLabel": "Voting power",
+  "votingUpdatingRounds": "Updating voting rounds...",
+  "votingGenericStatusError": "Voting could not continue for this account. Retry, or switch to an eligible account if this account cannot vote in this voting round.",
+  "votingPirNotReady": "Voting PIR data is not ready for this voting round yet. Expected snapshot block {expected}; PIR endpoints report {highest}.",
+  "@votingPirNotReady": {
+    "placeholders": {
+      "expected": {
+        "type": "String"
+      },
+      "highest": {
+        "type": "String"
+      }
+    }
+  },
+  "votingPirNoEndpoint": "No PIR endpoint matched this voting round snapshot. Expected snapshot block {expected}.",
+  "@votingPirNoEndpoint": {
+    "placeholders": {
+      "expected": {
+        "type": "String"
+      }
+    }
+  },
+  "votingQuestionProgress": "Question {current}/{total}",
+  "@votingQuestionProgress": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "votingUseSignedBundlesOnly": "Use signed bundles only?",
+  "votingSignedBundlesBody": "Vizor can submit now using only signatures already scanned from Keystone.",
+  "votingSignedBundlesWarning": "Unsigned bundles are skipped, which lowers voting power for this voting round.",
+  "votingKeepSigning": "Keep signing",
+  "votingSkipBundles": "Skip bundles",
+  "votingSubmittingVotes": "Submitting votes",
+  "votingSigningWithKeystone": "Signing with Keystone",
+  "votingDelegatingAuthority": "Delegating voting authority",
+  "votingCastingVotes": "Casting votes and submitting shares",
+  "votingFinalizingSubmission": "Finalizing submission",
+  "votingFailed": "Voting failed.",
+  "votingClear": "Clear",
+  "votingSyncedToBlock": "Synced to block {height}",
+  "@votingSyncedToBlock": {
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "votingSnapshotBlockPart": "snapshot block {height}",
+  "@votingSnapshotBlockPart": {
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "votingChainTipPart": "chain tip {height}",
+  "@votingChainTipPart": {
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "votingWaitingForSync": "Waiting for wallet sync",
+  "votingWaitingForSyncBody": "Your wallet is catching up to this voting round snapshot. Voting will continue automatically once the wallet has synced through the snapshot block.",
+  "votingBlocksRemaining": "{count} blocks remaining",
+  "@votingBlocksRemaining": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "votingSignBundle": "Sign bundle {current} of {total}",
+  "@votingSignBundle": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "votingSkip": "Skip",
+  "votingScanQrInstruction": "Scan QR on this screen with Keystone. Then, scan the signed voting QR displayed on Keystone with this device's camera",
+  "votingNowSigningBundle": "Now signing bundle {current} of {total}",
+  "@votingNowSigningBundle": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "votingScanSignature": "Scan signature",
+  "votingSoftwareAccountRequired": "Software account required",
+  "votingSoftwareAccountBody": "Token holder voting requires a software account. Switch to a software account to vote in this round.",
+  "votingSignatureQrDecodeError": "This QR code could not be decoded as a Keystone voting signature.",
+  "votingOpenSignedQr": "Open the signed voting QR on Keystone, then scan again.",
+  "votingScanVotingSignature": "Scan voting signature",
+  "votingHoldKeystoneQr": "Hold the Keystone QR code steady in front of your camera",
+  "votingCameraOnly": "Keystone voting uses camera QR scanning only. Connect a camera and try again.",
+  "votingTitleTooLong": "Title must be {max} characters or less.",
+  "@votingTitleTooLong": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "votingSourceAlreadyAdded": "This source URL is already added.",
+  "votingCustomSource": "Custom source",
+  "votingSaving": "Saving...",
+  "votingAddCustomSource": "Add custom source",
+  "votingCopySourceUrl": "Copy source URL",
+  "votingSourceUrlCopied": "Source URL copied.",
+  "votingEditSavedSource": "Edit saved source",
+  "votingDeleteSavedSource": "Delete saved source",
+  "votingEditCustomSource": "Edit custom source",
+  "votingTitleField": "Title",
+  "votingStaticConfigUrl": "Static config URL",
+  "votingValidating": "Validating...",
+  "votingDefault": "Default",
+  "votingCloseConfigSettings": "Close voting config settings",
+  "settingsAccountChangedReenterPassword": "Active account changed. Enter your password again.",
+  "settingsNoActiveAccount": "No active account is selected.",
+  "settingsSeedNotAvailableHardware": "Secret passphrase is not available for hardware accounts.",
+  "settingsSeedNotAvailable": "Secret passphrase is not available for this account.",
+  "settingsSeedConfirmSubtitle": "To view the secret passphrase.",
+  "settingsSeedMasterKeyBody": "This is the master key to your wallet.\nDon't share it with anyone.",
+  "settingsBirthdayDate": "Birthday date",
+  "settingsBirthdayBlockHeight": "Birthday block height",
+  "settingsSeedBiometricReason": "Confirm access to your secret passphrase",
+  "settingsIncorrectPasscode": "Incorrect passcode",
+  "settingsEnterPasscode": "Enter Passcode",
+  "settingsConfirmYourAccess": "Confirm your access",
+  "settingsSeedCopiedToast": "Secret passphrase copied",
+  "settingsBirthdayDateCopied": "Birthday date copied",
+  "settingsBirthdayHeightCopied": "Birthday height copied",
+  "settingsCopyLabel": "Copy {label}",
+  "@settingsCopyLabel": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsNoScreenshotsTitle": "Don’t take screenshots of your Secret Passphrase",
+  "settingsScreenshotsNotReliable": "Screenshots are not reliable",
+  "settingsNoScreenshotsBody": ". Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.",
+  "settingsIUnderstand": "I understand",
+  "settingsNewPasscodeMustDiffer": "Your new passcode must be different.",
+  "settingsPasscodeRotationRecoveryFailed": "We couldn't verify the previous passcode change. Keep your secret passphrase available before trying again.",
+  "settingsSetNewPasscode": "Set New Passcode",
+  "settingsEnterCurrentPasswordAgain": "Enter your current password again.",
+  "settingsKeepPassphraseAvailable": "We couldn't verify the previous password change. Please keep your secret passphrase available before trying again.",
+  "settingsEnterCurrentPasswordFirst": "Enter your current password first.",
+  "settingsUpdatePassword": "Update password",
+  "settingsPasswordHintLong": "Minimum 8 characters. Add numbers and symbols, or make it longer, for stronger security.",
+  "settingsConfirmPassword": "Confirm password",
+  "settingsUpdatingPassword": "Updating password...",
+  "settingsAccountSection": "Account",
+  "settingsSecretPassphraseTitle": "Secret Passphrase",
+  "settingsProfilePictureTitle": "Profile Picture",
+  "settingsAccountNameTitle": "Account Name",
+  "settingsSystemSection": "System",
+  "settingsOn": "On",
+  "settingsOff": "Off",
+  "settingsPasscodeUpdated": "Passcode updated",
+  "settingsTurnOff": "Turn off",
+  "settingsUninstallBody": "Vizor will delete wallet data and secure storage from {device}.",
+  "@settingsUninstallBody": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsThisMac": "this Mac",
+  "settingsThisPc": "this PC",
+  "settingsThisDevice": "this device",
+  "settingsUninstallFinishMac": "To finish uninstallation, remove the Vizor app from Applications.",
+  "settingsUninstallFinishWindows": "To finish uninstallation, uninstall Vizor from Windows settings.",
+  "settingsUninstallFinishOther": "To finish uninstallation, remove the Vizor app from this device.",
+  "settingsActiveSwapsBlockUninstall": "{count, plural, =1{This wallet has 1 active swap. Wait for them to complete before uninstalling.} other{This wallet has {count} active swaps. Wait for them to complete before uninstalling.}}",
+  "@settingsActiveSwapsBlockUninstall": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsCannotBeUndone": "This cannot be undone.",
+  "settingsCheckingSwaps": "Checking swaps...",
+  "settingsToUninstall": "To uninstall Vizor.",
+  "settingsDataRemoved": "Your data has been removed",
+  "settingsRemovingData": "Removing data...",
+  "settingsCloseVizor": "Close Vizor",
+  "settingsConfirmAccess": "Confirm access",
+  "settingsYourPasswordHint": "Your password...",
+  "endpointUpdating": "Updating...",
+  "endpointCloseSettings": "Close endpoint settings",
+  "endpointDefaultSuffix": "(Default)",
+  "endpointCurrentPrefix": "Current: ",
+  "endpointCustomEndpointTitle": "Custom Endpoint",
+  "endpointHostPortHint": "<hostname>:<port>",
+  "endpointSelectAnEndpoint": "Select an endpoint.",
+  "endpointUpdated": "Endpoint updated",
+  "endpointsTitle": "Endpoints",
+  "endpointSelectFromList": "Select from the list",
+  "endpointCustomEndpoint": "Custom endpoint",
+  "endpointUpdateEndpoint": "Update endpoint",
+  "endpointCustomiseEndpoint": "Customise endpoint",
+  "endpointCustomizeEndpoint": "Customize endpoint",
+  "endpointMisconfiguredNetwork": "If the endpoint is configured wrong, your wallet won't be able to sync with the Zcash network.",
+  "endpointMisconfiguredBlockchain": "If the endpoint is configured wrong, your wallet won't be able to sync with the Zcash blockchain.",
+  "endpointMisconfiguredNetworkNewline": "If the endpoint is configured wrong, your wallet won't be able to sync with the Zcash network.\n",
+  "endpointStaleBalanceWarning": "The wallet will show the balance from the last time it was successfully connected. It won't show any {ticker} you recently received.",
+  "@endpointStaleBalanceWarning": {
+    "placeholders": {
+      "ticker": {
+        "type": "String"
+      }
+    }
+  },
+  "abCopyAddress": "Copy address",
+  "abSendZec": "Send ZEC",
+  "abContactActions": "{name} actions",
+  "@abContactActions": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "cameraDeniedShortTitle": "You've denied Camera access",
+  "homeImportingWallet": "We're importing\nyour wallet...",
+  "homeImportingWalletMobile": "We're importing your wallet...",
+  "profilePictureUpdateFailed": "Couldn't update profile picture.",
+  "settingsRemoveDataFailed": "Couldn't finish removing data. Please try again.",
+  "settingsSwapCheckFailed": "Couldn't check for active swaps. Try again before uninstalling.",
+  "settingsPasswordCheckFailed": "Couldn't check your password. Please try again.",
+  "endpointConnectFailed": "Couldn't connect to that endpoint. Check the host and port.",
+  "settingsPasswordUpdateFailed": "Couldn't update your password. Please try again.",
+  "settingsPasscodesDidntMatch": "Passcodes didn't match. Try again.",
+  "settingsPasscodeCheckFailed": "Couldn't check your passcode. Please try again.",
+  "settingsPasscodeUpdateFailed": "Couldn't update your passcode. Please try again.",
+  "settingsAppResetFailed": "Couldn't reset the app. Please try again.",
+  "settingsAccountSaveFailed": "Couldn't save the account changes",
+  "settingsSeedLoadFailed": "Couldn't load your secret passphrase. Please try again.",
+  "settingsPasscodeVerifyFailed": "Couldn't verify the passcode. Try again.",
+  "votingRoundsLoadFailed": "Couldn't load voting rounds",
+  "votingRoundLoadFailedTitle": "Couldn't load voting round",
+  "votingConfigLoadFailed": "Couldn't load voting config from that source.",
+  "votingConfigUpdateFailed": "Couldn't update voting config.",
+  "votingRoundDetailsLoadFailed": "Couldn't load voting round details: {error}",
+  "@votingRoundDetailsLoadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "votingDontCloseWindow": "Don't close the window. Generating zero-knowledge proofs can take a while; closing now may lose in-flight proof work.",
+  "votingPirUnreachable": "Couldn't reach any configured PIR endpoint. Check your network and voting config, then try again.",
+  "swapNotEnoughZecBody": "You don't have enough ZEC for this swap. Try a smaller amount.",
+  "receiveTransparentShieldGuideBody": "After receiving ZEC to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won't be able to send it.",
+  "accountsAddressCopyFailed": "Address couldn't be copied",
+  "accountsAddressLoadFailed": "Couldn't load the account address",
+  "accountsResetVizorFailed": "Couldn't reset Vizor",
+  "accountsRemoveFailedShort": "Couldn't remove the account",
+  "receiveAddressLoadFailedLong": "We couldn't load your address. Try again in a moment.",
+  "receiveAddressLoadFailedShort": "Address couldn't be loaded. Try again.",
+  "accountsResetVizorFailedDot": "Couldn't reset Vizor.",
+  "accountsRemoveFailedDot": "Couldn't remove account.",
+  "sendBroadcastRejectedRetrying": "Transaction was created locally but didn't reach the network. The wallet will keep retrying until it expires. Don't send again unless this one expires.",
+  "sendQrNotZcash": "This QR code isn't a Zcash address.",
+  "onbInvalidBlockHeight": "That doesn't look like a valid block height.",
+  "onbNotLegitBlockHeight": "Doesn't seem like a legit block height",
+  "onbUnlockFailed": "Couldn't open your wallet. Please try again.",
+  "onbFewStepsAwayDesktop": "You're a few steps away from your first private wallet.\nLet's get you set up.",
+  "receivePreviewShieldedPrivacy": "Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.",
+  "receivePreviewShieldedRenew": "A new Zcash shielded address\ngenerated every time you open the\nreceive page or click renew button.",
+  "receivePreviewShieldedDiversified": "Each new address is a diversified\naddress derived from the same key.\nThey all receive to the same wallet.",
+  "passwordTooShort": "Password must be at least {min} characters.",
+  "@passwordTooShort": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
+  "passwordAsciiOnly": "Use only English letters, numbers, and symbols.",
+  "@passwordAsciiOnly": {
+    "description": "Wallet Password Policy (AGENTS.md): this charset validation message must stay exactly this literal in every locale. Do not translate."
+  },
+  "passwordMustDiffer": "Use a different password.",
+  "votingChooseAtLeastOneVote": "Choose at least one vote before submitting.",
+  "votingVoteLocked": "Vote locked",
+  "votingVotedOn": "Voted {date}",
+  "@votingVotedOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "votingPowerUnavailableShort": "Voting power unavailable",
+  "votingPreparingPowerShort": "Preparing voting power",
+  "votingPowerMeta": "Voting power {power}",
+  "@votingPowerMeta": {
+    "placeholders": {
+      "power": {
+        "type": "String"
+      }
+    }
+  },
+  "keystonePreparingQr": "Preparing QR",
+  "keystoneImReadyNow": "I'm ready now",
+  "swapChainAddressOrAccount": "{chain} address or account",
+  "@swapChainAddressOrAccount": {
+    "placeholders": {
+      "chain": {
+        "type": "String"
+      }
+    }
+  },
+  "swapNetworkErrorRetry": "Network error while sending. Check your connection and try again — your signature is safe to reuse.",
+  "activitySwapped": "Swapped",
+  "activitySwapFailed": "Swap failed",
+  "activitySwapping": "Swapping...",
+  "activitySymbolRefunded": "{symbol} refunded",
+  "@activitySymbolRefunded": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "activityReceivedSymbol": "Received {symbol}",
+  "@activityReceivedSymbol": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "activityDepositedSymbol": "Deposited {symbol}",
+  "@activityDepositedSymbol": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "legalTermsOfUse": "Terms of Use",
+  "updateTitleAvailableVersion": "Update {version} available",
+  "@updateTitleAvailableVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateTitleDownloading": "Downloading update",
+  "updateTitleReady": "Update ready",
+  "updateTitleApplying": "Restarting Vizor",
+  "updateTitleAvailable": "Update available",
+  "updateBodyAvailable": "Download now or keep working.",
+  "updateBodyDownloading": "{progress}% downloaded.",
+  "@updateBodyDownloading": {
+    "placeholders": {
+      "progress": {
+        "type": "int"
+      }
+    }
+  },
+  "updateBodyReady": "Restart when you are ready.",
+  "updateBodyApplying": "Applying after Vizor closes.",
+  "updateActionDownload": "Download",
+  "updateActionRestart": "Restart",
+  "updateActionDownloading": "Downloading",
+  "updateActionRestarting": "Restarting",
+  "updateActionUpdate": "Update",
+  "updateActionLater": "Later",
+  "updateLinuxAvailable": "Vizor {version} is available.",
+  "@updateLinuxAvailable": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateViewRelease": "View Release",
+  "endpointFailoverSwitched": "Selected endpoint is unstable. Switched to fallback endpoint.",
+  "endpointFailoverRecovered": "Selected endpoint recovered. Switched back.",
+  "activityIncompleteDeposit": "Incomplete deposit",
+  "activityTimeout": "Timeout",
+  "activityLoadErrorRetry": "Couldn't load activity. Try again in a moment.",
+  "keystoneShieldSignTitle": "Sign tx on your Keystone",
+  "keystoneShieldScanToSign": "Scan the QR code to sign",
+  "keystoneShieldSubmitting": "Submitting transaction",
+  "keystoneShieldReject": "Reject",
+  "keystoneShieldBackToWallet": "Back to Wallet",
+  "shieldErrorSyncFirst": "Sync the wallet before shielding transparent balance.",
+  "shieldErrorBroadcastFailed": "Shield transaction could not be broadcast.",
+  "shieldErrorRetry": "Shield balance failed. Please try again.",
+  "shieldCancelledParamsDownload": "Shielding was cancelled before proving parameters were downloaded.",
+  "scanCameraPermissionOff": "Camera access is off. Allow it in Settings to scan addresses.",
+  "swapQuoteChangedLower": "Live quote is {percent}% lower than the earlier estimate. Check the guaranteed minimum before you continue.",
+  "@swapQuoteChangedLower": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "swapQuoteChangedHigher": "Live quote is {percent}% higher than the earlier estimate. Check the guaranteed minimum before you continue.",
+  "@swapQuoteChangedHigher": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "swapPickerRecipientsTitle": "{symbol} recipients",
+  "@swapPickerRecipientsTitle": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapPickerRefundsTitle": "{symbol} refunds",
+  "@swapPickerRefundsTitle": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapPickerNoSavedRecipients": "No saved {symbol} recipients",
+  "@swapPickerNoSavedRecipients": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapPickerNoSavedRefunds": "No saved {symbol} refunds",
+  "@swapPickerNoSavedRefunds": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapErrAccountChanged": "Active account changed. Review the quote again before starting.",
+  "swapErrIntentMissing": "ZEC deposit was broadcast, but the saved swap intent was not found. Copy the transaction hash before leaving this screen.",
+  "swapDepositPartialBroadcast": "Some deposit transactions may have reached the network. Check activity before trying again.",
+  "swapDepositPendingBroadcast": "The deposit was created locally but could not be broadcast. Check activity before trying again.",
+  "swapDepositBroadcastUnknown": "The transaction may have reached the network, but confirmation timed out. Check activity before trying again.",
+  "swapDepositStorageFailed": "The transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.",
+  "swapDepositUncertain": "The deposit status is uncertain. Check activity before trying again.",
+  "endpointRegionDefault": "Default",
+  "endpointRegionAmericas": "Americas",
+  "endpointRegionEurope": "Europe",
+  "endpointRegionAsiaPacific": "Asia Pacific",
+  "endpointRegionGlobal": "Global",
+  "endpointRegionCommunity": "Community",
+  "endpointRegionTestnet": "Testnet",
+  "endpointRegionRegtest": "Regtest",
+  "endpointErrEnter": "Enter an endpoint.",
+  "endpointErrSpaces": "Endpoint cannot contain spaces.",
+  "endpointErrHostPort": "Enter a valid hostname and port.",
+  "endpointErrHttps": "Use an https:// endpoint.",
+  "endpointErrPort": "Include a valid port, for example us.zec.stardust.rest:443.",
+  "endpointLatencyChecking": "Checking...",
+  "endpointLatencyUnavailable": "Unavailable",
+  "endpointLatencyWrongNetwork": "Wrong network",
+  "aboutVersionLabel": "Version: {version} Public Beta",
+  "@aboutVersionLabel": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "privacySensitiveContentHidden": "Sensitive content hidden",
+  "sendUnknownShieldedAddress": "Unknown shielded address",
+  "sendUnknownTransparentAddress": "Unknown transparent address",
+  "accountsSendStartFailed": "Send couldn't be started",
+  "abClearContactLabel": "Clear contact label",
+  "abSaveContactFailed": "Couldn't save the contact. Please try again.",
+  "abRemoveContactFailed": "Couldn't remove the contact. Please try again.",
+  "abLoadContactsFailed": "Couldn't load contacts. Try again.",
+  "sendTxCouldNotBeSent": "Transaction couldn't be sent.",
+  "deviceAuthConfirmReset": "Confirm reset Vizor",
+  "deviceAuthRequired": "Device authentication is required to reset Vizor.",
+  "deviceAuthFailed": "Couldn't verify device ownership. Please try again.",
+  "abPickerNoContacts": "No contacts found",
+  "sendPartialBroadcast": "Some transactions were broadcast and the rest will retry automatically. Check activity before sending again.",
+  "sendPendingBroadcastRetry": "Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.",
+  "sendBroadcastUnknown": "The transaction may have reached the network, but confirmation timed out. Check activity before sending again.",
+  "sendBroadcastStorageFailed": "The transaction reached the network, but Vizor could not store it locally. Do not send again until sync or an explorer confirms the latest status.",
+  "sendPcztRejected": "Transaction was rejected by the network. Please try again later.",
+  "sendCancelledParamsDownload": "Sending was cancelled before proving parameters were downloaded.",
+  "votingAccountLoadError": "Couldn't load account",
+  "votingResultsFallbackTitle": "Voting results",
+  "votingLoadResultsError": "Couldn't load results: {message}",
+  "@votingLoadResultsError": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "votingLoadRoundDetailsError": "Couldn't load voting round details: {message}",
+  "@votingLoadRoundDetailsError": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "votingLoadReviewError": "Couldn't load review: {message}",
+  "@votingLoadReviewError": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "votingLoadSubmissionError": "Couldn't load submission details: {message}",
+  "@votingLoadSubmissionError": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "votingRoundsRefreshError": "Couldn't update voting rounds. Try again.",
+  "votingRecoveryDelegationPending": "This vote has local progress, but delegation is not fully confirmed yet. The app should continue recovery before accepting another vote.",
+  "votingRecoveryCommitmentPending": "This vote has been started, but its commitment transaction recovery data is not complete yet. Do not vote again from this account.",
+  "votingRecoverySharesPending": "This vote was submitted, but some helper-server shares are still waiting for confirmation. Do not vote again from this account.",
+  "votingEndsToday": "Ends today",
+  "votingOneDayLeft": "1 day left",
+  "votingDaysLeft": "{days} days left",
+  "@votingDaysLeft": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "mobileExitBackHint": "Go back again to exit"
+}

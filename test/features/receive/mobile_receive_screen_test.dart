@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 const _shielded = 'u1tvg2412a23kshieldedaddressk64123hhq6d';
 const _transparent = 't1aWwWwqk3jYGkZc7nLGuTvuM8hDywMZCo';
@@ -108,6 +109,9 @@ Widget _app(_FakeReceiveAddressService service) {
       receiveAddressServiceProvider.overrideWithValue(service),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
       home: const MobileReceiveScreen(),
     ),

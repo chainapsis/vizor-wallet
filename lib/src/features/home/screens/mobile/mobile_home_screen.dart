@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../../l10n/app_localizations.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/formatting/sync_status_label.dart';
 import '../../../../core/config/network_config.dart';
@@ -174,7 +175,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     try {
       accountUuid = activeShieldingAccountUuid(ref);
     } catch (_) {
-      _showShieldToast('No active account.');
+      _showShieldToast(AppLocalizations.of(context).homeShieldNoActiveAccount);
       return;
     }
 
@@ -188,7 +189,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       if (message != null && message.isNotEmpty) {
         _showShieldToast(message);
       } else if (result.succeeded) {
-        showAppToast(context, 'Shielding complete');
+        showAppToast(context, AppLocalizations.of(context).homeShieldComplete);
       }
       return;
     }
@@ -201,15 +202,20 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         logContext: 'MobileHome',
       );
       if (!mounted) return;
-      final warning = shieldBalanceBroadcastStatusMessage(result);
+      final warning = shieldBalanceBroadcastStatusMessage(
+        result,
+        AppLocalizations.of(context),
+      );
       if (warning != null) {
         _showShieldToast(warning);
       } else {
-        showAppToast(context, 'Shielding complete');
+        showAppToast(context, AppLocalizations.of(context).homeShieldComplete);
       }
     } catch (e) {
       if (!mounted) return;
-      _showShieldToast(friendlyShieldBalanceError(e));
+      _showShieldToast(
+        friendlyShieldBalanceError(e, AppLocalizations.of(context)),
+      );
     } finally {
       if (mounted) {
         setState(() => _isShieldingBalance = false);
@@ -330,7 +336,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   onPressed: () => context.push('/send'),
                   leading: const _ButtonIcon(AppIcons.plane),
                   height: _mobileHomeActionButtonHeight,
-                  child: const Text('Send'),
+                  child: Text(AppLocalizations.of(context).navSend),
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
@@ -342,7 +348,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   onPressed: () => context.push('/receive'),
                   leading: const _ButtonIcon(AppIcons.arrowDownCircle),
                   height: _mobileHomeActionButtonHeight,
-                  child: const Text('Receive'),
+                  child: Text(AppLocalizations.of(context).navReceive),
                 ),
               ),
             ],
@@ -357,8 +363,8 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             onPressed: () => context.push('/receive'),
             leading: const _ButtonIcon(AppIcons.addNew),
             height: _mobileHomeActionButtonHeight,
-            child: const Text(
-              'Receive your first ZEC',
+            child: Text(
+              AppLocalizations.of(context).homeReceiveFirstZec,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -471,7 +477,7 @@ class _BalanceCard extends StatelessWidget {
                       const SizedBox(width: AppSpacing.xs),
                       Expanded(
                         child: Text(
-                          'Shielded balance',
+                          AppLocalizations.of(context).homeShieldedBalance,
                           style: _mobileHomeLabelMStyle.copyWith(
                             color: cardText,
                           ),
@@ -748,7 +754,9 @@ class _MobileTransparentBalanceStrip extends StatelessWidget {
                   const SizedBox(width: AppSpacing.xs),
                   Flexible(
                     child: Text(
-                      'Transparent: $displayedBalance',
+                      AppLocalizations.of(
+                        context,
+                      ).homeTransparentBalanceLabel(displayedBalance),
                       key: const ValueKey(
                         'mobile_home_transparent_balance_text',
                       ),
@@ -811,7 +819,9 @@ class _MobileShieldBalanceButton extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                isLoading ? 'Shielding...' : 'Shield',
+                isLoading
+                    ? AppLocalizations.of(context).homeShielding
+                    : AppLocalizations.of(context).homeShield,
                 style: _mobileHomeLabelMStyle.copyWith(color: contentColor),
               ),
               const SizedBox(width: AppSpacing.xxs),
@@ -837,7 +847,9 @@ class _PrivacyEyeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: enabled ? 'Show balance' : 'Hide balance',
+      label: enabled
+          ? AppLocalizations.of(context).sidebarShowBalance
+          : AppLocalizations.of(context).sidebarHideBalance,
       button: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -889,7 +901,7 @@ class _RecentActivityHeader extends StatelessWidget {
       children: [
         Expanded(
           child: Text(
-            'Recent activity',
+            AppLocalizations.of(context).homeRecentActivity,
             style: AppTypography.labelLarge.copyWith(
               color: colors.text.accent,
               fontWeight: FontWeight.w600,
@@ -909,7 +921,7 @@ class _RecentActivityHeader extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'See all',
+                      AppLocalizations.of(context).homeSeeAll,
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.button.ghost.label,
                       ),
@@ -941,14 +953,14 @@ class _EmptyActivity extends StatelessWidget {
       children: [
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'No activity, yet...',
+          AppLocalizations.of(context).homeNoActivity,
           style: AppTypography.headlineSmall.copyWith(
             color: colors.text.accent,
           ),
         ),
         const SizedBox(height: AppSpacing.xxs),
         Text(
-          'How about running your\nfirst ZEC tx?',
+          AppLocalizations.of(context).homeFirstTxPromptWrapped,
           textAlign: TextAlign.center,
           style: AppTypography.bodyMedium.copyWith(
             color: colors.text.secondary,
@@ -1029,7 +1041,7 @@ class _ImportingView extends StatelessWidget {
         SizedBox(
           width: 246,
           child: Text(
-            "We're importing your wallet...",
+            AppLocalizations.of(context).homeImportingWalletMobile,
             textAlign: TextAlign.center,
             style: _titleStyle.copyWith(color: colors.text.accent),
           ),
@@ -1038,7 +1050,7 @@ class _ImportingView extends StatelessWidget {
         SizedBox(
           width: 247,
           child: Text(
-            'Hang tight ... It might take some time. Keep Vizor open & running.',
+            AppLocalizations.of(context).homeHangTight,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
