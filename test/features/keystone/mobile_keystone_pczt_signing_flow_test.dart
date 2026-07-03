@@ -480,6 +480,7 @@ void main() {
       tester.view.physicalSize = const Size(393, 667);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
+      Rect? scanWindow;
 
       final router = GoRouter(
         initialLocation: '/',
@@ -507,6 +508,7 @@ void main() {
               scannerBuilder: (_, _, _) =>
                   const SizedBox(key: ValueKey('fake_keystone_scanner')),
               forceScannerActiveForTesting: true,
+              onScanWindowForTesting: (value) => scanWindow = value,
               onSigned: (_, _, _, _) async {},
               friendlyError: (_) => 'Keystone signing failed.',
             ),
@@ -541,6 +543,8 @@ void main() {
         const ValueKey('test_keystone_sign_flashlight_action'),
       );
 
+      final viewfinderTopLeft = tester.getTopLeft(viewfinder);
+      final viewfinderSize = tester.getSize(viewfinder);
       final viewfinderBottom = tester.getBottomLeft(viewfinder).dy;
       final captionTop = tester.getTopLeft(caption).dy;
       final captionBottom = tester.getBottomLeft(caption).dy;
@@ -549,6 +553,12 @@ void main() {
       expect(captionTop, greaterThanOrEqualTo(viewfinderBottom + 12));
       expect(actionTop, greaterThanOrEqualTo(captionBottom + 16));
       expect(tester.getBottomLeft(flashlight).dy, lessThanOrEqualTo(667));
+      expect(scanWindow, isNotNull);
+      final actualScanWindow = scanWindow!;
+      expect(actualScanWindow.left, closeTo(viewfinderTopLeft.dx, 0.01));
+      expect(actualScanWindow.top, closeTo(viewfinderTopLeft.dy, 0.01));
+      expect(actualScanWindow.width, closeTo(viewfinderSize.width, 0.01));
+      expect(actualScanWindow.height, closeTo(viewfinderSize.height, 0.01));
     },
   );
 

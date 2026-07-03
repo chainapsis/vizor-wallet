@@ -117,6 +117,7 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
     this.scannerBuilder,
     this.forceScannerActiveForTesting = false,
     this.startInScannerForTesting = false,
+    this.onScanWindowForTesting,
     super.key,
   });
 
@@ -138,6 +139,7 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
   final MobileKeystonePcztScannerBuilder? scannerBuilder;
   final bool forceScannerActiveForTesting;
   final bool startInScannerForTesting;
+  final ValueChanged<Rect>? onScanWindowForTesting;
 
   @override
   ConsumerState<MobileKeystonePcztSigningFlow> createState() =>
@@ -575,24 +577,6 @@ class _MobileKeystonePcztSigningFlowState
     final scanController = _scanController;
     if (scanController == null) return const SizedBox.shrink();
     final scanSessionResetToken = (_stage, _scanSessionResetToken);
-    final scannerView =
-        widget.scannerBuilder?.call(
-          context,
-          (result) => unawaited(_handleScanComplete(result)),
-          scanSessionResetToken,
-        ) ??
-        AnimatedUrScannerView(
-          controller: scanController,
-          expectedUrType: 'zcash-pczt',
-          scanSessionResetToken: scanSessionResetToken,
-          errorBuilder: (context, error) => const SizedBox.shrink(),
-          onProgress: (progress) {
-            if (!mounted || _scanProgress == progress) return;
-            setState(() => _scanProgress = progress);
-          },
-          onDecodeError: _handleDecodeError,
-          onComplete: (result) => unawaited(_handleScanComplete(result)),
-        );
 
     final caption = _decoding
         ? _scanHint ?? widget.readingSignatureLabel
@@ -606,7 +590,7 @@ class _MobileKeystonePcztSigningFlowState
       color: Colors.black,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final viewfinderLeft =
+          final rawViewfinderLeft =
               ((constraints.maxWidth - _mobileKeystoneScanWindowSize) / 2) +
               _mobileKeystoneScanWindowCenterXOffset;
           final captionLeft =
@@ -614,6 +598,15 @@ class _MobileKeystonePcztSigningFlowState
           final actionInset =
               ((constraints.maxWidth - _mobileKeystoneDesignWidth) / 2) +
               _mobileKeystoneScanActionInset;
+          final viewfinderLeft = rawViewfinderLeft
+              .clamp(
+                0.0,
+                math.max(
+                  0.0,
+                  constraints.maxWidth - _mobileKeystoneScanWindowSize,
+                ),
+              )
+              .toDouble();
           final viewfinderTop = _scannerTopFor(
             constraints,
             designTop: _mobileKeystoneScanWindowTop,
@@ -657,6 +650,35 @@ class _MobileKeystonePcztSigningFlowState
               )
               .clamp(0.0, maxActionTop)
               .toDouble();
+          final scanWindow = Rect.fromLTWH(
+            viewfinderLeft,
+            viewfinderTop,
+            _mobileKeystoneScanWindowSize,
+            _mobileKeystoneScanWindowSize,
+          );
+          assert(() {
+            widget.onScanWindowForTesting?.call(scanWindow);
+            return true;
+          }());
+          final scannerView =
+              widget.scannerBuilder?.call(
+                context,
+                (result) => unawaited(_handleScanComplete(result)),
+                scanSessionResetToken,
+              ) ??
+              AnimatedUrScannerView(
+                controller: scanController,
+                expectedUrType: 'zcash-pczt',
+                scanSessionResetToken: scanSessionResetToken,
+                scanWindow: scanWindow,
+                errorBuilder: (context, error) => const SizedBox.shrink(),
+                onProgress: (progress) {
+                  if (!mounted || _scanProgress == progress) return;
+                  setState(() => _scanProgress = progress);
+                },
+                onDecodeError: _handleDecodeError,
+                onComplete: (result) => unawaited(_handleScanComplete(result)),
+              );
 
           return Stack(
             fit: StackFit.expand,
@@ -664,13 +686,7 @@ class _MobileKeystonePcztSigningFlowState
               Positioned.fill(child: scannerView),
               const _KeystoneScannerScrim(),
               Positioned(
-                left: viewfinderLeft.clamp(
-                  0.0,
-                  math.max(
-                    0.0,
-                    constraints.maxWidth - _mobileKeystoneScanWindowSize,
-                  ),
-                ),
+                left: viewfinderLeft,
                 top: viewfinderTop,
                 width: _mobileKeystoneScanWindowSize,
                 height: _mobileKeystoneScanWindowSize,

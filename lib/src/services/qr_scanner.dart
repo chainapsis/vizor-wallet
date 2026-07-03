@@ -162,6 +162,7 @@ class AnimatedUrScannerView extends StatefulWidget {
     this.controller,
     this.facing,
     this.scanSessionResetToken,
+    this.scanWindow,
     super.key,
   });
 
@@ -173,6 +174,7 @@ class AnimatedUrScannerView extends StatefulWidget {
   final MobileScannerController? controller;
   final CameraFacing? facing;
   final Object? scanSessionResetToken;
+  final Rect? scanWindow;
 
   @override
   State<AnimatedUrScannerView> createState() => _AnimatedUrScannerViewState();
@@ -297,7 +299,8 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
           controller: _controller,
           onDetect: _onDetect,
           errorBuilder: widget.errorBuilder,
-          scanWindow: QrScanner.scanWindowFor(constraints.biggest),
+          scanWindow:
+              widget.scanWindow ?? QrScanner.scanWindowFor(constraints.biggest),
           scanWindowUpdateThreshold: QrScanner.scanWindowUpdateThreshold,
         );
       },
