@@ -138,7 +138,7 @@ void main() {
     final emptyDecoration = _fieldShellDecoration(tester, 1);
     expect(_fieldBorder(emptyDecoration).top.color, Colors.transparent);
     expect(_fieldBorder(emptyDecoration).top.width, 1.5);
-    expect(emptyDecoration.color, colors.surface.input);
+    expect(emptyDecoration.color, colors.surface.input.primary);
     expect(emptyDecoration.boxShadow, isNotEmpty);
     expect(_fieldNumberColor(tester, '02'), colors.text.secondary);
     expect(
@@ -154,7 +154,7 @@ void main() {
       _fieldBorder(focusedInvalidPrefixDecoration).top.color,
       colors.background.inverse,
     );
-    expect(focusedInvalidPrefixDecoration.color, colors.surface.input);
+    expect(focusedInvalidPrefixDecoration.color, colors.surface.input.primary);
     expect(focusedInvalidPrefixDecoration.boxShadow, isNotEmpty);
     expect(_fieldNumberColor(tester, '01'), colors.text.accent);
 
@@ -170,7 +170,7 @@ void main() {
       invalidUnfocusedDecoration.color,
       Color.alphaBlend(
         colors.background.utilityDestructiveAlphaSubtle,
-        colors.surface.input,
+        colors.surface.input.primary,
       ),
     );
     expect(invalidUnfocusedDecoration.boxShadow, isEmpty);
@@ -185,7 +185,7 @@ void main() {
       _fieldBorder(validUnfocusedDecoration).top.color,
       Colors.transparent,
     );
-    expect(validUnfocusedDecoration.color, colors.surface.input);
+    expect(validUnfocusedDecoration.color, colors.surface.input.primary);
     expect(validUnfocusedDecoration.boxShadow, isNotEmpty);
     expect(_fieldNumberColor(tester, '03'), colors.text.accent);
     expect(_textField(tester, 2).style?.fontWeight, FontWeight.w400);

@@ -322,7 +322,7 @@ class _AccountRadioCard extends StatelessWidget {
             bottom: AppSpacing.xxs,
           ),
           decoration: BoxDecoration(
-            color: colors.surface.input,
+            color: colors.surface.input.primary,
             border: Border.all(color: borderColor, width: selected ? 2 : 0),
             borderRadius: BorderRadius.circular(AppSpacing.sm),
             boxShadow: _accountCardShadow(colors, selected: selected),

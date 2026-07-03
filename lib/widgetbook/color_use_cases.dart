@@ -386,16 +386,22 @@ Widget buildSurfaceUseCase(BuildContext context) {
         light: l.surface.card,
       ),
       TokenSwatch(
-        name: 'surface/input',
+        name: 'surface/input/primary',
         description: 'Text input background at rest',
-        dark: d.surface.input,
-        light: l.surface.input,
+        dark: d.surface.input.primary,
+        light: l.surface.input.primary,
       ),
       TokenSwatch(
-        name: 'surface/input-focus',
+        name: 'surface/input/secondary',
+        description: 'Filled secondary text input shell',
+        dark: d.surface.input.secondary,
+        light: l.surface.input.secondary,
+      ),
+      TokenSwatch(
+        name: 'surface/input/focus',
         description: 'Text input when focused',
-        dark: d.surface.inputFocus,
-        light: l.surface.inputFocus,
+        dark: d.surface.input.focus,
+        light: l.surface.input.focus,
       ),
       TokenSwatch(
         name: 'surface/nav',

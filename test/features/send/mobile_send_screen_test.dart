@@ -863,7 +863,7 @@ void main() {
     var decoration = _continueButtonDecoration(tester);
     expect(
       decoration.color,
-      Color.alphaBlend(colors.button.disabled.bg, colors.surface.input),
+      Color.alphaBlend(colors.button.disabled.bg, colors.surface.input.primary),
     );
 
     await _enterAddress(tester, _invalidAddress);

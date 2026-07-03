@@ -776,7 +776,7 @@ class _DatePickerField extends StatelessWidget {
             height: 46,
             padding: const EdgeInsets.only(left: AppSpacing.s, right: 10),
             decoration: BoxDecoration(
-              color: colors.surface.input,
+              color: colors.surface.input.primary,
               borderRadius: BorderRadius.circular(AppRadii.small),
               border: Border.all(color: const Color(0x00000000), width: 1.5),
               boxShadow: _birthdayFieldSurfaceShadow(colors),
@@ -838,9 +838,9 @@ class _BlockHeightField extends StatelessWidget {
         color: hasError
             ? Color.alphaBlend(
                 colors.background.utilityDestructiveAlphaSubtle,
-                colors.surface.input,
+                colors.surface.input.primary,
               )
-            : colors.surface.input,
+            : colors.surface.input.primary,
         borderRadius: BorderRadius.circular(AppRadii.small),
         border: Border.all(color: borderColor, width: 1.5),
         boxShadow: hasError

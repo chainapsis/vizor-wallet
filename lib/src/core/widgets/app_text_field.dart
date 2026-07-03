@@ -316,12 +316,12 @@ class _AppTextFieldState extends State<AppTextField> {
       forceStrutHeight: true,
     );
 
-    // Figma Field Type=Secondary: filled gray shell (auth screens); its
-    // component stroke is white at 0% paint opacity, so neither surface
-    // draws an idle border. Primary keeps the white input surface.
+    // Figma Field Type=Secondary: filled auth-screen input shell. Keep it
+    // separate from both button and layout-depth tokens so unrelated token
+    // changes do not alter input surfaces. Primary keeps the white input shell.
     final baseShellColor = widget.surface == AppTextFieldSurface.secondary
-        ? colors.button.secondary.bg
-        : colors.surface.input;
+        ? colors.surface.input.secondary
+        : colors.surface.input.primary;
     final shellColor = widget.tone == AppTextFieldTone.destructive
         ? Color.alphaBlend(
             colors.background.utilityDestructiveAlphaSubtle,

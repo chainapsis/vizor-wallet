@@ -1640,7 +1640,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         expand: true,
         constrainContent: true,
         disabledBackgroundColor: useBackdropColors
-            ? Color.alphaBlend(colors.button.disabled.bg, colors.surface.input)
+            ? Color.alphaBlend(
+                colors.button.disabled.bg,
+                colors.surface.input.primary,
+              )
             : null,
         enabledBorderColor: useBackdropColors
             ? colors.border.subtleOpacity
