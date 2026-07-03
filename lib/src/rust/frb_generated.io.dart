@@ -6,6 +6,7 @@
 import 'api/keystone.dart';
 import 'api/secret.dart';
 import 'api/simple.dart';
+import 'api/swap_zwap.dart';
 import 'api/sync.dart';
 import 'api/voting.dart';
 import 'api/wallet.dart';
@@ -530,6 +531,39 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   WireEncryptedShare dco_decode_wire_encrypted_share(dynamic raw);
+
+  @protected
+  ZwapB2zMaterial dco_decode_zwap_b_2_z_material(dynamic raw);
+
+  @protected
+  ZwapB2zOrderInputs dco_decode_zwap_b_2_z_order_inputs(dynamic raw);
+
+  @protected
+  ZwapDleqMaterial dco_decode_zwap_dleq_material(dynamic raw);
+
+  @protected
+  ZwapE2zMaterial dco_decode_zwap_e_2_z_material(dynamic raw);
+
+  @protected
+  ZwapInitiatorHalf dco_decode_zwap_initiator_half(dynamic raw);
+
+  @protected
+  ZwapSignedBtcTx dco_decode_zwap_signed_btc_tx(dynamic raw);
+
+  @protected
+  ZwapZ2bMaterial dco_decode_zwap_z_2_b_material(dynamic raw);
+
+  @protected
+  ZwapZ2bOrderInputs dco_decode_zwap_z_2_b_order_inputs(dynamic raw);
+
+  @protected
+  ZwapZ2eClaimSigs dco_decode_zwap_z_2_e_claim_sigs(dynamic raw);
+
+  @protected
+  ZwapZ2eMaterial dco_decode_zwap_z_2_e_material(dynamic raw);
+
+  @protected
+  ZwapZ2eOrderInputs dco_decode_zwap_z_2_e_order_inputs(dynamic raw);
 
   @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
@@ -1152,6 +1186,49 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   WireEncryptedShare sse_decode_wire_encrypted_share(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ZwapB2zMaterial sse_decode_zwap_b_2_z_material(SseDeserializer deserializer);
+
+  @protected
+  ZwapB2zOrderInputs sse_decode_zwap_b_2_z_order_inputs(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ZwapDleqMaterial sse_decode_zwap_dleq_material(SseDeserializer deserializer);
+
+  @protected
+  ZwapE2zMaterial sse_decode_zwap_e_2_z_material(SseDeserializer deserializer);
+
+  @protected
+  ZwapInitiatorHalf sse_decode_zwap_initiator_half(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ZwapSignedBtcTx sse_decode_zwap_signed_btc_tx(SseDeserializer deserializer);
+
+  @protected
+  ZwapZ2bMaterial sse_decode_zwap_z_2_b_material(SseDeserializer deserializer);
+
+  @protected
+  ZwapZ2bOrderInputs sse_decode_zwap_z_2_b_order_inputs(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ZwapZ2eClaimSigs sse_decode_zwap_z_2_e_claim_sigs(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ZwapZ2eMaterial sse_decode_zwap_z_2_e_material(SseDeserializer deserializer);
+
+  @protected
+  ZwapZ2eOrderInputs sse_decode_zwap_z_2_e_order_inputs(
     SseDeserializer deserializer,
   );
 
@@ -1923,6 +2000,72 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_wire_encrypted_share(
     WireEncryptedShare self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_zwap_b_2_z_material(
+    ZwapB2zMaterial self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_zwap_b_2_z_order_inputs(
+    ZwapB2zOrderInputs self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_zwap_dleq_material(
+    ZwapDleqMaterial self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_zwap_e_2_z_material(
+    ZwapE2zMaterial self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_zwap_initiator_half(
+    ZwapInitiatorHalf self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_zwap_signed_btc_tx(
+    ZwapSignedBtcTx self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_zwap_z_2_b_material(
+    ZwapZ2bMaterial self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_zwap_z_2_b_order_inputs(
+    ZwapZ2bOrderInputs self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_zwap_z_2_e_claim_sigs(
+    ZwapZ2eClaimSigs self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_zwap_z_2_e_material(
+    ZwapZ2eMaterial self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_zwap_z_2_e_order_inputs(
+    ZwapZ2eOrderInputs self,
     SseSerializer serializer,
   );
 }

@@ -6,6 +6,7 @@
 import 'api/keystone.dart';
 import 'api/secret.dart';
 import 'api/simple.dart';
+import 'api/swap_zwap.dart';
 import 'api/sync.dart';
 import 'api/voting.dart';
 import 'api/wallet.dart';
@@ -79,7 +80,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => -1052771162;
+  int get rustContentHash => 888420441;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -811,6 +812,182 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiSyncWriteBlockMetadata({
     required String cachePath,
     required List<BlockMetaInfo> blocks,
+  });
+
+  Future<ZwapB2zOrderInputs> crateApiSwapZwapZwapB2ZOrderInputs({
+    required String seedHex,
+    required String swapId,
+  });
+
+  Future<String> crateApiSwapZwapZwapBtcAddressToSpkHex({
+    required String address,
+  });
+
+  Future<String> crateApiSwapZwapZwapBuildClaimBuyAdaptor({
+    required String seedHex,
+    required String swapId,
+    required String encryptionPointHex,
+    required String claimBuyDigestHex,
+  });
+
+  Future<ZwapB2zMaterial> crateApiSwapZwapZwapDeriveB2ZMaterial({
+    required String seedHex,
+    required String swapId,
+    required String solverAkSec1,
+    required String solverNskLe,
+    required String solverBB,
+    required String solverHB,
+    required int t1,
+    required int t2,
+    required String network,
+  });
+
+  Future<ZwapE2zMaterial> crateApiSwapZwapZwapDeriveE2ZProxyMaterial({
+    required String seedHex,
+    required String swapId,
+    required String solverAkSec1,
+    required String solverNskLe,
+    required String solverLockPubkey,
+    required String solverRefundPubkey,
+    required String solverHB,
+    required String solverEvmAddr,
+    required String amountWei,
+    required String tokenAddr,
+    required String t0Abs,
+    required String t1Abs,
+    required BigInt chainId,
+    required String factoryAddr,
+    required String implementationAddr,
+    required String initiatorEvmAddr,
+    required String network,
+  });
+
+  Future<ZwapInitiatorHalf> crateApiSwapZwapZwapDeriveInitiatorHalf({
+    required String seedHex,
+    required String swapId,
+  });
+
+  Future<ZwapZ2bMaterial> crateApiSwapZwapZwapDeriveZ2BMaterial({
+    required String seedHex,
+    required String swapId,
+    required String solverAkSec1,
+    required String solverNskLe,
+    required String solverHB,
+    required String solverRefundPubkey,
+    required String solverSwapHash,
+    required int t1,
+    required int t2,
+    required String network,
+  });
+
+  Future<ZwapZ2eMaterial> crateApiSwapZwapZwapDeriveZ2EMaterial({
+    required String seedHex,
+    required String swapId,
+    required String solverAkSec1,
+    required String solverNskLe,
+    required String solverLockPubkey,
+    required String solverRefundPubkey,
+    required String solverHB,
+    required String solverSwapHash,
+    required String recipientEvmAddr,
+    required String solverEvmAddr,
+    required BigInt timelock,
+    required BigInt chainId,
+    required String contractHex,
+    required String tokenHex,
+    required String network,
+  });
+
+  Future<ZwapDleqMaterial> crateApiSwapZwapZwapE2ZDleqMaterial({
+    required String seedHex,
+    required String swapId,
+  });
+
+  Future<String> crateApiSwapZwapZwapFindSafeSwapId({
+    required String seedHex,
+    required String baseId,
+  });
+
+  Future<String> crateApiSwapZwapZwapJointAskLeHex({
+    required String kABeHex,
+    required String kBBeHex,
+  });
+
+  Future<String> crateApiSwapZwapZwapKUserBeHex({
+    required String seedHex,
+    required String swapId,
+  });
+
+  Future<String> crateApiSwapZwapZwapObIdentityPubkeyHex({
+    required String seedHex,
+  });
+
+  Future<String> crateApiSwapZwapZwapObSignChallengeHex({
+    required String seedHex,
+    required String challenge,
+  });
+
+  Future<String> crateApiSwapZwapZwapOrchardDerive({
+    required String requestJson,
+  });
+
+  Future<String> crateApiSwapZwapZwapOrchardSpend({
+    required String requestJson,
+  });
+
+  Future<String> crateApiSwapZwapZwapOrchardTrialDecrypt({
+    required String requestJson,
+  });
+
+  Future<String> crateApiSwapZwapZwapRecoverKFromClaimSig({
+    required String adaptorHex,
+    required String onchainSigHex,
+    required String expectedSecpPubkeyHex,
+  });
+
+  Future<String> crateApiSwapZwapZwapRevealSecretHex({
+    required String seedHex,
+    required String swapId,
+  });
+
+  Future<ZwapSignedBtcTx> crateApiSwapZwapZwapSignZ2BBtcClaimTx({
+    required String seedHex,
+    required String swapId,
+    required String lockTxid,
+    required int lockVout,
+    required BigInt lockValueSat,
+    required String witnessScriptHex,
+    required String swapSecretHex,
+    required String destSpkHex,
+    required BigInt feeSat,
+  });
+
+  Future<String> crateApiSwapZwapZwapUnifiedToOrchardRawHex({
+    required String unifiedAddress,
+  });
+
+  Future<ZwapZ2bOrderInputs> crateApiSwapZwapZwapZ2BOrderInputs({
+    required String seedHex,
+    required String swapId,
+  });
+
+  Future<ZwapZ2eClaimSigs> crateApiSwapZwapZwapZ2EClaimSigs({
+    required String seedHex,
+    required String swapId,
+    required String adaptorHex,
+    required String claimBuyDigestHex,
+    required String solverClaimAddrHex,
+  });
+
+  Future<ZwapZ2eOrderInputs> crateApiSwapZwapZwapZ2EOrderInputs({
+    required String seedHex,
+    required String swapId,
+  });
+
+  Future<String> crateApiSwapZwapZwapZ2ERefundSigB({
+    required String seedHex,
+    required String swapId,
+    required String refundToInitiatorDigestHex,
   });
 }
 
@@ -5558,6 +5735,1130 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: ["cachePath", "blocks"],
       );
 
+  @override
+  Future<ZwapB2zOrderInputs> crateApiSwapZwapZwapB2ZOrderInputs({
+    required String seedHex,
+    required String swapId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(swapId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 118,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_zwap_b_2_z_order_inputs,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapB2ZOrderInputsConstMeta,
+        argValues: [seedHex, swapId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapB2ZOrderInputsConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_b2z_order_inputs",
+        argNames: ["seedHex", "swapId"],
+      );
+
+  @override
+  Future<String> crateApiSwapZwapZwapBtcAddressToSpkHex({
+    required String address,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(address, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 119,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapBtcAddressToSpkHexConstMeta,
+        argValues: [address],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapBtcAddressToSpkHexConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_btc_address_to_spk_hex",
+        argNames: ["address"],
+      );
+
+  @override
+  Future<String> crateApiSwapZwapZwapBuildClaimBuyAdaptor({
+    required String seedHex,
+    required String swapId,
+    required String encryptionPointHex,
+    required String claimBuyDigestHex,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(swapId, serializer);
+          sse_encode_String(encryptionPointHex, serializer);
+          sse_encode_String(claimBuyDigestHex, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 120,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapBuildClaimBuyAdaptorConstMeta,
+        argValues: [seedHex, swapId, encryptionPointHex, claimBuyDigestHex],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapBuildClaimBuyAdaptorConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_build_claim_buy_adaptor",
+        argNames: [
+          "seedHex",
+          "swapId",
+          "encryptionPointHex",
+          "claimBuyDigestHex",
+        ],
+      );
+
+  @override
+  Future<ZwapB2zMaterial> crateApiSwapZwapZwapDeriveB2ZMaterial({
+    required String seedHex,
+    required String swapId,
+    required String solverAkSec1,
+    required String solverNskLe,
+    required String solverBB,
+    required String solverHB,
+    required int t1,
+    required int t2,
+    required String network,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(swapId, serializer);
+          sse_encode_String(solverAkSec1, serializer);
+          sse_encode_String(solverNskLe, serializer);
+          sse_encode_String(solverBB, serializer);
+          sse_encode_String(solverHB, serializer);
+          sse_encode_u_32(t1, serializer);
+          sse_encode_u_32(t2, serializer);
+          sse_encode_String(network, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 121,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_zwap_b_2_z_material,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapDeriveB2ZMaterialConstMeta,
+        argValues: [
+          seedHex,
+          swapId,
+          solverAkSec1,
+          solverNskLe,
+          solverBB,
+          solverHB,
+          t1,
+          t2,
+          network,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapDeriveB2ZMaterialConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_derive_b2z_material",
+        argNames: [
+          "seedHex",
+          "swapId",
+          "solverAkSec1",
+          "solverNskLe",
+          "solverBB",
+          "solverHB",
+          "t1",
+          "t2",
+          "network",
+        ],
+      );
+
+  @override
+  Future<ZwapE2zMaterial> crateApiSwapZwapZwapDeriveE2ZProxyMaterial({
+    required String seedHex,
+    required String swapId,
+    required String solverAkSec1,
+    required String solverNskLe,
+    required String solverLockPubkey,
+    required String solverRefundPubkey,
+    required String solverHB,
+    required String solverEvmAddr,
+    required String amountWei,
+    required String tokenAddr,
+    required String t0Abs,
+    required String t1Abs,
+    required BigInt chainId,
+    required String factoryAddr,
+    required String implementationAddr,
+    required String initiatorEvmAddr,
+    required String network,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(swapId, serializer);
+          sse_encode_String(solverAkSec1, serializer);
+          sse_encode_String(solverNskLe, serializer);
+          sse_encode_String(solverLockPubkey, serializer);
+          sse_encode_String(solverRefundPubkey, serializer);
+          sse_encode_String(solverHB, serializer);
+          sse_encode_String(solverEvmAddr, serializer);
+          sse_encode_String(amountWei, serializer);
+          sse_encode_String(tokenAddr, serializer);
+          sse_encode_String(t0Abs, serializer);
+          sse_encode_String(t1Abs, serializer);
+          sse_encode_u_64(chainId, serializer);
+          sse_encode_String(factoryAddr, serializer);
+          sse_encode_String(implementationAddr, serializer);
+          sse_encode_String(initiatorEvmAddr, serializer);
+          sse_encode_String(network, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 122,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_zwap_e_2_z_material,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapDeriveE2ZProxyMaterialConstMeta,
+        argValues: [
+          seedHex,
+          swapId,
+          solverAkSec1,
+          solverNskLe,
+          solverLockPubkey,
+          solverRefundPubkey,
+          solverHB,
+          solverEvmAddr,
+          amountWei,
+          tokenAddr,
+          t0Abs,
+          t1Abs,
+          chainId,
+          factoryAddr,
+          implementationAddr,
+          initiatorEvmAddr,
+          network,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapDeriveE2ZProxyMaterialConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_derive_e2z_proxy_material",
+        argNames: [
+          "seedHex",
+          "swapId",
+          "solverAkSec1",
+          "solverNskLe",
+          "solverLockPubkey",
+          "solverRefundPubkey",
+          "solverHB",
+          "solverEvmAddr",
+          "amountWei",
+          "tokenAddr",
+          "t0Abs",
+          "t1Abs",
+          "chainId",
+          "factoryAddr",
+          "implementationAddr",
+          "initiatorEvmAddr",
+          "network",
+        ],
+      );
+
+  @override
+  Future<ZwapInitiatorHalf> crateApiSwapZwapZwapDeriveInitiatorHalf({
+    required String seedHex,
+    required String swapId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(swapId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 123,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_zwap_initiator_half,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapDeriveInitiatorHalfConstMeta,
+        argValues: [seedHex, swapId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapDeriveInitiatorHalfConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_derive_initiator_half",
+        argNames: ["seedHex", "swapId"],
+      );
+
+  @override
+  Future<ZwapZ2bMaterial> crateApiSwapZwapZwapDeriveZ2BMaterial({
+    required String seedHex,
+    required String swapId,
+    required String solverAkSec1,
+    required String solverNskLe,
+    required String solverHB,
+    required String solverRefundPubkey,
+    required String solverSwapHash,
+    required int t1,
+    required int t2,
+    required String network,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(swapId, serializer);
+          sse_encode_String(solverAkSec1, serializer);
+          sse_encode_String(solverNskLe, serializer);
+          sse_encode_String(solverHB, serializer);
+          sse_encode_String(solverRefundPubkey, serializer);
+          sse_encode_String(solverSwapHash, serializer);
+          sse_encode_u_32(t1, serializer);
+          sse_encode_u_32(t2, serializer);
+          sse_encode_String(network, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 124,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_zwap_z_2_b_material,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapDeriveZ2BMaterialConstMeta,
+        argValues: [
+          seedHex,
+          swapId,
+          solverAkSec1,
+          solverNskLe,
+          solverHB,
+          solverRefundPubkey,
+          solverSwapHash,
+          t1,
+          t2,
+          network,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapDeriveZ2BMaterialConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_derive_z2b_material",
+        argNames: [
+          "seedHex",
+          "swapId",
+          "solverAkSec1",
+          "solverNskLe",
+          "solverHB",
+          "solverRefundPubkey",
+          "solverSwapHash",
+          "t1",
+          "t2",
+          "network",
+        ],
+      );
+
+  @override
+  Future<ZwapZ2eMaterial> crateApiSwapZwapZwapDeriveZ2EMaterial({
+    required String seedHex,
+    required String swapId,
+    required String solverAkSec1,
+    required String solverNskLe,
+    required String solverLockPubkey,
+    required String solverRefundPubkey,
+    required String solverHB,
+    required String solverSwapHash,
+    required String recipientEvmAddr,
+    required String solverEvmAddr,
+    required BigInt timelock,
+    required BigInt chainId,
+    required String contractHex,
+    required String tokenHex,
+    required String network,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(swapId, serializer);
+          sse_encode_String(solverAkSec1, serializer);
+          sse_encode_String(solverNskLe, serializer);
+          sse_encode_String(solverLockPubkey, serializer);
+          sse_encode_String(solverRefundPubkey, serializer);
+          sse_encode_String(solverHB, serializer);
+          sse_encode_String(solverSwapHash, serializer);
+          sse_encode_String(recipientEvmAddr, serializer);
+          sse_encode_String(solverEvmAddr, serializer);
+          sse_encode_u_64(timelock, serializer);
+          sse_encode_u_64(chainId, serializer);
+          sse_encode_String(contractHex, serializer);
+          sse_encode_String(tokenHex, serializer);
+          sse_encode_String(network, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 125,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_zwap_z_2_e_material,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapDeriveZ2EMaterialConstMeta,
+        argValues: [
+          seedHex,
+          swapId,
+          solverAkSec1,
+          solverNskLe,
+          solverLockPubkey,
+          solverRefundPubkey,
+          solverHB,
+          solverSwapHash,
+          recipientEvmAddr,
+          solverEvmAddr,
+          timelock,
+          chainId,
+          contractHex,
+          tokenHex,
+          network,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapDeriveZ2EMaterialConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_derive_z2e_material",
+        argNames: [
+          "seedHex",
+          "swapId",
+          "solverAkSec1",
+          "solverNskLe",
+          "solverLockPubkey",
+          "solverRefundPubkey",
+          "solverHB",
+          "solverSwapHash",
+          "recipientEvmAddr",
+          "solverEvmAddr",
+          "timelock",
+          "chainId",
+          "contractHex",
+          "tokenHex",
+          "network",
+        ],
+      );
+
+  @override
+  Future<ZwapDleqMaterial> crateApiSwapZwapZwapE2ZDleqMaterial({
+    required String seedHex,
+    required String swapId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(swapId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 126,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_zwap_dleq_material,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapE2ZDleqMaterialConstMeta,
+        argValues: [seedHex, swapId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapE2ZDleqMaterialConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_e2z_dleq_material",
+        argNames: ["seedHex", "swapId"],
+      );
+
+  @override
+  Future<String> crateApiSwapZwapZwapFindSafeSwapId({
+    required String seedHex,
+    required String baseId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(baseId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 127,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapFindSafeSwapIdConstMeta,
+        argValues: [seedHex, baseId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapFindSafeSwapIdConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_find_safe_swap_id",
+        argNames: ["seedHex", "baseId"],
+      );
+
+  @override
+  Future<String> crateApiSwapZwapZwapJointAskLeHex({
+    required String kABeHex,
+    required String kBBeHex,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(kABeHex, serializer);
+          sse_encode_String(kBBeHex, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 128,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapJointAskLeHexConstMeta,
+        argValues: [kABeHex, kBBeHex],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapJointAskLeHexConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_joint_ask_le_hex",
+        argNames: ["kABeHex", "kBBeHex"],
+      );
+
+  @override
+  Future<String> crateApiSwapZwapZwapKUserBeHex({
+    required String seedHex,
+    required String swapId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(swapId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 129,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapKUserBeHexConstMeta,
+        argValues: [seedHex, swapId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapKUserBeHexConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_k_user_be_hex",
+        argNames: ["seedHex", "swapId"],
+      );
+
+  @override
+  Future<String> crateApiSwapZwapZwapObIdentityPubkeyHex({
+    required String seedHex,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 130,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapObIdentityPubkeyHexConstMeta,
+        argValues: [seedHex],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapObIdentityPubkeyHexConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_ob_identity_pubkey_hex",
+        argNames: ["seedHex"],
+      );
+
+  @override
+  Future<String> crateApiSwapZwapZwapObSignChallengeHex({
+    required String seedHex,
+    required String challenge,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(challenge, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 131,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapObSignChallengeHexConstMeta,
+        argValues: [seedHex, challenge],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapObSignChallengeHexConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_ob_sign_challenge_hex",
+        argNames: ["seedHex", "challenge"],
+      );
+
+  @override
+  Future<String> crateApiSwapZwapZwapOrchardDerive({
+    required String requestJson,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(requestJson, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 132,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapOrchardDeriveConstMeta,
+        argValues: [requestJson],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapOrchardDeriveConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_orchard_derive",
+        argNames: ["requestJson"],
+      );
+
+  @override
+  Future<String> crateApiSwapZwapZwapOrchardSpend({
+    required String requestJson,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(requestJson, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 133,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapOrchardSpendConstMeta,
+        argValues: [requestJson],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapOrchardSpendConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_orchard_spend",
+        argNames: ["requestJson"],
+      );
+
+  @override
+  Future<String> crateApiSwapZwapZwapOrchardTrialDecrypt({
+    required String requestJson,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(requestJson, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 134,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapOrchardTrialDecryptConstMeta,
+        argValues: [requestJson],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapOrchardTrialDecryptConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_orchard_trial_decrypt",
+        argNames: ["requestJson"],
+      );
+
+  @override
+  Future<String> crateApiSwapZwapZwapRecoverKFromClaimSig({
+    required String adaptorHex,
+    required String onchainSigHex,
+    required String expectedSecpPubkeyHex,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(adaptorHex, serializer);
+          sse_encode_String(onchainSigHex, serializer);
+          sse_encode_String(expectedSecpPubkeyHex, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 135,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapRecoverKFromClaimSigConstMeta,
+        argValues: [adaptorHex, onchainSigHex, expectedSecpPubkeyHex],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapRecoverKFromClaimSigConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_recover_k_from_claim_sig",
+        argNames: ["adaptorHex", "onchainSigHex", "expectedSecpPubkeyHex"],
+      );
+
+  @override
+  Future<String> crateApiSwapZwapZwapRevealSecretHex({
+    required String seedHex,
+    required String swapId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(swapId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 136,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapRevealSecretHexConstMeta,
+        argValues: [seedHex, swapId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapRevealSecretHexConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_reveal_secret_hex",
+        argNames: ["seedHex", "swapId"],
+      );
+
+  @override
+  Future<ZwapSignedBtcTx> crateApiSwapZwapZwapSignZ2BBtcClaimTx({
+    required String seedHex,
+    required String swapId,
+    required String lockTxid,
+    required int lockVout,
+    required BigInt lockValueSat,
+    required String witnessScriptHex,
+    required String swapSecretHex,
+    required String destSpkHex,
+    required BigInt feeSat,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(swapId, serializer);
+          sse_encode_String(lockTxid, serializer);
+          sse_encode_u_32(lockVout, serializer);
+          sse_encode_u_64(lockValueSat, serializer);
+          sse_encode_String(witnessScriptHex, serializer);
+          sse_encode_String(swapSecretHex, serializer);
+          sse_encode_String(destSpkHex, serializer);
+          sse_encode_u_64(feeSat, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 137,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_zwap_signed_btc_tx,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapSignZ2BBtcClaimTxConstMeta,
+        argValues: [
+          seedHex,
+          swapId,
+          lockTxid,
+          lockVout,
+          lockValueSat,
+          witnessScriptHex,
+          swapSecretHex,
+          destSpkHex,
+          feeSat,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapSignZ2BBtcClaimTxConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_sign_z2b_btc_claim_tx",
+        argNames: [
+          "seedHex",
+          "swapId",
+          "lockTxid",
+          "lockVout",
+          "lockValueSat",
+          "witnessScriptHex",
+          "swapSecretHex",
+          "destSpkHex",
+          "feeSat",
+        ],
+      );
+
+  @override
+  Future<String> crateApiSwapZwapZwapUnifiedToOrchardRawHex({
+    required String unifiedAddress,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(unifiedAddress, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 138,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapUnifiedToOrchardRawHexConstMeta,
+        argValues: [unifiedAddress],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapUnifiedToOrchardRawHexConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_unified_to_orchard_raw_hex",
+        argNames: ["unifiedAddress"],
+      );
+
+  @override
+  Future<ZwapZ2bOrderInputs> crateApiSwapZwapZwapZ2BOrderInputs({
+    required String seedHex,
+    required String swapId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(swapId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 139,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_zwap_z_2_b_order_inputs,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapZ2BOrderInputsConstMeta,
+        argValues: [seedHex, swapId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapZ2BOrderInputsConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_z2b_order_inputs",
+        argNames: ["seedHex", "swapId"],
+      );
+
+  @override
+  Future<ZwapZ2eClaimSigs> crateApiSwapZwapZwapZ2EClaimSigs({
+    required String seedHex,
+    required String swapId,
+    required String adaptorHex,
+    required String claimBuyDigestHex,
+    required String solverClaimAddrHex,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(swapId, serializer);
+          sse_encode_String(adaptorHex, serializer);
+          sse_encode_String(claimBuyDigestHex, serializer);
+          sse_encode_String(solverClaimAddrHex, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 140,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_zwap_z_2_e_claim_sigs,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapZ2EClaimSigsConstMeta,
+        argValues: [
+          seedHex,
+          swapId,
+          adaptorHex,
+          claimBuyDigestHex,
+          solverClaimAddrHex,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapZ2EClaimSigsConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_z2e_claim_sigs",
+        argNames: [
+          "seedHex",
+          "swapId",
+          "adaptorHex",
+          "claimBuyDigestHex",
+          "solverClaimAddrHex",
+        ],
+      );
+
+  @override
+  Future<ZwapZ2eOrderInputs> crateApiSwapZwapZwapZ2EOrderInputs({
+    required String seedHex,
+    required String swapId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(swapId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 141,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_zwap_z_2_e_order_inputs,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapZ2EOrderInputsConstMeta,
+        argValues: [seedHex, swapId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapZ2EOrderInputsConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_z2e_order_inputs",
+        argNames: ["seedHex", "swapId"],
+      );
+
+  @override
+  Future<String> crateApiSwapZwapZwapZ2ERefundSigB({
+    required String seedHex,
+    required String swapId,
+    required String refundToInitiatorDigestHex,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(seedHex, serializer);
+          sse_encode_String(swapId, serializer);
+          sse_encode_String(refundToInitiatorDigestHex, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 142,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSwapZwapZwapZ2ERefundSigBConstMeta,
+        argValues: [seedHex, swapId, refundToInitiatorDigestHex],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSwapZwapZwapZ2ERefundSigBConstMeta =>
+      const TaskConstMeta(
+        debugName: "zwap_z2e_refund_sig_b",
+        argNames: ["seedHex", "swapId", "refundToInitiatorDigestHex"],
+      );
+
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -7150,6 +8451,196 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       c1: dco_decode_list_prim_u_8_strict(arr[0]),
       c2: dco_decode_list_prim_u_8_strict(arr[1]),
       shareIndex: dco_decode_u_32(arr[2]),
+    );
+  }
+
+  @protected
+  ZwapB2zMaterial dco_decode_zwap_b_2_z_material(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    return ZwapB2zMaterial(
+      btcLockAddress: dco_decode_String(arr[0]),
+      witnessScriptHex: dco_decode_String(arr[1]),
+      jointZecAddress: dco_decode_String(arr[2]),
+      jointZecUfvk: dco_decode_String(arr[3]),
+      jointZecNkHex: dco_decode_String(arr[4]),
+      jointZecRivkHex: dco_decode_String(arr[5]),
+      jointZecAkHex: dco_decode_String(arr[6]),
+      jointZecIvkHex: dco_decode_String(arr[7]),
+      jointZecDiversifierHex: dco_decode_String(arr[8]),
+      swapHashHex: dco_decode_String(arr[9]),
+      hAHex: dco_decode_String(arr[10]),
+    );
+  }
+
+  @protected
+  ZwapB2zOrderInputs dco_decode_zwap_b_2_z_order_inputs(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return ZwapB2zOrderInputs(
+      hA: dco_decode_String(arr[0]),
+      swapHash: dco_decode_String(arr[1]),
+      akA: dco_decode_String(arr[2]),
+      nskA: dco_decode_String(arr[3]),
+      lockPubkey: dco_decode_String(arr[4]),
+      refundPubkey: dco_decode_String(arr[5]),
+      kBeHex: dco_decode_String(arr[6]),
+    );
+  }
+
+  @protected
+  ZwapDleqMaterial dco_decode_zwap_dleq_material(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ZwapDleqMaterial(
+      lockPubkeySecpHex: dco_decode_String(arr[0]),
+      dleqProofHex: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
+  ZwapE2zMaterial dco_decode_zwap_e_2_z_material(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 14)
+      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
+    return ZwapE2zMaterial(
+      depositAddress: dco_decode_String(arr[0]),
+      saltHex: dco_decode_String(arr[1]),
+      claimBuyDigest: dco_decode_String(arr[2]),
+      refundToInitiatorDigest: dco_decode_String(arr[3]),
+      refundAfterClaimDigest: dco_decode_String(arr[4]),
+      jointZecAddress: dco_decode_String(arr[5]),
+      jointZecUfvk: dco_decode_String(arr[6]),
+      jointZecNkHex: dco_decode_String(arr[7]),
+      jointZecRivkHex: dco_decode_String(arr[8]),
+      jointZecAkHex: dco_decode_String(arr[9]),
+      jointZecIvkHex: dco_decode_String(arr[10]),
+      jointZecDiversifierHex: dco_decode_String(arr[11]),
+      swapHashHex: dco_decode_String(arr[12]),
+      proxyTermsJson: dco_decode_String(arr[13]),
+    );
+  }
+
+  @protected
+  ZwapInitiatorHalf dco_decode_zwap_initiator_half(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return ZwapInitiatorHalf(
+      akSec1: dco_decode_String(arr[0]),
+      nskLe: dco_decode_String(arr[1]),
+      hAHex: dco_decode_String(arr[2]),
+      swapHashHex: dco_decode_String(arr[3]),
+    );
+  }
+
+  @protected
+  ZwapSignedBtcTx dco_decode_zwap_signed_btc_tx(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ZwapSignedBtcTx(
+      rawTxHex: dco_decode_String(arr[0]),
+      txid: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
+  ZwapZ2bMaterial dco_decode_zwap_z_2_b_material(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 12)
+      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
+    return ZwapZ2bMaterial(
+      btcLockAddress: dco_decode_String(arr[0]),
+      witnessScriptHex: dco_decode_String(arr[1]),
+      claimPubkeyHex: dco_decode_String(arr[2]),
+      jointZecAddress: dco_decode_String(arr[3]),
+      jointZecUfvk: dco_decode_String(arr[4]),
+      jointZecNkHex: dco_decode_String(arr[5]),
+      jointZecRivkHex: dco_decode_String(arr[6]),
+      jointZecAkHex: dco_decode_String(arr[7]),
+      jointZecIvkHex: dco_decode_String(arr[8]),
+      jointZecDiversifierHex: dco_decode_String(arr[9]),
+      swapHashHex: dco_decode_String(arr[10]),
+      hBHex: dco_decode_String(arr[11]),
+    );
+  }
+
+  @protected
+  ZwapZ2bOrderInputs dco_decode_zwap_z_2_b_order_inputs(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return ZwapZ2bOrderInputs(
+      hA: dco_decode_String(arr[0]),
+      akA: dco_decode_String(arr[1]),
+      nskA: dco_decode_String(arr[2]),
+      lockPubkey: dco_decode_String(arr[3]),
+      claimPubkey: dco_decode_String(arr[4]),
+      kBeHex: dco_decode_String(arr[5]),
+    );
+  }
+
+  @protected
+  ZwapZ2eClaimSigs dco_decode_zwap_z_2_e_claim_sigs(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ZwapZ2eClaimSigs(
+      sigAHex: dco_decode_String(arr[0]),
+      sigBHex: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
+  ZwapZ2eMaterial dco_decode_zwap_z_2_e_material(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 13)
+      throw Exception('unexpected arr length: expect 13 but see ${arr.length}');
+    return ZwapZ2eMaterial(
+      jointZecAddress: dco_decode_String(arr[0]),
+      jointZecUfvk: dco_decode_String(arr[1]),
+      jointZecNkHex: dco_decode_String(arr[2]),
+      jointZecRivkHex: dco_decode_String(arr[3]),
+      jointZecAkHex: dco_decode_String(arr[4]),
+      jointZecIvkHex: dco_decode_String(arr[5]),
+      jointZecDiversifierHex: dco_decode_String(arr[6]),
+      evmSlotIdHex: dco_decode_String(arr[7]),
+      claimBuyDigestHex: dco_decode_String(arr[8]),
+      refundToInitiatorDigestHex: dco_decode_String(arr[9]),
+      solverClaimAddrHex: dco_decode_String(arr[10]),
+      swapHashHex: dco_decode_String(arr[11]),
+      hBHex: dco_decode_String(arr[12]),
+    );
+  }
+
+  @protected
+  ZwapZ2eOrderInputs dco_decode_zwap_z_2_e_order_inputs(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return ZwapZ2eOrderInputs(
+      hA: dco_decode_String(arr[0]),
+      akA: dco_decode_String(arr[1]),
+      nskA: dco_decode_String(arr[2]),
+      lockPubkey: dco_decode_String(arr[3]),
+      dleqProof: dco_decode_String(arr[4]),
+      claimPubkey: dco_decode_String(arr[5]),
+      kBeHex: dco_decode_String(arr[6]),
     );
   }
 
@@ -9203,6 +10694,247 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ZwapB2zMaterial sse_decode_zwap_b_2_z_material(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_btcLockAddress = sse_decode_String(deserializer);
+    var var_witnessScriptHex = sse_decode_String(deserializer);
+    var var_jointZecAddress = sse_decode_String(deserializer);
+    var var_jointZecUfvk = sse_decode_String(deserializer);
+    var var_jointZecNkHex = sse_decode_String(deserializer);
+    var var_jointZecRivkHex = sse_decode_String(deserializer);
+    var var_jointZecAkHex = sse_decode_String(deserializer);
+    var var_jointZecIvkHex = sse_decode_String(deserializer);
+    var var_jointZecDiversifierHex = sse_decode_String(deserializer);
+    var var_swapHashHex = sse_decode_String(deserializer);
+    var var_hAHex = sse_decode_String(deserializer);
+    return ZwapB2zMaterial(
+      btcLockAddress: var_btcLockAddress,
+      witnessScriptHex: var_witnessScriptHex,
+      jointZecAddress: var_jointZecAddress,
+      jointZecUfvk: var_jointZecUfvk,
+      jointZecNkHex: var_jointZecNkHex,
+      jointZecRivkHex: var_jointZecRivkHex,
+      jointZecAkHex: var_jointZecAkHex,
+      jointZecIvkHex: var_jointZecIvkHex,
+      jointZecDiversifierHex: var_jointZecDiversifierHex,
+      swapHashHex: var_swapHashHex,
+      hAHex: var_hAHex,
+    );
+  }
+
+  @protected
+  ZwapB2zOrderInputs sse_decode_zwap_b_2_z_order_inputs(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_hA = sse_decode_String(deserializer);
+    var var_swapHash = sse_decode_String(deserializer);
+    var var_akA = sse_decode_String(deserializer);
+    var var_nskA = sse_decode_String(deserializer);
+    var var_lockPubkey = sse_decode_String(deserializer);
+    var var_refundPubkey = sse_decode_String(deserializer);
+    var var_kBeHex = sse_decode_String(deserializer);
+    return ZwapB2zOrderInputs(
+      hA: var_hA,
+      swapHash: var_swapHash,
+      akA: var_akA,
+      nskA: var_nskA,
+      lockPubkey: var_lockPubkey,
+      refundPubkey: var_refundPubkey,
+      kBeHex: var_kBeHex,
+    );
+  }
+
+  @protected
+  ZwapDleqMaterial sse_decode_zwap_dleq_material(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_lockPubkeySecpHex = sse_decode_String(deserializer);
+    var var_dleqProofHex = sse_decode_String(deserializer);
+    return ZwapDleqMaterial(
+      lockPubkeySecpHex: var_lockPubkeySecpHex,
+      dleqProofHex: var_dleqProofHex,
+    );
+  }
+
+  @protected
+  ZwapE2zMaterial sse_decode_zwap_e_2_z_material(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_depositAddress = sse_decode_String(deserializer);
+    var var_saltHex = sse_decode_String(deserializer);
+    var var_claimBuyDigest = sse_decode_String(deserializer);
+    var var_refundToInitiatorDigest = sse_decode_String(deserializer);
+    var var_refundAfterClaimDigest = sse_decode_String(deserializer);
+    var var_jointZecAddress = sse_decode_String(deserializer);
+    var var_jointZecUfvk = sse_decode_String(deserializer);
+    var var_jointZecNkHex = sse_decode_String(deserializer);
+    var var_jointZecRivkHex = sse_decode_String(deserializer);
+    var var_jointZecAkHex = sse_decode_String(deserializer);
+    var var_jointZecIvkHex = sse_decode_String(deserializer);
+    var var_jointZecDiversifierHex = sse_decode_String(deserializer);
+    var var_swapHashHex = sse_decode_String(deserializer);
+    var var_proxyTermsJson = sse_decode_String(deserializer);
+    return ZwapE2zMaterial(
+      depositAddress: var_depositAddress,
+      saltHex: var_saltHex,
+      claimBuyDigest: var_claimBuyDigest,
+      refundToInitiatorDigest: var_refundToInitiatorDigest,
+      refundAfterClaimDigest: var_refundAfterClaimDigest,
+      jointZecAddress: var_jointZecAddress,
+      jointZecUfvk: var_jointZecUfvk,
+      jointZecNkHex: var_jointZecNkHex,
+      jointZecRivkHex: var_jointZecRivkHex,
+      jointZecAkHex: var_jointZecAkHex,
+      jointZecIvkHex: var_jointZecIvkHex,
+      jointZecDiversifierHex: var_jointZecDiversifierHex,
+      swapHashHex: var_swapHashHex,
+      proxyTermsJson: var_proxyTermsJson,
+    );
+  }
+
+  @protected
+  ZwapInitiatorHalf sse_decode_zwap_initiator_half(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_akSec1 = sse_decode_String(deserializer);
+    var var_nskLe = sse_decode_String(deserializer);
+    var var_hAHex = sse_decode_String(deserializer);
+    var var_swapHashHex = sse_decode_String(deserializer);
+    return ZwapInitiatorHalf(
+      akSec1: var_akSec1,
+      nskLe: var_nskLe,
+      hAHex: var_hAHex,
+      swapHashHex: var_swapHashHex,
+    );
+  }
+
+  @protected
+  ZwapSignedBtcTx sse_decode_zwap_signed_btc_tx(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_rawTxHex = sse_decode_String(deserializer);
+    var var_txid = sse_decode_String(deserializer);
+    return ZwapSignedBtcTx(rawTxHex: var_rawTxHex, txid: var_txid);
+  }
+
+  @protected
+  ZwapZ2bMaterial sse_decode_zwap_z_2_b_material(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_btcLockAddress = sse_decode_String(deserializer);
+    var var_witnessScriptHex = sse_decode_String(deserializer);
+    var var_claimPubkeyHex = sse_decode_String(deserializer);
+    var var_jointZecAddress = sse_decode_String(deserializer);
+    var var_jointZecUfvk = sse_decode_String(deserializer);
+    var var_jointZecNkHex = sse_decode_String(deserializer);
+    var var_jointZecRivkHex = sse_decode_String(deserializer);
+    var var_jointZecAkHex = sse_decode_String(deserializer);
+    var var_jointZecIvkHex = sse_decode_String(deserializer);
+    var var_jointZecDiversifierHex = sse_decode_String(deserializer);
+    var var_swapHashHex = sse_decode_String(deserializer);
+    var var_hBHex = sse_decode_String(deserializer);
+    return ZwapZ2bMaterial(
+      btcLockAddress: var_btcLockAddress,
+      witnessScriptHex: var_witnessScriptHex,
+      claimPubkeyHex: var_claimPubkeyHex,
+      jointZecAddress: var_jointZecAddress,
+      jointZecUfvk: var_jointZecUfvk,
+      jointZecNkHex: var_jointZecNkHex,
+      jointZecRivkHex: var_jointZecRivkHex,
+      jointZecAkHex: var_jointZecAkHex,
+      jointZecIvkHex: var_jointZecIvkHex,
+      jointZecDiversifierHex: var_jointZecDiversifierHex,
+      swapHashHex: var_swapHashHex,
+      hBHex: var_hBHex,
+    );
+  }
+
+  @protected
+  ZwapZ2bOrderInputs sse_decode_zwap_z_2_b_order_inputs(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_hA = sse_decode_String(deserializer);
+    var var_akA = sse_decode_String(deserializer);
+    var var_nskA = sse_decode_String(deserializer);
+    var var_lockPubkey = sse_decode_String(deserializer);
+    var var_claimPubkey = sse_decode_String(deserializer);
+    var var_kBeHex = sse_decode_String(deserializer);
+    return ZwapZ2bOrderInputs(
+      hA: var_hA,
+      akA: var_akA,
+      nskA: var_nskA,
+      lockPubkey: var_lockPubkey,
+      claimPubkey: var_claimPubkey,
+      kBeHex: var_kBeHex,
+    );
+  }
+
+  @protected
+  ZwapZ2eClaimSigs sse_decode_zwap_z_2_e_claim_sigs(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_sigAHex = sse_decode_String(deserializer);
+    var var_sigBHex = sse_decode_String(deserializer);
+    return ZwapZ2eClaimSigs(sigAHex: var_sigAHex, sigBHex: var_sigBHex);
+  }
+
+  @protected
+  ZwapZ2eMaterial sse_decode_zwap_z_2_e_material(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_jointZecAddress = sse_decode_String(deserializer);
+    var var_jointZecUfvk = sse_decode_String(deserializer);
+    var var_jointZecNkHex = sse_decode_String(deserializer);
+    var var_jointZecRivkHex = sse_decode_String(deserializer);
+    var var_jointZecAkHex = sse_decode_String(deserializer);
+    var var_jointZecIvkHex = sse_decode_String(deserializer);
+    var var_jointZecDiversifierHex = sse_decode_String(deserializer);
+    var var_evmSlotIdHex = sse_decode_String(deserializer);
+    var var_claimBuyDigestHex = sse_decode_String(deserializer);
+    var var_refundToInitiatorDigestHex = sse_decode_String(deserializer);
+    var var_solverClaimAddrHex = sse_decode_String(deserializer);
+    var var_swapHashHex = sse_decode_String(deserializer);
+    var var_hBHex = sse_decode_String(deserializer);
+    return ZwapZ2eMaterial(
+      jointZecAddress: var_jointZecAddress,
+      jointZecUfvk: var_jointZecUfvk,
+      jointZecNkHex: var_jointZecNkHex,
+      jointZecRivkHex: var_jointZecRivkHex,
+      jointZecAkHex: var_jointZecAkHex,
+      jointZecIvkHex: var_jointZecIvkHex,
+      jointZecDiversifierHex: var_jointZecDiversifierHex,
+      evmSlotIdHex: var_evmSlotIdHex,
+      claimBuyDigestHex: var_claimBuyDigestHex,
+      refundToInitiatorDigestHex: var_refundToInitiatorDigestHex,
+      solverClaimAddrHex: var_solverClaimAddrHex,
+      swapHashHex: var_swapHashHex,
+      hBHex: var_hBHex,
+    );
+  }
+
+  @protected
+  ZwapZ2eOrderInputs sse_decode_zwap_z_2_e_order_inputs(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_hA = sse_decode_String(deserializer);
+    var var_akA = sse_decode_String(deserializer);
+    var var_nskA = sse_decode_String(deserializer);
+    var var_lockPubkey = sse_decode_String(deserializer);
+    var var_dleqProof = sse_decode_String(deserializer);
+    var var_claimPubkey = sse_decode_String(deserializer);
+    var var_kBeHex = sse_decode_String(deserializer);
+    return ZwapZ2eOrderInputs(
+      hA: var_hA,
+      akA: var_akA,
+      nskA: var_nskA,
+      lockPubkey: var_lockPubkey,
+      dleqProof: var_dleqProof,
+      claimPubkey: var_claimPubkey,
+      kBeHex: var_kBeHex,
+    );
+  }
+
+  @protected
   void sse_encode_AnyhowException(
     AnyhowException self,
     SseSerializer serializer,
@@ -10872,5 +12604,173 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_prim_u_8_strict(self.c1, serializer);
     sse_encode_list_prim_u_8_strict(self.c2, serializer);
     sse_encode_u_32(self.shareIndex, serializer);
+  }
+
+  @protected
+  void sse_encode_zwap_b_2_z_material(
+    ZwapB2zMaterial self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.btcLockAddress, serializer);
+    sse_encode_String(self.witnessScriptHex, serializer);
+    sse_encode_String(self.jointZecAddress, serializer);
+    sse_encode_String(self.jointZecUfvk, serializer);
+    sse_encode_String(self.jointZecNkHex, serializer);
+    sse_encode_String(self.jointZecRivkHex, serializer);
+    sse_encode_String(self.jointZecAkHex, serializer);
+    sse_encode_String(self.jointZecIvkHex, serializer);
+    sse_encode_String(self.jointZecDiversifierHex, serializer);
+    sse_encode_String(self.swapHashHex, serializer);
+    sse_encode_String(self.hAHex, serializer);
+  }
+
+  @protected
+  void sse_encode_zwap_b_2_z_order_inputs(
+    ZwapB2zOrderInputs self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.hA, serializer);
+    sse_encode_String(self.swapHash, serializer);
+    sse_encode_String(self.akA, serializer);
+    sse_encode_String(self.nskA, serializer);
+    sse_encode_String(self.lockPubkey, serializer);
+    sse_encode_String(self.refundPubkey, serializer);
+    sse_encode_String(self.kBeHex, serializer);
+  }
+
+  @protected
+  void sse_encode_zwap_dleq_material(
+    ZwapDleqMaterial self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.lockPubkeySecpHex, serializer);
+    sse_encode_String(self.dleqProofHex, serializer);
+  }
+
+  @protected
+  void sse_encode_zwap_e_2_z_material(
+    ZwapE2zMaterial self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.depositAddress, serializer);
+    sse_encode_String(self.saltHex, serializer);
+    sse_encode_String(self.claimBuyDigest, serializer);
+    sse_encode_String(self.refundToInitiatorDigest, serializer);
+    sse_encode_String(self.refundAfterClaimDigest, serializer);
+    sse_encode_String(self.jointZecAddress, serializer);
+    sse_encode_String(self.jointZecUfvk, serializer);
+    sse_encode_String(self.jointZecNkHex, serializer);
+    sse_encode_String(self.jointZecRivkHex, serializer);
+    sse_encode_String(self.jointZecAkHex, serializer);
+    sse_encode_String(self.jointZecIvkHex, serializer);
+    sse_encode_String(self.jointZecDiversifierHex, serializer);
+    sse_encode_String(self.swapHashHex, serializer);
+    sse_encode_String(self.proxyTermsJson, serializer);
+  }
+
+  @protected
+  void sse_encode_zwap_initiator_half(
+    ZwapInitiatorHalf self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.akSec1, serializer);
+    sse_encode_String(self.nskLe, serializer);
+    sse_encode_String(self.hAHex, serializer);
+    sse_encode_String(self.swapHashHex, serializer);
+  }
+
+  @protected
+  void sse_encode_zwap_signed_btc_tx(
+    ZwapSignedBtcTx self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.rawTxHex, serializer);
+    sse_encode_String(self.txid, serializer);
+  }
+
+  @protected
+  void sse_encode_zwap_z_2_b_material(
+    ZwapZ2bMaterial self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.btcLockAddress, serializer);
+    sse_encode_String(self.witnessScriptHex, serializer);
+    sse_encode_String(self.claimPubkeyHex, serializer);
+    sse_encode_String(self.jointZecAddress, serializer);
+    sse_encode_String(self.jointZecUfvk, serializer);
+    sse_encode_String(self.jointZecNkHex, serializer);
+    sse_encode_String(self.jointZecRivkHex, serializer);
+    sse_encode_String(self.jointZecAkHex, serializer);
+    sse_encode_String(self.jointZecIvkHex, serializer);
+    sse_encode_String(self.jointZecDiversifierHex, serializer);
+    sse_encode_String(self.swapHashHex, serializer);
+    sse_encode_String(self.hBHex, serializer);
+  }
+
+  @protected
+  void sse_encode_zwap_z_2_b_order_inputs(
+    ZwapZ2bOrderInputs self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.hA, serializer);
+    sse_encode_String(self.akA, serializer);
+    sse_encode_String(self.nskA, serializer);
+    sse_encode_String(self.lockPubkey, serializer);
+    sse_encode_String(self.claimPubkey, serializer);
+    sse_encode_String(self.kBeHex, serializer);
+  }
+
+  @protected
+  void sse_encode_zwap_z_2_e_claim_sigs(
+    ZwapZ2eClaimSigs self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.sigAHex, serializer);
+    sse_encode_String(self.sigBHex, serializer);
+  }
+
+  @protected
+  void sse_encode_zwap_z_2_e_material(
+    ZwapZ2eMaterial self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.jointZecAddress, serializer);
+    sse_encode_String(self.jointZecUfvk, serializer);
+    sse_encode_String(self.jointZecNkHex, serializer);
+    sse_encode_String(self.jointZecRivkHex, serializer);
+    sse_encode_String(self.jointZecAkHex, serializer);
+    sse_encode_String(self.jointZecIvkHex, serializer);
+    sse_encode_String(self.jointZecDiversifierHex, serializer);
+    sse_encode_String(self.evmSlotIdHex, serializer);
+    sse_encode_String(self.claimBuyDigestHex, serializer);
+    sse_encode_String(self.refundToInitiatorDigestHex, serializer);
+    sse_encode_String(self.solverClaimAddrHex, serializer);
+    sse_encode_String(self.swapHashHex, serializer);
+    sse_encode_String(self.hBHex, serializer);
+  }
+
+  @protected
+  void sse_encode_zwap_z_2_e_order_inputs(
+    ZwapZ2eOrderInputs self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.hA, serializer);
+    sse_encode_String(self.akA, serializer);
+    sse_encode_String(self.nskA, serializer);
+    sse_encode_String(self.lockPubkey, serializer);
+    sse_encode_String(self.dleqProof, serializer);
+    sse_encode_String(self.claimPubkey, serializer);
+    sse_encode_String(self.kBeHex, serializer);
   }
 }

@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1052771162;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 888420441;
 
 // Section: executor
 
@@ -4581,6 +4581,1012 @@ fn wire__crate__api__sync__write_block_metadata_impl(
         },
     )
 }
+fn wire__crate__api__swap_zwap__zwap_b2z_order_inputs_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_b2z_order_inputs",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::swap_zwap::zwap_b2z_order_inputs(api_seed_hex, api_swap_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_btc_address_to_spk_hex_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_btc_address_to_spk_hex",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_address = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::swap_zwap::zwap_btc_address_to_spk_hex(api_address)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_build_claim_buy_adaptor_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_build_claim_buy_adaptor",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_id = <String>::sse_decode(&mut deserializer);
+            let api_encryption_point_hex = <String>::sse_decode(&mut deserializer);
+            let api_claim_buy_digest_hex = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::swap_zwap::zwap_build_claim_buy_adaptor(
+                        api_seed_hex,
+                        api_swap_id,
+                        api_encryption_point_hex,
+                        api_claim_buy_digest_hex,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_derive_b2z_material_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_derive_b2z_material",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_id = <String>::sse_decode(&mut deserializer);
+            let api_solver_ak_sec1 = <String>::sse_decode(&mut deserializer);
+            let api_solver_nsk_le = <String>::sse_decode(&mut deserializer);
+            let api_solver_b_b = <String>::sse_decode(&mut deserializer);
+            let api_solver_h_b = <String>::sse_decode(&mut deserializer);
+            let api_t1 = <u32>::sse_decode(&mut deserializer);
+            let api_t2 = <u32>::sse_decode(&mut deserializer);
+            let api_network = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::swap_zwap::zwap_derive_b2z_material(
+                        api_seed_hex,
+                        api_swap_id,
+                        api_solver_ak_sec1,
+                        api_solver_nsk_le,
+                        api_solver_b_b,
+                        api_solver_h_b,
+                        api_t1,
+                        api_t2,
+                        api_network,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_derive_e2z_proxy_material_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_derive_e2z_proxy_material",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_id = <String>::sse_decode(&mut deserializer);
+            let api_solver_ak_sec1 = <String>::sse_decode(&mut deserializer);
+            let api_solver_nsk_le = <String>::sse_decode(&mut deserializer);
+            let api_solver_lock_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_solver_refund_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_solver_h_b = <String>::sse_decode(&mut deserializer);
+            let api_solver_evm_addr = <String>::sse_decode(&mut deserializer);
+            let api_amount_wei = <String>::sse_decode(&mut deserializer);
+            let api_token_addr = <String>::sse_decode(&mut deserializer);
+            let api_t0_abs = <String>::sse_decode(&mut deserializer);
+            let api_t1_abs = <String>::sse_decode(&mut deserializer);
+            let api_chain_id = <u64>::sse_decode(&mut deserializer);
+            let api_factory_addr = <String>::sse_decode(&mut deserializer);
+            let api_implementation_addr = <String>::sse_decode(&mut deserializer);
+            let api_initiator_evm_addr = <String>::sse_decode(&mut deserializer);
+            let api_network = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::swap_zwap::zwap_derive_e2z_proxy_material(
+                        api_seed_hex,
+                        api_swap_id,
+                        api_solver_ak_sec1,
+                        api_solver_nsk_le,
+                        api_solver_lock_pubkey,
+                        api_solver_refund_pubkey,
+                        api_solver_h_b,
+                        api_solver_evm_addr,
+                        api_amount_wei,
+                        api_token_addr,
+                        api_t0_abs,
+                        api_t1_abs,
+                        api_chain_id,
+                        api_factory_addr,
+                        api_implementation_addr,
+                        api_initiator_evm_addr,
+                        api_network,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_derive_initiator_half_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_derive_initiator_half",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::swap_zwap::zwap_derive_initiator_half(
+                        api_seed_hex,
+                        api_swap_id,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_derive_z2b_material_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_derive_z2b_material",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_id = <String>::sse_decode(&mut deserializer);
+            let api_solver_ak_sec1 = <String>::sse_decode(&mut deserializer);
+            let api_solver_nsk_le = <String>::sse_decode(&mut deserializer);
+            let api_solver_h_b = <String>::sse_decode(&mut deserializer);
+            let api_solver_refund_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_solver_swap_hash = <String>::sse_decode(&mut deserializer);
+            let api_t1 = <u32>::sse_decode(&mut deserializer);
+            let api_t2 = <u32>::sse_decode(&mut deserializer);
+            let api_network = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::swap_zwap::zwap_derive_z2b_material(
+                        api_seed_hex,
+                        api_swap_id,
+                        api_solver_ak_sec1,
+                        api_solver_nsk_le,
+                        api_solver_h_b,
+                        api_solver_refund_pubkey,
+                        api_solver_swap_hash,
+                        api_t1,
+                        api_t2,
+                        api_network,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_derive_z2e_material_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_derive_z2e_material",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_id = <String>::sse_decode(&mut deserializer);
+            let api_solver_ak_sec1 = <String>::sse_decode(&mut deserializer);
+            let api_solver_nsk_le = <String>::sse_decode(&mut deserializer);
+            let api_solver_lock_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_solver_refund_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_solver_h_b = <String>::sse_decode(&mut deserializer);
+            let api_solver_swap_hash = <String>::sse_decode(&mut deserializer);
+            let api_recipient_evm_addr = <String>::sse_decode(&mut deserializer);
+            let api_solver_evm_addr = <String>::sse_decode(&mut deserializer);
+            let api_timelock = <u64>::sse_decode(&mut deserializer);
+            let api_chain_id = <u64>::sse_decode(&mut deserializer);
+            let api_contract_hex = <String>::sse_decode(&mut deserializer);
+            let api_token_hex = <String>::sse_decode(&mut deserializer);
+            let api_network = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::swap_zwap::zwap_derive_z2e_material(
+                        api_seed_hex,
+                        api_swap_id,
+                        api_solver_ak_sec1,
+                        api_solver_nsk_le,
+                        api_solver_lock_pubkey,
+                        api_solver_refund_pubkey,
+                        api_solver_h_b,
+                        api_solver_swap_hash,
+                        api_recipient_evm_addr,
+                        api_solver_evm_addr,
+                        api_timelock,
+                        api_chain_id,
+                        api_contract_hex,
+                        api_token_hex,
+                        api_network,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_e2z_dleq_material_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_e2z_dleq_material",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::swap_zwap::zwap_e2z_dleq_material(api_seed_hex, api_swap_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_find_safe_swap_id_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_find_safe_swap_id",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_base_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::swap_zwap::zwap_find_safe_swap_id(api_seed_hex, api_base_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_joint_ask_le_hex_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_joint_ask_le_hex",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_k_a_be_hex = <String>::sse_decode(&mut deserializer);
+            let api_k_b_be_hex = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::swap_zwap::zwap_joint_ask_le_hex(
+                        api_k_a_be_hex,
+                        api_k_b_be_hex,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_k_user_be_hex_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_k_user_be_hex",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::swap_zwap::zwap_k_user_be_hex(api_seed_hex, api_swap_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_ob_identity_pubkey_hex_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_ob_identity_pubkey_hex",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::swap_zwap::zwap_ob_identity_pubkey_hex(api_seed_hex)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_ob_sign_challenge_hex_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_ob_sign_challenge_hex",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_challenge = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::swap_zwap::zwap_ob_sign_challenge_hex(
+                        api_seed_hex,
+                        api_challenge,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_orchard_derive_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_orchard_derive",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request_json = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::swap_zwap::zwap_orchard_derive(api_request_json)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_orchard_spend_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_orchard_spend",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request_json = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::swap_zwap::zwap_orchard_spend(api_request_json)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_orchard_trial_decrypt_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_orchard_trial_decrypt",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request_json = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::swap_zwap::zwap_orchard_trial_decrypt(api_request_json)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_recover_k_from_claim_sig_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_recover_k_from_claim_sig",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_adaptor_hex = <String>::sse_decode(&mut deserializer);
+            let api_onchain_sig_hex = <String>::sse_decode(&mut deserializer);
+            let api_expected_secp_pubkey_hex = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::swap_zwap::zwap_recover_k_from_claim_sig(
+                        api_adaptor_hex,
+                        api_onchain_sig_hex,
+                        api_expected_secp_pubkey_hex,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_reveal_secret_hex_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_reveal_secret_hex",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::swap_zwap::zwap_reveal_secret_hex(api_seed_hex, api_swap_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_sign_z2b_btc_claim_tx_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_sign_z2b_btc_claim_tx",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_id = <String>::sse_decode(&mut deserializer);
+            let api_lock_txid = <String>::sse_decode(&mut deserializer);
+            let api_lock_vout = <u32>::sse_decode(&mut deserializer);
+            let api_lock_value_sat = <u64>::sse_decode(&mut deserializer);
+            let api_witness_script_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_secret_hex = <String>::sse_decode(&mut deserializer);
+            let api_dest_spk_hex = <String>::sse_decode(&mut deserializer);
+            let api_fee_sat = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::swap_zwap::zwap_sign_z2b_btc_claim_tx(
+                        api_seed_hex,
+                        api_swap_id,
+                        api_lock_txid,
+                        api_lock_vout,
+                        api_lock_value_sat,
+                        api_witness_script_hex,
+                        api_swap_secret_hex,
+                        api_dest_spk_hex,
+                        api_fee_sat,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_unified_to_orchard_raw_hex_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_unified_to_orchard_raw_hex",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_unified_address = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::swap_zwap::zwap_unified_to_orchard_raw_hex(
+                        api_unified_address,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_z2b_order_inputs_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_z2b_order_inputs",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::swap_zwap::zwap_z2b_order_inputs(api_seed_hex, api_swap_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_z2e_claim_sigs_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_z2e_claim_sigs",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_id = <String>::sse_decode(&mut deserializer);
+            let api_adaptor_hex = <String>::sse_decode(&mut deserializer);
+            let api_claim_buy_digest_hex = <String>::sse_decode(&mut deserializer);
+            let api_solver_claim_addr_hex = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::swap_zwap::zwap_z2e_claim_sigs(
+                        api_seed_hex,
+                        api_swap_id,
+                        api_adaptor_hex,
+                        api_claim_buy_digest_hex,
+                        api_solver_claim_addr_hex,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_z2e_order_inputs_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_z2e_order_inputs",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::swap_zwap::zwap_z2e_order_inputs(api_seed_hex, api_swap_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__swap_zwap__zwap_z2e_refund_sig_b_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "zwap_z2e_refund_sig_b",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_seed_hex = <String>::sse_decode(&mut deserializer);
+            let api_swap_id = <String>::sse_decode(&mut deserializer);
+            let api_refund_to_initiator_digest_hex = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::swap_zwap::zwap_z2e_refund_sig_b(
+                        api_seed_hex,
+                        api_swap_id,
+                        api_refund_to_initiator_digest_hex,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 
 // Section: static_checks
 
@@ -6849,6 +7855,254 @@ impl SseDecode for zcash_voting::types::WireEncryptedShare {
     }
 }
 
+impl SseDecode for crate::api::swap_zwap::ZwapB2zMaterial {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_btcLockAddress = <String>::sse_decode(deserializer);
+        let mut var_witnessScriptHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecAddress = <String>::sse_decode(deserializer);
+        let mut var_jointZecUfvk = <String>::sse_decode(deserializer);
+        let mut var_jointZecNkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecRivkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecAkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecIvkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecDiversifierHex = <String>::sse_decode(deserializer);
+        let mut var_swapHashHex = <String>::sse_decode(deserializer);
+        let mut var_hAHex = <String>::sse_decode(deserializer);
+        return crate::api::swap_zwap::ZwapB2zMaterial {
+            btc_lock_address: var_btcLockAddress,
+            witness_script_hex: var_witnessScriptHex,
+            joint_zec_address: var_jointZecAddress,
+            joint_zec_ufvk: var_jointZecUfvk,
+            joint_zec_nk_hex: var_jointZecNkHex,
+            joint_zec_rivk_hex: var_jointZecRivkHex,
+            joint_zec_ak_hex: var_jointZecAkHex,
+            joint_zec_ivk_hex: var_jointZecIvkHex,
+            joint_zec_diversifier_hex: var_jointZecDiversifierHex,
+            swap_hash_hex: var_swapHashHex,
+            h_a_hex: var_hAHex,
+        };
+    }
+}
+
+impl SseDecode for crate::api::swap_zwap::ZwapB2zOrderInputs {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_hA = <String>::sse_decode(deserializer);
+        let mut var_swapHash = <String>::sse_decode(deserializer);
+        let mut var_akA = <String>::sse_decode(deserializer);
+        let mut var_nskA = <String>::sse_decode(deserializer);
+        let mut var_lockPubkey = <String>::sse_decode(deserializer);
+        let mut var_refundPubkey = <String>::sse_decode(deserializer);
+        let mut var_kBeHex = <String>::sse_decode(deserializer);
+        return crate::api::swap_zwap::ZwapB2zOrderInputs {
+            h_a: var_hA,
+            swap_hash: var_swapHash,
+            ak_a: var_akA,
+            nsk_a: var_nskA,
+            lock_pubkey: var_lockPubkey,
+            refund_pubkey: var_refundPubkey,
+            k_be_hex: var_kBeHex,
+        };
+    }
+}
+
+impl SseDecode for crate::api::swap_zwap::ZwapDleqMaterial {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_lockPubkeySecpHex = <String>::sse_decode(deserializer);
+        let mut var_dleqProofHex = <String>::sse_decode(deserializer);
+        return crate::api::swap_zwap::ZwapDleqMaterial {
+            lock_pubkey_secp_hex: var_lockPubkeySecpHex,
+            dleq_proof_hex: var_dleqProofHex,
+        };
+    }
+}
+
+impl SseDecode for crate::api::swap_zwap::ZwapE2zMaterial {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_depositAddress = <String>::sse_decode(deserializer);
+        let mut var_saltHex = <String>::sse_decode(deserializer);
+        let mut var_claimBuyDigest = <String>::sse_decode(deserializer);
+        let mut var_refundToInitiatorDigest = <String>::sse_decode(deserializer);
+        let mut var_refundAfterClaimDigest = <String>::sse_decode(deserializer);
+        let mut var_jointZecAddress = <String>::sse_decode(deserializer);
+        let mut var_jointZecUfvk = <String>::sse_decode(deserializer);
+        let mut var_jointZecNkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecRivkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecAkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecIvkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecDiversifierHex = <String>::sse_decode(deserializer);
+        let mut var_swapHashHex = <String>::sse_decode(deserializer);
+        let mut var_proxyTermsJson = <String>::sse_decode(deserializer);
+        return crate::api::swap_zwap::ZwapE2zMaterial {
+            deposit_address: var_depositAddress,
+            salt_hex: var_saltHex,
+            claim_buy_digest: var_claimBuyDigest,
+            refund_to_initiator_digest: var_refundToInitiatorDigest,
+            refund_after_claim_digest: var_refundAfterClaimDigest,
+            joint_zec_address: var_jointZecAddress,
+            joint_zec_ufvk: var_jointZecUfvk,
+            joint_zec_nk_hex: var_jointZecNkHex,
+            joint_zec_rivk_hex: var_jointZecRivkHex,
+            joint_zec_ak_hex: var_jointZecAkHex,
+            joint_zec_ivk_hex: var_jointZecIvkHex,
+            joint_zec_diversifier_hex: var_jointZecDiversifierHex,
+            swap_hash_hex: var_swapHashHex,
+            proxy_terms_json: var_proxyTermsJson,
+        };
+    }
+}
+
+impl SseDecode for crate::api::swap_zwap::ZwapInitiatorHalf {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_akSec1 = <String>::sse_decode(deserializer);
+        let mut var_nskLe = <String>::sse_decode(deserializer);
+        let mut var_hAHex = <String>::sse_decode(deserializer);
+        let mut var_swapHashHex = <String>::sse_decode(deserializer);
+        return crate::api::swap_zwap::ZwapInitiatorHalf {
+            ak_sec1: var_akSec1,
+            nsk_le: var_nskLe,
+            h_a_hex: var_hAHex,
+            swap_hash_hex: var_swapHashHex,
+        };
+    }
+}
+
+impl SseDecode for crate::api::swap_zwap::ZwapSignedBtcTx {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_rawTxHex = <String>::sse_decode(deserializer);
+        let mut var_txid = <String>::sse_decode(deserializer);
+        return crate::api::swap_zwap::ZwapSignedBtcTx {
+            raw_tx_hex: var_rawTxHex,
+            txid: var_txid,
+        };
+    }
+}
+
+impl SseDecode for crate::api::swap_zwap::ZwapZ2bMaterial {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_btcLockAddress = <String>::sse_decode(deserializer);
+        let mut var_witnessScriptHex = <String>::sse_decode(deserializer);
+        let mut var_claimPubkeyHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecAddress = <String>::sse_decode(deserializer);
+        let mut var_jointZecUfvk = <String>::sse_decode(deserializer);
+        let mut var_jointZecNkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecRivkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecAkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecIvkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecDiversifierHex = <String>::sse_decode(deserializer);
+        let mut var_swapHashHex = <String>::sse_decode(deserializer);
+        let mut var_hBHex = <String>::sse_decode(deserializer);
+        return crate::api::swap_zwap::ZwapZ2bMaterial {
+            btc_lock_address: var_btcLockAddress,
+            witness_script_hex: var_witnessScriptHex,
+            claim_pubkey_hex: var_claimPubkeyHex,
+            joint_zec_address: var_jointZecAddress,
+            joint_zec_ufvk: var_jointZecUfvk,
+            joint_zec_nk_hex: var_jointZecNkHex,
+            joint_zec_rivk_hex: var_jointZecRivkHex,
+            joint_zec_ak_hex: var_jointZecAkHex,
+            joint_zec_ivk_hex: var_jointZecIvkHex,
+            joint_zec_diversifier_hex: var_jointZecDiversifierHex,
+            swap_hash_hex: var_swapHashHex,
+            h_b_hex: var_hBHex,
+        };
+    }
+}
+
+impl SseDecode for crate::api::swap_zwap::ZwapZ2bOrderInputs {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_hA = <String>::sse_decode(deserializer);
+        let mut var_akA = <String>::sse_decode(deserializer);
+        let mut var_nskA = <String>::sse_decode(deserializer);
+        let mut var_lockPubkey = <String>::sse_decode(deserializer);
+        let mut var_claimPubkey = <String>::sse_decode(deserializer);
+        let mut var_kBeHex = <String>::sse_decode(deserializer);
+        return crate::api::swap_zwap::ZwapZ2bOrderInputs {
+            h_a: var_hA,
+            ak_a: var_akA,
+            nsk_a: var_nskA,
+            lock_pubkey: var_lockPubkey,
+            claim_pubkey: var_claimPubkey,
+            k_be_hex: var_kBeHex,
+        };
+    }
+}
+
+impl SseDecode for crate::api::swap_zwap::ZwapZ2eClaimSigs {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sigAHex = <String>::sse_decode(deserializer);
+        let mut var_sigBHex = <String>::sse_decode(deserializer);
+        return crate::api::swap_zwap::ZwapZ2eClaimSigs {
+            sig_a_hex: var_sigAHex,
+            sig_b_hex: var_sigBHex,
+        };
+    }
+}
+
+impl SseDecode for crate::api::swap_zwap::ZwapZ2eMaterial {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_jointZecAddress = <String>::sse_decode(deserializer);
+        let mut var_jointZecUfvk = <String>::sse_decode(deserializer);
+        let mut var_jointZecNkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecRivkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecAkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecIvkHex = <String>::sse_decode(deserializer);
+        let mut var_jointZecDiversifierHex = <String>::sse_decode(deserializer);
+        let mut var_evmSlotIdHex = <String>::sse_decode(deserializer);
+        let mut var_claimBuyDigestHex = <String>::sse_decode(deserializer);
+        let mut var_refundToInitiatorDigestHex = <String>::sse_decode(deserializer);
+        let mut var_solverClaimAddrHex = <String>::sse_decode(deserializer);
+        let mut var_swapHashHex = <String>::sse_decode(deserializer);
+        let mut var_hBHex = <String>::sse_decode(deserializer);
+        return crate::api::swap_zwap::ZwapZ2eMaterial {
+            joint_zec_address: var_jointZecAddress,
+            joint_zec_ufvk: var_jointZecUfvk,
+            joint_zec_nk_hex: var_jointZecNkHex,
+            joint_zec_rivk_hex: var_jointZecRivkHex,
+            joint_zec_ak_hex: var_jointZecAkHex,
+            joint_zec_ivk_hex: var_jointZecIvkHex,
+            joint_zec_diversifier_hex: var_jointZecDiversifierHex,
+            evm_slot_id_hex: var_evmSlotIdHex,
+            claim_buy_digest_hex: var_claimBuyDigestHex,
+            refund_to_initiator_digest_hex: var_refundToInitiatorDigestHex,
+            solver_claim_addr_hex: var_solverClaimAddrHex,
+            swap_hash_hex: var_swapHashHex,
+            h_b_hex: var_hBHex,
+        };
+    }
+}
+
+impl SseDecode for crate::api::swap_zwap::ZwapZ2eOrderInputs {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_hA = <String>::sse_decode(deserializer);
+        let mut var_akA = <String>::sse_decode(deserializer);
+        let mut var_nskA = <String>::sse_decode(deserializer);
+        let mut var_lockPubkey = <String>::sse_decode(deserializer);
+        let mut var_dleqProof = <String>::sse_decode(deserializer);
+        let mut var_claimPubkey = <String>::sse_decode(deserializer);
+        let mut var_kBeHex = <String>::sse_decode(deserializer);
+        return crate::api::swap_zwap::ZwapZ2eOrderInputs {
+            h_a: var_hA,
+            ak_a: var_akA,
+            nsk_a: var_nskA,
+            lock_pubkey: var_lockPubkey,
+            dleq_proof: var_dleqProof,
+            claim_pubkey: var_claimPubkey,
+            k_be_hex: var_kBeHex,
+        };
+    }
+}
+
 fn pde_ffi_dispatcher_primary_impl(
     func_id: i32,
     port: flutter_rust_bridge::for_generated::MessagePort,
@@ -6958,6 +8212,31 @@ fn pde_ffi_dispatcher_primary_impl(
 114 => wire__crate__api__voting__vote_commitment_wire_json_impl(port, ptr, rust_vec_len, data_len),
 115 => wire__crate__api__voting__vote_share_wire_json_impl(port, ptr, rust_vec_len, data_len),
 117 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
+118 => wire__crate__api__swap_zwap__zwap_b2z_order_inputs_impl(port, ptr, rust_vec_len, data_len),
+119 => wire__crate__api__swap_zwap__zwap_btc_address_to_spk_hex_impl(port, ptr, rust_vec_len, data_len),
+120 => wire__crate__api__swap_zwap__zwap_build_claim_buy_adaptor_impl(port, ptr, rust_vec_len, data_len),
+121 => wire__crate__api__swap_zwap__zwap_derive_b2z_material_impl(port, ptr, rust_vec_len, data_len),
+122 => wire__crate__api__swap_zwap__zwap_derive_e2z_proxy_material_impl(port, ptr, rust_vec_len, data_len),
+123 => wire__crate__api__swap_zwap__zwap_derive_initiator_half_impl(port, ptr, rust_vec_len, data_len),
+124 => wire__crate__api__swap_zwap__zwap_derive_z2b_material_impl(port, ptr, rust_vec_len, data_len),
+125 => wire__crate__api__swap_zwap__zwap_derive_z2e_material_impl(port, ptr, rust_vec_len, data_len),
+126 => wire__crate__api__swap_zwap__zwap_e2z_dleq_material_impl(port, ptr, rust_vec_len, data_len),
+127 => wire__crate__api__swap_zwap__zwap_find_safe_swap_id_impl(port, ptr, rust_vec_len, data_len),
+128 => wire__crate__api__swap_zwap__zwap_joint_ask_le_hex_impl(port, ptr, rust_vec_len, data_len),
+129 => wire__crate__api__swap_zwap__zwap_k_user_be_hex_impl(port, ptr, rust_vec_len, data_len),
+130 => wire__crate__api__swap_zwap__zwap_ob_identity_pubkey_hex_impl(port, ptr, rust_vec_len, data_len),
+131 => wire__crate__api__swap_zwap__zwap_ob_sign_challenge_hex_impl(port, ptr, rust_vec_len, data_len),
+132 => wire__crate__api__swap_zwap__zwap_orchard_derive_impl(port, ptr, rust_vec_len, data_len),
+133 => wire__crate__api__swap_zwap__zwap_orchard_spend_impl(port, ptr, rust_vec_len, data_len),
+134 => wire__crate__api__swap_zwap__zwap_orchard_trial_decrypt_impl(port, ptr, rust_vec_len, data_len),
+135 => wire__crate__api__swap_zwap__zwap_recover_k_from_claim_sig_impl(port, ptr, rust_vec_len, data_len),
+136 => wire__crate__api__swap_zwap__zwap_reveal_secret_hex_impl(port, ptr, rust_vec_len, data_len),
+137 => wire__crate__api__swap_zwap__zwap_sign_z2b_btc_claim_tx_impl(port, ptr, rust_vec_len, data_len),
+138 => wire__crate__api__swap_zwap__zwap_unified_to_orchard_raw_hex_impl(port, ptr, rust_vec_len, data_len),
+139 => wire__crate__api__swap_zwap__zwap_z2b_order_inputs_impl(port, ptr, rust_vec_len, data_len),
+140 => wire__crate__api__swap_zwap__zwap_z2e_claim_sigs_impl(port, ptr, rust_vec_len, data_len),
+141 => wire__crate__api__swap_zwap__zwap_z2e_order_inputs_impl(port, ptr, rust_vec_len, data_len),
+142 => wire__crate__api__swap_zwap__zwap_z2e_refund_sig_b_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
 }
@@ -8745,6 +10024,297 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::types::WireEncry
         self.into()
     }
 }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::swap_zwap::ZwapB2zMaterial {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.btc_lock_address.into_into_dart().into_dart(),
+            self.witness_script_hex.into_into_dart().into_dart(),
+            self.joint_zec_address.into_into_dart().into_dart(),
+            self.joint_zec_ufvk.into_into_dart().into_dart(),
+            self.joint_zec_nk_hex.into_into_dart().into_dart(),
+            self.joint_zec_rivk_hex.into_into_dart().into_dart(),
+            self.joint_zec_ak_hex.into_into_dart().into_dart(),
+            self.joint_zec_ivk_hex.into_into_dart().into_dart(),
+            self.joint_zec_diversifier_hex.into_into_dart().into_dart(),
+            self.swap_hash_hex.into_into_dart().into_dart(),
+            self.h_a_hex.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::swap_zwap::ZwapB2zMaterial
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::swap_zwap::ZwapB2zMaterial>
+    for crate::api::swap_zwap::ZwapB2zMaterial
+{
+    fn into_into_dart(self) -> crate::api::swap_zwap::ZwapB2zMaterial {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::swap_zwap::ZwapB2zOrderInputs {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.h_a.into_into_dart().into_dart(),
+            self.swap_hash.into_into_dart().into_dart(),
+            self.ak_a.into_into_dart().into_dart(),
+            self.nsk_a.into_into_dart().into_dart(),
+            self.lock_pubkey.into_into_dart().into_dart(),
+            self.refund_pubkey.into_into_dart().into_dart(),
+            self.k_be_hex.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::swap_zwap::ZwapB2zOrderInputs
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::swap_zwap::ZwapB2zOrderInputs>
+    for crate::api::swap_zwap::ZwapB2zOrderInputs
+{
+    fn into_into_dart(self) -> crate::api::swap_zwap::ZwapB2zOrderInputs {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::swap_zwap::ZwapDleqMaterial {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.lock_pubkey_secp_hex.into_into_dart().into_dart(),
+            self.dleq_proof_hex.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::swap_zwap::ZwapDleqMaterial
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::swap_zwap::ZwapDleqMaterial>
+    for crate::api::swap_zwap::ZwapDleqMaterial
+{
+    fn into_into_dart(self) -> crate::api::swap_zwap::ZwapDleqMaterial {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::swap_zwap::ZwapE2zMaterial {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.deposit_address.into_into_dart().into_dart(),
+            self.salt_hex.into_into_dart().into_dart(),
+            self.claim_buy_digest.into_into_dart().into_dart(),
+            self.refund_to_initiator_digest.into_into_dart().into_dart(),
+            self.refund_after_claim_digest.into_into_dart().into_dart(),
+            self.joint_zec_address.into_into_dart().into_dart(),
+            self.joint_zec_ufvk.into_into_dart().into_dart(),
+            self.joint_zec_nk_hex.into_into_dart().into_dart(),
+            self.joint_zec_rivk_hex.into_into_dart().into_dart(),
+            self.joint_zec_ak_hex.into_into_dart().into_dart(),
+            self.joint_zec_ivk_hex.into_into_dart().into_dart(),
+            self.joint_zec_diversifier_hex.into_into_dart().into_dart(),
+            self.swap_hash_hex.into_into_dart().into_dart(),
+            self.proxy_terms_json.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::swap_zwap::ZwapE2zMaterial
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::swap_zwap::ZwapE2zMaterial>
+    for crate::api::swap_zwap::ZwapE2zMaterial
+{
+    fn into_into_dart(self) -> crate::api::swap_zwap::ZwapE2zMaterial {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::swap_zwap::ZwapInitiatorHalf {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.ak_sec1.into_into_dart().into_dart(),
+            self.nsk_le.into_into_dart().into_dart(),
+            self.h_a_hex.into_into_dart().into_dart(),
+            self.swap_hash_hex.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::swap_zwap::ZwapInitiatorHalf
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::swap_zwap::ZwapInitiatorHalf>
+    for crate::api::swap_zwap::ZwapInitiatorHalf
+{
+    fn into_into_dart(self) -> crate::api::swap_zwap::ZwapInitiatorHalf {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::swap_zwap::ZwapSignedBtcTx {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.raw_tx_hex.into_into_dart().into_dart(),
+            self.txid.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::swap_zwap::ZwapSignedBtcTx
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::swap_zwap::ZwapSignedBtcTx>
+    for crate::api::swap_zwap::ZwapSignedBtcTx
+{
+    fn into_into_dart(self) -> crate::api::swap_zwap::ZwapSignedBtcTx {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::swap_zwap::ZwapZ2bMaterial {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.btc_lock_address.into_into_dart().into_dart(),
+            self.witness_script_hex.into_into_dart().into_dart(),
+            self.claim_pubkey_hex.into_into_dart().into_dart(),
+            self.joint_zec_address.into_into_dart().into_dart(),
+            self.joint_zec_ufvk.into_into_dart().into_dart(),
+            self.joint_zec_nk_hex.into_into_dart().into_dart(),
+            self.joint_zec_rivk_hex.into_into_dart().into_dart(),
+            self.joint_zec_ak_hex.into_into_dart().into_dart(),
+            self.joint_zec_ivk_hex.into_into_dart().into_dart(),
+            self.joint_zec_diversifier_hex.into_into_dart().into_dart(),
+            self.swap_hash_hex.into_into_dart().into_dart(),
+            self.h_b_hex.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::swap_zwap::ZwapZ2bMaterial
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::swap_zwap::ZwapZ2bMaterial>
+    for crate::api::swap_zwap::ZwapZ2bMaterial
+{
+    fn into_into_dart(self) -> crate::api::swap_zwap::ZwapZ2bMaterial {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::swap_zwap::ZwapZ2bOrderInputs {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.h_a.into_into_dart().into_dart(),
+            self.ak_a.into_into_dart().into_dart(),
+            self.nsk_a.into_into_dart().into_dart(),
+            self.lock_pubkey.into_into_dart().into_dart(),
+            self.claim_pubkey.into_into_dart().into_dart(),
+            self.k_be_hex.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::swap_zwap::ZwapZ2bOrderInputs
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::swap_zwap::ZwapZ2bOrderInputs>
+    for crate::api::swap_zwap::ZwapZ2bOrderInputs
+{
+    fn into_into_dart(self) -> crate::api::swap_zwap::ZwapZ2bOrderInputs {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::swap_zwap::ZwapZ2eClaimSigs {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.sig_a_hex.into_into_dart().into_dart(),
+            self.sig_b_hex.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::swap_zwap::ZwapZ2eClaimSigs
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::swap_zwap::ZwapZ2eClaimSigs>
+    for crate::api::swap_zwap::ZwapZ2eClaimSigs
+{
+    fn into_into_dart(self) -> crate::api::swap_zwap::ZwapZ2eClaimSigs {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::swap_zwap::ZwapZ2eMaterial {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.joint_zec_address.into_into_dart().into_dart(),
+            self.joint_zec_ufvk.into_into_dart().into_dart(),
+            self.joint_zec_nk_hex.into_into_dart().into_dart(),
+            self.joint_zec_rivk_hex.into_into_dart().into_dart(),
+            self.joint_zec_ak_hex.into_into_dart().into_dart(),
+            self.joint_zec_ivk_hex.into_into_dart().into_dart(),
+            self.joint_zec_diversifier_hex.into_into_dart().into_dart(),
+            self.evm_slot_id_hex.into_into_dart().into_dart(),
+            self.claim_buy_digest_hex.into_into_dart().into_dart(),
+            self.refund_to_initiator_digest_hex
+                .into_into_dart()
+                .into_dart(),
+            self.solver_claim_addr_hex.into_into_dart().into_dart(),
+            self.swap_hash_hex.into_into_dart().into_dart(),
+            self.h_b_hex.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::swap_zwap::ZwapZ2eMaterial
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::swap_zwap::ZwapZ2eMaterial>
+    for crate::api::swap_zwap::ZwapZ2eMaterial
+{
+    fn into_into_dart(self) -> crate::api::swap_zwap::ZwapZ2eMaterial {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::swap_zwap::ZwapZ2eOrderInputs {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.h_a.into_into_dart().into_dart(),
+            self.ak_a.into_into_dart().into_dart(),
+            self.nsk_a.into_into_dart().into_dart(),
+            self.lock_pubkey.into_into_dart().into_dart(),
+            self.dleq_proof.into_into_dart().into_dart(),
+            self.claim_pubkey.into_into_dart().into_dart(),
+            self.k_be_hex.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::swap_zwap::ZwapZ2eOrderInputs
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::swap_zwap::ZwapZ2eOrderInputs>
+    for crate::api::swap_zwap::ZwapZ2eOrderInputs
+{
+    fn into_into_dart(self) -> crate::api::swap_zwap::ZwapZ2eOrderInputs {
+        self
+    }
+}
 
 impl SseEncode for flutter_rust_bridge::for_generated::anyhow::Error {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -10129,6 +11699,152 @@ impl SseEncode for zcash_voting::types::WireEncryptedShare {
         <Vec<u8>>::sse_encode(self.c1, serializer);
         <Vec<u8>>::sse_encode(self.c2, serializer);
         <u32>::sse_encode(self.share_index, serializer);
+    }
+}
+
+impl SseEncode for crate::api::swap_zwap::ZwapB2zMaterial {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.btc_lock_address, serializer);
+        <String>::sse_encode(self.witness_script_hex, serializer);
+        <String>::sse_encode(self.joint_zec_address, serializer);
+        <String>::sse_encode(self.joint_zec_ufvk, serializer);
+        <String>::sse_encode(self.joint_zec_nk_hex, serializer);
+        <String>::sse_encode(self.joint_zec_rivk_hex, serializer);
+        <String>::sse_encode(self.joint_zec_ak_hex, serializer);
+        <String>::sse_encode(self.joint_zec_ivk_hex, serializer);
+        <String>::sse_encode(self.joint_zec_diversifier_hex, serializer);
+        <String>::sse_encode(self.swap_hash_hex, serializer);
+        <String>::sse_encode(self.h_a_hex, serializer);
+    }
+}
+
+impl SseEncode for crate::api::swap_zwap::ZwapB2zOrderInputs {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.h_a, serializer);
+        <String>::sse_encode(self.swap_hash, serializer);
+        <String>::sse_encode(self.ak_a, serializer);
+        <String>::sse_encode(self.nsk_a, serializer);
+        <String>::sse_encode(self.lock_pubkey, serializer);
+        <String>::sse_encode(self.refund_pubkey, serializer);
+        <String>::sse_encode(self.k_be_hex, serializer);
+    }
+}
+
+impl SseEncode for crate::api::swap_zwap::ZwapDleqMaterial {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.lock_pubkey_secp_hex, serializer);
+        <String>::sse_encode(self.dleq_proof_hex, serializer);
+    }
+}
+
+impl SseEncode for crate::api::swap_zwap::ZwapE2zMaterial {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.deposit_address, serializer);
+        <String>::sse_encode(self.salt_hex, serializer);
+        <String>::sse_encode(self.claim_buy_digest, serializer);
+        <String>::sse_encode(self.refund_to_initiator_digest, serializer);
+        <String>::sse_encode(self.refund_after_claim_digest, serializer);
+        <String>::sse_encode(self.joint_zec_address, serializer);
+        <String>::sse_encode(self.joint_zec_ufvk, serializer);
+        <String>::sse_encode(self.joint_zec_nk_hex, serializer);
+        <String>::sse_encode(self.joint_zec_rivk_hex, serializer);
+        <String>::sse_encode(self.joint_zec_ak_hex, serializer);
+        <String>::sse_encode(self.joint_zec_ivk_hex, serializer);
+        <String>::sse_encode(self.joint_zec_diversifier_hex, serializer);
+        <String>::sse_encode(self.swap_hash_hex, serializer);
+        <String>::sse_encode(self.proxy_terms_json, serializer);
+    }
+}
+
+impl SseEncode for crate::api::swap_zwap::ZwapInitiatorHalf {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.ak_sec1, serializer);
+        <String>::sse_encode(self.nsk_le, serializer);
+        <String>::sse_encode(self.h_a_hex, serializer);
+        <String>::sse_encode(self.swap_hash_hex, serializer);
+    }
+}
+
+impl SseEncode for crate::api::swap_zwap::ZwapSignedBtcTx {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.raw_tx_hex, serializer);
+        <String>::sse_encode(self.txid, serializer);
+    }
+}
+
+impl SseEncode for crate::api::swap_zwap::ZwapZ2bMaterial {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.btc_lock_address, serializer);
+        <String>::sse_encode(self.witness_script_hex, serializer);
+        <String>::sse_encode(self.claim_pubkey_hex, serializer);
+        <String>::sse_encode(self.joint_zec_address, serializer);
+        <String>::sse_encode(self.joint_zec_ufvk, serializer);
+        <String>::sse_encode(self.joint_zec_nk_hex, serializer);
+        <String>::sse_encode(self.joint_zec_rivk_hex, serializer);
+        <String>::sse_encode(self.joint_zec_ak_hex, serializer);
+        <String>::sse_encode(self.joint_zec_ivk_hex, serializer);
+        <String>::sse_encode(self.joint_zec_diversifier_hex, serializer);
+        <String>::sse_encode(self.swap_hash_hex, serializer);
+        <String>::sse_encode(self.h_b_hex, serializer);
+    }
+}
+
+impl SseEncode for crate::api::swap_zwap::ZwapZ2bOrderInputs {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.h_a, serializer);
+        <String>::sse_encode(self.ak_a, serializer);
+        <String>::sse_encode(self.nsk_a, serializer);
+        <String>::sse_encode(self.lock_pubkey, serializer);
+        <String>::sse_encode(self.claim_pubkey, serializer);
+        <String>::sse_encode(self.k_be_hex, serializer);
+    }
+}
+
+impl SseEncode for crate::api::swap_zwap::ZwapZ2eClaimSigs {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.sig_a_hex, serializer);
+        <String>::sse_encode(self.sig_b_hex, serializer);
+    }
+}
+
+impl SseEncode for crate::api::swap_zwap::ZwapZ2eMaterial {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.joint_zec_address, serializer);
+        <String>::sse_encode(self.joint_zec_ufvk, serializer);
+        <String>::sse_encode(self.joint_zec_nk_hex, serializer);
+        <String>::sse_encode(self.joint_zec_rivk_hex, serializer);
+        <String>::sse_encode(self.joint_zec_ak_hex, serializer);
+        <String>::sse_encode(self.joint_zec_ivk_hex, serializer);
+        <String>::sse_encode(self.joint_zec_diversifier_hex, serializer);
+        <String>::sse_encode(self.evm_slot_id_hex, serializer);
+        <String>::sse_encode(self.claim_buy_digest_hex, serializer);
+        <String>::sse_encode(self.refund_to_initiator_digest_hex, serializer);
+        <String>::sse_encode(self.solver_claim_addr_hex, serializer);
+        <String>::sse_encode(self.swap_hash_hex, serializer);
+        <String>::sse_encode(self.h_b_hex, serializer);
+    }
+}
+
+impl SseEncode for crate::api::swap_zwap::ZwapZ2eOrderInputs {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.h_a, serializer);
+        <String>::sse_encode(self.ak_a, serializer);
+        <String>::sse_encode(self.nsk_a, serializer);
+        <String>::sse_encode(self.lock_pubkey, serializer);
+        <String>::sse_encode(self.dleq_proof, serializer);
+        <String>::sse_encode(self.claim_pubkey, serializer);
+        <String>::sse_encode(self.k_be_hex, serializer);
     }
 }
 
