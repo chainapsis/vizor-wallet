@@ -18,11 +18,17 @@ ApiMultisigThresholdParams validateMultisigThreshold({
   participantCount: participantCount,
 );
 
-/// Random 32-byte session invite secret (base64url). Shared out-of-band as
-/// part of the invite code; never sent to the coordinator. Participant
-/// labels are sealed under it so the server only relays opaque strings.
+/// Random 16-byte session invite secret (base64url, 22 chars). This IS the
+/// invite code: it never reaches the coordinator, participant labels are
+/// sealed under it, and the session id is derived from it locally.
 String generateMultisigInviteSecret() =>
     RustLib.instance.api.crateApiMultisigGenerateMultisigInviteSecret();
+
+/// Derives the coordinator session id from the invite secret (one-way).
+String deriveMultisigSessionId({required String inviteSecret}) => RustLib
+    .instance
+    .api
+    .crateApiMultisigDeriveMultisigSessionId(inviteSecret: inviteSecret);
 
 ApiMultisigParticipantIdentity generateMultisigParticipantIdentity() =>
     RustLib.instance.api.crateApiMultisigGenerateMultisigParticipantIdentity();

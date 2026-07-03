@@ -92,22 +92,25 @@ void main() {
     },
   );
 
-  test('parses invite codes and rejects malformed ones', () {
-    final invite = parseMultisigInviteCode(' session-1#secret-abc ');
-    expect(invite.sessionId, 'session-1');
-    expect(invite.inviteSecret, 'secret-abc');
-    expect(invite.encoded, 'session-1#secret-abc');
+  test('normalizes invite codes and rejects malformed ones', () {
+    expect(
+      normalizeMultisigInviteCode(' invitesecretinvite_s-1 '),
+      'invitesecretinvite_s-1',
+    );
 
+    // Too short (a 16-byte secret is 22 base64url chars).
     expect(
-      () => parseMultisigInviteCode('session-1'),
+      () => normalizeMultisigInviteCode('short'),
       throwsA(isA<FormatException>()),
     );
+    // Legacy two-part format is not a valid single token.
     expect(
-      () => parseMultisigInviteCode('session-1#'),
+      () => normalizeMultisigInviteCode('session-1#invitesecretinvitesec'),
       throwsA(isA<FormatException>()),
     );
+    // Non-base64url characters.
     expect(
-      () => parseMultisigInviteCode('#secret'),
+      () => normalizeMultisigInviteCode('invitesecretinvite!s-1'),
       throwsA(isA<FormatException>()),
     );
   });
@@ -136,7 +139,7 @@ void main() {
       'https://coordinator.example|Family vault|${_apiIdentity.admissionSecretKey}',
     ]);
     expect(created.inviteSecret, 'invite-secret');
-    expect(created.inviteCode, '${created.sessionId}#invite-secret');
+    expect(created.inviteCode, 'invite-secret');
     expect(store.sessions[created.storageId], same(created));
     expect(store.summaries[created.storageId]?.label, 'Family vault');
     expect(
@@ -155,7 +158,7 @@ void main() {
         .read(multisigPendingSessionsProvider.notifier)
         .joinSession(
           coordinatorUrl: 'https://coordinator.example',
-          inviteCode: ' session-join#invite-secret ',
+          inviteCode: ' invitesecretinvitesecr ',
           label: 'Signer 2',
         );
 
@@ -184,7 +187,7 @@ void main() {
           .read(multisigPendingSessionsProvider.notifier)
           .joinSession(
             coordinatorUrl: 'https://coordinator.example',
-            inviteCode: 'session-join#invite-secret',
+            inviteCode: 'invitesecretinvitesecr',
             label: 'Signer 2',
           ),
       throwsA(isA<StateError>()),
@@ -1075,6 +1078,9 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
 
   @override
   String generateInviteSecret() => 'invite-secret';
+
+  @override
+  String deriveSessionId(String inviteSecret) => 'session-join';
 
   @override
   Future<rust_multisig.ApiMultisigAuthSession> createSession({

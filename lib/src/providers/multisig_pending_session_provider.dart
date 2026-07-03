@@ -20,34 +20,29 @@ const kDefaultMultisigCoordinatorUrl = String.fromEnvironment(
 const _multisigCreateStateStoragePrefix = 'zcash_multisig_create_state_v1_';
 const _accessTokenRefreshSkewSeconds = 30;
 
-/// Invite code shared out-of-band: `<sessionId>#<inviteSecret>`. Only the
-/// session id is ever sent to the coordinator; the secret stays between
-/// participants and seals their labels.
-class MultisigInviteCode {
-  const MultisigInviteCode({required this.sessionId, required this.inviteSecret});
-
-  final String sessionId;
-  final String inviteSecret;
-
-  String get encoded => '$sessionId#$inviteSecret';
+/// The invite code shared out-of-band IS the session secret: a single
+/// base64url token. The session id is derived from it locally, labels are
+/// sealed under it, and the coordinator never sees it.
+String normalizeMultisigInviteCode(String value) {
+  final trimmed = value.trim();
+  const minLength = 22; // 16-byte secret, base64url no-pad
+  const maxLength = 64;
+  final valid =
+      trimmed.length >= minLength &&
+      trimmed.length <= maxLength &&
+      trimmed.codeUnits.every(_isBase64UrlCodeUnit);
+  if (!valid) {
+    throw const FormatException('Invite code is not valid.');
+  }
+  return trimmed;
 }
 
-MultisigInviteCode parseMultisigInviteCode(String value) {
-  final trimmed = value.trim();
-  final separator = trimmed.indexOf('#');
-  if (separator <= 0 || separator == trimmed.length - 1) {
-    throw const FormatException(
-      'Invite code must look like <session ID>#<secret>.',
-    );
-  }
-  final sessionId = trimmed.substring(0, separator).trim();
-  final inviteSecret = trimmed.substring(separator + 1).trim();
-  if (sessionId.isEmpty || inviteSecret.isEmpty) {
-    throw const FormatException(
-      'Invite code must look like <session ID>#<secret>.',
-    );
-  }
-  return MultisigInviteCode(sessionId: sessionId, inviteSecret: inviteSecret);
+bool _isBase64UrlCodeUnit(int codeUnit) {
+  return (codeUnit >= 0x30 && codeUnit <= 0x39) || // 0-9
+      (codeUnit >= 0x41 && codeUnit <= 0x5a) || // A-Z
+      (codeUnit >= 0x61 && codeUnit <= 0x7a) || // a-z
+      codeUnit == 0x2d || // -
+      codeUnit == 0x5f; // _
 }
 
 typedef MultisigNow = DateTime Function();
@@ -219,9 +214,9 @@ class MultisigPendingSession {
   final List<String> localBackupDestinations;
 
   String get storageId => '$sessionId:$participantId';
-  String get inviteCode =>
-      MultisigInviteCode(sessionId: sessionId, inviteSecret: inviteSecret)
-          .encoded;
+  /// The invite code is the secret itself; joiners derive the session id
+  /// from it locally.
+  String get inviteCode => inviteSecret;
   bool get isCreator => participantId == creatorParticipantId;
   bool get isTerminal => state == 'ready' || state == 'failed';
   bool get isPending => !isTerminal;
@@ -862,27 +857,26 @@ class MultisigPendingSessionsNotifier
     String? label,
   }) async {
     final cleanUrl = _cleanRequired(coordinatorUrl, 'coordinator URL');
-    final invite = parseMultisigInviteCode(
-      _cleanRequired(inviteCode, 'invite code'),
-    );
+    final inviteSecret = normalizeMultisigInviteCode(inviteCode);
+    final sessionId = _coordinator.deriveSessionId(inviteSecret);
     final cleanLabel = _cleanOptional(label);
     final identity = _coordinator.generateParticipantIdentity();
     final auth = await _coordinator.joinSession(
       coordinatorUrl: cleanUrl,
-      sessionId: invite.sessionId,
+      sessionId: sessionId,
       identity: identity,
-      inviteSecret: invite.inviteSecret,
+      inviteSecret: inviteSecret,
       label: cleanLabel,
     );
     _validateSessionOwner(
-      expectedSessionId: invite.sessionId,
+      expectedSessionId: sessionId,
       returnedSessionId: auth.sessionId,
     );
     final pending = MultisigPendingSession.fromAuth(
       auth: auth,
       role: MultisigPendingRole.participant,
       coordinatorUrl: cleanUrl,
-      inviteSecret: invite.inviteSecret,
+      inviteSecret: inviteSecret,
       label: cleanLabel,
     );
     await upsert(pending);

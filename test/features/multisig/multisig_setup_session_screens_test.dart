@@ -157,7 +157,7 @@ void main() {
 
     await tester.enterText(
       find.byType(EditableText).at(0),
-      'session-join#invite-secret',
+      'invitesecretinvitesecr',
     );
     await tester.enterText(find.byType(EditableText).at(3), 'password123');
     await tester.tap(find.text('Join session'));
@@ -382,6 +382,9 @@ class _FakeMultisigCoordinatorService extends RustMultisigCoordinatorService {
 
   @override
   String generateInviteSecret() => 'invite-secret';
+
+  @override
+  String deriveSessionId(String inviteSecret) => 'session-join';
 
   @override
   rust_multisig.ApiMultisigParticipantIdentity generateParticipantIdentity() {

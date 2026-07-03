@@ -34,8 +34,8 @@ use zcash_multisig_sdk::{
     },
     client::{ClientError, Coordinator2Client},
     e2e::{
-        encrypt_for, generate_invite_secret, open_session_label, seal_session_label,
-        vault_delivery_keypair, DeliveryKeypair, E2eContext,
+        derive_session_id, encrypt_for, generate_invite_secret, open_session_label,
+        seal_session_label, vault_delivery_keypair, DeliveryKeypair, E2eContext,
     },
     identity::AdmissionKey,
     types::{
@@ -486,12 +486,18 @@ pub fn validate_multisig_threshold(
         })
 }
 
-/// Random 32-byte session invite secret (base64url). Shared out-of-band as
-/// part of the invite code; never sent to the coordinator. Participant
-/// labels are sealed under it so the server only relays opaque strings.
+/// Random 16-byte session invite secret (base64url, 22 chars). This IS the
+/// invite code: it never reaches the coordinator, participant labels are
+/// sealed under it, and the session id is derived from it locally.
 #[flutter_rust_bridge::frb(sync)]
 pub fn generate_multisig_invite_secret() -> String {
     generate_invite_secret()
+}
+
+/// Derives the coordinator session id from the invite secret (one-way).
+#[flutter_rust_bridge::frb(sync)]
+pub fn derive_multisig_session_id(invite_secret: String) -> Result<String, String> {
+    derive_session_id(invite_secret.trim()).map_err(|e| format!("Invalid invite code: {e}"))
 }
 
 #[flutter_rust_bridge::frb(sync)]
@@ -674,6 +680,11 @@ pub fn create_multisig_session(
             restore_participant_identity(admission_secret_key, delivery_secret_key)?;
         let encrypted_label =
             seal_label(&invite_secret, &identity.admission_public_key, label)?;
+        // The session id is derived from the invite secret so the invite
+        // code stays a single short token; the coordinator only checks
+        // format and uniqueness.
+        let session_id = derive_session_id(&invite_secret)
+            .map_err(|e| format!("Invalid invite secret: {e}"))?;
         let creator = admission.admission_request(
             AdmissionAction::CreateSession,
             &challenge,
@@ -681,9 +692,15 @@ pub fn create_multisig_session(
             encrypted_label,
         );
         let created = client
-            .create_session(&zcash_multisig_sdk::types::CreateSessionReq { creator })
+            .create_session(&zcash_multisig_sdk::types::CreateSessionReq {
+                session_id: Some(session_id.clone()),
+                creator,
+            })
             .await
             .map_err(client_error)?;
+        if created.session_id != session_id {
+            return Err("Coordinator returned a different session id.".to_string());
+        }
 
         Ok(map_auth_session(created, identity, Some(&invite_secret)))
     })

@@ -126,7 +126,7 @@ class _MultisigJoinSessionScreenState
                           AppTextField(
                             label: 'Invite code',
                             controller: _sessionController,
-                            hintText: 'Session ID#secret',
+                            hintText: 'Invite code',
                             leading: const AppIcon(AppIcons.link),
                             showClearButton: true,
                             tone:

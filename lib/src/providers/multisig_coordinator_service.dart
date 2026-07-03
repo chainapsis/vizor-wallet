@@ -5,10 +5,13 @@ import '../rust/api/multisig.dart' as rust_multisig;
 abstract class MultisigCoordinatorService {
   rust_multisig.ApiMultisigParticipantIdentity generateParticipantIdentity();
 
-  /// Random session invite secret, shared out-of-band inside the invite
-  /// code. Participant labels are sealed under it so the coordinator only
-  /// ever relays opaque strings.
+  /// Random session invite secret; this single token IS the out-of-band
+  /// invite code. Participant labels are sealed under it and the session id
+  /// is derived from it, so the coordinator never sees it.
   String generateInviteSecret();
+
+  /// Derives the coordinator session id from the invite secret (one-way).
+  String deriveSessionId(String inviteSecret);
 
   Future<rust_multisig.ApiMultisigAuthSession> createSession({
     required String coordinatorUrl,
@@ -186,6 +189,11 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
   @override
   String generateInviteSecret() {
     return rust_multisig.generateMultisigInviteSecret();
+  }
+
+  @override
+  String deriveSessionId(String inviteSecret) {
+    return rust_multisig.deriveMultisigSessionId(inviteSecret: inviteSecret);
   }
 
   @override
