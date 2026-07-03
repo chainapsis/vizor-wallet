@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
 
@@ -66,7 +67,7 @@ void main() {
       find.descendant(of: placeholder, matching: find.byType(AnimatedBuilder)),
       findsOneWidget,
     );
-    expect(find.text('Loading the QR code ...'), findsOneWidget);
+    expect(find.text('Loading QR code ...'), findsOneWidget);
 
     prepareCompleter.complete(
       MobileKeystonePcztSigningPayload(
@@ -83,7 +84,7 @@ void main() {
     );
   });
 
-  testWidgets('sizes the QR modal surface to the Figma mobile frame', (
+  testWidgets('sizes the QR full-screen surface to the Figma mobile frame', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(393, 852);
@@ -134,18 +135,144 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      tester.getSize(find.byKey(const ValueKey('test_keystone_sign_modal'))),
-      const Size(393, 701),
+      tester.getSize(find.byKey(const ValueKey('test_keystone_sign_screen'))),
+      const Size(393, 852),
     );
     expect(
-      tester.getSize(
-        find.byKey(const ValueKey('test_keystone_sign_modal_surface')),
-      ),
-      const Size(361, 669),
+      tester.getSize(find.byKey(const ValueKey('test_keystone_sign_qr_frame'))),
+      const Size(320, 320),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('test_keystone_sign_qr_stage'))),
-      const Size(321, 321),
+      const Size(320, 320),
+    );
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('test_keystone_sign_progress_track')),
+      ),
+      const Size(196, 6),
+    );
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('test_keystone_sign_progress_fill')),
+          )
+          .width,
+      closeTo(60, 0.01),
+    );
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is AppIcon &&
+            widget.name == AppIcons.keystoneScan &&
+            widget.size == 18.3335,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is AppIcon &&
+            widget.name == AppIcons.chevronForward &&
+            widget.size == 20,
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('positions scanner controls to the Figma Step 2 frame', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, _) => Center(
+            child: TextButton(
+              key: const ValueKey('open_signing'),
+              onPressed: () => context.push('/sign'),
+              child: const Text('Open signing'),
+            ),
+          ),
+        ),
+        GoRoute(
+          path: '/sign',
+          builder: (_, _) => MobileKeystonePcztSigningFlow(
+            title: 'Confirm transaction',
+            description: 'Scan with Keystone.',
+            keyPrefix: 'test_keystone_sign',
+            preparePczt: (_, _) async => MobileKeystonePcztSigningPayload(
+              urParts: const ['ur:zcash-pczt/test'],
+              pcztWithProofs: Future.value(const [1, 2, 3]),
+            ),
+            scannerBuilder: (_, _, _) =>
+                const SizedBox(key: ValueKey('fake_keystone_scanner')),
+            forceScannerActiveForTesting: true,
+            onSigned: (_, _, _, _) async {},
+            friendlyError: (_) => 'Keystone signing failed.',
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.light, child: child!),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('open_signing')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('test_keystone_sign_get_signature')),
+    );
+    await tester.pump();
+
+    final viewfinder = find.byKey(
+      const ValueKey('test_keystone_sign_scan_viewfinder'),
+    );
+    final caption = find.byKey(
+      const ValueKey('test_keystone_sign_scan_caption'),
+    );
+    final flashlight = find.byKey(
+      const ValueKey('test_keystone_sign_flashlight_action'),
+    );
+    final qrAction = find.byKey(const ValueKey('test_keystone_sign_qr_action'));
+
+    expect(tester.getTopLeft(viewfinder), const Offset(55, 293));
+    expect(tester.getSize(viewfinder), const Size(285, 285));
+    expect(tester.getTopLeft(caption), const Offset(65, 628));
+    expect(tester.getSize(caption).width, 263);
+    expect(tester.getTopLeft(flashlight), const Offset(32, 762));
+    expect(tester.getSize(flashlight), const Size(40, 40));
+    expect(tester.getTopLeft(qrAction), const Offset(321, 762));
+    expect(tester.getSize(qrAction), const Size(40, 40));
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Icon &&
+            widget.icon == Icons.flashlight_on_outlined &&
+            widget.size == 30,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is AppIcon &&
+            widget.name == AppIcons.qr &&
+            widget.size == 26,
+      ),
+      findsOneWidget,
     );
   });
 
@@ -344,6 +471,8 @@ void main() {
             description: 'Scan with Keystone.',
             keyPrefix: 'test_keystone_sign',
             finalizingSignatureLabel: 'Broadcasting ZEC deposit...',
+            scanCaption:
+                'Scan the QR code on your Keystone to finish the ZEC deposit',
             preparePczt: (_, _) async => MobileKeystonePcztSigningPayload(
               urParts: const ['ur:zcash-pczt/test'],
               pcztWithProofs: Future.value(const [1, 2, 3]),
@@ -374,16 +503,30 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('open_signing')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Confirm with Keystone'), findsOneWidget);
-    expect(find.text('Scan with your Keystone'), findsOneWidget);
-    expect(find.text('Get signature'), findsOneWidget);
-    expect(find.text('Close'), findsOneWidget);
+    expect(find.text('Step 1/2'), findsOneWidget);
+    expect(find.text('Scan with Keystone'), findsOneWidget);
+    expect(find.text('Next step'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey('test_keystone_sign_get_signature')),
     );
     await tester.pump();
     expect(find.byKey(const ValueKey('fake_keystone_scanner')), findsOneWidget);
+    expect(find.text('Step 2/2'), findsOneWidget);
+    expect(find.text('Confirm with Keystone'), findsOneWidget);
+    expect(
+      find.text('Scan the QR code on your Keystone to finish the ZEC deposit'),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('test_keystone_sign_progress_fill')),
+          )
+          .width,
+      closeTo(196, 0.01),
+    );
 
     completeScan!(const ScanResult(urType: 'zcash-pczt', data: [1]));
     await tester.pump();
@@ -392,7 +535,7 @@ void main() {
     expect(find.text('Broadcasting ZEC deposit...'), findsOneWidget);
 
     await tester.tap(
-      find.bySemanticsLabel('Close scanner'),
+      find.bySemanticsLabel('Show transaction QR'),
       warnIfMissed: false,
     );
     await tester.pump();

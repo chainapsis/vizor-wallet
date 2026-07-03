@@ -1,20 +1,25 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/material.dart' show Colors, Icons;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/layout/mobile/mobile_top_nav.dart'
+    show kMobileTopNavHeight;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
+import '../../../services/camera_permission_settings.dart';
 import '../../../services/qr_scanner.dart';
-import '../../address_scan/widgets/mobile_address_scan_card.dart'
-    show MobileQrScanCard;
+import '../../address_scan/widgets/mobile_address_scan_view.dart'
+    show MobileScanCameraErrorOverlay, MobileScanViewfinderCorners;
 import 'keystone_pczt_qr_stage.dart';
 
 class MobileKeystonePcztSigningAborted implements Exception {
@@ -58,12 +63,31 @@ typedef MobileKeystonePcztScannerBuilder =
 
 enum _SignStage { preparing, showQr, scanning, failed }
 
-const _mobileKeystoneQrSize = 321.0;
-const _mobileKeystoneMinQrSize = 200.0;
-const _mobileKeystoneModalMaxWidth = 393.0;
-const _mobileKeystoneModalBottomPadding = AppSpacing.base;
-const _mobileKeystoneQrInset = AppSpacing.xxs;
-const _mobileKeystoneScanCaption = 'Scan a Zcash QR code to continue';
+const _mobileKeystoneQrFrameSize = 320.0;
+const _mobileKeystoneDesignWidth = 393.0;
+const _mobileKeystoneDesignHeight = 852.0;
+const _mobileKeystoneScanWindowSize = 285.0;
+const _mobileKeystoneScanWindowTop = 293.0;
+const _mobileKeystoneScanWindowCenterXOffset = 1.0;
+const _mobileKeystoneScanCaptionTop = 628.0;
+const _mobileKeystoneScanCaptionWidth = 263.0;
+const _mobileKeystoneScanActionTop = 762.0;
+const _mobileKeystoneScanActionInset = AppSpacing.base;
+const _mobileKeystoneScanActionSize = 40.0;
+const _mobileKeystoneFlashlightIconSize = 30.0;
+const _mobileKeystoneQrActionIconSize = 26.0;
+const _mobileKeystoneProgressTrackWidth = 196.0;
+const _mobileKeystoneStepOneProgress = 60.0 / _mobileKeystoneProgressTrackWidth;
+const _mobileKeystoneStepTwoProgress = 1.0;
+const _mobileKeystoneScanCaption =
+    'Scan the QR code on your Keystone to confirm';
+const _mobileKeystoneTitleTopGap = AppSpacing.s;
+const _mobileKeystoneQrPromptGap = AppSpacing.base;
+const _mobileKeystonePromptBlockHeight = 56.0;
+const _mobileKeystonePromptLineGap = 2.0;
+const _mobileKeystonePromptInlineGap = 6.0;
+const _mobileKeystoneLightText = Color(0xFFFFFFFF);
+const _mobileKeystoneOrange = Color(0xFFF98F0E);
 
 /// Shared mobile Keystone PCZT round trip.
 ///
@@ -81,10 +105,15 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
     this.keyPrefix = 'mobile_keystone_sign',
     this.readingSignatureLabel = 'Reading signature...',
     this.finalizingSignatureLabel,
+    this.scanCaption = _mobileKeystoneScanCaption,
+    this.stepOneProgress = _mobileKeystoneStepOneProgress,
+    this.stepTwoProgress = _mobileKeystoneStepTwoProgress,
     this.logTag = 'MobileKeystonePcztSigningFlow',
-    @visibleForTesting this.signedPcztDecoder,
-    @visibleForTesting this.scannerBuilder,
-    @visibleForTesting this.forceScannerActiveForTesting = false,
+    this.onCancel,
+    this.signedPcztDecoder,
+    this.scannerBuilder,
+    this.forceScannerActiveForTesting = false,
+    this.startInScannerForTesting = false,
     super.key,
   });
 
@@ -94,13 +123,18 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
   final String keyPrefix;
   final String readingSignatureLabel;
   final String? finalizingSignatureLabel;
+  final String scanCaption;
+  final double stepOneProgress;
+  final double stepTwoProgress;
   final String logTag;
+  final VoidCallback? onCancel;
   final MobileKeystonePcztPrepare preparePczt;
   final MobileKeystonePcztSigned onSigned;
   final MobileKeystonePcztFriendlyError friendlyError;
   final MobileKeystonePcztDecoder? signedPcztDecoder;
   final MobileKeystonePcztScannerBuilder? scannerBuilder;
   final bool forceScannerActiveForTesting;
+  final bool startInScannerForTesting;
 
   @override
   ConsumerState<MobileKeystonePcztSigningFlow> createState() =>
@@ -108,13 +142,15 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
 }
 
 class _MobileKeystonePcztSigningFlowState
-    extends ConsumerState<MobileKeystonePcztSigningFlow> {
+    extends ConsumerState<MobileKeystonePcztSigningFlow>
+    with WidgetsBindingObserver {
   var _stage = _SignStage.preparing;
   String? _error;
   List<String> _urParts = const [];
   List<int>? _pcztWithProofs;
   bool _proofsFailed = false;
   bool _decoding = false;
+  bool _restartCameraOnResume = false;
   int _scanProgress = 0;
   int _scanSessionResetToken = 0;
   String? _scanHint;
@@ -124,11 +160,21 @@ class _MobileKeystonePcztSigningFlowState
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_preparePczt());
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    if (!_restartCameraOnResume) return;
+    _restartCameraOnResume = false;
+    unawaited(_restartCameraAfterSettings());
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(_scanController?.dispose());
     super.dispose();
   }
@@ -138,14 +184,17 @@ class _MobileKeystonePcztSigningFlowState
       final payload = await widget.preparePczt(context, ref);
       if (!mounted) return;
       setState(() {
-        _stage = _SignStage.showQr;
+        _stage = widget.startInScannerForTesting
+            ? _SignStage.scanning
+            : _SignStage.showQr;
         _urParts = payload.urParts;
         _error = null;
+        if (widget.startInScannerForTesting) _ensureScanController();
       });
       unawaited(_waitForProofs(payload.pcztWithProofs));
     } on MobileKeystonePcztSigningAborted {
       if (!mounted) return;
-      context.pop();
+      _dismiss();
     } catch (e, st) {
       log('${widget.logTag}._preparePczt: ERROR: $e\n$st');
       if (!mounted) return;
@@ -173,16 +222,20 @@ class _MobileKeystonePcztSigningFlowState
   }
 
   void _startScanning() {
-    _scanController ??= MobileScannerController(
-      facing: CameraFacing.back,
-      formats: QrScanner.formats,
-      detectionSpeed: QrScanner.detectionSpeed,
-    );
+    _ensureScanController();
     setState(() {
       _stage = _SignStage.scanning;
       _scanHint = null;
       _scanProgress = 0;
     });
+  }
+
+  void _ensureScanController() {
+    _scanController ??= MobileScannerController(
+      facing: CameraFacing.back,
+      formats: QrScanner.formats,
+      detectionSpeed: QrScanner.detectionSpeed,
+    );
   }
 
   Future<void> _handleScanComplete(ScanResult result) async {
@@ -254,7 +307,52 @@ class _MobileKeystonePcztSigningFlowState
 
   void _cancel() {
     if (_decoding) return;
+    _dismiss();
+  }
+
+  void _dismiss() {
+    final onCancel = widget.onCancel;
+    if (onCancel != null) {
+      onCancel();
+      return;
+    }
     context.pop();
+  }
+
+  void _backToQr() {
+    if (_decoding) return;
+    _stopScannerIfRunning();
+    setState(() {
+      _stage = _SignStage.showQr;
+      _scanHint = null;
+      _scanProgress = 0;
+      _scanSessionResetToken++;
+    });
+  }
+
+  Future<void> _openCameraSettings() async {
+    _restartCameraOnResume = true;
+    final opened = await CameraPermissionSettings.open();
+    if (!opened) {
+      _restartCameraOnResume = false;
+      log('${widget.logTag}: failed to open camera permission settings');
+    }
+  }
+
+  Future<void> _restartCameraAfterSettings() async {
+    final scanController = _scanController;
+    if (scanController == null ||
+        !QrScanner.isAvailable ||
+        scanController.value.isStarting ||
+        scanController.value.isRunning) {
+      return;
+    }
+
+    try {
+      await scanController.start();
+    } catch (e, st) {
+      log('${widget.logTag}: camera settings return retry error: $e\n$st');
+    }
   }
 
   void _stopScannerIfRunning() {
@@ -273,104 +371,117 @@ class _MobileKeystonePcztSigningFlowState
     return ValueKey('${widget.keyPrefix}_$suffix');
   }
 
+  double get _activeProgress {
+    return switch (_stage) {
+      _SignStage.scanning => widget.stepTwoProgress,
+      _ => widget.stepOneProgress,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
-    final scanning = _stage == _SignStage.scanning;
-    final modal = scanning ? _buildScannerModal() : _buildQrModal();
+    final child = _stage == _SignStage.scanning
+        ? _buildScannerPage()
+        : _buildQrPage();
     return PopScope<void>(
       canPop: !_decoding,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _cancel();
       },
-      child: SizedBox.expand(
-        key: _key('screen'),
-        child: Align(alignment: Alignment.bottomCenter, child: modal),
-      ),
+      child: SizedBox.expand(key: _key('screen'), child: child),
     );
   }
 
-  Widget _buildQrModal() {
+  Widget _buildQrPage() {
     final colors = context.colors;
-    final title = _stage == _SignStage.failed
-        ? widget.failedTitle ?? widget.title
-        : 'Confirm with Keystone';
     final actionEnabled = _stage == _SignStage.showQr;
     final isPreparing = _stage == _SignStage.preparing;
     final isFailed = _stage == _SignStage.failed;
-    final instruction = isPreparing
-        ? 'Loading the QR code ...'
+    final title = isFailed ? widget.failedTitle ?? widget.title : 'Step 1/2';
+    final subtitle = isFailed ? widget.description : 'Scan with Keystone';
+    final message = isPreparing
+        ? 'Loading QR code ...'
         : isFailed
         ? _error ?? widget.friendlyError(StateError('Keystone signing failed.'))
-        : 'After you scanned, click Get signature.';
+        : null;
 
-    final surface = Stack(
-      key: _key('modal_surface'),
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
-            AppSpacing.base,
-            AppSpacing.sm,
-            _mobileKeystoneModalBottomPadding,
-          ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final qrSize = _qrSizeFor(constraints);
-              return Column(
-                mainAxisSize: MainAxisSize.min,
+    return ColoredBox(
+      color: colors.background.window,
+      child: SafeArea(
+        child: Column(
+          children: [
+            _KeystoneSigningTopNav(
+              color: colors.icon.accent,
+              trackColor: colors.background.overlay,
+              fillColor: colors.background.inverse,
+              progress: _activeProgress,
+              trackKey: _key('progress_track'),
+              fillKey: _key('progress_fill'),
+              onBack: _cancel,
+            ),
+            const SizedBox(height: _mobileKeystoneTitleTopGap),
+            _KeystoneSigningTitle(
+              title: title,
+              subtitle: subtitle,
+              titleColor: colors.text.accent,
+              subtitleColor: colors.text.accent,
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final availableForQr =
+                        constraints.maxHeight -
+                        _mobileKeystoneQrPromptGap -
+                        _mobileKeystonePromptBlockHeight;
+                    final frameSize = math
+                        .min(
+                          _mobileKeystoneQrFrameSize,
+                          math.min(constraints.maxWidth, availableForQr),
+                        )
+                        .clamp(120.0, _mobileKeystoneQrFrameSize)
+                        .toDouble();
+
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildQrFrame(frameSize: frameSize),
+                          const SizedBox(height: _mobileKeystoneQrPromptGap),
+                          if (message != null)
+                            _KeystoneSigningPromptText(
+                              text: message,
+                              color: isFailed
+                                  ? colors.text.destructive
+                                  : colors.text.primary,
+                            )
+                          else
+                            _KeystoneScanPrompt(color: colors.text.primary),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sm,
+                0,
+                AppSpacing.sm,
+                AppSpacing.base,
+              ),
+              child: Column(
+                key: _key('actions'),
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 40),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.bodyLarge.copyWith(
-                            color: colors.text.accent,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.xxs),
-                        Text(
-                          'Scan with your Keystone',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.secondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 44),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: _mobileKeystoneQrInset,
-                    ),
-                    child: _buildQrContent(size: qrSize),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    instruction,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: isFailed
-                          ? colors.text.destructive
-                          : colors.text.accent,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.base),
                   AppButton(
                     key: _key('get_signature'),
                     expand: true,
                     onPressed: actionEnabled ? _startScanning : null,
-                    child: const Text('Get signature'),
+                    trailing: const AppIcon(AppIcons.chevronForward, size: 20),
+                    child: const Text('Next step'),
                   ),
                   const SizedBox(height: AppSpacing.s),
                   AppButton(
@@ -378,49 +489,46 @@ class _MobileKeystonePcztSigningFlowState
                     expand: true,
                     variant: AppButtonVariant.ghost,
                     onPressed: _cancel,
-                    child: const Text('Close'),
+                    child: const Text('Cancel'),
                   ),
                 ],
-              );
-            },
-          ),
+              ),
+            ),
+          ],
         ),
-        Positioned(
-          top: 15.5,
-          right: AppSpacing.sm,
-          child: _KeystoneModalCloseButton(onTap: _cancel),
-        ),
-      ],
-    );
-    return _buildModalFrame(surface);
-  }
-
-  Widget _buildModalFrame(Widget child) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: _mobileKeystoneModalMaxWidth),
-      child: Stack(
-        key: _key('modal'),
-        children: [MobileModalCard(child: child)],
       ),
     );
   }
 
-  double _qrSizeFor(BoxConstraints constraints) {
-    const titleBlockHeight = 26.0 + AppSpacing.xxs + 25.0;
-    const instructionBlockHeight = 25.0;
-    const fixedContentHeight =
-        titleBlockHeight +
-        44.0 +
-        AppSpacing.sm +
-        instructionBlockHeight +
-        AppSpacing.base +
-        AppButtonSizing.largeHeight +
-        AppSpacing.s +
-        AppButtonSizing.largeHeight;
-    final available = constraints.maxHeight - fixedContentHeight;
-    return available
-        .clamp(_mobileKeystoneMinQrSize, _mobileKeystoneQrSize)
-        .toDouble();
+  Widget _buildQrFrame({required double frameSize}) {
+    final showPlaceholder =
+        _stage == _SignStage.preparing ||
+        (_stage == _SignStage.failed && _urParts.isEmpty);
+    if (showPlaceholder) {
+      return ClipRRect(
+        key: _key('qr_frame'),
+        borderRadius: BorderRadius.circular(24),
+        child: SizedBox.square(
+          dimension: frameSize,
+          child: _MobileKeystoneQrPlaceholder(
+            key: _key('qr_placeholder'),
+            size: frameSize,
+          ),
+        ),
+      );
+    }
+
+    return ClipRRect(
+      key: _key('qr_frame'),
+      borderRadius: BorderRadius.circular(24),
+      child: ColoredBox(
+        color: Colors.white,
+        child: SizedBox.square(
+          dimension: frameSize,
+          child: _buildQrContent(size: frameSize),
+        ),
+      ),
+    );
   }
 
   Widget _buildQrContent({required double size}) {
@@ -443,11 +551,12 @@ class _MobileKeystonePcztSigningFlowState
       error: null,
       size: size,
       scanOptimized: true,
+      quietZone: const PrettyQrQuietZone.modules(3),
       frameInterval: const Duration(milliseconds: 100),
     );
   }
 
-  Widget _buildScannerModal() {
+  Widget _buildScannerPage() {
     final scanController = _scanController;
     if (scanController == null) return const SizedBox.shrink();
     final scanSessionResetToken = (_stage, _scanSessionResetToken);
@@ -475,21 +584,183 @@ class _MobileKeystonePcztSigningFlowState
         : _scanHint ??
               (_scanProgress > 0
                   ? 'Scanning... $_scanProgress%'
-                  : _mobileKeystoneScanCaption);
+                  : widget.scanCaption);
 
-    return _buildModalFrame(
-      MobileQrScanCard(
-        key: _key('scanner_card'),
-        controller: scanController,
-        closeEnabled: !_decoding,
-        forceActiveForTesting: widget.forceScannerActiveForTesting,
-        caption: caption,
-        permissionTitle: 'Scan the signed Keystone QR',
-        unavailableDescription:
-            'Keystone signing needs a camera on this device.',
-        onClose: _cancel,
-        cameraViewBuilder: (_, _) => scannerView,
+    return ColoredBox(
+      key: _key('scanner_card'),
+      color: Colors.black,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final viewfinderLeft =
+              ((constraints.maxWidth - _mobileKeystoneScanWindowSize) / 2) +
+              _mobileKeystoneScanWindowCenterXOffset;
+          final captionLeft =
+              (constraints.maxWidth - _mobileKeystoneScanCaptionWidth) / 2;
+          final actionInset =
+              ((constraints.maxWidth - _mobileKeystoneDesignWidth) / 2) +
+              _mobileKeystoneScanActionInset;
+
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned.fill(child: scannerView),
+              const _KeystoneScannerScrim(),
+              Positioned(
+                left: viewfinderLeft.clamp(
+                  0.0,
+                  math.max(
+                    0.0,
+                    constraints.maxWidth - _mobileKeystoneScanWindowSize,
+                  ),
+                ),
+                top: _scannerTopFor(
+                  constraints,
+                  designTop: _mobileKeystoneScanWindowTop,
+                  height: _mobileKeystoneScanWindowSize,
+                ),
+                width: _mobileKeystoneScanWindowSize,
+                height: _mobileKeystoneScanWindowSize,
+                child: SizedBox(
+                  key: _key('scan_viewfinder'),
+                  width: _mobileKeystoneScanWindowSize,
+                  height: _mobileKeystoneScanWindowSize,
+                  child: const MobileScanViewfinderCorners(
+                    cornerLength: 60,
+                    cornerRadius: 32,
+                    strokeWidth: 6,
+                  ),
+                ),
+              ),
+              if (!widget.forceScannerActiveForTesting)
+                MobileScanCameraErrorOverlay(
+                  controller: scanController,
+                  maxWidth: _mobileKeystoneScanWindowSize,
+                  permissionDeniedMessage:
+                      'Camera access is off. Allow it in Settings to scan Keystone signatures.',
+                  unavailableMessage: 'The camera is unavailable right now.',
+                  onOpenSettings: _openCameraSettings,
+                ),
+              SafeArea(
+                child: Column(
+                  children: [
+                    _KeystoneSigningTopNav(
+                      color: _mobileKeystoneLightText,
+                      trackColor: _mobileKeystoneLightText.withValues(
+                        alpha: 0.32,
+                      ),
+                      fillColor: _mobileKeystoneLightText,
+                      progress: _activeProgress,
+                      trackKey: _key('progress_track'),
+                      fillKey: _key('progress_fill'),
+                      onBack: _cancel,
+                    ),
+                    const SizedBox(height: _mobileKeystoneTitleTopGap),
+                    const _KeystoneSigningTitle(
+                      title: 'Step 2/2',
+                      subtitle: 'Confirm with Keystone',
+                      titleColor: _mobileKeystoneLightText,
+                      subtitleColor: _mobileKeystoneLightText,
+                    ),
+                  ],
+                ),
+              ),
+              Positioned(
+                left: captionLeft.clamp(
+                  AppSpacing.sm,
+                  math.max(
+                    AppSpacing.sm,
+                    constraints.maxWidth -
+                        _mobileKeystoneScanCaptionWidth -
+                        AppSpacing.sm,
+                  ),
+                ),
+                top: _scannerTopFor(
+                  constraints,
+                  designTop: _mobileKeystoneScanCaptionTop,
+                  height: 75,
+                ),
+                width: _mobileKeystoneScanCaptionWidth,
+                child: SizedBox(
+                  key: _key('scan_caption'),
+                  width: _mobileKeystoneScanCaptionWidth,
+                  child: _KeystoneSigningPromptText(
+                    text: caption,
+                    color: _mobileKeystoneLightText,
+                    maxLines: 3,
+                  ),
+                ),
+              ),
+              Positioned(
+                top: _scannerTopFor(
+                  constraints,
+                  designTop: _mobileKeystoneScanActionTop,
+                  height: _mobileKeystoneScanActionSize,
+                ),
+                left: actionInset.clamp(
+                  AppSpacing.sm,
+                  math.max(
+                    AppSpacing.sm,
+                    constraints.maxWidth -
+                        (AppSpacing.sm * 2) -
+                        _mobileKeystoneScanActionSize,
+                  ),
+                ),
+                child: _KeystoneScannerIconButton(
+                  controlKey: _key('flashlight_action'),
+                  semanticLabel: 'Toggle flashlight',
+                  onTap: () => unawaited(scanController.toggleTorch()),
+                  child: const Icon(
+                    Icons.flashlight_on_outlined,
+                    color: _mobileKeystoneLightText,
+                    size: _mobileKeystoneFlashlightIconSize,
+                  ),
+                ),
+              ),
+              Positioned(
+                top: _scannerTopFor(
+                  constraints,
+                  designTop: _mobileKeystoneScanActionTop,
+                  height: _mobileKeystoneScanActionSize,
+                ),
+                right: actionInset.clamp(
+                  AppSpacing.sm,
+                  math.max(
+                    AppSpacing.sm,
+                    constraints.maxWidth -
+                        (AppSpacing.sm * 2) -
+                        _mobileKeystoneScanActionSize,
+                  ),
+                ),
+                child: _KeystoneScannerIconButton(
+                  controlKey: _key('qr_action'),
+                  semanticLabel: 'Show transaction QR',
+                  onTap: _decoding ? null : _backToQr,
+                  child: AppIcon(
+                    AppIcons.qr,
+                    color: _mobileKeystoneLightText.withValues(
+                      alpha: _decoding ? 0.4 : 1,
+                    ),
+                    size: _mobileKeystoneQrActionIconSize,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
+    );
+  }
+
+  double _scannerTopFor(
+    BoxConstraints constraints, {
+    required double designTop,
+    required double height,
+  }) {
+    final scaledTop =
+        designTop * (constraints.maxHeight / _mobileKeystoneDesignHeight);
+    return scaledTop.clamp(
+      0.0,
+      math.max(0.0, constraints.maxHeight - height - AppSpacing.xxs),
     );
   }
 }
@@ -526,46 +797,40 @@ class _MobileKeystoneQrPlaceholderState
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final base = colors.background.raised;
-    final highlight = colors.background.overlay.withValues(alpha: 0.72);
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, _) {
-        final bandHeight = widget.size * 0.72;
+        const base = Color(0x26E1E1E1);
+        const highlight = Color(0xFFD4D4D4);
+        final bandHeight = widget.size * 0.78;
         final travel = widget.size + bandHeight * 2;
         final top = -bandHeight + travel * _controller.value;
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadii.large),
-          child: SizedBox(
-            width: widget.size,
-            height: widget.size,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                DecoratedBox(decoration: BoxDecoration(color: base)),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: top,
-                  height: bandHeight,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          base.withValues(alpha: 0),
-                          highlight,
-                          base.withValues(alpha: 0),
-                        ],
-                        stops: const [0, 0.5, 1],
-                      ),
+        return SizedBox(
+          width: widget.size,
+          height: widget.size,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              const DecoratedBox(
+                decoration: BoxDecoration(color: Color(0x40FFFFFF)),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                top: top,
+                height: bandHeight,
+                child: const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [base, highlight, base],
+                      stops: [0, 0.5, 1],
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         );
       },
@@ -573,30 +838,276 @@ class _MobileKeystoneQrPlaceholderState
   }
 }
 
-class _KeystoneModalCloseButton extends StatelessWidget {
-  const _KeystoneModalCloseButton({required this.onTap});
+class _KeystoneSigningTopNav extends StatelessWidget {
+  const _KeystoneSigningTopNav({
+    required this.color,
+    required this.trackColor,
+    required this.fillColor,
+    required this.progress,
+    required this.onBack,
+    this.trackKey,
+    this.fillKey,
+  });
 
-  final VoidCallback onTap;
+  final Color color;
+  final Color trackColor;
+  final Color fillColor;
+  final double progress;
+  final VoidCallback onBack;
+  final Key? trackKey;
+  final Key? fillKey;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
+    return SizedBox(
+      height: kMobileTopNavHeight,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Center(
+            child: SizedBox(
+              key: trackKey,
+              width: 196,
+              height: 6,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: trackColor,
+                  borderRadius: BorderRadius.circular(AppRadii.full),
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: progress.clamp(0.0, 1.0).toDouble(),
+                    heightFactor: 1,
+                    child: DecoratedBox(
+                      key: fillKey,
+                      decoration: BoxDecoration(
+                        color: fillColor,
+                        borderRadius: BorderRadius.circular(AppRadii.full),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: AppSpacing.s,
+            child: Semantics(
+              label: 'Back',
+              button: true,
+              excludeSemantics: true,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onBack,
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: Center(
+                    child: AppIcon(
+                      AppIcons.chevronBackward,
+                      size: 24,
+                      color: color,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KeystoneSigningTitle extends StatelessWidget {
+  const _KeystoneSigningTitle({
+    required this.title,
+    required this.subtitle,
+    required this.titleColor,
+    required this.subtitleColor,
+  });
+
+  final String title;
+  final String subtitle;
+  final Color titleColor;
+  final Color subtitleColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      child: Column(
+        children: [
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: AppTypography.displayLarge.copyWith(color: titleColor),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          Text(
+            subtitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyLarge.copyWith(
+              color: subtitleColor,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KeystoneSigningPromptText extends StatelessWidget {
+  const _KeystoneSigningPromptText({
+    required this.text,
+    required this.color,
+    this.maxLines = 2,
+  });
+
+  final String text;
+  final Color color;
+  final int maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      maxLines: maxLines,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+      style: AppTypography.bodyMediumStrong.copyWith(color: color),
+    );
+  }
+}
+
+class _KeystoneScanPrompt extends StatelessWidget {
+  const _KeystoneScanPrompt({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final textStyle = AppTypography.bodyMediumStrong.copyWith(color: color);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: _mobileKeystonePromptInlineGap,
+          runSpacing: _mobileKeystonePromptLineGap,
+          children: [
+            Text('Tap', style: textStyle),
+            const _KeystoneScanPromptIcon(),
+            Text('on your Keystone,', style: textStyle),
+          ],
+        ),
+        const SizedBox(height: _mobileKeystonePromptLineGap),
+        Text(
+          'then scan this QR code',
+          textAlign: TextAlign.center,
+          style: textStyle,
+        ),
+      ],
+    );
+  }
+}
+
+class _KeystoneScanPromptIcon extends StatelessWidget {
+  const _KeystoneScanPromptIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _mobileKeystoneOrange,
+        borderRadius: BorderRadius.circular(8.615),
+      ),
+      child: const SizedBox(
+        width: 28,
+        height: 28,
+        child: Center(
+          child: SizedBox.square(
+            dimension: 22,
+            child: Center(
+              child: AppIcon(
+                AppIcons.keystoneScan,
+                color: _mobileKeystoneLightText,
+                size: 18.3335,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _KeystoneScannerScrim extends StatelessWidget {
+  const _KeystoneScannerScrim();
+
+  @override
+  Widget build(BuildContext context) {
+    return ColorFiltered(
+      colorFilter: const ColorFilter.mode(Color(0x99000000), BlendMode.srcOut),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              color: Colors.black,
+              backgroundBlendMode: BlendMode.dstOut,
+            ),
+          ),
+          Center(
+            child: Container(
+              width: _mobileKeystoneScanWindowSize,
+              height: _mobileKeystoneScanWindowSize,
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(32),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KeystoneScannerIconButton extends StatelessWidget {
+  const _KeystoneScannerIconButton({
+    required this.semanticLabel,
+    required this.child,
+    required this.onTap,
+    this.controlKey,
+  });
+
+  final String semanticLabel;
+  final Widget child;
+  final VoidCallback? onTap;
+  final Key? controlKey;
+
+  @override
+  Widget build(BuildContext context) {
     return Semantics(
-      label: 'Close Keystone signing',
+      label: semanticLabel,
       button: true,
+      enabled: onTap != null,
+      excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: colors.button.secondary.bg,
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: AppIcon(AppIcons.cross, size: 20, color: colors.icon.accent),
-          ),
+        child: SizedBox.square(
+          key: controlKey,
+          dimension: _mobileKeystoneScanActionSize,
+          child: Center(child: child),
         ),
       ),
     );

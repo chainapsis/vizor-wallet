@@ -108,6 +108,94 @@ void main() {
     );
   });
 
+  testWidgets('mobile Keystone signing loading use case renders Step 1', (
+    tester,
+  ) async {
+    await _pumpUseCase(tester, buildMobileKeystoneSigningLoadingUseCase);
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Step 1/2'), findsOneWidget);
+    expect(find.text('Scan with Keystone'), findsOneWidget);
+    expect(find.text('Loading QR code ...'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey('mobile_keystone_signing_widgetbook_qr_placeholder'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('mobile Keystone signing ready use case enters scanner step', (
+    tester,
+  ) async {
+    await _pumpUseCase(tester, buildMobileKeystoneSigningReadyUseCase);
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Step 1/2'), findsOneWidget);
+    expect(find.text('Next step'), findsOneWidget);
+    expect(
+      tester.getSize(
+        find.byKey(
+          const ValueKey('mobile_keystone_signing_widgetbook_qr_frame'),
+        ),
+      ),
+      const Size(320, 320),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_keystone_signing_widgetbook_cancel')),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Step 1/2'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey('mobile_keystone_signing_widgetbook_get_signature'),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Step 2/2'), findsOneWidget);
+    expect(find.text('Confirm with Keystone'), findsOneWidget);
+    expect(
+      find.text('Scan the QR code on your Keystone to finish sending'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_keystone_signing_widgetbook_camera')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Step 2/2'), findsOneWidget);
+  });
+
+  testWidgets('mobile Keystone signing scanner use case renders Step 2', (
+    tester,
+  ) async {
+    await _pumpUseCase(tester, buildMobileKeystoneSigningScannerUseCase);
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Step 2/2'), findsOneWidget);
+    expect(find.text('Confirm with Keystone'), findsOneWidget);
+    expect(
+      find.text('Scan the QR code on your Keystone to finish sending'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_keystone_signing_widgetbook_camera')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('mobile Keystone select account use case lists seeded accounts', (
     tester,
   ) async {

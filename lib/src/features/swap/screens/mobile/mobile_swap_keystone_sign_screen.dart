@@ -65,6 +65,8 @@ class _MobileSwapKeystoneSignScreenState
       onSigned: _handleSignedPczt,
       friendlyError: _friendlyError,
       keyPrefix: 'mobile_swap_keystone_sign',
+      scanCaption:
+          'Scan the QR code on your Keystone to finish the ZEC deposit',
       finalizingSignatureLabel: 'Broadcasting ZEC deposit...',
       logTag: 'MobileSwapKeystoneSign',
     );
