@@ -252,7 +252,7 @@ Widget _amountStepWithPriceLoadingApp() {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
-      syncProvider.overrideWith(_FakeSyncNotifier.new),
+      syncProvider.overrideWith(() => _FakeSyncNotifier(syncedToTip: true)),
       zecHomeUsdUnitPriceProvider.overrideWithValue(null),
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(const []),
