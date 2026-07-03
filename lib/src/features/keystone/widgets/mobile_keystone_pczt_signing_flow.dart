@@ -401,7 +401,9 @@ class _MobileKeystonePcztSigningFlowState
     final isPreparing = _stage == _SignStage.preparing;
     final isFailed = _stage == _SignStage.failed;
     final title = isFailed ? widget.failedTitle ?? widget.title : 'Step 1/2';
-    final subtitle = isFailed ? widget.description : 'Scan with Keystone';
+    final subtitle = isFailed
+        ? 'Try again with Keystone'
+        : 'Scan with Keystone';
     final message = isPreparing
         ? 'Loading QR code ...'
         : isFailed

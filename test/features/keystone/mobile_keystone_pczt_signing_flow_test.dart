@@ -264,6 +264,60 @@ void main() {
     );
   });
 
+  testWidgets('uses concise failed subtitle instead of the signing description', (
+    tester,
+  ) async {
+    const longDescription =
+        'Use your Keystone wallet to scan this transaction QR code. '
+        'Follow the steps on your device.';
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, _) => Center(
+            child: TextButton(
+              key: const ValueKey('open_signing'),
+              onPressed: () => context.push('/sign'),
+              child: const Text('Open signing'),
+            ),
+          ),
+        ),
+        GoRoute(
+          path: '/sign',
+          builder: (_, _) => MobileKeystonePcztSigningFlow(
+            title: 'Confirm transaction',
+            failedTitle: 'Keystone signing failed',
+            description: longDescription,
+            keyPrefix: 'test_keystone_sign',
+            preparePczt: (_, _) async => throw StateError('prepare failed'),
+            onSigned: (_, _, _, _) async {},
+            friendlyError: (_) =>
+                'Keystone signing could not be prepared. Go back and try again.',
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.light, child: child!),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('open_signing')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Keystone signing failed'), findsOneWidget);
+    expect(find.text('Try again with Keystone'), findsOneWidget);
+    expect(find.text(longDescription), findsNothing);
+  });
+
   testWidgets('positions scanner controls to the Figma Step 2 frame', (
     tester,
   ) async {
