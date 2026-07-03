@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/providers/multisig_coordinator_service.dart';
 import 'package:zcash_wallet/src/providers/multisig_pending_session_provider.dart';
 import 'package:zcash_wallet/src/providers/multisig_realtime_cursor_store.dart';
 import 'package:zcash_wallet/src/providers/multisig_signing_request_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_vault_label_store.dart';
 import 'package:zcash_wallet/src/rust/api/multisig.dart' as rust_multisig;
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 
@@ -674,6 +675,57 @@ void main() {
     ]);
   });
 
+  test('inbox vault_label broadcasts land in the vault label store', () async {
+    final materialStore = _FakeAccountMaterialStore()
+      ..put(_accountMaterial(accessTokenExpiresAt: 9999999999));
+    final vaultLabelStore = _FakeVaultLabelStore();
+    final coordinator = _FakeCoordinatorService(
+      inboxCursor: 3,
+      inboxMessages: [
+        rust_multisig.ApiMultisigSigningMessage(
+          cursor: 1,
+          messageId: 'message-label',
+          sessionId: 'session-1',
+          kind: 'vault_label',
+          fromParticipantId: 'participant-2',
+          toParticipantId: null,
+          relatedId: null,
+          plaintextJson: jsonEncode({'version': 1, 'label': 'Signer 2'}),
+          createdAt: BigInt.from(41),
+        ),
+      ],
+    );
+    final container = _container(
+      materialStore: materialStore,
+      coordinatorService: coordinator,
+      vaultLabelStore: vaultLabelStore,
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(multisigSigningRequestsProvider.notifier)
+        .refreshForAccount('account-1');
+
+    expect(vaultLabelStore.labels['session-1:participant-1'], {
+      'participant-2': 'Signer 2',
+    });
+
+    // Post-finalize drafts merge the stored vault label into the display
+    // name (the coordinator response carries no readable label anymore).
+    final merged = MultisigSigningParticipant.fromApi(
+      rust_multisig.ApiMultisigParticipant(
+        participantId: 'participant-2',
+        label: null,
+        admissionPublicKey: 'admission-public-2',
+        deliveryPublicKey: 'delivery-public-2',
+        joinedAt: BigInt.one,
+        dkgCompleted: true,
+      ),
+      vaultLabel: 'Signer 2',
+    );
+    expect(merged.displayName, 'Signer 2');
+  });
+
   test(
     'refreshRequestProgress merges coordinator round progress into record',
     () async {
@@ -740,6 +792,7 @@ ProviderContainer _container({
   _FakeProposalService? proposalService,
   _FakeCoordinatorService? coordinatorService,
   _FakeRealtimeCursorStore? cursorStore,
+  _FakeVaultLabelStore? vaultLabelStore,
 }) {
   return ProviderContainer(
     overrides: [
@@ -762,8 +815,31 @@ ProviderContainer _container({
       multisigRealtimeCursorStoreProvider.overrideWithValue(
         cursorStore ?? _FakeRealtimeCursorStore(),
       ),
+      multisigVaultLabelStoreProvider.overrideWithValue(
+        vaultLabelStore ?? _FakeVaultLabelStore(),
+      ),
     ],
   );
+}
+
+class _FakeVaultLabelStore implements MultisigVaultLabelStore {
+  final labels = <String, Map<String, String>>{};
+
+  @override
+  Future<Map<String, String>> read(String storageId) async {
+    return labels[storageId] ?? const <String, String>{};
+  }
+
+  @override
+  Future<void> setLabels(String storageId, Map<String, String> update) async {
+    if (update.isEmpty) return;
+    labels[storageId] = {...?labels[storageId], ...update};
+  }
+
+  @override
+  Future<void> clear(String storageId) async {
+    labels.remove(storageId);
+  }
 }
 
 class _FakeAppSecurityNotifier extends AppSecurityNotifier {
@@ -1081,6 +1157,7 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
     required String accessToken,
     required String rosterHash,
     required String deliverySecretKey,
+    String? groupPublicPackageJson,
     required int after,
   }) async {
     inboxCalls.add('$sessionId|$participantId|$after');

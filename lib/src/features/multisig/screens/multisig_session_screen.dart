@@ -232,12 +232,12 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
     }
   }
 
-  Future<void> _copySessionId(String sessionId) async {
-    await Clipboard.setData(ClipboardData(text: sessionId));
+  Future<void> _copyInviteCode(String inviteCode) async {
+    await Clipboard.setData(ClipboardData(text: inviteCode));
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Session ID copied.')));
+    ).showSnackBar(const SnackBar(content: Text('Invite code copied.')));
   }
 
   void _syncRealtimeLease(MultisigPendingSession? session, bool isUnlocked) {
@@ -344,7 +344,7 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
                   if (value == null) return;
                   setState(() => _selectedThreshold = value);
                 },
-                onCopySessionId: () => _copySessionId(session.sessionId),
+                onCopyInviteCode: () => _copyInviteCode(session.inviteCode),
                 onLockRoster: () => _lockRoster(session),
                 onAdvanceCreate: () => _advanceCreate(session),
                 onConfirmBackup: (completion) =>
@@ -513,7 +513,7 @@ class _SessionContent extends StatelessWidget {
     required this.createProgress,
     required this.error,
     required this.onThresholdChanged,
-    required this.onCopySessionId,
+    required this.onCopyInviteCode,
     required this.onLockRoster,
     required this.onAdvanceCreate,
     required this.onConfirmBackup,
@@ -527,7 +527,7 @@ class _SessionContent extends StatelessWidget {
   final MultisigCreateAdvanceResult? createProgress;
   final String? error;
   final ValueChanged<int?> onThresholdChanged;
-  final VoidCallback onCopySessionId;
+  final VoidCallback onCopyInviteCode;
   final VoidCallback onLockRoster;
   final VoidCallback onAdvanceCreate;
   final ValueChanged<MultisigBackupCompletion> onConfirmBackup;
@@ -546,7 +546,7 @@ class _SessionContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _SessionIdPanel(session: session, onCopy: onCopySessionId),
+          _InviteCodePanel(session: session, onCopy: onCopyInviteCode),
           const SizedBox(height: AppSpacing.md),
           _ProgressPanel(session: session),
           const SizedBox(height: AppSpacing.md),
@@ -637,8 +637,8 @@ class _SessionContent extends StatelessWidget {
   }
 }
 
-class _SessionIdPanel extends StatelessWidget {
-  const _SessionIdPanel({required this.session, required this.onCopy});
+class _InviteCodePanel extends StatelessWidget {
+  const _InviteCodePanel({required this.session, required this.onCopy});
 
   final MultisigPendingSession session;
   final VoidCallback onCopy;
@@ -660,14 +660,14 @@ class _SessionIdPanel extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Session ID',
+                    'Invite code',
                     style: AppTypography.labelMedium.copyWith(
                       color: colors.text.secondary,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xxs),
                   SelectableText(
-                    session.sessionId,
+                    session.inviteCode,
                     style: AppTypography.bodyMediumStrong.copyWith(
                       color: colors.text.primary,
                     ),

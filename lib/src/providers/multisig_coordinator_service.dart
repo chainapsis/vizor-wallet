@@ -5,9 +5,15 @@ import '../rust/api/multisig.dart' as rust_multisig;
 abstract class MultisigCoordinatorService {
   rust_multisig.ApiMultisigParticipantIdentity generateParticipantIdentity();
 
+  /// Random session invite secret, shared out-of-band inside the invite
+  /// code. Participant labels are sealed under it so the coordinator only
+  /// ever relays opaque strings.
+  String generateInviteSecret();
+
   Future<rust_multisig.ApiMultisigAuthSession> createSession({
     required String coordinatorUrl,
     required rust_multisig.ApiMultisigParticipantIdentity identity,
+    required String inviteSecret,
     String? label,
   });
 
@@ -15,6 +21,7 @@ abstract class MultisigCoordinatorService {
     required String coordinatorUrl,
     required String sessionId,
     required rust_multisig.ApiMultisigParticipantIdentity identity,
+    required String inviteSecret,
     String? label,
   });
 
@@ -32,12 +39,14 @@ abstract class MultisigCoordinatorService {
     required String sessionId,
     required String admissionSecretKey,
     required String deliverySecretKey,
+    String? inviteSecret,
   });
 
   Future<rust_multisig.ApiMultisigSession> getSession({
     required String coordinatorUrl,
     required String sessionId,
     required String accessToken,
+    String? inviteSecret,
   });
 
   Future<rust_multisig.ApiMultisigSession> lockSession({
@@ -45,6 +54,19 @@ abstract class MultisigCoordinatorService {
     required String sessionId,
     required String accessToken,
     required int threshold,
+    String? inviteSecret,
+  });
+
+  /// Publishes the local participant's label for a finalized vault as a
+  /// broadcast message encrypted to the group-derived metadata keypair.
+  Future<void> postVaultLabel({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String groupPublicPackageJson,
+    required String label,
   });
 
   Future<rust_multisig.ApiPreparedMultisigSigningRequest>
@@ -87,6 +109,7 @@ abstract class MultisigCoordinatorService {
     required String accessToken,
     required String rosterHash,
     required String deliverySecretKey,
+    String? groupPublicPackageJson,
     required int after,
   });
 
@@ -161,15 +184,22 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
   }
 
   @override
+  String generateInviteSecret() {
+    return rust_multisig.generateMultisigInviteSecret();
+  }
+
+  @override
   Future<rust_multisig.ApiMultisigAuthSession> createSession({
     required String coordinatorUrl,
     required rust_multisig.ApiMultisigParticipantIdentity identity,
+    required String inviteSecret,
     String? label,
   }) {
     return rust_multisig.createMultisigSession(
       coordinatorUrl: coordinatorUrl,
       admissionSecretKey: identity.admissionSecretKey,
       deliverySecretKey: identity.deliverySecretKey,
+      inviteSecret: inviteSecret,
       label: label,
     );
   }
@@ -179,6 +209,7 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
     required String coordinatorUrl,
     required String sessionId,
     required rust_multisig.ApiMultisigParticipantIdentity identity,
+    required String inviteSecret,
     String? label,
   }) {
     return rust_multisig.joinMultisigSession(
@@ -186,6 +217,7 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
       sessionId: sessionId,
       admissionSecretKey: identity.admissionSecretKey,
       deliverySecretKey: identity.deliverySecretKey,
+      inviteSecret: inviteSecret,
       label: label,
     );
   }
@@ -215,12 +247,14 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
     required String sessionId,
     required String admissionSecretKey,
     required String deliverySecretKey,
+    String? inviteSecret,
   }) {
     return rust_multisig.resumeMultisigParticipant(
       coordinatorUrl: coordinatorUrl,
       sessionId: sessionId,
       admissionSecretKey: admissionSecretKey,
       deliverySecretKey: deliverySecretKey,
+      inviteSecret: inviteSecret,
     );
   }
 
@@ -229,11 +263,13 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
     required String coordinatorUrl,
     required String sessionId,
     required String accessToken,
+    String? inviteSecret,
   }) {
     return rust_multisig.getMultisigSession(
       coordinatorUrl: coordinatorUrl,
       sessionId: sessionId,
       accessToken: accessToken,
+      inviteSecret: inviteSecret,
     );
   }
 
@@ -243,12 +279,35 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
     required String sessionId,
     required String accessToken,
     required int threshold,
+    String? inviteSecret,
   }) {
     return rust_multisig.lockMultisigSession(
       coordinatorUrl: coordinatorUrl,
       sessionId: sessionId,
       accessToken: accessToken,
       threshold: threshold,
+      inviteSecret: inviteSecret,
+    );
+  }
+
+  @override
+  Future<void> postVaultLabel({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String groupPublicPackageJson,
+    required String label,
+  }) {
+    return rust_multisig.postMultisigVaultLabel(
+      coordinatorUrl: coordinatorUrl,
+      sessionId: sessionId,
+      participantId: participantId,
+      accessToken: accessToken,
+      rosterHash: rosterHash,
+      groupPublicPackageJson: groupPublicPackageJson,
+      label: label,
     );
   }
 
@@ -328,6 +387,7 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
     required String accessToken,
     required String rosterHash,
     required String deliverySecretKey,
+    String? groupPublicPackageJson,
     required int after,
   }) {
     return rust_multisig.getMultisigSigningInbox(
@@ -337,6 +397,7 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
       accessToken: accessToken,
       rosterHash: rosterHash,
       deliverySecretKey: deliverySecretKey,
+      groupPublicPackageJson: groupPublicPackageJson,
       after: after,
     );
   }

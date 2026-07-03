@@ -22,6 +22,7 @@ void main() {
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
       identity: identity,
+      inviteSecret: 'invite-secret',
       accessTokenExpiresAt: 10,
       refreshTokenExpiresAt: 20,
       participants: <MultisigPendingParticipant>[],

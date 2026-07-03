@@ -33,7 +33,10 @@ use zcash_multisig_sdk::{
         decrypt_share_backup, encrypt_share_backup, EncryptedShareBackup, ShareBackupPlaintext,
     },
     client::{ClientError, Coordinator2Client},
-    e2e::{encrypt_for, DeliveryKeypair, E2eContext},
+    e2e::{
+        encrypt_for, generate_invite_secret, open_session_label, seal_session_label,
+        vault_delivery_keypair, DeliveryKeypair, E2eContext,
+    },
     identity::AdmissionKey,
     types::{
         AdmissionAction, AdmissionChallengeReq, AuthRefreshReq, AuthSessionResp, AuthTokenResp,
@@ -483,6 +486,14 @@ pub fn validate_multisig_threshold(
         })
 }
 
+/// Random 32-byte session invite secret (base64url). Shared out-of-band as
+/// part of the invite code; never sent to the coordinator. Participant
+/// labels are sealed under it so the server only relays opaque strings.
+#[flutter_rust_bridge::frb(sync)]
+pub fn generate_multisig_invite_secret() -> String {
+    generate_invite_secret()
+}
+
 #[flutter_rust_bridge::frb(sync)]
 pub fn generate_multisig_participant_identity() -> ApiMultisigParticipantIdentity {
     multisig_identity_from_keys(AdmissionKey::generate(), DeliveryKeypair::generate())
@@ -650,6 +661,7 @@ pub fn create_multisig_session(
     coordinator_url: String,
     admission_secret_key: String,
     delivery_secret_key: String,
+    invite_secret: String,
     label: Option<String>,
 ) -> Result<ApiMultisigAuthSession, String> {
     block_on(async move {
@@ -660,18 +672,20 @@ pub fn create_multisig_session(
             .map_err(client_error)?;
         let (admission, delivery, identity) =
             restore_participant_identity(admission_secret_key, delivery_secret_key)?;
+        let encrypted_label =
+            seal_label(&invite_secret, &identity.admission_public_key, label)?;
         let creator = admission.admission_request(
             AdmissionAction::CreateSession,
             &challenge,
             &delivery,
-            clean_label(label),
+            encrypted_label,
         );
         let created = client
             .create_session(&zcash_multisig_sdk::types::CreateSessionReq { creator })
             .await
             .map_err(client_error)?;
 
-        Ok(map_auth_session(created, identity))
+        Ok(map_auth_session(created, identity, Some(&invite_secret)))
     })
 }
 
@@ -680,6 +694,7 @@ pub fn join_multisig_session(
     session_id: String,
     admission_secret_key: String,
     delivery_secret_key: String,
+    invite_secret: String,
     label: Option<String>,
 ) -> Result<ApiMultisigAuthSession, String> {
     block_on(async move {
@@ -692,20 +707,22 @@ pub fn join_multisig_session(
             .map_err(client_error)?;
         let (admission, delivery, identity) =
             restore_participant_identity(admission_secret_key, delivery_secret_key)?;
+        let encrypted_label =
+            seal_label(&invite_secret, &identity.admission_public_key, label)?;
         let participant = admission.admission_request(
             AdmissionAction::JoinSession {
                 session_id: &session_id,
             },
             &challenge,
             &delivery,
-            clean_label(label),
+            encrypted_label,
         );
         let joined = client
             .join_session(&session_id, &JoinSessionReq { participant })
             .await
             .map_err(client_error)?;
 
-        Ok(map_auth_session(joined, identity))
+        Ok(map_auth_session(joined, identity, Some(&invite_secret)))
     })
 }
 
@@ -772,6 +789,7 @@ pub fn resume_multisig_participant(
     session_id: String,
     admission_secret_key: String,
     delivery_secret_key: String,
+    invite_secret: Option<String>,
 ) -> Result<ApiMultisigAuthSession, String> {
     block_on(async move {
         let client = Coordinator2Client::new(coordinator_url);
@@ -780,7 +798,7 @@ pub fn resume_multisig_participant(
         let resumed =
             resume_participant_auth_session(&client, session_id, &admission, &delivery).await?;
 
-        Ok(map_auth_session(resumed, identity))
+        Ok(map_auth_session(resumed, identity, invite_secret.as_deref()))
     })
 }
 
@@ -788,6 +806,7 @@ pub fn get_multisig_session(
     coordinator_url: String,
     session_id: String,
     access_token: String,
+    invite_secret: Option<String>,
 ) -> Result<ApiMultisigSession, String> {
     block_on(async move {
         let client = Coordinator2Client::new(coordinator_url);
@@ -796,7 +815,7 @@ pub fn get_multisig_session(
             .await
             .map_err(client_error)?;
 
-        Ok(map_session(session))
+        Ok(map_session(session, invite_secret.as_deref()))
     })
 }
 
@@ -805,6 +824,7 @@ pub fn lock_multisig_session(
     session_id: String,
     access_token: String,
     threshold: u16,
+    invite_secret: Option<String>,
 ) -> Result<ApiMultisigSession, String> {
     block_on(async move {
         let client = Coordinator2Client::new(coordinator_url);
@@ -813,7 +833,7 @@ pub fn lock_multisig_session(
             .await
             .map_err(client_error)?;
 
-        Ok(map_session(session))
+        Ok(map_session(session, invite_secret.as_deref()))
     })
 }
 
@@ -824,9 +844,15 @@ pub fn advance_multisig_create(
     access_token: String,
     admission_secret_key: String,
     delivery_secret_key: String,
+    invite_secret: Option<String>,
     local_state_json: Option<String>,
 ) -> Result<ApiMultisigCreateAdvance, String> {
     block_on(async move {
+        // Shadows the free function so every progress return below decrypts
+        // participant labels with this call's invite secret.
+        let create_progress = |session, state, detail, waiting| {
+            create_progress_with(session, state, detail, waiting, invite_secret.as_deref())
+        };
         let client = Coordinator2Client::new(coordinator_url);
         let mut session = client
             .get_session(&session_id, &access_token)
@@ -1224,6 +1250,61 @@ async fn prepare_multisig_signing_request_inner(
     })
 }
 
+/// Publishes the local participant's label for the finalized vault as a
+/// broadcast message encrypted to the group-derived metadata keypair. The
+/// coordinator relays ciphertext only. Safe to call repeatedly: the
+/// idempotency key is stable and a same-key replay (or the 409 produced by
+/// a re-encrypted retry) counts as already published.
+pub fn post_multisig_vault_label(
+    coordinator_url: String,
+    session_id: String,
+    participant_id: String,
+    access_token: String,
+    roster_hash: String,
+    group_public_package_json: String,
+    label: String,
+) -> Result<(), String> {
+    block_on(async move {
+        let label = label.trim();
+        if label.is_empty() {
+            return Err("Label is empty.".to_string());
+        }
+        let vault = vault_delivery_keypair(group_public_package_json.as_bytes())
+            .map_err(|e| format!("Invalid group public package: {e}"))?;
+        let ctx = E2eContext {
+            session_id: &session_id,
+            roster_hash: Some(&roster_hash),
+            kind: "vault_label",
+            from_participant_id: &participant_id,
+            to_participant_id: None,
+            related_id: None,
+        };
+        let body = serde_json::json!({ "version": 1, "label": label });
+        let body_json = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
+        let envelope = encrypt_for(&vault.public_key_b64(), &ctx, &body_json)
+            .map_err(|e| e.to_string())?;
+        let key = idempotency_key("vault-label", &[&session_id, &participant_id]);
+        let client = Coordinator2Client::new(coordinator_url);
+        match client
+            .post_message_with_idempotency(&session_id, &access_token, &key, &envelope)
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                let text = client_error(err);
+                // A retry re-encrypts with a fresh nonce, so the stable key
+                // conflicts with the stored request hash — the label is
+                // already published.
+                if text.contains("reused with a different request") {
+                    Ok(())
+                } else {
+                    Err(text)
+                }
+            }
+        }
+    })
+}
+
 pub fn get_multisig_signing_request(
     coordinator_url: String,
     signing_request_id: String,
@@ -1247,12 +1328,22 @@ pub fn get_multisig_signing_inbox(
     access_token: String,
     roster_hash: String,
     delivery_secret_key: String,
+    group_public_package_json: Option<String>,
     after: i64,
 ) -> Result<ApiMultisigSigningInbox, String> {
     block_on(async move {
         let client = Coordinator2Client::new(coordinator_url);
         let delivery = DeliveryKeypair::from_secret_b64(&delivery_secret_key)
             .map_err(|e| format!("Invalid delivery secret key: {e}"))?;
+        // Broadcast vault metadata (participant labels) is encrypted to the
+        // keypair every member derives from the group public package.
+        let vault = match group_public_package_json.as_deref() {
+            Some(json) => Some(
+                vault_delivery_keypair(json.as_bytes())
+                    .map_err(|e| format!("Invalid group public package: {e}"))?,
+            ),
+            None => None,
+        };
         let inbox = client
             .inbox(&session_id, &access_token, after)
             .await
@@ -1264,16 +1355,26 @@ pub fn get_multisig_signing_inbox(
                 matches!(
                     message.kind.as_str(),
                     "tx_request" | "tx_round1" | "tx_round2" | "broadcast_result"
+                        | "vault_label"
                 )
             })
             .map(|message| {
-                let (plaintext_json, decrypt_error) = match decrypt_signing_message(
-                    &session_id,
-                    &participant_id,
-                    &roster_hash,
-                    &delivery,
-                    &message,
-                ) {
+                let keypair = if message.kind == "vault_label" {
+                    vault.as_ref()
+                } else {
+                    Some(&delivery)
+                };
+                let (plaintext_json, decrypt_error) = match keypair
+                    .ok_or_else(|| "Vault metadata key unavailable.".to_string())
+                    .and_then(|keypair| {
+                        decrypt_signing_message(
+                            &session_id,
+                            &participant_id,
+                            &roster_hash,
+                            keypair,
+                            &message,
+                        )
+                    }) {
                     Ok(bytes) => match String::from_utf8(bytes) {
                         Ok(value) => (Some(value), None),
                         Err(e) => (None, Some(format!("Message is not UTF-8 JSON: {e}"))),
@@ -1872,6 +1973,7 @@ fn ensure_auth_owner(
 fn map_auth_session(
     value: AuthSessionResp,
     identity: ApiMultisigParticipantIdentity,
+    invite_secret: Option<&str>,
 ) -> ApiMultisigAuthSession {
     ApiMultisigAuthSession {
         session_id: value.session_id,
@@ -1885,7 +1987,7 @@ fn map_auth_session(
         access_token_expires_at: value.access_token_expires_at,
         refresh_token_expires_at: value.refresh_token_expires_at,
         state: value.state.as_str().to_string(),
-        participant: map_participant(value.participant),
+        participant: map_participant(value.participant, invite_secret),
     }
 }
 
@@ -1938,7 +2040,7 @@ fn map_tokens(value: AuthTokenResp) -> ApiMultisigTokens {
     }
 }
 
-fn map_session(value: SessionResp) -> ApiMultisigSession {
+fn map_session(value: SessionResp, invite_secret: Option<&str>) -> ApiMultisigSession {
     ApiMultisigSession {
         session_id: value.session_id,
         state: value.state.as_str().to_string(),
@@ -1949,7 +2051,7 @@ fn map_session(value: SessionResp) -> ApiMultisigSession {
         participants: value
             .participants
             .into_iter()
-            .map(map_participant)
+            .map(|participant| map_participant(participant, invite_secret))
             .collect(),
         created_at: value.created_at,
         updated_at: value.updated_at,
@@ -1972,14 +2074,40 @@ fn map_signing_request(value: SigningRequestResp, pczt_hash: String) -> ApiMulti
     }
 }
 
-fn map_participant(value: ParticipantResp) -> ApiMultisigParticipant {
+fn map_participant(
+    value: ParticipantResp,
+    invite_secret: Option<&str>,
+) -> ApiMultisigParticipant {
+    // The coordinator only relays a sealed label; without the invite secret
+    // (or when the seal does not verify for this participant's admission
+    // key) the participant simply has no label and the UI falls back to the
+    // short participant id.
+    let label = match (invite_secret, value.encrypted_label.as_deref()) {
+        (Some(secret), Some(sealed)) => {
+            open_session_label(secret, &value.admission_public_key, sealed).ok()
+        }
+        _ => None,
+    };
     ApiMultisigParticipant {
         participant_id: value.participant_id,
-        label: value.label,
+        label,
         admission_public_key: value.admission_public_key,
         delivery_public_key: value.delivery_public_key,
         joined_at: value.joined_at,
         dkg_completed: value.dkg_completed,
+    }
+}
+
+fn seal_label(
+    invite_secret: &str,
+    admission_public_key: &str,
+    label: Option<String>,
+) -> Result<Option<String>, String> {
+    match clean_label(label) {
+        Some(label) => seal_session_label(invite_secret, admission_public_key, &label)
+            .map(Some)
+            .map_err(|e| format!("Failed to seal label: {e}")),
+        None => Ok(None),
     }
 }
 
@@ -2922,11 +3050,12 @@ fn session_state_phase(message: &str) -> String {
     message.to_string()
 }
 
-fn create_progress(
+fn create_progress_with(
     session: SessionResp,
     state: LocalCreateState,
     detail: String,
     waiting_for_participant_ids: Vec<String>,
+    invite_secret: Option<&str>,
 ) -> Result<ApiMultisigCreateAdvance, String> {
     let phase = if session.state.as_str() != "request_create" {
         session.state.as_str().to_string()
@@ -2951,7 +3080,7 @@ fn create_progress(
     };
     let local_state_json = serde_json::to_string(&state).map_err(|e| e.to_string())?;
     Ok(ApiMultisigCreateAdvance {
-        session: map_session(session),
+        session: map_session(session, invite_secret),
         local_state_json,
         phase,
         detail,

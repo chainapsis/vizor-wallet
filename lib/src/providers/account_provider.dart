@@ -21,8 +21,10 @@ import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
 import 'app_security_provider.dart';
 import 'multisig_account_material_provider.dart';
+import 'multisig_coordinator_service.dart';
 import 'multisig_pending_session_provider.dart';
 import 'multisig_signing_request_provider.dart';
+import 'multisig_vault_label_store.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
 import 'voting/voting_submission_guard_provider.dart';
@@ -941,6 +943,41 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           ),
         );
         ref.invalidate(multisigAccountMaterialsProvider);
+
+        // The pending session (and with it the invite secret) is deleted
+        // below, so labels for the finalized vault live in the vault label
+        // store from here on. Seed our own label and, as a safety net for
+        // an advance-create publish that never went through, post it under
+        // the vault metadata key (best-effort).
+        final ownLabel = session.label?.trim();
+        if (ownLabel != null && ownLabel.isNotEmpty) {
+          try {
+            await ref
+                .read(multisigVaultLabelStoreProvider)
+                .setLabels(session.storageId, {
+                  session.participantId: ownLabel,
+                });
+          } catch (e) {
+            log('finalizeMultisigAccount: vault label seed failed: $e');
+          }
+          if (session.vaultLabelPostedAt == null) {
+            try {
+              await ref
+                  .read(multisigCoordinatorServiceProvider)
+                  .postVaultLabel(
+                    coordinatorUrl: session.coordinatorUrl,
+                    sessionId: session.sessionId,
+                    participantId: session.participantId,
+                    accessToken: session.accessToken,
+                    rosterHash: rosterHash,
+                    groupPublicPackageJson: verification.groupPublicPackageJson,
+                    label: ownLabel,
+                  );
+            } catch (e) {
+              log('finalizeMultisigAccount: vault label publish failed: $e');
+            }
+          }
+        }
 
         final newAccount = AccountInfo(
           uuid: importedAccountUuid,

@@ -155,7 +155,10 @@ void main() {
     expect(find.byKey(kMultisigSetupPasswordFieldKey), findsOneWidget);
     expect(find.byKey(kMultisigSetupConfirmPasswordFieldKey), findsNothing);
 
-    await tester.enterText(find.byType(EditableText).at(0), 'session-join');
+    await tester.enterText(
+      find.byType(EditableText).at(0),
+      'session-join#invite-secret',
+    );
     await tester.enterText(find.byType(EditableText).at(3), 'password123');
     await tester.tap(find.text('Join session'));
     await tester.pumpAndSettle();
@@ -378,6 +381,9 @@ class _FakeMultisigCoordinatorService extends RustMultisigCoordinatorService {
   final joinCalls = <String>[];
 
   @override
+  String generateInviteSecret() => 'invite-secret';
+
+  @override
   rust_multisig.ApiMultisigParticipantIdentity generateParticipantIdentity() {
     return const rust_multisig.ApiMultisigParticipantIdentity(
       admissionSecretKey: 'admission-secret',
@@ -391,6 +397,7 @@ class _FakeMultisigCoordinatorService extends RustMultisigCoordinatorService {
   Future<rust_multisig.ApiMultisigAuthSession> createSession({
     required String coordinatorUrl,
     required rust_multisig.ApiMultisigParticipantIdentity identity,
+    required String inviteSecret,
     String? label,
   }) async {
     createCalls.add('$coordinatorUrl|$label|${identity.admissionSecretKey}');
@@ -404,6 +411,7 @@ class _FakeMultisigCoordinatorService extends RustMultisigCoordinatorService {
     required String coordinatorUrl,
     required String sessionId,
     required rust_multisig.ApiMultisigParticipantIdentity identity,
+    required String inviteSecret,
     String? label,
   }) async {
     joinCalls.add('$coordinatorUrl|$sessionId|$label');
