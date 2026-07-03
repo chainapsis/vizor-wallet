@@ -314,6 +314,41 @@ void main() {
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'keeps the shield up while the screenshot warning sheet is open over the '
+    'seed',
+    (tester) async {
+      final screenshots = StreamController<void>();
+      addTearDown(screenshots.close);
+      final privacyController = SensitivePrivacyOverlayController(
+        initiallySafe: false,
+      );
+      addTearDown(privacyController.dispose);
+      _mockClipboard(tester, 'one two three');
+
+      await tester.pumpWidget(
+        _screenshotApp(
+          screenshotStream: screenshots.stream,
+          privacyOverlayController: privacyController,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+
+      // A screenshot opens the warning bottom sheet — a non-opaque popup route.
+      // The mnemonic is still behind it, so RouteCoverageAware must NOT treat
+      // the screen as covered; the shield must stay up so a second screenshot
+      // or app-switcher snapshot is still blanked.
+      screenshots.add(null);
+      await tester.pumpAndSettle();
+      expect(find.byType(MobileSeedScreenshotWarningSheet), findsOneWidget);
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+    },
+  );
 }
 
 class _RustApiFake implements RustLibApi {
