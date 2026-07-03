@@ -179,7 +179,10 @@ class SensitivePrivacyOverlayController extends ChangeNotifier {
   /// screenshot preview/editor causes. The native secure-field blanking already
   /// blacks out the actual capture and the warning sheet already explains it, so
   /// the extra blur flash during the screenshot flow is pure noise. The
-  /// environment controller auto-releases this on the next foreground return.
+  /// The caller releases this via [endScreenshotSuppression] when the warning
+  /// sheet closes, so the suppression is scoped to the active screenshot flow
+  /// rather than a fixed timeout — a genuine backgrounding once the sheet is
+  /// gone still blurs.
   void beginScreenshotSuppression() {
     if (_screenshotSuppressionActive) return;
     _screenshotSuppressionActive = true;
@@ -264,7 +267,6 @@ class SensitivePrivacyEnvironmentController
   bool _macOSNativeSafe = true;
   bool _disposed = false;
   bool _deferAuthClear = false;
-  Timer? _screenshotSuppressionTimer;
 
   @override
   void beginAuthPrompt() {
@@ -291,26 +293,15 @@ class SensitivePrivacyEnvironmentController
 
   @override
   void beginScreenshotSuppression() {
-    final wasActive = _screenshotSuppressionActive;
-    _screenshotSuppressionActive = true;
-    // Backstop: if the app never goes inactive (the user ignores the preview),
-    // release after a short window so a genuine later backgrounding still
-    // blurs. It only clears while already foreground; if the editor is still
-    // up (inactive), the foreground transition clears it instead, so the
-    // shield never flashes during the editor dismiss animation.
-    _screenshotSuppressionTimer?.cancel();
-    _screenshotSuppressionTimer = Timer(const Duration(seconds: 8), () {
-      if (!_lifecycleInactive) endScreenshotSuppression();
-    });
-    if (!wasActive) _syncSafety();
+    if (_disposed || _screenshotSuppressionActive) return;
+    super.beginScreenshotSuppression();
+    _syncSafety();
   }
 
   @override
   void endScreenshotSuppression() {
-    _screenshotSuppressionTimer?.cancel();
-    _screenshotSuppressionTimer = null;
-    if (!_screenshotSuppressionActive) return;
-    _screenshotSuppressionActive = false;
+    if (_disposed || !_screenshotSuppressionActive) return;
+    super.endScreenshotSuppression();
     _syncSafety();
   }
 
@@ -344,13 +335,6 @@ class SensitivePrivacyEnvironmentController
       // frame where content is visible, unsuppressed, and unsafe.
       _deferAuthClear = false;
       _authPromptActive = false;
-    }
-    if (_screenshotSuppressionActive) {
-      // The iOS screenshot preview/editor handed foreground back; drop the
-      // suppression so a genuine later backgrounding blurs normally.
-      _screenshotSuppressionTimer?.cancel();
-      _screenshotSuppressionTimer = null;
-      _screenshotSuppressionActive = false;
     }
     _syncSafety();
   }
@@ -388,7 +372,6 @@ class SensitivePrivacyEnvironmentController
   @override
   void dispose() {
     _disposed = true;
-    _screenshotSuppressionTimer?.cancel();
     _macOSExposureSub?.cancel();
     _lifecycleListener?.dispose();
     if (_supportsPlatformPrivacySignals) {

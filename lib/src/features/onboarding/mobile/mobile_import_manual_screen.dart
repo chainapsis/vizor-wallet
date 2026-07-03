@@ -115,6 +115,9 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
       );
     } finally {
       _screenshotSheetShowing = false;
+      // Release the shield suppression now the warning sheet is gone, so a
+      // genuine later backgrounding still blurs.
+      _privacyController.endScreenshotSuppression();
     }
   }
 
