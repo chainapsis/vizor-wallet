@@ -70,10 +70,13 @@ const _mobileKeystoneScanWindowSize = 285.0;
 const _mobileKeystoneScanWindowTop = 293.0;
 const _mobileKeystoneScanWindowCenterXOffset = 1.0;
 const _mobileKeystoneScanCaptionTop = 628.0;
+const _mobileKeystoneScanCaptionHeight = 75.0;
 const _mobileKeystoneScanCaptionWidth = 263.0;
 const _mobileKeystoneScanActionTop = 762.0;
 const _mobileKeystoneScanActionInset = AppSpacing.base;
 const _mobileKeystoneScanActionSize = 40.0;
+const _mobileKeystoneScanMinCaptionGap = 12.0;
+const _mobileKeystoneScanMinActionGap = AppSpacing.sm;
 const _mobileKeystoneFlashlightIconSize = 30.0;
 const _mobileKeystoneQrActionIconSize = 26.0;
 const _mobileKeystoneProgressTrackWidth = 196.0;
@@ -533,15 +536,12 @@ class _MobileKeystonePcztSigningFlowState
       );
     }
 
-    return ClipRRect(
+    return ColoredBox(
       key: _key('qr_frame'),
-      borderRadius: BorderRadius.circular(24),
-      child: ColoredBox(
-        color: Colors.white,
-        child: SizedBox.square(
-          dimension: frameSize,
-          child: _buildQrContent(size: frameSize),
-        ),
+      color: Colors.white,
+      child: SizedBox.square(
+        dimension: frameSize,
+        child: _buildQrContent(size: frameSize),
       ),
     );
   }
@@ -614,6 +614,49 @@ class _MobileKeystonePcztSigningFlowState
           final actionInset =
               ((constraints.maxWidth - _mobileKeystoneDesignWidth) / 2) +
               _mobileKeystoneScanActionInset;
+          final viewfinderTop = _scannerTopFor(
+            constraints,
+            designTop: _mobileKeystoneScanWindowTop,
+            height: _mobileKeystoneScanWindowSize,
+          );
+          final desiredCaptionTop = _scannerTopFor(
+            constraints,
+            designTop: _mobileKeystoneScanCaptionTop,
+            height: _mobileKeystoneScanCaptionHeight,
+          );
+          final desiredActionTop = _scannerTopFor(
+            constraints,
+            designTop: _mobileKeystoneScanActionTop,
+            height: _mobileKeystoneScanActionSize,
+          );
+          final maxActionTop = math.max(
+            0.0,
+            constraints.maxHeight -
+                _mobileKeystoneScanActionSize -
+                AppSpacing.xxs,
+          );
+          final minCaptionTop =
+              viewfinderTop +
+              _mobileKeystoneScanWindowSize +
+              _mobileKeystoneScanMinCaptionGap;
+          final maxCaptionTop = math.max(
+            minCaptionTop,
+            maxActionTop -
+                _mobileKeystoneScanMinActionGap -
+                _mobileKeystoneScanCaptionHeight,
+          );
+          final captionTop = desiredCaptionTop
+              .clamp(minCaptionTop, maxCaptionTop)
+              .toDouble();
+          final actionTop = math
+              .max(
+                desiredActionTop,
+                captionTop +
+                    _mobileKeystoneScanCaptionHeight +
+                    _mobileKeystoneScanMinActionGap,
+              )
+              .clamp(0.0, maxActionTop)
+              .toDouble();
 
           return Stack(
             fit: StackFit.expand,
@@ -628,11 +671,7 @@ class _MobileKeystonePcztSigningFlowState
                     constraints.maxWidth - _mobileKeystoneScanWindowSize,
                   ),
                 ),
-                top: _scannerTopFor(
-                  constraints,
-                  designTop: _mobileKeystoneScanWindowTop,
-                  height: _mobileKeystoneScanWindowSize,
-                ),
+                top: viewfinderTop,
                 width: _mobileKeystoneScanWindowSize,
                 height: _mobileKeystoneScanWindowSize,
                 child: SizedBox(
@@ -689,11 +728,7 @@ class _MobileKeystonePcztSigningFlowState
                         AppSpacing.sm,
                   ),
                 ),
-                top: _scannerTopFor(
-                  constraints,
-                  designTop: _mobileKeystoneScanCaptionTop,
-                  height: 75,
-                ),
+                top: captionTop,
                 width: _mobileKeystoneScanCaptionWidth,
                 child: SizedBox(
                   key: _key('scan_caption'),
@@ -706,11 +741,7 @@ class _MobileKeystonePcztSigningFlowState
                 ),
               ),
               Positioned(
-                top: _scannerTopFor(
-                  constraints,
-                  designTop: _mobileKeystoneScanActionTop,
-                  height: _mobileKeystoneScanActionSize,
-                ),
+                top: actionTop,
                 left: actionInset.clamp(
                   AppSpacing.sm,
                   math.max(
@@ -742,11 +773,7 @@ class _MobileKeystonePcztSigningFlowState
                 ),
               ),
               Positioned(
-                top: _scannerTopFor(
-                  constraints,
-                  designTop: _mobileKeystoneScanActionTop,
-                  height: _mobileKeystoneScanActionSize,
-                ),
+                top: actionTop,
                 right: actionInset.clamp(
                   AppSpacing.sm,
                   math.max(

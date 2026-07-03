@@ -180,6 +180,58 @@ void main() {
     );
   });
 
+  testWidgets('does not clip the scan-optimized QR surface', (tester) async {
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, _) => Center(
+            child: TextButton(
+              key: const ValueKey('open_signing'),
+              onPressed: () => context.push('/sign'),
+              child: const Text('Open signing'),
+            ),
+          ),
+        ),
+        GoRoute(
+          path: '/sign',
+          builder: (_, _) => MobileKeystonePcztSigningFlow(
+            title: 'Confirm transaction',
+            description: 'Scan with Keystone.',
+            keyPrefix: 'test_keystone_sign',
+            preparePczt: (_, _) async => MobileKeystonePcztSigningPayload(
+              urParts: const ['ur:zcash-pczt/test'],
+              pcztWithProofs: Future.value(const [1, 2, 3]),
+            ),
+            onSigned: (_, _, _, _) async {},
+            friendlyError: (_) => 'Keystone signing failed.',
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.light, child: child!),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('open_signing')));
+    await tester.pumpAndSettle();
+
+    final qrStage = find.byKey(const ValueKey('test_keystone_sign_qr_stage'));
+    expect(qrStage, findsOneWidget);
+    expect(
+      find.ancestor(of: qrStage, matching: find.byType(ClipRRect)),
+      findsNothing,
+    );
+  });
+
   testWidgets('clears fallback text decorations on full-screen routes', (
     tester,
   ) async {
@@ -421,6 +473,84 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'keeps scanner caption clear of the viewfinder on short screens',
+    (tester) async {
+      tester.view.physicalSize = const Size(393, 667);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final router = GoRouter(
+        initialLocation: '/',
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (context, _) => Center(
+              child: TextButton(
+                key: const ValueKey('open_signing'),
+                onPressed: () => context.push('/sign'),
+                child: const Text('Open signing'),
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/sign',
+            builder: (_, _) => MobileKeystonePcztSigningFlow(
+              title: 'Confirm transaction',
+              description: 'Scan with Keystone.',
+              keyPrefix: 'test_keystone_sign',
+              preparePczt: (_, _) async => MobileKeystonePcztSigningPayload(
+                urParts: const ['ur:zcash-pczt/test'],
+                pcztWithProofs: Future.value(const [1, 2, 3]),
+              ),
+              scannerBuilder: (_, _, _) =>
+                  const SizedBox(key: ValueKey('fake_keystone_scanner')),
+              forceScannerActiveForTesting: true,
+              onSigned: (_, _, _, _) async {},
+              friendlyError: (_) => 'Keystone signing failed.',
+            ),
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.light, child: child!),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('open_signing')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('test_keystone_sign_get_signature')),
+      );
+      await tester.pump();
+
+      final viewfinder = find.byKey(
+        const ValueKey('test_keystone_sign_scan_viewfinder'),
+      );
+      final caption = find.byKey(
+        const ValueKey('test_keystone_sign_scan_caption'),
+      );
+      final flashlight = find.byKey(
+        const ValueKey('test_keystone_sign_flashlight_action'),
+      );
+
+      final viewfinderBottom = tester.getBottomLeft(viewfinder).dy;
+      final captionTop = tester.getTopLeft(caption).dy;
+      final captionBottom = tester.getBottomLeft(caption).dy;
+      final actionTop = tester.getTopLeft(flashlight).dy;
+
+      expect(captionTop, greaterThanOrEqualTo(viewfinderBottom + 12));
+      expect(actionTop, greaterThanOrEqualTo(captionBottom + 16));
+      expect(tester.getBottomLeft(flashlight).dy, lessThanOrEqualTo(667));
+    },
+  );
 
   testWidgets('ignores repeated scan completions after signing failure', (
     tester,
