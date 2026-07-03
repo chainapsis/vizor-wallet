@@ -181,7 +181,7 @@ class _MobileSendStatusScreenState
       _MobileSendStatusPhase.succeeded =>
         'You will find your transaction in the Activity page.',
       _MobileSendStatusPhase.failed =>
-        'Your ZEC will be refunded, minus the transaction fee.',
+        "Send didn't go through. No ZEC or fee was spent.",
     };
   }
 

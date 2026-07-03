@@ -243,7 +243,7 @@ void main() {
     expect(find.byKey(const ValueKey('mobile_send_status_failed')), findsOne);
     expect(find.text('Send failed'), findsOneWidget);
     expect(
-      find.text('Your ZEC will be refunded, minus the transaction fee.'),
+      find.text("Send didn't go through. No ZEC or fee was spent."),
       findsOneWidget,
     );
     expect(find.text('Return home'), findsOneWidget);
