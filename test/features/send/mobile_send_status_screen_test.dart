@@ -92,7 +92,7 @@ void main() {
     expect(_statusRouteCanPop(tester), isFalse);
   });
 
-  testWidgets('broadcast success shows the complete state with medium haptic', (
+  testWidgets('broadcast success shows the complete state with ripple haptic', (
     tester,
   ) async {
     final haptics = <Object?>[];
@@ -141,6 +141,14 @@ void main() {
 
     // Ripple + icon crossfade are finite; the succeeded state settles.
     await tester.pumpAndSettle();
+    expect(
+      haptics,
+      containsAllInOrder([
+        'HapticFeedbackType.mediumImpact',
+        'HapticFeedbackType.lightImpact',
+        'HapticFeedbackType.selectionClick',
+      ]),
+    );
     expect(
       find.byKey(const ValueKey('mobile_send_status_icon_success')),
       findsOneWidget,

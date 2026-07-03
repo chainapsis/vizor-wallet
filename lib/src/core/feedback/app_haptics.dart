@@ -24,6 +24,16 @@ abstract final class AppHaptics {
   /// Copying sensitive values — a light confirmation tap.
   static Future<void> copy() => HapticFeedback.lightImpact();
 
+  /// Send success confirmation — a clear center pulse followed by two
+  /// softer outward echoes to match the expanding success circle.
+  static Future<void> successRipple() async {
+    await HapticFeedback.mediumImpact();
+    await Future<void>.delayed(const Duration(milliseconds: 90));
+    await HapticFeedback.lightImpact();
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    await HapticFeedback.selectionClick();
+  }
+
   /// A rejected passcode. Native notification-error where the platform
   /// has one (iOS UINotificationFeedbackGenerator(.error), Android
   /// REJECT on API 30+); otherwise a double heavy knock approximates

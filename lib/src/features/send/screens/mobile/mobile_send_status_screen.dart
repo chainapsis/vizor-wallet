@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart'
     show kMobileTopNavHeight;
@@ -133,12 +134,11 @@ class _MobileSendStatusScreenState
       };
       _statusMessage = outcome.statusMessage;
     });
-    // Figma comments on 5497:22398 / 5498:22300: success = medium
-    // haptic with the circle-grow animation, failure = low haptic with
-    // the shake.
+    // Figma comments on 5497:22398 / 5498:22300: success = medium haptic
+    // with the circle-grow animation, failure = low haptic with the shake.
     switch (_phase) {
       case _MobileSendStatusPhase.succeeded:
-        unawaited(HapticFeedback.mediumImpact());
+        unawaited(AppHaptics.successRipple());
       case _MobileSendStatusPhase.failed:
         unawaited(HapticFeedback.lightImpact());
       case _MobileSendStatusPhase.sending:
