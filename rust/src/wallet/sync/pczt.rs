@@ -122,8 +122,6 @@ pub(crate) struct ExtractedPcztTransaction {
     pub tx: Transaction,
 }
 
-const LEGACY_V5_TX_VERSION: u32 = 5;
-
 fn legacy_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
     static LEGACY_ORCHARD_PROVING_KEY: OnceLock<orchard::circuit::ProvingKey> = OnceLock::new();
     LEGACY_ORCHARD_PROVING_KEY.get_or_init(|| {
@@ -137,20 +135,53 @@ fn ironwood_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
         .get_or_init(|| orchard::circuit::ProvingKey::build(ironwood_orchard_circuit_version()))
 }
 
-fn orchard_proving_key_for_tx_version(tx_version: u32) -> &'static orchard::circuit::ProvingKey {
-    if tx_version == LEGACY_V5_TX_VERSION {
-        legacy_orchard_proving_key()
-    } else {
+/// The Orchard circuit version implied by a PCZT's `consensus_branch_id`.
+///
+/// Per ZIP 229 the Orchard bundle format — and therefore the circuit its
+/// proofs are built and verified with — is keyed on the consensus branch, NOT
+/// the transaction version (the pczt crate's `orchard_bundle_format` applies
+/// the same branch-keyed mapping when parsing the bundle). In particular a
+/// post-NU6.3 legacy-V5 transaction still carries an `orchard_v3`-format
+/// bundle, so it needs the post-NU6.3 keys; branches at or before NU6.2 use
+/// the fixed post-NU6.2 circuit (never the insecure pre-NU6.2 one — the
+/// wallet only proves new transactions, never reconstructs historical keys).
+fn orchard_circuit_version_for_consensus_branch(
+    consensus_branch_id: u32,
+) -> orchard::circuit::OrchardCircuitVersion {
+    #[cfg(zcash_unstable = "nu6.3")]
+    if matches!(
+        zcash_protocol::consensus::BranchId::try_from(consensus_branch_id),
+        Ok(zcash_protocol::consensus::BranchId::Nu6_3)
+    ) {
+        return ironwood_orchard_circuit_version();
+    }
+    #[cfg(not(zcash_unstable = "nu6.3"))]
+    let _ = consensus_branch_id;
+    orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2
+}
+
+/// Selects the cached Orchard proving key for the circuit implied by a PCZT's
+/// consensus branch (see [`orchard_circuit_version_for_consensus_branch`]).
+fn orchard_proving_key_for_consensus_branch(
+    consensus_branch_id: u32,
+) -> &'static orchard::circuit::ProvingKey {
+    if orchard_circuit_version_for_consensus_branch(consensus_branch_id)
+        == orchard::circuit::OrchardCircuitVersion::PostNu6_3
+    {
         ironwood_orchard_proving_key()
+    } else {
+        legacy_orchard_proving_key()
     }
 }
 
-fn orchard_verifying_key_for_tx_version(tx_version: u32) -> orchard::circuit::VerifyingKey {
-    orchard::circuit::VerifyingKey::build(if tx_version == LEGACY_V5_TX_VERSION {
-        orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2
-    } else {
-        ironwood_orchard_circuit_version()
-    })
+/// Builds the Orchard verifying key for the circuit implied by a PCZT's
+/// consensus branch (see [`orchard_circuit_version_for_consensus_branch`]).
+fn orchard_verifying_key_for_consensus_branch(
+    consensus_branch_id: u32,
+) -> orchard::circuit::VerifyingKey {
+    orchard::circuit::VerifyingKey::build(orchard_circuit_version_for_consensus_branch(
+        consensus_branch_id,
+    ))
 }
 
 fn ironwood_orchard_circuit_version() -> orchard::circuit::OrchardCircuitVersion {
@@ -242,13 +273,13 @@ pub fn add_proofs_to_pczt(
     use pczt::roles::prover::Prover;
 
     let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
-    let tx_version = *pczt.global().tx_version();
+    let consensus_branch_id = *pczt.global().consensus_branch_id();
 
     let mut prover = Prover::new(pczt);
 
     if prover.requires_orchard_proof() {
         prover = prover
-            .create_orchard_proof(orchard_proving_key_for_tx_version(tx_version))
+            .create_orchard_proof(orchard_proving_key_for_consensus_branch(consensus_branch_id))
             .map_err(|e| format!("Orchard proof: {e:?}"))?;
     }
 
@@ -470,8 +501,8 @@ fn finalize_and_extract(
         .finalize_spends()
         .map_err(|e| format!("Finalize transparent spends in PCZT: {e:?}"))?;
 
-    let tx_version = *finalized_pczt.global().tx_version();
-    let orchard_vk = orchard_verifying_key_for_tx_version(tx_version);
+    let consensus_branch_id = *finalized_pczt.global().consensus_branch_id();
+    let orchard_vk = orchard_verifying_key_for_consensus_branch(consensus_branch_id);
     #[cfg(zcash_unstable = "nu6.3")]
     let ironwood_vk = orchard::circuit::VerifyingKey::build(ironwood_orchard_circuit_version());
 
@@ -701,8 +732,8 @@ pub async fn extract_and_broadcast_pczt(
             // store anything.
             let sapling_vk_pair = sapling_vks.as_ref().map(|(s, o)| (s, o));
             let combined_pczt = combine_pczts(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?;
-            let tx_version = *combined_pczt.global().tx_version();
-            let orchard_vk = orchard_verifying_key_for_tx_version(tx_version);
+            let consensus_branch_id = *combined_pczt.global().consensus_branch_id();
+            let orchard_vk = orchard_verifying_key_for_consensus_branch(consensus_branch_id);
             match extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
                 &mut db,
                 combined_pczt,
@@ -923,6 +954,37 @@ mod tests {
 
         assert_eq!(err, "Broadcast rejected: bad-txns-inputs-spent (code 18)");
         assert_eq!(store_calls.get(), 0);
+    }
+
+    #[test]
+    fn orchard_circuit_version_follows_consensus_branch() {
+        use zcash_protocol::consensus::BranchId;
+
+        // Branches at or before NU6.2 prove/verify the Orchard pool under the
+        // fixed post-NU6.2 circuit. NU6.2 matches the crate's own bundle-format
+        // mapping; earlier branches deliberately do NOT (the crate maps them to
+        // the insecure pre-NU6.2 format, which the wallet never proves with).
+        assert_eq!(
+            orchard_circuit_version_for_consensus_branch(u32::from(BranchId::Nu6_2)),
+            orchard::bundle::BundleVersion::orchard_v2().circuit_version(),
+        );
+        assert_eq!(
+            orchard_circuit_version_for_consensus_branch(u32::from(BranchId::Nu6_1)),
+            orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2,
+        );
+        assert_eq!(
+            orchard_circuit_version_for_consensus_branch(u32::from(BranchId::Nu5)),
+            orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2,
+        );
+
+        // NU6.3 selects the post-NU6.3 circuit from the branch alone — the tx
+        // version is not consulted, so a post-activation legacy-V5 PCZT gets
+        // the same keys as a V6 one (both carry `orchard_v3`-format bundles).
+        #[cfg(zcash_unstable = "nu6.3")]
+        assert_eq!(
+            orchard_circuit_version_for_consensus_branch(u32::from(BranchId::Nu6_3)),
+            orchard::bundle::BundleVersion::orchard_v3().circuit_version(),
+        );
     }
 
     #[test]

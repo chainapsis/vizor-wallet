@@ -285,7 +285,7 @@ pub fn propose_send(
     to_address: &str,
     amount_zatoshi: u64,
     memo_str: Option<&str>,
-    legacy_v5_pczt: bool,
+    _legacy_v5_pczt: bool,
 ) -> Result<ProposalResult, String> {
     use zcash_protocol::{PoolType, ShieldedProtocol as SP};
 
@@ -298,7 +298,7 @@ pub fn propose_send(
     let proposed_tx_version = proposed_tx_version_for_wallet_db(&db, network, "creating a send")?;
     let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
     let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
-    let mut proposal = propose_send_with_reserved_notes(
+    let pass1_proposal = propose_send_with_reserved_notes(
         &db,
         network,
         account_id,
@@ -307,20 +307,19 @@ pub fn propose_send(
         &migration_locks,
         proposed_tx_version,
     )?;
-    let mut stored_tx_version = proposed_tx_version;
-    if proposal_should_use_legacy_v5(&proposal, to_address, legacy_v5_pczt)? {
-        let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
-        proposal = propose_send_with_reserved_notes(
-            &db,
-            network,
-            account_id,
-            request,
-            &BTreeSet::new(),
-            &migration_locks,
-            Some(TxVersion::V5),
-        )?;
-        stored_tx_version = Some(TxVersion::V5);
-    }
+    let (proposal, stored_tx_version) =
+        propose_with_note_version_downgrade(pass1_proposal, proposed_tx_version, |tx_version| {
+            let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
+            propose_send_with_reserved_notes(
+                &db,
+                network,
+                account_id,
+                request,
+                &BTreeSet::new(),
+                &migration_locks,
+                tx_version,
+            )
+        });
 
     let needs_sapling = proposal
         .steps()
@@ -365,7 +364,10 @@ pub(crate) fn create_reserved_pczt_batch(
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
 ) -> Result<Vec<ReservedPcztBatchItem>, String> {
-    use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
+    use zcash_client_backend::data_api::wallet::{
+        create_pczt_from_proposal as zcb_create_pczt,
+        create_pczt_from_proposal_with_tx_version as zcb_create_pczt_with_tx_version,
+    };
 
     if requests.is_empty() {
         return Err("Batch requires at least one request".to_string());
@@ -373,6 +375,8 @@ pub(crate) fn create_reserved_pczt_batch(
 
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
+    let proposed_tx_version =
+        proposed_tx_version_for_wallet_db(&db, network, "creating a reserved batch")?;
     let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
     let mut reserved = BTreeSet::new();
     let mut items = Vec::with_capacity(requests.len());
@@ -390,16 +394,36 @@ pub(crate) fn create_reserved_pczt_batch(
             request.amount_zatoshi,
             request.memo.as_deref(),
         )?;
-        let proposal = propose_send_with_reserved_notes(
+        let pass1_proposal = propose_send_with_reserved_notes(
             &db,
             network,
             account_id,
             transaction_request,
             &reserved,
             &migration_locks,
-            None,
+            proposed_tx_version,
         )
         .map_err(|e| format!("Proposal {} failed: {e}", request.id))?;
+        let (proposal, decided_tx_version) = propose_with_note_version_downgrade(
+            pass1_proposal,
+            proposed_tx_version,
+            |tx_version| {
+                let transaction_request = build_send_request(
+                    &request.to_address,
+                    request.amount_zatoshi,
+                    request.memo.as_deref(),
+                )?;
+                propose_send_with_reserved_notes(
+                    &db,
+                    network,
+                    account_id,
+                    transaction_request,
+                    &reserved,
+                    &migration_locks,
+                    tx_version,
+                )
+            },
+        );
 
         for note_ref in proposal_selected_note_refs(&proposal) {
             reserved.insert(note_ref);
@@ -408,13 +432,24 @@ pub(crate) fn create_reserved_pczt_batch(
         let fee_zatoshi = proposal_fee_zatoshi(&proposal);
         let pczt = with_wallet_db_write_lock("send.create_reserved_pczt_batch", || {
             let mut write_db = open_wallet_db(db_path, network)?;
-            zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
-                &mut write_db,
-                &network,
-                account_id,
-                OvkPolicy::Sender,
-                &proposal,
-            )
+            if let Some(tx_version) = decided_tx_version {
+                zcb_create_pczt_with_tx_version::<_, _, Infallible, _, Infallible, _>(
+                    &mut write_db,
+                    &network,
+                    account_id,
+                    OvkPolicy::Sender,
+                    &proposal,
+                    tx_version,
+                )
+            } else {
+                zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+                    &mut write_db,
+                    &network,
+                    account_id,
+                    OvkPolicy::Sender,
+                    &proposal,
+                )
+            }
             .map_err(|e| format!("Create PCZT {} failed: {e}", request.id))
         })?;
         let pczt_bytes = pczt.serialize();
@@ -445,7 +480,7 @@ pub fn estimate_fee(
     to_address: &str,
     amount_zatoshi: u64,
     memo_str: Option<&str>,
-    legacy_v5_pczt: bool,
+    _legacy_v5_pczt: bool,
 ) -> Result<u64, String> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
@@ -453,7 +488,7 @@ pub fn estimate_fee(
         proposed_tx_version_for_wallet_db(&db, network, "estimating a send fee")?;
     let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
     let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
-    let mut proposal = propose_send_with_reserved_notes(
+    let pass1_proposal = propose_send_with_reserved_notes(
         &db,
         network,
         account_id,
@@ -462,26 +497,23 @@ pub fn estimate_fee(
         &migration_locks,
         proposed_tx_version,
     )?;
-    if proposal_should_use_legacy_v5(&proposal, to_address, legacy_v5_pczt)? {
-        let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
-        proposal = propose_send_with_reserved_notes(
-            &db,
-            network,
-            account_id,
-            request,
-            &BTreeSet::new(),
-            &migration_locks,
-            Some(TxVersion::V5),
-        )?;
-    }
+    // Same two-pass rule as `propose_send`, so the displayed estimate equals
+    // the stored proposal's fee.
+    let (proposal, _) =
+        propose_with_note_version_downgrade(pass1_proposal, proposed_tx_version, |tx_version| {
+            let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
+            propose_send_with_reserved_notes(
+                &db,
+                network,
+                account_id,
+                request,
+                &BTreeSet::new(),
+                &migration_locks,
+                tx_version,
+            )
+        });
 
-    let fee: u64 = proposal
-        .steps()
-        .iter()
-        .map(|step| u64::from(step.balance().fee_required()))
-        .sum();
-
-    Ok(fee)
+    Ok(proposal_fee_zatoshi(&proposal))
 }
 
 /// Estimate the maximum recipient amount for the current destination and memo.
@@ -496,13 +528,23 @@ pub(crate) fn estimate_send_max(
     account_uuid: &str,
     to_address: &str,
     memo_str: Option<&str>,
-    legacy_v5_pczt: bool,
+    _legacy_v5_pczt: bool,
 ) -> Result<SendMaxEstimateResult, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
     let proposed_tx_version =
         proposed_tx_version_for_wallet_db(&db, network, "estimating max send")?;
-    let mut proposal = build_send_max_proposal(
+    // Deliberately NOT downgraded: send-max quotes at the pass-1 V6 ceiling so
+    // the returned max is always realizable by `propose_send`, whose own pass-1
+    // is hard-gated at V6. A V5-priced (cheaper-fee) max would quote more than
+    // `propose_send(quoted_max)` can build, failing with InsufficientFunds for
+    // V2-only wallets. Fixed-amount sends still get the V2->V5/V2-change
+    // downgrade (the primary goal).
+    //
+    // TODO: revisit once `propose_send` can retry V5 on InsufficientFunds; then
+    // send-max could quote the cheaper V5 max for V2-only spends. Same bucket as
+    // the deferred mixed-change split — for now send-max stays V6/Ironwood-change.
+    let proposal = build_send_max_proposal(
         &mut db,
         network,
         account_id,
@@ -510,16 +552,6 @@ pub(crate) fn estimate_send_max(
         memo_str,
         proposed_tx_version,
     )?;
-    if proposal_should_use_legacy_v5(&proposal, to_address, legacy_v5_pczt)? {
-        proposal = build_send_max_proposal(
-            &mut db,
-            network,
-            account_id,
-            to_address,
-            memo_str,
-            Some(TxVersion::V5),
-        )?;
-    }
     summarize_send_max_proposal(&proposal)
 }
 
@@ -3941,8 +3973,8 @@ struct SelectedOrchardNoteVersions {
     has_v3: bool,
 }
 
-fn proposal_selected_orchard_note_versions(
-    proposal: &Proposal<WalletFeeRule, ReceivedNoteId>,
+fn proposal_selected_orchard_note_versions<NoteRef>(
+    proposal: &Proposal<WalletFeeRule, NoteRef>,
 ) -> SelectedOrchardNoteVersions {
     let mut versions = SelectedOrchardNoteVersions::default();
     for note in proposal.steps().iter().flat_map(|step| {
@@ -3960,25 +3992,96 @@ fn proposal_selected_orchard_note_versions(
     versions
 }
 
-fn proposal_should_use_legacy_v5(
-    proposal: &Proposal<WalletFeeRule, ReceivedNoteId>,
-    to_address: &str,
-    legacy_v5_pczt: bool,
-) -> Result<bool, String> {
-    let recipient_is_transparent = super::validate_address(to_address)? == "transparent";
-    Ok(should_force_legacy_v5_for_selected_versions(
-        legacy_v5_pczt,
-        recipient_is_transparent,
-        proposal_selected_orchard_note_versions(proposal),
-    ))
+/// Whether any proposal step pays a shielded-**Orchard** recipient.
+///
+/// Only *payment* outputs are considered: `payment_pools()` maps the request's
+/// payment indices to their pool, and change is not represented there. This is
+/// what makes the legacy-V5 downgrade safe — a legacy `orchard_v3` bundle at
+/// NU6.3 has cross-address transfers disabled, so it can carry a self-address
+/// Orchard *change* output but not an Orchard *payment* to another party;
+/// building such a payment as V5 fails with `CrossAddressDisabled`. If this
+/// returns true the send must stay V6.
+fn proposal_has_orchard_payment<NoteRef>(proposal: &Proposal<WalletFeeRule, NoteRef>) -> bool {
+    proposal.steps().iter().any(|step| {
+        step.payment_pools()
+            .values()
+            .any(|pool| *pool == PoolType::Shielded(ShieldedProtocol::Orchard))
+    })
 }
 
-fn should_force_legacy_v5_for_selected_versions(
-    legacy_v5_pczt: bool,
-    recipient_is_transparent: bool,
-    versions: SelectedOrchardNoteVersions,
+/// Pass-2 decision for the ordinary send/estimate paths: a pass-1 V6 proposal
+/// is downgraded to a legacy V5 transaction iff every selected Orchard note is
+/// legacy (V2) — so the change note stays V2 — and no step pays a
+/// shielded-Orchard recipient. V3-only and mixed V2+V3 selections keep V6 with
+/// an Ironwood (V3) change note — splitting mixed change per spent-note version
+/// is a deliberate future item — and pre-activation proposals (`initial` of
+/// `None`) are never rewritten.
+///
+/// `has_orchard_payment` gates out sends whose recipient is a shielded-Orchard
+/// address: the V5 proposal would build fine but fail at execution with
+/// `CrossAddressDisabled`, and that failure is past the point
+/// [`propose_with_note_version_downgrade`]'s re-proposal fallback can catch it,
+/// so such sends must stay V6. Orchard *change* is unaffected (it is not a
+/// payment pool), so an Orchard→transparent V2 send still downgrades.
+#[cfg(zcash_unstable = "nu6.3")]
+fn should_downgrade_send_to_legacy_v5(
+    initial: Option<TxVersion>,
+    versions: &SelectedOrchardNoteVersions,
+    has_orchard_payment: bool,
 ) -> bool {
-    legacy_v5_pczt && recipient_is_transparent && versions.has_v2 && !versions.has_v3
+    matches!(initial, Some(TxVersion::V6))
+        && versions.has_v2
+        && !versions.has_v3
+        && !has_orchard_payment
+}
+
+/// Pre-NU6.3 builds propose no V6 transactions, so there is nothing to
+/// downgrade.
+#[cfg(not(zcash_unstable = "nu6.3"))]
+fn should_downgrade_send_to_legacy_v5(
+    _initial: Option<TxVersion>,
+    _versions: &SelectedOrchardNoteVersions,
+    _has_orchard_payment: bool,
+) -> bool {
+    false
+}
+
+/// Shared pass-2 of [`propose_send`], [`estimate_fee`], and
+/// [`create_reserved_pczt_batch`]: when [`should_downgrade_send_to_legacy_v5`]
+/// holds for the pass-1 proposal, re-propose as legacy V5 via `repropose` and
+/// return that proposal with `Some(TxVersion::V5)`. Any re-proposal error keeps
+/// the pass-1 (V6) proposal and version instead of failing the send;
+/// `repropose` is a closure so tests can exercise that fallback directly.
+///
+/// (`estimate_send_max` deliberately does NOT funnel through here — see the
+/// note there for why the quoted max stays at the V6 ceiling.)
+///
+/// Callers must store/build with the *returned* version: it stays coupled to
+/// [`zip317_helper`]'s `.with_legacy_orchard_change()` (applied iff
+/// `Some(V5)`), so fee/change accounting matches the version used at
+/// execution time.
+fn propose_with_note_version_downgrade<NoteRef, F>(
+    pass1_proposal: Proposal<WalletFeeRule, NoteRef>,
+    pass1_tx_version: Option<TxVersion>,
+    repropose: F,
+) -> (Proposal<WalletFeeRule, NoteRef>, Option<TxVersion>)
+where
+    F: FnOnce(Option<TxVersion>) -> Result<Proposal<WalletFeeRule, NoteRef>, String>,
+{
+    if !should_downgrade_send_to_legacy_v5(
+        pass1_tx_version,
+        &proposal_selected_orchard_note_versions(&pass1_proposal),
+        proposal_has_orchard_payment(&pass1_proposal),
+    ) {
+        return (pass1_proposal, pass1_tx_version);
+    }
+    match repropose(Some(TxVersion::V5)) {
+        Ok(proposal) => (proposal, Some(TxVersion::V5)),
+        Err(e) => {
+            log::warn!("Legacy-V5 re-proposal failed; keeping the pass-1 V6 proposal: {e}");
+            (pass1_proposal, pass1_tx_version)
+        }
+    }
 }
 
 struct ReservedInputSource<'a> {
@@ -4167,6 +4270,9 @@ fn build_send_max_proposal(
     .map_err(|e| format!("Propose max failed: {e}"))
 }
 
+/// Pass-1 "ceiling" tx version for the wallet's current target height (see
+/// [`proposed_tx_version_for_send`]); the ordinary send paths may still
+/// downgrade it per [`should_downgrade_send_to_legacy_v5`].
 fn proposed_tx_version_for_wallet_db(
     db: &WalletDatabase,
     network: WalletNetwork,
@@ -4180,6 +4286,9 @@ fn proposed_tx_version_for_wallet_db(
     Ok(proposed_tx_version_for_send(network, target_height))
 }
 
+/// Pass-1 "ceiling" tx version: `Some(V6)` once NU6.3 is active at the target
+/// height, before [`should_downgrade_send_to_legacy_v5`] is applied to the
+/// selected notes.
 fn proposed_tx_version_for_send(
     network: WalletNetwork,
     target_height: wallet::TargetHeight,
@@ -5474,57 +5583,411 @@ mod tests {
     #[cfg(zcash_unstable = "nu6.3")]
     fn send_proposals_use_v6_after_nu6_3() {
         let network = WalletNetwork::LocalIronwoodTestnet;
+        let v2_only = SelectedOrchardNoteVersions {
+            has_v2: true,
+            has_v3: false,
+        };
 
-        assert_eq!(
-            proposed_tx_version_for_send(
-                network,
-                zcash_client_backend::data_api::wallet::TargetHeight::from(119),
-            ),
-            None
-        );
-        assert_eq!(
-            proposed_tx_version_for_send(
-                network,
-                zcash_client_backend::data_api::wallet::TargetHeight::from(120),
-            ),
-            Some(TxVersion::V6)
-        );
+        // Pass-1 ceiling: no explicit version before activation, V6 after.
+        let before = proposed_tx_version_for_send(network, TargetHeight::from(119));
+        let after = proposed_tx_version_for_send(network, TargetHeight::from(120));
+        assert_eq!(before, None);
+        assert_eq!(after, Some(TxVersion::V6));
+
+        // The pass-2 decision keys off that ceiling: a V2-only selection with a
+        // non-Orchard payment downgrades a post-activation V6 proposal, never a
+        // pre-activation one.
+        assert!(should_downgrade_send_to_legacy_v5(after, &v2_only, false));
+        assert!(!should_downgrade_send_to_legacy_v5(before, &v2_only, false));
     }
 
     #[test]
-    fn legacy_v5_policy_only_for_transparent_orchard_v2_spends() {
-        assert!(should_force_legacy_v5_for_selected_versions(
-            true,
-            true,
-            SelectedOrchardNoteVersions {
-                has_v2: true,
-                has_v3: false,
-            },
-        ));
-        assert!(!should_force_legacy_v5_for_selected_versions(
-            true,
-            true,
-            SelectedOrchardNoteVersions {
-                has_v2: false,
-                has_v3: true,
-            },
-        ));
-        assert!(!should_force_legacy_v5_for_selected_versions(
-            true,
+    #[cfg(zcash_unstable = "nu6.3")]
+    fn v5_downgrade_requires_v6_ceiling_and_v2_only_spends() {
+        let versions = |has_v2, has_v3| SelectedOrchardNoteVersions { has_v2, has_v3 };
+
+        // Canonical downgrade case: V6 ceiling, V2-only spends, non-Orchard
+        // recipient.
+        assert!(should_downgrade_send_to_legacy_v5(
+            Some(TxVersion::V6),
+            &versions(true, false),
             false,
-            SelectedOrchardNoteVersions {
-                has_v2: true,
-                has_v3: false,
-            },
         ));
-        assert!(!should_force_legacy_v5_for_selected_versions(
-            false,
+        // Shielded-Orchard recipient: a legacy-V5 build would fail with
+        // CrossAddressDisabled, so stay V6 even for V2-only spends.
+        assert!(!should_downgrade_send_to_legacy_v5(
+            Some(TxVersion::V6),
+            &versions(true, false),
             true,
-            SelectedOrchardNoteVersions {
-                has_v2: true,
-                has_v3: false,
-            },
         ));
+        // V3-only and mixed selections keep V6 (mixed keeps the V3 change).
+        assert!(!should_downgrade_send_to_legacy_v5(
+            Some(TxVersion::V6),
+            &versions(false, true),
+            false,
+        ));
+        assert!(!should_downgrade_send_to_legacy_v5(
+            Some(TxVersion::V6),
+            &versions(true, true),
+            false,
+        ));
+        // No Orchard spends at all: nothing to preserve, keep V6.
+        assert!(!should_downgrade_send_to_legacy_v5(
+            Some(TxVersion::V6),
+            &versions(false, false),
+            false,
+        ));
+        // Pre-activation (no pass-1 ceiling) proposals are never rewritten.
+        assert!(!should_downgrade_send_to_legacy_v5(
+            None,
+            &versions(true, false),
+            false,
+        ));
+        assert!(!should_downgrade_send_to_legacy_v5(
+            Some(TxVersion::V5),
+            &versions(true, false),
+            false,
+        ));
+    }
+
+    /// Fabricates a transparent-recipient proposal spending one Orchard note
+    /// per entry in `versions` (plus a lone Sapling note when `versions` is
+    /// empty, so the proposal still has a shielded input), mirroring
+    /// `transparent_recipient_send_max_proposal_spends_shielded_notes`.
+    fn fabricated_shielded_spend_proposal(
+        versions: &[orchard::note::NoteVersion],
+    ) -> Proposal<WalletFeeRule, u32> {
+        let network = WalletNetwork::Regtest;
+        let orchard_notes = versions
+            .iter()
+            .enumerate()
+            .map(|(index, version)| {
+                let sk = orchard::keys::SpendingKey::from_bytes([7 + index as u8; 32]).unwrap();
+                let fvk = orchard::keys::FullViewingKey::from(&sk);
+                let recipient = fvk.address_at(0u32, orchard::keys::Scope::External);
+                let rho = orchard::note::Rho::from_bytes(&[1; 32]).unwrap();
+                let rseed = (0u8..=255)
+                    .find_map(|b| {
+                        orchard::note::RandomSeed::from_bytes([b; 32], &rho).into_option()
+                    })
+                    .expect("test rseed");
+                let note = orchard::Note::from_parts(
+                    recipient,
+                    orchard::value::NoteValue::from_raw(100_000),
+                    rho,
+                    rseed,
+                    *version,
+                )
+                .unwrap();
+                ReceivedNote::from_parts(
+                    index as u32,
+                    TxId::from_bytes([index as u8; 32]),
+                    0,
+                    note,
+                    zip32::Scope::External,
+                    Position::from(index as u64),
+                    Some(BlockHeight::from_u32(20)),
+                    None,
+                )
+            })
+            .collect::<Vec<_>>();
+        let sapling_notes = if orchard_notes.is_empty() {
+            let spending_key = sapling_crypto::zip32::ExtendedSpendingKey::master(&[7u8; 32]);
+            let (_, recipient) = spending_key.default_address();
+            let note = sapling_crypto::Note::from_parts(
+                recipient,
+                sapling_crypto::value::NoteValue::from_raw(100_000),
+                sapling_crypto::Rseed::AfterZip212([3u8; 32]),
+            );
+            vec![ReceivedNote::from_parts(
+                100u32,
+                TxId::from_bytes([100u8; 32]),
+                0,
+                note,
+                zip32::Scope::External,
+                Position::from(0u64),
+                Some(BlockHeight::from_u32(20)),
+                None,
+            )]
+        } else {
+            vec![]
+        };
+        let recipient = Address::Transparent(taddr(9)).to_zcash_address(&network);
+
+        build_transparent_recipient_send_max_proposal_from_notes(
+            network,
+            TargetHeight::from(BlockHeight::from_u32(1_000)),
+            BlockHeight::from_u32(900),
+            recipient,
+            None,
+            ReceivedNotes::new(sapling_notes, orchard_notes),
+            ConservativeZip317FeeRule,
+        )
+        .expect("fabricated proposal should build")
+    }
+
+    /// Fabricates a single-step proposal that spends one V2 Orchard note and
+    /// pays a recipient in `payment_pool`, so `payment_pools()` reflects the
+    /// requested recipient pool. Used to exercise
+    /// [`proposal_has_orchard_payment`] and the recipient-pool guard.
+    fn fabricated_proposal_with_payment_pool(
+        payment_pool: PoolType,
+    ) -> Proposal<WalletFeeRule, u32> {
+        let network = WalletNetwork::Regtest;
+        let sk = orchard::keys::SpendingKey::from_bytes([7; 32]).unwrap();
+        let fvk = orchard::keys::FullViewingKey::from(&sk);
+        let orchard_recipient = fvk.address_at(0u32, orchard::keys::Scope::External);
+        let rho = orchard::note::Rho::from_bytes(&[1; 32]).unwrap();
+        let rseed = (0u8..=255)
+            .find_map(|b| orchard::note::RandomSeed::from_bytes([b; 32], &rho).into_option())
+            .expect("test rseed");
+        let note = orchard::Note::from_parts(
+            orchard_recipient,
+            orchard::value::NoteValue::from_raw(100_000),
+            rho,
+            rseed,
+            orchard::note::NoteVersion::V2,
+        )
+        .unwrap();
+        let received_note = ReceivedNote::from_parts(
+            0u32,
+            TxId::from_bytes([0u8; 32]),
+            0,
+            note,
+            zip32::Scope::External,
+            Position::from(0u64),
+            Some(BlockHeight::from_u32(20)),
+            None,
+        );
+
+        // Recipient address matches the requested payment pool.
+        let to = match payment_pool {
+            PoolType::Transparent => Address::Transparent(taddr(9)).to_zcash_address(&network),
+            PoolType::Shielded(ShieldedProtocol::Orchard) => {
+                let ua = zcash_keys::address::UnifiedAddress::from_receivers(
+                    Some(orchard_recipient),
+                    None,
+                    None,
+                )
+                .expect("UA with an Orchard receiver is valid");
+                Address::from(ua).to_zcash_address(&network)
+            }
+            PoolType::Shielded(ShieldedProtocol::Sapling) => {
+                let esk = sapling_crypto::zip32::ExtendedSpendingKey::master(&[9u8; 32]);
+                let (_, sapling_recipient) = esk.default_address();
+                Address::from(sapling_recipient).to_zcash_address(&network)
+            }
+        };
+
+        // No change: amount + fee must equal the single 100_000-zat input, or
+        // `Proposal::single_step` rejects the unbalanced proposal.
+        let fee = Zatoshis::const_from_u64(10_000);
+        let amount = Zatoshis::const_from_u64(90_000);
+        let payment = Payment::new(to, Some(amount), None, None, None, vec![]).unwrap();
+        let request = TransactionRequest::new(vec![payment]).unwrap();
+        // `ShieldedInputs` wants `ReceivedNote<_, wallet::Note>`; wrap the
+        // orchard-typed note through `ReceivedNotes::into_vec` to get that form.
+        let notes = ReceivedNotes::new(vec![], vec![received_note]).into_vec(&RetainAllNotes);
+        let shielded_inputs = ShieldedInputs::from_parts(
+            BlockHeight::from_u32(900),
+            nonempty::NonEmpty::from_vec(notes).unwrap(),
+        );
+        let balance = TransactionBalance::new(vec![], fee).unwrap();
+
+        Proposal::single_step(
+            request,
+            BTreeMap::from([(0usize, payment_pool)]),
+            vec![],
+            Some(shielded_inputs),
+            balance,
+            ConservativeZip317FeeRule,
+            TargetHeight::from(BlockHeight::from_u32(1_000)),
+            false,
+        )
+        .expect("fabricated payment-pool proposal should build")
+    }
+
+    #[test]
+    fn proposal_has_orchard_payment_detects_recipient_pool() {
+        // Orchard recipient => Orchard payment.
+        assert!(proposal_has_orchard_payment(
+            &fabricated_proposal_with_payment_pool(PoolType::Shielded(ShieldedProtocol::Orchard)),
+        ));
+        // Transparent recipient (Orchard change is not a payment pool) => none.
+        assert!(!proposal_has_orchard_payment(
+            &fabricated_proposal_with_payment_pool(PoolType::Transparent),
+        ));
+        // Sapling recipient => not an Orchard payment.
+        assert!(!proposal_has_orchard_payment(
+            &fabricated_proposal_with_payment_pool(PoolType::Shielded(ShieldedProtocol::Sapling)),
+        ));
+        // Change-only send-max proposal (transparent recipient, Orchard spend)
+        // has no Orchard payment pool either.
+        assert!(!proposal_has_orchard_payment(
+            &fabricated_shielded_spend_proposal(&[orchard::note::NoteVersion::V2]),
+        ));
+    }
+
+    #[test]
+    #[cfg(zcash_unstable = "nu6.3")]
+    fn orchard_recipient_v2_send_keeps_v6_without_rerun() {
+        // V2-only spend paying a shielded-Orchard recipient: must stay V6 (a V5
+        // build would fail with CrossAddressDisabled), and the re-proposal
+        // closure must never run.
+        let pass1 =
+            fabricated_proposal_with_payment_pool(PoolType::Shielded(ShieldedProtocol::Orchard));
+
+        let (_, tx_version) =
+            propose_with_note_version_downgrade(pass1, Some(TxVersion::V6), |_| {
+                panic!("re-proposal must not run for a shielded-Orchard recipient")
+            });
+
+        assert_eq!(tx_version, Some(TxVersion::V6));
+    }
+
+    #[test]
+    #[cfg(zcash_unstable = "nu6.3")]
+    fn transparent_recipient_v2_send_downgrades_to_v5() {
+        // Contrast with the Orchard-recipient case: a transparent recipient with
+        // the same V2-only spend downgrades to V5.
+        let pass1 = fabricated_proposal_with_payment_pool(PoolType::Transparent);
+        let rerun = fabricated_proposal_with_payment_pool(PoolType::Transparent);
+
+        let (_, tx_version) =
+            propose_with_note_version_downgrade(pass1, Some(TxVersion::V6), move |requested| {
+                assert_eq!(requested, Some(TxVersion::V5));
+                Ok(rerun)
+            });
+
+        assert_eq!(tx_version, Some(TxVersion::V5));
+    }
+
+    #[test]
+    fn proposal_selected_orchard_note_versions_detects_spent_versions() {
+        use orchard::note::NoteVersion;
+
+        let v2_only = proposal_selected_orchard_note_versions(&fabricated_shielded_spend_proposal(
+            &[NoteVersion::V2],
+        ));
+        assert!(v2_only.has_v2 && !v2_only.has_v3);
+
+        let v3_only = proposal_selected_orchard_note_versions(&fabricated_shielded_spend_proposal(
+            &[NoteVersion::V3],
+        ));
+        assert!(!v3_only.has_v2 && v3_only.has_v3);
+
+        let mixed = proposal_selected_orchard_note_versions(&fabricated_shielded_spend_proposal(
+            &[NoteVersion::V2, NoteVersion::V3],
+        ));
+        assert!(mixed.has_v2 && mixed.has_v3);
+
+        // Sapling-only selection: no Orchard notes at all.
+        let none =
+            proposal_selected_orchard_note_versions(&fabricated_shielded_spend_proposal(&[]));
+        assert!(!none.has_v2 && !none.has_v3);
+    }
+
+    #[test]
+    #[cfg(zcash_unstable = "nu6.3")]
+    fn v5_rerun_falls_back_to_v6_proposal_on_failure() {
+        let pass1 = fabricated_shielded_spend_proposal(&[orchard::note::NoteVersion::V2]);
+        let pass1_fee = proposal_fee_zatoshi(&pass1);
+        let rerun_calls = std::cell::Cell::new(0);
+
+        let (proposal, tx_version) =
+            propose_with_note_version_downgrade(pass1, Some(TxVersion::V6), |requested| {
+                rerun_calls.set(rerun_calls.get() + 1);
+                assert_eq!(requested, Some(TxVersion::V5));
+                Err("simulated re-proposal failure".to_string())
+            });
+
+        // The failed downgrade keeps the pass-1 proposal under its V6 version.
+        assert_eq!(rerun_calls.get(), 1);
+        assert_eq!(tx_version, Some(TxVersion::V6));
+        assert_eq!(proposal_fee_zatoshi(&proposal), pass1_fee);
+    }
+
+    #[test]
+    #[cfg(zcash_unstable = "nu6.3")]
+    fn v5_rerun_returns_reproposed_v5_proposal_on_success() {
+        use orchard::note::NoteVersion;
+
+        let pass1 = fabricated_shielded_spend_proposal(&[NoteVersion::V2]);
+        let rerun = fabricated_shielded_spend_proposal(&[NoteVersion::V2, NoteVersion::V2]);
+
+        let (proposal, tx_version) =
+            propose_with_note_version_downgrade(pass1, Some(TxVersion::V6), move |_| Ok(rerun));
+
+        assert_eq!(tx_version, Some(TxVersion::V5));
+        // The returned proposal is the re-proposed one (two spends, not one).
+        let selected: Vec<_> = proposal
+            .steps()
+            .iter()
+            .flat_map(|step| step.shielded_inputs().into_iter())
+            .flat_map(|inputs| inputs.notes().iter())
+            .collect();
+        assert_eq!(selected.len(), 2);
+    }
+
+    #[test]
+    #[cfg(zcash_unstable = "nu6.3")]
+    fn v3_only_spends_keep_v6_without_rerun() {
+        let pass1 = fabricated_shielded_spend_proposal(&[orchard::note::NoteVersion::V3]);
+
+        let (_, tx_version) =
+            propose_with_note_version_downgrade(pass1, Some(TxVersion::V6), |_| {
+                panic!("re-proposal must not run for a V3-only selection")
+            });
+
+        assert_eq!(tx_version, Some(TxVersion::V6));
+    }
+
+    // `estimate_send_max` deliberately quotes at the pass-1 V6 ceiling and does
+    // NOT apply the V2->V5 downgrade, so the quoted max is always realizable by
+    // `propose_send` (whose pass-1 is hard-gated at V6). A cheaper V5-priced max
+    // would over-quote for V2-only wallets and fail `propose_send` with
+    // InsufficientFunds. This test pins that policy: the same V2-only
+    // transparent-recipient max proposal that send-max builds *would* be
+    // downgraded by the shared decision, and the value send-max returns is the
+    // V6-ceiling summary, unchanged by any downgrade.
+    #[test]
+    #[cfg(zcash_unstable = "nu6.3")]
+    fn estimate_send_max_stays_at_v6_ceiling_for_v2_only_spends() {
+        // The pass-1 proposal send-max builds for a V2-only spend to a
+        // transparent recipient.
+        let pass1 = fabricated_shielded_spend_proposal(&[orchard::note::NoteVersion::V2]);
+
+        // The shared decision WOULD downgrade this (V6 ceiling, V2-only spends,
+        // transparent recipient), confirming send-max is intentionally opting
+        // out rather than the case being ineligible.
+        assert!(should_downgrade_send_to_legacy_v5(
+            Some(TxVersion::V6),
+            &proposal_selected_orchard_note_versions(&pass1),
+            proposal_has_orchard_payment(&pass1),
+        ));
+
+        // The value send-max returns is the V6-ceiling summary. Running the
+        // shared downgrade helper here (as the removed code did) would have
+        // produced a different, V5-priced result; send-max must return the
+        // undowngraded V6 summary instead.
+        let v6_summary = summarize_send_max_proposal(&pass1).unwrap();
+        let (downgraded, downgraded_version) =
+            propose_with_note_version_downgrade(pass1, Some(TxVersion::V6), |tx_version| {
+                assert_eq!(tx_version, Some(TxVersion::V5));
+                // Stand in for a cheaper V5 re-proposal so the two paths differ.
+                Ok(fabricated_shielded_spend_proposal(&[
+                    orchard::note::NoteVersion::V2,
+                    orchard::note::NoteVersion::V2,
+                ]))
+            });
+        // Sanity: the downgrade path really does diverge from what send-max
+        // returns (different selection/amount), so the assertion below is
+        // meaningful rather than vacuous.
+        assert_eq!(downgraded_version, Some(TxVersion::V5));
+        assert_ne!(
+            summarize_send_max_proposal(&downgraded).unwrap().amount_zatoshi,
+            v6_summary.amount_zatoshi,
+        );
     }
 
     #[test]
