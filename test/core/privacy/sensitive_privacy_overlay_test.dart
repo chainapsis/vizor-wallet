@@ -271,59 +271,6 @@ void main() {
     },
   );
 
-  testWidgets(
-    'environment controller suppresses the shield across the iOS screenshot '
-    'preview inactive→resumed transition',
-    (tester) async {
-      final controller = SensitivePrivacyEnvironmentController();
-      addTearDown(controller.dispose);
-
-      await tester.pumpWidget(
-        AppTheme(
-          data: AppThemeData.light,
-          child: Directionality(
-            textDirection: TextDirection.ltr,
-            child: SensitivePrivacyOverlay(
-              sensitiveContentVisible: true,
-              controller: controller,
-              child: const SizedBox(width: 320, height: 240),
-            ),
-          ),
-        ),
-      );
-
-      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
-
-      // A screenshot marks suppression while the warning sheet is up; the
-      // preview/editor then drives the app inactive — the shield stays down
-      // (native blanking already blacks out the capture).
-      controller.beginScreenshotSuppression();
-      controller.setLifecycleInactiveForTesting();
-      await tester.pump();
-      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
-
-      // A real background (hide) is not suppressed by the screenshot marker.
-      controller.setLifecycleHiddenForTesting();
-      await tester.pump();
-      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
-
-      // The editor closes to foreground and reopens — suppression persists
-      // while the sheet is up, so the preview reopen does not flash the shield.
-      controller.setLifecycleForegroundForTesting();
-      await tester.pump();
-      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
-      controller.setLifecycleInactiveForTesting();
-      await tester.pump();
-      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
-
-      // Dismissing the warning sheet releases suppression; the current
-      // inactive state is no longer safe, so the shield covers the content.
-      controller.endScreenshotSuppression();
-      await tester.pump();
-      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
-    },
-  );
-
   testWidgets('environment controller honors native macOS exposure events', (
     tester,
   ) async {

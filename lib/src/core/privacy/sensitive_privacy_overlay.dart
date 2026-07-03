@@ -149,7 +149,6 @@ class SensitivePrivacyOverlayController extends ChangeNotifier {
 
   bool _isSafe;
   bool _authPromptActive = false;
-  bool _screenshotSuppressionActive = false;
 
   /// Whether sensitive content may be shown unobscured.
   bool get isSafe => _isSafe;
@@ -172,27 +171,6 @@ class SensitivePrivacyOverlayController extends ChangeNotifier {
   void endAuthPrompt() {
     if (!_authPromptActive) return;
     _authPromptActive = false;
-    notifyListeners();
-  }
-
-  /// Suppresses the shield through the brief `inactive` transition the iOS
-  /// screenshot preview/editor causes. The native secure-field blanking already
-  /// blacks out the actual capture and the warning sheet already explains it, so
-  /// the extra blur flash during the screenshot flow is pure noise. The
-  /// The caller releases this via [endScreenshotSuppression] when the warning
-  /// sheet closes, so the suppression is scoped to the active screenshot flow
-  /// rather than a fixed timeout — a genuine backgrounding once the sheet is
-  /// gone still blurs.
-  void beginScreenshotSuppression() {
-    if (_screenshotSuppressionActive) return;
-    _screenshotSuppressionActive = true;
-    notifyListeners();
-  }
-
-  /// Releases the [beginScreenshotSuppression] marker.
-  void endScreenshotSuppression() {
-    if (!_screenshotSuppressionActive) return;
-    _screenshotSuppressionActive = false;
     notifyListeners();
   }
 
@@ -292,20 +270,6 @@ class SensitivePrivacyEnvironmentController
   }
 
   @override
-  void beginScreenshotSuppression() {
-    if (_disposed || _screenshotSuppressionActive) return;
-    super.beginScreenshotSuppression();
-    _syncSafety();
-  }
-
-  @override
-  void endScreenshotSuppression() {
-    if (_disposed || !_screenshotSuppressionActive) return;
-    super.endScreenshotSuppression();
-    _syncSafety();
-  }
-
-  @override
   void onWindowFocus() => _setWindowSafe(true);
 
   @override
@@ -362,10 +326,8 @@ class SensitivePrivacyEnvironmentController
   }
 
   void _syncSafety() {
-    final suppressedInactive =
-        _lifecycleInactive &&
-        (_authPromptActive || _screenshotSuppressionActive);
-    final lifecycleSafe = _lifecycleSafe || suppressedInactive;
+    final lifecycleSafe =
+        _lifecycleSafe || (_lifecycleInactive && _authPromptActive);
     _setSafe(lifecycleSafe && _windowSafe && _macOSNativeSafe);
   }
 

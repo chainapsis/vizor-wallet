@@ -105,10 +105,6 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
       return;
     }
     _screenshotSheetShowing = true;
-    // Suppress the privacy shield through the iOS screenshot preview/editor
-    // flow — the native blanking already blacks out the capture, so the extra
-    // blur flash is redundant noise.
-    _privacyController.beginScreenshotSuppression();
     unawaited(AppHaptics.privacyToggle());
     try {
       await showAppMobileSheet<void>(
@@ -117,9 +113,6 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
       );
     } finally {
       _screenshotSheetShowing = false;
-      // Release the shield suppression now the warning sheet is gone, so a
-      // genuine later backgrounding still blurs.
-      _privacyController.endScreenshotSuppression();
     }
   }
 
