@@ -392,6 +392,14 @@ void main() {
     expect(tester.getSize(caption).width, 263);
     expect(tester.getTopLeft(flashlight), const Offset(32, 762));
     expect(tester.getSize(flashlight), const Size(40, 40));
+    final flashlightTapTarget = find.ancestor(
+      of: flashlight,
+      matching: find.byType(GestureDetector),
+    );
+    expect(
+      tester.widget<GestureDetector>(flashlightTapTarget.first).onTap,
+      isNull,
+    );
     expect(tester.getTopLeft(qrAction), const Offset(321, 762));
     expect(tester.getSize(qrAction), const Size(40, 40));
     expect(

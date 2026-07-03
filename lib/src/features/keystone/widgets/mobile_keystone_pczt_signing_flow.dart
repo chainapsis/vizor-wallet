@@ -367,6 +367,16 @@ class _MobileKeystonePcztSigningFlowState
     );
   }
 
+  Future<void> _toggleTorchIfRunning() async {
+    final scanController = _scanController;
+    if (scanController == null || !scanController.value.isRunning) return;
+    try {
+      await scanController.toggleTorch();
+    } catch (e, st) {
+      log('${widget.logTag}: flashlight toggle error: $e\n$st');
+    }
+  }
+
   ValueKey<String> _key(String suffix) {
     return ValueKey('${widget.keyPrefix}_$suffix');
   }
@@ -710,15 +720,25 @@ class _MobileKeystonePcztSigningFlowState
                         _mobileKeystoneScanActionSize,
                   ),
                 ),
-                child: _KeystoneScannerIconButton(
-                  controlKey: _key('flashlight_action'),
-                  semanticLabel: 'Toggle flashlight',
-                  onTap: () => unawaited(scanController.toggleTorch()),
-                  child: const Icon(
-                    Icons.flashlight_on_outlined,
-                    color: _mobileKeystoneLightText,
-                    size: _mobileKeystoneFlashlightIconSize,
-                  ),
+                child: ValueListenableBuilder<MobileScannerState>(
+                  valueListenable: scanController,
+                  builder: (context, scannerState, _) {
+                    final flashlightEnabled = scannerState.isRunning;
+                    return _KeystoneScannerIconButton(
+                      controlKey: _key('flashlight_action'),
+                      semanticLabel: 'Toggle flashlight',
+                      onTap: flashlightEnabled
+                          ? () => unawaited(_toggleTorchIfRunning())
+                          : null,
+                      child: Icon(
+                        Icons.flashlight_on_outlined,
+                        color: _mobileKeystoneLightText.withValues(
+                          alpha: flashlightEnabled ? 1 : 0.4,
+                        ),
+                        size: _mobileKeystoneFlashlightIconSize,
+                      ),
+                    );
+                  },
                 ),
               ),
               Positioned(
