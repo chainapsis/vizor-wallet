@@ -630,8 +630,38 @@ class _MobileKeystonePcztSigningFlowState
       color: Colors.black,
       child: LayoutBuilder(
         builder: (context, constraints) {
+          final topInset = MediaQuery.paddingOf(context).top;
+          // Reserve the header block drawn above the scanner (top nav + Step
+          // title + subtitle) so the viewfinder never tucks under it on short
+          // screens.
+          final headerReserve =
+              topInset +
+              kMobileTopNavHeight +
+              _mobileKeystoneTitleTopGap +
+              (AppTypography.displayLarge.fontSize ?? 40) *
+                  (AppTypography.displayLarge.height ?? 1) +
+              AppSpacing.s +
+              (AppTypography.bodyLarge.fontSize ?? 18) *
+                  (AppTypography.bodyLarge.height ?? 1);
+          // Space reserved for the caption + action row below the viewfinder.
+          const chromeReserve =
+              _mobileKeystoneScanMinCaptionGap +
+              _mobileKeystoneScanCaptionHeight +
+              _mobileKeystoneScanMinActionGap +
+              _mobileKeystoneScanActionSize +
+              AppSpacing.xxs;
+          // Shrink the viewfinder on short screens so it clears the header and
+          // still leaves room for the caption/action below it. Tall screens
+          // keep the full design size.
+          final viewfinderSize = math
+              .min(
+                _mobileKeystoneScanWindowSize,
+                constraints.maxHeight - headerReserve - chromeReserve,
+              )
+              .clamp(160.0, _mobileKeystoneScanWindowSize)
+              .toDouble();
           final rawViewfinderLeft =
-              ((constraints.maxWidth - _mobileKeystoneScanWindowSize) / 2) +
+              ((constraints.maxWidth - viewfinderSize) / 2) +
               _mobileKeystoneScanWindowCenterXOffset;
           final captionLeft =
               (constraints.maxWidth - _mobileKeystoneScanCaptionWidth) / 2;
@@ -639,18 +669,12 @@ class _MobileKeystonePcztSigningFlowState
               ((constraints.maxWidth - _mobileKeystoneDesignWidth) / 2) +
               _mobileKeystoneScanActionInset;
           final viewfinderLeft = rawViewfinderLeft
-              .clamp(
-                0.0,
-                math.max(
-                  0.0,
-                  constraints.maxWidth - _mobileKeystoneScanWindowSize,
-                ),
-              )
+              .clamp(0.0, math.max(0.0, constraints.maxWidth - viewfinderSize))
               .toDouble();
           final desiredViewfinderTop = _scannerTopFor(
             constraints,
             designTop: _mobileKeystoneScanWindowTop,
-            height: _mobileKeystoneScanWindowSize,
+            height: viewfinderSize,
           );
           final desiredCaptionTop = _scannerTopFor(
             constraints,
@@ -674,14 +698,17 @@ class _MobileKeystonePcztSigningFlowState
                 _mobileKeystoneScanMinActionGap -
                 _mobileKeystoneScanCaptionHeight -
                 _mobileKeystoneScanMinCaptionGap -
-                _mobileKeystoneScanWindowSize,
+                viewfinderSize,
           );
           final viewfinderTop = desiredViewfinderTop
-              .clamp(0.0, maxViewfinderTop)
+              .clamp(
+                math.min(headerReserve, maxViewfinderTop),
+                maxViewfinderTop,
+              )
               .toDouble();
           final minCaptionTop =
               viewfinderTop +
-              _mobileKeystoneScanWindowSize +
+              viewfinderSize +
               _mobileKeystoneScanMinCaptionGap;
           final maxCaptionTop = math.max(
             minCaptionTop,
@@ -704,8 +731,8 @@ class _MobileKeystonePcztSigningFlowState
           final scanWindow = Rect.fromLTWH(
             viewfinderLeft,
             viewfinderTop,
-            _mobileKeystoneScanWindowSize,
-            _mobileKeystoneScanWindowSize,
+            viewfinderSize,
+            viewfinderSize,
           );
           assert(() {
             widget.onScanWindowForTesting?.call(scanWindow);
@@ -722,6 +749,10 @@ class _MobileKeystonePcztSigningFlowState
                 controller: scanController,
                 expectedUrType: 'zcash-pczt',
                 scanSessionResetToken: scanSessionResetToken,
+                // Constrain detection to the visible viewfinder (this full-screen
+                // scanner's viewfinder is positioned, not centred), so a QR is
+                // only accepted when aimed at the bracket.
+                scanWindow: scanWindow,
                 errorBuilder: (context, error) => const SizedBox.shrink(),
                 onProgress: _handleScanProgress,
                 onDecodeError: _handleDecodeError,
@@ -739,12 +770,12 @@ class _MobileKeystonePcztSigningFlowState
               Positioned(
                 left: viewfinderLeft,
                 top: viewfinderTop,
-                width: _mobileKeystoneScanWindowSize,
-                height: _mobileKeystoneScanWindowSize,
+                width: viewfinderSize,
+                height: viewfinderSize,
                 child: SizedBox(
                   key: _key('scan_viewfinder'),
-                  width: _mobileKeystoneScanWindowSize,
-                  height: _mobileKeystoneScanWindowSize,
+                  width: viewfinderSize,
+                  height: viewfinderSize,
                   child: const MobileScanViewfinderCorners(
                     cornerLength: 60,
                     cornerRadius: 32,
@@ -755,7 +786,7 @@ class _MobileKeystonePcztSigningFlowState
               if (!widget.forceScannerActiveForTesting)
                 MobileScanCameraErrorOverlay(
                   controller: scanController,
-                  maxWidth: _mobileKeystoneScanWindowSize,
+                  maxWidth: viewfinderSize,
                   permissionDeniedMessage:
                       'Camera access is off. Allow it in Settings to scan Keystone signatures.',
                   unavailableMessage: 'The camera is unavailable right now.',

@@ -299,13 +299,15 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
           controller: _controller,
           onDetect: _onDetect,
           errorBuilder: widget.errorBuilder,
-          // Send an explicit full-preview rect rather than null: the native
-          // plugin keeps `scanWindow` (the Vision regionOfInterest) as a
-          // process-global that stop/dispose never clears, so a null window
-          // silently inherits whatever ROI the previous scanner left behind.
-          // A full-preview rect resets detection to the whole visible preview.
+          // Default to a centred, viewfinder-sized crop so detection matches
+          // the bounded viewfinder each caller draws (a QR aimed at the bracket,
+          // not one drifting elsewhere in frame, drives the flow). Callers whose
+          // viewfinder isn't centred — e.g. the full-screen Keystone signing
+          // scanner — pass their own rect. Either way this stays non-null, which
+          // also overwrites any stale region-of-interest the native plugin kept
+          // from a previous scanner (it never clears it on stop/dispose).
           scanWindow:
-              widget.scanWindow ?? (Offset.zero & constraints.biggest),
+              widget.scanWindow ?? QrScanner.scanWindowFor(constraints.biggest),
           scanWindowUpdateThreshold: QrScanner.scanWindowUpdateThreshold,
         );
       },
