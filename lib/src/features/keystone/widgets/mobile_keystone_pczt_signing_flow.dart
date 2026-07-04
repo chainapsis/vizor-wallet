@@ -321,7 +321,7 @@ class _MobileKeystonePcztSigningFlowState
     } catch (e, st) {
       log('${widget.logTag}._onSigned: ERROR: $e\n$st');
       if (!mounted) return;
-      _stopScannerIfRunning();
+      _stopScannerIfActive();
       setState(() {
         _decoding = false;
         _stage = _SignStage.failed;
@@ -359,7 +359,7 @@ class _MobileKeystonePcztSigningFlowState
 
   void _backToQr() {
     if (_decoding) return;
-    _stopScannerIfRunning();
+    _stopScannerIfActive();
     setState(() {
       _stage = _SignStage.showQr;
       _scanHint = null;
@@ -394,9 +394,15 @@ class _MobileKeystonePcztSigningFlowState
     }
   }
 
-  void _stopScannerIfRunning() {
+  void _stopScannerIfActive() {
     final scanController = _scanController;
-    if (scanController == null || !scanController.value.isRunning) return;
+    if (scanController == null) return;
+    // Also stop a controller that is still starting: tapping back-to-QR right
+    // after entering Step 2 would otherwise leave the camera finishing its
+    // start in the background, active on the QR page until the flow disposes.
+    if (!scanController.value.isRunning && !scanController.value.isStarting) {
+      return;
+    }
     unawaited(
       scanController.stop().catchError((Object e, StackTrace st) {
         log(
