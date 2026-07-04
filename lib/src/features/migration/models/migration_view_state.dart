@@ -234,6 +234,26 @@ bool migrationCanStartFromEntry(MigrationViewState viewState) {
   return viewState == MigrationViewState.planningDenominations;
 }
 
+BigInt migrationDisplayAmount({
+  required MigrationViewState viewState,
+  required BigInt orchardAmount,
+  required Iterable<BigInt> migrationTransactionAmounts,
+}) {
+  if (migrationShouldShowEntry(
+    viewState: viewState,
+    keepsProgressVisible: false,
+  )) {
+    return orchardAmount;
+  }
+
+  final txAmount = migrationTransactionAmounts.fold<BigInt>(
+    BigInt.zero,
+    (sum, amount) => sum + amount,
+  );
+  if (txAmount > BigInt.zero) return txAmount;
+  return orchardAmount;
+}
+
 Duration? migrationRemainingScheduledSubmissionTime(
   rust_sync.MigrationStatus? status,
   DateTime now,

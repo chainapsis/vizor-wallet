@@ -195,6 +195,7 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
         shares: currentRunMigrationTransactions,
         totalShares: effectiveExpectedCount,
         amountZatoshi: _migrationDisplayAmount(
+          viewState,
           sync,
           currentRunMigrationTransactions,
         ),
@@ -1427,15 +1428,17 @@ bool _isCompletedMigration(rust_sync.TransactionInfo tx) =>
     tx.minedHeight != BigInt.zero && !tx.expiredUnmined;
 
 BigInt _migrationDisplayAmount(
+  MigrationViewState viewState,
   SyncState sync,
   List<rust_sync.TransactionInfo> migrationTransactions,
 ) {
-  final txAmount = migrationTransactions.fold<BigInt>(
-    BigInt.zero,
-    (sum, tx) => sum + tx.displayAmount,
+  return migrationDisplayAmount(
+    viewState: viewState,
+    orchardAmount: sync.orchardBalance + sync.orchardPendingBalance,
+    migrationTransactionAmounts: migrationTransactions.map(
+      (tx) => tx.displayAmount,
+    ),
   );
-  if (txAmount > BigInt.zero) return txAmount;
-  return sync.orchardBalance + sync.orchardPendingBalance;
 }
 
 class _KeystoneMigrationError {

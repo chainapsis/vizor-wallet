@@ -77,6 +77,36 @@ void main() {
     );
   });
 
+  test('idle migration amount ignores historical migration transactions', () {
+    expect(
+      migrationDisplayAmount(
+        viewState: MigrationViewState.noOrchardFunds,
+        orchardAmount: BigInt.zero,
+        migrationTransactionAmounts: [BigInt.from(100)],
+      ),
+      BigInt.zero,
+    );
+    expect(
+      migrationDisplayAmount(
+        viewState: MigrationViewState.planningDenominations,
+        orchardAmount: BigInt.from(42),
+        migrationTransactionAmounts: [BigInt.from(100)],
+      ),
+      BigInt.from(42),
+    );
+  });
+
+  test('active migration amount uses current migration transactions', () {
+    expect(
+      migrationDisplayAmount(
+        viewState: MigrationViewState.waitingMigrationConfirmations,
+        orchardAmount: BigInt.zero,
+        migrationTransactionAmounts: [BigInt.from(40), BigInt.from(2)],
+      ),
+      BigInt.from(42),
+    );
+  });
+
   test('account with a pending migration shows confirmation wait', () {
     expect(
       migrationViewState(
