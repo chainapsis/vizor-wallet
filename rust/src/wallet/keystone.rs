@@ -409,18 +409,15 @@ pub fn decode_ur_part(part: &str, expected_ur_type: &str) -> Result<UrDecodeResu
 }
 
 /// Number of animated-QR parts to emit for a UR whose payload spans
-/// `fragment_count` fragments. The encoder emits the pure fragments first, then
-/// fountain (mixed) parts; a large fountain tail lets a poor scanner camera
-/// recover missed frames from later mixes instead of waiting a full loop.
-///
-/// TEST dial: fountain redundancy raised from ~10% to ~100% (2x total parts) for
-/// the bad-camera 50-note migration experiment. Revert with the other test dials.
+/// `fragment_count` fragments. The encoder emits the pure fragments first; using
+/// a short fountain tail lets the scanner recover from a missed frame without
+/// forcing the user to wait for a full loop.
 fn ur_part_count(fragment_count: usize) -> usize {
     if fragment_count <= 1 {
         return fragment_count;
     }
 
-    let redundant_parts = fragment_count.max(2);
+    let redundant_parts = fragment_count.div_ceil(10).max(2);
     fragment_count + redundant_parts
 }
 
@@ -1040,10 +1037,9 @@ mod tests {
     fn ur_part_count_adds_small_redundancy_tail() {
         assert_eq!(ur_part_count(0), 0);
         assert_eq!(ur_part_count(1), 1);
-        // TEST dial: ~100% fountain redundancy (2x total parts) for the bad-camera experiment.
-        assert_eq!(ur_part_count(20), 40);
-        assert_eq!(ur_part_count(36), 72);
-        assert_eq!(ur_part_count(57), 114);
+        assert_eq!(ur_part_count(20), 22);
+        assert_eq!(ur_part_count(36), 40);
+        assert_eq!(ur_part_count(57), 63);
     }
 
     #[test]
