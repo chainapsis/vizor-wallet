@@ -452,7 +452,9 @@ pub(crate) fn create_reserved_pczt_batch(
             }
             .map_err(|e| format!("Create PCZT {} failed: {e}", request.id))
         })?;
-        let pczt_bytes = pczt.serialize();
+        let pczt_bytes = pczt
+            .serialize()
+            .map_err(|e| format!("Serialize PCZT {}: {e:?}", request.id))?;
         let spend_nullifiers = crate::wallet::keystone::pczt_spend_nullifiers(&pczt_bytes)?;
         let pczt_with_proofs =
             super::pczt::add_proofs_to_pczt(&pczt_bytes, spend_params_path, output_params_path)?;
@@ -609,7 +611,9 @@ pub(crate) fn create_shield_transparent_pczt(
             &proposal,
         )
         .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
-        let pczt_bytes = pczt.serialize();
+        let pczt_bytes = pczt
+            .serialize()
+            .map_err(|e| format!("Serialize shielding PCZT: {e:?}"))?;
         ensure_transparent_shielding_pczt_targets_ironwood(&pczt_bytes)?;
 
         Ok(ShieldTransparentPcztResult {
@@ -2821,7 +2825,9 @@ fn pczt_from_build_result(
         .finish();
 
     Ok(BuiltPczt {
-        bytes: pczt.serialize(),
+        bytes: pczt
+            .serialize()
+            .map_err(|e| format!("Serialize built PCZT: {e:?}"))?,
         orchard_spend_action_indices,
     })
 }
@@ -2895,6 +2901,13 @@ fn create_orchard_denomination_split_pczt(
     })?;
     let (orchard_anchor, orchard_inputs) =
         orchard_witnesses(&mut db, anchor_height, &orchard_notes)?;
+    // The ZIP-317 fee of one migration child: its Orchard bundle pads the single
+    // real spend to the 2-action minimum, while its Ironwood bundle is unpadded
+    // (see `zcash_primitives::transaction::builder::transactional_bundle_type`),
+    // so the single self-addressed output counts as 1 action — 3 logical actions,
+    // 15_000 zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
+    // recomputes the exact per-child fee from the real builder; this estimate
+    // must match it so the planned denominations balance.
     let migration_fee_estimate = fee_rule
         .fee_required(
             &network,
@@ -2903,7 +2916,7 @@ fn create_orchard_denomination_split_pczt(
             std::iter::empty::<usize>(),
             0,
             0,
-            1,
+            3,
         )
         .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
 
@@ -3062,6 +3075,13 @@ fn create_orchard_denomination_split_transaction(
     })?;
     let (orchard_anchor, orchard_inputs) =
         orchard_witnesses(&mut db, anchor_height, &orchard_notes)?;
+    // The ZIP-317 fee of one migration child: its Orchard bundle pads the single
+    // real spend to the 2-action minimum, while its Ironwood bundle is unpadded
+    // (see `zcash_primitives::transaction::builder::transactional_bundle_type`),
+    // so the single self-addressed output counts as 1 action — 3 logical actions,
+    // 15_000 zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
+    // recomputes the exact per-child fee from the real builder; this estimate
+    // must match it so the planned denominations balance.
     let migration_fee_estimate = fee_rule
         .fee_required(
             &network,
@@ -3070,7 +3090,7 @@ fn create_orchard_denomination_split_transaction(
             std::iter::empty::<usize>(),
             0,
             0,
-            1,
+            3,
         )
         .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
 
@@ -3376,7 +3396,10 @@ fn sign_orchard_migration_pczt_with_usk(
             .sign_orchard(*index, &orchard_ask)
             .map_err(|e| format!("Sign migration PCZT action {index}: {e:?}"))?;
     }
-    Ok(signer.finish().serialize())
+    signer
+        .finish()
+        .serialize()
+        .map_err(|e| format!("Serialize signed migration PCZT: {e:?}"))
 }
 
 fn create_orchard_to_ironwood_transaction_from_note(
@@ -6482,11 +6505,11 @@ mod tests {
             for index in 0..action_count {
                 signer.sign_orchard(index, &ask).unwrap();
             }
-            signer.finish().serialize()
+            signer.finish().serialize().unwrap()
         };
+        let request = pczt::Pczt::parse(&request_bytes).unwrap();
         assert!(
-            pczt::Pczt::parse(&request_bytes)
-                .unwrap()
+            request
                 .orchard()
                 .actions()
                 .iter()
@@ -6510,49 +6533,88 @@ mod tests {
             "batch redaction must clear every spend_auth_sig",
         );
 
-        // Exactness: the batch redaction equals the standard signer redaction plus
-        // precisely the spend fvk + spend_auth_sig clears — no other field changes.
-        let with_extra_clears = |bytes: &[u8]| {
+        // The batch redaction additionally elides the derived fields the device
+        // recomputes, so it must be meaningfully smaller than the standard signer
+        // redaction (this fixture's two actions each shed cv_net + cmx +
+        // ephemeral_key + enc_ciphertext).
+        assert!(
+            batch.len() + 1_000 < standard.len(),
+            "batch redaction should elide derived fields ({} vs {} bytes)",
+            batch.len(),
+            standard.len(),
+        );
+        // Every action sheds its unconditionally recomputable derived fields. The
+        // `enc_ciphertext` is elided (with a memo tag) except on the zero-valued
+        // output the builder pairs with the real spend, whose ciphertext is
+        // randomized and can never reconstruct — the self-check keeps it.
+        for action in batch_parsed.orchard().actions() {
+            assert!(action.cv_net().is_none());
+            assert!(action.output().cmx().is_none());
+            assert!(action.output().ephemeral_key().is_none());
+            if action.output().enc_ciphertext().is_some() {
+                assert!(action.output().memo_kind().is_none());
+                assert_eq!(*action.output().value(), Some(0));
+            } else {
+                assert!(action.output().memo_kind().is_some());
+            }
+        }
+        assert!(
+            batch_parsed
+                .orchard()
+                .actions()
+                .iter()
+                .any(|action| action.output().enc_ciphertext().is_none()),
+            "at least one enc_ciphertext must be elided in this fixture",
+        );
+
+        // The self-check contract: refilling the elided fields reproduces the
+        // original values byte-identically.
+        let mut refilled = batch_parsed;
+        refilled.fill_derived_fields().unwrap();
+        for (reb, orig) in refilled
+            .orchard()
+            .actions()
+            .iter()
+            .zip(request.orchard().actions().iter())
+        {
+            assert_eq!(reb.cv_net(), orig.cv_net());
+            assert_eq!(reb.output().cmx(), orig.output().cmx());
+            assert_eq!(reb.output().ephemeral_key(), orig.output().ephemeral_key());
+            assert_eq!(
+                reb.output().enc_ciphertext(),
+                orig.output().enc_ciphertext()
+            );
+        }
+
+        // Guard that the fvk clear is not vacuous: re-clearing the fvk on the batch
+        // redaction changes nothing (it was already cleared), while the standard
+        // redaction still carries the wire fvks.
+        let clear_fvks = |bytes: &[u8]| {
             let parsed = pczt::Pczt::parse(bytes).unwrap();
             Redactor::new(parsed)
                 .redact_orchard_with(|mut r| {
                     r.redact_actions(|mut ar| {
                         ar.clear_spend_fvk();
-                        ar.clear_spend_auth_sig();
                     });
                 })
                 .redact_ironwood_with(|mut r| {
                     r.redact_actions(|mut ar| {
                         ar.clear_spend_fvk();
-                        ar.clear_spend_auth_sig();
                     });
                 })
                 .finish()
                 .serialize()
+                .unwrap()
         };
-        assert_eq!(batch, with_extra_clears(&standard));
-
-        // Guard that the fvk clear is not vacuous: clearing only the signatures must
-        // not reproduce the batch redaction, i.e. the wire fvk was present and cleared.
-        let sigs_only_cleared = {
-            let parsed = pczt::Pczt::parse(&standard).unwrap();
-            Redactor::new(parsed)
-                .redact_orchard_with(|mut r| {
-                    r.redact_actions(|mut ar| {
-                        ar.clear_spend_auth_sig();
-                    });
-                })
-                .redact_ironwood_with(|mut r| {
-                    r.redact_actions(|mut ar| {
-                        ar.clear_spend_auth_sig();
-                    });
-                })
-                .finish()
-                .serialize()
-        };
+        assert_eq!(
+            clear_fvks(&batch),
+            batch,
+            "batch redaction must already have cleared the wire spend fvks",
+        );
         assert_ne!(
-            batch, sigs_only_cleared,
-            "batch redaction must also clear the wire spend fvks",
+            clear_fvks(&standard),
+            standard,
+            "standard redaction must retain the wire spend fvks",
         );
     }
 

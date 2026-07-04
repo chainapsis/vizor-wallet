@@ -18,8 +18,10 @@ pub(crate) const ZATOSHIS_PER_ZEC: u64 = 100_000_000;
 pub(crate) const MIGRATION_BROADCAST_WINDOW_SECS: u64 = 180;
 pub(crate) const MIGRATION_MAX_PREPARED_NOTES_PER_RUN: usize = 64;
 pub(crate) const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
-// Mirrors the one-action ZIP-317 migration fee estimate used by send planning.
-const MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI: u64 = 10_000;
+// Mirrors the per-child ZIP-317 migration fee estimate used by send planning:
+// 3 logical actions (2 padded Orchard + 1 unpadded Ironwood; see the estimate
+// in `send::prepare_denomination_split`).
+const MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI: u64 = 15_000;
 
 const RUNS_TABLE: &str = "vizor_migration_runs";
 const PREPARED_NOTES_TABLE: &str = "vizor_migration_prepared_notes";
@@ -52,6 +54,10 @@ pub(crate) struct DenominationPlan {
     pub total_migratable_zatoshi: u64,
 }
 
+// TEMP TEST OVERRIDE: the `#[allow(unreachable_code)]` below covers the
+// denomination-split logic left dead by the 50-part override inside this fn.
+// Remove the attribute together with the override block to restore normal behavior.
+#[allow(unreachable_code)]
 pub(crate) fn plan_denominations(
     total_input_zatoshi: u64,
     prep_fee_zatoshi: u64,
@@ -72,6 +78,45 @@ pub(crate) fn plan_denominations(
     let available = total_input_zatoshi
         .checked_sub(prep_fee_zatoshi)
         .ok_or("Denomination prep fee underflow")?;
+
+    // ===== TEMPORARY TEST OVERRIDE — remove after validating the larger batch =====
+    // Ignore the denomination split and cut `available` into exactly 50 equal parts
+    // so the migration produces 50 children and exercises the batch signer at that
+    // size. To revert: delete this block and the `#[allow(unreachable_code)]` on the fn.
+    {
+        const TEST_FORCED_PARTS: u64 = 50;
+        let per_part = available / TEST_FORCED_PARTS;
+        let per_part_floor = migration_fee_zatoshi.saturating_add(minimum_output_zatoshi);
+        if per_part < per_part_floor {
+            return Err(format!(
+                "50-part test override: available {} / {} = {} below per-part floor {} \
+                 (migration_fee + minimum_output); fund more Orchard balance to test 50 parts",
+                available, TEST_FORCED_PARTS, per_part, per_part_floor
+            ));
+        }
+        let mut outputs = vec![per_part; (TEST_FORCED_PARTS - 1) as usize];
+        // Last part absorbs the division remainder so all of `available` migrates.
+        outputs.push(available - per_part * (TEST_FORCED_PARTS - 1));
+        let total_migratable_zatoshi = outputs.iter().try_fold(0u64, |acc, value| {
+            acc.checked_add(*value)
+                .ok_or_else(|| "Migratable total overflow".to_string())
+        })?;
+        log::warn!(
+            "[MIGRATION TEST OVERRIDE] forcing {} parts (~{} zat each, available={}) \
+             — REMOVE before production",
+            TEST_FORCED_PARTS, per_part, available
+        );
+        return Ok(DenominationPlan {
+            migration_outputs: outputs,
+            orchard_change: None,
+            prep_fee_zatoshi,
+            migration_fee_zatoshi,
+            total_input_zatoshi,
+            total_migratable_zatoshi,
+        });
+    }
+    // ===== END TEMPORARY TEST OVERRIDE =====
+
     let whole_zec = available / ZATOSHIS_PER_ZEC;
     let mut remainder = available % ZATOSHIS_PER_ZEC;
     let mut outputs = Vec::new();

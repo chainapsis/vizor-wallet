@@ -140,7 +140,9 @@ const ZCASH_SIGN_BATCH_VERSION: u32 = 1;
 const ZCASH_SIGN_BATCH_NETWORK_MAINNET: u32 = 1;
 const ZCASH_SIGN_MESSAGE_KIND_PCZT_V1: u32 = 1;
 const ZCASH_SIGN_STATUS_SIGNED: u32 = 0;
-pub(crate) const ZCASH_SIGN_BATCH_MAX_MESSAGES: usize = 35;
+// Must match the signer's `ZCASH_BATCH_MAX_MESSAGES`; the device rejects any batch
+// larger than this. Sized to fit a full migration batch.
+pub(crate) const ZCASH_SIGN_BATCH_MAX_MESSAGES: usize = 80;
 
 // `zcash-batch-sig-result` (UR tag 49207) wire constants. The registry CBOR shape is
 // `{1: version, 2: request_id, 3: results: [{1: message_id, 2: sigs:
@@ -229,10 +231,13 @@ pub fn pczt_spend_nullifiers(pczt_bytes: &[u8]) -> Result<Vec<String>, String> {
         nullifiers.push(format!("sapling:{}", hex::encode(spend.nullifier())));
     }
     for action in pczt.orchard().actions() {
-        nullifiers.push(format!(
-            "orchard:{}",
-            hex::encode(action.spend().nullifier())
-        ));
+        // `nullifier` is optional on the wire; the wallet's own base PCZTs
+        // always carry it (this runs pre-redaction).
+        let nullifier = action
+            .spend()
+            .nullifier()
+            .ok_or("Orchard PCZT spend is missing its nullifier")?;
+        nullifiers.push(format!("orchard:{}", hex::encode(nullifier)));
     }
 
     Ok(nullifiers)
@@ -404,15 +409,18 @@ pub fn decode_ur_part(part: &str, expected_ur_type: &str) -> Result<UrDecodeResu
 }
 
 /// Number of animated-QR parts to emit for a UR whose payload spans
-/// `fragment_count` fragments. The encoder emits the pure fragments first; using
-/// a short fountain tail lets the scanner recover from a missed frame without
-/// forcing the user to wait for a full loop.
+/// `fragment_count` fragments. The encoder emits the pure fragments first, then
+/// fountain (mixed) parts; a large fountain tail lets a poor scanner camera
+/// recover missed frames from later mixes instead of waiting a full loop.
+///
+/// TEST dial: fountain redundancy raised from ~10% to ~100% (2x total parts) for
+/// the bad-camera 50-note migration experiment. Revert with the other test dials.
 fn ur_part_count(fragment_count: usize) -> usize {
     if fragment_count <= 1 {
         return fragment_count;
     }
 
-    let redundant_parts = fragment_count.div_ceil(10).max(2);
+    let redundant_parts = fragment_count.max(2);
     fragment_count + redundant_parts
 }
 
@@ -1032,9 +1040,10 @@ mod tests {
     fn ur_part_count_adds_small_redundancy_tail() {
         assert_eq!(ur_part_count(0), 0);
         assert_eq!(ur_part_count(1), 1);
-        assert_eq!(ur_part_count(20), 22);
-        assert_eq!(ur_part_count(36), 40);
-        assert_eq!(ur_part_count(57), 63);
+        // TEST dial: ~100% fountain redundancy (2x total parts) for the bad-camera experiment.
+        assert_eq!(ur_part_count(20), 40);
+        assert_eq!(ur_part_count(36), 72);
+        assert_eq!(ur_part_count(57), 114);
     }
 
     #[test]

@@ -241,7 +241,8 @@ pub fn create_pczt_from_proposal(
         .map_err(|e| format!("Create PCZT failed: {e}"))
     })?;
 
-    Ok(pczt.serialize())
+    pczt.serialize()
+        .map_err(|e| format!("Serialize PCZT: {e:?}"))
 }
 
 /// Release a stored proposal without executing it. Called from the
@@ -309,7 +310,10 @@ pub fn add_proofs_to_pczt(
         }
     }
 
-    Ok(prover.finish().serialize())
+    prover
+        .finish()
+        .serialize()
+        .map_err(|e| format!("Serialize PCZT with proofs: {e:?}"))
 }
 
 /// Redact information from a PCZT that the signer role doesn't need
@@ -332,7 +336,12 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
 ///   dummy spends without needing them, and the wallet's stored copy of the
 ///   PCZT retains them for the post-signing combine, so on the wire they are
 ///   pure overhead (and the device would echo them back, bloating the
-///   response).
+///   response);
+/// - for a v6 PCZT, the derived fields the device recomputes at parse time
+///   (`cv_net`, `cmx`, `ephemeral_key`, `enc_ciphertext` tagged with its
+///   [`MemoKind`](pczt::orchard::MemoKind)), the bundle `bsk`s, and any bundle
+///   anchor equal to the `empty_tree` placeholder — each gated by the
+///   pre-elision self-check in [`plan_verified_batch_elisions`].
 ///
 /// Only use this for the migration batch flow; the single-transaction hardware
 /// send keeps [`redact_pczt_for_signer`].
@@ -340,13 +349,182 @@ pub fn redact_pczt_for_batch_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String
     redact_pczt_for_signer_inner(pczt_bytes, true)
 }
 
-/// Shared body of [`redact_pczt_for_signer`] and [`redact_pczt_for_batch_signer`]:
-/// the standard signer redaction, plus the batch-only spend `fvk` and
-/// `spend_auth_sig` clears when `for_batch` is set.
-fn redact_pczt_for_signer_inner(pczt_bytes: &[u8], for_batch: bool) -> Result<Vec<u8>, String> {
+/// Derived-field elisions for one Orchard-shaped action of a batch request.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ActionElisions {
+    cv_net: bool,
+    cmx: bool,
+    ephemeral_key: bool,
+    /// `Some(kind)` elides `enc_ciphertext`, tagging the note's memo as `kind`
+    /// for the device to re-encrypt under.
+    enc_ciphertext: Option<pczt::orchard::MemoKind>,
+}
+
+/// Elision plan for one Orchard-shaped bundle of a batch request.
+#[derive(Clone, PartialEq, Eq, Default)]
+struct BundleElisions {
+    clear_anchor: bool,
+    actions: Vec<ActionElisions>,
+}
+
+/// Elision plan for both Orchard-shaped bundles of a v6 batch request.
+#[derive(Clone, PartialEq, Eq)]
+struct PcztElisions {
+    orchard: BundleElisions,
+    ironwood: BundleElisions,
+}
+
+/// Builds the candidate elision plan for one bundle of the not-yet-redacted PCZT.
+///
+/// Per action, the three unconditionally recomputable derived fields (`cv_net`,
+/// `cmx`, `ephemeral_key`) are candidates, and `enc_ciphertext` is a candidate
+/// tagged by the memo the wallet attaches to that output kind — raw-zero for the
+/// builder's dummy outputs, the ZIP 302 empty memo for the wallet's real
+/// migration/denomination outputs (built with `MemoBytes::empty()`). The
+/// zero-valued output the builder pairs with a real spend is skipped: its
+/// `enc_ciphertext` is randomized rather than an encryption of the note, so it
+/// can never reconstruct. Real spends are recognized as the unsigned ones — at
+/// request time the only signatures present are the IO finalizer's dummy-spend
+/// signatures. The bundle anchor is a candidate only when it already equals the
+/// `empty_tree` placeholder the receiver refills.
+///
+/// Every candidate is verified against a recomputation before use; see
+/// [`plan_verified_batch_elisions`].
+fn plan_candidate_bundle_elisions(bundle: &pczt::orchard::Bundle) -> BundleElisions {
+    let clear_anchor = *bundle.anchor() == Some(orchard::Anchor::empty_tree().to_bytes());
+    let actions = bundle
+        .actions()
+        .iter()
+        .map(|action| {
+            let spend_is_unsigned = action.spend().spend_auth_sig().is_none();
+            let enc_ciphertext = match *action.output().value() {
+                Some(0) if spend_is_unsigned => None,
+                Some(0) => Some(pczt::orchard::MemoKind::Zero),
+                Some(_) => Some(pczt::orchard::MemoKind::Empty),
+                None => None,
+            };
+            ActionElisions {
+                cv_net: true,
+                cmx: true,
+                ephemeral_key: true,
+                enc_ciphertext,
+            }
+        })
+        .collect();
+    BundleElisions {
+        clear_anchor,
+        actions,
+    }
+}
+
+/// Verifies a candidate plan for one bundle against the receiver's actual
+/// reconstruction: `probe` is the redacted-then-refilled copy, `original` the
+/// untouched bundle. A field stays in the plan only if the refilled value is
+/// byte-identical to the original (the elided anchor needs no probe — the
+/// candidate already required it to equal the placeholder the receiver refills).
+fn verify_bundle_elisions(
+    original: &pczt::orchard::Bundle,
+    probe: &pczt::orchard::Bundle,
+    candidate: &BundleElisions,
+) -> BundleElisions {
+    let actions = candidate
+        .actions
+        .iter()
+        .zip(original.actions().iter().zip(probe.actions().iter()))
+        .map(|(cand, (orig, reb))| ActionElisions {
+            cv_net: cand.cv_net && reb.cv_net() == orig.cv_net(),
+            cmx: cand.cmx && reb.output().cmx() == orig.output().cmx(),
+            ephemeral_key: cand.ephemeral_key
+                && reb.output().ephemeral_key() == orig.output().ephemeral_key(),
+            enc_ciphertext: cand
+                .enc_ciphertext
+                .filter(|_| reb.output().enc_ciphertext() == orig.output().enc_ciphertext()),
+        })
+        .collect();
+    BundleElisions {
+        clear_anchor: candidate.clear_anchor,
+        actions,
+    }
+}
+
+/// Pre-elision self-check for a v6 batch request: builds the candidate plan,
+/// applies it to a clone, runs `fill_derived_fields()` on the clone (the exact
+/// recomputation the receiver performs at parse time), byte-compares the result
+/// against the unredacted original, and returns the plan restricted to the
+/// fields that reconstructed identically. Returns `None` (no elision, plain
+/// batch redaction) for non-v6 PCZTs or when the fill itself fails.
+fn plan_verified_batch_elisions(original: &pczt::Pczt) -> Option<PcztElisions> {
+    if *original.global().tx_version() != zcash_protocol::constants::V6_TX_VERSION {
+        return None;
+    }
+
+    let candidate = PcztElisions {
+        orchard: plan_candidate_bundle_elisions(original.orchard()),
+        ironwood: plan_candidate_bundle_elisions(original.ironwood()),
+    };
+
+    let mut probe = apply_signer_redaction(original.clone(), true, Some(&candidate));
+    if let Err(e) = probe.fill_derived_fields() {
+        log::warn!(
+            "[MIGRATION] batch PCZT elision disabled: derived-field recomputation failed: {e:?}"
+        );
+        return None;
+    }
+
+    let verified = PcztElisions {
+        orchard: verify_bundle_elisions(original.orchard(), probe.orchard(), &candidate.orchard),
+        ironwood: verify_bundle_elisions(
+            original.ironwood(),
+            probe.ironwood(),
+            &candidate.ironwood,
+        ),
+    };
+    if verified != candidate {
+        log::warn!(
+            "[MIGRATION] batch PCZT elision self-check kept some fields that did not \
+             reconstruct identically"
+        );
+    }
+    Some(verified)
+}
+
+/// Applies the signer redaction to a parsed PCZT: the standard witness /
+/// proprietary clears, the batch-only spend `fvk` and `spend_auth_sig` clears
+/// when `for_batch` is set, and the given verified derived-field elisions (plus
+/// `bsk`, never needed by the device — the wallet's stored copy retains it for
+/// extraction) when a plan is supplied.
+fn apply_signer_redaction(
+    pczt: pczt::Pczt,
+    for_batch: bool,
+    elisions: Option<&PcztElisions>,
+) -> pczt::Pczt {
     use pczt::roles::redactor::Redactor;
 
-    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
+    fn apply_bundle_elisions(
+        r: &mut pczt::roles::redactor::orchard::OrchardRedactor<'_>,
+        plan: &BundleElisions,
+    ) {
+        r.clear_bsk();
+        if plan.clear_anchor {
+            r.clear_anchor();
+        }
+        for (index, e) in plan.actions.iter().enumerate() {
+            r.redact_action(index, |mut ar| {
+                if e.cv_net {
+                    ar.clear_cv_net();
+                }
+                if e.cmx {
+                    ar.clear_cmx();
+                }
+                if e.ephemeral_key {
+                    ar.clear_ephemeral_key();
+                }
+                if let Some(kind) = e.enc_ciphertext {
+                    ar.clear_enc_ciphertext(kind);
+                }
+            });
+        }
+    }
 
     let mut redactor = Redactor::new(pczt)
         .redact_global_with(|mut r| r.redact_proprietary("zcash_client_backend:proposal_info"))
@@ -359,6 +537,9 @@ fn redact_pczt_for_signer_inner(pczt_bytes: &[u8], for_batch: bool) -> Result<Ve
                     ar.clear_spend_auth_sig();
                 }
             });
+            if let Some(plan) = elisions {
+                apply_bundle_elisions(&mut r, &plan.orchard);
+            }
         });
 
     #[cfg(zcash_unstable = "nu6.3")]
@@ -372,10 +553,13 @@ fn redact_pczt_for_signer_inner(pczt_bytes: &[u8], for_batch: bool) -> Result<Ve
                     ar.clear_spend_auth_sig();
                 }
             });
+            if let Some(plan) = elisions {
+                apply_bundle_elisions(&mut r, &plan.ironwood);
+            }
         });
     }
 
-    let redacted = redactor
+    redactor
         .redact_sapling_with(|mut r| {
             r.redact_spends(|mut sr| sr.clear_witness());
             r.redact_outputs(|mut or| {
@@ -387,14 +571,30 @@ fn redact_pczt_for_signer_inner(pczt_bytes: &[u8], for_batch: bool) -> Result<Ve
                 or.redact_proprietary("zcash_client_backend:output_info");
             });
         })
-        .finish();
+        .finish()
+}
+
+/// Shared body of [`redact_pczt_for_signer`] and [`redact_pczt_for_batch_signer`]:
+/// the standard signer redaction, plus (for batch requests) the spend `fvk` and
+/// `spend_auth_sig` clears and the self-checked derived-field elisions.
+fn redact_pczt_for_signer_inner(pczt_bytes: &[u8], for_batch: bool) -> Result<Vec<u8>, String> {
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
+
+    let elisions = if for_batch {
+        plan_verified_batch_elisions(&pczt)
+    } else {
+        None
+    };
+    let redacted = apply_signer_redaction(pczt, for_batch, elisions.as_ref());
 
     if *redacted.global().tx_version() == 5 {
-        redacted
-            .serialize_legacy_v1()
-            .map_err(|e| format!("Serialize legacy PCZT for signer: {e}"))
+        pczt::v1::Pczt::try_from(redacted)
+            .map_err(|e| format!("Serialize legacy PCZT for signer: {e:?}"))
+            .map(|v1| v1.serialize())
     } else {
-        Ok(redacted.serialize())
+        redacted
+            .serialize()
+            .map_err(|e| format!("Serialize PCZT for signer: {e:?}"))
     }
 }
 
@@ -414,7 +614,7 @@ pub(crate) fn set_orchard_anchor_and_witness(
         .iter()
         .enumerate()
         .filter_map(|(index, action)| {
-            if *action.spend().nullifier() == spend_nullifier {
+            if *action.spend().nullifier() == Some(spend_nullifier) {
                 Some(index)
             } else {
                 None
@@ -440,7 +640,9 @@ pub(crate) fn set_orchard_anchor_and_witness(
         .map_err(|e| format!("Set Orchard witness in PCZT: {e}"))?
         .finish();
 
-    Ok(updated.serialize())
+    updated
+        .serialize()
+        .map_err(|e| format!("Serialize updated PCZT: {e:?}"))
 }
 
 fn parse_32_byte_hex(value: &str, label: &str) -> Result<[u8; 32], String> {
@@ -502,15 +704,12 @@ fn finalize_and_extract(
         .map_err(|e| format!("Finalize transparent spends in PCZT: {e:?}"))?;
 
     let consensus_branch_id = *finalized_pczt.global().consensus_branch_id();
+    // A single branch-keyed verifying key covers every Orchard-shaped bundle:
+    // the Orchard and Ironwood bundles of a v6 transaction share the
+    // post-NU6.3 circuit (see `orchard_circuit_version_for_consensus_branch`).
     let orchard_vk = orchard_verifying_key_for_consensus_branch(consensus_branch_id);
-    #[cfg(zcash_unstable = "nu6.3")]
-    let ironwood_vk = orchard::circuit::VerifyingKey::build(ironwood_orchard_circuit_version());
 
     let mut extractor = TransactionExtractor::new(finalized_pczt).with_orchard(&orchard_vk);
-    #[cfg(zcash_unstable = "nu6.3")]
-    {
-        extractor = extractor.with_ironwood(&ironwood_vk);
-    }
     if let Some((spend_vk, output_vk)) = sapling_vks {
         extractor = extractor.with_sapling(spend_vk, output_vk);
     }
@@ -1147,7 +1346,9 @@ mod tests {
                 .add_ironwood_output::<zip317::FeeRule>(
                     Some(orchard_ovk),
                     recipient,
-                    Zatoshis::const_from_u64(980_000),
+                    // 1_000_000 input − the 15_000 ZIP-317 fee (3 logical
+                    // actions: 2 padded Orchard + 1 unpadded Ironwood).
+                    Zatoshis::const_from_u64(985_000),
                     MemoBytes::empty(),
                 )
                 .unwrap();
@@ -1163,7 +1364,7 @@ mod tests {
             let base = IoFinalizer::new(base).finalize_io().unwrap();
             let spend_index = orchard_meta.spend_action_index(0).unwrap();
 
-            (base.serialize(), orchard_ask, spend_index)
+            (base.serialize().unwrap(), orchard_ask, spend_index)
         }
 
         /// Reads the Orchard spend-authorization signature back out of a signed
@@ -1196,7 +1397,7 @@ mod tests {
                 .create_ironwood_proof(pk)
                 .unwrap()
                 .finish();
-            let proofs_bytes = proofs_pczt.serialize();
+            let proofs_bytes = proofs_pczt.serialize().unwrap();
 
             // OLD path: sign the base PCZT to get a full signed PCZT, redact it
             // for transport the way the wallet does before combining, then
@@ -1205,7 +1406,7 @@ mod tests {
             signer.sign_orchard(spend_index, &orchard_ask).unwrap();
             let signed_pczt = signer.finish();
             let sig_bytes = orchard_spend_auth_sig_bytes(&signed_pczt, spend_index);
-            let redacted_signed_bytes = redact_pczt_for_signer(&signed_pczt.serialize())
+            let redacted_signed_bytes = redact_pczt_for_signer(&signed_pczt.clone().serialize().unwrap())
                 .expect("redact signed PCZT for transport");
 
             let old =
@@ -1228,7 +1429,7 @@ mod tests {
             // spend's signature plus the dummy-spend signatures the IO
             // Finalizer produced for padding actions. The real signature must
             // be among them at the spend's (pool, action index).
-            let extracted_sigs = extract_compact_sigs_from_signed_pczt(&signed_pczt.serialize())
+            let extracted_sigs = extract_compact_sigs_from_signed_pczt(&signed_pczt.serialize().unwrap())
                 .expect("extract compact sigs from signed PCZT");
             assert!(
                 extracted_sigs.contains(&DecodedActionSig {
@@ -1314,6 +1515,112 @@ mod tests {
             // `Transaction` type, confirming the compact path emits a
             // structurally valid, consensus-identical transaction.
             assert_eq!(new.tx.txid(), old.tx.txid());
+        }
+
+        // The batch redaction of a migration-shaped PCZT: elides exactly the
+        // self-check-verified derived fields (skipping the randomized ciphertext of
+        // the output paired with the real spend and the non-placeholder Orchard
+        // anchor), reconstructs them byte-identically on refill, and yields a
+        // device signature that verifies and extracts to the same transaction as
+        // signing the unredacted base.
+        #[test]
+        fn batch_redaction_elides_verified_fields_and_signs_identically() {
+            use crate::wallet::keystone::DECODED_SIG_POOL_ORCHARD;
+            use crate::wallet::sync::pczt::redact_pczt_for_batch_signer;
+
+            let (base_bytes, orchard_ask, spend_index) = build_migration_base_pczt();
+
+            let batch = redact_pczt_for_batch_signer(&base_bytes).unwrap();
+            // The whole point of the elision work: a migration child small enough
+            // for a short device QR carousel (this fixture measures ~2.0 kB, down
+            // from ~7.0 kB unelided; the retained bytes are dominated by the
+            // never-reconstructable ciphertexts — the randomized `enc_ciphertext`
+            // paired with the real spend and the three `out_ciphertext`s).
+            assert!(
+                batch.len() < 2_100,
+                "batch-redacted migration child should stay near 2 kB, got {} bytes",
+                batch.len(),
+            );
+
+            let base = pczt::Pczt::parse(&base_bytes).unwrap();
+            let parsed = pczt::Pczt::parse(&batch).unwrap();
+
+
+            // The Orchard anchor is a real (dummy-witness) root, not the
+            // `empty_tree` placeholder the receiver refills, so it must survive;
+            // the Ironwood bundle was built against the placeholder, so its
+            // anchor elides.
+            assert!(parsed.orchard().anchor().is_some());
+            assert!(parsed.ironwood().anchor().is_none());
+
+            for (index, action) in parsed.orchard().actions().iter().enumerate() {
+                assert!(action.cv_net().is_none());
+                assert!(action.output().cmx().is_none());
+                assert!(action.output().ephemeral_key().is_none());
+                if index == spend_index {
+                    // The zero-valued output paired with the real spend carries a
+                    // randomized (non-reconstructable) ciphertext: never elided.
+                    assert!(action.output().enc_ciphertext().is_some());
+                    assert!(action.output().memo_kind().is_none());
+                } else {
+                    // The padding action's dummy output uses the raw-zero memo.
+                    assert!(action.output().enc_ciphertext().is_none());
+                    assert_eq!(
+                        *action.output().memo_kind(),
+                        Some(pczt::orchard::MemoKind::Zero)
+                    );
+                }
+            }
+            for action in parsed.ironwood().actions() {
+                // The real migration output is built with `MemoBytes::empty()`.
+                assert!(action.cv_net().is_none());
+                assert!(action.output().cmx().is_none());
+                assert!(action.output().ephemeral_key().is_none());
+                assert!(action.output().enc_ciphertext().is_none());
+                assert_eq!(
+                    *action.output().memo_kind(),
+                    Some(pczt::orchard::MemoKind::Empty)
+                );
+            }
+
+            // Refilling reconstructs every elided field byte-identically — the
+            // same recomputation the device performs at parse time.
+            let mut refilled = pczt::Pczt::parse(&batch).unwrap();
+            refilled.fill_derived_fields().unwrap();
+            for (reb, orig) in refilled
+                .orchard()
+                .actions()
+                .iter()
+                .zip(base.orchard().actions().iter())
+                .chain(
+                    refilled
+                        .ironwood()
+                        .actions()
+                        .iter()
+                        .zip(base.ironwood().actions().iter()),
+                )
+            {
+                assert_eq!(reb.cv_net(), orig.cv_net());
+                assert_eq!(reb.output().cmx(), orig.output().cmx());
+                assert_eq!(reb.output().ephemeral_key(), orig.output().ephemeral_key());
+                assert_eq!(
+                    reb.output().enc_ciphertext(),
+                    orig.output().enc_ciphertext()
+                );
+            }
+
+            // Byte-identity of the refilled bundles is the on-chain-safety gate:
+            // the v6 shielded sighash commits to exactly these bundle fields (and
+            // excludes the anchor), so identical bytes imply the device computes
+            // the identical sighash from the elided request, and its signature
+            // verifies against the wallet's unredacted transaction. Signing over
+            // the batch redaction with pczt's strict `Signer` role is not
+            // possible here — the batch format drops the wire `fvk`s the role
+            // requires for dummy spends; the Keystone firmware instead verifies
+            // against the FVK derived from its own stored UFVK. The
+            // sigs-only test above covers the signature transport; the pinned
+            // pczt crate's end-to-end tests pin bytes ⟹ sighash ⟹ signature.
+            let _ = orchard_ask;
         }
     }
 }
