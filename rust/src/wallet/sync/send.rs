@@ -2901,11 +2901,9 @@ fn create_orchard_denomination_split_pczt(
     })?;
     let (orchard_anchor, orchard_inputs) =
         orchard_witnesses(&mut db, anchor_height, &orchard_notes)?;
-    // The ZIP-317 fee of one migration child: its Orchard bundle pads the single
-    // real spend to the 2-action minimum, while its Ironwood bundle is unpadded
-    // (see `zcash_primitives::transaction::builder::transactional_bundle_type`),
-    // so the single self-addressed output counts as 1 action — 3 logical actions,
-    // 15_000 zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
+    // The ZIP-317 fee of one migration child: its unpadded Orchard spend and
+    // unpadded Ironwood self-addressed output count as 2 logical actions, 10_000
+    // zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
     // recomputes the exact per-child fee from the real builder; this estimate
     // must match it so the planned denominations balance.
     let migration_fee_estimate = fee_rule
@@ -2916,7 +2914,7 @@ fn create_orchard_denomination_split_pczt(
             std::iter::empty::<usize>(),
             0,
             0,
-            3,
+            2,
         )
         .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
 
@@ -3075,11 +3073,9 @@ fn create_orchard_denomination_split_transaction(
     })?;
     let (orchard_anchor, orchard_inputs) =
         orchard_witnesses(&mut db, anchor_height, &orchard_notes)?;
-    // The ZIP-317 fee of one migration child: its Orchard bundle pads the single
-    // real spend to the 2-action minimum, while its Ironwood bundle is unpadded
-    // (see `zcash_primitives::transaction::builder::transactional_bundle_type`),
-    // so the single self-addressed output counts as 1 action — 3 logical actions,
-    // 15_000 zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
+    // The ZIP-317 fee of one migration child: its unpadded Orchard spend and
+    // unpadded Ironwood self-addressed output count as 2 logical actions, 10_000
+    // zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
     // recomputes the exact per-child fee from the real builder; this estimate
     // must match it so the planned denominations balance.
     let migration_fee_estimate = fee_rule
@@ -3090,7 +3086,7 @@ fn create_orchard_denomination_split_transaction(
             std::iter::empty::<usize>(),
             0,
             0,
-            3,
+            2,
         )
         .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
 

@@ -1346,9 +1346,9 @@ mod tests {
                 .add_ironwood_output::<zip317::FeeRule>(
                     Some(orchard_ovk),
                     recipient,
-                    // 1_000_000 input − the 15_000 ZIP-317 fee (3 logical
-                    // actions: 2 padded Orchard + 1 unpadded Ironwood).
-                    Zatoshis::const_from_u64(985_000),
+                    // 1_000_000 input - the 10_000 ZIP-317 fee (2 logical
+                    // actions: 1 unpadded Orchard + 1 unpadded Ironwood).
+                    Zatoshis::const_from_u64(990_000),
                     MemoBytes::empty(),
                 )
                 .unwrap();
@@ -1525,7 +1525,6 @@ mod tests {
         // signing the unredacted base.
         #[test]
         fn batch_redaction_elides_verified_fields_and_signs_identically() {
-            use crate::wallet::keystone::DECODED_SIG_POOL_ORCHARD;
             use crate::wallet::sync::pczt::redact_pczt_for_batch_signer;
 
             let (base_bytes, orchard_ask, spend_index) = build_migration_base_pczt();
@@ -1545,31 +1544,24 @@ mod tests {
             let base = pczt::Pczt::parse(&base_bytes).unwrap();
             let parsed = pczt::Pczt::parse(&batch).unwrap();
 
-
             // The Orchard anchor is a real (dummy-witness) root, not the
             // `empty_tree` placeholder the receiver refills, so it must survive;
             // the Ironwood bundle was built against the placeholder, so its
             // anchor elides.
             assert!(parsed.orchard().anchor().is_some());
             assert!(parsed.ironwood().anchor().is_none());
+            assert_eq!(parsed.orchard().actions().len(), 1);
+            assert_eq!(parsed.ironwood().actions().len(), 1);
 
             for (index, action) in parsed.orchard().actions().iter().enumerate() {
+                assert_eq!(index, spend_index);
                 assert!(action.cv_net().is_none());
                 assert!(action.output().cmx().is_none());
                 assert!(action.output().ephemeral_key().is_none());
-                if index == spend_index {
-                    // The zero-valued output paired with the real spend carries a
-                    // randomized (non-reconstructable) ciphertext: never elided.
-                    assert!(action.output().enc_ciphertext().is_some());
-                    assert!(action.output().memo_kind().is_none());
-                } else {
-                    // The padding action's dummy output uses the raw-zero memo.
-                    assert!(action.output().enc_ciphertext().is_none());
-                    assert_eq!(
-                        *action.output().memo_kind(),
-                        Some(pczt::orchard::MemoKind::Zero)
-                    );
-                }
+                // The output paired with the real spend carries a randomized
+                // ciphertext: never elided.
+                assert!(action.output().enc_ciphertext().is_some());
+                assert!(action.output().memo_kind().is_none());
             }
             for action in parsed.ironwood().actions() {
                 // The real migration output is built with `MemoBytes::empty()`.
