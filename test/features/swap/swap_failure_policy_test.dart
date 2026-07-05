@@ -213,4 +213,96 @@ void main() {
       );
     },
   );
+
+  test('dust-guard StateError on start asks to increase the amount', () {
+    // Mirrors the zwap adapter's _assertReceiveSweepable message.
+    final error = StateError(
+      'Amount too small: this swap yields about 10000 zatoshi of ZEC, '
+      'below the 30000 zat minimum needed to cover the 15000 zat network '
+      'sweep fee. Increase the amount and retry.',
+    );
+
+    expect(
+      swapFailureCategory(SwapFailureOperation.start, error),
+      SwapFailureCategory.amountTooSmall,
+    );
+    expect(
+      swapFailureMessage(SwapFailureOperation.start, error),
+      'Amount is too small to cover the network fee.\n'
+      'Increase the amount and try again.',
+    );
+  });
+
+  test('insufficient solver liquidity on start asks for a smaller amount', () {
+    // The zwap client rethrows the price-server 409 as a StateError string.
+    final error = StateError(
+      'zwap GET http://localhost:3600/v1/attest?from=btc&to=zec&amount=10000 '
+      '→ HTTP 409: {"error":"insufficient solver liquidity for requested '
+      'amount","requiredSmallest":"17960000"}',
+    );
+
+    expect(
+      swapFailureCategory(SwapFailureOperation.start, error),
+      SwapFailureCategory.noQuoteOrLiquidity,
+    );
+    expect(
+      swapFailureMessage(SwapFailureOperation.start, error),
+      'No quote is available for this route or amount.\n'
+      'Try a smaller amount or another asset.',
+    );
+  });
+
+  test('connection reset on start is a reachability issue, not unknown', () {
+    // dart:io SocketException stringifies with "SocketException" + the OS
+    // "Connection reset by peer" text; match without importing dart:io.
+    final error = Exception(
+      'SocketException: Connection reset by peer (OS Error: '
+      'Connection reset by peer, errno = 54), address = localhost',
+    );
+
+    expect(
+      swapFailureCategory(SwapFailureOperation.start, error),
+      SwapFailureCategory.networkUnreachable,
+    );
+    expect(
+      swapFailureMessage(SwapFailureOperation.start, error),
+      "Can't reach the swap service.\nCheck your connection and try again.",
+    );
+  });
+
+  group('swapDepositBalanceStillConfirming', () {
+    test('true for the give-ZEC unconfirmed-change race (have 0)', () {
+      expect(
+        swapDepositBalanceStillConfirming(
+          StateError(
+            'Propose failed: Insufficient balance '
+            '(have 0, need 1010000 including fee)',
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test('false for solver-side insufficient liquidity', () {
+      expect(
+        swapDepositBalanceStillConfirming(
+          Exception('insufficient solver liquidity'),
+        ),
+        isFalse,
+      );
+      expect(
+        swapDepositBalanceStillConfirming(Exception('insufficient liquidity')),
+        isFalse,
+      );
+    });
+
+    test('false for unrelated wallet errors (not auto-retryable)', () {
+      expect(
+        swapDepositBalanceStillConfirming(
+          StateError('Mnemonic not found for the active account'),
+        ),
+        isFalse,
+      );
+    });
+  });
 }

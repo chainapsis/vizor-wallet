@@ -16,6 +16,9 @@ void main() {
         sellAmount: '2.0000 ZEC',
         receiveEstimate: '140.00 USDC',
         depositAddress: 't1deposit-address',
+        // A give-ZEC swap only reaches `processing` after its ZEC deposit
+        // actually broadcast; that deposit tx is what marks "ZEC sent".
+        depositTxHash: 'zec-deposit-txid',
         oneClickRecipient: '0xrecipient-address',
         oneClickRefundTo: 'u1refund-address',
         createdAt: DateTime.utc(2026, 5, 20, 13, 20),
@@ -533,6 +536,47 @@ void main() {
     expect(memo.copyable, isTrue);
     expect(memo.copyText, 'required-memo-123');
   });
+
+  test(
+    'give-ZEC keeps step 0 when the orderbook advanced but the ZEC deposit '
+    'never broadcast (solver funded its leg first)',
+    () {
+      // Regression: a give-ZEC deposit that FAILED (e.g. insufficient confirmed
+      // balance) must not show "ZEC sent". The orderbook can reach
+      // depositObserved / processing purely because the solver funded its
+      // counter-leg, but with no local deposit tx the progress stays at step 0.
+      for (final status in const [
+        SwapIntentStatus.depositObserved,
+        SwapIntentStatus.processing,
+      ]) {
+        final presentation = swapActivityStatusPresentationForIntent(
+          _state(),
+          _intent(
+            status: status,
+            direction: SwapDirection.zecToExternal,
+            externalAsset: SwapAsset.usdc,
+            depositAddress: 't1deposit-address',
+            oneClickRecipient: '0xrecipient-address',
+          ),
+        );
+        expect(presentation.progressIndex, 0, reason: 'status=$status');
+      }
+
+      // With the ZEC deposit tx present, the same states advance normally.
+      final sent = swapActivityStatusPresentationForIntent(
+        _state(),
+        _intent(
+          status: SwapIntentStatus.processing,
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          depositAddress: 't1deposit-address',
+          depositTxHash: 'zec-deposit-txid',
+          oneClickRecipient: '0xrecipient-address',
+        ),
+      );
+      expect(sent.progressIndex, 2);
+    },
+  );
 }
 
 SwapState _state({Map<SwapAsset, double> indicativeExternalPerZec = const {}}) {

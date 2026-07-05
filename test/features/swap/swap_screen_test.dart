@@ -2675,8 +2675,21 @@ void main() {
       find.byKey(const ValueKey('swap_external_asset_menu')),
       findsOneWidget,
     );
-    expect(find.text('ETH'), findsOneWidget);
+    // ETH and USDC are each offered on both EVM chains (Ethereum + Base), so the
+    // in-app chain selector shows a row per (token, chain).
+    expect(find.text('ETH'), findsWidgets);
     expect(find.text('Ethereum'), findsWidgets);
+    expect(find.text('Base'), findsWidgets);
+    expect(find.byKey(const ValueKey('swap_asset_row_eth')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('swap_asset_row_eth_base')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('swap_asset_row_usdc')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('swap_asset_row_usdc_base')),
+      findsOneWidget,
+    );
     expect(find.text('Ethereum ETH'), findsNothing);
 
     await tester.enterText(
@@ -3643,6 +3656,9 @@ void main() {
         receiveEstimateText: '70.170000 USDC',
         status: SwapIntentStatus.processing,
         nextAction: 'Swap is processing',
+        // Give-ZEC at `processing` carries its ZEC deposit tx (origin chain);
+        // that is what advances the tracker past the "Send ZEC" step.
+        originChainTxHash: 'zec-deposit-txid',
         depositInstruction: SwapDepositInstruction(
           asset: SwapAsset.zec,
           address: 'jump-deposit',

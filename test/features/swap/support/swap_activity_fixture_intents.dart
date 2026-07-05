@@ -9,6 +9,9 @@ final swapActivityFixtureIntents = <SwapIntent>[
     provider: 'NEAR Intents',
     status: SwapIntentStatus.processing,
     nextAction: 'Swap is processing',
+    // A give-ZEC swap only reaches `processing` after its ZEC deposit
+    // broadcast; that deposit tx is what marks the "ZEC sent" step done.
+    depositTxHash: 'zec-deposit-txid',
   ),
   SwapIntent(
     id: 'swap-6c44',
