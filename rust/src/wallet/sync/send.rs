@@ -3022,7 +3022,7 @@ fn create_orchard_denomination_split_pczt(
         orchard_inputs.len(),
         split_outputs.len(),
     )?;
-    let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built_pczt.bytes)?;
+    let redacted_pczt = super::pczt::redact_pczt_for_compressed_batch_signer(&built_pczt.bytes)?;
 
     Ok(Some(CreatedDenominationSplitPczt {
         base_pczt: built_pczt.bytes,
@@ -3350,7 +3350,8 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
         .map_err(|e| format!("Build predicted migration PCZT failed: {e}"))?;
     let expiry_height = u32::from(build_result.pczt_parts.expiry_height);
     let built_pczt = pczt_from_build_result(build_result, network, account_derivation, 1, 0)?;
-    let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built_pczt.bytes)?;
+    let redacted_pczt =
+        super::pczt::redact_pczt_for_compact_migration_child_signer(&built_pczt.bytes)?;
     let target_height_u32: u32 = target_height.into();
 
     Ok(Some(CreatedMigrationPczt {
@@ -3709,7 +3710,8 @@ fn create_orchard_to_ironwood_pczt_from_note(
         orchard_inputs.len(),
         0,
     )?;
-    let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built_pczt.bytes)?;
+    let redacted_pczt =
+        super::pczt::redact_pczt_for_compact_migration_child_signer(&built_pczt.bytes)?;
     let target_height_u32: u32 = target_height.into();
 
     Ok(Some(CreatedMigrationPczt {
