@@ -14,10 +14,12 @@ enum SwapFailureOperation {
 enum SwapFailureCategory {
   unsupportedAsset,
   amountPrecision,
+  amountTooSmall,
   invalidRouteOrAddress,
   noQuoteOrLiquidity,
   serviceUnavailable,
   networkTimeout,
+  networkUnreachable,
   unverifiedResponse,
   retryLater,
   walletPreflight,
@@ -45,12 +47,75 @@ SwapFailureCategory swapFailureCategory(
     return _oneClickCategory(operation, error);
   }
 
+  // Non-typed errors surface as plain strings (StateError from the zwap
+  // adapter, SocketException from dart:io on the atomic-swap backend). Classify
+  // them by content so the user gets an actionable message instead of the
+  // generic "could not be started / try again later".
+  final text = error.toString();
+  if (_isAmountTooSmallError(text)) {
+    return SwapFailureCategory.amountTooSmall;
+  }
+  if (_isInsufficientLiquidityError(text)) {
+    return SwapFailureCategory.noQuoteOrLiquidity;
+  }
+  if (_isNetworkUnreachableError(text)) {
+    return SwapFailureCategory.networkUnreachable;
+  }
+
   return switch (operation) {
     SwapFailureOperation.sendZecDeposit => SwapFailureCategory.walletPreflight,
     SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
       SwapFailureCategory.serviceUnavailable,
     _ => SwapFailureCategory.unknown,
   };
+}
+
+/// The zwap adapter's receive-side dust guard (`_assertReceiveSweepable`) and
+/// the Rust sweep both reject amounts that can't cover the network fee. The
+/// message is stable; match it so the user is told to increase the amount.
+bool _isAmountTooSmallError(String text) {
+  final t = text.toLowerCase();
+  return t.contains('amount too small') ||
+      (t.contains('note value') && t.contains('fee'));
+}
+
+/// The zwap price-server rejects an order (HTTP 409) when the solver can't
+/// fund the requested receive amount. Surfaced as a StateError carrying the
+/// server JSON. Map to the "try a smaller amount" guidance rather than the
+/// generic unknown message.
+bool _isInsufficientLiquidityError(String text) {
+  final t = text.toLowerCase();
+  return t.contains('insufficient solver liquidity') ||
+      t.contains('insufficient liquidity');
+}
+
+/// True when a give-ZEC deposit `propose` failed only because the wallet's
+/// CONFIRMED spendable balance was momentarily 0 — the classic unconfirmed-
+/// change race right after a prior swap spent a note (the funds exist, they
+/// just need a block confirmation). The give-ZEC flow uses this to auto-retry
+/// the deposit once the change confirms instead of orphaning the order.
+/// Deliberately distinct from solver-side "insufficient liquidity".
+bool swapDepositBalanceStillConfirming(Object error) {
+  final t = error.toString().toLowerCase();
+  return t.contains('insufficient balance') &&
+      !t.contains('insufficient solver') &&
+      !t.contains('insufficient liquidity');
+}
+
+/// Connection-level failures reaching the atomic-swap orderbook/solver
+/// (localhost during dev, remote in prod). Covers dart:io SocketException
+/// variants and http client connection errors without importing dart:io
+/// (keeps this file web-safe).
+bool _isNetworkUnreachableError(String text) {
+  final t = text.toLowerCase();
+  return t.contains('socketexception') ||
+      t.contains('connection refused') ||
+      t.contains('connection reset') ||
+      t.contains('connection closed') ||
+      t.contains('connection terminated') ||
+      t.contains('clientexception') ||
+      t.contains('failed host lookup') ||
+      t.contains('network is unreachable');
 }
 
 SwapFailureCategory _oneClickCategory(
@@ -101,6 +166,8 @@ String _messageFor(
     SwapFailureCategory.unsupportedAsset => _unsupportedAssetMessage(operation),
     SwapFailureCategory.amountPrecision =>
       'Amount has too many decimal places.\nUse fewer decimals and try again.',
+    SwapFailureCategory.amountTooSmall =>
+      'Amount is too small to cover the network fee.\nIncrease the amount and try again.',
     SwapFailureCategory.invalidRouteOrAddress =>
       'This route or address was rejected.\nEdit the details and request a new quote.',
     SwapFailureCategory.noQuoteOrLiquidity =>
@@ -109,6 +176,9 @@ String _messageFor(
       operation,
     ),
     SwapFailureCategory.networkTimeout => _timeoutMessage(operation),
+    SwapFailureCategory.networkUnreachable => _networkUnreachableMessage(
+      operation,
+    ),
     SwapFailureCategory.unverifiedResponse => _unverifiedResponseMessage(
       operation,
     ),
@@ -137,6 +207,14 @@ String _serviceUnavailableMessage(SwapFailureOperation operation) {
     SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
       'Swap service is temporarily unavailable.\nDo not resend funds. Try again later.',
     _ => 'Swap service is temporarily unavailable.\nTry again later.',
+  };
+}
+
+String _networkUnreachableMessage(SwapFailureOperation operation) {
+  return switch (operation) {
+    SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
+      "Can't reach the swap service.\nDo not resend funds. Try again in a moment.",
+    _ => "Can't reach the swap service.\nCheck your connection and try again.",
   };
 }
 

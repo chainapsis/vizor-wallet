@@ -492,13 +492,20 @@ class _SwapActivityFlowContent extends StatelessWidget {
       _ when showExternalDepositPage && depositInstruction != null =>
         SwapDepositTokensPageContent(
           asset: swapActivitySellAsset(intent) ?? SwapAsset.zec,
-          amountText: intent.sellAmount,
+          // Partial deposit in progress: show the amount STILL owed (send this
+          // much more) instead of the full total, keeping the same address.
+          amountText:
+              intent.depositProgress?.remainingText ?? intent.sellAmount,
           depositAddress: depositInstruction.address,
           expiresInLabel: swapDepositDeadlineLabel(intent) ?? '2hrs',
           expiresAt: intent.depositDeadline,
           memo: depositInstruction.memo,
           checking: depositChecking || state.statusRefreshing,
-          checkWarning: depositCheckWarning,
+          checkWarning: intent.depositProgress != null
+              ? '${intent.depositProgress!.depositedText} received so far — '
+                  'send the remaining ${intent.depositProgress!.remainingText} '
+                  'to the same address.'
+              : depositCheckWarning,
           onDeposited: onMarkDeposited,
           mobile: layout == SwapActivityDetailLayout.mobile,
         ),

@@ -56,6 +56,18 @@ class SwapAsset {
     decimals: 6,
     fallbackExternalPerZec: 70.1733333333,
   );
+
+  /// USDC on Base (second EVM chain — see [ethBase]).
+  static const usdcBase = SwapAsset._(
+    name: 'usdc_base',
+    symbol: 'USDC',
+    displayName: 'USD Coin',
+    chainTicker: 'base',
+    chainLabel: 'Base',
+    railLabel: 'Base USDC',
+    decimals: 6,
+    fallbackExternalPerZec: 70.1733333333,
+  );
   static const eth = SwapAsset._(
     name: 'eth',
     symbol: 'ETH',
@@ -63,6 +75,20 @@ class SwapAsset {
     chainTicker: 'eth',
     chainLabel: 'Ethereum',
     railLabel: 'Ethereum ETH',
+    decimals: 18,
+    fallbackExternalPerZec: 0.0254,
+  );
+
+  /// ETH on Base. Same token, different EVM chain — the swap backend and the
+  /// wallet select the chain from [chainTicker] (`base`), so this is how the
+  /// in-app chain selector offers the second EVM chain.
+  static const ethBase = SwapAsset._(
+    name: 'eth_base',
+    symbol: 'ETH',
+    displayName: 'Ether',
+    chainTicker: 'base',
+    chainLabel: 'Base',
+    railLabel: 'Base ETH',
     decimals: 18,
     fallbackExternalPerZec: 0.0254,
   );
@@ -140,7 +166,9 @@ class SwapAsset {
   static const values = <SwapAsset>[
     zec,
     usdc,
+    usdcBase,
     eth,
+    ethBase,
     btc,
     sol,
     usdt,
@@ -215,13 +243,51 @@ class SwapAsset {
     double amount, {
     required _SwapAmountRounding rounding,
   }) {
-    final digits = _displayFractionDigits;
+    final baseDigits = _displayFractionDigits;
+    final digits = _displayFractionDigitsFor(amount, baseDigits);
     final displayAmount = switch (rounding) {
       _SwapAmountRounding.nearest => amount,
       _SwapAmountRounding.down => _roundDisplayAmountDown(amount, digits),
       _SwapAmountRounding.up => _roundDisplayAmountUp(amount, digits),
     };
-    return displayAmount.toStringAsFixed(digits);
+    final text = displayAmount.toStringAsFixed(digits);
+    // Only the precision-boosted (sub-0.001 fine-grained) path can leave
+    // trailing zeros; trim them back to the base width so a clean amount
+    // stays clean while a small one keeps its significant figures.
+    return digits > baseDigits ? _trimTrailingZeros(text, baseDigits) : text;
+  }
+
+  /// Fine-grained assets (ETH/SOL/NEAR) are natively high-decimal but display
+  /// at [_displayFractionDigits] (4) for readability. That is far too coarse
+  /// for sub-0.001 amounts: 0.00014835 ETH would render as "0.0001", which no
+  /// longer matches the attested rate the review shows nor the amount actually
+  /// delivered on-chain. For amounts below 0.001 widen to ~4 significant
+  /// figures (capped at 8 decimals) so the composer, review, and settled
+  /// amounts read consistently; larger amounts keep the clean 4-decimal form.
+  int _displayFractionDigitsFor(double amount, int baseDigits) {
+    final normalized = symbol.toUpperCase();
+    final fineGrained =
+        normalized == 'ETH' || normalized == 'SOL' || normalized == 'NEAR';
+    if (!fineGrained) return baseDigits;
+    final abs = amount.abs();
+    if (!abs.isFinite || abs == 0 || abs >= 0.001) return baseDigits;
+    var leadingZeros = 0;
+    var threshold = 0.1;
+    while (abs < threshold && leadingZeros < 8) {
+      leadingZeros++;
+      threshold /= 10;
+    }
+    return (leadingZeros + 4).clamp(baseDigits, 8).toInt();
+  }
+
+  static String _trimTrailingZeros(String text, int minFractionDigits) {
+    if (!text.contains('.')) return text;
+    final parts = text.split('.');
+    var frac = parts[1];
+    while (frac.length > minFractionDigits && frac.endsWith('0')) {
+      frac = frac.substring(0, frac.length - 1);
+    }
+    return frac.isEmpty ? parts[0] : '${parts[0]}.$frac';
   }
 
   int get _displayFractionDigits {
@@ -346,7 +412,9 @@ double _roundDisplayAmount(
 
 const swapExternalAssets = <SwapAsset>[
   SwapAsset.usdc,
+  SwapAsset.usdcBase,
   SwapAsset.eth,
+  SwapAsset.ethBase,
   SwapAsset.btc,
   SwapAsset.sol,
   SwapAsset.usdt,

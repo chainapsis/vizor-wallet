@@ -127,6 +127,7 @@ class SwapQuote {
     this.rateTextOverride,
     this.providerRefundInfo,
     this.fiatValueBasis,
+    this.destination,
   });
 
   factory SwapQuote.estimate({
@@ -141,6 +142,9 @@ class SwapQuote {
     DateTime? depositDeadline,
     double? externalPerZec,
     int slippageBps = 50,
+    String? providerQuoteId,
+    String? destination,
+    SwapFiatValueBasis? fiatValueBasis,
   }) {
     assert(externalAsset.name != 'zec');
     final quoteAmount = amount ?? sellAmount;
@@ -185,8 +189,54 @@ class SwapQuote {
         deadline: depositDeadline,
       ),
       rateTextOverride: rateText,
+      providerQuoteId: providerQuoteId,
+      destination: destination,
+      // Fiat "$" values for the review + activity screens. NEAR sets this from
+      // its own live per-token USD prices; zwap passes a basis derived from the
+      // wallet's ZEC/USD spot price. Null (no price) preserves the old `$--`.
+      fiatValueBasis: fiatValueBasis,
+      // Give-ZEC (the wallet sends ZEC): expose the executable base-unit amount
+      // so the ZEC deposit sender can fund the deposit. Receive-ZEC leaves it
+      // null (the external asset is deposited off-wallet).
+      sellAmountBaseUnits: sellAsset == SwapAsset.zec
+          ? BigInt.from((estimatedSellAmount * 1e8).round())
+          : null,
     );
   }
+
+  /// The user's external destination address (give-ZEC directions, e.g. the BTC
+  /// receive address for z2b). Null for receive-ZEC quotes.
+  final String? destination;
+
+  /// Copy overriding only the given fields. Used to graft the real deposit
+  /// address onto an estimate-time quote once an atomic-swap order has produced
+  /// it (zwap's joint UA is unknown until startSwap, unlike NEAR's live quote).
+  SwapQuote copyWith({SwapDepositInstruction? depositInstruction}) => SwapQuote(
+        direction: direction,
+        sellAsset: sellAsset,
+        receiveAsset: receiveAsset,
+        externalAsset: externalAsset,
+        mode: mode,
+        sellAmount: sellAmount,
+        receiveAmount: receiveAmount,
+        minimumReceiveAmount: minimumReceiveAmount,
+        providerLabel: providerLabel,
+        feeLabel: feeLabel,
+        totalFeesText: totalFeesText,
+        expiryLabel: expiryLabel,
+        quoteExpiresAt: quoteExpiresAt,
+        depositInstruction: depositInstruction ?? this.depositInstruction,
+        providerQuoteId: providerQuoteId,
+        sellAmountBaseUnits: sellAmountBaseUnits,
+        sellAmountTextOverride: sellAmountTextOverride,
+        receiveEstimateTextOverride: receiveEstimateTextOverride,
+        minimumReceiveTextOverride: minimumReceiveTextOverride,
+        slippageToleranceTextOverride: slippageToleranceTextOverride,
+        rateTextOverride: rateTextOverride,
+        providerRefundInfo: providerRefundInfo,
+        fiatValueBasis: fiatValueBasis,
+        destination: destination,
+      );
 
   final SwapDirection direction;
   final SwapAsset sellAsset;

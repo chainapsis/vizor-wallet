@@ -21,8 +21,19 @@ final swapFeatureEnabledProvider = Provider<bool>((ref) {
   return ref.watch(swapEnabledRemoteOverrideProvider);
 });
 
+/// The active swap backend, read straight from the build define so this core
+/// gate stays independent of the swap feature module (`near` | `zwap`).
+const String _swapBackendDefine =
+    String.fromEnvironment('VIZOR_SWAP_BACKEND', defaultValue: 'near');
+
 bool isSwapFeatureEnabledForNetwork(String networkName) {
-  return zcashNetworkFromName(networkName) == ZcashNetwork.mainnet;
+  final network = zcashNetworkFromName(networkName);
+  if (network == ZcashNetwork.mainnet) return true;
+  // The custodial NEAR aggregator only makes sense on mainnet. The
+  // non-custodial zwap backend is explicitly for local/regtest+testnet testing,
+  // so surface the swap tab on those networks when it is the selected backend.
+  return _swapBackendDefine == 'zwap' &&
+      (network == ZcashNetwork.regtest || network == ZcashNetwork.testnet);
 }
 
 final swapFeatureIsIosProvider = Provider<bool>((_) => Platform.isIOS);

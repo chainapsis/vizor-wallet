@@ -77,3 +77,49 @@ String swapTokenAmountDisplayText({required String tokenAmountText}) {
 double? _usableUnitPrice(double? value) {
   return value != null && value.isFinite && value > 0 ? value : null;
 }
+
+/// Derive a per-asset USD unit-price map from the app's single ZEC/USD price.
+///
+/// The zwap backend does not ship its own price oracle the way the NEAR
+/// aggregator does, so it reuses the wallet's own ZEC/USD spot price (the same
+/// source the home balance is priced with). The external legs are priced by
+/// dividing through `externalPerZec` (external-asset units per ZEC): if
+/// 1 ZEC = X external units and 1 ZEC = $Z, then one external unit is $Z/X.
+///
+/// Only entries with a usable (finite, positive) price are included. Returns an
+/// empty map when the ZEC price is unusable so callers can treat "no prices" and
+/// "empty prices" the same way.
+Map<SwapAsset, double> swapUsdPricesFromZecPrice({
+  required double? zecUsdUnitPrice,
+  Map<SwapAsset, double> externalPerZec = const {},
+}) {
+  final zecPrice = _usableUnitPrice(zecUsdUnitPrice);
+  if (zecPrice == null) return const {};
+  final prices = <SwapAsset, double>{SwapAsset.zec: zecPrice};
+  for (final entry in externalPerZec.entries) {
+    final perZec = _usableUnitPrice(entry.value);
+    if (perZec == null) continue;
+    final usd = _usableUnitPrice(zecPrice / perZec);
+    if (usd != null) prices[entry.key] = usd;
+  }
+  return prices;
+}
+
+/// Build a [SwapFiatValueBasis] for a quote whose sell/receive assets are known,
+/// pricing each side off a per-asset USD unit-price map (see
+/// [swapUsdPricesFromZecPrice]). Returns null when neither side can be priced,
+/// so the caller leaves `fiatValueBasis` null (renders `$--`) exactly as before.
+SwapFiatValueBasis? swapFiatValueBasisFromUsdPrices({
+  required Map<SwapAsset, double> usdPrices,
+  required SwapAsset sellAsset,
+  required SwapAsset receiveAsset,
+  DateTime? capturedAt,
+}) {
+  if (usdPrices.isEmpty) return null;
+  final basis = SwapFiatValueBasis(
+    capturedAt: capturedAt ?? DateTime.now().toUtc(),
+    sellUsdUnitPrice: swapUsdUnitPriceFromPrices(usdPrices, sellAsset),
+    receiveUsdUnitPrice: swapUsdUnitPriceFromPrices(usdPrices, receiveAsset),
+  );
+  return basis.isUsable ? basis : null;
+}

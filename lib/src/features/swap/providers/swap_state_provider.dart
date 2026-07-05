@@ -30,6 +30,17 @@ class SwapNotifier extends Notifier<SwapState> {
   var _accountScopeGeneration = 0;
   var _statusRefreshInFlight = false;
 
+  /// A give-ZEC deposit that failed ONLY because the wallet's confirmed
+  /// spendable balance was momentarily 0 (the unconfirmed-change race). The
+  /// order is already live on the orderbook, so instead of orphaning it we
+  /// re-attempt the SAME deposit on each status-poll tick until the change
+  /// confirms or the short retry window elapses. Session-scoped (the in-memory
+  /// quote holds the joint deposit address + amount); re-proposes only from the
+  /// user's own wallet. Cleared on success, terminal status, or deadline.
+  ({String accountUuid, SwapQuote quote, String intentId, DateTime deadline})?
+      _pendingGiveZecDepositRetry;
+  var _giveZecDepositRetryInFlight = false;
+
   String? get _activeAccountUuidOrNull =>
       ref.read(accountProvider).value?.activeAccountUuid;
 
@@ -526,7 +537,13 @@ class SwapNotifier extends Notifier<SwapState> {
     final activeAccountIsHardware = ref
         .read(accountProvider.notifier)
         .isActiveAccountHardware;
-    if (quote.direction.sendsZec) {
+    // Atomic-swap (zwap) give-ZEC quotes carry only a placeholder deposit
+    // address at quote time — the joint UA is produced inside startSwap. Skip
+    // the pre-send fee preflight for those; the fee is estimated at the real
+    // send below (against the actual joint UA).
+    final depositAddressKnown =
+        !quote.depositInstruction.address.contains('placeholder');
+    if (quote.direction.sendsZec && depositAddressKnown) {
       try {
         await ref
             .read(swapDepositSenderProvider)
@@ -609,10 +626,13 @@ class SwapNotifier extends Notifier<SwapState> {
         );
         return true;
       }
+      // Send to the REAL deposit address the provider produced in startSwap
+      // (zwap's joint UA); the estimate-time quote only had a placeholder.
       unawaited(
         _sendAndSubmitZecDeposit(
           accountUuid: accountUuid,
-          quote: quote,
+          quote: quote.copyWith(
+              depositInstruction: snapshot.depositInstruction),
           intentId: intent.id,
         ),
       );
@@ -636,6 +656,59 @@ class SwapNotifier extends Notifier<SwapState> {
       showBusy: false,
       includeTerminal: false,
     );
+    // Statuses are fresh (so terminal/expired orders are detected below) — now
+    // retry a give-ZEC deposit that failed on the unconfirmed-change race.
+    await _maybeRetryPendingGiveZecDeposit();
+  }
+
+  static const _terminalSwapStatuses = {
+    SwapIntentStatus.complete,
+    SwapIntentStatus.refunded,
+    SwapIntentStatus.expired,
+    SwapIntentStatus.failed,
+  };
+
+  /// Re-attempt a give-ZEC deposit that failed only because the wallet's
+  /// confirmed balance was momentarily 0 (see [_pendingGiveZecDepositRetry]).
+  /// Bounded and heavily guarded: never retries a terminal/expired order, an
+  /// order whose deposit already broadcast, a different account, past the
+  /// deadline, or concurrently — so it can only ever complete the deposit the
+  /// user already committed to, never fund an order that has moved on.
+  Future<void> _maybeRetryPendingGiveZecDeposit() async {
+    final pending = _pendingGiveZecDepositRetry;
+    if (pending == null ||
+        _giveZecDepositRetryInFlight ||
+        state.depositSubmitting) {
+      return;
+    }
+    if (!_isAccountActive(pending.accountUuid) ||
+        DateTime.now().isAfter(pending.deadline)) {
+      _pendingGiveZecDepositRetry = null;
+      return;
+    }
+    final intent = state.intents.swapIntentById(pending.intentId);
+    final depositAlreadySent =
+        intent?.depositTxHash?.trim().isNotEmpty ?? false;
+    if (intent == null ||
+        depositAlreadySent ||
+        _terminalSwapStatuses.contains(intent.status)) {
+      _pendingGiveZecDepositRetry = null;
+      return;
+    }
+    _giveZecDepositRetryInFlight = true;
+    try {
+      log(
+        'Swap: retrying give-ZEC deposit '
+        'intent=${_shortSwapValue(pending.intentId)} (balance may have confirmed)',
+      );
+      await _sendAndSubmitZecDeposit(
+        accountUuid: pending.accountUuid,
+        quote: pending.quote,
+        intentId: pending.intentId,
+      );
+    } finally {
+      _giveZecDepositRetryInFlight = false;
+    }
   }
 
   void updateDepositTxHash(String value) {
@@ -1036,15 +1109,44 @@ class SwapNotifier extends Notifier<SwapState> {
         'Swap: live ZEC deposit failed intent=${_shortSwapValue(intentId)} '
         'error=$e',
       );
+      if (!_isAccountActive(accountUuid)) {
+        return;
+      }
+      // Unconfirmed-change race: the funds exist but a prior swap's change note
+      // has not confirmed yet, so `propose` saw 0 confirmed spendable. The
+      // order is already live; keep it and auto-retry the SAME deposit on the
+      // next poll ticks instead of orphaning it.
+      if (quote.direction.sendsZec && swapDepositBalanceStillConfirming(e)) {
+        final existing = _pendingGiveZecDepositRetry;
+        _pendingGiveZecDepositRetry = (
+          accountUuid: accountUuid,
+          quote: quote,
+          intentId: intentId,
+          deadline: (existing != null && existing.intentId == intentId)
+              ? existing.deadline
+              : DateTime.now().add(const Duration(minutes: 4)),
+        );
+        state = state.copyWith(
+          depositSubmitting: false,
+          statusError: 'Some funds are still confirming.\n'
+              "We'll retry the deposit automatically.",
+        );
+        return;
+      }
+      if (_pendingGiveZecDepositRetry?.intentId == intentId) {
+        _pendingGiveZecDepositRetry = null;
+      }
       final message = swapFailureMessage(
         SwapFailureOperation.sendZecDeposit,
         e,
       );
-      if (!_isAccountActive(accountUuid)) {
-        return;
-      }
       state = state.copyWith(depositSubmitting: false, statusError: message);
       return;
+    }
+
+    // The deposit broadcast succeeded — cancel any pending auto-retry for it.
+    if (_pendingGiveZecDepositRetry?.intentId == intentId) {
+      _pendingGiveZecDepositRetry = null;
     }
 
     log(

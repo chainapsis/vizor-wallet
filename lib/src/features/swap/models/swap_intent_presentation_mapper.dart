@@ -129,8 +129,17 @@ SwapIntent swapIntentFromSnapshot({
         snapshot.sellAmountBaseUnits ?? quote.sellAmountBaseUnits,
     direction: quote.direction,
     externalAsset: quote.externalAsset,
-    depositAddress: quote.depositInstruction.address,
-    depositMemo: quote.depositInstruction.memo,
+    // Prefer the address the provider assigned in `startSwap` (the snapshot).
+    // NEAR hands back the real deposit address at quote time, but zwap's
+    // atomic-swap address is only derived after the order is created + matched,
+    // so it lives on the snapshot — using the quote here would show a
+    // placeholder. Fall back to the quote for providers that don't set it.
+    depositAddress: _hasText(snapshot.depositInstruction.address)
+        ? snapshot.depositInstruction.address
+        : quote.depositInstruction.address,
+    depositMemo: _hasText(snapshot.depositInstruction.memo)
+        ? snapshot.depositInstruction.memo
+        : quote.depositInstruction.memo,
     providerQuoteId: quote.providerQuoteId,
     swapFeeText: snapshot.swapFeeText ?? quote.feeLabel,
     totalFeesText: snapshot.totalFeesText ?? quote.totalFeesText,
@@ -250,8 +259,18 @@ SwapIntent updateSwapIntentFromSnapshot(
   final record = SwapIntentRecord.fromIntent(intent).copyWith(
     providerLabel: snapshot.providerLabel,
     pairText: snapshot.pairText,
-    sellAmountText: snapshot.sellAmountText,
-    receiveEstimateText: snapshot.receiveEstimateText,
+    // Preserve the amounts captured when the intent was created if the status
+    // snapshot omits them. The zwap adapter's `_statusSnapshot` returns empty
+    // `sellAmountText`/`receiveEstimateText` (it only knows the settle-side
+    // fields), so overwriting unconditionally would blank the deposit screen's
+    // "Amount to deposit" on the first status refresh. NEAR always repopulates
+    // these, so this fallback is a no-op there.
+    sellAmountText: _hasText(snapshot.sellAmountText)
+        ? snapshot.sellAmountText
+        : intent.sellAmount,
+    receiveEstimateText: _hasText(snapshot.receiveEstimateText)
+        ? snapshot.receiveEstimateText
+        : intent.receiveEstimate,
     status: status,
     nextAction: nextAction,
     sellAmountBaseUnits: snapshot.sellAmountBaseUnits,
@@ -274,7 +293,13 @@ SwapIntent updateSwapIntentFromSnapshot(
     updatedAt: timestamp,
     completedAt: intent.completedAt ?? (status.isTerminal ? timestamp : null),
   );
-  return _swapIntentFromRecord(record);
+  // Partial-deposit progress is transient (re-derived from each poll's snapshot,
+  // not persisted via the record). The record-built intent always starts with
+  // depositProgress == null, so this copyWith sets the fresh value or clears it
+  // once the deposit is complete.
+  return _swapIntentFromRecord(
+    record,
+  ).copyWith(depositProgress: snapshot.depositProgress);
 }
 
 SwapIntentStatus _resolveDepositDeadlineStatus({

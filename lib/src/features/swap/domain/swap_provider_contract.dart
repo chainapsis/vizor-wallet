@@ -4,6 +4,24 @@ import 'swap_fiat_value_basis.dart';
 import 'swap_intent_status.dart';
 import 'swap_quote.dart';
 
+/// Progress of a multi-part ("partial") external deposit: the atomic-swap
+/// backends accept top-ups toward the required amount, so the deposit screen can
+/// tell the user how much is in and how much is still owed — while keeping the
+/// same one-time deposit address visible. All amounts are pre-formatted for
+/// display (e.g. "0.5 USDC").
+class SwapDepositProgress {
+  const SwapDepositProgress({
+    required this.remainingText,
+    required this.depositedText,
+  });
+
+  /// The amount still owed — shown as the primary "send this" amount.
+  final String remainingText;
+
+  /// The amount received so far — shown as a "X received" progress note.
+  final String depositedText;
+}
+
 class SwapIntentSnapshot {
   const SwapIntentSnapshot({
     required this.id,
@@ -26,6 +44,7 @@ class SwapIntentSnapshot {
     this.providerRefundInfo,
     this.sellAmountBaseUnits,
     this.fiatValueBasis,
+    this.depositProgress,
   });
 
   factory SwapIntentSnapshot.fromQuote(
@@ -75,6 +94,7 @@ class SwapIntentSnapshot {
   final SwapProviderRefundInfo? providerRefundInfo;
   final BigInt? sellAmountBaseUnits;
   final SwapFiatValueBasis? fiatValueBasis;
+  final SwapDepositProgress? depositProgress;
 }
 
 class SwapPricingSnapshot {

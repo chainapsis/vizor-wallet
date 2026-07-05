@@ -254,6 +254,7 @@ class SwapIntent {
     this.broadcastNotice,
     this.broadcastStatus,
     this.depositClaimedAt,
+    this.depositProgress,
   });
 
   final String id;
@@ -293,6 +294,11 @@ class SwapIntent {
   final String? broadcastNotice;
   final String? broadcastStatus;
   final DateTime? depositClaimedAt;
+
+  /// Partial-deposit progress for a multi-part external deposit (null unless the
+  /// backend reports a partial). Drives the "X received / send Y more" line on
+  /// the deposit screen. Transient — re-derived from each status poll.
+  final SwapDepositProgress? depositProgress;
 
   String get statusLabel => status.label;
 
@@ -342,6 +348,7 @@ class SwapIntent {
     String? broadcastNotice,
     String? broadcastStatus,
     DateTime? depositClaimedAt,
+    SwapDepositProgress? depositProgress,
     bool clearStatusError = false,
     bool clearBroadcastNotice = false,
     bool clearBroadcastStatus = false,
@@ -390,6 +397,7 @@ class SwapIntent {
           ? null
           : broadcastStatus ?? this.broadcastStatus,
       depositClaimedAt: depositClaimedAt ?? this.depositClaimedAt,
+      depositProgress: depositProgress ?? this.depositProgress,
     );
   }
 }

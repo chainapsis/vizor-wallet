@@ -146,12 +146,23 @@ bool _isEip55Checksummed(String body) {
   return true;
 }
 
+/// The native-SegWit HRP for the build's active network — so a regtest build
+/// accepts `bcrt1…`, a testnet build `tb1…`, and mainnet `bc1…`, mirroring the
+/// network-scoped Zcash check above (and unblocking regtest swap testing).
+String _btcSegwitHrp(ZcashNetwork network) => switch (network) {
+      ZcashNetwork.mainnet => 'bc',
+      ZcashNetwork.testnet => 'tb',
+      ZcashNetwork.regtest => 'bcrt',
+    };
+
 bool _isBitcoinAddress(String value) {
   // Legacy P2PKH/P2SH: base58 format gate + base58check (double-SHA256) checksum.
   if (_btcLegacy.hasMatch(value)) return base58CheckDecode(value) != null;
-  // Native SegWit (bech32/bech32m): full checksum verification.
-  if (value.toLowerCase().startsWith('bc1')) {
-    return decodeSegwitAddress(value) != null;
+  // Native SegWit (bech32/bech32m): full checksum verification against the
+  // build network's HRP (regtest bcrt / testnet tb / mainnet bc).
+  final hrp = _btcSegwitHrp(zcashNetworkFromName(kZcashDefaultNetworkName));
+  if (value.toLowerCase().startsWith('${hrp}1')) {
+    return decodeSegwitAddress(value, hrp: hrp) != null;
   }
   return false;
 }

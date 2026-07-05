@@ -181,14 +181,31 @@ SwapStatusBadgeKind _swapActivityStatusBadgeKind(SwapIntentStatus status) {
 
 int _swapActivityStatusProgressIndex(SwapIntent intent) {
   final hasDepositTx = intent.depositTxHash?.trim().isNotEmpty ?? false;
-  final depositSent = hasDepositTx || intent.depositClaimedAt != null;
+  // For give-ZEC the origin-chain tx IS the ZEC deposit tx — the same signal
+  // the deposit-tx display uses (see [_firstNonEmpty] below) — so it also
+  // proves the deposit went out.
+  final hasOriginDepositTx =
+      intent.originChainTxHash?.trim().isNotEmpty ?? false;
+  final depositSent =
+      hasDepositTx || hasOriginDepositTx || intent.depositClaimedAt != null;
+  // For give-ZEC (ZEC -> external) the FIRST step is the wallet's own ZEC
+  // deposit. The orderbook can advance to depositObserved / processing purely
+  // because the SOLVER funded its counter-leg first, so those mid-flow states
+  // must NOT mark "ZEC sent" until the wallet's deposit actually broadcast.
+  // Otherwise a give-ZEC deposit that FAILED (e.g. insufficient confirmed
+  // balance) shows a false "ZEC sent / Deposit confirmation..." that can never
+  // complete — the solver is waiting for a deposit that was never sent. Pin the
+  // step at 0 ("Send ZEC", still active) until the deposit is real. Terminal
+  // states keep their own index (a completed give-ZEC always deposited).
+  final giveZecDepositPending =
+      intent.direction != SwapDirection.externalToZec && !depositSent;
   return switch (intent.status) {
     SwapIntentStatus.awaitingDeposit ||
     SwapIntentStatus.awaitingExternalDeposit => depositSent ? 1 : 0,
-    SwapIntentStatus.depositObserved => 1,
+    SwapIntentStatus.depositObserved => giveZecDepositPending ? 0 : 1,
     SwapIntentStatus.processing ||
     SwapIntentStatus.providerStatusUnknown ||
-    SwapIntentStatus.incompleteDeposit => 2,
+    SwapIntentStatus.incompleteDeposit => giveZecDepositPending ? 0 : 2,
     SwapIntentStatus.complete ||
     SwapIntentStatus.refunded ||
     SwapIntentStatus.expired ||
@@ -197,14 +214,24 @@ int _swapActivityStatusProgressIndex(SwapIntent intent) {
 }
 
 List<SwapStatusStepData> _swapActivityProgressSteps(SwapIntent intent) {
-  final sourceSymbol = swapActivityPairSymbol(intent.pair, 0);
-  final receiveSymbol = swapActivityPairSymbol(intent.pair, 1);
+  // Prefer the resolved pay/receive asset symbols over parsing the free-text
+  // pair label: the zwap backend formats `pairText` with a unicode arrow
+  // ('ZEC → BTC'), which the ' -> ' pair split does not recognise and would
+  // otherwise leave `sourceSymbol` as the whole 'ZEC → BTC' string — producing
+  // a "ZEC → BTC sent" step. The "sent"/"deposited" step is about the pay asset
+  // the user (or wallet) sent, so it must show only that single asset symbol.
+  final sourceSymbol =
+      swapActivitySellAsset(intent)?.symbol ??
+      swapActivityPairSymbol(intent.pair, 0);
+  final receiveSymbol =
+      swapActivityReceiveAsset(intent)?.symbol ??
+      swapActivityPairSymbol(intent.pair, 1);
   final sourceVerb = intent.direction == SwapDirection.zecToExternal
       ? 'Sending'
       : 'Depositing';
   final sourceDone = intent.direction == SwapDirection.zecToExternal
       ? '$sourceSymbol sent'
-      : '$sourceSymbol Deposited';
+      : '$sourceSymbol deposited';
   final deliveryTitle = intent.direction == SwapDirection.zecToExternal
       ? 'Deliver $receiveSymbol'
       : 'Send $receiveSymbol';
@@ -593,8 +620,14 @@ SwapAsset? swapActivityReceiveAsset(SwapIntent intent) {
   return direction.toAsset(externalAsset);
 }
 
+// Pair labels arrive with different arrow glyphs depending on the backend:
+// NEAR uses the ASCII ' -> ', the zwap atomic-swap backend uses the unicode
+// '→' ('ZEC → BTC'). Split on either so a single symbol is extracted per side
+// regardless of which backend produced the label.
+final _swapActivityPairArrow = RegExp(r'\s*(?:->|→)\s*');
+
 SwapAsset? _swapActivityAssetFromPair(String pair, int index) {
-  final parts = pair.split('->');
+  final parts = pair.split(_swapActivityPairArrow);
   if (index < 0 || index >= parts.length) return null;
   final tokens = parts[index].trim().split(RegExp(r'\s+'));
   final symbol = tokens.isEmpty ? '' : tokens.first;
@@ -603,9 +636,11 @@ SwapAsset? _swapActivityAssetFromPair(String pair, int index) {
 }
 
 String swapActivityPairSymbol(String pair, int index) {
-  final parts = pair.split(' -> ');
+  final parts = pair.split(_swapActivityPairArrow);
   if (parts.length > index && parts[index].trim().isNotEmpty) {
-    return parts[index].trim();
+    // The pair side may still carry a chain qualifier ("USDC on Ethereum");
+    // the step/detail labels want just the leading asset symbol.
+    return parts[index].trim().split(RegExp(r'\s+')).first;
   }
   return index == 0 ? 'deposit asset' : 'receive asset';
 }
@@ -736,9 +771,26 @@ bool canRefreshSwapIntentStatus(SwapIntentStatus status) {
 }
 
 bool swapActivityShowsExternalDepositPage(SwapIntent intent) {
+  // Receive-ZEC swaps have the user pay from an OFF-APP external wallet
+  // (NEAR intents, or zwap's BTC/ETH/USDC deposit). Either way the user needs
+  // to SEE the one-time deposit address + QR — otherwise they have nowhere to
+  // send funds. The difference is only in how the page LEAVES:
+  //   - NEAR can't observe the chain, so it needs the manual "I've deposited"
+  //     confirmation (sets depositClaimedAt) to advance.
+  //   - zwap auto-detects the on-chain deposit; its poll moves the orderbook
+  //     state off awaitingExternalDeposit (KeysExchanged → LockFunded/
+  //     InitiatorFunded → depositObserved) and the page transitions to the
+  //     in-progress status on its own, no user tap required.
+  // Both cases must render the address, so this gate is backend-agnostic.
+  //
+  // PARTIAL DEPOSITS: while the backend reports a partial (`depositProgress` is
+  // set — some funds in, more still owed), keep showing the deposit page even if
+  // the user already tapped "I've deposited". The deposit is INCOMPLETE, so they
+  // still need the address + QR + "send N more" line to finish the top-up; a
+  // premature `depositClaimedAt` must not strand them on the in-progress view.
   return intent.direction == SwapDirection.externalToZec &&
       intent.status == SwapIntentStatus.awaitingExternalDeposit &&
-      intent.depositClaimedAt == null &&
+      (intent.depositClaimedAt == null || intent.depositProgress != null) &&
       SwapActivityDepositInstruction.fromIntent(intent) != null;
 }
 
