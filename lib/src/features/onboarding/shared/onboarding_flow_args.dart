@@ -1,4 +1,7 @@
-enum SetPasswordFlow { create, importWallet, importKeystone }
+import '../../../providers/account_provider.dart';
+import '../../address_book/models/address_book_contact.dart';
+
+enum SetPasswordFlow { create, importWallet, importKeystone, importWalletLink }
 
 class CreateSecretPassphraseArgs {
   const CreateSecretPassphraseArgs({required this.mnemonic});
@@ -34,6 +37,9 @@ class SetPasswordScreenArgs {
     this.keystoneUfvk,
     this.keystoneSeedFingerprint,
     this.keystoneZip32Index,
+    this.walletLinkNetwork,
+    this.walletLinkAccounts = const [],
+    this.walletLinkContacts = const [],
   });
 
   const SetPasswordScreenArgs.create({required String mnemonic})
@@ -65,6 +71,17 @@ class SetPasswordScreenArgs {
          keystoneZip32Index: zip32Index,
        );
 
+  const SetPasswordScreenArgs.importWalletLink({
+    required String network,
+    required List<LinkedWalletAccountImport> accounts,
+    required List<AddressBookContact> contacts,
+  }) : this._(
+         flow: SetPasswordFlow.importWalletLink,
+         walletLinkNetwork: network,
+         walletLinkAccounts: accounts,
+         walletLinkContacts: contacts,
+       );
+
   final SetPasswordFlow flow;
   final String? mnemonic;
   final int? birthdayHeight;
@@ -73,6 +90,9 @@ class SetPasswordScreenArgs {
   final String? keystoneUfvk;
   final List<int>? keystoneSeedFingerprint;
   final int? keystoneZip32Index;
+  final String? walletLinkNetwork;
+  final List<LinkedWalletAccountImport> walletLinkAccounts;
+  final List<AddressBookContact> walletLinkContacts;
 
   bool get isImport => flow == SetPasswordFlow.importWallet;
   bool get isKeystoneImport => flow == SetPasswordFlow.importKeystone;
@@ -83,11 +103,13 @@ class SetPasswordScreenArgs {
   String get requiredKeystoneUfvk => keystoneUfvk!;
   List<int> get requiredKeystoneSeedFingerprint => keystoneSeedFingerprint!;
   int get requiredKeystoneZip32Index => keystoneZip32Index!;
+  String get requiredWalletLinkNetwork => walletLinkNetwork!;
 
   String get backRoutePath => switch (flow) {
     SetPasswordFlow.create => '/onboarding/secret-passphrase',
     SetPasswordFlow.importWallet => '/import/birthday',
     SetPasswordFlow.importKeystone => '/onboarding/keystone/birthday',
+    SetPasswordFlow.importWalletLink => '/onboarding/link-desktop/contacts',
   };
 
   Object get backRouteExtra => switch (flow) {
@@ -100,5 +122,6 @@ class SetPasswordScreenArgs {
       selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
     ),
     SetPasswordFlow.importKeystone => this,
+    SetPasswordFlow.importWalletLink => this,
   };
 }

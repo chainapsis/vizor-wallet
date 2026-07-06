@@ -1,5 +1,6 @@
 import '../../../core/layout/app_form_factor.dart';
 import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/models/address_book_label_lookup.dart';
 import '../domain/near_intents_explorer.dart';
 import 'swap_address_formatting.dart';
 import 'swap_detail_tooltips.dart';
@@ -26,11 +27,13 @@ class _SwapActivityAddressBookLabels {
     final network = AddressBookNetwork.tryFromChainTicker(asset.chainTicker);
     if (network == null) return null;
 
-    final target = _normalizedAddress(network, address);
+    final target = normalizedAddressBookAddress(network, address);
     if (target.isEmpty) return null;
     for (final contact in _contacts) {
       if (contact.network != network) continue;
-      if (_normalizedAddress(network, contact.address) != target) continue;
+      if (normalizedAddressBookAddress(network, contact.address) != target) {
+        continue;
+      }
       final label = contact.label.trim();
       return label.isEmpty ? null : label;
     }
@@ -786,34 +789,6 @@ String? _firstNonEmpty(Iterable<String?> values) {
     if (trimmed != null && trimmed.isNotEmpty) return trimmed;
   }
   return null;
-}
-
-String _normalizedAddress(AddressBookNetwork network, String address) {
-  final trimmed = address.trim();
-  return _addressBookNetworkIgnoresCase(network)
-      ? trimmed.toLowerCase()
-      : trimmed;
-}
-
-bool _addressBookNetworkIgnoresCase(AddressBookNetwork network) {
-  return switch (network) {
-    AddressBookNetwork.ethereum ||
-    AddressBookNetwork.base ||
-    AddressBookNetwork.arbitrum ||
-    AddressBookNetwork.binanceSmartChain ||
-    AddressBookNetwork.optimism ||
-    AddressBookNetwork.avalanche ||
-    AddressBookNetwork.gnosis ||
-    AddressBookNetwork.polygon ||
-    AddressBookNetwork.xLayer ||
-    AddressBookNetwork.plasma ||
-    AddressBookNetwork.abstractChain ||
-    AddressBookNetwork.bera ||
-    AddressBookNetwork.monad ||
-    AddressBookNetwork.scroll ||
-    AddressBookNetwork.near => true,
-    _ => false,
-  };
 }
 
 double? _numericAmount(String amountText) {

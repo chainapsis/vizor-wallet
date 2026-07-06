@@ -125,6 +125,31 @@ importSoftwareWalletWithAccountDiscovery({
       additionalAccountIndices: additionalAccountIndices,
     );
 
+/// Import exactly one software ZIP32 account for encrypted wallet-link imports.
+///
+/// Account 0 remains a Derived seed-anchor when it is the first wallet account.
+/// If the first selected account is a higher ZIP32 index, the wallet is
+/// initialized without a seed and that selected account is imported by UFVK so
+/// the mobile import matches the user's selection instead of silently adding
+/// account 0.
+Future<SoftwareWalletImportAccount> importSoftwareAccountAtIndex({
+  required String mnemonic,
+  BigInt? birthdayHeight,
+  required String network,
+  required String dbPath,
+  required String name,
+  required int zip32AccountIndex,
+  required bool isFirstWalletAccount,
+}) => RustLib.instance.api.crateApiWalletImportSoftwareAccountAtIndex(
+  mnemonic: mnemonic,
+  birthdayHeight: birthdayHeight,
+  network: network,
+  dbPath: dbPath,
+  name: name,
+  zip32AccountIndex: zip32AccountIndex,
+  isFirstWalletAccount: isFirstWalletAccount,
+);
+
 /// Import a hardware wallet account using a UFVK (no mnemonic/seed needed).
 Future<AccountCreationResult> importHardwareAccount({
   required String dbPath,

@@ -20,3 +20,7 @@ double mobileImportProgress(int step) => step / (kMobileImportStepCount + 1);
 /// Keep its passcode step on the previous 5/6 fill while create progress
 /// counts welcome and the shared method-selection screen.
 const kMobileKeystonePasscodeProgress = 5 / 6;
+
+/// Desktop-link import has intro, scan, account selection, contact selection,
+/// then passcode.
+const kMobileWalletLinkPasscodeProgress = 5 / 6;

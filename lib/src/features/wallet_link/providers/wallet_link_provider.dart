@@ -14,7 +14,6 @@ import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../address_book/providers/address_book_provider.dart';
 import '../models/wallet_link_models.dart';
 import '../services/wallet_link_api_client.dart';
-import '../wallet_link_config.dart';
 
 final walletLinkLocalLifetimeProvider = Provider<Duration>((ref) {
   return const Duration(minutes: 1);
@@ -107,16 +106,11 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       WalletLinkCreatePackageRequest(id: id, envelope: envelope),
     );
 
-    final endpoint = walletLinkBackendBaseUri().toString();
     final qrPayload = Uri(
       scheme: 'vizor',
       host: 'wallet-link',
       path: '/v1',
-      queryParameters: {
-        'id': id,
-        'key': _base64UrlNoPadding(keyBytes),
-        'endpoint': endpoint,
-      },
+      queryParameters: {'id': id, 'key': _base64UrlNoPadding(keyBytes)},
     ).toString();
 
     final accountCount = (payload['accounts'] as List<Object?>).length;

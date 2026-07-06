@@ -13,6 +13,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
+import '../../address_book/providers/address_book_provider.dart';
 import '../create/onboarding_split_view.dart'
     show clearCreateOnboardingSecretState;
 import '../keystone/keystone_onboarding_flow.dart'
@@ -135,6 +136,14 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                 zip32Index: args.requiredKeystoneZip32Index,
                 birthdayHeight: args.importBirthdayHeight,
               );
+            case SetPasswordFlow.importWalletLink:
+              await accountNotifier.importLinkedWalletAccounts(
+                network: args.requiredWalletLinkNetwork,
+                accountsToImport: args.walletLinkAccounts,
+              );
+              await ref
+                  .read(addressBookProvider.notifier)
+                  .importContacts(args.walletLinkContacts);
           }
         });
 
@@ -265,4 +274,5 @@ double _progressForFlow(SetPasswordFlow flow) => switch (flow) {
   SetPasswordFlow.create => mobileCreateProgress(7),
   SetPasswordFlow.importKeystone => kMobileKeystonePasscodeProgress,
   SetPasswordFlow.importWallet => mobileImportProgress(3),
+  SetPasswordFlow.importWalletLink => kMobileWalletLinkPasscodeProgress,
 };

@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screen
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_method_selection_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_wallet_link_screens.dart';
 
 Widget _app({
   String initialLocation = '/welcome',
@@ -133,7 +134,7 @@ void main() {
   });
 
   testWidgets(
-    'Get started opens method selection with the three entry points and '
+    'Get started opens method selection with the four entry points and '
     'the hidden legal footer space',
     (tester) async {
       await tester.pumpWidget(_app());
@@ -143,6 +144,7 @@ void main() {
       expect(find.byType(MobileMethodSelectionScreen), findsOneWidget);
       expect(find.text('Create wallet'), findsOneWidget);
       expect(find.text('Import wallet'), findsOneWidget);
+      expect(find.text('Link Vizor Desktop'), findsOneWidget);
       expect(find.text('Connect Keystone'), findsOneWidget);
       expect(_stepsProgress(tester), closeTo(mobileCreateProgress(2), 0.0001));
       expect(find.textContaining('you agree to our'), findsOneWidget);
@@ -247,6 +249,11 @@ void main() {
       _cardIconColor(tester, const ValueKey('mobile_welcome_import')),
       colors.text.accent,
     );
+    expect(_textColor(tester, 'Link Vizor Desktop'), colors.text.accent);
+    expect(
+      _cardIconColor(tester, const ValueKey('mobile_welcome_link_desktop')),
+      colors.text.accent,
+    );
 
     final createBorder = _cardBorder(
       tester,
@@ -299,6 +306,11 @@ void main() {
       _cardIconColor(tester, const ValueKey('mobile_welcome_import')),
       colors.text.accent,
     );
+    expect(_textColor(tester, 'Link Vizor Desktop'), colors.text.accent);
+    expect(
+      _cardIconColor(tester, const ValueKey('mobile_welcome_link_desktop')),
+      colors.text.accent,
+    );
 
     final createBorder = _cardBorder(
       tester,
@@ -335,6 +347,18 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_welcome_import')));
     await tester.pumpAndSettle();
     expect(find.byType(MobileImportScreen), findsOneWidget);
+  });
+
+  testWidgets('link desktop pushes the wallet link intro step', (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _openMethodSelection(tester);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_welcome_link_desktop')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileWalletLinkIntroScreen), findsOneWidget);
+    expect(find.text('Link with Desktop'), findsOneWidget);
   });
 
   testWidgets('keystone pushes the keystone intro step', (tester) async {

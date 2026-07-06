@@ -66,6 +66,24 @@ class WalletLinkApiClient {
     }
   }
 
+  Future<WalletLinkPackageDownload> getPackage(String packageId) async {
+    final request = await _client
+        .getUrl(walletLinkPackagesUri(_baseUri, packageId: packageId))
+        .timeout(timeout);
+    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+
+    final response = await request.close().timeout(timeout);
+    final body = await utf8.decoder.bind(response).join().timeout(timeout);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw WalletLinkApiException(response.statusCode, body.trim());
+    }
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, Object?>) {
+      throw const FormatException('Wallet link response must be an object.');
+    }
+    return WalletLinkPackageDownload.fromJson(decoded);
+  }
+
   void close({bool force = false}) {
     _client.close(force: force);
   }

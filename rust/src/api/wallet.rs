@@ -331,6 +331,90 @@ pub fn import_software_wallet_with_account_discovery(
     })
 }
 
+/// Import exactly one software ZIP32 account for encrypted wallet-link imports.
+///
+/// Account 0 remains a Derived seed-anchor when it is the first wallet account.
+/// If the first selected account is a higher ZIP32 index, the wallet is
+/// initialized without a seed and that selected account is imported by UFVK so
+/// the mobile import matches the user's selection instead of silently adding
+/// account 0.
+pub fn import_software_account_at_index(
+    mnemonic: String,
+    birthday_height: Option<u64>,
+    network: String,
+    db_path: String,
+    name: String,
+    zip32_account_index: u32,
+    is_first_wallet_account: bool,
+) -> Result<SoftwareWalletImportAccount, String> {
+    catch(|| {
+        let network = if is_first_wallet_account && zip32_account_index == 0 {
+            keys::parse_network(&network)?
+        } else {
+            parse_network_and_migrate(&db_path, &network)?
+        };
+        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+
+        let (account_uuid, unified_address, is_seed_anchor) = if is_first_wallet_account {
+            if zip32_account_index == 0 {
+                let (account_uuid, unified_address) = keys::init_db_and_create_account(
+                    &db_path,
+                    network,
+                    &seed,
+                    birthday_height,
+                    &name,
+                )?;
+                (account_uuid, unified_address, true)
+            } else {
+                let (account_uuid, unified_address) = keys::add_account_at_index(
+                    &db_path,
+                    network,
+                    &name,
+                    &seed,
+                    birthday_height,
+                    zip32_account_index,
+                )?;
+                (account_uuid, unified_address, false)
+            }
+        } else {
+            let existing_seed_accounts =
+                keys::existing_software_seed_account_state(&db_path, network, &seed)?;
+            if existing_seed_accounts.contains(zip32_account_index) {
+                return Err(keys::DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE.to_string());
+            }
+            if existing_seed_accounts.has_derived_account {
+                let (account_uuid, unified_address) = keys::import_derived_account_at_index(
+                    &db_path,
+                    network,
+                    &seed,
+                    birthday_height,
+                    &name,
+                    zip32_account_index,
+                )?;
+                (account_uuid, unified_address, true)
+            } else {
+                let (account_uuid, unified_address) = keys::add_account_at_index(
+                    &db_path,
+                    network,
+                    &name,
+                    &seed,
+                    birthday_height,
+                    zip32_account_index,
+                )?;
+                (account_uuid, unified_address, false)
+            }
+        };
+
+        Ok(SoftwareWalletImportAccount {
+            account_uuid,
+            unified_address,
+            zip32_account_index,
+            name,
+            is_seed_anchor,
+        })
+    })
+}
+
 fn import_discovered_software_wallet_accounts(
     network: WalletNetwork,
     db_path: &str,

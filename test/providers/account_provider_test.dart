@@ -44,6 +44,37 @@ void main() {
     ]);
   });
 
+  test('wallet link duplicate import errors are recognized', () {
+    expect(
+      isWalletLinkDuplicateImportError(
+        Exception('This account is already in your wallet.'),
+      ),
+      isTrue,
+    );
+    expect(
+      isWalletLinkDuplicateImportError(
+        const _FakeAnyhowException(
+          'This Keystone account is already in your wallet.',
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      isWalletLinkDuplicateImportError(
+        const _FakeAnyhowException(
+          'Failed to import account: An account corresponding to the data '
+          'provided already exists in the wallet with UUID '
+          '00000000-0000-0000-0000-000000000000.',
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      isWalletLinkDuplicateImportError(Exception('Failed to parse UFVK.')),
+      isFalse,
+    );
+  });
+
   test(
     'next active account stays unchanged when removing a non-active account',
     () {
@@ -199,6 +230,15 @@ void main() {
     );
     expect(container.read(votingSubmissionGuardProvider), isEmpty);
   });
+}
+
+class _FakeAnyhowException implements Exception {
+  const _FakeAnyhowException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'AnyhowException($message)';
 }
 
 AppBootstrapState _bootstrapWithAccounts() {

@@ -7,23 +7,23 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'mobile_onboarding_progress.dart';
 
-const double _methodCardHeight = 120;
-const double _regularArtWidth = 180;
-const double _regularArtHeight = 120;
-const double _bleedArtWidth = 186;
-const double _bleedArtHeight = 151;
-const double _bleedArtTopOverflow = 32.5;
+const double _methodCardHeight = 90;
+const double _regularArtWidth = 135;
+const double _regularArtHeight = 90;
+const double _bleedArtWidth = 140;
+const double _bleedArtHeight = 113;
+const double _bleedArtTopOverflow = 24;
 const double _methodCardBorderWidth = 1.5;
 
 /// Second onboarding step — Figma `Method Selection` (4752:26334): the
-/// "Welcome to Vizor" title over three illustrated cards (create /
-/// import / Keystone), reached from the Welcome screen's "Get started"
+/// "Welcome to Vizor" title over four illustrated cards (create /
+/// import / desktop link / Keystone), reached from the Welcome screen's "Get started"
 /// button. Keeps the `mobile_welcome_*` keys so the onboarding flow
 /// helpers route through here unchanged.
 ///
 /// Unlike the scrolling step scaffold, the Figma frame pins the title to
 /// the top and the legal line to the bottom, then vertically centres the
-/// three cards in the space between (≈69 px above and below). The layout
+/// cards in the space between. The layout
 /// below mirrors that: a fixed top nav + title block, an [Expanded] that
 /// centres the cards, and a pinned footer.
 class MobileMethodSelectionScreen extends StatelessWidget {
@@ -102,6 +102,18 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                             const SizedBox(height: AppSpacing.sm),
                             _MethodCard(
                               buttonKey: const ValueKey(
+                                'mobile_welcome_link_desktop',
+                              ),
+                              iconName: AppIcons.monitor,
+                              label: 'Link Vizor Desktop',
+                              illustration:
+                                  'assets/illustrations/method_import_dark.png',
+                              onTap: () =>
+                                  context.push('/onboarding/link-desktop'),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            _MethodCard(
+                              buttonKey: const ValueKey(
                                 'mobile_welcome_keystone',
                               ),
                               iconName: AppIcons.qr,
@@ -172,8 +184,7 @@ class _MethodCard extends StatelessWidget {
     final contentColor = emphasized ? colors.text.homeCard : colors.text.accent;
     final cardRadius = BorderRadius.circular(AppRadii.large);
     final keySuffix = label.toLowerCase().replaceAll(' ', '_');
-    // Figma `New Wallet Bg` 186×151 @ top -32.5; `Import/keystone card bg`
-    // 180×120 @ top 0, both right-aligned.
+    // Compact mobile method cards keep the artwork right-aligned and masked.
     final artImage = Image.asset(
       illustration,
       key: ValueKey('mobile_method_${keySuffix}_art'),
@@ -319,7 +330,7 @@ class _MethodCardContent extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       // Figma insets the icon/label 14.5 from the card edge (~sm).
-      padding: const EdgeInsets.all(AppSpacing.sm),
+      padding: const EdgeInsets.all(AppSpacing.s),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -327,7 +338,12 @@ class _MethodCardContent extends StatelessWidget {
           const Spacer(),
           Text(
             label,
-            style: AppTypography.headlineMedium.copyWith(color: color),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.bodyLarge.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
