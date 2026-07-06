@@ -77,9 +77,10 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Pending sessions'), findsOneWidget);
+    expect(find.text('Continue pending setup'), findsOneWidget);
     expect(find.text('Family vault'), findsOneWidget);
-    expect(find.text('session-1 · Collecting'), findsOneWidget);
+    expect(find.text('Session ID: session-1'), findsOneWidget);
+    expect(find.text('Collecting'), findsOneWidget);
   });
 }
 

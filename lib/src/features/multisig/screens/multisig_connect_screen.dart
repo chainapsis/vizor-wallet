@@ -145,9 +145,10 @@ class _MultisigConnectScreenState extends ConsumerState<MultisigConnectScreen> {
         routePath: '/welcome',
       ),
       bodyPadding: const EdgeInsets.fromLTRB(32, 24, 32, 32),
-      child: Center(
+      child: Align(
+        alignment: Alignment.topCenter,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
+          constraints: const BoxConstraints(maxWidth: 640),
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -155,47 +156,41 @@ class _MultisigConnectScreenState extends ConsumerState<MultisigConnectScreen> {
               children: [
                 const MultisigOnboardingTitle(
                   title: 'Connect multisig',
-                  subtitle: 'Continue a setup or start a new session.',
+                  subtitle:
+                      'Continue a setup, start a new session, or restore from backup.',
                   iconName: AppIcons.users,
                 ),
-                const SizedBox(height: AppSpacing.lg),
-                Row(
-                  children: [
-                    Expanded(
-                      child: AppButton(
-                        key: const ValueKey('multisig_connect_create_button'),
-                        onPressed: () => context.go('/multisig/create'),
-                        leading: const AppIcon(AppIcons.addNew),
-                        child: const Text('Create session'),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: AppButton(
-                        key: const ValueKey('multisig_connect_join_button'),
-                        onPressed: () => context.go('/multisig/join'),
-                        variant: AppButtonVariant.secondary,
-                        leading: const AppIcon(AppIcons.link),
-                        child: const Text('Join session'),
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: AppSpacing.md),
+                summariesAsync.when(
+                  loading: () => const _PendingSessionsLoading(),
+                  error: (error, _) => _InlineError(message: error.toString()),
+                  data: (summaries) {
+                    final pendingSummaries = summaries
+                        .where(
+                          (summary) => multisigSessionSummaryNeedsLocalSetup(
+                            summary,
+                            materializedSessionStorageIds,
+                          ),
+                        )
+                        .toList(growable: false);
+
+                    if (pendingSummaries.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return _PendingSessionsSection(summaries: pendingSummaries);
+                  },
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _StartSessionSection(
+                  onCreate: () => context.go('/multisig/create'),
+                  onJoin: () => context.go('/multisig/join'),
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                AppButton(
-                  key: const ValueKey('multisig_connect_restore_button'),
-                  onPressed: _busy ? null : _pickBackup,
-                  variant: AppButtonVariant.secondary,
-                  leading: _isPickingBackup
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const AppIcon(AppIcons.importWallet),
-                  child: Text(
-                    _isPickingBackup ? 'Choosing backup' : 'Restore backup',
-                  ),
+                _RestoreBackupEntry(
+                  busy: _busy,
+                  isPickingBackup: _isPickingBackup,
+                  onPressed: _pickBackup,
                 ),
                 if (_selectedBackup != null || _restoreError != null) ...[
                   const SizedBox(height: AppSpacing.md),
@@ -213,53 +208,120 @@ class _MultisigConnectScreenState extends ConsumerState<MultisigConnectScreen> {
                     onRestore: _restoreBackup,
                   ),
                 ],
-                const SizedBox(height: AppSpacing.lg),
-                summariesAsync.when(
-                  loading: () => const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(AppSpacing.md),
-                      child: CircularProgressIndicator(),
-                    ),
-                  ),
-                  error: (error, _) => _InlineError(message: error.toString()),
-                  data: (summaries) {
-                    final pendingSummaries = summaries
-                        .where(
-                          (summary) => multisigSessionSummaryNeedsLocalSetup(
-                            summary,
-                            materializedSessionStorageIds,
-                          ),
-                        )
-                        .toList(growable: false);
-
-                    if (pendingSummaries.isEmpty) {
-                      return const _EmptyPendingSessions();
-                    }
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          'Pending sessions',
-                          style: AppTypography.labelLarge.copyWith(
-                            color: context.colors.text.secondary,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.s),
-                        for (var i = 0; i < pendingSummaries.length; i++) ...[
-                          _PendingSessionTile(summary: pendingSummaries[i]),
-                          if (i != pendingSummaries.length - 1)
-                            const SizedBox(height: AppSpacing.xs),
-                        ],
-                      ],
-                    );
-                  },
-                ),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _StartSessionSection extends StatelessWidget {
+  const _StartSessionSection({required this.onCreate, required this.onJoin});
+
+  final VoidCallback onCreate;
+  final VoidCallback onJoin;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ConnectSection(
+      title: 'Start a new multisig setup',
+      subtitle: 'Create a new session or join one with an invite code.',
+      child: Row(
+        children: [
+          Expanded(
+            child: AppButton(
+              key: const ValueKey('multisig_connect_create_button'),
+              onPressed: onCreate,
+              expand: true,
+              leading: const AppIcon(AppIcons.addNew),
+              child: const Text('Create session'),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: AppButton(
+              key: const ValueKey('multisig_connect_join_button'),
+              onPressed: onJoin,
+              variant: AppButtonVariant.secondary,
+              expand: true,
+              leading: const AppIcon(AppIcons.link),
+              child: const Text('Join session'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RestoreBackupEntry extends StatelessWidget {
+  const _RestoreBackupEntry({
+    required this.busy,
+    required this.isPickingBackup,
+    required this.onPressed,
+  });
+
+  final bool busy;
+  final bool isPickingBackup;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ConnectSection(
+      title: 'Recover account',
+      subtitle: 'Restore this participant from a saved multisig backup file.',
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: AppButton(
+          key: const ValueKey('multisig_connect_restore_button'),
+          onPressed: busy ? null : onPressed,
+          variant: AppButtonVariant.secondary,
+          minWidth: 180,
+          leading: isPickingBackup
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const AppIcon(AppIcons.importWallet),
+          child: Text(isPickingBackup ? 'Choosing backup' : 'Restore backup'),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConnectSection extends StatelessWidget {
+  const _ConnectSection({
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          title,
+          style: AppTypography.labelLarge.copyWith(color: colors.text.primary),
+        ),
+        const SizedBox(height: AppSpacing.xxs),
+        Text(
+          subtitle,
+          style: AppTypography.bodySmall.copyWith(color: colors.text.secondary),
+        ),
+        const SizedBox(height: AppSpacing.s),
+        child,
+      ],
     );
   }
 }
@@ -411,6 +473,53 @@ class _RestoreBackupPanel extends StatelessWidget {
   }
 }
 
+class _PendingSessionsSection extends StatelessWidget {
+  const _PendingSessionsSection({required this.summaries});
+
+  final List<MultisigPendingSessionSummary> summaries;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ConnectSection(
+      title: 'Continue pending setup',
+      subtitle: 'Finish a multisig session already saved on this device.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < summaries.length; i++) ...[
+            _PendingSessionTile(summary: summaries[i]),
+            if (i != summaries.length - 1)
+              const SizedBox(height: AppSpacing.xs),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PendingSessionsLoading extends StatelessWidget {
+  const _PendingSessionsLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return _ConnectSection(
+      title: 'Continue pending setup',
+      subtitle: 'Checking for unfinished multisig sessions.',
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: context.colors.background.raised,
+          borderRadius: BorderRadius.circular(AppRadii.xSmall),
+          border: Border.all(color: context.colors.border.subtle),
+        ),
+        child: const Padding(
+          padding: EdgeInsets.all(AppSpacing.md),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ),
+    );
+  }
+}
+
 class _PendingSessionTile extends StatelessWidget {
   const _PendingSessionTile({required this.summary});
 
@@ -433,7 +542,7 @@ class _PendingSessionTile extends StatelessWidget {
             border: Border.all(color: colors.border.subtle),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.sm),
+            padding: const EdgeInsets.all(AppSpacing.md),
             child: Row(
               children: [
                 DecoratedBox(
@@ -468,7 +577,7 @@ class _PendingSessionTile extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
-                        '${summary.shortSessionId} · ${_statusLabel(summary.state)}',
+                        'Session ID: ${summary.shortSessionId}',
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.bodySmall.copyWith(
                           color: colors.text.secondary,
@@ -477,6 +586,8 @@ class _PendingSessionTile extends StatelessWidget {
                     ],
                   ),
                 ),
+                const SizedBox(width: AppSpacing.sm),
+                _StatusPill(label: _statusLabel(summary.state)),
                 const SizedBox(width: AppSpacing.sm),
                 AppIcon(
                   AppIcons.chevronForward,
@@ -499,24 +610,27 @@ class _PendingSessionTile extends StatelessWidget {
   };
 }
 
-class _EmptyPendingSessions extends StatelessWidget {
-  const _EmptyPendingSessions();
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.label});
+
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: context.colors.background.raised,
+        color: context.colors.state.selectedOpacity,
         borderRadius: BorderRadius.circular(AppRadii.xSmall),
-        border: Border.all(color: context.colors.border.subtle),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xs,
+          vertical: AppSpacing.xxs,
+        ),
         child: Text(
-          'No pending multisig sessions',
-          textAlign: TextAlign.center,
-          style: AppTypography.bodyMedium.copyWith(
-            color: context.colors.text.secondary,
+          label,
+          style: AppTypography.labelSmall.copyWith(
+            color: context.colors.text.primary,
           ),
         ),
       ),
