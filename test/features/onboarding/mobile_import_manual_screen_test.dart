@@ -33,10 +33,10 @@ Widget _routedApp() {
             const MobileImportManualScreen(wordListOverride: _wordList),
       ),
       GoRoute(
-        path: '/import/birthday',
+        path: '/import/review',
         builder: (_, state) {
-          final args = state.extra as ImportBirthdayArgs;
-          return Scaffold(body: Text('Birthday: ${args.mnemonic}'));
+          final args = state.extra as ImportSecretPassphraseArgs;
+          return Scaffold(body: Text('Review: ${args.mnemonic}'));
         },
       ),
     ],
@@ -82,6 +82,33 @@ void main() {
     expect(find.text('abandon'), findsOneWidget);
     expect(find.text('ability'), findsOneWidget);
     expect(find.text('zebra'), findsNothing);
+    final inputBottom = tester
+        .getBottomLeft(find.byKey(const ValueKey('mobile_import_manual_input')))
+        .dy;
+    final suggestionsTop = tester
+        .getTopLeft(
+          find.byKey(const ValueKey('mobile_import_manual_suggestions')),
+        )
+        .dy;
+    expect(suggestionsTop - inputBottom, AppSpacing.sm);
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('mobile_import_manual_suggestions')),
+          )
+          .height,
+      60,
+    );
+    expect(
+      tester
+          .getSize(
+            find.byKey(
+              const ValueKey('mobile_import_manual_suggestion_abandon'),
+            ),
+          )
+          .height,
+      36,
+    );
 
     await tester.tap(find.text('abandon'));
     await tester.pump();
@@ -90,38 +117,37 @@ void main() {
     expect(find.textContaining('abandon'), findsOneWidget);
   });
 
-  testWidgets(
-    'back from birthday edits the last word instead of adding a 25th',
-    (tester) async {
-      await tester.pumpWidget(_routedApp());
-      await tester.pumpAndSettle();
+  testWidgets('back from review edits the last word instead of adding a 25th', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_routedApp());
+    await tester.pumpAndSettle();
 
-      final field = find.byKey(const ValueKey('mobile_import_manual_field'));
-      await tester.enterText(
-        field,
-        List.filled(kMnemonicMaxWords, 'abandon').join(' '),
-      );
-      await tester.pumpAndSettle();
+    final field = find.byKey(const ValueKey('mobile_import_manual_field'));
+    await tester.enterText(
+      field,
+      List.filled(kMnemonicMaxWords, 'abandon').join(' '),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.textContaining('Birthday:'), findsOneWidget);
+    expect(find.textContaining('Review:'), findsOneWidget);
 
-      await tester.binding.handlePopRoute();
-      await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
 
-      expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
-      expect(tester.widget<TextField>(field).controller!.text, 'abandon');
-      expect(find.text('24'), findsOneWidget);
+    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
+    expect(tester.widget<TextField>(field).controller!.text, 'abandon');
+    expect(find.text('24'), findsOneWidget);
 
-      await tester.enterText(field, 'zebra');
-      await tester.pump();
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pumpAndSettle();
+    await tester.enterText(field, 'zebra');
+    await tester.pump();
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
 
-      expect(find.textContaining('Birthday:'), findsOneWidget);
-      expect(find.textContaining('zebra'), findsOneWidget);
-      expect(find.textContaining('found 25'), findsNothing);
-    },
-  );
+    expect(find.textContaining('Review:'), findsOneWidget);
+    expect(find.textContaining('zebra'), findsOneWidget);
+    expect(find.textContaining('found 25'), findsNothing);
+  });
 
   testWidgets('keyboard action advances without dropping focus', (
     tester,
@@ -150,20 +176,17 @@ void main() {
     );
   });
 
-  testWidgets('an unknown word is rejected with an error', (tester) async {
+  testWidgets('an invalid word is shown as an input error', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pump();
 
     await tester.enterText(
       find.byKey(const ValueKey('mobile_import_manual_field')),
-      'notaword ',
+      r'Secr$',
     );
     await tester.pump();
 
-    expect(
-      find.text("'notaword' isn't in the passphrase word list."),
-      findsOneWidget,
-    );
+    expect(find.text('Invalid Secret Passphrase word.'), findsOneWidget);
     expect(find.text('01'), findsOneWidget);
   });
 
