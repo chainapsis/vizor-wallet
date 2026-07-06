@@ -4,6 +4,8 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../models/send_amount_currency.dart';
+import 'send_amount_currency_field.dart';
 
 /// Recipient address type used to choose the leading icon.
 ///
@@ -49,8 +51,11 @@ class SendComposeView extends StatelessWidget {
     this.recipientHint = 'Zcash address',
     this.route = SendPoolRoute.unknown,
     this.amountText = '',
-    this.amountHint = '0.00',
-    this.maxLabel = 'Max: 150 ZEC',
+    this.amountHint = '0',
+    this.amountInputMode = SendAmountInputMode.zec,
+    this.amountConversionText,
+    this.amountPriceLoading = false,
+    this.maxLabel = 'Use Max',
     this.amountFocused = false,
     this.amountError,
     this.memoMode = SendMemoMode.prompt,
@@ -59,6 +64,7 @@ class SendComposeView extends StatelessWidget {
     this.memoCounter = '512/512',
     this.memoError,
     this.reviewEnabled = false,
+    this.reviewButtonLabel = 'Review',
     this.onReview,
     this.onContactsPressed,
     this.onAddMemo,
@@ -79,6 +85,9 @@ class SendComposeView extends StatelessWidget {
   // Amount field.
   final String amountText;
   final String amountHint;
+  final SendAmountInputMode amountInputMode;
+  final String? amountConversionText;
+  final bool amountPriceLoading;
   final String maxLabel;
 
   /// Autofocuses the amount field so the focus ring is visible in static
@@ -95,6 +104,7 @@ class SendComposeView extends StatelessWidget {
 
   // Primary CTA.
   final bool reviewEnabled;
+  final String reviewButtonLabel;
   final VoidCallback? onReview;
   final VoidCallback? onContactsPressed;
   final VoidCallback? onAddMemo;
@@ -185,8 +195,11 @@ class SendComposeView extends StatelessWidget {
                           onPressed: reviewEnabled ? (onReview ?? _noop) : null,
                           variant: AppButtonVariant.primary,
                           minWidth: reviewButtonWidth,
-                          trailing: const AppIcon(AppIcons.chevronForward),
-                          child: const Text('Review'),
+                          constrainContent: true,
+                          trailing: reviewButtonLabel == 'Review'
+                              ? const AppIcon(AppIcons.chevronForward)
+                              : null,
+                          child: Text(reviewButtonLabel),
                         ),
                       ),
                     ],
@@ -228,26 +241,25 @@ class SendComposeView extends StatelessWidget {
   }
 
   Widget _amountField(BuildContext context) {
-    final colors = context.colors;
-    final hasText = amountText.isNotEmpty;
     final isError = amountError != null && amountError!.trim().isNotEmpty;
+    final conversionText =
+        amountConversionText ??
+        (amountInputMode == SendAmountInputMode.usd ? '0 ZEC' : r'$ 0');
 
-    return AppTextField(
+    return SendAmountCurrencyField(
       key: const ValueKey('send_amount_field'),
+      mode: amountInputMode,
       label: 'Amount',
-      rightLabel: maxLabel,
+      rightSlot: SendAmountHeaderControls(label: maxLabel),
       initialValue: amountText,
       hintText: amountHint,
       autofocus: amountFocused,
       tone: isError ? AppTextFieldTone.destructive : AppTextFieldTone.neutral,
-      leading: AppIcon(
-        AppIcons.zcash,
-        size: 20,
-        color: hasText ? colors.icon.accent : colors.icon.regular,
-      ),
+      conversionText: conversionText,
+      isPriceLoading: amountPriceLoading,
+      canToggleMode: !amountPriceLoading,
       messageText: isError ? amountError : null,
       showClearButton: true,
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
     );
   }
 

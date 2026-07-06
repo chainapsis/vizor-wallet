@@ -636,12 +636,40 @@ class WidgetbookApp extends StatelessWidget {
                   name: 'Send page',
                   useCases: [
                     WidgetbookUseCase(
-                      name: 'Empty state',
+                      name: 'Default',
                       builder: buildSendEmptyUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Shielded - filled',
-                      builder: buildSendShieldedFilledUseCase,
+                      name: 'Address entered',
+                      builder: buildSendAddressEnteredUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Fetching USD value',
+                      builder: buildSendFetchingUsdUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'USD value fetched',
+                      builder: buildSendUsdFetchedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Input values switched',
+                      builder: buildSendInputValuesSwitchedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Not enough ZEC',
+                      builder: buildSendNotEnoughZecUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Contacts modal',
+                      builder: buildSendContactsModalUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Memo added',
+                      builder: buildSendMemoAddedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Spendable modal',
+                      builder: buildSendSpendableModalUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Shielded - memo too long',

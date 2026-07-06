@@ -31,6 +31,7 @@ class AddressBookContactPickerModal extends ConsumerStatefulWidget {
     required this.onCancel,
     this.emptyTitle = 'No contacts found',
     this.searchHint = 'Search contacts',
+    this.showCloseButton = true,
     super.key,
   });
 
@@ -40,6 +41,7 @@ class AddressBookContactPickerModal extends ConsumerStatefulWidget {
   final VoidCallback onCancel;
   final String emptyTitle;
   final String searchHint;
+  final bool showCloseButton;
 
   @override
   ConsumerState<AddressBookContactPickerModal> createState() =>
@@ -170,18 +172,20 @@ class _AddressBookContactPickerModalState
                   ),
                 ),
               ),
-              const SizedBox(width: AppSpacing.xs),
-              Builder(
-                builder: (context) => AppIconHoverButton(
-                  semanticLabel: 'Close contacts',
-                  icon: AppIcons.cross,
-                  onTap: widget.onCancel,
-                  size: 24,
-                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
-                  hoverColor: context.colors.background.ground,
-                  iconColor: context.colors.icon.regular,
+              if (widget.showCloseButton) ...[
+                const SizedBox(width: AppSpacing.xs),
+                Builder(
+                  builder: (context) => AppIconHoverButton(
+                    semanticLabel: 'Close contacts',
+                    icon: AppIcons.cross,
+                    onTap: widget.onCancel,
+                    size: 24,
+                    borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                    hoverColor: context.colors.background.ground,
+                    iconColor: context.colors.icon.regular,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
           Expanded(

@@ -5,12 +5,14 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
@@ -125,7 +127,7 @@ void main() {
       BorderRadius.circular(AppRadii.large),
     );
     expect(contactDecoration.boxShadow, _figmaModalSurfaceShadows);
-    expect(find.bySemanticsLabel('Close contacts'), findsOneWidget);
+    expect(find.bySemanticsLabel('Close contacts'), findsNothing);
     expect(find.text('Cancel'), findsNothing);
     final contactScrollbar = tester.widget<RawScrollbar>(
       find.byKey(const ValueKey('address_book_contact_picker_scrollbar')),
@@ -284,6 +286,57 @@ void main() {
     expect(find.byKey(const ValueKey('send_memo_field')), findsOneWidget);
   });
 
+  testWidgets('invalid recipient colors the send-to field affordances', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _invalidAddress);
+    await tester.pumpAndSettle();
+
+    final colors = AppThemeData.light.colors;
+    final fieldFinder = find.byKey(const ValueKey('send_address_field'));
+    final label = tester.widget<Text>(
+      find.descendant(of: fieldFinder, matching: find.text('Send to')),
+    );
+    final input = tester.widget<EditableText>(
+      _editableIn('send_address_field'),
+    );
+    final leadingIcon = tester.widget<AppIcon>(
+      find.descendant(
+        of: fieldFinder,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.plane,
+        ),
+      ),
+    );
+    final contactsLabel = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_contacts_button')),
+        matching: find.text('Contacts'),
+      ),
+    );
+    final contactsChevron = tester.widget<AppIcon>(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_contacts_button')),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is AppIcon && widget.name == AppIcons.chevronForward,
+        ),
+      ),
+    );
+
+    expect(label.style?.color, colors.text.secondary);
+    expect(input.style.color, colors.text.destructive);
+    expect(leadingIcon.color, colors.icon.destructive);
+    expect(contactsLabel.style?.color, colors.text.secondary);
+    expect(contactsChevron.color, colors.text.secondary);
+    expect(find.text('Invalid address'), findsOneWidget);
+  });
+
   testWidgets('hides imported memo controls for transparent recipients', (
     tester,
   ) async {
@@ -327,7 +380,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.textContaining('Max:'));
+    expect(find.text('Max: 5 ZEC'), findsOneWidget);
+
+    await tester.tap(find.text('Max: 5 ZEC'));
     await tester.pump();
     await tester.pumpAndSettle();
 
@@ -336,6 +391,130 @@ void main() {
     expect(rustApi.lastEstimateSendMaxMemo, isNull);
     expect(_fieldText(tester, 'send_amount_field'), isNotEmpty);
     expect(find.text('Max amount unavailable'), findsNothing);
+  });
+
+  testWidgets('amount field switches to USD and proposes canonical ZEC', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        zecUsdUnitPrice: 70,
+        spendableBalance: BigInt.from(1000000000),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_amount_field'), '1.5');
+    await tester.pumpAndSettle();
+
+    expect(find.text(r'$ 105'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('send_amount_currency_toggle')));
+    await tester.pumpAndSettle();
+
+    expect(_fieldText(tester, 'send_amount_field'), '105.00');
+    await tester.enterText(_editableIn('send_amount_field'), '140');
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 ZEC'), findsOneWidget);
+    await tester.tap(find.text('Review'));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeAmountZatoshi, BigInt.from(200000000));
+  });
+
+  testWidgets('amount field shows USD skeleton while pricing entered ZEC', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(1000000000),
+        zecUsdUnitPrice: null,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_amount_field'), '1.5');
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('send_amount_price_loading')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('spendable help icon opens the balance explanation modal', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('send_spendable_info_icon_target')),
+      ),
+      const Size.square(16),
+    );
+    final helpIcon = tester.widget<AppIcon>(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_spendable_info_icon_target')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.help,
+        ),
+      ),
+    );
+    expect(helpIcon.size, 16);
+    expect(helpIcon.color, AppThemeData.light.colors.icon.muted);
+
+    await tester.tap(find.bySemanticsLabel('Spendable balance info'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Spendable vs. Total Balances'), findsOneWidget);
+    expect(find.text('Why they may differ'), findsOneWidget);
+    expect(find.text('I Understand'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.text('Spendable vs. Total Balances'))
+          .style
+          ?.color,
+      AppThemeData.light.colors.text.accent,
+    );
+    expect(
+      tester.widget<Text>(find.text('Why they may differ')).style?.color,
+      AppThemeData.light.colors.text.secondary,
+    );
+    expect(
+      tester
+          .widget<Text>(
+            find.text(
+              'Your Spendable Balance may be lower than\n'
+              'your Total Balance.',
+            ),
+          )
+          .style
+          ?.color,
+      AppThemeData.light.colors.text.accent,
+    );
+
+    await tester.tap(find.text('I Understand'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Spendable vs. Total Balances'), findsNothing);
   });
 
   testWidgets('hides imported memo controls for TEX recipients', (
@@ -424,8 +603,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Insufficient balance'), findsOneWidget);
+    expect(find.text('Not Enough ZEC'), findsOneWidget);
 
-    await tester.tap(find.text('Review'));
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
     await tester.pumpAndSettle();
 
     expect(rustApi.proposeSendCalls, 0);
@@ -508,6 +688,7 @@ Widget _sendHarness({
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
   BigInt? transparentBalance,
+  double? zecUsdUnitPrice = 70,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -532,6 +713,7 @@ Widget _sendHarness({
       ),
       if (addressBookRepository != null)
         addressBookRepositoryProvider.overrideWithValue(addressBookRepository),
+      zecHomeUsdUnitPriceProvider.overrideWithValue(zecUsdUnitPrice),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -658,6 +840,7 @@ class _RustApiFake implements RustLibApi {
   int estimateSendMaxCalls = 0;
   String? lastProposeToAddress;
   String? lastProposeMemo;
+  BigInt? lastProposeAmountZatoshi;
   String? lastEstimateSendMaxToAddress;
   String? lastEstimateSendMaxMemo;
 
@@ -666,6 +849,7 @@ class _RustApiFake implements RustLibApi {
     estimateSendMaxCalls = 0;
     lastProposeToAddress = null;
     lastProposeMemo = null;
+    lastProposeAmountZatoshi = null;
     lastEstimateSendMaxToAddress = null;
     lastEstimateSendMaxMemo = null;
   }
@@ -674,6 +858,9 @@ class _RustApiFake implements RustLibApi {
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
   }) async {
+    if (address == _invalidAddress) {
+      return const AddressValidationResult(isValid: false, addressType: '');
+    }
     if (address == _texAddress) {
       return const AddressValidationResult(isValid: true, addressType: 'tex');
     }
@@ -729,6 +916,7 @@ class _RustApiFake implements RustLibApi {
     proposeSendCalls++;
     lastProposeToAddress = toAddress;
     lastProposeMemo = memo;
+    lastProposeAmountZatoshi = amountZatoshi;
     return ProposalResult(
       proposalId: BigInt.one,
       needsSaplingParams: false,
@@ -744,3 +932,4 @@ const _shieldedAddress =
     'u1testshieldedaddress000000000000000000000000000000000000000000000000000';
 const _transparentAddress = 't1transparentdestination0000000000000000000';
 const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
+const _invalidAddress = 'not-a-zcash-address';

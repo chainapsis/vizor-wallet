@@ -13,12 +13,16 @@ import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_back_link.dart';
 import '../src/core/widgets/app_icon.dart';
+import '../src/core/widgets/app_pane_modal_overlay.dart';
 import '../src/features/address_book/models/address_book_contact.dart';
 import '../src/features/address_book/providers/address_book_provider.dart';
+import '../src/features/address_book/widgets/address_book_contact_picker_modal.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
+import '../src/features/send/models/send_amount_currency.dart';
 import '../src/features/send/screens/mobile/mobile_send_screen.dart';
 import '../src/features/send/widgets/send_compose_view.dart';
+import '../src/features/send/widgets/send_spendable_info_modal.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/sync_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
@@ -40,18 +44,119 @@ Widget buildSendEmptyUseCase(BuildContext context) {
   return const _SendPageFrame(child: SendComposeView());
 }
 
-/// Shielded recipient, amount entered, memo expanded, Review enabled.
-Widget buildSendShieldedFilledUseCase(BuildContext context) {
+Widget buildSendAddressEnteredUseCase(BuildContext context) {
+  return const _SendPageFrame(
+    child: SendComposeView(
+      recipientText: _sampleUnifiedAddress,
+      route: SendPoolRoute.shieldedToShielded,
+      amountText: '',
+      amountFocused: true,
+    ),
+  );
+}
+
+Widget buildSendFetchingUsdUseCase(BuildContext context) {
   return const _SendPageFrame(
     child: SendComposeView(
       recipientText: _sampleUnifiedAddress,
       route: SendPoolRoute.shieldedToShielded,
       amountText: '125.12',
       amountFocused: true,
-      memoMode: SendMemoMode.expanded,
+      amountPriceLoading: true,
+    ),
+  );
+}
+
+Widget buildSendUsdFetchedUseCase(BuildContext context) {
+  return const _SendPageFrame(
+    child: SendComposeView(
+      recipientText: _sampleUnifiedAddress,
+      route: SendPoolRoute.shieldedToShielded,
+      amountText: '125.12',
+      amountFocused: true,
+      amountConversionText: r'$ 512',
       reviewEnabled: true,
     ),
   );
+}
+
+Widget buildSendInputValuesSwitchedUseCase(BuildContext context) {
+  return const _SendPageFrame(
+    child: SendComposeView(
+      recipientText: _sampleUnifiedAddress,
+      route: SendPoolRoute.shieldedToShielded,
+      amountText: '512.24',
+      amountInputMode: SendAmountInputMode.usd,
+      amountFocused: true,
+      amountConversionText: '125.12 ZEC',
+      reviewEnabled: true,
+    ),
+  );
+}
+
+Widget buildSendNotEnoughZecUseCase(BuildContext context) {
+  return const _SendPageFrame(
+    child: SendComposeView(
+      recipientText: _sampleUnifiedAddress,
+      route: SendPoolRoute.shieldedToShielded,
+      amountText: '512.24',
+      amountInputMode: SendAmountInputMode.usd,
+      amountFocused: true,
+      amountConversionText: '651.12 ZEC',
+      amountError: 'Not enough ZEC',
+      reviewButtonLabel: 'Not Enough ZEC',
+    ),
+  );
+}
+
+Widget buildSendContactsModalUseCase(BuildContext context) {
+  return const _SendPageFrame(
+    overlay: _SendContactsPreviewOverlay(),
+    child: SendComposeView(
+      recipientText: _sampleUnifiedAddress,
+      route: SendPoolRoute.shieldedToShielded,
+      amountText: '125.12',
+      amountFocused: true,
+      amountConversionText: r'$ 512',
+      reviewEnabled: true,
+    ),
+  );
+}
+
+Widget buildSendMemoAddedUseCase(BuildContext context) {
+  return const _SendPageFrame(
+    child: SendComposeView(
+      recipientText: _sampleUnifiedAddress,
+      route: SendPoolRoute.shieldedToShielded,
+      amountText: '512.24',
+      amountInputMode: SendAmountInputMode.usd,
+      amountFocused: true,
+      amountConversionText: '125.12 ZEC',
+      memoMode: SendMemoMode.expanded,
+      memoHint: 'Placeholder',
+      reviewEnabled: true,
+    ),
+  );
+}
+
+Widget buildSendSpendableModalUseCase(BuildContext context) {
+  return const _SendPageFrame(
+    overlay: _SendSpendablePreviewOverlay(),
+    child: SendComposeView(
+      recipientText: _sampleUnifiedAddress,
+      route: SendPoolRoute.shieldedToShielded,
+      amountText: '512.24',
+      amountInputMode: SendAmountInputMode.usd,
+      amountFocused: true,
+      amountConversionText: '125.12 ZEC',
+      reviewEnabled: true,
+    ),
+  );
+}
+
+/// Shielded recipient, amount entered, memo expanded, Review enabled.
+Widget buildSendShieldedFilledUseCase(BuildContext context) {
+  return buildSendMemoAddedUseCase(context);
 }
 
 /// Shielded recipient with a memo over the 512-byte limit: destructive tone,
@@ -153,7 +258,7 @@ Widget buildMobileSendAmountUsdUseCase(BuildContext context) {
     initialRecipient: _mobileShieldedAddress,
     initialAmount: '12',
     initialFiatAmount: '120.12',
-    initialAmountInputMode: MobileSendAmountInputMode.usd,
+    initialAmountInputMode: SendAmountInputMode.usd,
     initialAmountReady: true,
     initialContactLabel: 'Contact label',
     initialContactPictureId: 'pfp-02',
@@ -237,9 +342,10 @@ Widget buildMobileSendQrScanDeniedUseCase(BuildContext context) {
 /// view, mirroring `_SwapPageFrame` so Widgetbook previews use the same
 /// surface the real screen lives in.
 class _SendPageFrame extends StatelessWidget {
-  const _SendPageFrame({required this.child});
+  const _SendPageFrame({required this.child, this.overlay});
 
   final Widget child;
+  final Widget? overlay;
 
   @override
   Widget build(BuildContext context) {
@@ -259,11 +365,17 @@ class _SendPageFrame extends StatelessWidget {
             sidebar: const _PreviewSendSidebar(),
             pane: AppDesktopPane(
               padding: EdgeInsets.zero,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  const _PreviewSendPaneToolbar(),
-                  Expanded(child: child),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const _PreviewSendPaneToolbar(),
+                      Expanded(child: child),
+                    ],
+                  ),
+                  ?overlay,
                 ],
               ),
             ),
@@ -280,7 +392,7 @@ class _MobileSendHarness extends StatelessWidget {
     this.initialRecipient,
     this.initialAmount,
     this.initialFiatAmount,
-    this.initialAmountInputMode = MobileSendAmountInputMode.zec,
+    this.initialAmountInputMode = SendAmountInputMode.zec,
     this.initialAmountError,
     this.initialAmountReady = false,
     this.initialReview = false,
@@ -294,7 +406,7 @@ class _MobileSendHarness extends StatelessWidget {
   final String? initialRecipient;
   final String? initialAmount;
   final String? initialFiatAmount;
-  final MobileSendAmountInputMode initialAmountInputMode;
+  final SendAmountInputMode initialAmountInputMode;
   final String? initialAmountError;
   final bool initialAmountReady;
   final bool initialReview;
@@ -401,7 +513,47 @@ class _MobileSendScanCameraPreview extends StatelessWidget {
   }
 }
 
+class _SendContactsPreviewOverlay extends StatelessWidget {
+  const _SendContactsPreviewOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    return ProviderScope(
+      overrides: [
+        addressBookRepositoryProvider.overrideWithValue(
+          const _WidgetbookAddressBookRepository(_desktopSendContacts),
+        ),
+      ],
+      child: AppPaneModalOverlay(
+        onDismiss: _noop,
+        child: const AddressBookContactPickerModal(
+          title: 'Contacts',
+          networks: [AddressBookNetwork.zcash],
+          emptyTitle: 'No Zcash contacts',
+          showCloseButton: false,
+          onSelected: _noopContact,
+          onCancel: _noop,
+        ),
+      ),
+    );
+  }
+}
+
+class _SendSpendablePreviewOverlay extends StatelessWidget {
+  const _SendSpendablePreviewOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    return AppPaneModalOverlay(
+      onDismiss: _noop,
+      child: const SendSpendableInfoModal(onDismiss: _noop),
+    );
+  }
+}
+
 void _noop() {}
+
+void _noopContact(AddressBookContact contact) {}
 
 const _mobileShieldedAddress =
     'u1tvg2412a23kshieldedaddress000000000000000000000000k64123hhq6d';
@@ -488,6 +640,36 @@ const _mobileSendContacts = [
     profilePictureId: 'pfp-07',
     createdAtMs: 6,
     updatedAtMs: 6,
+  ),
+];
+
+const _desktopSendContacts = [
+  AddressBookContact(
+    id: 'desktop-contact-mike',
+    label: 'Mike',
+    network: AddressBookNetwork.zcash,
+    address: _mobileShieldedAddress,
+    profilePictureId: 'pfp-02',
+    createdAtMs: 1,
+    updatedAtMs: 1,
+  ),
+  AddressBookContact(
+    id: 'desktop-contact-anna',
+    label: 'Anna',
+    network: AddressBookNetwork.zcash,
+    address: _mobileShieldedAddress,
+    profilePictureId: 'pfp-03',
+    createdAtMs: 2,
+    updatedAtMs: 2,
+  ),
+  AddressBookContact(
+    id: 'desktop-contact-rowan',
+    label: 'Rowan',
+    network: AddressBookNetwork.zcash,
+    address: _mobileShieldedAddress,
+    profilePictureId: 'pfp-04',
+    createdAtMs: 3,
+    updatedAtMs: 3,
   ),
 ];
 
