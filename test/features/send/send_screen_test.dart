@@ -393,6 +393,55 @@ void main() {
     expect(find.text('Max amount unavailable'), findsNothing);
   });
 
+  testWidgets('Max before a valid address does not auto-fill later', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(500000000)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Max: 5 ZEC'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    final addressField = find.byKey(const ValueKey('send_address_field'));
+    final amountField = find.byKey(const ValueKey('send_amount_field'));
+    expect(
+      find.descendant(
+        of: addressField,
+        matching: find.text('Enter a valid address to use Max'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: amountField,
+        matching: find.text('Enter a valid address to use Max'),
+      ),
+      findsNothing,
+    );
+    expect(_fieldText(tester, 'send_amount_field'), isEmpty);
+    expect(rustApi.estimateSendMaxCalls, 0);
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter a valid address to use Max'), findsNothing);
+    expect(_fieldText(tester, 'send_amount_field'), isEmpty);
+    expect(rustApi.estimateSendMaxCalls, 0);
+
+    await tester.tap(find.text('Max: 5 ZEC'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(rustApi.estimateSendMaxCalls, 1);
+    expect(rustApi.lastEstimateSendMaxToAddress, _shieldedAddress);
+    expect(_fieldText(tester, 'send_amount_field'), isNotEmpty);
+  });
+
   testWidgets('Max in USD mode preserves the quote when prices refresh', (
     tester,
   ) async {

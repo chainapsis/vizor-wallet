@@ -170,6 +170,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _maxDebounceDuration = Duration(milliseconds: 300);
   static const _hardwareTexUnsupportedText =
       'Keystone does not support TEX sends yet.';
+  static const _maxRequiresAddressText = 'Enter a valid address to use Max';
   final _addressController = _AddressTextEditingController();
   final _amountController = TextEditingController();
   final _memoController = TextEditingController();
@@ -183,6 +184,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool _contactPickerOpen = false;
   bool _spendableInfoOpen = false;
   String? _error;
+  String? _addressActionError;
   String _addressType = '';
   String _amountText = '';
   String _fiatAmountText = '';
@@ -356,6 +358,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final nextAddressType = result.isValid ? result.addressType : 'invalid';
       setState(() {
         _addressType = nextAddressType;
+        _addressActionError = null;
         if (_isTransparentLikeType(nextAddressType)) {
           _messageExpanded = false;
         }
@@ -368,7 +371,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     } catch (e) {
       log('Send: address validation error: $e');
       if (!mounted || seq != _addressSeq) return;
-      setState(() => _addressType = 'error');
+      setState(() {
+        _addressType = 'error';
+        _addressActionError = null;
+      });
       _handleAddressValidationSettled();
     }
   }
@@ -387,6 +393,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     setState(() {
       _addressType = '';
       _error = null;
+      _addressActionError = null;
       if (_isMaxMode) {
         _validateSeq++;
         _maxSeq++;
@@ -586,6 +593,16 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   void _activateMaxMode() {
     if (_isResolvingMax) return;
+    if (!_hasValidAddress) {
+      setState(() {
+        _clearMaxState();
+        _addressActionError = _maxRequiresAddressText;
+        _amountError = '';
+        _error = null;
+      });
+      _addressFocusNode.requestFocus();
+      return;
+    }
     setState(() {
       _isMaxMode = true;
       _maxQuote = null;
@@ -596,7 +613,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   String? _maxEstimatePreconditionError() {
     if (widget.activeAccountUuid == null) return 'No active account';
-    if (!_hasValidAddress) return 'Enter a valid address to use Max';
+    if (!_hasValidAddress) return _maxRequiresAddressText;
     if (_isHardwareTexSend) return _hardwareTexUnsupportedText;
     return _memoError;
   }
@@ -925,8 +942,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     _addressController.edgeHighlightColor = null;
 
+    final addressHasActionError =
+        _addressActionError != null && _addressActionError!.trim().isNotEmpty;
     final addressTone = switch (_addressType) {
       'invalid' || 'error' => AppTextFieldTone.destructive,
+      _ when addressHasActionError => AppTextFieldTone.destructive,
       _ => AppTextFieldTone.neutral,
     };
     // Live contact-match feedback: when the entered address is valid and
@@ -951,10 +971,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     final addressTextColor = addressIsDestructive
         ? colors.text.destructive
         : colors.text.accent;
+    final addressActionMessage = addressHasActionError
+        ? _addressActionError
+        : null;
     final addressMessage = switch (_addressType) {
       'invalid' => 'Invalid address',
       'error' => 'Address validation failed',
-      _ => matchedRecipientName,
+      _ => addressActionMessage ?? matchedRecipientName,
     };
     final addressMessageIcon = switch (_addressType) {
       'invalid' || 'error' => AppIcon(
@@ -963,7 +986,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         color: colors.text.destructive,
       ),
       _ =>
-        matchedRecipientName == null
+        addressHasActionError
+            ? AppIcon(
+                AppIcons.warning,
+                size: 16,
+                color: colors.text.destructive,
+              )
+            : matchedRecipientName == null
             ? null
             : AppIcon(
                 AppIcons.user,
@@ -1077,6 +1106,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                               _maxDebounceTimer?.cancel();
                               setState(() {
                                 _addressType = '';
+                                _addressActionError = null;
                                 _error = null;
                                 if (_isMaxMode) {
                                   _validateSeq++;
