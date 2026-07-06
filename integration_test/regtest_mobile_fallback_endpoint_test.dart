@@ -100,7 +100,7 @@ void main() {
 Future<void> _pasteAndContinueToBirthday(WidgetTester tester) async {
   await Clipboard.setData(const ClipboardData(text: _mnemonic));
   await tapAppButton(tester, const ValueKey('mobile_import_paste'));
-  await tapAppButton(tester, const ValueKey('mobile_import_confirm'));
+  await tapAppButton(tester, const ValueKey('mobile_import_review_continue'));
 }
 
 Future<void> _configureProxyPresetPrimary() async {

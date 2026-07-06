@@ -94,12 +94,16 @@ void main() {
       await tapAppButton(tester, const ValueKey('mobile_import_paste'));
       await pumpUntil(
         tester,
-        () =>
-            tester.any(find.byKey(const ValueKey('mobile_import_confirm'))),
-        description: 'import slots filled',
+        () => tester.any(
+          find.byKey(const ValueKey('mobile_import_review_continue')),
+        ),
+        description: 'import review',
       );
-      await shot('02b_import_entry_filled');
-      await tapAppButton(tester, const ValueKey('mobile_import_confirm'));
+      await shot('02b_import_review');
+      await tapAppButton(
+        tester,
+        const ValueKey('mobile_import_review_continue'),
+      );
       await pumpUntil(
         tester,
         () => tester.any(
