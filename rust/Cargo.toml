@@ -49,7 +49,6 @@ reddsa = { version = "0.5.2", features = ["frost"] }
 
 # Key generation
 bip0039 = "0.12"
-diceware_wordlists = "1.2.3"
 
 # Serialization
 nonempty = "0.11"

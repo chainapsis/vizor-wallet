@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `all_dkg_round1_packages`, `all_sent_to`, `block_on`, `classify_client_status`, `clean_label`, `client_error`, `collect_signing_inbox`, `create_progress_with`, `decode_b64_32`, `decode_b64`, `decrypt_create_message`, `decrypt_signing_message`, `dkg_identifier`, `ensure_auth_owner`, `ensure_dkg_finalized`, `ensure_dkg_round1`, `ensure_dkg_round2`, `ensure_round1_ready`, `ensure_round2_ready`, `ensure_selected_signer`, `hash_bytes_b64`, `hash_group_public_package`, `idempotency_key`, `identifier_from_hex`, `insert_unique_round1`, `insert_unique_round2`, `map_auth_session`, `map_auth_update_from_session`, `map_auth_update_from_tokens`, `map_participant_without_label`, `map_participant`, `map_session_without_labels`, `map_session`, `map_signing_request`, `map_tokens`, `mark_sent_to`, `missing_round1_participants`, `missing_round2_participants`, `multisig_identity_from_keys`, `new`, `new`, `normalize_backup_passphrase`, `normalize_selected_participants`, `own_roster_entry`, `parse_create_state`, `parse_key_package_b64`, `parse_signing_state`, `poll_create_inbox`, `post_create_message_with_outbox`, `post_signing_body_to_selected`, `prepare_multisig_signing_request_inner`, `random_word_index`, `refresh_error_allows_resume`, `restore_participant_identity`, `resume_participant_auth_session`, `roster_entry`, `round1_commitments_for_action`, `round2_shares_for_action`, `round_action_msg`, `seal_label`, `seed_issuer_participant_id`, `sent_to_contains`, `session_recipients`, `session_state_phase`, `signing_advance_with_submission`, `signing_advance`, `signing_recipients`, `stable_hash`, `stable_id`, `state_action_indices`, `status_code_allows_resume`, `structured_multisig_error`, `sync_locked_roster`, `unix_now_secs`, `unsigned_orchard_action_indices`, `vault_address_from_group_public_package`, `without_identifier`
+// These functions are ignored because they are not marked as `pub`: `all_dkg_round1_packages`, `all_sent_to`, `block_on`, `classify_client_status`, `clean_label`, `client_error`, `collect_signing_inbox`, `create_progress_with`, `decode_b64_32`, `decode_b64`, `decrypt_create_message`, `decrypt_signing_message`, `dkg_identifier`, `ensure_auth_owner`, `ensure_dkg_finalized`, `ensure_dkg_round1`, `ensure_dkg_round2`, `ensure_round1_ready`, `ensure_round2_ready`, `ensure_selected_signer`, `hash_bytes_b64`, `hash_group_public_package`, `idempotency_key`, `identifier_from_hex`, `insert_unique_round1`, `insert_unique_round2`, `map_auth_session`, `map_auth_update_from_session`, `map_auth_update_from_tokens`, `map_participant_without_label`, `map_participant`, `map_session_without_labels`, `map_session`, `map_signing_request`, `map_tokens`, `mark_sent_to`, `missing_round1_participants`, `missing_round2_participants`, `multisig_identity_from_keys`, `new`, `new`, `normalize_backup_passphrase`, `normalize_selected_participants`, `own_roster_entry`, `parse_create_state`, `parse_key_package_b64`, `parse_signing_state`, `poll_create_inbox`, `post_create_message_with_outbox`, `post_signing_body_to_selected`, `prepare_multisig_signing_request_inner`, `refresh_error_allows_resume`, `restore_participant_identity`, `resume_participant_auth_session`, `roster_entry`, `round1_commitments_for_action`, `round2_shares_for_action`, `round_action_msg`, `seal_label`, `seed_issuer_participant_id`, `sent_to_contains`, `session_recipients`, `session_state_phase`, `signing_advance_with_submission`, `signing_advance`, `signing_recipients`, `stable_hash`, `stable_id`, `state_action_indices`, `status_code_allows_resume`, `structured_multisig_error`, `sync_locked_roster`, `unix_now_secs`, `unsigned_orchard_action_indices`, `vault_address_from_group_public_package`, `without_identifier`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ApiMultisigErrorBody`, `ApiMultisigErrorKind`, `LocalCreateState`, `LocalRosterParticipant`, `LocalSigningState`, `SigningInboxMessages`, `TxRequestBody`, `TxRound1Body`, `TxRound2Body`, `TxRoundActionMsg`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -41,15 +41,12 @@ ApiMultisigParticipantIdentity restoreMultisigParticipantIdentity({
   deliverySecretKey: deliverySecretKey,
 );
 
-ApiMultisigBackupPassword generateMultisigBackupPassword() =>
-    RustLib.instance.api.crateApiMultisigGenerateMultisigBackupPassword();
-
 String normalizeMultisigBackupPassword({
   required String password,
-  required bool generated,
+  required int minLength,
 }) => RustLib.instance.api.crateApiMultisigNormalizeMultisigBackupPassword(
   password: password,
-  generated: generated,
+  minLength: minLength,
 );
 
 Future<ApiMultisigBackupArtifact> createMultisigShareBackup({
@@ -588,31 +585,6 @@ class ApiMultisigBackupArtifact {
           artifactJson == other.artifactJson &&
           backupHash == other.backupHash &&
           vaultAddress == other.vaultAddress;
-}
-
-class ApiMultisigBackupPassword {
-  final String displayPassword;
-  final String canonicalPassword;
-  final String checksum;
-
-  const ApiMultisigBackupPassword({
-    required this.displayPassword,
-    required this.canonicalPassword,
-    required this.checksum,
-  });
-
-  @override
-  int get hashCode =>
-      displayPassword.hashCode ^ canonicalPassword.hashCode ^ checksum.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiMultisigBackupPassword &&
-          runtimeType == other.runtimeType &&
-          displayPassword == other.displayPassword &&
-          canonicalPassword == other.canonicalPassword &&
-          checksum == other.checksum;
 }
 
 class ApiMultisigBackupVerification {

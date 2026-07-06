@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart' show CircularProgressIndicator;
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -47,12 +47,9 @@ class MultisigBackupWizard extends ConsumerStatefulWidget {
 class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
   final _customPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  bool _useGeneratedPassword = true;
-  bool _isGenerating = false;
   bool _isEncrypting = false;
   bool _isVerifying = false;
   bool _isSaving = false;
-  rust_multisig.ApiMultisigBackupPassword? _generatedPassword;
   rust_multisig.ApiMultisigBackupArtifact? _artifact;
   String? _verifiedPassphrase;
   String? _verifiedBackupHash;
@@ -60,11 +57,26 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
   String? _error;
 
   bool get _busy =>
-      _isGenerating ||
-      _isEncrypting ||
-      _isVerifying ||
-      _isSaving ||
-      widget.isCompleting;
+      _isEncrypting || _isVerifying || _isSaving || widget.isCompleting;
+
+  String? get _backupPasswordMessage =>
+      validateWalletPassword(_customPasswordController.text);
+
+  bool get _backupPasswordValid =>
+      isWalletPasswordValid(_customPasswordController.text);
+
+  String? get _confirmPasswordMessage {
+    final value = _confirmPasswordController.text;
+    if (value.isEmpty) return null;
+    if (value != _customPasswordController.text) {
+      return 'Passwords do not match.';
+    }
+    return validateWalletPassword(value);
+  }
+
+  bool get _confirmPasswordValid =>
+      _confirmPasswordController.text == _customPasswordController.text &&
+      isWalletPasswordValid(_confirmPasswordController.text);
 
   @override
   void dispose() {
@@ -81,47 +93,21 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
     _confirmPasswordController.clear();
   }
 
-  Future<void> _generatePassword() async {
-    if (_busy) return;
-    setState(() {
-      _isGenerating = true;
-      _error = null;
-    });
-    try {
-      final generated = rust_multisig.generateMultisigBackupPassword();
-      if (!mounted) return;
-      setState(() {
-        _generatedPassword = generated;
-        _useGeneratedPassword = true;
-        _resetArtifact();
-        _isGenerating = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isGenerating = false;
-        _error = e.toString();
-      });
-    }
-  }
-
-  Future<void> _copyGeneratedPassword() async {
-    final password = _generatedPassword?.displayPassword;
-    if (password == null) return;
-    await Clipboard.setData(ClipboardData(text: password));
-  }
-
   Future<void> _encryptBackup() async {
     if (_busy) return;
+    final passwordMessage = validateRequiredWalletPassword(
+      _customPasswordController.text,
+    );
+    if (passwordMessage != null) {
+      setState(() => _error = passwordMessage);
+      return;
+    }
     setState(() {
       _isEncrypting = true;
       _error = null;
       _resetArtifact();
     });
     try {
-      if (_useGeneratedPassword && _generatedPassword == null) {
-        _generatedPassword = rust_multisig.generateMultisigBackupPassword();
-      }
       final source = _backupSource(widget.session);
       final artifact = await rust_multisig.createMultisigShareBackup(
         network: ref.read(rpcEndpointProvider).networkName,
@@ -153,6 +139,13 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
   Future<void> _verifyPassword() async {
     final artifact = _artifact;
     if (_busy || artifact == null) return;
+    final confirmMessage = _confirmPasswordMessage;
+    if (confirmMessage != null || !_confirmPasswordValid) {
+      setState(() {
+        _error = confirmMessage ?? kWalletPasswordMinLengthMessage;
+      });
+      return;
+    }
     setState(() {
       _isVerifying = true;
       _error = null;
@@ -163,7 +156,7 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
     try {
       final passphrase = rust_multisig.normalizeMultisigBackupPassword(
         password: _confirmPasswordController.text,
-        generated: _useGeneratedPassword,
+        minLength: kWalletPasswordMinLength,
       );
       final source = _backupSource(widget.session);
       final verified = await rust_multisig.verifyMultisigShareBackup(
@@ -264,16 +257,9 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
   }
 
   String _currentPassphrase() {
-    if (_useGeneratedPassword) {
-      final generated = _generatedPassword;
-      if (generated == null) {
-        throw StateError('Generate a backup password first.');
-      }
-      return generated.canonicalPassword;
-    }
     return rust_multisig.normalizeMultisigBackupPassword(
       password: _customPasswordController.text,
-      generated: false,
+      minLength: kWalletPasswordMinLength,
     );
   }
 
@@ -316,57 +302,29 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            Row(
-              children: [
-                AppButton(
-                  onPressed: _busy
-                      ? null
-                      : () => setState(() {
-                          _useGeneratedPassword = true;
-                          _resetArtifact();
-                        }),
-                  variant: _useGeneratedPassword
-                      ? AppButtonVariant.primary
-                      : AppButtonVariant.secondary,
-                  size: AppButtonSize.small,
-                  child: const Text('Generated'),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                AppButton(
-                  onPressed: _busy
-                      ? null
-                      : () => setState(() {
-                          _useGeneratedPassword = false;
-                          _resetArtifact();
-                        }),
-                  variant: !_useGeneratedPassword
-                      ? AppButtonVariant.primary
-                      : AppButtonVariant.secondary,
-                  size: AppButtonSize.small,
-                  child: const Text('Custom'),
-                ),
-              ],
+            PasswordTextField(
+              label: 'Backup password',
+              controller: _customPasswordController,
+              hintText: 'Min. $kWalletPasswordMinLength characters and symbols',
+              messageText: _backupPasswordMessage,
+              tone: _backupPasswordMessage == null
+                  ? AppTextFieldTone.neutral
+                  : AppTextFieldTone.destructive,
+              onChanged: (_) {
+                setState(() {
+                  _resetArtifact();
+                  _error = null;
+                });
+              },
+              onSubmitted: (_) {
+                if (!_busy && _backupPasswordValid) {
+                  _encryptBackup();
+                }
+              },
             ),
-            const SizedBox(height: AppSpacing.sm),
-            if (_useGeneratedPassword)
-              _GeneratedPasswordPanel(
-                password: _generatedPassword,
-                isGenerating: _isGenerating,
-                onGenerate: _busy ? null : _generatePassword,
-                onCopy: _generatedPassword == null
-                    ? null
-                    : _copyGeneratedPassword,
-              )
-            else
-              PasswordTextField(
-                label: 'Backup password',
-                controller: _customPasswordController,
-                hintText: 'At least 16 ASCII characters',
-                onChanged: (_) => setState(_resetArtifact),
-              ),
             const SizedBox(height: AppSpacing.md),
             AppButton(
-              onPressed: _busy ? null : _encryptBackup,
+              onPressed: _busy || !_backupPasswordValid ? null : _encryptBackup,
               minWidth: 180,
               leading: _isEncrypting
                   ? const _SmallSpinner()
@@ -379,7 +337,10 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
                 label: 'Confirm backup password',
                 controller: _confirmPasswordController,
                 hintText: 'Re-enter the password',
-                tone: _verifiedPassphrase == null
+                messageText: _confirmPasswordMessage,
+                tone: _confirmPasswordMessage != null
+                    ? AppTextFieldTone.destructive
+                    : _verifiedPassphrase == null
                     ? AppTextFieldTone.neutral
                     : AppTextFieldTone.success,
                 onChanged: (_) {
@@ -387,12 +348,20 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
                     _verifiedPassphrase = null;
                     _verifiedBackupHash = null;
                     _savedPath = null;
+                    _error = null;
                   });
+                },
+                onSubmitted: (_) {
+                  if (_artifact != null && !_busy && _confirmPasswordValid) {
+                    _verifyPassword();
+                  }
                 },
               ),
               const SizedBox(height: AppSpacing.sm),
               AppButton(
-                onPressed: _busy ? null : _verifyPassword,
+                onPressed: _busy || !_confirmPasswordValid
+                    ? null
+                    : _verifyPassword,
                 minWidth: 180,
                 variant: AppButtonVariant.secondary,
                 leading: _isVerifying
@@ -440,78 +409,6 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
                   ? const _SmallSpinner()
                   : const AppIcon(AppIcons.checkCircle),
               child: const Text('Continue'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GeneratedPasswordPanel extends StatelessWidget {
-  const _GeneratedPasswordPanel({
-    required this.password,
-    required this.isGenerating,
-    required this.onGenerate,
-    required this.onCopy,
-  });
-
-  final rust_multisig.ApiMultisigBackupPassword? password;
-  final bool isGenerating;
-  final VoidCallback? onGenerate;
-  final VoidCallback? onCopy;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.background.base,
-        border: Border.all(color: colors.border.subtle),
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.sm),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              password?.displayPassword ?? 'No password generated',
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.primary,
-              ),
-            ),
-            if (password != null) ...[
-              const SizedBox(height: AppSpacing.xxs),
-              Text(
-                'Checksum ${password!.checksum}',
-                style: AppTypography.bodySmall.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-            ],
-            const SizedBox(height: AppSpacing.sm),
-            Wrap(
-              spacing: AppSpacing.xs,
-              runSpacing: AppSpacing.xs,
-              children: [
-                AppButton(
-                  onPressed: onGenerate,
-                  size: AppButtonSize.small,
-                  variant: AppButtonVariant.secondary,
-                  leading: isGenerating
-                      ? const _SmallSpinner()
-                      : const AppIcon(AppIcons.renew),
-                  child: Text(isGenerating ? 'Generating' : 'Generate'),
-                ),
-                AppButton(
-                  onPressed: onCopy,
-                  size: AppButtonSize.small,
-                  variant: AppButtonVariant.secondary,
-                  leading: const AppIcon(AppIcons.copy),
-                  child: const Text('Copy'),
-                ),
-              ],
             ),
           ],
         ),

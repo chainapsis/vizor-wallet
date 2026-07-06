@@ -83,11 +83,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ApiMultisigBackupPassword dco_decode_api_multisig_backup_password(
-    dynamic raw,
-  );
-
-  @protected
   ApiMultisigBackupVerification dco_decode_api_multisig_backup_verification(
     dynamic raw,
   );
@@ -693,11 +688,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiMultisigBackupArtifact sse_decode_api_multisig_backup_artifact(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ApiMultisigBackupPassword sse_decode_api_multisig_backup_password(
     SseDeserializer deserializer,
   );
 
@@ -1451,12 +1441,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_multisig_backup_artifact(
     ApiMultisigBackupArtifact self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_api_multisig_backup_password(
-    ApiMultisigBackupPassword self,
     SseSerializer serializer,
   );
 

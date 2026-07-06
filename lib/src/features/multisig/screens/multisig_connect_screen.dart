@@ -3,9 +3,11 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/password_text_field.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -28,13 +30,18 @@ class MultisigConnectScreen extends ConsumerStatefulWidget {
 
 class _MultisigConnectScreenState extends ConsumerState<MultisigConnectScreen> {
   final _backupPasswordController = TextEditingController();
-  bool _restoreGeneratedPassword = true;
   bool _isPickingBackup = false;
   bool _isRestoringBackup = false;
   MultisigBackupFileReadResult? _selectedBackup;
   String? _restoreError;
 
   bool get _busy => _isPickingBackup || _isRestoringBackup;
+
+  String? get _restorePasswordMessage =>
+      validateWalletPassword(_backupPasswordController.text);
+
+  bool get _restorePasswordValid =>
+      isWalletPasswordValid(_backupPasswordController.text);
 
   @override
   void dispose() {
@@ -70,6 +77,13 @@ class _MultisigConnectScreenState extends ConsumerState<MultisigConnectScreen> {
   Future<void> _restoreBackup() async {
     final backup = _selectedBackup;
     if (_busy || backup == null) return;
+    final passwordMessage = validateRequiredWalletPassword(
+      _backupPasswordController.text,
+    );
+    if (passwordMessage != null) {
+      setState(() => _restoreError = passwordMessage);
+      return;
+    }
     setState(() {
       _isRestoringBackup = true;
       _restoreError = null;
@@ -77,7 +91,7 @@ class _MultisigConnectScreenState extends ConsumerState<MultisigConnectScreen> {
     try {
       final passphrase = rust_multisig.normalizeMultisigBackupPassword(
         password: _backupPasswordController.text,
-        generated: _restoreGeneratedPassword,
+        minLength: kWalletPasswordMinLength,
       );
       final security = ref.read(appSecurityProvider);
       final hasAccounts =
@@ -187,16 +201,11 @@ class _MultisigConnectScreenState extends ConsumerState<MultisigConnectScreen> {
                   const SizedBox(height: AppSpacing.md),
                   _RestoreBackupPanel(
                     selectedBackup: _selectedBackup,
-                    generatedPassword: _restoreGeneratedPassword,
                     passwordController: _backupPasswordController,
+                    passwordMessage: _restorePasswordMessage,
+                    canRestore: _restorePasswordValid,
                     busy: _busy,
                     error: _restoreError,
-                    onGeneratedPasswordChanged: (value) {
-                      setState(() {
-                        _restoreGeneratedPassword = value;
-                        _restoreError = null;
-                      });
-                    },
                     onPasswordChanged: () {
                       setState(() => _restoreError = null);
                     },
@@ -258,22 +267,22 @@ class _MultisigConnectScreenState extends ConsumerState<MultisigConnectScreen> {
 class _RestoreBackupPanel extends StatelessWidget {
   const _RestoreBackupPanel({
     required this.selectedBackup,
-    required this.generatedPassword,
     required this.passwordController,
+    required this.passwordMessage,
+    required this.canRestore,
     required this.busy,
     required this.error,
-    required this.onGeneratedPasswordChanged,
     required this.onPasswordChanged,
     required this.onChooseFile,
     required this.onRestore,
   });
 
   final MultisigBackupFileReadResult? selectedBackup;
-  final bool generatedPassword;
   final TextEditingController passwordController;
+  final String? passwordMessage;
+  final bool canRestore;
   final bool busy;
   final String? error;
-  final ValueChanged<bool> onGeneratedPasswordChanged;
   final VoidCallback onPasswordChanged;
   final VoidCallback onChooseFile;
   final VoidCallback onRestore;
@@ -351,50 +360,18 @@ class _RestoreBackupPanel extends StatelessWidget {
               ],
             ),
             const SizedBox(height: AppSpacing.md),
-            Row(
-              children: [
-                Expanded(
-                  child: AppButton(
-                    onPressed: busy
-                        ? null
-                        : () => onGeneratedPasswordChanged(true),
-                    variant: generatedPassword
-                        ? AppButtonVariant.primary
-                        : AppButtonVariant.secondary,
-                    size: AppButtonSize.medium,
-                    expand: true,
-                    leading: const AppIcon(AppIcons.renew),
-                    child: const Text('Generated'),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: AppButton(
-                    onPressed: busy
-                        ? null
-                        : () => onGeneratedPasswordChanged(false),
-                    variant: generatedPassword
-                        ? AppButtonVariant.secondary
-                        : AppButtonVariant.primary,
-                    size: AppButtonSize.medium,
-                    expand: true,
-                    leading: const AppIcon(AppIcons.edit),
-                    child: const Text('Custom'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
             PasswordTextField(
               label: 'Backup password',
               controller: passwordController,
               enabled: !busy,
-              hintText: generatedPassword
-                  ? 'eight generated words'
-                  : 'backup password',
+              hintText: 'Min. $kWalletPasswordMinLength characters and symbols',
+              messageText: passwordMessage,
+              tone: passwordMessage == null
+                  ? AppTextFieldTone.neutral
+                  : AppTextFieldTone.destructive,
               onChanged: (_) => onPasswordChanged(),
               onSubmitted: (_) {
-                if (backup != null && !busy) onRestore();
+                if (backup != null && !busy && canRestore) onRestore();
               },
             ),
             if (errorText != null) ...[
@@ -409,7 +386,9 @@ class _RestoreBackupPanel extends StatelessWidget {
             const SizedBox(height: AppSpacing.md),
             Center(
               child: AppButton(
-                onPressed: backup == null || busy ? null : onRestore,
+                onPressed: backup == null || busy || !canRestore
+                    ? null
+                    : onRestore,
                 leading: busy
                     ? const SizedBox(
                         width: 16,
