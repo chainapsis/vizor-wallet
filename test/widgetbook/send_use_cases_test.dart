@@ -258,7 +258,7 @@ void main() {
       tester.getSize(find.byKey(const ValueKey('send_spendable_info_modal'))),
       SendSpendableInfoModal.size,
     );
-    expect(find.text('I Understand'), findsOneWidget);
+    expect(find.text('I understand'), findsOneWidget);
   });
 }
 

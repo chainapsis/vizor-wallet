@@ -100,7 +100,7 @@ class SendSpendableInfoModal extends StatelessWidget {
             size: AppButtonSize.mediumLarge,
             height: kAppModalButtonHeight,
             minWidth: double.infinity,
-            child: const Text('I Understand'),
+            child: const Text('I understand'),
           ),
         ],
       ),

@@ -533,7 +533,7 @@ void main() {
 
     expect(find.text('Spendable vs. Total Balances'), findsOneWidget);
     expect(find.text('Why they may differ'), findsOneWidget);
-    expect(find.text('I Understand'), findsOneWidget);
+    expect(find.text('I understand'), findsOneWidget);
     expect(
       tester
           .widget<Text>(find.text('Spendable vs. Total Balances'))
@@ -558,7 +558,7 @@ void main() {
       AppThemeData.light.colors.text.accent,
     );
 
-    await tester.tap(find.text('I Understand'));
+    await tester.tap(find.text('I understand'));
     await tester.pumpAndSettle();
 
     expect(find.text('Spendable vs. Total Balances'), findsNothing);
