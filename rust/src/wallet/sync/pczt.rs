@@ -1342,9 +1342,9 @@ mod tests {
                 .expect("valid Orchard ZIP 32 spending key");
             let orchard_ask = orchard::keys::SpendAuthorizingKey::from(&orchard_sk);
             let orchard_fvk = orchard::keys::FullViewingKey::from(&orchard_sk);
-            let orchard_ivk = orchard_fvk.to_ivk(orchard::keys::Scope::External);
-            let orchard_ovk = orchard_fvk.to_ovk(orchard::keys::Scope::External);
-            let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::External);
+            let orchard_ivk = orchard_fvk.to_ivk(orchard::keys::Scope::Internal);
+            let orchard_ovk = orchard_fvk.to_ovk(orchard::keys::Scope::Internal);
+            let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::Internal);
 
             // Pretend we already received an Orchard (V2) note.
             let value = orchard::value::NoteValue::from_raw(1_000_000);
@@ -1680,8 +1680,11 @@ mod tests {
                 assert!(action.cv_net().is_none());
                 assert!(action.output().cmx().is_none());
                 assert!(action.output().ephemeral_key().is_none());
-                assert!(action.output().enc_ciphertext().is_some());
-                assert!(action.output().memo_kind().is_none());
+                assert!(action.output().enc_ciphertext().is_none());
+                assert_eq!(
+                    *action.output().memo_kind(),
+                    Some(pczt::orchard::MemoKind::Zero)
+                );
             }
             for action in parsed.ironwood().actions() {
                 // The real migration output is built with `MemoBytes::empty()`.
