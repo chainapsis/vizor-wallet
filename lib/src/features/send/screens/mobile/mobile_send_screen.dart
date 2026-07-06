@@ -10,7 +10,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
-import '../../../../core/formatting/number_format.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -34,7 +33,9 @@ import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
+import '../../models/send_amount_currency.dart';
 import '../../services/send_flow.dart';
+import '../../widgets/send_decimal_amount_input_formatter.dart';
 import '../../widgets/send_recipient_resolver.dart';
 import '../../widgets/send_review_layout.dart'
     show SendReviewContactRecipient;
@@ -43,8 +44,6 @@ import 'mobile_send_scan_screen.dart';
 enum _SendStep { recipient, amount, review }
 
 enum _SendPhase { compose, failed }
-
-enum MobileSendAmountInputMode { zec, usd }
 
 class _ReviewRecipientPresentation {
   const _ReviewRecipientPresentation({
@@ -251,7 +250,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.initialAddressType,
     this.initialAmount,
     this.initialFiatAmount,
-    this.initialAmountInputMode = MobileSendAmountInputMode.zec,
+    this.initialAmountInputMode = SendAmountInputMode.zec,
     this.initialAmountError,
     this.initialAmountReady = false,
     this.initialAmountStep = false,
@@ -279,7 +278,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   final bool initialAmountStep;
   final String? initialAmount;
   final String? initialFiatAmount;
-  final MobileSendAmountInputMode initialAmountInputMode;
+  final SendAmountInputMode initialAmountInputMode;
   final String? initialAmountError;
   final bool initialAmountReady;
   final bool initialReview;
@@ -328,7 +327,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   // Amount state. `_amountText` stays canonical ZEC text for Rust/review.
   String _amountText = '';
   String _fiatAmountText = '';
-  MobileSendAmountInputMode _amountInputMode = MobileSendAmountInputMode.zec;
+  SendAmountInputMode _amountInputMode = SendAmountInputMode.zec;
   String? _amountError = ''; // null = valid, '' = silently incomplete
   int _validateSeq = 0;
   bool _isMaxMode = false;
@@ -373,7 +372,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _amountText = widget.initialAmount?.trim() ?? '';
       _amountInputMode = widget.initialAmountInputMode;
       _fiatAmountText = widget.initialFiatAmount?.trim() ?? '';
-      _amountController.text = _amountInputMode == MobileSendAmountInputMode.usd
+      _amountController.text = _amountInputMode == SendAmountInputMode.usd
           ? _fiatAmountText
           : _amountText;
       _isMaxMode = widget.initialMaxMode;
@@ -588,8 +587,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String? get _activeAccountUuid =>
       ref.read(accountProvider).value?.activeAccountUuid;
 
-  bool get _amountInputIsUsd =>
-      _amountInputMode == MobileSendAmountInputMode.usd;
+  bool get _amountInputIsUsd => _amountInputMode == SendAmountInputMode.usd;
 
   void _setAmountControllerText(String text) {
     _amountController.value = TextEditingValue(
@@ -598,56 +596,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
-  BigInt? _zatoshiFromUsdText(String text, double? zecUsdUnitPrice) {
-    final normalized = text.trim();
-    if (normalized.isEmpty || normalized == '.' || normalized == '0.') {
-      return null;
-    }
-    final usd = double.tryParse(
-      normalized.startsWith('.') ? '0$normalized' : normalized,
-    );
-    if (usd == null ||
-        !usd.isFinite ||
-        usd <= 0 ||
-        zecUsdUnitPrice == null ||
-        !zecUsdUnitPrice.isFinite ||
-        zecUsdUnitPrice <= 0) {
-      return null;
-    }
-    final zatoshi = (usd / zecUsdUnitPrice) * zatoshiPerZec.toDouble();
-    if (!zatoshi.isFinite || zatoshi <= 0) return null;
-    return BigInt.from(zatoshi.floor());
-  }
-
-  String _usdInputTextForZatoshi(BigInt zatoshi, double zecUsdUnitPrice) {
-    final usd = zatoshi.toDouble() / zatoshiPerZec.toDouble() * zecUsdUnitPrice;
-    if (!usd.isFinite || usd <= 0) return '';
-    return usd.toStringAsFixed(2);
-  }
-
-  String _sendableUsdInputTextForZatoshi(
-    BigInt zatoshi,
-    double zecUsdUnitPrice,
-  ) {
-    final text = _usdInputTextForZatoshi(zatoshi, zecUsdUnitPrice);
-    return text == '0.00' ? '' : text;
-  }
-
-  String _usdDisplayTextForZatoshi(BigInt zatoshi, double zecUsdUnitPrice) {
-    final raw = _usdInputTextForZatoshi(zatoshi, zecUsdUnitPrice);
-    if (raw.isEmpty) return '0.00';
-    final parts = raw.split('.');
-    final whole = int.tryParse(parts.first) ?? 0;
-    final fraction = parts.length > 1 ? parts[1] : '00';
-    return '${formatGroupedInteger(whole)}.$fraction';
-  }
-
   void _toggleAmountInputMode() {
     final nextMode = _amountInputIsUsd
-        ? MobileSendAmountInputMode.zec
-        : MobileSendAmountInputMode.usd;
+        ? SendAmountInputMode.zec
+        : SendAmountInputMode.usd;
     final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
-    if (nextMode == MobileSendAmountInputMode.usd && zecUsdUnitPrice == null) {
+    if (nextMode == SendAmountInputMode.usd && zecUsdUnitPrice == null) {
       return;
     }
 
@@ -657,7 +611,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         final zatoshi = parseZecAmount(_amountText.trim());
         _fiatAmountText = zatoshi == null || zatoshi <= BigInt.zero
             ? ''
-            : _sendableUsdInputTextForZatoshi(zatoshi, zecUsdUnitPrice!);
+            : sendableUsdInputTextForZatoshi(zatoshi, zecUsdUnitPrice!);
         if (_fiatAmountText.isEmpty) {
           _amountText = '';
           _amountError = '';
@@ -724,7 +678,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   void _handleFiatAmountChanged(String value) {
     final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
-    final zatoshi = _zatoshiFromUsdText(value, zecUsdUnitPrice);
+    final zatoshi = sendZatoshiFromUsdText(value, zecUsdUnitPrice);
     setState(() {
       _fiatAmountText = value.trim();
       _amountText = zatoshi == null
@@ -802,7 +756,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
       final fiatText = zecUsdUnitPrice == null
           ? ''
-          : _sendableUsdInputTextForZatoshi(
+          : sendableUsdInputTextForZatoshi(
               estimate.amountZatoshi,
               zecUsdUnitPrice,
             );
@@ -1966,7 +1920,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
     final inputFormatters = [
       const CommaToDotInputFormatter(),
-      _DecimalAmountInputFormatter(
+      SendDecimalAmountInputFormatter(
         maxFractionDigits: _amountInputIsUsd ? 2 : 8,
         maxLength: _amountInputIsUsd ? 12 : 17,
       ),
@@ -2113,7 +2067,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         : r'$ ' +
               (amountZatoshi == null || amountZatoshi <= BigInt.zero
                   ? '0.00'
-                  : _usdDisplayTextForZatoshi(amountZatoshi, zecUsdUnitPrice));
+                  : sendUsdDisplayTextForZatoshi(
+                      amountZatoshi,
+                      zecUsdUnitPrice,
+                    ));
 
     return SizedBox(
       height: _kMobileSendAmountMetaHeight,
@@ -2756,54 +2713,6 @@ RenderEditable? _findRenderEditable(RenderObject root) {
     found ??= _findRenderEditable(child);
   });
   return found;
-}
-
-class _DecimalAmountInputFormatter extends TextInputFormatter {
-  const _DecimalAmountInputFormatter({
-    required this.maxFractionDigits,
-    required this.maxLength,
-  });
-
-  final int maxFractionDigits;
-  final int maxLength;
-
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    var text = newValue.text;
-    if (text.isEmpty) return newValue;
-
-    final buffer = StringBuffer();
-    var hasDecimal = false;
-    for (final codeUnit in text.codeUnits) {
-      final ch = String.fromCharCode(codeUnit);
-      if (ch == '.') {
-        if (hasDecimal) continue;
-        hasDecimal = true;
-        buffer.write(ch);
-        continue;
-      }
-      if (codeUnit >= 0x30 && codeUnit <= 0x39) {
-        buffer.write(ch);
-      }
-    }
-
-    text = buffer.toString();
-    if (text.startsWith('.')) text = '0$text';
-    if (text.length > maxLength) text = text.substring(0, maxLength);
-    final decimalIndex = text.indexOf('.');
-    if (decimalIndex >= 0) {
-      final maxEnd = decimalIndex + 1 + maxFractionDigits;
-      if (text.length > maxEnd) text = text.substring(0, maxEnd);
-    }
-
-    return TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-  }
 }
 
 class _ReviewZecIcon extends StatelessWidget {
